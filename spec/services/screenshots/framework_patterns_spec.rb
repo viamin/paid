@@ -73,6 +73,14 @@ RSpec.describe Screenshots::FrameworkPatterns do
       expect(patterns[:patterns].any? { |p| p.match?("app/layout.tsx") }).to be true
     end
 
+    it "matches app router global stylesheets" do
+      expect(patterns[:patterns].any? { |p| p.match?("app/globals.css") }).to be true
+    end
+
+    it "matches app router CSS modules" do
+      expect(patterns[:patterns].any? { |p| p.match?("app/dashboard/page.module.css") }).to be true
+    end
+
     it "matches component files" do
       expect(patterns[:patterns].any? { |p| p.match?("components/Button.tsx") }).to be true
     end

@@ -77,11 +77,13 @@ module Screenshots
     end
 
     def resolve_framework_patterns
-      @resolve_framework_patterns ||= if @patterns
-        { patterns: @patterns, exclusions: @exclusions || [] }
-      else
-        framework = @framework || detect_or_default_framework
-        FrameworkPatterns.for(framework)
+      @resolve_framework_patterns ||= begin
+        framework_patterns = FrameworkPatterns.for(@framework || detect_or_default_framework)
+
+        {
+          patterns: @patterns || framework_patterns[:patterns],
+          exclusions: @exclusions || framework_patterns[:exclusions]
+        }
       end
     end
 

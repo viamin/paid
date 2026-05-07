@@ -64,16 +64,13 @@ RSpec.describe "screenshots:capture" do
     end
 
     it "passes repo-configured UI patterns and exclusions into detection" do
-      config = Screenshots::Configuration.from_hash(
-        "routes" => [ { "path" => "/", "name" => "home" } ],
-        "ui_patterns" => [ "frontend/**/*" ],
-        "ui_exclusions" => [ "frontend/vendor/**/*" ]
-      )
-
       ENV["CHANGED_FILES"] = "frontend/app.js"
       allow(File).to receive(:exist?).and_call_original
       allow(File).to receive(:exist?).with(File.join(Dir.pwd, ".paid/screenshots.yml")).and_return(true)
-      allow(Screenshots::ConfigParser).to receive(:from_repo_path).with(Dir.pwd).and_return(config)
+      allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(repo_path: Dir.pwd).and_return(
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
       allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
         { ui_changes?: true, ui_files: [ "frontend/app.js" ] }
       )
@@ -86,6 +83,23 @@ RSpec.describe "screenshots:capture" do
         repo_path: Dir.pwd,
         patterns: [ "frontend/**/*" ],
         exclusions: [ "frontend/vendor/**/*" ]
+      )
+    end
+
+    it "keeps framework auto-detection when UI patterns were not explicitly configured" do
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(File.join(Dir.pwd, ".paid/screenshots.yml")).and_return(true)
+      allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(repo_path: Dir.pwd).and_return({})
+      allow(Screenshots::DetectUiChanges).to receive(:call).and_return(
+        { ui_changes?: true, ui_files: [ "app/views/projects/index.html.erb" ] }
+      )
+      allow(Screenshots::Capture).to receive(:call).and_return([])
+
+      task.invoke
+
+      expect(Screenshots::DetectUiChanges).to have_received(:call).with(
+        changed_files: [ "app/views/projects/index.html.erb" ],
+        repo_path: Dir.pwd
       )
     end
   end

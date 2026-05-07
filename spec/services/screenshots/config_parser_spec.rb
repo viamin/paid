@@ -16,6 +16,35 @@ RSpec.describe Screenshots::ConfigParser do
     FileUtils.rm_rf(repo_dir)
   end
 
+  describe ".ui_detection_overrides" do
+    it "returns explicit UI pattern overrides from the repo config" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+        ui_patterns:
+          - frontend/**/*
+        ui_exclusions:
+          - frontend/vendor/**/*
+      YAML
+
+      expect(described_class.ui_detection_overrides(repo_path: repo_dir)).to eq(
+        patterns: [ "frontend/**/*" ],
+        exclusions: [ "frontend/vendor/**/*" ]
+      )
+    end
+
+    it "does not return default Rails UI patterns when the repo config omits them" do
+      write_config(repo_dir, <<~YAML)
+        routes:
+          - path: /
+            name: homepage
+      YAML
+
+      expect(described_class.ui_detection_overrides(repo_path: repo_dir)).to eq({})
+    end
+  end
+
   describe ".from_repo_path" do
     context "with a minimal config" do
       subject(:config) { described_class.from_repo_path(repo_dir, project: project) }

@@ -14,9 +14,9 @@ namespace :screenshots do
       config_path = File.join(Dir.pwd, Screenshots::ConfigParser::CONFIG_PATH)
 
       if File.exist?(config_path)
-        config = Screenshots::ConfigParser.from_repo_path(Dir.pwd)
-        ui_detection_options[:patterns] = config.ui_patterns
-        ui_detection_options[:exclusions] = config.ui_exclusions
+        ui_detection_options.merge!(
+          Screenshots::ConfigParser.ui_detection_overrides(repo_path: Dir.pwd)
+        )
       end
 
       result = Screenshots::DetectUiChanges.call(

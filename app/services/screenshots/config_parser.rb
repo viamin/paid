@@ -27,6 +27,10 @@ module Screenshots
         new(project:, repo_path:, blob:, content:).call
       end
 
+      def ui_detection_overrides(project: nil, repo_path: nil, blob: nil, content: nil)
+        new(project:, repo_path:, blob:, content:).send(:ui_detection_overrides)
+      end
+
       def from_repo_path(repo_path, project: nil)
         call(project:, repo_path:)
       end
@@ -70,6 +74,19 @@ module Screenshots
       File.read(path)
     rescue Errno::ENOENT => e
       raise ConfigError, "Unable to read #{CONFIG_PATH}: #{e.message}"
+    end
+
+    def ui_detection_overrides
+      file_settings = parse_content(raw_content)
+      validate_partial!(file_settings)
+
+      merged = merged_settings(file_settings)
+      explicit_settings = explicit_project_settings.merge(file_settings)
+
+      {}.tap do |overrides|
+        overrides[:patterns] = merged["ui_patterns"] if explicit_settings.key?("ui_patterns")
+        overrides[:exclusions] = merged["ui_exclusions"] if explicit_settings.key?("ui_exclusions")
+      end
     end
 
     def config_path

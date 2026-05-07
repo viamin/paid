@@ -35,6 +35,8 @@ module Screenshots
         %r{\Aapp/(?:.+/)?layout\.[jt]sx?\z},
         %r{\Aapp/(?:.+/)?loading\.[jt]sx?\z},
         %r{\Aapp/(?:.+/)?error\.[jt]sx?\z},
+        %r{\Aapp/(?:.+/)?globals\.(?:css|scss|sass|less)\z},
+        %r{\Aapp/(?:.+/)?[^/]+\.module\.(?:css|scss|sass|less)\z},
         %r{\Apages/},
         %r{\Acomponents/},
         %r{\Astyles/},

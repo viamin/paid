@@ -228,6 +228,16 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_changes?]).to be true
     end
 
+    it "detects Next.js app router stylesheet changes" do
+      result = described_class.call(
+        changed_files: [ "app/dashboard/page.module.css", "app/globals.css" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to contain_exactly("app/dashboard/page.module.css", "app/globals.css")
+    end
+
     it "ignores Rails-specific files with Next.js framework" do
       result = described_class.call(
         changed_files: [ "app/helpers/application_helper.rb" ],
@@ -298,6 +308,17 @@ RSpec.describe Screenshots::DetectUiChanges do
 
       expect(result[:ui_changes?]).to be true
       expect(result[:ui_files]).to eq([ "my_custom/views/home.html" ])
+    end
+
+    it "applies custom exclusions on top of detected framework defaults" do
+      result = described_class.call(
+        changed_files: [ "app/views/projects/index.html.erb", "app/views/pwa/manifest.json.erb" ],
+        exclusions: [ "app/views/pwa/**/*" ],
+        repo_path: Dir.pwd
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "app/views/projects/index.html.erb" ])
     end
 
     it "custom patterns override framework when both provided" do
