@@ -65,6 +65,8 @@ module Scaling
         swarm = JSON.parse(output, symbolize_names: true)
 
         swarm[:LocalNodeState] == "active" && swarm[:ControlAvailable] == true
+      rescue JSON::ParserError
+        false
       rescue StandardError
         false
       end

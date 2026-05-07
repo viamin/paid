@@ -221,7 +221,8 @@ module Scaling
         step = config.fetch(:step)
         minimum = [ required_memory, memory_range.begin ].max
 
-        memory_range.begin + (((minimum - memory_range.begin).to_f / step).ceil * step)
+        aligned = memory_range.begin + (((minimum - memory_range.begin).to_f / step).ceil * step)
+        [ aligned, memory_range.end ].min
       end
 
       def service_ready?(service)
