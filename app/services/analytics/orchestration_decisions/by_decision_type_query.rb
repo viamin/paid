@@ -4,20 +4,22 @@ module Analytics
   module OrchestrationDecisions
     class ByDecisionTypeQuery < BaseQuery
       def call
+        total_count = distinct_count(decision_records_table[:id])
+
         scope = filtered_scope
           .left_joins(:agent_run)
           .joins(decision_types_join_sql)
 
-        scope = scope.where([ "#{decision_type_sql} IN (?)", decision_types ]) if decision_types.any?
+        scope = scope.where(decision_type_expression.in(decision_types)) if decision_types.any?
 
-        rows = scope.group(Arel.sql(decision_type_sql))
-          .order(Arel.sql("COUNT(DISTINCT decision_records.id) DESC"), Arel.sql("#{decision_type_sql} ASC"))
+        rows = scope.group(decision_type_expression)
+          .order(total_count.desc, decision_type_expression.asc)
           .pluck(
-            Arel.sql(decision_type_sql),
-            Arel.sql("COUNT(DISTINCT decision_records.id)"),
-            Arel.sql("COUNT(DISTINCT decision_records.project_id)"),
-            Arel.sql("COUNT(DISTINCT CASE WHEN decision_records.status = 'active' THEN decision_records.id END)"),
-            Arel.sql("COUNT(DISTINCT CASE WHEN agent_runs.status = 'completed' THEN decision_records.id END)")
+            decision_type_expression,
+            total_count,
+            distinct_count(decision_records_table[:project_id]),
+            distinct_status_count("active"),
+            distinct_completed_run_count
           )
 
         rows.map do |decision_type, total_count, project_count, active_count, completed_run_count|

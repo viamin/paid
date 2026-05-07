@@ -85,8 +85,47 @@ module Analytics
         SQL
       end
 
-      def decision_type_sql
-        "COALESCE(decision_types.decision_type, '#{UNCATEGORIZED_DECISION_TYPE}')"
+      def decision_records_table
+        DecisionRecord.arel_table
+      end
+
+      def projects_table
+        Project.arel_table
+      end
+
+      def agent_runs_table
+        AgentRun.arel_table
+      end
+
+      def decision_types_table
+        Arel::Table.new(:decision_types)
+      end
+
+      def decision_type_expression
+        Arel::Nodes::NamedFunction.new(
+          "COALESCE",
+          [ decision_types_table[:decision_type], Arel::Nodes.build_quoted(UNCATEGORIZED_DECISION_TYPE) ]
+        )
+      end
+
+      def distinct_count(expression)
+        Arel::Nodes::Count.new([ expression ], true)
+      end
+
+      def distinct_status_count(status)
+        distinct_count(
+          Arel::Nodes::Case.new
+            .when(decision_records_table[:status].eq(status))
+            .then(decision_records_table[:id])
+        )
+      end
+
+      def distinct_completed_run_count
+        distinct_count(
+          Arel::Nodes::Case.new
+            .when(agent_runs_table[:status].eq("completed"))
+            .then(decision_records_table[:id])
+        )
       end
     end
   end

@@ -4,21 +4,29 @@ module Analytics
   module OrchestrationDecisions
     class ByProjectQuery < BaseQuery
       def call
+        total_count = distinct_count(decision_records_table[:id])
+        decision_type_count = distinct_count(decision_type_expression)
+
         rows = filtered_scope
           .joins(:project)
           .joins(decision_types_join_sql)
-          .group("projects.id", "projects.name", "projects.owner", "projects.repo")
-          .order(Arel.sql("COUNT(DISTINCT decision_records.id) DESC"), "projects.name ASC")
+          .group(
+            projects_table[:id],
+            projects_table[:name],
+            projects_table[:owner],
+            projects_table[:repo]
+          )
+          .order(total_count.desc, projects_table[:name].asc)
           .pluck(
-            "projects.id",
-            "projects.name",
-            "projects.owner",
-            "projects.repo",
-            Arel.sql("COUNT(DISTINCT decision_records.id)"),
-            Arel.sql("COUNT(DISTINCT #{decision_type_sql})"),
-            Arel.sql("COUNT(DISTINCT CASE WHEN decision_records.status = 'active' THEN decision_records.id END)"),
-            Arel.sql("COUNT(DISTINCT CASE WHEN decision_records.status = 'superseded' THEN decision_records.id END)"),
-            Arel.sql("COUNT(DISTINCT CASE WHEN decision_records.status = 'reverted' THEN decision_records.id END)")
+            projects_table[:id],
+            projects_table[:name],
+            projects_table[:owner],
+            projects_table[:repo],
+            total_count,
+            decision_type_count,
+            distinct_status_count("active"),
+            distinct_status_count("superseded"),
+            distinct_status_count("reverted")
           )
 
         rows.map do |project_id, name, owner, repo, total_count, decision_type_count, active_count, superseded_count, reverted_count|
