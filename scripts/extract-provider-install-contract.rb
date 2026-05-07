@@ -14,6 +14,13 @@
 
 require "agent_harness"
 
+def normalized_install_command(contract)
+  command = Array(contract[:install_command]).dup
+  return command if command.empty? || command.include?("--ignore-scripts")
+
+  command << "--ignore-scripts"
+end
+
 provider = ARGV[0]
 unless provider
   warn "Usage: #{$PROGRAM_NAME} <provider>"
@@ -105,9 +112,10 @@ if source == :uv_tool
   puts "SUPPORTED_VERSION=#{contract[:version]}"
 elsif is_npm
   package = contract[:package] || (source.is_a?(Hash) && source[:package])
+  install_command = normalized_install_command(contract)
   puts "SOURCE=npm"
   puts "PACKAGE=#{package}"
-  puts "INSTALL_COMMAND=#{contract[:install_command]&.join(" ")}"
+  puts "INSTALL_COMMAND=#{install_command.join(" ")}"
   puts "SUPPORTED_VERSION=#{contract[:version] || contract[:default_version]}"
 else
   install_command = contract.dig(:install, :command) || contract[:install_command_string]

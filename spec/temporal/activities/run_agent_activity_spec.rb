@@ -602,6 +602,23 @@ RSpec.describe Activities::RunAgentActivity do
         expect(env).not_to have_key("PAID_KILOCODE_CONFIG_B64")
       end
     end
+
+    context "with a persisted copilot provider" do
+      it "propagates dangerous-mode approval bypass through the harness runtime path" do
+        provider = create(:provider, user: user, provider_key: "copilot", auth_type: "subscription")
+        context = described_class::CommandContext.new(
+          provider_candidate: provider.routing_key,
+          provider: "copilot",
+          user: user
+        )
+
+        command = activity.send(:build_command, context, "ping")
+        env = activity.send(:command_env_for, context, "ping")
+
+        expect(command).to include("copilot", "--autopilot")
+        expect(env).to include("COPILOT_ALLOW_ALL" => "true")
+      end
+    end
   end
 
   describe "#provider_entry_for" do
