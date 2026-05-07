@@ -233,9 +233,9 @@ module Screenshots
       @screenshot_service_env = agent_run.service_environment&.deep_dup || {}
     ensure
       current_ids = agent_run.service_container_ids
-      @screenshot_service_container_ids |= current_ids - original_ids
+      @screenshot_service_container_ids |= current_ids - (original_ids || current_ids)
 
-      needs_restore = current_ids != original_ids || agent_run.service_environment != original_env
+      needs_restore = original_ids && (current_ids != original_ids || agent_run.service_environment != original_env)
       if needs_restore
         agent_run.update!(
           service_container_ids: original_ids,
