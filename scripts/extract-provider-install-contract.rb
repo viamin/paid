@@ -47,17 +47,21 @@ end
 begin
   contract = AgentHarness.install_contract(provider.to_sym)
 rescue AgentHarness::ConfigurationError
-  # Some providers (e.g., Codex) use the class-level installation_contract
-  # instead of the generic registry method. Fall back to that API.
+  metadata = AgentHarness.provider_metadata(provider.to_sym)
+  provider_class_name = metadata.fetch(:canonical_provider).to_s.split("_").map(&:capitalize).join
+
+  # Some providers expose install metadata via their canonical class contract
+  # even when the alias-based registry lookup does not implement
+  # AgentHarness.install_contract(provider_alias).
   begin
-    provider_class = AgentHarness::Providers.const_get(provider.split("_").map(&:capitalize).join)
+    provider_class = AgentHarness::Providers.const_get(provider_class_name)
     if provider_class.respond_to?(:installation_contract)
       contract = provider_class.installation_contract
     else
       warn "No install contract found for provider: #{provider}"
       exit 1
     end
-  rescue NameError => e
+  rescue KeyError, NameError => e
     warn "No install contract found for provider: #{provider} (#{e.message})"
     exit 1
   end

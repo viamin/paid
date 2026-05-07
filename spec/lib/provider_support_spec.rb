@@ -326,7 +326,7 @@ RSpec.describe ProviderSupport do
           "aider" => "aider",
           "claude" => "claude",
           "codex" => "codex",
-          "copilot" => "github-copilot-cli",
+          "copilot" => "copilot",
           "cursor" => "cursor-agent",
           "gemini" => "gemini",
           "kilocode" => "kilo",

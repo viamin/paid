@@ -923,6 +923,8 @@ RSpec.describe Containers::Provision do
         copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
         agent_run.update!(provider: copilot_provider, agent_type: "copilot")
         project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
+        allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+        allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
@@ -937,6 +939,8 @@ RSpec.describe Containers::Provision do
         claude_api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
         claude_fallback = create(:provider, :api_key, user: project.created_by,
           provider_key: "claude", provider_api_key: claude_api_key)
+        allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+        allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
         direct_outbound_provider.update!(enabled_for_fallback: false)
         project.created_by.providers.subscription.find_by!(provider_key: "claude")
@@ -991,6 +995,8 @@ RSpec.describe Containers::Provision do
         copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
         agent_run.update!(provider: copilot_provider, agent_type: "copilot")
         project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
+        allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+        allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
 
         container_network = nil
 

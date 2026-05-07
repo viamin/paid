@@ -9,7 +9,7 @@ RSpec.describe Providers::HarnessExecutionPlan do
       harness_provider = instance_double(
         AgentHarness::Providers::GithubCopilot,
         plan_execution: {
-          command: %w[github-copilot-cli -p ping --output-format json],
+          command: %w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping],
           env: {},
           preparation: nil
         }
@@ -25,7 +25,7 @@ RSpec.describe Providers::HarnessExecutionPlan do
       plan = described_class.for_provider_key(provider_key: "copilot", prompt: "ping")
 
       expect(harness_provider).to have_received(:plan_execution).with(prompt: "ping")
-      expect(plan.command).to eq(%w[github-copilot-cli -p ping --output-format json])
+      expect(plan.command).to eq(%w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping])
     end
   end
 
