@@ -47,9 +47,11 @@ module Screenshots
 
       authenticated_routes = routes.select(&:requires_auth)
       if authenticated_routes.any?
-        driver.authenticate(auth_config: resolved_auth_config(seed_data))
+        resolved_auth = resolved_auth_config(seed_data)
+        driver.authenticate(auth_config: resolved_auth)
       end
-      capture_partition(authenticated_routes, requires_auth: true, capture_results:)
+      capture_partition(authenticated_routes, requires_auth: true, capture_results:,
+        resolved_login_path: resolved_auth&.login_path)
 
       RunResult.new(
         captures: capture_results.freeze,
@@ -110,7 +112,7 @@ module Screenshots
       end
     end
 
-    def capture_partition(routes, requires_auth:, capture_results:)
+    def capture_partition(routes, requires_auth:, capture_results:, resolved_login_path: nil)
       routes.each do |route|
         next if route.requires_auth != requires_auth
 
@@ -118,8 +120,8 @@ module Screenshots
         driver.visit(route.path)
         driver.wait_for_load
 
-        if route.requires_auth && auth_redirect?(driver.current_path)
-          raise "redirected to login page (#{config.auth.login_path}) — authentication may have failed"
+        if route.requires_auth && auth_redirect?(driver.current_path, resolved_login_path)
+          raise "redirected to login page (#{resolved_login_path}) — authentication may have failed"
         end
 
         driver.screenshot(name: route.name, path: file_path)
@@ -140,13 +142,11 @@ module Screenshots
       config.auth.strategy.present? && config.auth.strategy != "none"
     end
 
-    def auth_redirect?(current_path)
+    def auth_redirect?(current_path, resolved_login_path)
       return false if current_path.blank?
+      return false if resolved_login_path.blank?
 
-      login_path = config.auth.login_path
-      return false if login_path.blank?
-
-      current_path.include?(login_path.split("?").first)
+      current_path.include?(resolved_login_path.split("?").first)
     end
 
     def resolved_auth_config(seed_data)
@@ -162,9 +162,15 @@ module Screenshots
       return template unless template.is_a?(String)
 
       values = interpolation_values(seed_data, seed_key)
-      template.gsub(/:\w+/) do |match|
+      result = template.gsub(/:\w+/) do |match|
         values.fetch(match.delete_prefix(":")) { match }
-      end % values.symbolize_keys
+      end
+
+      if result.match?(/%\{[^}]+\}/)
+        result % values.symbolize_keys
+      else
+        result
+      end
     rescue KeyError => e
       raise KeyError, "Missing screenshot seed value #{e.message} for #{template.inspect}"
     end

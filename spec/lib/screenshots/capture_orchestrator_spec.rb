@@ -144,4 +144,64 @@ RSpec.describe Screenshots::CaptureOrchestrator do
     expect(driver).to have_received(:visit).with("/projects/1")
     expect(result.paths).to eq([ "#{output_dir}/project_show.png" ])
   end
+
+  context "with literal percent signs in credentials" do
+    let(:percent_config) do
+      Screenshots::Configuration.from_hash(
+        "driver" => "cuprite",
+        "routes" => [
+          { "path" => "/dashboard", "name" => "dashboard", "requires_auth" => true }
+        ],
+        "auth" => {
+          "strategy" => "form",
+          "login_path" => "/users/sign_in",
+          "fields" => { "email" => "input[name='user[email]']", "password" => "input[name='user[password]']",
+                        "submit" => "input[name='commit']" },
+          "credentials" => { "email" => "user@example.com", "password" => "abc%def" }
+        }
+      )
+    end
+
+    it "does not raise" do
+      allow(Screenshots::Driver::Cuprite).to receive(:new).and_return(driver)
+      orchestrator = build_orchestrator(config: percent_config)
+
+      expect { orchestrator.call }.not_to raise_error
+    end
+  end
+
+  context "with templated login_path containing placeholders" do
+    let(:template_config) do
+      Screenshots::Configuration.from_hash(
+        "driver" => "cuprite",
+        "routes" => [
+          { "path" => "/projects/:project_id", "name" => "project_show", "requires_auth" => true, "seed_key" => "project" }
+        ],
+        "auth" => {
+          "strategy" => "form",
+          "login_path" => "/%{account_slug}/sign_in",
+          "fields" => { "email" => "input[name='user[email]']", "password" => "input[name='user[password]']",
+                        "submit" => "input[name='commit']" },
+          "credentials" => { "email" => "%{user_email}", "password" => "%{user_password}" }
+        }
+      )
+    end
+    let(:seed_with_account) { seed_data.merge(account: OpenStruct.new(id: 1, slug: "demo")) }
+    let(:redirecting_driver) do
+      instance_double(Screenshots::Driver::Cuprite, start_browser: true, visit: true,
+        wait_for_load: true, screenshot: true, authenticate: true, quit: true, current_path: "/demo/sign_in")
+    end
+
+    it "detects auth redirect using the resolved login path, not the raw template" do
+      allow(Screenshots::Driver::Cuprite).to receive(:new).and_return(redirecting_driver)
+      orchestrator = build_orchestrator(
+        config: template_config,
+        seed_runner_double: instance_double(Screenshots::SeedRunner, call: seed_with_account)
+      )
+
+      result = orchestrator.call
+
+      expect(result.failures.first).to include("redirected to login page (/demo/sign_in)")
+    end
+  end
 end
