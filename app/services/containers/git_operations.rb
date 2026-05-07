@@ -276,10 +276,12 @@ module Containers
     # @param pull_request_number [Integer, nil] PR number for fallback fetch
     # @return [void]
     # @raise [CloneError] when clone or checkout fails
-    def clone_and_checkout_branch(branch_name:, pull_request_number: nil)
+    def clone_and_checkout_branch(branch_name:, pull_request_number: nil, persist: true)
       clone_repo
       checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
       base_sha = record_merge_base
+
+      return unless persist
 
       agent_run.update!(
         worktree_path: "/workspace",
