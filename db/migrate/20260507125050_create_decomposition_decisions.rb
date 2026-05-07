@@ -23,5 +23,25 @@ class CreateDecompositionDecisions < ActiveRecord::Migration[8.1]
     add_index :decomposition_decisions, [ :project_id, :created_at ]
     add_index :decomposition_decisions, [ :issue_id, :created_at ]
     add_index :decomposition_decisions, [ :workflow_id, :decision_type ]
+
+    execute <<~SQL
+      ALTER TABLE decomposition_decisions ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE decomposition_decisions FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON decomposition_decisions
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = decomposition_decisions.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = decomposition_decisions.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        );
+    SQL
   end
 end

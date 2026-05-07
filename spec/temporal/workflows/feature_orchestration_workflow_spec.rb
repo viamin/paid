@@ -90,8 +90,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(result[:failed]).to eq(0)
       end
 
-    it "calls planning activities before parallel execution" do
-      workflow.execute(input)
+      it "calls planning activities before parallel execution" do
+        workflow.execute(input)
 
         expect(workflow).to have_received(:run_activity)
           .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), timeout: 60)
