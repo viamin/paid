@@ -642,7 +642,7 @@ module Workflows
 
     def capture_screenshots(agent_run_id)
       run_activity(Activities::CaptureScreenshotsActivity,
-        { agent_run_id: agent_run_id }, timeout: 360, retry_policy: NO_RETRY)
+        { agent_run_id: agent_run_id }, timeout: 900, retry_policy: NO_RETRY)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e

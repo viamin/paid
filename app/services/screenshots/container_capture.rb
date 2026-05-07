@@ -135,8 +135,6 @@ module Screenshots
     def with_workspace
       @tmpdir = Dir.mktmpdir("paid-screenshots-#{agent_run.id}-")
       yield(@tmpdir)
-    ensure
-      FileUtils.rm_rf(@tmpdir) if @tmpdir.present?
     end
 
     def provision_capture_container(repo_path)
@@ -585,6 +583,8 @@ module Screenshots
       rescue StandardError => e
         logger.warn(message: "screenshots.container_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       end
+
+      FileUtils.rm_rf(@tmpdir) if @tmpdir.present?
     end
 
     def cleanup_screenshot_services!

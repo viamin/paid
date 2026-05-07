@@ -1039,7 +1039,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CaptureScreenshotsActivity,
           { agent_run_id: 42 },
-          timeout: 360,
+          timeout: 900,
           retry_policy: described_class::NO_RETRY)
     end
 
