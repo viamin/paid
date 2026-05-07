@@ -70,7 +70,7 @@ module Screenshots
     end
 
     def ui_detection_overrides
-      file_settings = if content.present? || blob.present? || (repo_path.present? && File.exist?(config_path))
+      file_settings = if content.present? || blob.present? || repo_config_file_present?
         parse_content(raw_content)
       else
         {}
@@ -118,15 +118,40 @@ module Screenshots
       return decode_blob(blob) if blob.present?
 
       path = config_path
-      raise ConfigError, "Missing #{CONFIG_PATH} in #{repo_path}" unless File.exist?(path)
+      ensure_config_file!(path)
 
       File.read(path)
     rescue Errno::ENOENT => e
-      raise ConfigError, "Unable to read #{CONFIG_PATH}: #{e.message}"
+      raise ConfigError, "Unable to read #{config_path_label}: #{e.message}"
     end
 
     def config_path
-      Pathname(repo_path).join(CONFIG_PATH)
+      root = Pathname(repo_path).expand_path
+      full = root.join(config_path_label).expand_path
+      return full if full.to_s.start_with?("#{root}/") || full == root
+
+      raise ConfigError, "config_path escapes the repo directory"
+    end
+
+    def config_path_label
+      explicit_project_settings["config_path"].presence || CONFIG_PATH
+    end
+
+    def repo_config_file_present?
+      return false unless repo_path.present?
+
+      path = config_path
+      return false unless File.exist?(path)
+
+      ensure_config_file!(path)
+      true
+    end
+
+    def ensure_config_file!(path)
+      return if File.file?(path)
+      raise ConfigError, "Missing #{config_path_label} in #{repo_path}" unless File.exist?(path)
+
+      raise ConfigError, "#{config_path_label} must be a file"
     end
 
     def decode_blob(value)
@@ -141,14 +166,14 @@ module Screenshots
       return {} if parsed.nil?
 
       unless parsed.is_a?(Hash)
-        raise ConfigError, "#{CONFIG_PATH} must contain a YAML mapping at the top level"
+        raise ConfigError, "#{config_path_label} must contain a YAML mapping at the top level"
       end
 
       parsed.deep_stringify_keys
     rescue Psych::DisallowedClass => e
-      raise ConfigError, "#{CONFIG_PATH} contains unsupported YAML types (e.g. symbols): #{e.message}"
+      raise ConfigError, "#{config_path_label} contains unsupported YAML types (e.g. symbols): #{e.message}"
     rescue Psych::SyntaxError => e
-      raise ConfigError, "Invalid YAML in #{CONFIG_PATH}: #{e.message}"
+      raise ConfigError, "Invalid YAML in #{config_path_label}: #{e.message}"
     end
 
     def merged_settings(file_settings)
