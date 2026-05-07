@@ -6161,10 +6161,24 @@ CREATE INDEX idx_orchestration_decisions_project_actor_created ON public.orchest
 
 
 --
+-- Name: idx_orchestration_decisions_project_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_project_recent ON public.orchestration_decisions USING btree (project_id, created_at, id);
+
+
+--
 -- Name: idx_orchestration_decisions_project_type_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_orchestration_decisions_project_type_created ON public.orchestration_decisions USING btree (project_id, decision_type, created_at);
+
+
+--
+-- Name: idx_orchestration_decisions_run_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_run_recent ON public.orchestration_decisions USING btree (agent_run_id, created_at, id);
 
 
 --
@@ -11658,4 +11672,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-

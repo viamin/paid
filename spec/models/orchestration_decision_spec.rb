@@ -109,6 +109,14 @@ RSpec.describe OrchestrationDecision do
 
         expect(described_class.recent).to eq([ newer, older ])
       end
+
+      it "uses id as a deterministic tiebreaker for identical timestamps" do
+        timestamp = Time.current.change(usec: 0)
+        earlier = create(:orchestration_decision, created_at: timestamp)
+        later = create(:orchestration_decision, created_at: timestamp)
+
+        expect(described_class.recent).to eq([ later, earlier ])
+      end
     end
   end
 

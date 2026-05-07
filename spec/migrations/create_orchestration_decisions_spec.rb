@@ -50,7 +50,9 @@ RSpec.describe CreateOrchestrationDecisions, :aggregate_failures do
     expect(index_names).to include(
       "index_orchestration_decisions_on_project_id",
       "index_orchestration_decisions_on_agent_run_id",
+      "idx_orchestration_decisions_project_recent",
       "idx_orchestration_decisions_project_type_created",
+      "idx_orchestration_decisions_run_recent",
       "idx_orchestration_decisions_run_type_created",
       "idx_orchestration_decisions_project_actor_created"
     )

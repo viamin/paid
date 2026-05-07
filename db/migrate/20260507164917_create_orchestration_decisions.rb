@@ -40,8 +40,14 @@ class CreateOrchestrationDecisions < ActiveRecord::Migration[8.1]
     end
 
     add_index :orchestration_decisions,
+      [ :project_id, :created_at, :id ],
+      name: "idx_orchestration_decisions_project_recent"
+    add_index :orchestration_decisions,
       [ :project_id, :decision_type, :created_at ],
       name: "idx_orchestration_decisions_project_type_created"
+    add_index :orchestration_decisions,
+      [ :agent_run_id, :created_at, :id ],
+      name: "idx_orchestration_decisions_run_recent"
     add_index :orchestration_decisions,
       [ :agent_run_id, :decision_type, :created_at ],
       name: "idx_orchestration_decisions_run_type_created"
