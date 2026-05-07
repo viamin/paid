@@ -92,6 +92,74 @@ RSpec.describe Screenshots::DetectFramework do
     end
   end
 
+  describe "fallback Rails route parsing" do
+    it "keeps namespace prefixes across nested non-namespace blocks" do
+      routes = <<~RUBY
+        Rails.application.routes.draw do
+          namespace :admin do
+            resources :users do
+              get "audit"
+            end
+
+            get "dashboard"
+          end
+        end
+      RUBY
+
+      repo = instance_double(
+        described_class::LocalRepository,
+        respond_to?: false,
+        read: routes
+      )
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_rails_routes)
+
+      expect(parsed_routes.map { |route| route["path"] }).to include("/admin/users", "/admin/dashboard")
+    end
+  end
+
+  describe "Django url parsing" do
+    def django_repo_with_included_urls
+      instance_double(
+        described_class::LocalRepository,
+        glob: [ "config/settings.py", "project/urls.py", "blog/urls.py" ]
+      ).tap do |repo|
+        allow(repo).to receive(:file?) do |path|
+          [ "project/urls.py", "blog/urls.py" ].include?(path)
+        end
+        allow(repo).to receive(:read).with("config/settings.py").and_return('ROOT_URLCONF = "project.urls"')
+        allow(repo).to receive(:read).with("project/urls.py").and_return(<<~PY)
+          from django.urls import include, path
+
+          urlpatterns = [
+            path("blog/", include("blog.urls")),
+          ]
+        PY
+        allow(repo).to receive(:read).with("blog/urls.py").and_return(<<~PY)
+          from django.urls import path
+
+          urlpatterns = [
+            path("posts/", views.posts),
+          ]
+        PY
+      end
+    end
+
+    it "carries include prefixes into child urlconfs" do
+      repo = django_repo_with_included_urls
+      service = described_class.new(repo_path: fixture_path("django_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_django_routes)
+
+      expect(parsed_routes.map { |route| route["path"] }).to include("/blog/posts/")
+      expect(parsed_routes.map { |route| route["path"] }).not_to include("/posts/")
+    end
+  end
+
   describe "dependency memoization" do
     let(:repo) do
       instance_double(

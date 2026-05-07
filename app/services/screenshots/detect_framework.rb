@@ -338,25 +338,27 @@ module Screenshots
       content = rails_routes_content
       return [] if content.blank?
 
-      prefixes = []
+      block_stack = []
       routes = []
 
-      content.each_line do |line|
-        stripped = line.strip
+      content.each_line.flat_map { |line| line.split(";") }.each do |statement|
+        stripped = statement.strip
         next if stripped.start_with?("#")
 
         if (match = stripped.match(/^namespace\s+:([a-zA-Z_][\w]*)\s+do/))
-          prefixes << match[1]
+          block_stack << match[1]
           next
         end
 
         if stripped == "end"
-          prefixes.pop if prefixes.any?
+          block_stack.pop if block_stack.any?
           next
         end
 
-        route = parse_rails_route_line(stripped, prefixes)
+        route = parse_rails_route_line(stripped, current_rails_prefixes(block_stack))
         routes << route if route
+
+        block_stack << nil if opens_rails_block?(stripped)
       end
 
       unique_routes(routes)
@@ -416,6 +418,14 @@ module Screenshots
       nil
     end
 
+    def current_rails_prefixes(block_stack)
+      block_stack.compact
+    end
+
+    def opens_rails_block?(line)
+      line.end_with?(" do") || line.match?(/\sdo\s+\|[^|]*\|\s*\z/)
+    end
+
     def discover_nextjs_routes
       routes = []
 
@@ -458,22 +468,84 @@ module Screenshots
     end
 
     def discover_django_routes
-      routes = repo.glob("**/urls.py").flat_map do |path|
-        parse_django_urls(repo.read(path).to_s)
+      routes = django_root_url_files.flat_map do |path|
+        parse_django_urlconf(path, prefix: "", visited: Set.new)
       end
 
       unique_routes(routes)
     end
 
-    def parse_django_urls(content)
+    def django_root_url_files
+      roots = django_root_url_files_from_settings
+      return roots if roots.any?
+
+      url_files = repo.glob("**/urls.py")
+      included = url_files.flat_map do |path|
+        parse_django_include_targets(repo.read(path).to_s)
+      end.to_set
+      root_files = url_files.reject { |path| included.include?(path) }
+      root_files.presence || url_files
+    end
+
+    def django_root_url_files_from_settings
+      repo.glob("**/settings.py").filter_map do |path|
+        repo.read(path).to_s[/ROOT_URLCONF\s*=\s*["']([^"']+)["']/, 1]
+      end.filter_map do |module_name|
+        django_module_path(module_name)
+      end.uniq
+    end
+
+    def parse_django_urlconf(path, prefix:, visited:)
+      visit_key = [ path, prefix ]
+      return [] if visited.include?(visit_key)
+
+      visited << visit_key
+      parse_django_urls(repo.read(path).to_s, prefix:, visited:)
+    end
+
+    def parse_django_urls(content, prefix:, visited:)
       content.each_line.filter_map do |line|
+        if (include_match = line.match(/(?:path|re_path)\(\s*["']([^"']*)["']\s*,\s*include\((.+?)\)\s*[,\)]/))
+          include_prefix = join_django_route_segments(prefix, include_match[1])
+          include_module = django_include_module_name(include_match[2])
+          include_path = include_module.present? ? django_module_path(include_module) : nil
+
+          next parse_django_urlconf(include_path, prefix: include_prefix, visited:) if include_path.present?
+          next route_hash(include_prefix, route_name_from_path(include_prefix))
+        end
+
         next unless (match = line.match(/(?:path|re_path)\(\s*["']([^"']*)["']/))
 
-        raw = match[1]
-        route_path = raw.start_with?("/") ? raw : "/#{raw}"
-        route_path = "/" if route_path == "/"
+        route_path = join_django_route_segments(prefix, match[1])
         route_hash(route_path, route_name_from_path(route_path))
+      end.flatten
+    end
+
+    def parse_django_include_targets(content)
+      content.each_line.filter_map do |line|
+        include_match = line.match(/include\((.+?)\)/)
+        next unless include_match
+
+        include_module = django_include_module_name(include_match[1])
+        next unless include_module.present?
+
+        django_module_path(include_module)
       end
+    end
+
+    def django_include_module_name(arguments)
+      arguments[/["']([^"']+)["']/, 1]
+    end
+
+    def django_module_path(module_name)
+      path = "#{module_name.tr('.', '/')}.py"
+      repo.file?(path) ? path : nil
+    end
+
+    def join_django_route_segments(prefix, path)
+      joined = [ prefix, path ].compact.reject(&:blank?).join("/")
+      normalized = joined.gsub(%r{/+}, "/").delete_prefix("/")
+      normalized.present? ? "/#{normalized}" : "/"
     end
 
     def normalize_route_path(prefixes, path)
