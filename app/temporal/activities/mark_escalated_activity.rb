@@ -27,7 +27,7 @@ module Activities
         pr_number: issue.github_number
       )
 
-      OrchestrationDecisionEvent.record(
+      OrchestrationDecision.record(
         project: project,
         issue: issue,
         decision_point: "mark_escalated",

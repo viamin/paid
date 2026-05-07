@@ -34,7 +34,6 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       llm_output_metrics_rls_migration.down if llm_output_metrics_has_rls?
       knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
       notification_rls_migration.down
-      drop_orchestration_decision_events_rls if orchestration_decision_events_have_rls?
       rls_migration.down
     end
     restore_service_container_account_reference unless service_containers_have_account_reference?
@@ -54,7 +53,6 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       chat_rls_migration.up unless chat_tables_have_rls?
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
       issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
-      create_orchestration_decision_events_rls unless orchestration_decision_events_have_rls?
     end
     ServiceContainer.reset_column_information
   end
@@ -239,34 +237,6 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
-  end
-
-  def orchestration_decision_events_have_rls?
-    ActiveRecord::Base.connection.select_value(
-      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decision_events' AND policyname = 'tenant_isolation'"
-    ).to_i.positive?
-  end
-
-  def drop_orchestration_decision_events_rls
-    ActiveRecord::Base.connection.execute(<<~SQL)
-      DROP POLICY IF EXISTS tenant_isolation ON orchestration_decision_events;
-      ALTER TABLE orchestration_decision_events DISABLE ROW LEVEL SECURITY;
-    SQL
-  end
-
-  def create_orchestration_decision_events_rls
-    ActiveRecord::Base.connection.execute(<<~SQL)
-      ALTER TABLE orchestration_decision_events ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY tenant_isolation ON orchestration_decision_events
-        USING  (paid_tenant_bypass() OR EXISTS (
-          SELECT 1 FROM projects
-          WHERE projects.id = orchestration_decision_events.project_id
-            AND projects.account_id = paid_current_account_id()))
-        WITH CHECK (paid_tenant_bypass() OR EXISTS (
-          SELECT 1 FROM projects
-          WHERE projects.id = orchestration_decision_events.project_id
-            AND projects.account_id = paid_current_account_id()));
-    SQL
   end
 
   def tenant_policy_count

@@ -8,6 +8,7 @@ RSpec.describe AgentRun do
     it { is_expected.to belong_to(:issue).optional }
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
     it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
+    it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
   end
 
   describe "validations" do
@@ -985,18 +986,18 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.retry!(decision_point: "manual_retry", result: { new_agent_run_id: 123 })
-      }.to change(OrchestrationDecisionEvent, :count).by(1)
+      }.to change(OrchestrationDecision, :count).by(1)
 
-      event = OrchestrationDecisionEvent.last
-      expect(event.action).to eq("retry")
-      expect(event.status).to eq("applied")
-      expect(event.decision_point).to eq("manual_retry")
-      expect(event.result).to include("new_agent_run_id" => 123, "status" => "retried")
+      event = OrchestrationDecision.last
+      expect(event.decision_type).to eq("retry")
+      expect(event.context["decision_status"]).to eq("applied")
+      expect(event.actor).to eq("manual_retry")
+      expect(event.outputs).to include("new_agent_run_id" => 123, "status" => "retried")
     end
 
     it "still marks the run retried when decision logging fails" do
       agent_run = create(:agent_run, :failed)
-      allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(OrchestrationDecision).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
 
       expect { agent_run.retry! }.not_to raise_error
 
@@ -3146,12 +3147,12 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
-      }.to change(OrchestrationDecisionEvent, :count).by(1)
+      }.to change(OrchestrationDecision, :count).by(1)
 
-      event = OrchestrationDecisionEvent.last
-      expect(event.action).to eq("pause")
-      expect(event.status).to eq("applied")
-      expect(event.signals).to include("violation_type" => "loop_detected")
+      event = OrchestrationDecision.last
+      expect(event.decision_type).to eq("pause")
+      expect(event.context["decision_status"]).to eq("applied")
+      expect(event.inputs).to include("violation_type" => "loop_detected")
     end
 
     it "does not pause a non-running run" do
@@ -3159,15 +3160,15 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.pause!(violation_type: "loop_detected")
-      }.to change(OrchestrationDecisionEvent, :count).by(1)
+      }.to change(OrchestrationDecision, :count).by(1)
 
       expect(agent_run.reload.status).to eq("completed")
-      expect(OrchestrationDecisionEvent.last.status).to eq("noop")
+      expect(OrchestrationDecision.last.context["decision_status"]).to eq("noop")
     end
 
     it "still pauses the run when decision logging fails" do
       agent_run = create(:agent_run, :running)
-      allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(OrchestrationDecision).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
 
       expect(agent_run.pause!(violation_type: "loop_detected")).to be true
 
@@ -3207,12 +3208,12 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.resume!(decision_point: "manual_resume")
-      }.to change(OrchestrationDecisionEvent, :count).by(1)
+      }.to change(OrchestrationDecision, :count).by(1)
 
-      event = OrchestrationDecisionEvent.last
-      expect(event.action).to eq("resume")
-      expect(event.status).to eq("applied")
-      expect(event.decision_point).to eq("manual_resume")
+      event = OrchestrationDecision.last
+      expect(event.decision_type).to eq("resume")
+      expect(event.context["decision_status"]).to eq("applied")
+      expect(event.actor).to eq("manual_resume")
     end
 
     it "does not resume a non-paused run" do
@@ -3220,16 +3221,16 @@ RSpec.describe AgentRun do
 
       expect {
         expect(agent_run.resume!).to be false
-      }.to change(OrchestrationDecisionEvent, :count).by(1)
+      }.to change(OrchestrationDecision, :count).by(1)
 
       expect(agent_run.reload.status).to eq("running")
-      expect(OrchestrationDecisionEvent.last.status).to eq("noop")
+      expect(OrchestrationDecision.last.context["decision_status"]).to eq("noop")
     end
 
     it "still resumes the run when decision logging fails" do
       agent_run = create(:agent_run, :running)
       agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
-      allow(OrchestrationDecisionEvent).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(OrchestrationDecision).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
 
       expect(agent_run.resume!).to be true
 

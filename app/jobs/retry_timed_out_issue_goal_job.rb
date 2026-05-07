@@ -167,7 +167,7 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
   end
 
   def log_retry_decision(agent_run:, status:, signals:, result:)
-    OrchestrationDecisionEvent.record(
+    OrchestrationDecision.record(
       project: agent_run.project,
       issue: agent_run.issue,
       agent_run: agent_run,

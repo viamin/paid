@@ -399,7 +399,7 @@ module Projects
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Agent run queued as a retry of run ##{@agent_run.id}."
     rescue ActiveRecord::RecordNotUnique => e
-      OrchestrationDecisionEvent.record(
+      OrchestrationDecision.record(
         project: @project,
         issue: @agent_run.issue,
         agent_run: @agent_run,
@@ -486,7 +486,7 @@ module Projects
     # Catch all harness errors (including AuthenticationError, which is a
     # subclass of Error) so this works even when the shim hasn't loaded yet.
     rescue AgentHarness::Error => e
-      OrchestrationDecisionEvent.record(
+      OrchestrationDecision.record(
         project: @project,
         issue: @agent_run.issue,
         agent_run: @agent_run,
@@ -508,7 +508,7 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
     rescue NotImplementedError => e
-      OrchestrationDecisionEvent.record(
+      OrchestrationDecision.record(
         project: @project,
         issue: @agent_run.issue,
         agent_run: @agent_run,
@@ -531,7 +531,7 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication is not supported for this provider."
     rescue ActiveRecord::RecordNotUnique => e
-      OrchestrationDecisionEvent.record(
+      OrchestrationDecision.record(
         project: @project,
         issue: @agent_run.issue,
         agent_run: @agent_run,

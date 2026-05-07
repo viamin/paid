@@ -1890,7 +1890,7 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.guardrail_violation_type).to be_nil
         expect(agent_run.temporal_workflow_id).to be_nil
         expect(agent_run.temporal_run_id).to be_nil
-        expect(OrchestrationDecisionEvent.last.decision_point).to eq("manual_resume")
+        expect(OrchestrationDecision.last.actor).to eq("manual_resume")
       end
 
       it "rejects non-paused runs" do
@@ -2180,12 +2180,12 @@ RSpec.describe "AgentRuns" do
 
         expect {
           post retry_project_agent_run_path(project, agent_run)
-        }.to change(OrchestrationDecisionEvent, :count).by(1)
+        }.to change(OrchestrationDecision, :count).by(1)
 
-        event = OrchestrationDecisionEvent.last
-        expect(event.decision_point).to eq("manual_retry")
-        expect(event.status).to eq("applied")
-        expect(event.result["new_agent_run_id"]).to eq(AgentRun.last.id)
+        event = OrchestrationDecision.last
+        expect(event.actor).to eq("manual_retry")
+        expect(event.context["decision_status"]).to eq("applied")
+        expect(event.outputs["new_agent_run_id"]).to eq(AgentRun.last.id)
       end
 
       it "rejects retrying an active run" do
@@ -2263,7 +2263,7 @@ RSpec.describe "AgentRuns" do
         expect(new_run.trigger_type).to eq("manual")
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
-        expect(OrchestrationDecisionEvent.last.decision_point).to eq("refresh_auth_retry")
+        expect(OrchestrationDecision.last.actor).to eq("refresh_auth_retry")
         without_partial_double_verification do
           expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token")
         end

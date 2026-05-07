@@ -174,7 +174,6 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
-      drop_orchestration_decision_events_rls if orchestration_decision_events_has_rls?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       EnableRlsOnNotificationRuleStates.new.up
@@ -183,7 +182,6 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
-      create_orchestration_decision_events_rls unless orchestration_decision_events_has_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -204,7 +202,6 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
-      drop_orchestration_decision_events_rls if orchestration_decision_events_has_rls?
       EnableTenantRowLevelSecurity.new.down
     end
   end
@@ -237,34 +234,6 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
-  end
-
-  def orchestration_decision_events_has_rls?
-    ActiveRecord::Base.connection.select_value(
-      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decision_events' AND policyname = 'tenant_isolation'"
-    ).to_i.positive?
-  end
-
-  def drop_orchestration_decision_events_rls
-    ActiveRecord::Base.connection.execute(<<~SQL)
-      DROP POLICY IF EXISTS tenant_isolation ON orchestration_decision_events;
-      ALTER TABLE orchestration_decision_events DISABLE ROW LEVEL SECURITY;
-    SQL
-  end
-
-  def create_orchestration_decision_events_rls
-    ActiveRecord::Base.connection.execute(<<~SQL)
-      ALTER TABLE orchestration_decision_events ENABLE ROW LEVEL SECURITY;
-      CREATE POLICY tenant_isolation ON orchestration_decision_events
-        USING  (paid_tenant_bypass() OR EXISTS (
-          SELECT 1 FROM projects
-          WHERE projects.id = orchestration_decision_events.project_id
-            AND projects.account_id = paid_current_account_id()))
-        WITH CHECK (paid_tenant_bypass() OR EXISTS (
-          SELECT 1 FROM projects
-          WHERE projects.id = orchestration_decision_events.project_id
-            AND projects.account_id = paid_current_account_id()));
-    SQL
   end
 
   def cleanup_restricted_role

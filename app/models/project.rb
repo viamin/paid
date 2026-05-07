@@ -135,7 +135,6 @@ class Project < ApplicationRecord
   has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
-  has_many :orchestration_decision_events, dependent: :destroy
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
   has_many :cost_budgets, dependent: :destroy
@@ -152,6 +151,7 @@ class Project < ApplicationRecord
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
   has_many :decision_records, dependent: :destroy
+  has_many :orchestration_decisions, dependent: :destroy
   has_many :llm_output_metrics, dependent: :destroy
   has_many :knowledge_runs, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy

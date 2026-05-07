@@ -13,10 +13,10 @@ RSpec.describe Activities::RecordReviewGoalRetryActivity do
       expect {
         result = activity.execute(issue_id: issue.id)
         expect(result[:review_goal_retry_count]).to eq(1)
-      }.to change(OrchestrationDecisionEvent, :count).by(1)
+      }.to change(OrchestrationDecision, :count).by(1)
 
       expect(issue.reload.review_goal_retry_count).to eq(1)
-      expect(OrchestrationDecisionEvent.last.status).to eq("applied")
+      expect(OrchestrationDecision.last.context["decision_status"]).to eq("applied")
     end
 
     it "increments from an existing count" do
@@ -41,12 +41,12 @@ RSpec.describe Activities::RecordReviewGoalRetryActivity do
 
         expect {
           activity.execute(issue_id: issue.id, expected_review_goal_retry_count: 0)
-        }.to change(OrchestrationDecisionEvent, :count).by(1)
+        }.to change(OrchestrationDecision, :count).by(1)
 
         expect(issue.reload.review_goal_retry_count).to eq(2)
-        event = OrchestrationDecisionEvent.last
-        expect(event.status).to eq("noop")
-        expect(event.result).to include("review_goal_retry_count" => 2)
+        event = OrchestrationDecision.last
+        expect(event.context["decision_status"]).to eq("noop")
+        expect(event.outputs).to include("review_goal_retry_count" => 2)
       end
 
       it "prevents double-counting on repeated calls with same expected count" do
