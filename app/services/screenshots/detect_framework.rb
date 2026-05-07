@@ -67,7 +67,8 @@ module Screenshots
 
     def call
       detection = detect_rails || detect_nextjs || detect_django || detect_generic
-      suggested_routes = detection.fetch(:routes).presence || default_routes_for(detection.fetch(:framework))
+      detected_routes = detection.fetch(:routes)
+      suggested_routes = detected_routes.presence || default_routes_for
       services = detect_services
 
       Result.new(
@@ -81,7 +82,7 @@ module Screenshots
           auth: detection[:auth]
         ),
         detected_services: services,
-        detected_routes: suggested_routes
+        detected_routes: detected_routes
       )
     end
 
@@ -183,9 +184,7 @@ module Screenshots
       framework == :django ? "http://localhost:8000" : Screenshots::Configuration::DEFAULT_BASE_URL
     end
 
-    def default_routes_for(framework)
-      return [] if framework == :generic
-
+    def default_routes_for
       [ route_hash("/", "home") ]
     end
 
@@ -563,7 +562,7 @@ module Screenshots
       def read(path)
         return unless file?(path)
 
-        project.github_token.client.file_content(project.full_name, path: path)&.force_encoding("UTF-8")&.scrub("")
+        project.github_token.client.file_content(project.full_name, path:, ref:)&.force_encoding("UTF-8")&.scrub("")
       rescue GithubClient::NotFoundError
         nil
       end
@@ -583,8 +582,12 @@ module Screenshots
         @path_set ||= paths.to_set
       end
 
+      def ref
+        @ref ||= project.default_branch || "main"
+      end
+
       def tree
-        @tree ||= project.github_token.client.tree(project.full_name, project.default_branch || "main", recursive: true)
+        @tree ||= project.github_token.client.tree(project.full_name, ref, recursive: true)
       end
     end
   end

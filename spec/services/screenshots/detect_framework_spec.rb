@@ -46,7 +46,10 @@ RSpec.describe Screenshots::DetectFramework do
       expect(result.confidence).to eq(0.45)
       expect(result.suggested_config["driver"]).to eq("playwright")
       expect(result.detected_routes).to eq([])
-      expect(result.suggested_yaml).to include("routes: []")
+      expect(result.suggested_config["routes"]).to eq([
+        { "path" => "/", "name" => "home", "requires_auth" => false }
+      ])
+      expect(result.suggested_yaml).to include('- path: "/"')
     end
 
     it "uses lower confidence when only generic frontend assets are present" do
@@ -121,6 +124,30 @@ RSpec.describe Screenshots::DetectFramework do
 
       expect(repo).to have_received(:read).with("Gemfile").once
       expect(repo).to have_received(:read).with("package.json").once
+    end
+  end
+
+  describe "GitHub repository reads" do
+    it "uses the project's configured default branch for both tree and file reads" do
+      client = instance_double(GithubClient)
+      github_token = instance_double(GithubToken, client:)
+      project = instance_double(
+        Project,
+        github_token:,
+        full_name: "acme/widgets",
+        default_branch: "develop"
+      )
+
+      tree_item = double(type: "blob", path: "README.md")
+      tree = double(tree: [ tree_item ])
+
+      allow(client).to receive(:tree).with("acme/widgets", "develop", recursive: true).and_return(tree)
+      allow(client).to receive(:file_content).with("acme/widgets", path: "README.md", ref: "develop").and_return(+"# Widgets")
+
+      repo = described_class::GithubRepository.new(project)
+
+      expect(repo.paths).to eq([ "README.md" ])
+      expect(repo.read("README.md")).to eq("# Widgets")
     end
   end
 end
