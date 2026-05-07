@@ -56,13 +56,13 @@ RSpec.describe Screenshots::ContainerCapture do
       .with(agent_run, network: "paid-test", service_names: contain_exactly("postgres", "redis"))
   end
 
-  it "marks the project status when capture is skipped for non-UI changes" do
+  it "skips before container provisioning when precheck detects no UI changes" do
     allow(service).to receive(:detect_ui_files).and_return([])
-    allow(Containers::ServiceProvisioner).to receive(:new).and_return(instance_double(Containers::ServiceProvisioner, cleanup: true))
 
     result = service.call
 
     expect(result.status).to eq("no_ui_changes")
+    expect(service).not_to have_received(:provision_capture_container)
     expect(project.reload.effective_screenshot_status["last_capture_status"]).to eq("no_ui_changes")
     expect(Screenshots::PrComment).to have_received(:call) do |**args|
       expect(args).to include(
@@ -97,19 +97,40 @@ RSpec.describe Screenshots::ContainerCapture do
     end
   end
 
-  it "restores the original service container ids when dependency provisioning fails" do
+  it "restores the original service container ids and environment when dependency provisioning fails" do
     provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
     allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
     allow(provisioner).to receive(:provision) do
-      agent_run.update!(service_container_ids: [ 101, 202 ])
+      agent_run.update!(
+        service_container_ids: [ 101, 202 ],
+        service_environment: { "DATABASE_URL" => "postgres://screenshot-host/db" }
+      )
       raise Containers::Provision::TimeoutError, "timed out"
     end
 
     result = service.call
 
     expect(result.status).to eq("capture_timeout")
-    expect(agent_run.reload.service_container_ids).to eq([])
+    agent_run.reload
+    expect(agent_run.service_container_ids).to eq([])
+    expect(agent_run.service_environment).to eq({})
     expect(service.instance_variable_get(:@screenshot_service_container_ids)).to contain_exactly(101, 202)
+  end
+
+  it "rejects unsupported screenshot drivers with a config error" do
+    cuprite_config = Screenshots::Configuration.from_hash(
+      "driver" => "cuprite",
+      "base_url" => "http://localhost:3000",
+      "routes" => [ { "path" => "/", "name" => "home" } ]
+    )
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(cuprite_config)
+    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
+    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+    result = service.call
+
+    expect(result.status).to eq("config_error")
+    expect(result.error).to include("cuprite")
   end
 
   it "shell-escapes readiness probe url parts before building the probe command" do

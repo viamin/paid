@@ -47,6 +47,7 @@ module Screenshots
       @screenshot_container = nil
       @chrome_container = nil
       @screenshot_service_container_ids = []
+      @screenshot_service_env = {}
       @tmpdir = nil
       @config = nil
       @network = nil
@@ -55,13 +56,22 @@ module Screenshots
 
     def call
       ensure_capture_eligible!
+
+      # Lightweight precheck: fetch changed files via GitHub API and detect
+      # UI-relevant changes *before* paying the Docker/clone/startup cost.
+      # The precheck runs without repo context (no custom config overrides),
+      # so it may be slightly conservative — that is acceptable.
+      changed_files = fetch_changed_files
+      precheck_ui_files = detect_ui_files(changed_files, nil)
+      return finalize_skip("no_ui_changes", changed_files:, ui_files: precheck_ui_files) if precheck_ui_files.empty?
+
       with_workspace do |repo_path|
         provision_capture_container(repo_path)
         checkout_branch!
         @config = Screenshots::ConfigParser.from_repo_path(repo_path, project: project)
         validate_supported_config!
 
-        changed_files = fetch_changed_files
+        # Re-detect with full repo context (custom patterns/exclusions from config)
         ui_files = detect_ui_files(changed_files, repo_path)
         return finalize_skip("no_ui_changes", changed_files:, ui_files:) if ui_files.empty?
 
@@ -155,7 +165,15 @@ module Screenshots
       git_ops.install_artifact_excludes
     end
 
+    SUPPORTED_DRIVERS = %w[playwright].freeze
+
     def validate_supported_config!
+      unless config.driver.in?(SUPPORTED_DRIVERS)
+        raise Screenshots::ConfigError,
+          "container screenshot capture only supports drivers: #{SUPPORTED_DRIVERS.join(', ')} " \
+          "(configured: #{config.driver})"
+      end
+
       if config.seed.any?
         raise Screenshots::ConfigError, "container screenshot capture does not yet support seed data"
       end
@@ -199,16 +217,31 @@ module Screenshots
       service_names = configured_service_dependencies
       return if service_names.empty?
 
-      # Save the original service_container_ids so we can restore them after
-      # provisioning. ServiceProvisioner#provision overwrites the field, which
-      # would orphan the main workflow's service containers during cleanup.
+      # Snapshot the original service_container_ids and service_environment so
+      # we can restore them after provisioning. ServiceProvisioner#provision
+      # overwrites both fields, which would orphan the main workflow's service
+      # containers and leave stale DATABASE_URL/REDIS_URL pointing at the
+      # screenshot network's (now torn-down) services during cleanup.
       original_ids = agent_run.service_container_ids.dup
+      original_env = agent_run.service_environment&.deep_dup
 
       service_provisioner.provision(agent_run, network: @network, service_names: service_names)
+
+      # Capture the screenshot-specific service env for use in capture_env,
+      # then restore the agent_run to its original state so the main workflow's
+      # service references are not corrupted.
+      @screenshot_service_env = agent_run.service_environment&.deep_dup || {}
     ensure
       current_ids = agent_run.service_container_ids
       @screenshot_service_container_ids |= current_ids - original_ids
-      agent_run.update!(service_container_ids: original_ids) unless current_ids == original_ids
+
+      needs_restore = current_ids != original_ids || agent_run.service_environment != original_env
+      if needs_restore
+        agent_run.update!(
+          service_container_ids: original_ids,
+          service_environment: original_env
+        )
+      end
     end
 
     def configured_service_dependencies
@@ -452,7 +485,7 @@ module Screenshots
     end
 
     def capture_env
-      agent_run.service_environment.deep_dup.merge(
+      @screenshot_service_env.merge(
         "CHROME_URL" => CHROME_URL,
         "CI" => "1"
       )
