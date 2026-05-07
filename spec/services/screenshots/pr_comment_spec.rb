@@ -127,7 +127,7 @@ RSpec.describe Screenshots::PrComment do
   describe "#call" do
     context "when no existing comment exists" do
       before do
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
       end
 
       it "creates a new comment" do
@@ -151,7 +151,7 @@ RSpec.describe Screenshots::PrComment do
       end
 
       before do
-        allow(github_client).to receive(:issue_comments).and_return(
+        allow(github_client).to receive(:recent_issue_comments).and_return(
           [
             Struct.new(:id, :body).new(id: 1, body: "unrelated comment"),
             existing_comment
@@ -171,6 +171,40 @@ RSpec.describe Screenshots::PrComment do
           a_string_starting_with(described_class::MARKER)
         )
         expect(github_client).not_to have_received(:add_comment) if github_client.respond_to?(:add_comment)
+        expect(result).to eq(updated_comment)
+      end
+    end
+
+    context "when the marker is not in recent comments" do
+      let(:older_page_url) { "https://api.github.com/repos/acme/web/issues/42/comments?page=1" }
+      let(:recent_comments) do
+        page_url = older_page_url
+        [].tap do |comments|
+          comments.define_singleton_method(:next_older_page_url) { page_url }
+        end
+      end
+      let(:existing_comment) do
+        Struct.new(:id, :body).new(id: 999, body: "#{described_class::MARKER}\nold content")
+      end
+
+      before do
+        allow(github_client).to receive(:recent_issue_comments).and_return(recent_comments)
+        allow(github_client).to receive(:fetch_issue_comment_page).with(older_page_url).and_return([ existing_comment ])
+      end
+
+      it "falls back to older pages before creating a new comment" do
+        updated_comment = Struct.new(:id, :body).new(id: 999, body: "updated")
+        allow(github_client).to receive(:update_comment).and_return(updated_comment)
+
+        result = service.call
+
+        expect(github_client).to have_received(:recent_issue_comments).with(repo, pr_number)
+        expect(github_client).to have_received(:fetch_issue_comment_page).with(older_page_url)
+        expect(github_client).to have_received(:update_comment).with(
+          repo,
+          999,
+          a_string_starting_with(described_class::MARKER)
+        )
         expect(result).to eq(updated_comment)
       end
     end

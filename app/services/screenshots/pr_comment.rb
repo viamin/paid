@@ -144,8 +144,22 @@ module Screenshots
     end
 
     def find_existing_comment
-      comments = @github_client.issue_comments(@repo, @pr_number)
-      comments.find { |c| c.body&.start_with?(MARKER) }
+      comments = @github_client.recent_issue_comments(@repo, @pr_number)
+      find_comment_with_marker(comments) || find_comment_in_older_pages(comments)
+    end
+
+    def find_comment_in_older_pages(comments)
+      while comments.respond_to?(:next_older_page_url) && comments.next_older_page_url
+        comments = @github_client.fetch_issue_comment_page(comments.next_older_page_url)
+        existing = find_comment_with_marker(comments)
+        return existing if existing
+      end
+
+      nil
+    end
+
+    def find_comment_with_marker(comments)
+      comments.find { |comment| comment.body&.start_with?(MARKER) }
     end
   end
 end

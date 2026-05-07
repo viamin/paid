@@ -29,13 +29,13 @@ RSpec.describe Screenshots::Storage do
   end
 
   describe "#upload" do
-    it "uploads a file to S3 and returns a stable object URL" do
+    it "uploads a file to S3 and returns a signed object URL" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
-      allow(storage).to receive(:public_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      allow(storage).to receive(:signed_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png?signature=test")
 
       url = storage.upload(
         file_path: file.path,
@@ -46,7 +46,7 @@ RSpec.describe Screenshots::Storage do
         route_name: "dashboard"
       )
 
-      expect(url).to eq("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      expect(url).to eq("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png?signature=test")
       expect(url).to include("dashboard.png")
     ensure
       file.close
@@ -75,25 +75,24 @@ RSpec.describe Screenshots::Storage do
       file.unlink
     end
 
-    it "does not evaluate URL TTL configuration when returning stable URLs" do
+    it "returns a signed URL for the uploaded object" do
       file = Tempfile.new([ "screenshot", ".png" ])
       file.write("fake png data")
       file.rewind
 
       s3_client.stub_responses(:put_object, {})
-      allow(storage).to receive(:configured_url_ttl).and_raise(ArgumentError, "ttl should stay lazy")
-      allow(storage).to receive(:public_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png")
+      allow(storage).to receive(:signed_url).and_return("https://cdn.example.test/screenshots/acme/web/pr-42/abc1234/dashboard.png?signature=test")
 
-      expect {
-        storage.upload(
-          file_path: file.path,
-          org: "acme",
-          repo: "web",
-          pr_number: 42,
-          commit_sha: "abc1234",
-          route_name: "dashboard"
-        )
-      }.not_to raise_error
+      storage.upload(
+        file_path: file.path,
+        org: "acme",
+        repo: "web",
+        pr_number: 42,
+        commit_sha: "abc1234",
+        route_name: "dashboard"
+      )
+
+      expect(storage).to have_received(:signed_url).with("screenshots/acme/web/pr-42/abc1234/dashboard.png")
     ensure
       file.close
       file.unlink

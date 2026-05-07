@@ -5,7 +5,7 @@ require "cgi"
 
 module Screenshots
   # Uploads screenshot PNG files to S3-compatible object storage and returns
-  # stable object URLs for inline viewing in PR comments.
+  # signed object URLs for inline viewing in PR comments.
   #
   # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.png
   #
@@ -35,7 +35,7 @@ module Screenshots
       @url_ttl = url_ttl
     end
 
-    # Uploads a PNG file to S3 and returns a stable object URL.
+    # Uploads a PNG file to S3 and returns a signed object URL.
     #
     # @param file_path [String] Path to the local PNG file
     # @param org [String] GitHub org/owner
@@ -43,7 +43,7 @@ module Screenshots
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA
     # @param route_name [String] Route slug for the screenshot
-    # @return [String] Stable object URL for the uploaded file
+    # @return [String] Signed object URL for the uploaded file
     def upload(file_path:, org:, repo:, pr_number:, commit_sha:, route_name:)
       key = object_key(org:, repo:, pr_number:, commit_sha:, route_name:)
 
@@ -56,7 +56,7 @@ module Screenshots
         )
       end
 
-      public_url(key)
+      signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
     end
