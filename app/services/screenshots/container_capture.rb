@@ -46,6 +46,7 @@ module Screenshots
       @service_provisioner = nil
       @screenshot_container = nil
       @chrome_container = nil
+      @screenshot_service_container_ids = []
       @tmpdir = nil
       @config = nil
       @network = nil
@@ -107,11 +108,7 @@ module Screenshots
 
     private
 
-    attr_reader :agent_run, :project, :logger
-
-    def config
-      @config
-    end
+    attr_reader :agent_run, :project, :logger, :config
 
     def service_provisioner
       @service_provisioner ||= Containers::ServiceProvisioner.new
@@ -199,7 +196,15 @@ module Screenshots
       service_names = configured_service_dependencies
       return if service_names.empty?
 
+      # Save the original service_container_ids so we can restore them after
+      # provisioning. ServiceProvisioner#provision overwrites the field, which
+      # would orphan the main workflow's service containers during cleanup.
+      original_ids = agent_run.service_container_ids.dup
+
       service_provisioner.provision(agent_run, network: @network, service_names: service_names)
+
+      @screenshot_service_container_ids = agent_run.service_container_ids - original_ids
+      agent_run.update!(service_container_ids: original_ids)
     end
 
     def configured_service_dependencies
@@ -272,8 +277,8 @@ module Screenshots
     end
 
     def run_capture!(ui_files)
-      runner_path = write_capture_runner
-      command = "node #{Shellwords.escape(runner_path)}"
+      write_capture_runner
+      command = "node .paid-screenshots/capture_runner.mjs"
       env = capture_env.merge(
         "SCREENSHOT_CONFIG_JSON" => screenshot_config_json,
         "SCREENSHOT_OUTPUT_DIR" => OUTPUT_DIR,
@@ -514,16 +519,31 @@ module Screenshots
         logger.warn(message: "screenshots.chrome_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       end
 
-      begin
-        service_provisioner.cleanup(agent_run)
-      rescue StandardError => e
-        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      end
+      cleanup_screenshot_services!
 
       begin
         @screenshot_container&.cleanup(force: true)
       rescue StandardError => e
         logger.warn(message: "screenshots.container_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
+      end
+    end
+
+    def cleanup_screenshot_services!
+      return if @screenshot_service_container_ids.empty?
+
+      ServiceContainer.where(id: @screenshot_service_container_ids).find_each do |sc|
+        sc.with_lock do
+          next unless sc.capacity_inflight_agent_run_count.zero?
+
+          docker = Docker::Container.get(sc.docker_container_id)
+          docker.stop(timeout: 10)
+          docker.delete(force: true, v: true)
+          sc.update!(status: "stopped", docker_container_id: nil)
+        end
+      rescue Docker::Error::DockerError => e
+        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, service_container: sc.name, error: e.message)
+      rescue StandardError => e
+        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       end
     end
   end
