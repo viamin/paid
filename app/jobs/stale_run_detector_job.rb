@@ -144,8 +144,7 @@ class StaleRunDetectorJob < ApplicationJob
     orphans.find_each do |issue|
       issue.with_lock do
         issue.reload
-        next unless issue.paid_state == "in_progress"
-        next if AgentRun.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).exists?
+        next unless recoverable_orphaned_issue?(issue)
 
         issue.update!(paid_state: "new")
         count += 1
@@ -164,6 +163,32 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
     count
+  end
+
+  def recoverable_orphaned_issue?(issue)
+    return false unless issue.paid_state == "in_progress"
+    return false if AgentRun.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).exists?
+    return false if orphaned_enhance_issue_recheck?(issue)
+
+    true
+  end
+
+  # FetchIssuesActivity intentionally moves a needs_input issue to
+  # in_progress before QueueAgentRunActivity persists the follow-up
+  # enhance_issue run. If that workflow dies in between, the issue is
+  # orphaned but still semantically belongs to the enhance_issue path.
+  # Resetting it to "new" would let normal auto-pick queue create_pr
+  # instead of the intended enhancement rerun.
+  def orphaned_enhance_issue_recheck?(issue)
+    return false if issue.enhance_issue_rounds.zero?
+    return false if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+    return false if issue.has_label?(issue.project.enhance_issue_enhanced_label_name)
+
+    latest_goal_for(issue) == "enhance_issue"
+  end
+
+  def latest_goal_for(issue)
+    issue.agent_runs.order(created_at: :desc, id: :desc).limit(1).pick(:goal)
   end
 
   # Uses the default timeout rather than per-user maximums. Individual run

@@ -528,6 +528,34 @@ RSpec.describe StaleRunDetectorJob do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
+      it "does not reset an orphaned enhance_issue recheck before its run is queued" do
+        issue = create(:issue,
+          project: project,
+          paid_state: "in_progress",
+          enhance_issue_rounds: 1,
+          labels: [],
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: issue, pull_request_number: nil)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "still resets a non-enhancement orphan with prior enhance_issue history" do
+        issue = create(:issue,
+          project: project,
+          paid_state: "in_progress",
+          enhance_issue_rounds: 1,
+          labels: [ project.enhance_issue_enhanced_label_name ],
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: issue, pull_request_number: nil)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+
       it "does not reset an issue whose paid_state changed before lock acquisition" do
         issue = create(:issue, project: project, paid_state: "in_progress",
           updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
