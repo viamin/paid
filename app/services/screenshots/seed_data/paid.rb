@@ -124,7 +124,7 @@ module Screenshots
             record.validation_status = "validated"
           end
 
-          StyleGuide.find_or_create_by!(project: project, name: "Screenshot Style Guide") do |record|
+          style_guide = StyleGuide.find_or_create_by!(project: project, name: "Screenshot Style Guide") do |record|
             record.account = account
             record.raw_content = "Prefer small methods and explicit tests."
             record.language = "ruby"
