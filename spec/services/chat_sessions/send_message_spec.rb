@@ -84,6 +84,13 @@ RSpec.describe ChatSessions::SendMessage do
       }.to raise_error(ArgumentError, /blank/)
     end
 
+    it "raises when content exceeds maximum length" do
+      long_content = "x" * (described_class::MAX_CONTENT_LENGTH + 1)
+      expect {
+        described_class.call(chat_session: chat_session, content: long_content, llm_client: llm_client)
+      }.to raise_error(ArgumentError, /maximum length/)
+    end
+
     it "raises without llm_client when agent-harness is not integrated" do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello")

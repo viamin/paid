@@ -31,6 +31,11 @@ class ChatMessagesController < ApplicationController
       return
     end
 
+    if params[:content].to_s.length > ChatSessions::SendMessage::MAX_CONTENT_LENGTH
+      render json: { error: "content exceeds maximum length" }, status: :unprocessable_content
+      return
+    end
+
     if sse_requested?
       stream_sse_response
     else
@@ -54,12 +59,14 @@ class ChatMessagesController < ApplicationController
     response.headers["X-Accel-Buffering"] = "no"
 
     message_id = SecureRandom.uuid
+    llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
 
     write_sse_event("message_start", { message_id: message_id, model: @chat_session.model })
 
     assistant_message = ChatSessions::SendMessage.call(
       chat_session: @chat_session,
       content: params[:content],
+      llm_client: llm_client,
       on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) }
     )
 
@@ -84,9 +91,12 @@ class ChatMessagesController < ApplicationController
   end
 
   def json_response
+    llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
+
     assistant_message = ChatSessions::SendMessage.call(
       chat_session: @chat_session,
-      content: params[:content]
+      content: params[:content],
+      llm_client: llm_client
     )
     render json: message_json(assistant_message), status: :created
   rescue NotImplementedError => e
