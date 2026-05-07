@@ -972,38 +972,38 @@ RSpec.describe AgentRun do
       end
     end
 
-  describe "#retry!" do
-    it "sets status to retried" do
-      agent_run = create(:agent_run, :failed)
+    describe "#retry!" do
+      it "sets status to retried" do
+        agent_run = create(:agent_run, :failed)
 
-      agent_run.retry!
+        agent_run.retry!
 
-      expect(agent_run.status).to eq("retried")
+        expect(agent_run.status).to eq("retried")
+      end
+
+      it "records a retry decision event" do
+        agent_run = create(:agent_run, :failed)
+
+        expect {
+          agent_run.retry!(decision_point: "manual_retry", result: { new_agent_run_id: 123 })
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        event = OrchestrationDecision.last
+        expect(event.decision_type).to eq("retry")
+        expect(event.context["decision_status"]).to eq("applied")
+        expect(event.actor).to eq("manual_retry")
+        expect(event.outputs).to include("new_agent_run_id" => 123, "status" => "retried")
+      end
+
+      it "still marks the run retried when decision logging fails" do
+        agent_run = create(:agent_run, :failed)
+        allow(OrchestrationDecision).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+        expect { agent_run.retry! }.not_to raise_error
+
+        expect(agent_run.reload.status).to eq("retried")
+      end
     end
-
-    it "records a retry decision event" do
-      agent_run = create(:agent_run, :failed)
-
-      expect {
-        agent_run.retry!(decision_point: "manual_retry", result: { new_agent_run_id: 123 })
-      }.to change(OrchestrationDecision, :count).by(1)
-
-      event = OrchestrationDecision.last
-      expect(event.decision_type).to eq("retry")
-      expect(event.context["decision_status"]).to eq("applied")
-      expect(event.actor).to eq("manual_retry")
-      expect(event.outputs).to include("new_agent_run_id" => 123, "status" => "retried")
-    end
-
-    it "still marks the run retried when decision logging fails" do
-      agent_run = create(:agent_run, :failed)
-      allow(OrchestrationDecision).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
-
-      expect { agent_run.retry! }.not_to raise_error
-
-      expect(agent_run.reload.status).to eq("retried")
-    end
-  end
 
     describe "#auth_expired?" do
       it "returns true when status is auth_expired" do
