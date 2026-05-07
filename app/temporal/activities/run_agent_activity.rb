@@ -1449,7 +1449,8 @@ module Activities
 
       @direct_outbound_execution_plan_cache[cache_key] = Providers::HarnessExecutionPlan.call(
         provider: provider_entry,
-        prompt: prompt
+        prompt: prompt,
+        options: { dangerous_mode: true }
       )
     end
 

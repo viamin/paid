@@ -17,6 +17,7 @@ RSpec.describe ProviderSmokeHelpers do
       expect(described_class.scenario_names_from_env).to eq(%w[
         claude-subscription
         codex-subscription
+        copilot-subscription
         kilocode-zai
         opencode-openrouter
         kilocode-inception

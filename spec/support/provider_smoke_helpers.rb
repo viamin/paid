@@ -40,6 +40,7 @@ module ProviderSmokeHelpers
   DEFAULT_SCENARIO_NAMES = %w[
     claude-subscription
     codex-subscription
+    copilot-subscription
     kilocode-zai
     opencode-openrouter
     kilocode-inception
@@ -101,6 +102,12 @@ module ProviderSmokeHelpers
       model_env: "PAID_SMOKE_KILOCODE_INCEPTION_MODEL",
       default_model: "mercury-2",
       label: "KiloCode with Inception API key"
+    ),
+    "copilot-subscription" => Scenario.new(
+      name: "copilot-subscription",
+      provider_key: "copilot",
+      auth_type: "subscription",
+      label: "Copilot subscription"
     )
   }.freeze
   PRESETS = {
