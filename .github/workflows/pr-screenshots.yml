@@ -205,8 +205,19 @@ jobs:
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
-      GITHUB_TOKEN: ${{ github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
+      # Storage credentials — Screenshots::Storage.configured? requires both
+      # access-key and secret-key to be present. Without these the publish task
+      # raises for any captured PNGs and cleanup_pr silently no-ops.
+      SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
+      SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
+      SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
+      SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
+      SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+      # Target repository and token — defaults to the workflow repo for same-repo
+      # PRs. Set SCREENSHOTS_GITHUB_TOKEN and SCREENSHOTS_TARGET_REPO secrets to
+      # post screenshots to a tracked project's target-repository PR instead.
+      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
+      GITHUB_REPOSITORY: ${{ secrets.SCREENSHOTS_TARGET_REPO || github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
@@ -248,12 +259,13 @@ jobs:
     steps:
       - name: Update stale screenshot comment
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_REPO: ${{ secrets.SCREENSHOTS_TARGET_REPO || github.repository }}
         run: |
           marker="<!-- pr-screenshots-comment -->"
           existing_comment_id=$(gh api \
-            "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            "repos/${TARGET_REPO}/issues/${PR_NUMBER}/comments" \
             --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
             2>/dev/null | head -1)
 
@@ -267,7 +279,7 @@ jobs:
           body+="The previously captured screenshots are outdated and can be ignored.\n"
 
           printf '%b' "$body" | gh api \
-            "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
+            "repos/${TARGET_REPO}/issues/comments/${existing_comment_id}" \
             --method PATCH \
             --field "body=@-"
 
@@ -293,6 +305,11 @@ jobs:
         env:
           BUNDLE_FROZEN: "true"
           RAILS_ENV: test
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
+          SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
+          SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
+          SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
+          SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+          GITHUB_REPOSITORY: ${{ secrets.SCREENSHOTS_TARGET_REPO || github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: bin/rails screenshots:cleanup_pr
