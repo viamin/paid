@@ -91,7 +91,7 @@ module Screenshots
       # Use repo_path if given, otherwise probe the working directory so
       # callers that only supply changed_files still get auto-detection.
       path = @repo_path || Dir.pwd
-      DetectFramework.call(repo_path: path)
+      DetectFramework.call(repo_path: path).framework
     end
 
     def ui_file?(path)

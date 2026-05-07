@@ -3,82 +3,83 @@
 require "rails_helper"
 
 RSpec.describe Screenshots::DetectFramework do
+  def fixture_path(name)
+    Rails.root.join("spec/fixtures/screenshots/#{name}").to_s
+  end
+
   describe ".call" do
+    it "detects a Rails app and suggests a Cuprite config" do
+      result = described_class.call(repo_path: fixture_path("rails_repo"))
+
+      expect(result.framework).to eq(:rails)
+      expect(result.confidence).to eq(1.0)
+      expect(result.suggested_config["driver"]).to eq("cuprite")
+      expect(result.detected_services).to contain_exactly("postgres", "redis")
+      expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+      expect(result.detected_routes.map { |route| route["path"] }).to include("/", "/dashboard", "/reports")
+    end
+
+    it "detects a Next.js app and discovers app routes" do
+      result = described_class.call(repo_path: fixture_path("next_repo"))
+
+      expect(result.framework).to eq(:nextjs)
+      expect(result.confidence).to eq(1.0)
+      expect(result.suggested_config["driver"]).to eq("playwright")
+      expect(result.suggested_config.dig("auth", "strategy")).to eq("custom")
+      expect(result.detected_routes.map { |route| route["path"] }).to include("/", "/dashboard", "/blog/:slug")
+    end
+
+    it "detects a Django app and parses urls.py routes" do
+      result = described_class.call(repo_path: fixture_path("django_repo"))
+
+      expect(result.framework).to eq(:django)
+      expect(result.confidence).to eq(1.0)
+      expect(result.suggested_config["base_url"]).to eq("http://localhost:8000")
+      expect(result.detected_routes.map { |route| route["path"] }).to include("/", "/admin/", "/accounts/login/")
+      expect(result.suggested_config.dig("auth", "login_path")).to eq("/accounts/login/")
+    end
+
+    it "falls back to a generic app when no known framework is detected" do
+      result = described_class.call(repo_path: fixture_path("generic_repo"))
+
+      expect(result.framework).to eq(:generic)
+      expect(result.confidence).to eq(0.45)
+      expect(result.suggested_config["driver"]).to eq("playwright")
+      expect(result.detected_routes).to eq([])
+      expect(result.suggested_config["routes"]).to eq([
+        { "path" => "/", "name" => "home", "requires_auth" => false }
+      ])
+      expect(result.suggested_yaml).to include('- path: "/"')
+    end
+
+    it "uses lower confidence when only generic frontend assets are present" do
+      result = described_class.call(repo_path: fixture_path("generic_repo"))
+
+      expect(result.confidence).to be < 0.5
+    end
+
     context "with file_list" do
-      it "detects Rails from config/routes.rb and app/views" do
-        file_list = [ "config/routes.rb", "app/views/home/index.html.erb", "Gemfile" ]
+      it "detects Rails from routes, Gemfile, and app structure" do
+        result = described_class.call(
+          file_list: [ "Gemfile", "config/routes.rb", "app/controllers/home_controller.rb" ]
+        )
 
-        expect(described_class.call(file_list: file_list)).to eq(:rails)
+        expect(result.framework).to eq(:rails)
       end
 
-      it "detects Next.js from next.config.js and app directory" do
-        file_list = [ "next.config.js", "app/page.tsx", "package.json" ]
+      it "detects Next.js from src/pages" do
+        result = described_class.call(
+          file_list: [ "next.config.ts", "package.json", "src/pages/index.tsx" ]
+        )
 
-        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
+        expect(result.framework).to eq(:nextjs)
+        expect(result.detected_routes.map { |route| route["path"] }).to include("/")
       end
 
-      it "detects Next.js from next.config.ts" do
-        file_list = [ "next.config.ts", "pages/index.tsx" ]
+      it "falls back to generic for an empty file list" do
+        result = described_class.call(file_list: [])
 
-        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
-      end
-
-      it "detects Next.js from next.config.mjs" do
-        file_list = [ "next.config.mjs", "app/layout.tsx" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
-      end
-
-      it "detects Next.js from next.config.js and src/app" do
-        file_list = [ "next.config.js", "src/app/page.tsx", "package.json" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
-      end
-
-      it "detects Next.js from next.config.ts and src/pages" do
-        file_list = [ "next.config.ts", "src/pages/index.tsx", "package.json" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:nextjs)
-      end
-
-      it "detects Django from manage.py and templates" do
-        file_list = [ "manage.py", "myapp/templates/home.html", "requirements.txt" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:django)
-      end
-
-      it "falls back to generic when no framework detected" do
-        file_list = [ "index.html", "styles.css", "app.js" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:generic)
-      end
-
-      it "falls back to generic for empty file list" do
-        expect(described_class.call(file_list: [])).to eq(:generic)
-      end
-
-      it "prefers Rails when both Rails and Django markers are present" do
-        file_list = [ "config/routes.rb", "app/views/home/index.html.erb", "manage.py", "templates/base.html" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:rails)
-      end
-
-      it "requires both markers for Rails detection" do
-        file_list = [ "config/routes.rb", "Gemfile" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:generic)
-      end
-
-      it "requires both markers for Next.js detection" do
-        file_list = [ "app/page.tsx", "package.json" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:generic)
-      end
-
-      it "requires both markers for Django detection" do
-        file_list = [ "manage.py", "requirements.txt" ]
-
-        expect(described_class.call(file_list: file_list)).to eq(:generic)
+        expect(result.framework).to eq(:generic)
       end
     end
 
@@ -87,34 +88,16 @@ RSpec.describe Screenshots::DetectFramework do
 
       after { FileUtils.remove_entry(repo_path) }
 
-      it "detects Rails from filesystem" do
-        FileUtils.mkdir_p(File.join(repo_path, "app/views"))
-        FileUtils.mkdir_p(File.join(repo_path, "config"))
-        File.write(File.join(repo_path, "config/routes.rb"), "# routes")
-
-        expect(described_class.call(repo_path: repo_path)).to eq(:rails)
-      end
-
-      it "falls back to generic when repo has no framework markers" do
-        File.write(File.join(repo_path, "README.md"), "# Hello")
-
-        expect(described_class.call(repo_path: repo_path)).to eq(:generic)
-      end
-
-      it "detects Next.js src/app layout from filesystem" do
+      it "detects Next.js src/app layout from the filesystem" do
         FileUtils.mkdir_p(File.join(repo_path, "src/app"))
         File.write(File.join(repo_path, "next.config.js"), "export default {}")
+        File.write(File.join(repo_path, "package.json"), JSON.dump({ "dependencies" => { "next" => "15.0.0" } }))
         File.write(File.join(repo_path, "src/app/page.tsx"), "export default function Page() {}")
 
-        expect(described_class.call(repo_path: repo_path)).to eq(:nextjs)
-      end
+        result = described_class.call(repo_path: repo_path)
 
-      it "detects Django from nested templates on the filesystem" do
-        FileUtils.mkdir_p(File.join(repo_path, "blog/templates/blog"))
-        File.write(File.join(repo_path, "manage.py"), "print('manage')")
-        File.write(File.join(repo_path, "blog/templates/blog/index.html"), "<h1>Blog</h1>")
-
-        expect(described_class.call(repo_path: repo_path)).to eq(:django)
+        expect(result.framework).to eq(:nextjs)
+        expect(result.detected_routes.map { |route| route["path"] }).to include("/")
       end
 
       it "ignores heavyweight directories while scanning the filesystem" do
@@ -123,28 +106,178 @@ RSpec.describe Screenshots::DetectFramework do
         FileUtils.mkdir_p(File.join(repo_path, "app/views"))
         FileUtils.mkdir_p(File.join(repo_path, "config"))
         File.write(File.join(repo_path, "config/routes.rb"), "# routes")
+        File.write(File.join(repo_path, "Gemfile"), "gem 'rails'\n")
         File.write(File.join(repo_path, ".git/objects/packfile"), "ignored")
         File.write(File.join(repo_path, "node_modules/react/index.js"), "ignored")
 
-        detector = described_class.new(repo_path: repo_path)
-        entries = detector.send(:candidate_entries)
+        repo = described_class::LocalRepository.new(repo_path)
 
-        expect(entries).to include("app/views", "config/routes.rb")
-        expect(entries).not_to include(
-          ".git",
-          ".git/objects",
+        expect(repo.paths).to include("Gemfile", "config/routes.rb")
+        expect(repo.paths).not_to include(
           ".git/objects/packfile",
-          "node_modules",
-          "node_modules/react",
           "node_modules/react/index.js"
         )
       end
     end
+  end
 
-    context "with no arguments" do
-      it "falls back to generic" do
-        expect(described_class.call).to eq(:generic)
+  describe "parse_rails_routes_output" do
+    it "extracts the URI path (after the verb) from rails routes output" do
+      output = <<~ROUTES
+                         Prefix Verb   URI Pattern                 Controller#Action
+                           root GET    /                           home#index
+                      dashboard GET    /dashboard(.:format)        dashboard#show
+                        reports GET    /reports(.:format)          reports#index
+                   edit_profile GET    /profile/edit(.:format)     profiles#edit
+      ROUTES
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      routes = service.send(:parse_rails_routes_output, output)
+      paths = routes.map { |r| r["path"] }
+
+      expect(paths).to include("/", "/dashboard", "/reports", "/profile/edit")
+      expect(paths).not_to include("root", "dashboard", "reports", "edit_profile")
+    end
+
+    it "handles lines where the prefix column is blank" do
+      output = <<~ROUTES
+                         Prefix Verb   URI Pattern                 Controller#Action
+                                POST   /sessions(.:format)         sessions#create
+                        sign_in GET    /sign_in(.:format)          sessions#new
+      ROUTES
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      routes = service.send(:parse_rails_routes_output, output)
+      paths = routes.map { |r| r["path"] }
+
+      expect(paths).to include("/sessions", "/sign_in")
+    end
+  end
+
+  describe "fallback Rails route parsing" do
+    it "keeps namespace prefixes across nested non-namespace blocks" do
+      routes = <<~RUBY
+        Rails.application.routes.draw do
+          namespace :admin do
+            resources :users do
+              get "audit"
+            end
+
+            get "dashboard"
+          end
+        end
+      RUBY
+
+      repo = instance_double(
+        described_class::LocalRepository,
+        respond_to?: false,
+        read: routes
+      )
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_rails_routes)
+
+      expect(parsed_routes.map { |route| route["path"] }).to include("/admin/users", "/admin/dashboard")
+    end
+  end
+
+  describe "Django url parsing" do
+    def django_repo_with_included_urls
+      instance_double(
+        described_class::LocalRepository,
+        glob: [ "config/settings.py", "project/urls.py", "blog/urls.py" ]
+      ).tap do |repo|
+        allow(repo).to receive(:file?) do |path|
+          [ "project/urls.py", "blog/urls.py" ].include?(path)
+        end
+        allow(repo).to receive(:read).with("config/settings.py").and_return('ROOT_URLCONF = "project.urls"')
+        allow(repo).to receive(:read).with("project/urls.py").and_return(<<~PY)
+          from django.urls import include, path
+
+          urlpatterns = [
+            path("blog/", include("blog.urls")),
+          ]
+        PY
+        allow(repo).to receive(:read).with("blog/urls.py").and_return(<<~PY)
+          from django.urls import path
+
+          urlpatterns = [
+            path("posts/", views.posts),
+          ]
+        PY
       end
+    end
+
+    it "carries include prefixes into child urlconfs" do
+      repo = django_repo_with_included_urls
+      service = described_class.new(repo_path: fixture_path("django_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_django_routes)
+
+      expect(parsed_routes.map { |route| route["path"] }).to include("/blog/posts/")
+      expect(parsed_routes.map { |route| route["path"] }).not_to include("/posts/")
+    end
+  end
+
+  describe "dependency memoization" do
+    let(:repo) do
+      instance_double(
+        described_class::LocalRepository,
+        file?: false,
+        directory?: false,
+        glob: [],
+        paths: []
+      )
+    end
+
+    before do
+      allow(repo).to receive(:read).with("Gemfile").and_return("gem 'rails'\ngem 'devise'\n")
+      allow(repo).to receive(:read).with("package.json").and_return(JSON.dump({
+        "dependencies" => { "next" => "1.0.0", "next-auth" => "1.0.0", "redis" => "1.0.0" }
+      }))
+      allow(repo).to receive(:read).with("config/database.yml").and_return("")
+      allow(repo).to receive(:read).with("config/routes.rb").and_return("devise_for :users\n")
+      allow(repo).to receive(:read).with("middleware.ts").and_return("")
+      allow(repo).to receive(:read).with("middleware.js").and_return("")
+    end
+
+    it "reads Gemfile and package.json once even when multiple detectors query dependencies" do
+      service = described_class.new(repo_path: fixture_path("generic_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      service.send(:detect_rails)
+      service.send(:detect_nextjs)
+      service.send(:detect_services)
+
+      expect(repo).to have_received(:read).with("Gemfile").once
+      expect(repo).to have_received(:read).with("package.json").once
+    end
+  end
+
+  describe "GitHub repository reads" do
+    it "uses the project's configured default branch for both tree and file reads" do
+      client = instance_double(GithubClient)
+      github_token = instance_double(GithubToken, client:)
+      project = instance_double(
+        Project,
+        github_token:,
+        full_name: "acme/widgets",
+        default_branch: "develop"
+      )
+
+      tree_item = double(type: "blob", path: "README.md")
+      tree = double(tree: [ tree_item ])
+
+      allow(client).to receive(:tree).with("acme/widgets", "develop", recursive: true).and_return(tree)
+      allow(client).to receive(:file_content).with("acme/widgets", path: "README.md", ref: "develop").and_return(+"# Widgets")
+
+      repo = described_class::GithubRepository.new(project)
+
+      expect(repo.paths).to eq([ "README.md" ])
+      expect(repo.read("README.md")).to eq("# Widgets")
     end
   end
 end

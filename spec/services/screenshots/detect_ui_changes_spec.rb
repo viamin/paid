@@ -228,6 +228,16 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_changes?]).to be true
     end
 
+    it "detects Next.js src/pages changes" do
+      result = described_class.call(
+        changed_files: [ "src/pages/index.tsx" ],
+        framework: :nextjs
+      )
+
+      expect(result[:ui_changes?]).to be true
+      expect(result[:ui_files]).to eq([ "src/pages/index.tsx" ])
+    end
+
     it "detects Next.js app router stylesheet changes" do
       result = described_class.call(
         changed_files: [ "app/dashboard/page.module.css", "app/globals.css" ],

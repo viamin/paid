@@ -8,16 +8,13 @@ namespace :screenshots do
     require "screenshots/capture"
 
     changed_files = ENV.fetch("CHANGED_FILES", "").split("\n").map(&:strip).reject(&:empty?)
+    project = Project.find_by(id: ENV["PROJECT_ID"]) if ENV["PROJECT_ID"].present?
 
     if changed_files.any?
       ui_detection_options = { repo_path: Dir.pwd }
-      config_path = File.join(Dir.pwd, Screenshots::ConfigParser::CONFIG_PATH)
-
-      if File.exist?(config_path)
-        ui_detection_options.merge!(
-          Screenshots::ConfigParser.ui_detection_overrides(repo_path: Dir.pwd)
-        )
-      end
+      ui_detection_options.merge!(
+        Screenshots::ConfigParser.ui_detection_overrides(project:, repo_path: Dir.pwd)
+      )
 
       result = Screenshots::DetectUiChanges.call(
         changed_files: changed_files,

@@ -88,6 +88,10 @@ RSpec.describe Screenshots::FrameworkPatterns do
     it "matches src directory components" do
       expect(patterns[:patterns].any? { |p| p.match?("src/components/Header.tsx") }).to be true
     end
+
+    it "matches src/pages routes" do
+      expect(patterns[:patterns].any? { |p| p.match?("src/pages/index.tsx") }).to be true
+    end
   end
 
   describe "generic patterns" do

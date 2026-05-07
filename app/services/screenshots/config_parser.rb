@@ -78,7 +78,11 @@ module Screenshots
     end
 
     def ui_detection_overrides
-      file_settings = parse_content(raw_content)
+      file_settings = if content.present? || blob.present? || (repo_path.present? && File.exist?(config_path))
+        parse_content(raw_content)
+      else
+        {}
+      end
       validate_partial!(file_settings)
 
       merged = merged_settings(file_settings)

@@ -38,6 +38,7 @@ module Screenshots
         %r{\Aapp/(?:.+/)?globals\.(?:css|scss|sass|less)\z},
         %r{\Aapp/(?:.+/)?[^/]+\.module\.(?:css|scss|sass|less)\z},
         %r{\Apages/},
+        %r{\Asrc/pages/},
         %r{\Acomponents/},
         %r{\Astyles/},
         %r{\Apublic/.*\.(?:html|png|svg|ico|webmanifest)\z},

@@ -47,6 +47,14 @@ RSpec.describe Screenshots::ConfigParser do
       )
     end
 
+    it "returns project screenshot setting overrides without a repo config file" do
+      project.screenshot_settings = { "framework" => "nextjs" }
+
+      expect(described_class.ui_detection_overrides(project:, repo_path: repo_dir)).to eq(
+        framework: :nextjs
+      )
+    end
+
     it "does not return default Rails UI patterns when the repo config omits them" do
       write_config(repo_dir, <<~YAML)
         routes:
