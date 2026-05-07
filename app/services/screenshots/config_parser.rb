@@ -126,7 +126,11 @@ module Screenshots
     end
 
     def config_path
-      Pathname(repo_path).join(config_path_label)
+      root = Pathname(repo_path).expand_path
+      full = root.join(config_path_label).expand_path
+      return full if full.to_s.start_with?("#{root}/") || full == root
+
+      raise ConfigError, "config_path escapes the repo directory"
     end
 
     def config_path_label

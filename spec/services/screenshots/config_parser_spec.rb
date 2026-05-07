@@ -75,6 +75,14 @@ RSpec.describe Screenshots::ConfigParser do
       )
     end
 
+    it "rejects UI override config paths that escape the repo" do
+      project.screenshot_settings = { "config_path" => "../custom-screenshots.yml" }
+
+      expect {
+        described_class.ui_detection_overrides(project:, repo_path: repo_dir)
+      }.to raise_error(Screenshots::ConfigError, "config_path escapes the repo directory")
+    end
+
     it "does not return default Rails UI patterns when the repo config omits them" do
       write_config(repo_dir, <<~YAML)
         routes:
@@ -140,6 +148,15 @@ RSpec.describe Screenshots::ConfigParser do
       it "reads the configured file instead of the default path" do
         expect(config.routes).to contain_exactly(
           have_attributes(path: "/dashboard", name: "dashboard", requires_auth: false, seed_key: nil)
+        )
+      end
+
+      it "rejects configured paths that escape the repo" do
+        project.screenshot_settings = { "config_path" => "../custom-screenshots.yml" }
+
+        expect { config }.to raise_error(
+          Screenshots::ConfigError,
+          "config_path escapes the repo directory"
         )
       end
     end
