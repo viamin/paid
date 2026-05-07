@@ -34,8 +34,37 @@ namespace :screenshots do
     commit_sha = ENV.fetch("COMMIT_SHA")
     github_token = ENV.fetch("GITHUB_TOKEN")
     screenshot_dir = ENV.fetch("SCREENSHOT_OUTPUT_DIR", "tmp/screenshots")
+    comment_status = ENV.fetch("SCREENSHOT_COMMENT_STATUS", "success")
     screenshot_paths = Dir.glob(File.join(screenshot_dir, "*.png")).sort
     github_client = GithubClient.new(token: github_token)
+
+    if comment_status == "capture_failed"
+      Screenshots::PrComment.call(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: [],
+        status: comment_status
+      )
+
+      puts "Updated screenshot comment with capture failure for PR ##{pr_number}."
+      next
+    end
+
+    if comment_status == "no_ui_changes"
+      Screenshots::PrComment.call(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: [],
+        status: comment_status
+      )
+
+      puts "Updated screenshot comment to mark screenshots stale for PR ##{pr_number}."
+      next
+    end
 
     if screenshot_paths.any? && !Screenshots::Storage.configured?
       Screenshots::PrComment.call(

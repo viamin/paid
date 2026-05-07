@@ -90,6 +90,38 @@ RSpec.describe Screenshots::PrComment do
       expect(body).to include("Download the `pr-screenshots` workflow artifact")
       expect(body).not_to include("| Page |")
     end
+
+    it "renders a stale notice when the PR no longer has UI changes" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: [],
+        status: "no_ui_changes"
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("no longer contains UI-facing changes")
+      expect(body).to include("`abc1234`")
+    end
+
+    it "renders a failure notice when screenshot capture fails" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: [],
+        status: "capture_failed"
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("screenshot capture failed")
+      expect(body).to include("stale and should not be used for review")
+    end
   end
 
   describe "#call" do

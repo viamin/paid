@@ -102,7 +102,8 @@ RSpec.describe "screenshots:capture" do
         "PR_NUMBER",
         "COMMIT_SHA",
         "GITHUB_TOKEN",
-        "SCREENSHOT_OUTPUT_DIR"
+        "SCREENSHOT_OUTPUT_DIR",
+        "SCREENSHOT_COMMENT_STATUS"
       )
       ENV["GITHUB_REPOSITORY"] = "acme/web"
       ENV["PR_NUMBER"] = "42"
@@ -112,7 +113,7 @@ RSpec.describe "screenshots:capture" do
       example.run
     ensure
       FileUtils.rm_rf(output_dir)
-      %w[GITHUB_REPOSITORY PR_NUMBER COMMIT_SHA GITHUB_TOKEN SCREENSHOT_OUTPUT_DIR].each do |key|
+      %w[GITHUB_REPOSITORY PR_NUMBER COMMIT_SHA GITHUB_TOKEN SCREENSHOT_OUTPUT_DIR SCREENSHOT_COMMENT_STATUS].each do |key|
         original_env.key?(key) ? ENV[key] = original_env[key] : ENV.delete(key)
       end
     end
@@ -169,6 +170,42 @@ RSpec.describe "screenshots:capture" do
         commit_sha: "abc1234def5678",
         screenshots: [],
         artifact_name: "pr-screenshots"
+      )
+    end
+
+    it "updates the PR comment with a capture failure notice" do
+      ENV["SCREENSHOT_COMMENT_STATUS"] = "capture_failed"
+      allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
+      allow(Screenshots::PrComment).to receive(:call)
+
+      expect { task.invoke }
+        .to output(/Updated screenshot comment with capture failure for PR #42\./).to_stdout
+
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        github_client: github_client,
+        repo: "acme/web",
+        pr_number: 42,
+        commit_sha: "abc1234def5678",
+        screenshots: [],
+        status: "capture_failed"
+      )
+    end
+
+    it "updates the PR comment when the PR no longer has UI changes" do
+      ENV["SCREENSHOT_COMMENT_STATUS"] = "no_ui_changes"
+      allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
+      allow(Screenshots::PrComment).to receive(:call)
+
+      expect { task.invoke }
+        .to output(/Updated screenshot comment to mark screenshots stale for PR #42\./).to_stdout
+
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        github_client: github_client,
+        repo: "acme/web",
+        pr_number: 42,
+        commit_sha: "abc1234def5678",
+        screenshots: [],
+        status: "no_ui_changes"
       )
     end
   end

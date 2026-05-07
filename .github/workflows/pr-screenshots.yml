@@ -195,7 +195,8 @@ jobs:
     needs: [detect, capture]
     if: >-
       always()
-      && needs.capture.result == 'success'
+      && needs.detect.outputs.has_ui_changes == 'true'
+      && needs.capture.result != 'cancelled'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
@@ -220,6 +221,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      SCREENSHOT_COMMENT_STATUS: ${{ needs.capture.result == 'success' && 'success' || 'capture_failed' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -232,6 +234,7 @@ jobs:
 
       - name: Download screenshot artifacts
         id: download_screenshots
+        if: needs.capture.result == 'success'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
         with:
           name: pr-screenshots
@@ -254,32 +257,26 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      SCREENSHOT_COMMENT_STATUS: no_ui_changes
     steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
       - name: Update stale screenshot comment
-        env:
-          GH_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          TARGET_REPO: ${{ github.repository }}
-        run: |
-          marker="<!-- pr-screenshots-comment -->"
-          existing_comment_id=$(gh api \
-            "repos/${TARGET_REPO}/issues/${PR_NUMBER}/comments" \
-            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
-            2>/dev/null | head -1)
-
-          if [ -z "$existing_comment_id" ]; then
-            echo "No existing screenshot comment to clean up."
-            exit 0
-          fi
-
-          body="${marker}\n## 📸 UI Screenshots\n\n"
-          body+="This PR **no longer contains UI-facing changes**. "
-          body+="The previously captured screenshots are outdated and can be ignored.\n"
-
-          printf '%b' "$body" | gh api \
-            "repos/${TARGET_REPO}/issues/comments/${existing_comment_id}" \
-            --method PATCH \
-            --field "body=@-"
+        run: bin/rails screenshots:publish
 
   # Clean up uploaded screenshots when a PR is closed or merged.
   cleanup-storage:
