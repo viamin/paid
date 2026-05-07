@@ -3572,6 +3572,13 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 
 
 --
+-- Name: COLUMN projects.last_issue_reconciliation_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.projects.last_issue_reconciliation_at IS 'Timestamp of the last issue state reconciliation against GitHub';
+
+
+--
 -- Name: COLUMN projects.screenshot_settings; Type: COMMENT; Schema: public; Owner: -
 --
 

@@ -82,8 +82,16 @@ RSpec.configure do |config|
   end
 
   config.filter_run_excluding :provider_smoke unless ENV["RUN_PROVIDER_SMOKE"] == "true"
+  config.filter_run_excluding :chat_e2e unless ENV["RUN_CHAT_E2E"] == "true"
 
   config.around(:each, :provider_smoke) do |example|
+    WebMock.allow_net_connect!
+    example.run
+  ensure
+    WebMock.disable_net_connect!(allow_localhost: true)
+  end
+
+  config.around(:each, :chat_e2e) do |example|
     WebMock.allow_net_connect!
     example.run
   ensure
