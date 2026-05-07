@@ -363,7 +363,7 @@ RSpec.describe Containers::Provision do
           expect(binds.none? { |bind| bind.include?("/home/agent/.claude-host:ro") }).to be true
           expect(binds.none? { |bind| bind.include?("/home/agent/.codex-host:ro") }).to be true
           expect(binds.none? { |bind| bind.include?("/home/agent/.gemini-host:ro") }).to be true
-          expect(binds.none? { |bind| bind.include?("/home/agent/.config/github-copilot-host:ro") }).to be true
+          expect(binds.none? { |bind| bind.include?("/home/agent/.copilot-host:ro") }).to be true
           mock_container
         end
 
@@ -421,9 +421,9 @@ RSpec.describe Containers::Provision do
       it "configures a writable tmpfs for GitHub Copilot CLI config" do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]
-          expect(tmpfs).to have_key("/home/agent/.config/github-copilot")
-          expect(tmpfs["/home/agent/.config/github-copilot"]).to include("mode=0700")
-          expect(tmpfs["/home/agent/.config/github-copilot"]).to include("size=#{64 * 1024 * 1024}")
+          expect(tmpfs).to have_key("/home/agent/.copilot")
+          expect(tmpfs["/home/agent/.copilot"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.copilot"]).to include("size=#{64 * 1024 * 1024}")
           mock_container
         end
 
@@ -730,6 +730,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil, copilot_local_config_path: nil)
       end
@@ -1019,10 +1020,9 @@ RSpec.describe Containers::Provision do
 
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(claude_config_dir)
-        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
-        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
-        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
-        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        %w[CODEX_CONFIG_DIR CODEX_HOME GEMINI_CONFIG_DIR COPILOT_HOME COPILOT_CONFIG_DIR].each do |key|
+          allow(ENV).to receive(:[]).with(key).and_return(nil)
+        end
         allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil, copilot_local_config_path: nil)
 
         container_network = nil
@@ -1055,6 +1055,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(gemini_config_dir)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(claude_local_config_path: nil, codex_local_config_path: nil, copilot_local_config_path: nil)
       end
@@ -1100,6 +1101,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(
           claude_local_config_path: nil,
@@ -1158,6 +1160,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(claude_local_config_path: nil, gemini_local_config_path: nil, copilot_local_config_path: nil)
       end
@@ -1260,6 +1263,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(
           claude_local_config_path: nil,
@@ -1364,7 +1368,7 @@ RSpec.describe Containers::Provision do
       let(:copilot_config_dir) { Dir.mktmpdir("copilot-config") }
 
       before do
-        File.write(File.join(copilot_config_dir, "hosts.json"), "{}")
+        File.write(File.join(copilot_config_dir, "config.json"), "{}")
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -1372,6 +1376,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(copilot_config_dir)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(copilot_config_dir)
         allow(service).to receive_messages(
           claude_local_config_path: nil,
@@ -1388,7 +1393,7 @@ RSpec.describe Containers::Provision do
       it "mounts Copilot config at a staging path and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("#{copilot_config_dir}:/home/agent/.config/github-copilot-host:ro")
+          expect(binds).to include("#{copilot_config_dir}:/home/agent/.copilot-host:ro")
           env = config["Env"]
           expect(env).to include("PAID_COPILOT_SUBSCRIPTION_AUTH=1")
           mock_container
@@ -1410,7 +1415,7 @@ RSpec.describe Containers::Provision do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-c", include("/home/agent/.config/github-copilot-host/hosts.json").and(include("/home/agent/.config/github-copilot/hosts.json")) ],
+          [ "sh", "-c", include("/home/agent/.copilot-host/config.json").and(include("/home/agent/.copilot/config.json")) ],
           user: "agent"
         )
       end
@@ -1420,8 +1425,8 @@ RSpec.describe Containers::Provision do
       let(:copilot_local_dir) { Dir.mktmpdir("copilot-local") }
 
       before do
-        File.write(File.join(copilot_local_dir, "hosts.json"), '{"github.com":{"oauth_token":"test-token"}}')
-        File.write(File.join(copilot_local_dir, "apps.json"), '{}')
+        File.write(File.join(copilot_local_dir, "config.json"), '{"oauth_token":"test-token"}')
+        File.write(File.join(copilot_local_dir, "settings.json"), '{}')
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -1429,6 +1434,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(
           claude_local_config_path: nil,
@@ -1445,7 +1451,7 @@ RSpec.describe Containers::Provision do
       it "sets the subscription marker without requiring a host bind mount" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds.none? { |bind| bind.include?("/home/agent/.config/github-copilot-host:ro") }).to be true
+          expect(binds.none? { |bind| bind.include?("/home/agent/.copilot-host:ro") }).to be true
           expect(config["Env"]).to include("PAID_COPILOT_SUBSCRIPTION_AUTH=1")
           mock_container
         end
@@ -1457,7 +1463,7 @@ RSpec.describe Containers::Provision do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.config/github-copilot/hosts.json") && decoded_base64_content(cmd).include?("oauth_token") } ],
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.copilot/config.json") && decoded_base64_content(cmd).include?("oauth_token") } ],
           user: "agent"
         )
       end

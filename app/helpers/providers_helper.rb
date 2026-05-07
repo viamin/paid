@@ -45,8 +45,8 @@ module ProvidersHelper
     "copilot" => {
       summary: "GitHub Copilot currently uses subscription auth in Paid:",
       items: [
-        "Sign in with the GitHub Copilot CLI and make <code>~/.config/github-copilot/hosts.json</code> visible to Paid.",
-        "If Copilot creds live elsewhere, set <code>COPILOT_CONFIG_DIR</code>.",
+        "Sign in with the GitHub Copilot CLI and make <code>~/.copilot/config.json</code> visible to Paid.",
+        "If Copilot creds live elsewhere, set <code>COPILOT_HOME</code> (or Paid's legacy <code>COPILOT_CONFIG_DIR</code> override).",
         "Restart the <code>web</code> and <code>worker</code> services after changing credential mounts."
       ]
     }

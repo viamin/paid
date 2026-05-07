@@ -5,27 +5,38 @@ require "securerandom"
 
 RSpec.describe Providers::HarnessExecutionPlan do
   describe ".for_provider_key" do
-    it "uses plan_execution for probe-dependent providers" do
-      harness_provider = instance_double(
-        AgentHarness::Providers::GithubCopilot,
-        plan_execution: {
-          command: %w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping],
-          env: {},
-          preparation: nil
-        }
-      )
-      provider_class = class_double(AgentHarness::Providers::GithubCopilot)
+    let(:copilot_plan_payload) do
+      {
+        command: %w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping],
+        env: { "COPILOT_ALLOW_ALL" => "true" },
+        preparation: nil
+      }
+    end
 
+    let(:harness_provider) do
+      instance_double(AgentHarness::Providers::GithubCopilot, plan_execution: copilot_plan_payload)
+    end
+
+    let(:provider_class) { class_double(AgentHarness::Providers::GithubCopilot) }
+
+    before do
       allow(AgentHarness).to receive(:provider_class).with(:github_copilot).and_return(provider_class)
       allow(AgentHarness).to receive(:build_config).with(:github_copilot).and_return(
         AgentHarness::ProviderConfig.new(:github_copilot)
       )
       allow(provider_class).to receive(:new).with(config: kind_of(AgentHarness::ProviderConfig)).and_return(harness_provider)
+    end
 
-      plan = described_class.for_provider_key(provider_key: "copilot", prompt: "ping")
+    it "uses plan_execution for probe-dependent providers" do
+      plan = described_class.for_provider_key(
+        provider_key: "copilot",
+        prompt: "ping",
+        options: { dangerous_mode: true }
+      )
 
-      expect(harness_provider).to have_received(:plan_execution).with(prompt: "ping")
+      expect(harness_provider).to have_received(:plan_execution).with(prompt: "ping", dangerous_mode: true)
       expect(plan.command).to eq(%w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping])
+      expect(plan.env).to include("COPILOT_ALLOW_ALL" => "true")
     end
   end
 

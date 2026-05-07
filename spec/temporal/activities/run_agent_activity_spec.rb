@@ -318,6 +318,14 @@ RSpec.describe Activities::RunAgentActivity do
       )
       expect(plan.command).to include("claude", "--print", "--dangerously-skip-permissions")
     end
+
+    it "generates copilot env that bypasses approval prompts in dangerous mode" do
+      plan = Providers::HarnessExecutionPlan.for_provider_key(
+        provider_key: "copilot", prompt: "test", options: { dangerous_mode: true }
+      )
+      expect(plan.command).to include("copilot", "--autopilot")
+      expect(plan.env).to include("COPILOT_ALLOW_ALL" => "true")
+    end
   end
 
   describe ".provider_order" do
