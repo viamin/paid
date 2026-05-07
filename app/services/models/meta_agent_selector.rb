@@ -32,7 +32,7 @@ module Models
           selector_type: "meta_agent",
           tier: initial_tier,
           reasoning: "Single candidate in pool; LLM selection skipped",
-          candidates: [ { model_id: only.model_id, score: only.capability_score.to_f } ],
+          candidates: [ only ],
           complexity_score: initial_complexity
         }
       end
@@ -52,7 +52,7 @@ module Models
         # separately on the selection record.
         tier: initial_tier,
         reasoning: response[:reasoning],
-        candidates: candidates.map { |m| { model_id: m.model_id, score: m.capability_score.to_f } },
+        candidates: candidates,
         complexity_score: response[:complexity_score]
       }
     rescue AgentHarness::Error, JSON::ParserError => e

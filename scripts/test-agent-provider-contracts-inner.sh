@@ -1,8 +1,7 @@
 #!/bin/bash
 # Provider-contract smoke test executed inside the paid-agent container.
 # Validates that every provider declared container-executable in Paid has a
-# compatible CLI installed in the image, and that known non-runnable providers
-# (e.g. copilot) are not accidentally promoted to container-executable.
+# compatible CLI installed in the image.
 #
 # Also performs a cheap Codex config.toml shape check to catch notify/TOML
 # regressions without requiring real credentials or model calls.
@@ -37,6 +36,7 @@ PROVIDER_CLI_BINARY=(
     [aider]=aider
     [claude]=claude
     [codex]=codex
+    [copilot]=copilot
     [cursor]=cursor-agent
     [gemini]=gemini
     [kilocode]=kilo
@@ -70,32 +70,9 @@ done
 echo ""
 
 # ---------------------------------------------------------------------------
-# 3. Known non-runnable providers must NOT be container-executable
+# 3. Codex config.toml shape validation
 # ---------------------------------------------------------------------------
-echo "2. Non-runnable provider exclusion checks:"
-
-# Copilot CLI only supports shell/git/gh assist subcommands, not repo-changing
-# agent tasks. It must not appear in the container-executable set.
-COPILOT_FOUND=false
-for key in "${EXEC_KEYS[@]}"; do
-    if [ "$key" = "copilot" ]; then
-        COPILOT_FOUND=true
-        break
-    fi
-done
-
-if [ "$COPILOT_FOUND" = "true" ]; then
-    fail "copilot must not be in CONTAINER_EXECUTABLE_PROVIDER_KEYS"
-else
-    pass "copilot correctly excluded from container-executable set"
-fi
-
-echo ""
-
-# ---------------------------------------------------------------------------
-# 4. Codex config.toml shape validation
-# ---------------------------------------------------------------------------
-echo "3. Codex config.toml shape validation:"
+echo "2. Codex config.toml shape validation:"
 
 CODEX_NOTIFY_LINE="${CODEX_NOTIFY_LINE:-}"
 CODEX_CONFIG_TOML_BODY="${CODEX_CONFIG_TOML_BODY:-}"

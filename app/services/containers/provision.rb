@@ -1232,14 +1232,20 @@ module Containers
     end
 
     def seed_copilot_credentials!
-      source_files = %w[hosts.json apps.json]
+      source_files = %w[
+        config.json
+        settings.json
+        permissions-config.json
+        mcp-config.json
+        lsp-config.json
+      ]
       return unless copilot_subscription_auth?
 
       host = copilot_config_host_path
-      if host.present? && File.file?(File.join(host, "hosts.json"))
+      if host.present? && File.file?(File.join(host, "config.json"))
         seed_host_credentials!(
-          staging_path: "/home/agent/.config/github-copilot-host",
-          target_path: "/home/agent/.config/github-copilot",
+          staging_path: "/home/agent/.copilot-host",
+          target_path: "/home/agent/.copilot",
           files: source_files,
           success_log_key: "container.copilot_credentials_seeded",
           failure_log_key: "container.copilot_credentials_seed_failed"
@@ -1247,7 +1253,7 @@ module Containers
       elsif copilot_local_config_path.present?
         seed_local_credentials!(
           source_path: copilot_local_config_path,
-          target_path: "/home/agent/.config/github-copilot",
+          target_path: "/home/agent/.copilot",
           files: source_files,
           success_log_key: "container.copilot_credentials_seeded",
           failure_log_key: "container.copilot_credentials_seed_failed"
@@ -1304,7 +1310,7 @@ module Containers
         "/home/agent/.local/share/kilo",
         "/home/agent/.config/opencode",
         "/home/agent/.local/share/opencode",
-        "/home/agent/.config/github-copilot",
+        "/home/agent/.copilot",
         "/home/agent/.aider"
       ]
 
@@ -1417,10 +1423,10 @@ module Containers
       fix_tmpfs_ownership!(".local/share/opencode")
     end
 
-    # Fixes ownership of the ~/.config/github-copilot tmpfs so the non-root
+    # Fixes ownership of the ~/.copilot tmpfs so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     def fix_copilot_tmpfs_ownership!
-      fix_tmpfs_ownership!(".config/github-copilot", log_key: "config_github_copilot")
+      fix_tmpfs_ownership!(".copilot")
     end
 
     # Fixes ownership of the ~/.aider tmpfs so the non-root agent user can
@@ -1592,7 +1598,7 @@ module Containers
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
     #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
-    #   /home/agent/.config/github-copilot   - tmpfs (64MB, for GitHub Copilot CLI config)
+    #   /home/agent/.copilot                 - tmpfs (64MB, for GitHub Copilot CLI config)
     #   /home/agent/.aider                   - tmpfs (64MB, for Aider CLI config/session data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
@@ -1648,9 +1654,9 @@ module Containers
 
       if copilot_config_host_path.present? &&
          File.directory?(copilot_config_host_path) &&
-         File.file?(File.join(copilot_config_host_path, "hosts.json")) &&
+         File.file?(File.join(copilot_config_host_path, "config.json")) &&
          copilot_subscription_auth?
-        binds << "#{copilot_config_host_path}:/home/agent/.config/github-copilot-host:ro"
+        binds << "#{copilot_config_host_path}:/home/agent/.copilot-host:ro"
       end
 
       # /tmp must be `exec` because every coding/review/rebase prompt has the
@@ -1709,9 +1715,9 @@ module Containers
       tmpfs["/home/agent/.config/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
       tmpfs["/home/agent/.local/share/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
-      # GitHub Copilot CLI stores config under ~/.config/github-copilot.
+      # GitHub Copilot CLI stores config and auth state under ~/.copilot.
       # Ownership is fixed by fix_copilot_tmpfs_ownership! after container start.
-      tmpfs["/home/agent/.config/github-copilot"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.copilot"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # Aider CLI stores config and session data under ~/.aider.
       # Ownership is fixed by fix_aider_tmpfs_ownership! after container start.
@@ -2112,16 +2118,20 @@ module Containers
     end
 
     def copilot_config_host_path
-      @copilot_config_host_path ||= ENV["COPILOT_CONFIG_DIR"].presence || detect_host_config_path("/.config/github-copilot")
+      @copilot_config_host_path ||= begin
+        ENV["COPILOT_HOME"].presence ||
+          ENV["COPILOT_CONFIG_DIR"].presence ||
+          detect_host_config_path("/.copilot")
+      end
     end
 
     def copilot_local_config_path
-      @copilot_local_config_path ||= local_config_path(".config/github-copilot")
+      @copilot_local_config_path ||= local_config_path(".copilot")
     end
 
     def copilot_subscription_auth?
       paths = [ copilot_config_host_path, copilot_local_config_path ].compact
-      paths.any? { |base| File.file?(File.join(base, "hosts.json")) }
+      paths.any? { |base| File.file?(File.join(base, "config.json")) }
     end
 
     def detect_host_config_path(suffix)

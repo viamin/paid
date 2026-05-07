@@ -30,6 +30,17 @@ RSpec.describe Scaling::Orchestrators::Resolver do
     end
   end
 
+  describe "default registrations" do
+    it "registers the built-in orchestrator adapters" do
+      expect(described_class.registered_types).to include(
+        :kubernetes,
+        :docker_compose,
+        :docker_swarm,
+        :ecs
+      )
+    end
+  end
+
   describe ".for" do
     before do
       described_class.reset!
@@ -50,10 +61,16 @@ RSpec.describe Scaling::Orchestrators::Resolver do
     it "clears a single orchestrator type when given one" do
       described_class.register(:kubernetes, factory)
       described_class.register(:docker_compose, factory)
+      described_class.register(:docker_swarm, factory)
+      described_class.register(:ecs, factory)
 
       described_class.reset!(:kubernetes)
 
-      expect(described_class.registered_types).to contain_exactly(:docker_compose)
+      expect(described_class.registered_types).to contain_exactly(
+        :docker_compose,
+        :docker_swarm,
+        :ecs
+      )
     end
 
     it "clears every registration when called without arguments" do

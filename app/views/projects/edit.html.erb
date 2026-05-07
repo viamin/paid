@@ -618,6 +618,8 @@
             </div>
           </fieldset>
 
+          <%= render "screenshot_settings", form: form %>
+
           <fieldset id="auto-release" class="space-y-4">
             <legend class="text-sm font-semibold leading-6 text-gray-900">Auto-Merge &amp; Auto-Release</legend>
 
@@ -676,7 +678,6 @@
       <% end %>
     </div>
   </div>
-
   <%# MCP Servers section %>
   <div id="mcp-servers" class="mt-6 bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:p-6">

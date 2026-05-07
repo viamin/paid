@@ -27,7 +27,7 @@ module Models
         tier: tier,
         reasoning: "Rules-based selection: complexity=#{complexity.round(1)}, tier=#{tier || 'unknown'}, " \
                    "selected #{selected.display_name} (capability=#{selected.capability_score})",
-        candidates: candidates.map { |m| { model_id: m.model_id, score: m.capability_score.to_f } },
+        candidates: candidates,
         complexity_score: complexity
       }
     end

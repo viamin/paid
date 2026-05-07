@@ -4,6 +4,8 @@ module Models
   class Select
     include ProviderTierLookup
 
+    DECISION_LOG_TYPE = "model_selection_decision"
+
     attr_reader :agent_run
 
     def self.call(...)
@@ -18,26 +20,43 @@ module Models
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       selected = select_model
-      return nil unless selected
-
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+      unless selected
+        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms)
+        return nil
+      end
 
       final_tier = selected[:tier] || tier_for(selected)
       escalation = detect_escalation(selected, final_tier)
+      candidates = normalized_candidates(selected, selected_model_id: selected[:model].model_id)
 
-      ModelSelection.find_or_create_by!(agent_run: agent_run) do |ms|
+      selection = ModelSelection.find_or_create_by!(agent_run: agent_run) do |ms|
         ms.llm_model = selected[:model]
         ms.selector_type = selected[:selector_type]
         ms.reasoning = selected[:reasoning]
-        ms.candidates = selected[:candidates]
+        ms.candidates = candidates
         ms.complexity_score = selected[:complexity_score]
         ms.tier = final_tier
         ms.selection_duration_ms = duration_ms
         ms.escalated_from_tier = escalation[:from_tier]
         ms.escalated_reason = escalation[:reason]
       end
+      persist_decision_log(
+        outcome: "selected",
+        duration_ms: duration_ms,
+        selected: selected,
+        final_tier: final_tier,
+        escalation: escalation,
+        selection: selection,
+        candidates: candidates
+      )
+      selection
     rescue ActiveRecord::RecordNotUnique
       ModelSelection.find_by!(agent_run: agent_run)
+    rescue => e
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+      persist_decision_log(outcome: "failed", duration_ms: duration_ms, error: e)
+      raise
     end
 
     private
@@ -82,7 +101,7 @@ module Models
         model: model,
         selector_type: "quality_escalation",
         reasoning: "Quality-triggered escalation to #{tier} tier",
-        candidates: [ { model_id: model.model_id, score: model.capability_score.to_f } ],
+        candidates: [ model ],
         complexity_score: nil,
         tier: tier
       }
@@ -115,7 +134,7 @@ module Models
         model: model,
         selector_type: "override",
         reasoning: reason,
-        candidates: [ { model_id: model.model_id, score: model.capability_score.to_f } ],
+        candidates: [ model ],
         complexity_score: nil,
         # For override paths the tier follows the chosen model directly, since
         # no complexity-based routing was performed.
@@ -168,6 +187,172 @@ module Models
       elsif project.model_preferences&.dig("quality_recovery_min_tier").present?
         "quality_recovery_project"
       end
+    end
+
+    def normalized_candidates(selected, selected_model_id:)
+      Array(selected[:candidates]).filter_map.with_index(1) do |candidate, rank|
+        normalize_candidate(candidate, rank: rank, selected_model_id: selected_model_id)
+      end
+    end
+
+    def normalize_candidate(candidate, rank:, selected_model_id:)
+      if candidate.is_a?(LlmModel)
+        serialize_model_candidate(candidate, rank: rank, selected: candidate.model_id == selected_model_id)
+      elsif candidate.respond_to?(:deep_symbolize_keys)
+        data = candidate.deep_symbolize_keys
+        model = LlmModel.find_by(model_id: data[:model_id])
+        serialize_hash_candidate(data, model: model, rank: rank, selected_model_id: selected_model_id)
+      end
+    end
+
+    def serialize_hash_candidate(data, model:, rank:, selected_model_id:)
+      {
+        rank: rank,
+        selected: data.fetch(:selected, data[:model_id] == selected_model_id),
+        model_id: data[:model_id],
+        provider: data[:provider] || model&.provider,
+        tier: data[:tier] || model&.tier,
+        score: data[:score],
+        capability_score: data[:capability_score] || model&.capability_score&.to_f,
+        input_cost_per_million: data[:input_cost_per_million] || model&.input_cost_per_million&.to_f,
+        output_cost_per_million: data[:output_cost_per_million] || model&.output_cost_per_million&.to_f
+      }.compact
+    end
+
+    def serialize_model_candidate(model, rank:, selected:)
+      {
+        rank: rank,
+        selected: selected,
+        model_id: model.model_id,
+        provider: model.provider,
+        tier: model.tier,
+        score: model.capability_score&.to_f,
+        capability_score: model.capability_score&.to_f,
+        input_cost_per_million: model.input_cost_per_million&.to_f,
+        output_cost_per_million: model.output_cost_per_million&.to_f
+      }.compact
+    end
+
+    def persist_decision_log(outcome:, duration_ms:, selected: nil, final_tier: nil, escalation: nil, selection: nil, candidates: nil, error: nil)
+      agent_run.agent_run_logs.create!(
+        log_type: "system",
+        content: decision_log_content(outcome: outcome, selected: selected, error: error),
+        metadata: {
+          type: DECISION_LOG_TYPE,
+          outcome: outcome,
+          duration_ms: duration_ms,
+          selection: selection_payload(selected: selected, selection: selection, final_tier: final_tier, escalation: escalation, candidates: candidates),
+          inputs: selection_inputs,
+          error: error_payload(error)
+        }.compact
+      )
+    rescue => log_error
+      Rails.logger.warn(
+        message: "model_selection.decision_log_failed",
+        agent_run_id: agent_run.id,
+        error_class: log_error.class.name,
+        error: log_error.message
+      )
+    end
+
+    def decision_log_content(outcome:, selected:, error:)
+      case outcome
+      when "selected"
+        "Agent selection succeeded via #{selected[:selector_type]} for #{selected[:model].model_id}"
+      when "no_selection"
+        "Agent selection found no eligible models"
+      else
+        "Agent selection failed: #{error.class}: #{error.message}"
+      end
+    end
+
+    def selection_payload(selected:, selection:, final_tier:, escalation:, candidates:)
+      return nil unless selected || selection
+
+      {
+        model_selection_id: selection&.id,
+        agent_type: agent_run.agent_type,
+        provider_id: agent_run.provider_id,
+        provider_key: agent_run.provider&.provider_key || agent_run.effective_provider,
+        effective_provider: agent_run.effective_provider,
+        selector_type: selected&.dig(:selector_type) || selection&.selector_type,
+        reasoning: selected&.dig(:reasoning) || selection&.reasoning,
+        model_id: selected&.dig(:model)&.model_id || selection&.llm_model&.model_id,
+        model_provider: selected&.dig(:model)&.provider || selection&.llm_model&.provider,
+        model_tier: selected&.dig(:model)&.tier || selection&.llm_model&.tier,
+        final_tier: final_tier || selection&.tier,
+        complexity_score: selected&.dig(:complexity_score) || selection&.complexity_score&.to_f,
+        escalated_from_tier: escalation&.dig(:from_tier) || selection&.escalated_from_tier,
+        escalated_reason: escalation&.dig(:reason) || selection&.escalated_reason,
+        candidates: candidates || selection&.candidates
+      }.compact
+    end
+
+    def selection_inputs
+      project = agent_run.project
+      issue = agent_run.issue
+      preferences = project.model_preferences || {}
+      provider = agent_run.provider
+
+      {
+        task: {
+          goal: agent_run.goal,
+          trigger_type: agent_run.trigger_type,
+          issue_id: issue&.id,
+          issue_title: issue&.title,
+          issue_body_length: issue&.body.to_s.length,
+          custom_prompt_present: agent_run.custom_prompt.present?,
+          existing_pr: agent_run.existing_pr?,
+          priority_tier: agent_run.priority_tier
+        }.compact,
+        repository: {
+          project_id: project.id,
+          full_name: project.full_name,
+          max_tokens_per_run: project.max_tokens_per_run
+        }.compact,
+        provider_context: {
+          provider_id: provider&.id,
+          provider_key: provider&.provider_key || agent_run.effective_provider,
+          agent_type: agent_run.agent_type,
+          effective_provider: agent_run.effective_provider,
+          complexity_thresholds: Models::TierForComplexity.new(agent_run: agent_run, complexity: 1.0).effective_thresholds
+        }.compact,
+        policy_constraints: {
+          required_model_id: preferences["required_model_id"],
+          preferred_model_ids: preferences["preferred_model_ids"],
+          excluded_model_ids: preferences["excluded_model_ids"],
+          max_tier: preferences["max_tier"],
+          quality_recovery_min_tier: preferences["quality_recovery_min_tier"],
+          goal_min_tier: preferences.dig("goal_min_tiers", agent_run.goal),
+          preferred_agent_type: preferences["preferred_agent_type"]
+        }.compact,
+        budget_signals: {
+          active_budgets: active_budget_signals(project)
+        }
+      }
+    end
+
+    def active_budget_signals(project)
+      project.cost_budgets.filter_map do |budget|
+        next unless budget.limit_cents.to_i.positive?
+
+        {
+          budget_type: budget.budget_type,
+          enforcement_mode: budget.enforcement_mode,
+          limit_cents: budget.limit_cents,
+          remaining_cents: budget.remaining_cents,
+          hard_stop: budget.hard_stop?
+        }
+      end
+    end
+
+    def error_payload(error)
+      return nil unless error
+
+      {
+        class: error.class.name,
+        message: error.message
+      }
     end
   end
 end
