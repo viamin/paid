@@ -84,15 +84,16 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
     end
     let(:next_task_definition_arn) { "arn:aws:ecs:task-definition/agent-worker:8" }
 
-    def expect_task_definition_registration(expected_cpu: "512", expected_memory: "2048")
+    def expect_task_definition_registration(expected_cpu: "512", expected_memory: "2048",
+                                              expected_container_cpu: 512, expected_container_memory: 2048)
       expect(adapter).to receive(:run_aws).with(
         "ecs", "register-task-definition",
         "--cli-input-json", kind_of(String)
       ) do |*args|
         payload = JSON.parse(args.last, symbolize_names: true)
         container = payload.fetch(:containerDefinitions).first
-        expect(container[:cpu]).to eq(512)
-        expect(container[:memory]).to eq(2048)
+        expect(container[:cpu]).to eq(expected_container_cpu)
+        expect(container[:memory]).to eq(expected_container_memory)
         expect(payload[:cpu]).to eq(expected_cpu)
         expect(payload[:memory]).to eq(expected_memory)
 
@@ -160,15 +161,15 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
       expect(result.accepted).to be true
     end
 
-    it "preserves raw ECS CPU-unit inputs when updating container resources" do
+    it "treats bare integer cpu_limit as CPU cores per the shared contract" do
       allow(adapter).to receive(:describe_service)
         .with(service_name)
         .and_return({ taskDefinition: task_definition[:taskDefinitionArn] })
       allow(adapter).to receive(:describe_task_definition)
         .with(task_definition[:taskDefinitionArn])
         .and_return(task_definition)
-      expect_task_definition_registration(expected_cpu: "512")
-
+      expect_task_definition_registration(expected_cpu: "2048", expected_memory: "4096",
+                                          expected_container_cpu: 2048)
       expect(adapter).to receive(:run_aws).with(
         "ecs", "update-service",
         "--cluster", "paid-prod",
@@ -177,7 +178,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
         "--force-new-deployment"
       ).and_return({ service: { taskDefinition: next_task_definition_arn } }.to_json)
 
-      result = adapter.set_resource_limits(service: service_name, cpu_limit: "512", memory_limit: "2Gi")
+      result = adapter.set_resource_limits(service: service_name, cpu_limit: "2", memory_limit: "2Gi")
 
       expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
       expect(result.accepted).to be true

@@ -237,10 +237,12 @@ module Scaling
           primary[:rolloutState].to_s.casecmp("COMPLETED").zero?
       end
 
+      # Converts shared-contract cpu_limit values to ECS CPU units.
+      # The contract defines "500m" as 500 millicores and "2" as 2 CPUs.
+      # ECS uses 1024 units per vCPU, so "2" becomes 2048.
       def ecs_cpu_units(value)
         string = value.to_s.strip
         return (string.delete_suffix("m").to_f / 1000 * 1024).round if string.end_with?("m")
-        return string.to_i if string.match?(/\A\d+\z/)
 
         (string.to_f * 1024).round
       end
