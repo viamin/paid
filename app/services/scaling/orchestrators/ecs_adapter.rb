@@ -183,8 +183,8 @@ module Scaling
       end
 
       def updated_task_resources(task_definition, container_definitions)
-        required_cpu = container_definitions.sum { |definition| definition[:cpu].to_i if definition[:cpu] }.to_i
-        required_memory = container_definitions.sum { |definition| definition[:memory].to_i if definition[:memory] }.to_i
+        required_cpu = container_definitions.sum { |definition| definition[:cpu].to_i }
+        required_memory = container_definitions.sum { |definition| definition[:memory].to_i }
         current_cpu = task_definition[:cpu].to_i
         current_memory = task_definition[:memory].to_i
 
