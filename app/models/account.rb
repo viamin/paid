@@ -17,6 +17,8 @@ class Account < ApplicationRecord
   has_many :linear_tokens, dependent: :destroy
   has_many :prompts, -> { where(project_id: nil) }, dependent: :destroy
   has_many :all_prompts, class_name: "Prompt"
+  has_many :strategies, -> { where(project_id: nil) }, dependent: :destroy
+  has_many :all_strategies, class_name: "Strategy"
   has_many :style_guides, -> { where(project_id: nil) }, dependent: :destroy
   has_many :mcp_server_definitions, dependent: :destroy
   has_many :notifications, dependent: :destroy

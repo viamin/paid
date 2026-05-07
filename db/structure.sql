@@ -1828,8 +1828,6 @@ CREATE TABLE public.exception_incidents (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
-ALTER TABLE ONLY public.exception_incidents FORCE ROW LEVEL SECURITY;
-
 
 --
 -- Name: exception_incidents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -3080,7 +3078,8 @@ CREATE TABLE public.orchestration_decisions (
     outputs jsonb DEFAULT '{}'::jsonb NOT NULL,
     outcome_references jsonb DEFAULT '[]'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    strategy_version_id bigint
 );
 
 ALTER TABLE ONLY public.orchestration_decisions FORCE ROW LEVEL SECURITY;
@@ -4342,6 +4341,257 @@ ALTER SEQUENCE public.service_containers_id_seq OWNED BY public.service_containe
 
 
 --
+-- Name: strategies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategies (
+    id bigint NOT NULL,
+    slug character varying(100) NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    decision_type character varying(100) NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    selection_rules jsonb DEFAULT '{}'::jsonb NOT NULL,
+    account_id bigint,
+    project_id bigint,
+    current_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_strategies_scope_consistency CHECK (((project_id IS NULL) OR (account_id IS NOT NULL)))
+);
+
+
+--
+-- Name: TABLE strategies; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategies IS 'Scoped orchestration strategies selected for workflow decisions.';
+
+
+--
+-- Name: COLUMN strategies.slug; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.slug IS 'Stable identifier used to resolve a strategy within its scope.';
+
+
+--
+-- Name: COLUMN strategies.name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.name IS 'Human-readable strategy name.';
+
+
+--
+-- Name: COLUMN strategies.description; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.description IS 'Optional description of when and why this strategy should be selected.';
+
+
+--
+-- Name: COLUMN strategies.decision_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.decision_type IS 'Workflow decision boundary this strategy governs, such as issue_execution or retry.';
+
+
+--
+-- Name: COLUMN strategies.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.status IS 'Lifecycle state controlling whether the strategy is eligible for selection.';
+
+
+--
+-- Name: COLUMN strategies.selection_rules; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.selection_rules IS 'Structured scope and context rules used to select the strategy.';
+
+
+--
+-- Name: COLUMN strategies.account_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.account_id IS 'Owning account for account-scoped and project-scoped strategies.';
+
+
+--
+-- Name: COLUMN strategies.project_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.project_id IS 'Owning project for project-specific strategy overrides.';
+
+
+--
+-- Name: COLUMN strategies.current_version_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategies.current_version_id IS 'Currently promoted strategy version used by selection.';
+
+
+--
+-- Name: strategies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.strategies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: strategies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.strategies_id_seq OWNED BY public.strategies.id;
+
+
+--
+-- Name: strategy_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategy_versions (
+    id bigint NOT NULL,
+    strategy_id bigint NOT NULL,
+    version integer NOT NULL,
+    content jsonb DEFAULT '{}'::jsonb NOT NULL,
+    provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
+    promotion_state character varying(20) DEFAULT 'draft'::character varying NOT NULL,
+    reasoning text,
+    change_notes text,
+    created_by character varying(50),
+    created_by_user_id bigint,
+    parent_version_id bigint,
+    promoted_by_user_id bigint,
+    promoted_at timestamp(6) without time zone,
+    retired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE strategy_versions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategy_versions IS 'Versioned orchestration strategy payloads and promotion history.';
+
+
+--
+-- Name: COLUMN strategy_versions.strategy_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.strategy_id IS 'Parent strategy whose behavior this version defines.';
+
+
+--
+-- Name: COLUMN strategy_versions.version; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.version IS 'Monotonic version number within a strategy.';
+
+
+--
+-- Name: COLUMN strategy_versions.content; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.content IS 'Structured orchestration behavior moved out of hardcoded workflow logic.';
+
+
+--
+-- Name: COLUMN strategy_versions.provenance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.provenance IS 'Origin metadata such as manual creation, evolution run, or experiment lineage.';
+
+
+--
+-- Name: COLUMN strategy_versions.promotion_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.promotion_state IS 'Promotion lifecycle state for this version.';
+
+
+--
+-- Name: COLUMN strategy_versions.reasoning; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.reasoning IS 'Why this version exists or differs from its parent.';
+
+
+--
+-- Name: COLUMN strategy_versions.change_notes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.change_notes IS 'Operator- or workflow-authored notes about the change.';
+
+
+--
+-- Name: COLUMN strategy_versions.created_by; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.created_by IS 'Origin label such as seed, human, or evolution.';
+
+
+--
+-- Name: COLUMN strategy_versions.created_by_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.created_by_user_id IS 'User who created the version when applicable.';
+
+
+--
+-- Name: COLUMN strategy_versions.parent_version_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.parent_version_id IS 'Previous version this candidate was derived from.';
+
+
+--
+-- Name: COLUMN strategy_versions.promoted_by_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.promoted_by_user_id IS 'User who promoted this version to current.';
+
+
+--
+-- Name: COLUMN strategy_versions.promoted_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.promoted_at IS 'When this version became current.';
+
+
+--
+-- Name: COLUMN strategy_versions.retired_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_versions.retired_at IS 'When this version stopped being eligible for execution.';
+
+
+--
+-- Name: strategy_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.strategy_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: strategy_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.strategy_versions_id_seq OWNED BY public.strategy_versions.id;
+
+
+--
 -- Name: style_guides; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5304,6 +5554,20 @@ ALTER TABLE ONLY public.service_containers ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
+-- Name: strategies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategies ALTER COLUMN id SET DEFAULT nextval('public.strategies_id_seq'::regclass);
+
+
+--
+-- Name: strategy_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_versions ALTER COLUMN id SET DEFAULT nextval('public.strategy_versions_id_seq'::regclass);
+
+
+--
 -- Name: style_guides id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6013,6 +6277,22 @@ ALTER TABLE ONLY public.service_container_metrics
 
 ALTER TABLE ONLY public.service_containers
     ADD CONSTRAINT service_containers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: strategies strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategies
+    ADD CONSTRAINT strategies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: strategy_versions strategy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_versions
+    ADD CONSTRAINT strategy_versions_pkey PRIMARY KEY (id);
 
 
 --
@@ -8075,6 +8355,13 @@ CREATE UNIQUE INDEX index_onboarding_steps_on_account_id_and_step ON public.onbo
 
 
 --
+-- Name: index_orchestration_decisions_on_strategy_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_decisions_on_strategy_version_id ON public.orchestration_decisions USING btree (strategy_version_id);
+
+
+--
 -- Name: index_pr_templates_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8656,6 +8943,125 @@ CREATE UNIQUE INDEX index_service_containers_on_account_id_and_name ON public.se
 
 
 --
+-- Name: index_strategies_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategies_on_account_id ON public.strategies USING btree (account_id);
+
+
+--
+-- Name: index_strategies_on_current_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategies_on_current_version_id ON public.strategies USING btree (current_version_id);
+
+
+--
+-- Name: index_strategies_on_decision_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategies_on_decision_type ON public.strategies USING btree (decision_type);
+
+
+--
+-- Name: index_strategies_on_decision_type_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategies_on_decision_type_and_status ON public.strategies USING btree (decision_type, status);
+
+
+--
+-- Name: index_strategies_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategies_on_project_id ON public.strategies USING btree (project_id);
+
+
+--
+-- Name: index_strategies_on_slug_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategies_on_slug_account ON public.strategies USING btree (slug, account_id) WHERE ((account_id IS NOT NULL) AND (project_id IS NULL));
+
+
+--
+-- Name: index_strategies_on_slug_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategies_on_slug_global ON public.strategies USING btree (slug) WHERE ((account_id IS NULL) AND (project_id IS NULL));
+
+
+--
+-- Name: index_strategies_on_slug_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategies_on_slug_project ON public.strategies USING btree (slug, project_id) WHERE (project_id IS NOT NULL);
+
+
+--
+-- Name: index_strategies_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategies_on_status ON public.strategies USING btree (status);
+
+
+--
+-- Name: index_strategy_versions_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_versions_on_created_by_user_id ON public.strategy_versions USING btree (created_by_user_id);
+
+
+--
+-- Name: index_strategy_versions_on_parent_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_versions_on_parent_version_id ON public.strategy_versions USING btree (parent_version_id);
+
+
+--
+-- Name: index_strategy_versions_on_promoted_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_versions_on_promoted_by_user_id ON public.strategy_versions USING btree (promoted_by_user_id);
+
+
+--
+-- Name: index_strategy_versions_on_retired_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_versions_on_retired_at ON public.strategy_versions USING btree (retired_at);
+
+
+--
+-- Name: index_strategy_versions_on_strategy_and_promotion_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_versions_on_strategy_and_promotion_state ON public.strategy_versions USING btree (strategy_id, promotion_state);
+
+
+--
+-- Name: index_strategy_versions_on_strategy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_versions_on_strategy_id ON public.strategy_versions USING btree (strategy_id);
+
+
+--
+-- Name: index_strategy_versions_on_strategy_id_and_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategy_versions_on_strategy_id_and_version ON public.strategy_versions USING btree (strategy_id, version);
+
+
+--
+-- Name: index_strategy_versions_one_active_per_strategy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategy_versions_one_active_per_strategy ON public.strategy_versions USING btree (strategy_id) WHERE ((promotion_state)::text = 'active'::text);
+
+
+--
 -- Name: index_style_guides_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8969,6 +9375,14 @@ ALTER TABLE ONLY public.agent_coordination_signals
 
 
 --
+-- Name: strategy_versions fk_rails_143cac24ec; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_versions
+    ADD CONSTRAINT fk_rails_143cac24ec FOREIGN KEY (parent_version_id) REFERENCES public.strategy_versions(id) ON DELETE SET NULL;
+
+
+--
 -- Name: providers fk_rails_173128f3bd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9177,11 +9591,27 @@ ALTER TABLE ONLY public.billing_periods
 
 
 --
+-- Name: strategies fk_rails_41b938f51d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategies
+    ADD CONSTRAINT fk_rails_41b938f51d FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: prompt_versions fk_rails_45761f0a57; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prompt_versions
     ADD CONSTRAINT fk_rails_45761f0a57 FOREIGN KEY (prompt_id) REFERENCES public.prompts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: orchestration_decisions fk_rails_45e5d15e5a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decisions
+    ADD CONSTRAINT fk_rails_45e5d15e5a FOREIGN KEY (strategy_version_id) REFERENCES public.strategy_versions(id) ON DELETE SET NULL;
 
 
 --
@@ -9329,6 +9759,14 @@ ALTER TABLE ONLY public.quality_pause_events
 
 
 --
+-- Name: strategies fk_rails_6691e72c8d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategies
+    ADD CONSTRAINT fk_rails_6691e72c8d FOREIGN KEY (current_version_id) REFERENCES public.strategy_versions(id) ON DELETE SET NULL;
+
+
+--
 -- Name: style_guides fk_rails_6c20f86430; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9361,11 +9799,27 @@ ALTER TABLE ONLY public.project_service_containers
 
 
 --
+-- Name: strategies fk_rails_724cbfabf5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategies
+    ADD CONSTRAINT fk_rails_724cbfabf5 FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: provider_states fk_rails_754bcfbe12; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.provider_states
     ADD CONSTRAINT fk_rails_754bcfbe12 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: strategy_versions fk_rails_77eb307a0a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_versions
+    ADD CONSTRAINT fk_rails_77eb307a0a FOREIGN KEY (promoted_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -9390,6 +9844,14 @@ ALTER TABLE ONLY public.tenant_settings
 
 ALTER TABLE ONLY public.provider_api_keys
     ADD CONSTRAINT fk_rails_7e4f482b74 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: strategy_versions fk_rails_7f4c802b11; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_versions
+    ADD CONSTRAINT fk_rails_7f4c802b11 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -9897,6 +10359,14 @@ ALTER TABLE ONLY public.issue_dependencies
 
 
 --
+-- Name: strategy_versions fk_rails_de250fbe47; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_versions
+    ADD CONSTRAINT fk_rails_de250fbe47 FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE CASCADE;
+
+
+--
 -- Name: exception_incidents fk_rails_dfbab0a98f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10211,12 +10681,6 @@ ALTER TABLE public.decision_records ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.decomposition_decisions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exception_incidents; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.exception_incidents ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: github_tokens; Type: ROW SECURITY; Schema: public; Owner: -
@@ -10752,13 +11216,6 @@ CREATE POLICY tenant_isolation ON public.decomposition_decisions USING ((public.
 
 
 --
--- Name: exception_incidents tenant_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tenant_isolation ON public.exception_incidents USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
-
-
---
 -- Name: github_tokens tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11234,17 +11691,13 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
-   FROM public.chat_sessions
-  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
-   FROM public.chat_sessions
-  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -11632,6 +12085,8 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507202027'),
+('20260507195716'),
 ('20260507164917'),
 ('20260507125050'),
 ('20260507011753'),

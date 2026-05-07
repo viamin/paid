@@ -144,6 +144,7 @@ class Project < ApplicationRecord
   has_many :token_usages, through: :agent_runs
   has_many :workflow_states, dependent: :destroy
   has_many :prompts, dependent: :destroy
+  has_many :strategies, dependent: :destroy
   has_many :style_guides, dependent: :destroy
   has_many :project_versions, dependent: :destroy
   has_many :knowledge_artifacts, dependent: :destroy

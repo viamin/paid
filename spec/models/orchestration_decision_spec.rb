@@ -8,6 +8,7 @@ RSpec.describe OrchestrationDecision do
   describe "associations" do
     it { is_expected.to belong_to(:project).without_validating_presence }
     it { is_expected.to belong_to(:agent_run).optional }
+    it { is_expected.to belong_to(:strategy_version).optional }
   end
 
   describe "validations" do

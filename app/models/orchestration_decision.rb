@@ -3,6 +3,7 @@
 class OrchestrationDecision < ApplicationRecord
   belongs_to :project
   belongs_to :agent_run, optional: true
+  belongs_to :strategy_version, optional: true
 
   before_validation :assign_project_from_agent_run
 
