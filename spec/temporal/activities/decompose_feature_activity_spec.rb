@@ -33,6 +33,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
     before do
       allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      allow(Prompt).to receive(:resolve).and_return(nil)
       # Default: preserve CLI transport so existing exact-match expectations
       # pass. Individual specs flip this on to prove text-mode routing.
       allow(Llm::TextMode).to receive(:options).and_return({})
