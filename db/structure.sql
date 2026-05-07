@@ -10140,6 +10140,12 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.onboarding_steps ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: orchestration_decision_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.orchestration_decision_events ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: pr_templates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10763,6 +10769,17 @@ CREATE POLICY tenant_isolation ON public.notifications USING ((public.paid_tenan
 --
 
 CREATE POLICY tenant_isolation ON public.onboarding_steps USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
+-- Name: orchestration_decision_events tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.orchestration_decision_events USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = orchestration_decision_events.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = orchestration_decision_events.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --

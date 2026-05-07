@@ -47,5 +47,28 @@ class CreateOrchestrationDecisionEvents < ActiveRecord::Migration[8.1]
       name: "idx_orch_decision_events_issue_action_sequence"
     add_index :orchestration_decision_events, [ :agent_run_id, :action, :sequence ],
       name: "idx_orch_decision_events_run_action_sequence"
+
+    reversible do |dir|
+      dir.up do
+        execute <<~SQL
+          ALTER TABLE orchestration_decision_events ENABLE ROW LEVEL SECURITY;
+          CREATE POLICY tenant_isolation ON orchestration_decision_events
+            USING  (paid_tenant_bypass() OR EXISTS (
+              SELECT 1 FROM projects
+              WHERE projects.id = orchestration_decision_events.project_id
+                AND projects.account_id = paid_current_account_id()))
+            WITH CHECK (paid_tenant_bypass() OR EXISTS (
+              SELECT 1 FROM projects
+              WHERE projects.id = orchestration_decision_events.project_id
+                AND projects.account_id = paid_current_account_id()));
+        SQL
+      end
+      dir.down do
+        execute <<~SQL
+          DROP POLICY IF EXISTS tenant_isolation ON orchestration_decision_events;
+          ALTER TABLE orchestration_decision_events DISABLE ROW LEVEL SECURITY;
+        SQL
+      end
+    end
   end
 end

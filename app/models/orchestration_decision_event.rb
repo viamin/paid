@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "zlib"
+
 class OrchestrationDecisionEvent < ApplicationRecord
   ACTIONS = %w[retry pause resume escalate].freeze
   STATUSES = %w[applied noop failed].freeze
@@ -36,6 +38,25 @@ class OrchestrationDecisionEvent < ApplicationRecord
     )
   end
 
+  # Non-bang variant that silently swallows failures. Use this inside rescue
+  # blocks so a logging failure cannot mask the original exception.
+  def self.record(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
+    record!(
+      project: project, issue: issue, agent_run: agent_run,
+      decision_point: decision_point, action: action, status: status,
+      signals: signals, result: result
+    )
+  rescue StandardError => e
+    Rails.logger.warn(
+      message: "orchestration_decision.record_failed",
+      decision_point: decision_point,
+      action: action,
+      error_class: e.class.name,
+      error_message: e.message
+    )
+    nil
+  end
+
   private
 
   def normalize_payloads
@@ -49,7 +70,14 @@ class OrchestrationDecisionEvent < ApplicationRecord
     self.sequence = next_sequence
   end
 
+  # Uses an advisory lock scoped to the (project, action, target) tuple to
+  # prevent TOCTOU races where two concurrent record! calls read the same max
+  # and assign duplicate sequence numbers.
   def next_sequence
+    lock_key = Zlib.crc32("orch_decision:#{project_id}:#{action}:#{issue_id || "run:#{agent_run_id}"}")
+
+    self.class.connection.execute("SELECT pg_advisory_xact_lock(#{lock_key.to_i})")
+
     scope = self.class.where(project_id: project_id, action: action)
 
     scope = if issue_id.present?
