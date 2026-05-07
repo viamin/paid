@@ -8,6 +8,7 @@ RSpec.describe AgentRun do
     it { is_expected.to belong_to(:issue).optional }
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
     it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
+    it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
   end
 
   describe "validations" do

@@ -3066,6 +3066,109 @@ ALTER SEQUENCE public.onboarding_steps_id_seq OWNED BY public.onboarding_steps.i
 
 
 --
+-- Name: orchestration_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.orchestration_decisions (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    agent_run_id bigint,
+    decision_type character varying(100) NOT NULL,
+    actor character varying(100) NOT NULL,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    inputs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    outputs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    outcome_references jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.orchestration_decisions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE orchestration_decisions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.orchestration_decisions IS 'Structured log of orchestration decisions for later workflow analysis and learning.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.project_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.project_id IS 'Owning project for tenant isolation and project-level analysis.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.agent_run_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.agent_run_id IS 'Agent run whose workflow emitted the decision when a specific run exists.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.decision_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.decision_type IS 'Decision category such as decompose, select_agent, parallelize, retry, or escalate.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.actor; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.actor IS 'Component or role that made the decision, such as workflow, planner, scheduler, or human.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.context; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.context IS 'Context snapshot used to make the decision, typically issue, project, and workflow features.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.inputs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.inputs IS 'Structured inputs or options considered before the decision.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.outputs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.outputs IS 'Structured payload describing what the workflow decided.';
+
+
+--
+-- Name: COLUMN orchestration_decisions.outcome_references; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_decisions.outcome_references IS 'References to later runs, metrics, or artifacts used to attribute outcomes back to this decision.';
+
+
+--
+-- Name: orchestration_decisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.orchestration_decisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: orchestration_decisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.orchestration_decisions_id_seq OWNED BY public.orchestration_decisions.id;
+
+
+--
 -- Name: pr_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5040,6 +5143,13 @@ ALTER TABLE ONLY public.onboarding_steps ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: orchestration_decisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decisions ALTER COLUMN id SET DEFAULT nextval('public.orchestration_decisions_id_seq'::regclass);
+
+
+--
 -- Name: pr_templates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5715,6 +5825,14 @@ ALTER TABLE ONLY public.onboarding_steps
 
 
 --
+-- Name: orchestration_decisions orchestration_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decisions
+    ADD CONSTRAINT orchestration_decisions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pr_templates pr_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6176,6 +6294,41 @@ CREATE INDEX idx_on_project_id_recommendation_type_333faaed2e ON public.knowledg
 --
 
 CREATE INDEX idx_on_project_id_status_warmed_at_d791387888 ON public.container_pool_entries USING btree (project_id, status, warmed_at);
+
+
+--
+-- Name: idx_orchestration_decisions_project_actor_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_project_actor_created ON public.orchestration_decisions USING btree (project_id, actor, created_at);
+
+
+--
+-- Name: idx_orchestration_decisions_project_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_project_recent ON public.orchestration_decisions USING btree (project_id, created_at, id);
+
+
+--
+-- Name: idx_orchestration_decisions_project_type_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_project_type_created ON public.orchestration_decisions USING btree (project_id, decision_type, created_at);
+
+
+--
+-- Name: idx_orchestration_decisions_run_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_run_recent ON public.orchestration_decisions USING btree (agent_run_id, created_at, id);
+
+
+--
+-- Name: idx_orchestration_decisions_run_type_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orchestration_decisions_run_type_created ON public.orchestration_decisions USING btree (agent_run_id, decision_type, created_at);
 
 
 --
@@ -8969,6 +9122,14 @@ ALTER TABLE ONLY public.knowledge_artifacts
 
 
 --
+-- Name: orchestration_decisions fk_rails_373dda1f87; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decisions
+    ADD CONSTRAINT fk_rails_373dda1f87 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE SET NULL;
+
+
+--
 -- Name: linear_tokens fk_rails_377d92966e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9486,6 +9647,14 @@ ALTER TABLE ONLY public.pre_commit_requirements
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT fk_rails_b080fb4855 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: orchestration_decisions fk_rails_b0ebd4e80f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_decisions
+    ADD CONSTRAINT fk_rails_b0ebd4e80f FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
 
 
 --
@@ -10157,6 +10326,12 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.onboarding_steps ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: orchestration_decisions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.orchestration_decisions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: pr_templates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10557,6 +10732,7 @@ CREATE POLICY tenant_isolation ON public.decision_records USING ((public.paid_te
    FROM public.projects
   WHERE ((projects.id = decision_records.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
+
 --
 -- Name: decomposition_decisions tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
@@ -10790,6 +10966,17 @@ CREATE POLICY tenant_isolation ON public.notifications USING ((public.paid_tenan
 --
 
 CREATE POLICY tenant_isolation ON public.onboarding_steps USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
+-- Name: orchestration_decisions tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.orchestration_decisions USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = orchestration_decisions.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = orchestration_decisions.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --
@@ -11438,6 +11625,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260507164917'),
 ('20260507125050'),
 ('20260507011753'),
 ('20260506175107'),
@@ -11689,3 +11877,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
+
