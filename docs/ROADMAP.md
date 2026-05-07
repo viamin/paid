@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) complete as of 2026-05-07. Phase 4 (AI-Native Evolution) is next.
+**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Provider Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) is next.
 
 ## Phase Overview
 
@@ -600,7 +600,7 @@ Deliverables:
 
 **Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-provider must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
 
-**Status**: Complete. All sections done. Section 3.5.4 (Performance Fundamentals) complete. Section 3.5.6 (Provider Quota Tracking) Steps 1–2 complete; Steps 3–6 deferred to Phase 4.
+**Status**: Substantially complete. Section 3.5.4 (Performance Fundamentals) is complete. Section 3.5.6 (Provider Quota Tracking) Step 1 has one remaining task (`Add per-provider circuit breaker history`); Step 2 is complete; Steps 3–6 are deferred to Phase 4.
 
 ### 3.5.1 Security & Reliability
 
@@ -846,7 +846,7 @@ Deliverables:
 - [x] Self-healing exception handling with auto-issue filing
 - [x] Screenshot visual regression for PRs with UI changes
 
-**Phase 3.5 completed**: All hardening work verified as of 2026-05-07.
+**Phase 3.5 substantially complete**: All hardening work except `Add per-provider circuit breaker history` verified as of 2026-05-07.
 
 ### 3.5.7 Interactive Chat
 
