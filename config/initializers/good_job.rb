@@ -127,6 +127,11 @@ Rails.application.configure do
       class: "KnowledgeAuditRetentionJob",
       description: "Delete knowledge audit events older than 90 days"
     },
+    screenshot_cleanup: {
+      cron: "30 3 * * *",
+      class: "ScreenshotCleanupJob",
+      description: "Delete uploaded screenshots older than the retention window"
+    },
     orphan_branch_reaper: {
       cron: "0 * * * *",
       class: "OrphanBranchReaperJob",
