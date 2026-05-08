@@ -220,7 +220,7 @@ module Projects
         .group(:configuration_experiment_variant_id)
         .pluck(
           Arel.sql("configuration_experiment_variant_id"),
-          Arel.sql("COUNT(*)"),
+          Arel.sql("COUNT(quality_score)"),
           Arel.sql("AVG(quality_score)")
         )
 
@@ -293,12 +293,7 @@ module Projects
     def active_experiments
       @active_experiments ||= ConfigurationExperiment
         .running
-        .where(
-          id: ConfigurationExperimentAssignment
-            .joins(:agent_run)
-            .where(agent_runs: { project_id: project.id })
-            .select(:configuration_experiment_id)
-        )
+        .where(account_id: [ project.account_id, nil ])
         .distinct
         .order(:id)
         .to_a
