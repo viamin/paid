@@ -59,6 +59,25 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(result[:phase]).to eq("ready")
         expect(result[:current_followup_count]).to eq(0)
       end
+
+      it "records a resume decision event" do
+        expect {
+          activity.execute(issue_id: issue.id)
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        event = OrchestrationDecision.last
+        expect(event.decision_type).to eq("resume")
+        expect(event.context["decision_status"]).to eq("applied")
+      end
+
+      it "still returns dismissed: true when decision logging fails" do
+        allow(OrchestrationDecision).to receive(:record!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result[:dismissed]).to be true
+        expect(issue.reload.pr_review_phase).to eq("ready")
+      end
     end
 
     context "when the escalated PR is still draft" do
@@ -89,9 +108,12 @@ RSpec.describe Activities::DismissEscalationActivity do
       end
 
       it "returns dismissed: false" do
-        result = activity.execute(issue_id: issue.id)
+        expect {
+          result = activity.execute(issue_id: issue.id)
+          expect(result[:dismissed]).to be false
+        }.to change(OrchestrationDecision, :count).by(1)
 
-        expect(result[:dismissed]).to be false
+        expect(OrchestrationDecision.last.context["decision_status"]).to eq("noop")
       end
 
       it "does not change the phase" do

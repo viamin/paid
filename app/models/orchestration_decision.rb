@@ -20,6 +20,48 @@ class OrchestrationDecision < ApplicationRecord
   scope :by_actor, ->(actor) { where(actor: actor) }
   scope :recent, -> { order(created_at: :desc, id: :desc) }
 
+  # Convenience factory for retry/escalation decision logging. Maps the
+  # action/decision_point/signals/result interface used by orchestration
+  # callers onto the generic OrchestrationDecision schema.
+  def self.record!(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
+    ctx = {}
+    ctx[:issue_id] = issue.id if issue
+    ctx[:decision_status] = status
+
+    create!(
+      project: project,
+      agent_run: agent_run,
+      decision_type: action,
+      actor: decision_point,
+      context: ctx,
+      inputs: signals,
+      outputs: result,
+      outcome_references: []
+    )
+  end
+
+  # Non-bang variant that silently swallows failures. Use this inside rescue
+  # blocks or lifecycle transactions so a logging failure cannot mask the
+  # original exception or poison the caller's transaction.
+  def self.record(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
+    transaction(requires_new: true) do
+      record!(
+        project: project, issue: issue, agent_run: agent_run,
+        decision_point: decision_point, action: action, status: status,
+        signals: signals, result: result
+      )
+    end
+  rescue StandardError => e
+    Rails.logger.warn(
+      message: "orchestration_decision.record_failed",
+      decision_point: decision_point,
+      action: action,
+      error_class: e.class.name,
+      error_message: e.message
+    )
+    nil
+  end
+
   private
 
   def assign_project_from_agent_run
