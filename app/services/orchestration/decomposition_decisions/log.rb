@@ -142,6 +142,15 @@ module Orchestration
           },
           outcome_references: []
         )
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "decomposition.orchestration_decision_failed",
+          project_id: project_id,
+          decision_key: decision_key,
+          error_class: e.class.name,
+          error: e.message
+        )
+        nil
       end
 
       def orchestration_status

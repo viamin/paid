@@ -144,5 +144,25 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
         ).count
       ).to eq(1)
     end
+
+    it "does not mask the decomposition decision when orchestration mirroring fails" do
+      allow(OrchestrationDecision).to receive(:create!).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(Rails.logger).to receive(:warn)
+
+      decision = described_class.call(**payload)
+
+      expect(decision).to be_persisted
+      expect(decision.decision_key).to eq(payload[:decision_key])
+      expect(DecompositionDecision.find_by(decision_key: payload[:decision_key])).to eq(decision)
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "decomposition.orchestration_decision_failed",
+          project_id: project.id,
+          decision_key: payload[:decision_key],
+          error_class: "ActiveRecord::StatementInvalid",
+          error: "boom"
+        )
+      )
+    end
   end
 end
