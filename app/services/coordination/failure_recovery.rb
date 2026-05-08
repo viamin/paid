@@ -16,11 +16,11 @@ module Coordination
       "rate_limit" => [ /RateLimit/i, /rate.?limit/i, /\b429\b/ ],
       "auth_failure" => [ /AuthenticationError/i, /auth.?expir/i, /unauthorized/i, /\b403\b/ ],
       "timeout" => [ /timeout/i, /timed?\s*out/i ],
-      "provider_error" => [ /AllProvidersExhausted/i, /ProxyUnavailable/i, /provider/i ],
-      "container_error" => [ /ContainerNotProvisioned/i, /container/i, /docker/i ],
-      "prompt_error" => [ /MissingPrompt/i, /prompt/i ],
-      "dependency_failure" => [ /dependency.?fail/i, /blocked/i ],
-      "configuration_error" => [ /McpProvisioningFailed/i, /config/i, /MissingUser/i ]
+      "provider_error" => [ /AllProvidersExhausted/i, /ProxyUnavailable/i, /\bprovider.?(error|fail)/i ],
+      "container_error" => [ /ContainerNotProvisioned/i, /\bcontainer.?(error|fail)/i, /\bdocker.?(error|fail)/i ],
+      "prompt_error" => [ /MissingPrompt/i, /\bprompt.?(error|fail|missing)/i ],
+      "dependency_failure" => [ /dependency.?fail/i, /\bblocked.?by\b/i ],
+      "configuration_error" => [ /McpProvisioningFailed/i, /\bconfig\w*.?(error|fail|invalid)/i, /MissingUser/i ]
     }.freeze
 
     DEFAULT_POLICY = {
