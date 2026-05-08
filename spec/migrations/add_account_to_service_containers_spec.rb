@@ -9,18 +9,13 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
+require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
+require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
+require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
-
-  let(:migration) { described_class.new }
-  let(:rls_migration) { EnableTenantRowLevelSecurity.new }
-  let(:knowledge_rls_migration) { EnableRlsOnKnowledgeUsageStats.new }
-  let(:notification_rls_migration) { EnableRlsOnNotificationRuleStates.new }
-  let(:llm_output_metrics_rls_migration) { EnableRlsOnLlmOutputMetrics.new }
-  let(:chat_rls_migration) { EnableRlsOnChatTables.new }
-  let(:knowledge_recommendations_rls_migration) { EnableRlsOnKnowledgeRecommendations.new }
-  let(:issue_merge_subscriptions_rls_migration) { EnableRlsOnIssueMergeSubscriptions.new }
 
   include MigrationSpecHelpers
 
@@ -28,6 +23,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     if tenant_policy_count.positive?
+      strategy_experiments_rls_migration.down if strategy_experiment_tables_have_rls?
+      orchestration_decisions_migration.down if orchestration_decisions_table_exists?
+      disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
+      exception_incidents_migration.down if exception_incidents_table_exists?
       issue_merge_subscriptions_rls_migration.down if issue_merge_subscriptions_have_rls?
       knowledge_recommendations_rls_migration.down if knowledge_recommendations_has_rls?
       chat_rls_migration.down if chat_tables_have_rls?
@@ -53,6 +52,9 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       chat_rls_migration.up unless chat_tables_have_rls?
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
       issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
+      exception_incidents_migration.up unless exception_incidents_table_exists?
+      orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
+      strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
     end
     ServiceContainer.reset_column_information
   end
@@ -239,6 +241,47 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ).to_i.positive?
   end
 
+  def strategy_experiment_tables_have_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i == 3
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE policyname = 'tenant_isolation'
+        AND tablename IN ('strategy_experiments', 'strategy_experiment_variants', 'strategy_experiment_assignments')
+    SQL
+  end
+
+  def exception_incidents_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'exception_incidents' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def exception_incidents_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
+  def decomposition_decisions_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def disable_decomposition_decisions_rls
+    ActiveRecord::Base.connection.execute("DROP POLICY IF EXISTS tenant_isolation ON decomposition_decisions")
+    ActiveRecord::Base.connection.execute("ALTER TABLE decomposition_decisions NO FORCE ROW LEVEL SECURITY")
+    ActiveRecord::Base.connection.execute("ALTER TABLE decomposition_decisions DISABLE ROW LEVEL SECURITY")
+  end
+
+  def orchestration_decisions_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decisions' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def orchestration_decisions_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:orchestration_decisions)
+  end
+
   def tenant_policy_count
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE policyname = 'tenant_isolation'"
@@ -256,5 +299,49 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     connection.remove_index(:service_containers, column: [ :account_id, :name ], if_exists: true)
     connection.remove_column(:service_containers, :account_id) if connection.column_exists?(:service_containers, :account_id)
     migration.up
+  end
+
+  def migration
+    @migration ||= described_class.new
+  end
+
+  def rls_migration
+    @rls_migration ||= EnableTenantRowLevelSecurity.new
+  end
+
+  def knowledge_rls_migration
+    @knowledge_rls_migration ||= EnableRlsOnKnowledgeUsageStats.new
+  end
+
+  def notification_rls_migration
+    @notification_rls_migration ||= EnableRlsOnNotificationRuleStates.new
+  end
+
+  def llm_output_metrics_rls_migration
+    @llm_output_metrics_rls_migration ||= EnableRlsOnLlmOutputMetrics.new
+  end
+
+  def chat_rls_migration
+    @chat_rls_migration ||= EnableRlsOnChatTables.new
+  end
+
+  def knowledge_recommendations_rls_migration
+    @knowledge_recommendations_rls_migration ||= EnableRlsOnKnowledgeRecommendations.new
+  end
+
+  def issue_merge_subscriptions_rls_migration
+    @issue_merge_subscriptions_rls_migration ||= EnableRlsOnIssueMergeSubscriptions.new
+  end
+
+  def exception_incidents_migration
+    @exception_incidents_migration ||= CreateExceptionIncidents.new
+  end
+
+  def orchestration_decisions_migration
+    @orchestration_decisions_migration ||= CreateOrchestrationDecisions.new
+  end
+
+  def strategy_experiments_rls_migration
+    @strategy_experiments_rls_migration ||= EnableRlsOnStrategyExperimentTables.new
   end
 end

@@ -109,7 +109,10 @@ module Issues
     private
 
     def strategy
-      @strategy ||= Automation::Strategies::AutoPick.new
+      @strategy ||= Automation::Strategies::Select.call(
+        strategy_type: :auto_pick,
+        project: @project
+      )
     end
 
     def should_sync_blocking_parent_reviews?

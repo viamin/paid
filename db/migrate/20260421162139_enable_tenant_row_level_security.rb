@@ -29,7 +29,6 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   PROJECT_TABLES = %w[
     agent_run_anomalies
     agent_runs
-    bundle_outcomes
     container_pool_entries
     context_intake_sessions
     cost_budgets
@@ -83,8 +82,6 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       enable_optional_account_policy(table)
     end
 
-    enable_policy("configuration_bundles", configuration_bundle_condition)
-
     PROJECT_TABLES.each do |table|
       enable_policy(table, project_condition(table))
     end
@@ -106,6 +103,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     enable_policy("agent_coordination_signals", coordination_signal_condition)
     enable_policy("billing_line_items", billing_line_item_condition)
     enable_policy("collector_runs", collector_run_condition)
+    enable_read_write_policy("configuration_bundles", optional_account_read_condition("configuration_bundles"), optional_account_write_condition("configuration_bundles"))
+    enable_policy("bundle_outcomes", bundle_outcome_condition)
     enable_policy("context_intake_responses", context_intake_response_condition)
     enable_policy("decision_record_links", decision_record_link_condition)
     enable_policy("issue_dependencies", issue_dependency_condition)
@@ -173,10 +172,14 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   end
 
   def enable_optional_account_policy(table)
-    read_condition = "#{table}.account_id IS NULL OR #{optional_account_write_condition(table)}"
+    read_condition = optional_account_read_condition(table)
     write_condition = optional_account_write_condition(table)
 
     enable_read_write_policy(table, read_condition, write_condition)
+  end
+
+  def optional_account_read_condition(table)
+    "#{table}.account_id IS NULL OR #{optional_account_write_condition(table)}"
   end
 
   def enable_read_write_policy(table, read_condition, write_condition)
@@ -320,13 +323,6 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
         WHERE projects.id = #{table}.project_id
           AND projects.account_id = paid_current_account_id()
       )
-    SQL
-  end
-
-  def configuration_bundle_condition
-    <<~SQL.squish
-      configuration_bundles.account_id IS NULL
-      OR configuration_bundles.account_id = paid_current_account_id()
     SQL
   end
 
@@ -586,6 +582,26 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     SQL
   end
 
+  def bundle_outcome_condition
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1
+        FROM configuration_bundles
+        INNER JOIN agent_runs
+          ON agent_runs.id = bundle_outcomes.agent_run_id
+        INNER JOIN projects
+          ON projects.id = agent_runs.project_id
+        WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
+          AND configuration_bundles.account_id = paid_current_account_id()
+          AND projects.account_id = paid_current_account_id()
+          AND (
+            configuration_bundles.project_id IS NULL
+            OR configuration_bundles.project_id = projects.id
+          )
+      )
+    SQL
+  end
+
   def tenant_tables
     [
       "accounts",
@@ -611,6 +627,9 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       "service_container_metrics",
       "knowledge_usage_stats",
       # Added by a later migration but depends on the same tenant helper functions.
+      "configuration_bundles",
+      "bundle_outcomes",
+      # Added by later migrations but depend on the same tenant helper functions.
       "orchestration_decisions",
       "token_usages",
       "tracker_configurations",

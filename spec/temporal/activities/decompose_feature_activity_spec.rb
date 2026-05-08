@@ -56,6 +56,159 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(result[:prompt_source]).to eq("fallback_prompt")
     end
 
+    context "when policy-based decomposition applies" do
+      let(:issue) do
+        create(
+          :issue,
+          project: project,
+          title: "Add notifications",
+          body: "Add database tables, service layer, API endpoints, and views for notifications."
+        )
+      end
+
+      it "uses Coordination::DecompositionService instead of the LLM path" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+        expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
+        expect(AgentHarness).not_to have_received(:send_message)
+      end
+    end
+
+    context "when a strategy exists without decomposition config and issue is below threshold" do
+      let(:project) { create(:project, account: account) }
+      let(:account) { create(:account) }
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account)
+      end
+
+      it "falls back to LLM decomposition" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(AgentHarness).to have_received(:send_message)
+      end
+    end
+
+    context "when a custom policy disables decomposition" do
+      let(:project) { create(:project, account: account) }
+      let(:account) { create(:account) }
+      let(:issue) do
+        create(
+          :issue,
+          project: project,
+          title: "Add notifications",
+          body: "Add database tables, service layer, API endpoints, and views for notifications."
+        )
+      end
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account,
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.merge(
+            "decomposition" => { "enabled" => false }
+          ))
+      end
+
+      it "returns the policy-based skip result without calling the LLM" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+        expect(result[:tasks]).to eq([])
+        expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
+        expect(AgentHarness).not_to have_received(:send_message)
+      end
+    end
+
+    context "when strategy resolution raises and issue is below threshold" do
+      before do
+        allow(OrchestrationStrategies::Resolve).to receive(:call)
+          .and_raise(StandardError, "connection timeout")
+      end
+
+      it "falls back to LLM decomposition instead of returning an empty plan" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(result[:tasks]).not_to be_empty
+        expect(AgentHarness).to have_received(:send_message)
+      end
+    end
+
+    context "when scope analysis raises" do
+      let(:logger) { instance_spy(Logger) }
+
+      before do
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(ScopeAnalysis::Analyze).to receive(:call)
+          .and_raise(StandardError, "scope failure")
+      end
+
+      it "logs and falls back to LLM decomposition" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(result[:tasks]).not_to be_empty
+        expect(AgentHarness).to have_received(:send_message)
+        expect(logger).to have_received(:warn).with(
+          message: "planning.policy_decomposition_failed",
+          error_class: "StandardError",
+          error: "scope failure"
+        )
+      end
+    end
+
+    context "when policy decomposition raises" do
+      let(:logger) { instance_spy(Logger) }
+      let(:scope_result) { double(sub_components: [ "api" ]) }
+
+      before do
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(ScopeAnalysis::Analyze).to receive(:call).and_return(scope_result)
+        allow(Coordination::DecompositionService).to receive(:call)
+          .and_raise(StandardError, "decomposition failure")
+      end
+
+      it "logs and falls back to LLM decomposition" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(result[:tasks]).not_to be_empty
+        expect(AgentHarness).to have_received(:send_message)
+        expect(logger).to have_received(:warn).with(
+          message: "planning.policy_decomposition_failed",
+          error_class: "StandardError",
+          error: "decomposition failure"
+        )
+      end
+    end
+
     it "calls AgentHarness with the correct provider and model" do
       activity.execute(
         project_id: project.id,

@@ -3,7 +3,7 @@
 module Analytics
   module OrchestrationDecisions
     class Report
-      def initialize(relation: DecisionRecord.all, filters: {})
+      def initialize(relation: OrchestrationDecision.all, filters: {})
         @relation = relation
         @filters = filters
       end

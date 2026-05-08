@@ -3,6 +3,13 @@
 module Orchestration
   module DecompositionDecisions
     class Log
+      NOOP_OUTCOMES = %w[
+        empty_plan
+        single_task_plan
+        parallel_execution_skipped_empty_plan
+        parallel_execution_skipped_single_task
+      ].freeze
+
       def self.call(...)
         new(...).call
       end
@@ -24,9 +31,9 @@ module Orchestration
 
       def call
         existing = DecompositionDecision.find_by(decision_key: decision_key)
-        return existing if existing
+        return existing.tap { ensure_orchestration_decision! } if existing
 
-        DecompositionDecision.create!(
+        decision = DecompositionDecision.create!(
           project_id: project_id,
           issue_id: issue_id,
           decision_key: decision_key,
@@ -40,8 +47,10 @@ module Orchestration
           error_details: error_details,
           metadata: metadata
         )
+        ensure_orchestration_decision!
+        decision
       rescue ActiveRecord::RecordNotUnique
-        DecompositionDecision.find_by!(decision_key: decision_key)
+        DecompositionDecision.find_by!(decision_key: decision_key).tap { ensure_orchestration_decision! }
       end
 
       private
@@ -93,6 +102,62 @@ module Orchestration
         else
           {}
         end
+      end
+
+      def ensure_orchestration_decision!
+        existing = OrchestrationDecision.find_by(
+          [
+            <<~SQL.squish,
+              project_id = ?
+              AND decision_type = ?
+              AND actor = ?
+              AND context ->> 'decision_key' = ?
+            SQL
+            project_id,
+            decision_type,
+            workflow_name,
+            decision_key
+          ]
+        )
+        return existing if existing
+
+        OrchestrationDecision.create!(
+          project_id: project_id,
+          decision_type: decision_type,
+          actor: workflow_name,
+          context: {
+            decision_key: decision_key,
+            workflow_id: workflow_id,
+            workflow_name: workflow_name,
+            issue_id: issue_id,
+            decision_status: orchestration_status
+          },
+          inputs: enriched_input_context,
+          outputs: {
+            outcome: outcome,
+            plan_data: plan_data,
+            hints: derived_hints,
+            error_details: error_details,
+            metadata: metadata
+          },
+          outcome_references: []
+        )
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "decomposition.orchestration_decision_failed",
+          project_id: project_id,
+          decision_key: decision_key,
+          error_class: e.class.name,
+          error: e.message
+        )
+        nil
+      end
+
+      def orchestration_status
+        return "failed" if error_details.present?
+        return "noop" if NOOP_OUTCOMES.include?(outcome)
+
+        "applied"
       end
     end
   end

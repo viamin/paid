@@ -3,10 +3,17 @@
 FactoryBot.define do
   factory :bundle_outcome do
     configuration_bundle
-    agent_run { association :agent_run, :completed, project: association(:project, account: configuration_bundle.account) }
-    project { agent_run.project }
-    context_features { { "project_language" => "ruby", "issue_complexity" => 0.6 } }
-    outcome_score { 0.72 }
-    component_scores { { "quality_score" => 0.72, "pr_created" => 1.0 } }
+    agent_run do
+      scoped_project = configuration_bundle.project || association(:project, account: configuration_bundle.account)
+      association :agent_run,
+        project: scoped_project,
+        issue: association(:issue, project: scoped_project)
+    end
+    quality_score { 0.85 }
+    duration_seconds { 120 }
+    cost_cents { 50 }
+    tokens_used { 5000 }
+    success { true }
+    metrics { {} }
   end
 end

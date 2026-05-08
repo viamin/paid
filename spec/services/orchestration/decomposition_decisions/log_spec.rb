@@ -38,6 +38,23 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       }
     end
 
+    def orchestration_decision_for(decision_key)
+      OrchestrationDecision.find_by!(
+        [
+          <<~SQL.squish,
+            project_id = ?
+            AND decision_type = ?
+            AND actor = ?
+            AND context ->> 'decision_key' = ?
+          SQL
+          project.id,
+          "planning_outcome",
+          "Workflows::PlanningWorkflow",
+          decision_key
+        ]
+      )
+    end
+
     it "persists structured context, plan data, and derived hints" do
       decision = described_class.call(**payload)
 
@@ -62,12 +79,90 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       expect(decision.metadata["prompt_source"]).to eq("fallback_prompt")
     end
 
+    it "mirrors the decomposition record into orchestration decisions" do
+      described_class.call(**payload)
+
+      orchestration_decision = OrchestrationDecision.find_by(
+        project: project,
+        decision_type: "planning_outcome",
+        actor: "Workflows::PlanningWorkflow"
+      )
+
+      expect(orchestration_decision).to be_present
+      expect(orchestration_decision.context).to include(
+        "decision_key" => payload[:decision_key],
+        "workflow_id" => payload[:workflow_id],
+        "decision_status" => "applied"
+      )
+      expect(orchestration_decision.inputs).to include(
+        "knowledge_results_count" => 2,
+        "issue" => include("id" => issue.id, "title" => "Add OAuth")
+      )
+      expect(orchestration_decision.outputs).to include(
+        "outcome" => "sub_issues_created",
+        "hints" => include("task_count" => 3)
+      )
+    end
+
+    it "marks skipped decomposition outcomes as noop" do
+      decision_key = "wf-123:planning_outcome:single-task"
+      described_class.call(**payload.merge(
+        decision_key: decision_key,
+        outcome: "single_task_plan",
+        plan_data: { tasks: [ { index: 0, title: "Only task", dependencies: [], parallel_group: 0 } ] }
+      ))
+      orchestration_decision = orchestration_decision_for(decision_key)
+
+      expect(orchestration_decision.context["decision_status"]).to eq("noop")
+      expect(orchestration_decision.outputs["outcome"]).to eq("single_task_plan")
+    end
+
+    it "marks failed decomposition outcomes as failed" do
+      decision_key = "wf-123:planning_outcome:failed"
+      described_class.call(**payload.merge(
+        decision_key: decision_key,
+        outcome: "decomposition_failed",
+        error_details: { error_message: "LLM failed" }
+      ))
+      orchestration_decision = orchestration_decision_for(decision_key)
+
+      expect(orchestration_decision.context["decision_status"]).to eq("failed")
+      expect(orchestration_decision.outputs["error_details"]).to include("error_message" => "LLM failed")
+    end
+
     it "is idempotent on decision_key" do
       first = described_class.call(**payload)
       second = described_class.call(**payload)
 
       expect(second.id).to eq(first.id)
       expect(DecompositionDecision.where(decision_key: payload[:decision_key]).count).to eq(1)
+      expect(
+        OrchestrationDecision.where(
+          project: project,
+          decision_type: "planning_outcome",
+          actor: "Workflows::PlanningWorkflow"
+        ).count
+      ).to eq(1)
+    end
+
+    it "does not mask the decomposition decision when orchestration mirroring fails" do
+      allow(OrchestrationDecision).to receive(:create!).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(Rails.logger).to receive(:warn)
+
+      decision = described_class.call(**payload)
+
+      expect(decision).to be_persisted
+      expect(decision.decision_key).to eq(payload[:decision_key])
+      expect(DecompositionDecision.find_by(decision_key: payload[:decision_key])).to eq(decision)
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "decomposition.orchestration_decision_failed",
+          project_id: project.id,
+          decision_key: payload[:decision_key],
+          error_class: "ActiveRecord::StatementInvalid",
+          error: "boom"
+        )
+      )
     end
   end
 end

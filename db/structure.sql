@@ -568,7 +568,8 @@ CREATE TABLE public.agent_runs (
     turns_completed integer DEFAULT 0 NOT NULL,
     streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL,
     mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
-    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL
+    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL,
+    configuration_bundle_id bigint
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -600,6 +601,13 @@ COMMENT ON COLUMN public.agent_runs.mcp_sidecar_container_ids IS 'Docker contain
 --
 
 COMMENT ON COLUMN public.agent_runs.mcp_provisioned_servers IS 'Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning';
+
+
+--
+-- Name: COLUMN agent_runs.configuration_bundle_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.configuration_bundle_id IS 'Configuration bundle assigned to the run before execution.';
 
 
 --
@@ -812,10 +820,12 @@ CREATE TABLE public.bundle_outcomes (
     id bigint NOT NULL,
     configuration_bundle_id bigint NOT NULL,
     agent_run_id bigint NOT NULL,
-    project_id bigint NOT NULL,
-    context_features jsonb DEFAULT '{}'::jsonb NOT NULL,
-    outcome_score numeric(5,4) NOT NULL,
-    component_scores jsonb DEFAULT '{}'::jsonb NOT NULL,
+    quality_score numeric(5,4),
+    duration_seconds integer,
+    cost_cents integer,
+    tokens_used integer,
+    success boolean DEFAULT false NOT NULL,
+    metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
@@ -827,49 +837,49 @@ ALTER TABLE ONLY public.bundle_outcomes FORCE ROW LEVEL SECURITY;
 -- Name: TABLE bundle_outcomes; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.bundle_outcomes IS 'Observed execution outcomes attributed to a specific configuration bundle and agent run.';
+COMMENT ON TABLE public.bundle_outcomes IS 'Measured results from using a configuration bundle on an agent run';
 
 
 --
--- Name: COLUMN bundle_outcomes.configuration_bundle_id; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN bundle_outcomes.quality_score; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.bundle_outcomes.configuration_bundle_id IS 'Bundle whose execution produced this outcome.';
-
-
---
--- Name: COLUMN bundle_outcomes.agent_run_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.bundle_outcomes.agent_run_id IS 'Agent run that executed the bundle.';
+COMMENT ON COLUMN public.bundle_outcomes.quality_score IS 'Overall quality score (0.0-1.0)';
 
 
 --
--- Name: COLUMN bundle_outcomes.project_id; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN bundle_outcomes.duration_seconds; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.bundle_outcomes.project_id IS 'Owning project used for tenant isolation and project-specific analysis.';
-
-
---
--- Name: COLUMN bundle_outcomes.context_features; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.bundle_outcomes.context_features IS 'Structured context captured at execution time for surrogate-model training.';
+COMMENT ON COLUMN public.bundle_outcomes.duration_seconds IS 'Wall-clock time for the agent run';
 
 
 --
--- Name: COLUMN bundle_outcomes.outcome_score; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN bundle_outcomes.cost_cents; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.bundle_outcomes.outcome_score IS 'Normalized objective value for the run, expected on the 0.0 to 1.0 scale.';
+COMMENT ON COLUMN public.bundle_outcomes.cost_cents IS 'Total cost of the agent run in cents';
 
 
 --
--- Name: COLUMN bundle_outcomes.component_scores; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN bundle_outcomes.tokens_used; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.bundle_outcomes.component_scores IS 'Supporting metrics that explain how the final outcome score was composed.';
+COMMENT ON COLUMN public.bundle_outcomes.tokens_used IS 'Total tokens (input + output) consumed';
+
+
+--
+-- Name: COLUMN bundle_outcomes.success; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.success IS 'Whether the agent run completed successfully';
+
+
+--
+-- Name: COLUMN bundle_outcomes.metrics; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.metrics IS 'Additional outcome metrics (lines changed, test pass rate, etc.)';
 
 
 --
@@ -1065,18 +1075,23 @@ ALTER SEQUENCE public.collector_runs_id_seq OWNED BY public.collector_runs.id;
 
 CREATE TABLE public.configuration_bundles (
     id bigint NOT NULL,
-    account_id bigint,
+    account_id bigint NOT NULL,
+    project_id bigint,
+    prompt_version_id bigint,
+    llm_model_id bigint,
+    version integer DEFAULT 1 NOT NULL,
     name character varying(255) NOT NULL,
     description text,
-    prompt_versions jsonb DEFAULT '{}'::jsonb NOT NULL,
-    model_preferences jsonb DEFAULT '{}'::jsonb NOT NULL,
-    orchestration_config jsonb DEFAULT '{}'::jsonb NOT NULL,
-    thresholds jsonb DEFAULT '{}'::jsonb NOT NULL,
-    context_selector jsonb DEFAULT '{}'::jsonb NOT NULL,
-    is_baseline boolean DEFAULT false NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
+    status character varying(50) DEFAULT 'draft'::character varying NOT NULL,
+    strategy character varying(100),
+    strategy_params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    fingerprint character varying(64),
+    activated_at timestamp(6) without time zone,
+    retired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    definition jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.configuration_bundles FORCE ROW LEVEL SECURITY;
@@ -1086,77 +1101,91 @@ ALTER TABLE ONLY public.configuration_bundles FORCE ROW LEVEL SECURITY;
 -- Name: TABLE configuration_bundles; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.configuration_bundles IS 'Versioned configuration bundles used by the outcome optimizer to select prompts, models, and orchestration settings.';
+COMMENT ON TABLE public.configuration_bundles IS 'Versioned snapshots of configuration components used for agent runs';
 
 
 --
--- Name: COLUMN configuration_bundles.account_id; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN configuration_bundles.project_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.configuration_bundles.account_id IS 'Owning account. Null means the bundle is globally visible across accounts.';
-
-
---
--- Name: COLUMN configuration_bundles.name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.configuration_bundles.name IS 'Human-readable label for the bundle.';
+COMMENT ON COLUMN public.configuration_bundles.project_id IS 'Optional project scope; NULL means account-wide bundle';
 
 
 --
--- Name: COLUMN configuration_bundles.description; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN configuration_bundles.prompt_version_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.configuration_bundles.description IS 'Optional explanation of what the bundle is intended to optimize.';
-
-
---
--- Name: COLUMN configuration_bundles.prompt_versions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.configuration_bundles.prompt_versions IS 'Prompt version selections keyed by workflow role, such as planning, coding, or review.';
+COMMENT ON COLUMN public.configuration_bundles.prompt_version_id IS 'The prompt template version included in this bundle';
 
 
 --
--- Name: COLUMN configuration_bundles.model_preferences; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN configuration_bundles.llm_model_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.configuration_bundles.model_preferences IS 'Model or provider preferences keyed by workflow role.';
-
-
---
--- Name: COLUMN configuration_bundles.orchestration_config; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.configuration_bundles.orchestration_config IS 'Orchestration settings such as retries, parallelism, or iteration limits.';
+COMMENT ON COLUMN public.configuration_bundles.llm_model_id IS 'The LLM model included in this bundle';
 
 
 --
--- Name: COLUMN configuration_bundles.thresholds; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN configuration_bundles.version; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.configuration_bundles.thresholds IS 'Quality, cost, or latency thresholds enforced for the bundle.';
-
-
---
--- Name: COLUMN configuration_bundles.context_selector; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.configuration_bundles.context_selector IS 'Optional matcher metadata describing where this bundle should be considered.';
+COMMENT ON COLUMN public.configuration_bundles.version IS 'Monotonic version number within the account/project scope';
 
 
 --
--- Name: COLUMN configuration_bundles.is_baseline; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN configuration_bundles.status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.configuration_bundles.is_baseline IS 'Marks the baseline configuration used before the optimizer has enough evidence.';
+COMMENT ON COLUMN public.configuration_bundles.status IS 'Lifecycle state: draft, active, retired';
 
 
 --
--- Name: COLUMN configuration_bundles.is_active; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN configuration_bundles.strategy; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.configuration_bundles.is_active IS 'Controls whether the optimizer may consider this bundle for selection.';
+COMMENT ON COLUMN public.configuration_bundles.strategy IS 'Orchestration strategy identifier (e.g. single_agent, multi_agent)';
+
+
+--
+-- Name: COLUMN configuration_bundles.strategy_params; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.strategy_params IS 'Strategy-specific parameters (concurrency, escalation thresholds, etc.)';
+
+
+--
+-- Name: COLUMN configuration_bundles.context; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.context IS 'Additional context such as guardrails, token budgets, or feature flags';
+
+
+--
+-- Name: COLUMN configuration_bundles.fingerprint; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.fingerprint IS 'Content-addressable hash for deduplication';
+
+
+--
+-- Name: COLUMN configuration_bundles.activated_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.activated_at IS 'When the bundle was promoted to active';
+
+
+--
+-- Name: COLUMN configuration_bundles.retired_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.retired_at IS 'When the bundle was retired';
+
+
+--
+-- Name: COLUMN configuration_bundles.definition; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.definition IS 'Canonical runtime configuration snapshot used for optimization and fingerprinting';
 
 
 --
@@ -3375,6 +3404,91 @@ ALTER SEQUENCE public.orchestration_decisions_id_seq OWNED BY public.orchestrati
 
 
 --
+-- Name: orchestration_strategies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.orchestration_strategies (
+    id bigint NOT NULL,
+    account_id bigint,
+    strategy_type character varying NOT NULL,
+    name character varying NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE orchestration_strategies; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.orchestration_strategies IS 'Persisted orchestration workflow configurations extracted from hardcoded defaults';
+
+
+--
+-- Name: COLUMN orchestration_strategies.account_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.account_id IS 'NULL = system-wide default; set = account-level override';
+
+
+--
+-- Name: COLUMN orchestration_strategies.strategy_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.strategy_type IS 'Category: review_settings, quality_gate, execution_timeouts, retry_policies, agent_settings, feature_orchestration, provider_resolution';
+
+
+--
+-- Name: COLUMN orchestration_strategies.name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.name IS 'Human-readable name for this strategy';
+
+
+--
+-- Name: COLUMN orchestration_strategies.version; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.version IS 'Monotonically increasing version for audit trail';
+
+
+--
+-- Name: COLUMN orchestration_strategies.configuration; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.configuration IS 'Strategy-specific configuration data';
+
+
+--
+-- Name: COLUMN orchestration_strategies.active; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.active IS 'Whether this strategy is currently in effect';
+
+
+--
+-- Name: orchestration_strategies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.orchestration_strategies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: orchestration_strategies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.orchestration_strategies_id_seq OWNED BY public.orchestration_strategies.id;
+
+
+--
 -- Name: pr_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4541,6 +4655,168 @@ ALTER SEQUENCE public.service_containers_id_seq OWNED BY public.service_containe
 
 
 --
+-- Name: strategy_experiment_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategy_experiment_assignments (
+    id bigint NOT NULL,
+    strategy_experiment_id bigint NOT NULL,
+    strategy_experiment_variant_id bigint NOT NULL,
+    agent_run_id bigint NOT NULL,
+    quality_score numeric(5,4),
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.strategy_experiment_assignments FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE strategy_experiment_assignments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategy_experiment_assignments IS 'Maps each agent run to the strategy variant it was assigned';
+
+
+--
+-- Name: strategy_experiment_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.strategy_experiment_assignments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: strategy_experiment_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.strategy_experiment_assignments_id_seq OWNED BY public.strategy_experiment_assignments.id;
+
+
+--
+-- Name: strategy_experiment_variants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategy_experiment_variants (
+    id bigint NOT NULL,
+    strategy_experiment_id bigint NOT NULL,
+    strategy_config text NOT NULL,
+    is_control boolean DEFAULT false NOT NULL,
+    sample_count integer DEFAULT 0 NOT NULL,
+    total_quality_score numeric(10,4) DEFAULT 0.0 NOT NULL,
+    avg_quality_score numeric(5,4),
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.strategy_experiment_variants FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE strategy_experiment_variants; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategy_experiment_variants IS 'Individual variant arms within a strategy A/B test';
+
+
+--
+-- Name: COLUMN strategy_experiment_variants.strategy_config; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_experiment_variants.strategy_config IS 'JSON-encoded configuration for this variant';
+
+
+--
+-- Name: strategy_experiment_variants_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.strategy_experiment_variants_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: strategy_experiment_variants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.strategy_experiment_variants_id_seq OWNED BY public.strategy_experiment_variants.id;
+
+
+--
+-- Name: strategy_experiments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategy_experiments (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    name character varying NOT NULL,
+    description text,
+    strategy_name character varying(100) NOT NULL,
+    status character varying(50) DEFAULT 'draft'::character varying NOT NULL,
+    control_config text NOT NULL,
+    min_samples_per_variant integer DEFAULT 30 NOT NULL,
+    confidence_threshold numeric(5,4) DEFAULT 0.95 NOT NULL,
+    traffic_percentage integer DEFAULT 100 NOT NULL,
+    cached_analysis jsonb,
+    analysis_samples_key character varying,
+    started_at timestamp(6) without time zone,
+    completed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    winner_variant_id bigint
+);
+
+ALTER TABLE ONLY public.strategy_experiments FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE strategy_experiments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategy_experiments IS 'A/B tests comparing evolved automation strategy variants against a baseline';
+
+
+--
+-- Name: COLUMN strategy_experiments.strategy_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_experiments.strategy_name IS 'Automation strategy being tested (e.g. auto_pick, auto_review)';
+
+
+--
+-- Name: COLUMN strategy_experiments.control_config; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.strategy_experiments.control_config IS 'JSON-encoded baseline configuration for the strategy';
+
+
+--
+-- Name: strategy_experiments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.strategy_experiments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: strategy_experiments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.strategy_experiments_id_seq OWNED BY public.strategy_experiments.id;
+
+
+--
 -- Name: style_guides; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5370,6 +5646,13 @@ ALTER TABLE ONLY public.orchestration_decisions ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: orchestration_strategies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_strategies ALTER COLUMN id SET DEFAULT nextval('public.orchestration_strategies_id_seq'::regclass);
+
+
+--
 -- Name: pr_templates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5514,6 +5797,27 @@ ALTER TABLE ONLY public.service_container_metrics ALTER COLUMN id SET DEFAULT ne
 --
 
 ALTER TABLE ONLY public.service_containers ALTER COLUMN id SET DEFAULT nextval('public.service_containers_id_seq'::regclass);
+
+
+--
+-- Name: strategy_experiment_assignments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_assignments ALTER COLUMN id SET DEFAULT nextval('public.strategy_experiment_assignments_id_seq'::regclass);
+
+
+--
+-- Name: strategy_experiment_variants id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_variants ALTER COLUMN id SET DEFAULT nextval('public.strategy_experiment_variants_id_seq'::regclass);
+
+
+--
+-- Name: strategy_experiments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiments ALTER COLUMN id SET DEFAULT nextval('public.strategy_experiments_id_seq'::regclass);
 
 
 --
@@ -6069,6 +6373,14 @@ ALTER TABLE ONLY public.orchestration_decisions
 
 
 --
+-- Name: orchestration_strategies orchestration_strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_strategies
+    ADD CONSTRAINT orchestration_strategies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pr_templates pr_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6245,6 +6557,30 @@ ALTER TABLE ONLY public.service_containers
 
 
 --
+-- Name: strategy_experiment_assignments strategy_experiment_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_assignments
+    ADD CONSTRAINT strategy_experiment_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: strategy_experiment_variants strategy_experiment_variants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_variants
+    ADD CONSTRAINT strategy_experiment_variants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: strategy_experiments strategy_experiments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiments
+    ADD CONSTRAINT strategy_experiments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: style_guides style_guides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6334,48 +6670,6 @@ CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USIN
 --
 
 CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
-
-
---
--- Name: idx_bundle_outcomes_agent_run_unique; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_bundle_outcomes_agent_run_unique ON public.bundle_outcomes USING btree (agent_run_id);
-
-
---
--- Name: idx_bundle_outcomes_bundle_recent; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_bundle_outcomes_bundle_recent ON public.bundle_outcomes USING btree (configuration_bundle_id, created_at, id);
-
-
---
--- Name: idx_bundle_outcomes_project_recent; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_bundle_outcomes_project_recent ON public.bundle_outcomes USING btree (project_id, created_at, id);
-
-
---
--- Name: idx_configuration_bundles_account_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_configuration_bundles_account_active ON public.configuration_bundles USING btree (account_id, is_active, id);
-
-
---
--- Name: idx_configuration_bundles_one_baseline_per_account; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_configuration_bundles_one_baseline_per_account ON public.configuration_bundles USING btree (account_id) WHERE (is_baseline = true);
-
-
---
--- Name: idx_configuration_bundles_one_global_baseline; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_configuration_bundles_one_global_baseline ON public.configuration_bundles USING btree (is_baseline) WHERE ((is_baseline = true) AND (account_id IS NULL));
 
 
 --
@@ -6575,6 +6869,13 @@ CREATE INDEX idx_on_project_id_status_warmed_at_d791387888 ON public.container_p
 
 
 --
+-- Name: idx_on_strategy_experiment_variant_id_95cba2d3c7; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_strategy_experiment_variant_id_95cba2d3c7 ON public.strategy_experiment_assignments USING btree (strategy_experiment_variant_id);
+
+
+--
 -- Name: idx_orchestration_decisions_project_actor_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6607,6 +6908,13 @@ CREATE INDEX idx_orchestration_decisions_run_recent ON public.orchestration_deci
 --
 
 CREATE INDEX idx_orchestration_decisions_run_type_created ON public.orchestration_decisions USING btree (agent_run_id, decision_type, created_at);
+
+
+--
+-- Name: idx_orchestration_strategies_active_type_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_orchestration_strategies_active_type_account ON public.orchestration_strategies USING btree (strategy_type, account_id) NULLS NOT DISTINCT WHERE (active = true);
 
 
 --
@@ -7016,6 +7324,13 @@ CREATE INDEX index_agent_run_phases_on_phase_key_and_started_at ON public.agent_
 
 
 --
+-- Name: index_agent_runs_on_configuration_bundle_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_runs_on_configuration_bundle_id ON public.agent_runs USING btree (configuration_bundle_id);
+
+
+--
 -- Name: index_agent_runs_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7191,6 +7506,34 @@ CREATE INDEX index_billing_plans_on_account_id_and_active ON public.billing_plan
 
 
 --
+-- Name: index_bundle_outcomes_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_bundle_outcomes_on_agent_run_id ON public.bundle_outcomes USING btree (agent_run_id);
+
+
+--
+-- Name: index_bundle_outcomes_on_quality_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_bundle_outcomes_on_quality_score ON public.bundle_outcomes USING btree (quality_score);
+
+
+--
+-- Name: index_bundle_outcomes_on_success; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_bundle_outcomes_on_success ON public.bundle_outcomes USING btree (success);
+
+
+--
+-- Name: index_bundle_outcomes_unique_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_bundle_outcomes_unique_run ON public.bundle_outcomes USING btree (configuration_bundle_id, agent_run_id);
+
+
+--
 -- Name: index_chat_messages_on_chat_session_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7317,6 +7660,41 @@ CREATE INDEX index_collector_runs_on_status ON public.collector_runs USING btree
 
 
 --
+-- Name: index_config_bundles_on_account_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_config_bundles_on_account_status ON public.configuration_bundles USING btree (account_id, status);
+
+
+--
+-- Name: index_config_bundles_on_project_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_config_bundles_on_project_status ON public.configuration_bundles USING btree (project_id, status);
+
+
+--
+-- Name: index_config_bundles_unique_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_config_bundles_unique_fingerprint ON public.configuration_bundles USING btree (account_id, fingerprint) WHERE (fingerprint IS NOT NULL);
+
+
+--
+-- Name: index_config_bundles_unique_version_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_config_bundles_unique_version_account ON public.configuration_bundles USING btree (account_id, version) WHERE (project_id IS NULL);
+
+
+--
+-- Name: index_config_bundles_unique_version_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_config_bundles_unique_version_project ON public.configuration_bundles USING btree (account_id, project_id, version) WHERE (project_id IS NOT NULL);
+
+
+--
 -- Name: index_config_experiment_assignments_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7342,6 +7720,41 @@ CREATE UNIQUE INDEX index_config_experiment_variants_one_control ON public.confi
 --
 
 CREATE UNIQUE INDEX index_config_experiments_one_running_per_account_key ON public.configuration_experiments USING btree (account_id, config_key) WHERE (((status)::text = 'running'::text) AND (account_id IS NOT NULL));
+
+
+--
+-- Name: index_configuration_bundles_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_bundles_on_account_id ON public.configuration_bundles USING btree (account_id);
+
+
+--
+-- Name: index_configuration_bundles_on_llm_model_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_bundles_on_llm_model_id ON public.configuration_bundles USING btree (llm_model_id);
+
+
+--
+-- Name: index_configuration_bundles_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_bundles_on_project_id ON public.configuration_bundles USING btree (project_id);
+
+
+--
+-- Name: index_configuration_bundles_on_prompt_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_bundles_on_prompt_version_id ON public.configuration_bundles USING btree (prompt_version_id);
+
+
+--
+-- Name: index_configuration_bundles_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_bundles_on_status ON public.configuration_bundles USING btree (status);
 
 
 --
@@ -8346,6 +8759,27 @@ CREATE UNIQUE INDEX index_onboarding_steps_on_account_id_and_step ON public.onbo
 
 
 --
+-- Name: index_orchestration_strategies_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_strategies_on_account_id ON public.orchestration_strategies USING btree (account_id);
+
+
+--
+-- Name: index_orchestration_strategies_on_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_strategies_on_active ON public.orchestration_strategies USING btree (active);
+
+
+--
+-- Name: index_orchestration_strategies_on_strategy_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_strategies_on_strategy_type ON public.orchestration_strategies USING btree (strategy_type);
+
+
+--
 -- Name: index_pr_templates_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8927,6 +9361,55 @@ CREATE UNIQUE INDEX index_service_containers_on_account_id_and_name ON public.se
 
 
 --
+-- Name: index_strategy_experiment_assignments_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_experiment_assignments_on_agent_run_id ON public.strategy_experiment_assignments USING btree (agent_run_id);
+
+
+--
+-- Name: index_strategy_experiment_assignments_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategy_experiment_assignments_unique ON public.strategy_experiment_assignments USING btree (strategy_experiment_id, agent_run_id);
+
+
+--
+-- Name: index_strategy_experiment_variants_on_experiment_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_experiment_variants_on_experiment_control ON public.strategy_experiment_variants USING btree (strategy_experiment_id, is_control);
+
+
+--
+-- Name: index_strategy_experiment_variants_one_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategy_experiment_variants_one_control ON public.strategy_experiment_variants USING btree (strategy_experiment_id) WHERE (is_control = true);
+
+
+--
+-- Name: index_strategy_experiments_on_account_strategy_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_experiments_on_account_strategy_status ON public.strategy_experiments USING btree (account_id, strategy_name, status);
+
+
+--
+-- Name: index_strategy_experiments_on_winner_variant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_strategy_experiments_on_winner_variant_id ON public.strategy_experiments USING btree (winner_variant_id);
+
+
+--
+-- Name: index_strategy_experiments_one_running_per_account_strategy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_strategy_experiments_one_running_per_account_strategy ON public.strategy_experiments USING btree (account_id, strategy_name) WHERE ((status)::text = 'running'::text);
+
+
+--
 -- Name: index_style_guides_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9376,6 +9859,14 @@ ALTER TABLE ONLY public.token_usages
 
 
 --
+-- Name: configuration_bundles fk_rails_305af63fff; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles
+    ADD CONSTRAINT fk_rails_305af63fff FOREIGN KEY (prompt_version_id) REFERENCES public.prompt_versions(id) ON DELETE SET NULL;
+
+
+--
 -- Name: prompts fk_rails_314c3f0405; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9544,6 +10035,14 @@ ALTER TABLE ONLY public.ab_test_assignments
 
 
 --
+-- Name: agent_runs fk_rails_5e2089720d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_runs
+    ADD CONSTRAINT fk_rails_5e2089720d FOREIGN KEY (configuration_bundle_id) REFERENCES public.configuration_bundles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: billing_line_items fk_rails_60a88c66a0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9576,6 +10075,14 @@ ALTER TABLE ONLY public.project_mcp_servers
 
 
 --
+-- Name: strategy_experiment_variants fk_rails_63128adc9b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_variants
+    ADD CONSTRAINT fk_rails_63128adc9b FOREIGN KEY (strategy_experiment_id) REFERENCES public.strategy_experiments(id) ON DELETE CASCADE;
+
+
+--
 -- Name: knowledge_audit_events fk_rails_6402bd2a4b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9605,6 +10112,14 @@ ALTER TABLE ONLY public.decision_records
 
 ALTER TABLE ONLY public.quality_pause_events
     ADD CONSTRAINT fk_rails_65e6e9ab0a FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id);
+
+
+--
+-- Name: orchestration_strategies fk_rails_68b1d7e980; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_strategies
+    ADD CONSTRAINT fk_rails_68b1d7e980 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -9688,6 +10203,14 @@ ALTER TABLE ONLY public.issues
 
 
 --
+-- Name: strategy_experiment_assignments fk_rails_836548eed9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_assignments
+    ADD CONSTRAINT fk_rails_836548eed9 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_run_anomalies fk_rails_83fa547c26; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9741,14 +10264,6 @@ ALTER TABLE ONLY public.container_metrics
 
 ALTER TABLE ONLY public.ab_test_assignments
     ADD CONSTRAINT fk_rails_8b957badbb FOREIGN KEY (ab_test_id) REFERENCES public.ab_tests(id) ON DELETE CASCADE;
-
-
---
--- Name: bundle_outcomes fk_rails_8c68e8dbfc; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bundle_outcomes
-    ADD CONSTRAINT fk_rails_8c68e8dbfc FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
 
 
 --
@@ -9816,6 +10331,14 @@ ALTER TABLE ONLY public.prompts
 
 
 --
+-- Name: configuration_bundles fk_rails_9ae9fd1826; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles
+    ADD CONSTRAINT fk_rails_9ae9fd1826 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: chat_sessions fk_rails_9b5b542892; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9853,6 +10376,14 @@ ALTER TABLE ONLY public.prompt_versions
 
 ALTER TABLE ONLY public.ab_test_variants
     ADD CONSTRAINT fk_rails_9fad431770 FOREIGN KEY (ab_test_id) REFERENCES public.ab_tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_bundles fk_rails_a150076ed9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles
+    ADD CONSTRAINT fk_rails_a150076ed9 FOREIGN KEY (llm_model_id) REFERENCES public.llm_models(id) ON DELETE SET NULL;
 
 
 --
@@ -10029,6 +10560,14 @@ ALTER TABLE ONLY public.billing_plans
 
 ALTER TABLE ONLY public.billing_invoices
     ADD CONSTRAINT fk_rails_be7a94c0fc FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: strategy_experiment_assignments fk_rails_c0e892d6a1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_assignments
+    ADD CONSTRAINT fk_rails_c0e892d6a1 FOREIGN KEY (strategy_experiment_variant_id) REFERENCES public.strategy_experiment_variants(id) ON DELETE CASCADE;
 
 
 --
@@ -10216,6 +10755,14 @@ ALTER TABLE ONLY public.model_selections
 
 
 --
+-- Name: strategy_experiment_assignments fk_rails_e3f0fb3b46; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiment_assignments
+    ADD CONSTRAINT fk_rails_e3f0fb3b46 FOREIGN KEY (strategy_experiment_id) REFERENCES public.strategy_experiments(id) ON DELETE CASCADE;
+
+
+--
 -- Name: onboarding_steps fk_rails_e648887d14; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10296,6 +10843,14 @@ ALTER TABLE ONLY public.llm_output_metrics
 
 
 --
+-- Name: strategy_experiments fk_rails_f2c1b39dfb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiments
+    ADD CONSTRAINT fk_rails_f2c1b39dfb FOREIGN KEY (winner_variant_id) REFERENCES public.strategy_experiment_variants(id) ON DELETE SET NULL;
+
+
+--
 -- Name: chat_sessions fk_rails_f3ce73dd5f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10349,6 +10904,14 @@ ALTER TABLE ONLY public.ab_test_assignments
 
 ALTER TABLE ONLY public.worktrees
     ADD CONSTRAINT fk_rails_fd82a63e04 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: strategy_experiments fk_rails_ff1e651e8d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.strategy_experiments
+    ADD CONSTRAINT fk_rails_ff1e651e8d FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -10780,6 +11343,24 @@ ALTER TABLE public.service_container_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_containers ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: strategy_experiment_assignments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_experiment_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: strategy_experiment_variants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_experiment_variants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: strategy_experiments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.strategy_experiments ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: style_guides; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10914,11 +11495,17 @@ CREATE POLICY tenant_isolation ON public.billing_plans USING ((public.paid_tenan
 -- Name: bundle_outcomes tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.bundle_outcomes USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
-   FROM public.projects
-  WHERE ((projects.id = bundle_outcomes.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
-   FROM public.projects
-  WHERE ((projects.id = bundle_outcomes.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
+CREATE POLICY tenant_isolation ON public.bundle_outcomes USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.configuration_bundles
+  WHERE ((configuration_bundles.id = bundle_outcomes.configuration_bundle_id) AND (configuration_bundles.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = bundle_outcomes.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.configuration_bundles
+  WHERE ((configuration_bundles.id = bundle_outcomes.configuration_bundle_id) AND (configuration_bundles.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = bundle_outcomes.agent_run_id) AND (projects.account_id = public.paid_current_account_id())))))));
 
 
 --
@@ -10987,7 +11574,11 @@ CREATE POLICY tenant_isolation ON public.collector_runs USING ((public.paid_tena
 -- Name: configuration_bundles tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.configuration_bundles USING ((public.paid_tenant_bypass() OR (account_id IS NULL) OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id IS NULL) OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.configuration_bundles USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = configuration_bundles.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = configuration_bundles.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -11551,6 +12142,35 @@ CREATE POLICY tenant_isolation ON public.service_containers USING ((public.paid_
 
 
 --
+-- Name: strategy_experiment_assignments tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.strategy_experiment_assignments USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_assignments.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_assignments.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: strategy_experiment_variants tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.strategy_experiment_variants USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_variants.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.strategy_experiments
+  WHERE ((strategy_experiments.id = strategy_experiment_variants.strategy_experiment_id) AND (strategy_experiments.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: strategy_experiments tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.strategy_experiments USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
 -- Name: tenant_settings tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11965,7 +12585,15 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
-('20260508021919'),
+('20260508061946'),
+('20260508061539'),
+('20260508020000'),
+('20260508014445'),
+('20260507224416'),
+('20260507223324'),
+('20260507223302'),
+('20260507204652'),
+('20260507204357'),
 ('20260507164917'),
 ('20260507125050'),
 ('20260507011753'),

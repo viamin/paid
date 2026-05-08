@@ -8,7 +8,9 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
-require Rails.root.join("db/migrate/20260508021919_create_configuration_bundles_and_bundle_outcomes")
+require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
+require Rails.root.join("db/migrate/20260508014445_create_configuration_bundles")
+require Rails.root.join("db/migrate/20260508020000_add_runtime_fields_to_configuration_bundles")
 
 RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   self.use_transactional_tests = false
@@ -20,11 +22,13 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   let(:chat_tables_migration) { EnableRlsOnChatTables.new }
   let(:knowledge_recommendations_migration) { EnableRlsOnKnowledgeRecommendations.new }
   let(:issue_merge_subscriptions_migration) { EnableRlsOnIssueMergeSubscriptions.new }
-  let(:optimizer_tables_migration) { CreateConfigurationBundlesAndBundleOutcomes.new }
-  let(:connection) { ActiveRecord::Base.connection }
+  let(:strategy_experiment_tables_migration) { EnableRlsOnStrategyExperimentTables.new }
+  let(:configuration_bundles_migration) { CreateConfigurationBundles.new }
+  let(:configuration_bundle_runtime_fields_migration) { AddRuntimeFieldsToConfigurationBundles.new }
 
   around do |example|
-    optimizer_tables_migration.down if optimizer_tables_present?
+    teardown_optimizer_tables
+    rebuild_optimizer_tables
     disable_later_rls_migrations
     migration.down
 
@@ -33,23 +37,25 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
     migration.down
     migration.up
     enable_later_rls_migrations
-    optimizer_tables_migration.up unless optimizer_tables_present?
+    rebuild_optimizer_tables unless optimizer_tables_present?
   end
 
-  it "skips future optimizer tables that are not present yet" do
-    expect(connection.table_exists?(:configuration_bundles)).to be(false)
-    expect(connection.table_exists?(:bundle_outcomes)).to be(false)
+  it "rebuilds policies for optimizer tables added by later migrations" do
+    connection = ActiveRecord::Base.connection
+
+    expect(connection.table_exists?(:configuration_bundles)).to be(true)
+    expect(connection.table_exists?(:bundle_outcomes)).to be(true)
 
     expect { migration.up }.not_to raise_error
-    expect(connection.table_exists?(:configuration_bundles)).to be(false)
-    expect(connection.table_exists?(:bundle_outcomes)).to be(false)
-    expect(tenant_policy_count("configuration_bundles")).to eq(0)
-    expect(tenant_policy_count("bundle_outcomes")).to eq(0)
+    expect(tenant_policy_count("configuration_bundles")).to be_positive
+    expect(tenant_policy_count("bundle_outcomes")).to be_positive
   end
 
   private
 
   def tenant_policy_count(table_name)
+    connection = ActiveRecord::Base.connection
+
     connection.select_value(
       ActiveRecord::Base.sanitize_sql_array([
         <<~SQL.squish,
@@ -64,6 +70,7 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   end
 
   def disable_later_rls_migrations
+    strategy_experiment_tables_migration.down if strategy_experiment_tables_have_rls?
     issue_merge_subscriptions_migration.down if issue_merge_subscriptions_have_rls?
     knowledge_recommendations_migration.down if knowledge_recommendations_has_rls?
     chat_tables_migration.down if chat_tables_have_rls?
@@ -79,10 +86,19 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
     chat_tables_migration.up unless chat_tables_have_rls?
     knowledge_recommendations_migration.up unless knowledge_recommendations_has_rls?
     issue_merge_subscriptions_migration.up unless issue_merge_subscriptions_have_rls?
+    strategy_experiment_tables_migration.up unless strategy_experiment_tables_have_rls?
   end
 
   def issue_merge_subscriptions_have_rls?
     tenant_policy_count("issue_merge_subscriptions").positive?
+  end
+
+  def strategy_experiment_tables_have_rls?
+    %w[
+      strategy_experiments
+      strategy_experiment_variants
+      strategy_experiment_assignments
+    ].all? { |table| tenant_policy_count(table).positive? }
   end
 
   def knowledge_recommendations_has_rls?
@@ -102,6 +118,22 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   end
 
   def optimizer_tables_present?
+    connection = ActiveRecord::Base.connection
+
     connection.table_exists?(:configuration_bundles) && connection.table_exists?(:bundle_outcomes)
+  end
+
+  def teardown_optimizer_tables
+    connection = ActiveRecord::Base.connection
+
+    configuration_bundle_runtime_fields_migration.down if connection.column_exists?(:agent_runs, :configuration_bundle_id)
+    configuration_bundles_migration.down if optimizer_tables_present?
+  end
+
+  def rebuild_optimizer_tables
+    connection = ActiveRecord::Base.connection
+
+    configuration_bundles_migration.up unless optimizer_tables_present?
+    configuration_bundle_runtime_fields_migration.up unless connection.column_exists?(:agent_runs, :configuration_bundle_id)
   end
 end
