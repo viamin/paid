@@ -26,6 +26,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.issue).to eq(issue)
       expect(agent_run.status).to eq("queued")
       expect(agent_run.agent_type).to eq("claude_code")
+      expect(agent_run.configuration_bundle).to be_present
     end
 
     it "returns the project max_execution_seconds in the result" do
@@ -175,6 +176,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.provider).to eq(codex_provider)
       expect(agent_run.agent_type).to eq("codex")
       expect(agent_run.status).to eq("queued")
+      expect(agent_run.configuration_bundle.definition).to include(
+        "provider_id" => codex_provider.id,
+        "agent_type" => "codex"
+      )
     end
 
     it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do

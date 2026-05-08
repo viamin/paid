@@ -568,7 +568,8 @@ CREATE TABLE public.agent_runs (
     turns_completed integer DEFAULT 0 NOT NULL,
     streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL,
     mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
-    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL
+    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL,
+    configuration_bundle_id bigint
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -600,6 +601,13 @@ COMMENT ON COLUMN public.agent_runs.mcp_sidecar_container_ids IS 'Docker contain
 --
 
 COMMENT ON COLUMN public.agent_runs.mcp_provisioned_servers IS 'Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning';
+
+
+--
+-- Name: COLUMN agent_runs.configuration_bundle_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.configuration_bundle_id IS 'Configuration bundle assigned to the run before execution.';
 
 
 --
@@ -970,6 +978,146 @@ CREATE SEQUENCE public.collector_runs_id_seq
 --
 
 ALTER SEQUENCE public.collector_runs_id_seq OWNED BY public.collector_runs.id;
+
+
+--
+-- Name: configuration_bundle_outcomes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.configuration_bundle_outcomes (
+    id bigint NOT NULL,
+    configuration_bundle_id bigint NOT NULL,
+    agent_run_id bigint NOT NULL,
+    status character varying NOT NULL,
+    quality_score numeric(5,4),
+    cost_cents integer DEFAULT 0 NOT NULL,
+    duration_seconds integer,
+    completed_at timestamp(6) without time zone,
+    component_scores jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE configuration_bundle_outcomes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.configuration_bundle_outcomes IS 'Optimization-facing outcome metrics observed for a specific agent run and bundle pairing.';
+
+
+--
+-- Name: COLUMN configuration_bundle_outcomes.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundle_outcomes.status IS 'Terminal agent run status captured for optimization analysis.';
+
+
+--
+-- Name: COLUMN configuration_bundle_outcomes.quality_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundle_outcomes.quality_score IS 'Composite quality score attributed to the completed agent run.';
+
+
+--
+-- Name: COLUMN configuration_bundle_outcomes.cost_cents; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundle_outcomes.cost_cents IS 'Final agent run cost in cents.';
+
+
+--
+-- Name: COLUMN configuration_bundle_outcomes.duration_seconds; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundle_outcomes.duration_seconds IS 'Final wall-clock duration recorded for the agent run.';
+
+
+--
+-- Name: COLUMN configuration_bundle_outcomes.completed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundle_outcomes.completed_at IS 'When the agent run reached its terminal state.';
+
+
+--
+-- Name: COLUMN configuration_bundle_outcomes.component_scores; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundle_outcomes.component_scores IS 'Detailed quality component scores that contributed to the final quality score.';
+
+
+--
+-- Name: configuration_bundle_outcomes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.configuration_bundle_outcomes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: configuration_bundle_outcomes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.configuration_bundle_outcomes_id_seq OWNED BY public.configuration_bundle_outcomes.id;
+
+
+--
+-- Name: configuration_bundles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.configuration_bundles (
+    id bigint NOT NULL,
+    fingerprint character varying NOT NULL,
+    definition jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE configuration_bundles; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.configuration_bundles IS 'Versioned runtime configuration snapshots assigned to agent runs for optimization analysis.';
+
+
+--
+-- Name: COLUMN configuration_bundles.fingerprint; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.fingerprint IS 'Deterministic SHA-256 digest of the canonical bundle definition.';
+
+
+--
+-- Name: COLUMN configuration_bundles.definition; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.definition IS 'Canonical configuration snapshot used by the assigned agent runs.';
+
+
+--
+-- Name: configuration_bundles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.configuration_bundles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: configuration_bundles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.configuration_bundles_id_seq OWNED BY public.configuration_bundles.id;
 
 
 --
@@ -3572,13 +3720,6 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 
 
 --
--- Name: COLUMN projects.last_issue_reconciliation_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.projects.last_issue_reconciliation_at IS 'Timestamp of the last issue state reconciliation against GitHub';
-
-
---
 -- Name: COLUMN projects.screenshot_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -4912,6 +5053,20 @@ ALTER TABLE ONLY public.collector_runs ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: configuration_bundle_outcomes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundle_outcomes ALTER COLUMN id SET DEFAULT nextval('public.configuration_bundle_outcomes_id_seq'::regclass);
+
+
+--
+-- Name: configuration_bundles id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles ALTER COLUMN id SET DEFAULT nextval('public.configuration_bundles_id_seq'::regclass);
+
+
+--
 -- Name: configuration_experiment_assignments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5509,6 +5664,22 @@ ALTER TABLE ONLY public.chat_sessions
 
 ALTER TABLE ONLY public.collector_runs
     ADD CONSTRAINT collector_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configuration_bundle_outcomes configuration_bundle_outcomes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundle_outcomes
+    ADD CONSTRAINT configuration_bundle_outcomes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configuration_bundles configuration_bundles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles
+    ADD CONSTRAINT configuration_bundles_pkey PRIMARY KEY (id);
 
 
 --
@@ -6269,6 +6440,13 @@ CREATE UNIQUE INDEX idx_on_account_id_service_key_name_e4c03e1ea7 ON public.inte
 
 
 --
+-- Name: idx_on_configuration_bundle_id_completed_at_8e9ffd096f; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_configuration_bundle_id_completed_at_8e9ffd096f ON public.configuration_bundle_outcomes USING btree (configuration_bundle_id, completed_at);
+
+
+--
 -- Name: idx_on_configuration_experiment_id_54cb3ed654; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6745,6 +6923,13 @@ CREATE INDEX index_agent_run_phases_on_phase_key_and_started_at ON public.agent_
 
 
 --
+-- Name: index_agent_runs_on_configuration_bundle_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_runs_on_configuration_bundle_id ON public.agent_runs USING btree (configuration_bundle_id);
+
+
+--
 -- Name: index_agent_runs_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7071,6 +7256,27 @@ CREATE UNIQUE INDEX index_config_experiment_variants_one_control ON public.confi
 --
 
 CREATE UNIQUE INDEX index_config_experiments_one_running_per_account_key ON public.configuration_experiments USING btree (account_id, config_key) WHERE (((status)::text = 'running'::text) AND (account_id IS NOT NULL));
+
+
+--
+-- Name: index_configuration_bundle_outcomes_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_configuration_bundle_outcomes_on_agent_run_id ON public.configuration_bundle_outcomes USING btree (agent_run_id);
+
+
+--
+-- Name: index_configuration_bundle_outcomes_on_configuration_bundle_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_configuration_bundle_outcomes_on_configuration_bundle_id ON public.configuration_bundle_outcomes USING btree (configuration_bundle_id);
+
+
+--
+-- Name: index_configuration_bundles_on_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_configuration_bundles_on_fingerprint ON public.configuration_bundles USING btree (fingerprint);
 
 
 --
@@ -9153,6 +9359,14 @@ ALTER TABLE ONLY public.quality_gate_thresholds
 
 
 --
+-- Name: configuration_bundle_outcomes fk_rails_3e14a74464; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundle_outcomes
+    ADD CONSTRAINT fk_rails_3e14a74464 FOREIGN KEY (configuration_bundle_id) REFERENCES public.configuration_bundles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: prompts fk_rails_3f18c469ef; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9262,6 +9476,14 @@ ALTER TABLE ONLY public.llm_output_metrics
 
 ALTER TABLE ONLY public.ab_test_assignments
     ADD CONSTRAINT fk_rails_5c6d672759 FOREIGN KEY (ab_test_variant_id) REFERENCES public.ab_test_variants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_runs fk_rails_5e2089720d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_runs
+    ADD CONSTRAINT fk_rails_5e2089720d FOREIGN KEY (configuration_bundle_id) REFERENCES public.configuration_bundles(id) ON DELETE SET NULL;
 
 
 --
@@ -9838,6 +10060,14 @@ ALTER TABLE ONLY public.model_selections
 
 ALTER TABLE ONLY public.agent_run_phases
     ADD CONSTRAINT fk_rails_d3958a462b FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: configuration_bundle_outcomes fk_rails_d61914be1b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundle_outcomes
+    ADD CONSTRAINT fk_rails_d61914be1b FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
 
 
 --
@@ -11632,6 +11862,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508014401'),
 ('20260507164917'),
 ('20260507125050'),
 ('20260507011753'),

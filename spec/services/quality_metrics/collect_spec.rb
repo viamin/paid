@@ -272,6 +272,18 @@ RSpec.describe QualityMetrics::Collect do
         expect(assignment.reload.quality_score).to be_present
       end
 
+      it "records a bundle outcome for optimization" do
+        agent_run.update!(configuration_bundle: create(:configuration_bundle))
+
+        described_class.call(agent_run: agent_run)
+
+        expect(agent_run.reload.configuration_bundle_outcome).to have_attributes(
+          status: agent_run.status,
+          cost_cents: agent_run.cost_cents
+        )
+        expect(agent_run.configuration_bundle_outcome.quality_score).to be_present
+      end
+
       it "updates variant aggregate stats" do
         expect { described_class.call(agent_run: agent_run) }
           .to change { variant.reload.sample_count }.by(1)

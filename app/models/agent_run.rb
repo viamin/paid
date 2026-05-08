@@ -92,6 +92,7 @@ class AgentRun < ApplicationRecord
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, optional: true
+  belongs_to :configuration_bundle, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
@@ -99,6 +100,7 @@ class AgentRun < ApplicationRecord
   has_many :token_usages, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
   has_many :configuration_experiment_assignments, dependent: :destroy
+  has_one :configuration_bundle_outcome, dependent: :destroy
   has_many :container_metrics, dependent: :delete_all
   has_many :quality_metrics, dependent: :destroy
   has_many :orchestration_decisions, dependent: :nullify

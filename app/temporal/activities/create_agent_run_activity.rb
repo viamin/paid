@@ -111,6 +111,7 @@ module Activities
         # tracking and audit). Non-fatal — runs proceed with default pricing
         # if no LlmModel records exist yet.
         select_model(agent_run)
+        assign_configuration_bundle(agent_run)
 
         log_scope_analysis(agent_run, scope_result)
 
@@ -179,6 +180,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
+      assign_configuration_bundle(agent_run)
 
       logger.info(
         message: "agent_execution.queued_run_resumed",
@@ -225,6 +227,10 @@ module Activities
         error: e.message,
         backtrace: e.backtrace&.first(5)
       )
+    end
+
+    def assign_configuration_bundle(agent_run)
+      ConfigurationBundles::AssignToRun.call(agent_run: agent_run)
     end
 
     def resolve_user_settings(project)
