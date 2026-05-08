@@ -8,6 +8,7 @@ class ConfigurationBundle < ApplicationRecord
   belongs_to :prompt_version, optional: true
   belongs_to :llm_model, optional: true
 
+  has_many :agent_runs, dependent: :nullify
   has_many :bundle_outcomes, dependent: :destroy
 
   before_validation :set_account_from_project, if: -> { project.present? && account.nil? }

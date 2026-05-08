@@ -25,6 +25,7 @@ module QualityMetrics
         update_prompt_version_stats if agent_run.prompt_version.present?
         check_quality_pause
       end
+      record_bundle_outcome
 
       enqueue_quality_gate_check
       automated_metric
@@ -71,6 +72,13 @@ module QualityMetrics
 
     def check_quality_pause
       QualityPause::Check.call(agent_run: agent_run)
+    end
+
+    def record_bundle_outcome
+      ConfigurationBundles::RecordOutcome.call(
+        agent_run: agent_run,
+        quality_metric: automated_metric
+      )
     end
 
     # Builds scores for metrics relevant to the agent run's goal type.
