@@ -12,6 +12,7 @@ module ConfigurationBundles
 
     PRIOR_MEAN = 0.5
     PRIOR_WEIGHT = 1.0
+    MAX_OUTCOME_ROWS = 500
 
     attr_reader :scope
 
@@ -76,7 +77,7 @@ module ConfigurationBundles
       @outcome_rows ||= begin
         rows = []
 
-        scope.find_each do |outcome|
+        scope.order(completed_at: :desc).limit(MAX_OUTCOME_ROWS).find_each do |outcome|
           definition = outcome.configuration_bundle&.definition
           next unless definition.is_a?(Hash)
 
