@@ -63,7 +63,7 @@ module Automation
         return noop_result if signals.scan.nil?
 
         review_context = context.with_metadata(scan: signals.scan)
-        Strategies::AutoReview.new.evaluate(review_context)
+        auto_review_strategy(context).evaluate(review_context)
       end
 
       private
@@ -137,7 +137,14 @@ module Automation
       end
 
       def delegate_to_auto_review(context)
-        Strategies::AutoReview.new.evaluate(context)
+        auto_review_strategy(context).evaluate(context)
+      end
+
+      def auto_review_strategy(context)
+        Strategies::Select.call(
+          strategy_type: :auto_review,
+          project: context.project
+        )
       end
     end
   end

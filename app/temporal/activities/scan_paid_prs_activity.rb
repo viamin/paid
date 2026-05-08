@@ -2387,7 +2387,10 @@ module Activities
         project: project,
         metadata: { Automation::Strategies::AutoMerge::SIGNALS_KEY => signals }
       )
-      result = Automation::Strategies::AutoMerge.new.evaluate(context)
+      result = Automation::Strategies::Select.call(
+        strategy_type: :auto_merge,
+        project: project
+      ).evaluate(context)
       result.decisions.any? { |d| d.type == "merge" }
     end
 

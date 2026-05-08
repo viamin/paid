@@ -39,7 +39,10 @@ module Automation
       metadata[:lifecycle] = lifecycle if lifecycle
 
       context = Context.build(record: record, project: project, metadata: metadata)
-      Strategies::AutoContinue.new.evaluate(context)
+      Strategies::Select.call(
+        strategy_type: :auto_continue,
+        project: project
+      ).evaluate(context)
     end
   end
 end

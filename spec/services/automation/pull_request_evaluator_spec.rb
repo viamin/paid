@@ -33,6 +33,26 @@ RSpec.describe Automation::PullRequestEvaluator do
       expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
     end
 
+    it "selects auto-continue through Automation::Strategies::Select for explicit PR decisions" do
+      selected_strategy = instance_double(Automation::Strategies::AutoContinue)
+      result = Automation::Result.noop
+
+      allow(Automation::Strategies::Select).to receive(:call)
+        .with(strategy_type: :auto_continue, project: project)
+        .and_return(selected_strategy)
+      allow(selected_strategy).to receive(:evaluate).and_return(result)
+
+      described_class.new(record: pull_request, explicit_pr_decisions: true).call(
+        scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
+      )
+
+      expect(Automation::Strategies::Select).to have_received(:call)
+        .with(strategy_type: :auto_continue, project: project)
+      expect(selected_strategy).to have_received(:evaluate).with(
+        have_attributes(project: project, record: pull_request)
+      )
+    end
+
     it "maps paid_agent review signals to an explicit review decision" do
       result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
         issue_id: pull_request.id,
