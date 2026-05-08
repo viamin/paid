@@ -173,7 +173,7 @@ RSpec.describe TenantContext, :tenant_isolation do
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
-      CreateOrchestrationDecisions.new.down if orchestration_decisions_have_rls?
+      CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
       CreateExceptionIncidents.new.down if exception_incidents_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
@@ -190,8 +190,8 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
-      CreateExceptionIncidents.new.up unless exception_incidents_have_rls?
-      CreateOrchestrationDecisions.new.up unless orchestration_decisions_have_rls?
+      CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
+      CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
@@ -208,7 +208,7 @@ RSpec.describe TenantContext, :tenant_isolation do
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
-      CreateOrchestrationDecisions.new.down if orchestration_decisions_have_rls?
+      CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
       CreateExceptionIncidents.new.down if exception_incidents_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
@@ -257,6 +257,10 @@ RSpec.describe TenantContext, :tenant_isolation do
     ).to_i.positive?
   end
 
+  def exception_incidents_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
   def decomposition_decisions_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
@@ -273,6 +277,10 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decisions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def orchestration_decisions_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:orchestration_decisions)
   end
 
   def strategy_experiment_tables_have_rls?

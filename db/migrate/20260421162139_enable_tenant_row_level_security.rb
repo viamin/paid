@@ -596,6 +596,9 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       "service_container_metrics",
       "knowledge_usage_stats",
       # Added by a later migration but depends on the same tenant helper functions.
+      "configuration_bundles",
+      "bundle_outcomes",
+      # Added by later migrations but depend on the same tenant helper functions.
       "orchestration_decisions",
       "token_usages",
       "tracker_configurations",

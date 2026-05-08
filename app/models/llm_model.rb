@@ -6,6 +6,7 @@ class LlmModel < ApplicationRecord
   TIERS = %w[low mid high].freeze
 
   has_many :model_selections, dependent: :restrict_with_error
+  has_many :configuration_bundles, dependent: :nullify
 
   validates :model_id, presence: true, uniqueness: true
   validates :display_name, presence: true
