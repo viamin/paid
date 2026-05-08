@@ -98,7 +98,9 @@ module Knowledge
       section_key = ContextIntake::QuestionnaireSchema.find_question(question_key)&.dig(:section, :key)
       return unless section_key
 
-      section_has_unanswered_questions?(section_key) ? section_key : nil
+      return section_key if section_has_unanswered_questions?(section_key)
+
+      next_incomplete_section_key_for_session || section_key
     end
 
     def section_has_unanswered_questions?(section_key)
@@ -108,6 +110,14 @@ module Knowledge
       section[:questions].any? do |question|
         !@session.context_intake_responses.find_by(question_key: question[:key])&.answered?
       end
+    end
+
+    def next_incomplete_section_key_for_session
+      ContextIntake::QuestionnaireSchema.sections.find do |section|
+        section[:questions].any? do |question|
+          !@session.context_intake_responses.find_by(question_key: question[:key])&.answered?
+        end
+      end&.fetch(:key, nil)
     end
 
     def abort_if_in_progress!

@@ -31,13 +31,22 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
   end
 
   def complete_questionnaire(answers)
-    Knowledge::ContextIntake::QuestionnaireSchema.sections.each do |section|
-      click_link section[:title]
+    sections = Knowledge::ContextIntake::QuestionnaireSchema.sections
 
-      within_section_panel(section[:key]) do
-        section[:questions].each do |question|
-          answer_question(question[:key], answers.fetch(question[:key]))
+    sections.each_with_index do |section, section_index|
+      expect_active_section(section[:key], section[:title])
+
+      section[:questions].each_with_index do |question, question_index|
+        answer_question(question[:key], answers.fetch(question[:key]))
+
+        next_section_key = if question_index < section[:questions].length - 1
+          section[:key]
+        else
+          sections[section_index + 1]&.fetch(:key, section[:key]) || section[:key]
         end
+
+        next_section_title = sections.find { |entry| entry[:key] == next_section_key }[:title]
+        expect_active_section(next_section_key, next_section_title)
       end
     end
 
@@ -75,6 +84,14 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
   def within_section_panel(section_key, &)
     within(find(%([data-section="#{section_key}"]), visible: true)) do
       yield
+    end
+  end
+
+  def expect_active_section(section_key, section_title)
+    expect(page).to have_css("[data-section]", visible: true, count: 1)
+
+    within_section_panel(section_key) do
+      expect(page).to have_css("h3", text: section_title)
     end
   end
 
