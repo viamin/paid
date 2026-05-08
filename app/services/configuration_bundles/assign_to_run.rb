@@ -17,7 +17,7 @@ module ConfigurationBundles
     def call
       selection = optimizer_selection
       definition = bundle_definition(selection&.variant_by_experiment_id)
-      fingerprint = selection&.fingerprint || Digest::SHA256.hexdigest(JSON.generate(definition))
+      fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(configuration_bundle: bundle) unless agent_run.configuration_bundle_id == bundle.id

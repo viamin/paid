@@ -15,12 +15,22 @@ module ConfigurationBundles
 
     attr_reader :scope
 
-    def initialize(scope: ConfigurationBundleOutcome.includes(:configuration_bundle).where.not(quality_score: nil))
-      @scope = scope
+    def initialize(project: nil, scope: nil)
+      @scope = scope || self.class.default_scope_for(project)
     end
 
     def self.call(bundle_definition:, fingerprint: nil, **options)
       new(**options).predict(bundle_definition:, fingerprint:)
+    end
+
+    def self.default_scope_for(project)
+      raise ArgumentError, "project is required when scope is not provided" unless project
+
+      ConfigurationBundleOutcome
+        .includes(:configuration_bundle)
+        .joins(agent_run: :project)
+        .where(agent_runs: { project_id: project.id })
+        .where.not(quality_score: nil)
     end
 
     def predict(bundle_definition:, fingerprint: nil)

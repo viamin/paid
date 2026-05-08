@@ -24,9 +24,9 @@ module ConfigurationBundles
 
     attr_reader :agent_run, :surrogate_model
 
-    def initialize(agent_run:, surrogate_model: SurrogateModel.new)
+    def initialize(agent_run:, surrogate_model: nil)
       @agent_run = agent_run
-      @surrogate_model = surrogate_model
+      @surrogate_model = surrogate_model || SurrogateModel.new(project: agent_run.project)
     end
 
     def self.call(...)
