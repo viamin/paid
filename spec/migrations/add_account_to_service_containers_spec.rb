@@ -24,9 +24,9 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
     if tenant_policy_count.positive?
       strategy_experiments_rls_migration.down if strategy_experiment_tables_have_rls?
-      orchestration_decisions_migration.down if orchestration_decisions_have_rls?
+      orchestration_decisions_migration.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
-      exception_incidents_migration.down if exception_incidents_have_rls?
+      exception_incidents_migration.down if exception_incidents_table_exists?
       issue_merge_subscriptions_rls_migration.down if issue_merge_subscriptions_have_rls?
       knowledge_recommendations_rls_migration.down if knowledge_recommendations_has_rls?
       chat_rls_migration.down if chat_tables_have_rls?
@@ -52,8 +52,8 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       chat_rls_migration.up unless chat_tables_have_rls?
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
       issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
-      exception_incidents_migration.up unless exception_incidents_have_rls?
-      orchestration_decisions_migration.up unless orchestration_decisions_have_rls?
+      exception_incidents_migration.up unless exception_incidents_table_exists?
+      orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
       strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
     end
     ServiceContainer.reset_column_information
@@ -256,6 +256,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ).to_i.positive?
   end
 
+  def exception_incidents_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
   def decomposition_decisions_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
@@ -272,6 +276,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decisions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def orchestration_decisions_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:orchestration_decisions)
   end
 
   def tenant_policy_count
