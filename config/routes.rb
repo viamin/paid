@@ -140,6 +140,7 @@ Rails.application.routes.draw do
     resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards" do
       get :export
     end
+    resource :bundle_performance_dashboard, only: [ :show ], controller: "projects/bundle_performance_dashboards"
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"

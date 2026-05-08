@@ -52,6 +52,29 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
+  it "filters configuration bundles and outcomes through the database policy" do
+    bundle_a, outcome_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      bundle = create(:configuration_bundle, account: account_a, project: project)
+      run = create(:agent_run, :completed, project: project, issue: create(:issue, project: project), configuration_bundle: bundle)
+
+      [ bundle, create(:bundle_outcome, configuration_bundle: bundle, agent_run: run) ]
+    end
+    described_class.with_system_access do
+      project = create(:project, account: account_b)
+      bundle = create(:configuration_bundle, account: account_b, project: project)
+      run = create(:agent_run, :completed, project: project, issue: create(:issue, project: project), configuration_bundle: bundle)
+      create(:bundle_outcome, configuration_bundle: bundle, agent_run: run)
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ConfigurationBundle.all).to contain_exactly(bundle_a)
+        expect(BundleOutcome.all).to contain_exactly(outcome_a)
+      end
+    end
+  end
+
   it "filters issue merge subscriptions and rejects cross-tenant users at the database policy" do
     subscription_a = described_class.with_system_access do
       issue = create(:issue, project: create(:project, account: account_a))
@@ -118,6 +141,17 @@ RSpec.describe TenantContext, :tenant_isolation do
         expect_rls_rejection { insert_quality_threshold(account, project_b) }
         expect_rls_rejection { insert_notification(account, user_b) }
         expect_rls_rejection { insert_github_token(account, user_b) }
+      end
+    end
+  end
+
+  it "rejects cross-tenant configuration bundle writes at the database policy" do
+    account = described_class.with_system_access { account_a }
+    project_b = described_class.with_system_access { create(:project, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account) do
+        expect_rls_rejection { insert_configuration_bundle(account, project_id: project_b.id) }
       end
     end
   end
@@ -437,6 +471,56 @@ RSpec.describe TenantContext, :tenant_isolation do
         #{user.id},
         #{quote("RLS Token #{SecureRandom.hex(4)}")},
         'ghp_test',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_configuration_bundle(account, project_id: nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO configuration_bundles (
+        account_id,
+        project_id,
+        version,
+        name,
+        status,
+        strategy_params,
+        context,
+        definition,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{account.id},
+        #{sql_value(project_id)},
+        999999,
+        #{quote("RLS Bundle #{SecureRandom.hex(4)}")},
+        'draft',
+        '{}'::jsonb,
+        '{}'::jsonb,
+        '{"schema_version":1}'::jsonb,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_bundle_outcome(configuration_bundle, agent_run)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO bundle_outcomes (
+        configuration_bundle_id,
+        agent_run_id,
+        success,
+        metrics,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{configuration_bundle.id},
+        #{agent_run.id},
+        TRUE,
+        '{}'::jsonb,
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP
       )

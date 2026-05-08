@@ -48,7 +48,11 @@ class FailureClassification < ApplicationRecord
   end
 
   def complete!(result_data = {})
-    update!(action_status: "completed", action_result: result_data, completed_at: Time.current)
+    update!(
+      action_status: "completed",
+      action_result: action_result.merge(result_data),
+      completed_at: Time.current
+    )
   end
 
   def skip!(reason = nil)

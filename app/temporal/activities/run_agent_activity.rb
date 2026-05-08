@@ -78,6 +78,7 @@ module Activities
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
     DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
+    DEFAULT_AGENT_STARTUP_TIMEOUT = 300    # 5 minutes without first output = stuck
     PREFLIGHT_TIMEOUT_SECONDS = 10
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
@@ -462,6 +463,15 @@ module Activities
       user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
     end
 
+    def effective_startup_timeout(heartbeat:, effective_idle_timeout:, effective_timeout:)
+      startup_base =
+        heartbeat.idle_timeout_for(effective_idle_timeout) ||
+        effective_idle_timeout ||
+        DEFAULT_AGENT_STARTUP_TIMEOUT
+
+      [ startup_base, effective_timeout ].compact.min
+    end
+
     # Builds the ordered list of providers to attempt.
     # Uses fallback providers if enabled, otherwise just the agent's type.
     # Rate-limit fallback providers are tracked separately (via
@@ -711,6 +721,11 @@ module Activities
       elsif agent_run.create_pr_goal?
         user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
+      startup_timeout = effective_startup_timeout(
+        heartbeat: heartbeat,
+        effective_idle_timeout: effective_idle_timeout,
+        effective_timeout: effective_timeout
+      )
 
       # Periodic heartbeats during container execution complement the
       # checkpoint heartbeats at provider attempt boundaries (lines 106, 129).
@@ -720,6 +735,7 @@ module Activities
         container_service.execute(
           command,
           timeout: effective_timeout,
+          startup_timeout: startup_timeout,
           idle_timeout: heartbeat.idle_timeout_for(effective_idle_timeout),
           env: command_env,
           preparation: command_preparation,
@@ -1618,10 +1634,12 @@ module Activities
       base = command_prefix.shelljoin
       env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
       unset_flags = subscription_auth_unset_vars_for(provider)
-        .map { |var| "-u #{var}" }
-        .join(" ")
+      if provider == "copilot"
+        unset_flags = unset_flags.reject { |var| var == "COPILOT_GITHUB_TOKEN" }
+      end
+      unset_str = unset_flags.map { |var| "-u #{var}" }.join(" ")
 
-      script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_flags} #{base} \"$1\"; else #{base} \"$1\"; fi"
+      script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_str} #{base} \"$1\"; else #{base} \"$1\"; fi"
       [ "sh", "-c", script, "--", prompt ]
     end
 

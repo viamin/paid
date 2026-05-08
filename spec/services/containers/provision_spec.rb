@@ -289,7 +289,7 @@ RSpec.describe Containers::Provision do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs["/tmp"]).to eq("exec,size=#{1024 * 1024 * 1024},mode=1777")
-          expect(tmpfs["/home/agent/.cache"]).to eq("size=#{512 * 1024 * 1024},mode=0755")
+          expect(tmpfs["/home/agent/.cache"]).to eq("exec,size=#{512 * 1024 * 1024},mode=0755")
           mock_container
         end
 
@@ -305,6 +305,16 @@ RSpec.describe Containers::Provision do
       it "mounts /tmp tmpfs with exec so bundle install can build native gems" do
         expect(Docker::Container).to receive(:create) do |config|
           tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp")
+          expect(tmp_options.split(",")).to include("exec")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "mounts /home/agent/.cache tmpfs with exec so native addons can be loaded" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmp_options = config.dig("HostConfig", "Tmpfs", "/home/agent/.cache")
           expect(tmp_options.split(",")).to include("exec")
           mock_container
         end
@@ -1419,6 +1429,28 @@ RSpec.describe Containers::Provision do
           user: "agent"
         )
       end
+
+      it "sets COPILOT_GITHUB_TOKEN when config.json lacks oauth_token and token resolution succeeds" do
+        allow(service).to receive(:resolve_copilot_github_token).and_return("gho_test_token_from_gh")
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).to include("COPILOT_GITHUB_TOKEN=gho_test_token_from_gh")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "omits COPILOT_GITHUB_TOKEN when config.json has oauth_token" do
+        File.write(File.join(copilot_config_dir, "config.json"), '{"oauth_token":"existing-token"}')
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).not_to include(a_string_matching("COPILOT_GITHUB_TOKEN="))
+          mock_container
+        end
+
+        service.provision
+      end
     end
 
     context "with Copilot subscription auth from the devcontainer filesystem" do
@@ -1466,6 +1498,15 @@ RSpec.describe Containers::Provision do
           [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.copilot/config.json") && decoded_base64_content(cmd).include?("oauth_token") } ],
           user: "agent"
         )
+      end
+
+      it "omits COPILOT_GITHUB_TOKEN when local config.json has oauth_token" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).not_to include(a_string_matching("COPILOT_GITHUB_TOKEN="))
+          mock_container
+        end
+
+        service.provision
       end
     end
 

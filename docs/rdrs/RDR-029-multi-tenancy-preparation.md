@@ -28,7 +28,7 @@ The multi-tenancy infrastructure was built incrementally across Phases 1-2:
 | TenantContext (RLS session vars) | Implemented | `app/services/tenant_context.rb` |
 | TenantScoped concern | Implemented | `app/models/concerns/tenant_scoped.rb` |
 | TenantSetting (per-tenant config) | Implemented | `app/models/tenant_setting.rb` |
-| Database RLS policies | Implemented | `db/structure.sql` |
+| Database RLS policies | Implemented | `db/schema.rb` |
 | Billing models | Implemented | `app/models/billing_*.rb` |
 | Billing aggregation | Implemented | `app/services/billing/` |
 | Onboarding flow | Implemented | `app/services/onboarding/` |

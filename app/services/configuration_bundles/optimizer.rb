@@ -37,13 +37,21 @@ module ConfigurationBundles
       new(...).select_bundle
     end
 
+    def self.ranked_candidates(...)
+      new(...).ranked_candidates
+    end
+
     def select_bundle
+      ranked_candidates.first
+    end
+
+    def ranked_candidates
       candidates = candidate_variants
-      return if candidates.empty?
+      return [] if candidates.empty?
 
       candidates
         .map { |variant_by_experiment_id| score_candidate(variant_by_experiment_id) }
-        .max_by { |selection| selection.score_inputs.acquisition_score }
+        .sort_by { |selection| -selection.score_inputs.acquisition_score }
     end
 
     private
@@ -69,7 +77,7 @@ module ConfigurationBundles
 
     def candidate_variants
       experiments = active_experiments.filter_map do |experiment|
-        variants = experiment.configuration_experiment_variants.order(:id).filter_map do |variant|
+        variants = active_experiment_variants_by_experiment_id.fetch(experiment.id, []).filter_map do |variant|
           next if parsed_variant_value(variant, experiment:).equal?(INVALID_VARIANT_VALUE)
 
           [ experiment.id, variant ]
@@ -86,9 +94,17 @@ module ConfigurationBundles
     end
 
     def active_experiments
-      ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
         ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
       end
+    end
+
+    def active_experiment_variants_by_experiment_id
+      @active_experiment_variants_by_experiment_id ||= ConfigurationExperimentVariant
+        .where(configuration_experiment_id: active_experiments.map(&:id))
+        .order(:configuration_experiment_id, :id)
+        .to_a
+        .group_by(&:configuration_experiment_id)
     end
 
     def bundle_definition(variant_by_experiment_id)
@@ -100,6 +116,7 @@ module ConfigurationBundles
           provider_id: agent_run.provider_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
+          model_selection: model_selection_definition,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           experiments: experiment_definitions(variant_by_experiment_id)

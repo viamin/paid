@@ -8,7 +8,7 @@ RSpec.describe "Dashboard orchestration decision metrics", type: :system do
     create(:user, :owner, account: account, email: "owner@example.com", password: "password123")
   end
 
-  it "shows the lazy-loaded decision metrics frame on the dashboard" do
+  it "renders deferred decision metrics frame wiring on the dashboard shell" do
     visit new_user_session_path
 
     fill_in "Email", with: user.email
@@ -18,7 +18,8 @@ RSpec.describe "Dashboard orchestration decision metrics", type: :system do
     frame = page.find("turbo-frame#dashboard-decision-metrics", visible: false)
 
     expect(page).to have_content("Cumulative / Periodic Metrics")
-    expect(frame["src"]).to eq(dashboard_decision_metrics_path(time_range: "cumulative"))
-    expect(frame["loading"]).to eq("lazy")
+    expect(frame["data-dashboard-frames-src"]).to eq(dashboard_decision_metrics_path(time_range: "cumulative"))
+    expect(frame["src"]).to be_nil
+    expect(page.find("[data-controller~='dashboard-frames']", visible: false)).to be_present
   end
 end

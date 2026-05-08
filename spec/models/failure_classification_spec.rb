@@ -58,6 +58,14 @@ RSpec.describe FailureClassification do
         expect(classification.action_result).to include("recovered" => true, "retries" => 1)
       end
     end
+
+    it "preserves existing action result data" do
+      classification = create(:failure_classification, :executing, action_result: { "attempts" => 2 })
+
+      classification.complete!(recovered: true)
+
+      expect(classification.action_result).to include("attempts" => 2, "recovered" => true)
+    end
   end
 
   describe "#skip!" do
