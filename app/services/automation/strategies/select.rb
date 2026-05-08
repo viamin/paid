@@ -89,10 +89,12 @@ module Automation
           @default_registry ||= build_default_registry
         end
 
-        # Replace the default registry. Returns the previous registry
+        # Replace the default registry and return the previous one
         # so callers can restore it (useful in tests).
-        def default_registry=(registry)
+        def swap_default_registry(registry)
+          previous_registry = default_registry
           @default_registry = registry
+          previous_registry
         end
 
         # Reset to built-in defaults. Primarily useful in tests.

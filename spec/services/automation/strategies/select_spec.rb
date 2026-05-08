@@ -145,4 +145,20 @@ RSpec.describe Automation::Strategies::Select do
       end
     end
   end
+
+  describe ".swap_default_registry" do
+    after do
+      described_class.reset_default_registry!
+    end
+
+    it "returns the previous registry and installs the new one" do
+      previous_registry = described_class.default_registry
+      replacement_registry = Automation::Strategies::Registry.new
+
+      returned_registry = described_class.swap_default_registry(replacement_registry)
+
+      expect(returned_registry).to be(previous_registry)
+      expect(described_class.default_registry).to be(replacement_registry)
+    end
+  end
 end
