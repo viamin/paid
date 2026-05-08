@@ -144,6 +144,30 @@ RSpec.describe Coordination::DecompositionService do
       end
     end
 
+    context "with policy overrides for max_tasks and layer_order" do
+      let(:sub_components) { %w[database service\ layer api\ endpoints views] }
+      let(:account) { create(:account) }
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account,
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.merge(
+            "decomposition" => {
+              "max_tasks" => 2,
+              "layer_order" => %w[view controller service model]
+            }
+          ))
+      end
+
+      it "passes the effective max_tasks into the generator output" do
+        expect(result.task_count).to eq(2)
+      end
+
+      it "passes the effective layer_order into the generator output" do
+        expect(result.tasks.map { |task| task[:scope] }).to eq(%w[view controller])
+      end
+    end
+
     context "with no strategy record (defaults fallback)" do
       let(:sub_components) { %w[database models service\ layer] }
 

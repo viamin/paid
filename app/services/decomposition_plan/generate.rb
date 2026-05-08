@@ -23,24 +23,26 @@ module DecompositionPlan
   #   result.tasks   # => [{ title: "...", deps: [], scope: "model" }, ...]
   #   result.valid?  # => true
   class Generate
-    # Scope layer ordering (lower = earlier in dependency chain)
-    LAYER_ORDER = {
+    DEFAULT_LAYER_ORDER = {
       "model" => 0,
       "service" => 1,
       "controller" => 2,
       "view" => 3
     }.freeze
+    LAYER_ORDER = DEFAULT_LAYER_ORDER
 
     MAX_DESCRIPTION_LENGTH = 5000
     MAX_TITLE_LENGTH = 255
     MAX_TASKS = 20
 
-    attr_reader :title, :description, :sub_components
+    attr_reader :title, :description, :sub_components, :max_tasks, :layer_order
 
-    def initialize(title:, description:, sub_components:)
+    def initialize(title:, description:, sub_components:, max_tasks: MAX_TASKS, layer_order: DEFAULT_LAYER_ORDER.keys)
       @title = title.to_s
       @description = description.to_s
       @sub_components = Array(sub_components)
+      @max_tasks = normalize_max_tasks(max_tasks)
+      @layer_order = normalize_layer_order(layer_order)
     end
 
     def self.call(...)
@@ -50,6 +52,7 @@ module DecompositionPlan
     def call
       tasks = build_tasks
       tasks = enforce_layer_ordering(tasks)
+      tasks = enforce_max_tasks(tasks)
       tasks = assign_indices(tasks)
 
       validation = ValidateDag.call(tasks: tasks)
@@ -120,7 +123,7 @@ module DecompositionPlan
         description: "Implement #{component_list}. #{layer_guidance(layer)}".truncate(MAX_DESCRIPTION_LENGTH),
         scope: layer,
         deps: [],
-        _layer_order: LAYER_ORDER.fetch(layer, 1)
+        _layer_order: layer_rank_for(layer)
       }
     end
 
@@ -130,7 +133,7 @@ module DecompositionPlan
         description: description.truncate(MAX_DESCRIPTION_LENGTH),
         scope: "service",
         deps: [],
-        _layer_order: 1
+        _layer_order: layer_rank_for("service")
       }
     end
 
@@ -163,6 +166,10 @@ module DecompositionPlan
     # depends on all tasks from preceding layers.
     def enforce_layer_ordering(tasks)
       tasks.sort_by { |t| t[:_layer_order] }
+    end
+
+    def enforce_max_tasks(tasks)
+      tasks.first(max_tasks)
     end
 
     def assign_indices(tasks)
@@ -199,6 +206,26 @@ module DecompositionPlan
     def deep_freeze(tasks)
       tasks.each { |task| task.each_value { |v| v.freeze unless v.frozen? }.freeze }
       tasks.freeze
+    end
+
+    def normalize_max_tasks(value)
+      Integer(value).clamp(1, MAX_TASKS)
+    rescue ArgumentError, TypeError
+      MAX_TASKS
+    end
+
+    def normalize_layer_order(value)
+      requested_layers = Array(value).filter_map do |layer|
+        normalized = layer.to_s
+        normalized if DEFAULT_LAYER_ORDER.key?(normalized)
+      end
+
+      ordered_layers = (requested_layers + DEFAULT_LAYER_ORDER.keys).uniq
+      ordered_layers.each_with_index.to_h
+    end
+
+    def layer_rank_for(layer)
+      layer_order.fetch(layer, DEFAULT_LAYER_ORDER.size)
     end
 
     # TODO(#453): Split tasks covering too many components into smaller tasks

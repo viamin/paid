@@ -56,7 +56,9 @@ module Coordination
       plan_result = DecompositionPlan::Generate.call(
         title: title,
         description: description,
-        sub_components: sub_components
+        sub_components: sub_components,
+        max_tasks: policy["max_tasks"],
+        layer_order: policy["layer_order"]
       )
 
       Result.new(
@@ -85,14 +87,14 @@ module Coordination
       decomposition_config = extract_decomposition_config(strategy)
       source = strategy&.persisted? ? "database" : "defaults"
 
-      DEFAULT_POLICY.merge(decomposition_config).merge("source" => source)
+      normalize_policy(DEFAULT_POLICY.merge(decomposition_config).merge("source" => source))
     rescue => e
       Rails.logger.warn(
         message: "coordination.decomposition_policy_resolution_failed",
         error_class: e.class.name,
         error: e.message
       )
-      DEFAULT_POLICY.merge("source" => "fallback")
+      normalize_policy(DEFAULT_POLICY.merge("source" => "fallback"))
     end
 
     def extract_decomposition_config(strategy)
@@ -137,6 +139,47 @@ module Coordination
         skipped: true,
         skip_reason: reason
       )
+    end
+
+    def normalize_policy(policy)
+      {
+        "max_tasks" => normalize_max_tasks(policy["max_tasks"]),
+        "min_components_to_decompose" => normalize_min_components(policy["min_components_to_decompose"]),
+        "enabled" => normalize_enabled(policy["enabled"]),
+        "layer_order" => normalize_layer_order(policy["layer_order"]),
+        "source" => policy["source"]
+      }
+    end
+
+    def normalize_max_tasks(value)
+      Integer(value).clamp(1, DEFAULT_POLICY["max_tasks"])
+    rescue ArgumentError, TypeError
+      DEFAULT_POLICY["max_tasks"]
+    end
+
+    def normalize_min_components(value)
+      Integer(value).clamp(1, DEFAULT_POLICY["max_tasks"])
+    rescue ArgumentError, TypeError
+      DEFAULT_POLICY["min_components_to_decompose"]
+    end
+
+    def normalize_enabled(value)
+      return value if value == true || value == false
+
+      case value.to_s.strip.downcase
+      when "true" then true
+      when "false" then false
+      else DEFAULT_POLICY["enabled"]
+      end
+    end
+
+    def normalize_layer_order(value)
+      requested_layers = Array(value).filter_map do |layer|
+        normalized = layer.to_s
+        normalized if DEFAULT_POLICY["layer_order"].include?(normalized)
+      end
+
+      (requested_layers + DEFAULT_POLICY["layer_order"]).uniq
     end
 
     class Result

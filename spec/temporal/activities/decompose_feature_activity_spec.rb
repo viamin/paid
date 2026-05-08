@@ -56,6 +56,63 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(result[:prompt_source]).to eq("fallback_prompt")
     end
 
+    context "when policy-based decomposition applies" do
+      let(:issue) do
+        create(
+          :issue,
+          project: project,
+          title: "Add notifications",
+          body: "Add database tables, service layer, API endpoints, and views for notifications."
+        )
+      end
+
+      it "uses Coordination::DecompositionService instead of the LLM path" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+        expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
+        expect(AgentHarness).not_to have_received(:send_message)
+      end
+    end
+
+    context "when a custom policy disables decomposition" do
+      let(:project) { create(:project, account: account) }
+      let(:account) { create(:account) }
+      let(:issue) do
+        create(
+          :issue,
+          project: project,
+          title: "Add notifications",
+          body: "Add database tables, service layer, API endpoints, and views for notifications."
+        )
+      end
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account,
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.merge(
+            "decomposition" => { "enabled" => false }
+          ))
+      end
+
+      it "returns the policy-based skip result without calling the LLM" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+        expect(result[:tasks]).to eq([])
+        expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
+        expect(AgentHarness).not_to have_received(:send_message)
+      end
+    end
+
     it "calls AgentHarness with the correct provider and model" do
       activity.execute(
         project_id: project.id,
