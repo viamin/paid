@@ -5,6 +5,10 @@ require "rails_helper"
 RSpec.describe OrchestrationStrategy do
   subject(:strategy) { build(:orchestration_strategy) }
 
+  # The backfill migration seeds system defaults during db:prepare in CI.
+  # Clear them here so these examples can create their own fixture rows.
+  before { described_class.delete_all }
+
   describe "associations" do
     it { is_expected.to belong_to(:account).optional }
   end

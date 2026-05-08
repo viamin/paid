@@ -4,6 +4,10 @@ require "rails_helper"
 
 RSpec.describe OrchestrationStrategies::Seed do
   describe ".call" do
+    # The backfill migration seeds system defaults during db:prepare in CI.
+    # Clear them here so these examples can verify initial seeding behavior.
+    before { OrchestrationStrategy.delete_all }
+
     it "creates one active strategy per type" do
       expect { described_class.call }.to change(OrchestrationStrategy, :count)
         .by(OrchestrationStrategy::STRATEGY_TYPES.size)

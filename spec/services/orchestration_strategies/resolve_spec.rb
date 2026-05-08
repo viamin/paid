@@ -4,6 +4,10 @@ require "rails_helper"
 
 RSpec.describe OrchestrationStrategies::Resolve do
   describe ".call" do
+    # The backfill migration seeds system defaults during db:prepare in CI.
+    # Clear them here so these examples can control the persisted state.
+    before { OrchestrationStrategy.delete_all }
+
     context "when a persisted system default exists" do
       let!(:strategy) { create(:orchestration_strategy, :review_settings) }
 
