@@ -25,6 +25,7 @@ class PromptVersion < ApplicationRecord
 
   scope :active, -> { where(retired_at: nil) }
   scope :retired, -> { where.not(retired_at: nil) }
+  scope :activatable, -> { where(review_status: nil).or(where(review_status: "approved")) }
   scope :pending_review, -> { where(review_status: "pending") }
   scope :approved, -> { where(review_status: "approved") }
   scope :rejected, -> { where(review_status: "rejected") }
@@ -64,6 +65,10 @@ class PromptVersion < ApplicationRecord
   # while the prompt's review gate was enabled), regardless of outcome.
   def under_review?
     review_status.present?
+  end
+
+  def activatable?
+    !under_review? || approved?
   end
 
   private

@@ -30,7 +30,15 @@
               <%= button_to "Cancel Test", cancel_prompt_ab_test_path(@prompt, @ab_test), method: :post, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500", form: { data: { turbo_confirm: "Cancel this A/B test? This action cannot be undone." } } %>
             <% end %>
             <% if @ab_test.completed? && @ab_test.winner_variant.present? %>
-              <%= button_to "Promote Winner", promote_prompt_ab_test_path(@prompt, @ab_test), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", form: { data: { turbo_confirm: "Promote the winning variant as the current prompt version? This will change the active prompt template." } } %>
+              <% winner = @ab_test.winner_variant.prompt_version %>
+              <% gated_winner = @prompt.requires_review? && !winner.approved? %>
+              <% button_label = gated_winner ? "Queue Winner for Review" : "Promote Winner" %>
+              <% confirm_message = if gated_winner
+                "Queue the winning variant for human review? It will stay inactive until explicitly approved."
+              else
+                "Promote the winning variant as the current prompt version? This will change the active prompt template."
+              end %>
+              <%= button_to button_label, promote_prompt_ab_test_path(@prompt, @ab_test), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", form: { data: { turbo_confirm: confirm_message } } %>
             <% end %>
           <% end %>
         </div>
@@ -76,6 +84,18 @@
               <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-sm font-medium text-green-700">
                 v<%= @ab_test.winner_variant.prompt_version.version %>
               </span>
+              <% if @prompt.requires_review? %>
+                <% winner = @ab_test.winner_variant.prompt_version %>
+                <% if winner.pending_review? %>
+                  <span class="ml-2 inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-sm font-medium text-yellow-800">
+                    pending review
+                  </span>
+                <% elsif winner.approved? %>
+                  <span class="ml-2 inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-sm font-medium text-blue-700">
+                    approved
+                  </span>
+                <% end %>
+              <% end %>
             </dd>
           </div>
         <% end %>

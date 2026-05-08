@@ -61,6 +61,25 @@ RSpec.describe Prompt do
       expect(prompt).not_to be_valid
       expect(prompt.errors[:project]).to include("must belong to the same account")
     end
+
+    it "rejects a pending review version as current_version" do
+      prompt = create(:prompt, :global, :with_version)
+      pending = prompt.create_pending_version!(template: "Pending")
+
+      prompt.current_version = pending
+
+      expect(prompt).not_to be_valid
+      expect(prompt.errors[:current_version]).to include("must be approved before it can become active")
+    end
+
+    it "allows an approved review version as current_version" do
+      prompt = create(:prompt, :global, :with_version)
+      approved = prompt.create_pending_version!(template: "Approved", review_status: "approved")
+
+      prompt.current_version = approved
+
+      expect(prompt).to be_valid
+    end
   end
 
   describe "scopes" do
