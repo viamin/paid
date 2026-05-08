@@ -3,8 +3,6 @@
 class Strategy < ApplicationRecord
   STATUSES = %w[draft active archived].freeze
 
-  attr_accessor :change_notes
-
   belongs_to :account, optional: true
   belongs_to :project, optional: true
   belongs_to :current_version, class_name: "StrategyVersion", optional: true

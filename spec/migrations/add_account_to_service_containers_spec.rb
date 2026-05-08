@@ -9,6 +9,7 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
+require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_strategy_versions")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -21,6 +22,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   let(:chat_rls_migration) { EnableRlsOnChatTables.new }
   let(:knowledge_recommendations_rls_migration) { EnableRlsOnKnowledgeRecommendations.new }
   let(:issue_merge_subscriptions_rls_migration) { EnableRlsOnIssueMergeSubscriptions.new }
+  let(:strategy_rls_migration) { EnableRlsOnStrategiesAndStrategyVersions.new }
 
   include MigrationSpecHelpers
 
@@ -28,6 +30,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     if tenant_policy_count.positive?
+      strategy_rls_migration.down if strategies_have_rls?
       issue_merge_subscriptions_rls_migration.down if issue_merge_subscriptions_have_rls?
       knowledge_recommendations_rls_migration.down if knowledge_recommendations_has_rls?
       chat_rls_migration.down if chat_tables_have_rls?
@@ -53,6 +56,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       chat_rls_migration.up unless chat_tables_have_rls?
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
       issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
+      strategy_rls_migration.up unless strategies_have_rls?
     end
     ServiceContainer.reset_column_information
   end
@@ -237,6 +241,21 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def strategies_have_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i.positive?
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE policyname IN (
+        'tenant_isolation',
+        'tenant_isolation_select',
+        'tenant_isolation_insert',
+        'tenant_isolation_update',
+        'tenant_isolation_delete'
+      )
+        AND tablename IN ('strategies', 'strategy_versions')
+    SQL
   end
 
   def tenant_policy_count

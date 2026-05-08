@@ -6,7 +6,6 @@ class EnableRlsOnStrategiesAndStrategyVersions < ActiveRecord::Migration[8.1]
 
     enable_read_write_policy("strategies", strategy_read_condition, strategy_write_condition)
     enable_read_write_policy("strategy_versions", strategy_version_read_condition, strategy_version_write_condition)
-    restore_exception_incidents_policy
   end
 
   def down
@@ -155,18 +154,5 @@ class EnableRlsOnStrategiesAndStrategyVersions < ActiveRecord::Migration[8.1]
 
   def wrap_sql(sql)
     "(#{sql})"
-  end
-
-  def restore_exception_incidents_policy
-    execute "DROP POLICY IF EXISTS tenant_isolation ON exception_incidents"
-    execute "ALTER TABLE exception_incidents ENABLE ROW LEVEL SECURITY"
-    execute "ALTER TABLE exception_incidents FORCE ROW LEVEL SECURITY"
-    execute <<~SQL
-      CREATE POLICY tenant_isolation ON exception_incidents
-      AS PERMISSIVE
-      FOR ALL
-      USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
-      WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id())
-    SQL
   end
 end

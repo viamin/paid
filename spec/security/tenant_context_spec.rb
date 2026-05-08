@@ -8,6 +8,7 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
+require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_strategy_versions")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -168,6 +169,7 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
       EnableRlsOnChatTables.new.down if chat_tables_have_rls?
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
@@ -182,6 +184,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
+      EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -196,6 +199,7 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
       EnableRlsOnChatTables.new.down if chat_tables_have_rls?
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
@@ -234,6 +238,21 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def strategies_have_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i.positive?
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE policyname IN (
+        'tenant_isolation',
+        'tenant_isolation_select',
+        'tenant_isolation_insert',
+        'tenant_isolation_update',
+        'tenant_isolation_delete'
+      )
+        AND tablename IN ('strategies', 'strategy_versions')
+    SQL
   end
 
   def cleanup_restricted_role
