@@ -88,38 +88,6 @@ module Automation
           return escalation_service_result(signals, service_result)
         end
 
-        if signals.draft_phase?
-          check_draft_gates(signals)
-        else
-          check_ready_escalated_gates(signals)
-        end
-      end
-
-      def check_draft_gates(signals)
-        if signals.review_goal_retry_limit_requires_escalation
-          return escalate_result(signals)
-        end
-
-        if signals.draft_review_limit_reached
-          return escalate_result(signals)
-        end
-
-        if signals.consecutive_draft_failures_breaker
-          return escalate_result(signals)
-        end
-
-        nil
-      end
-
-      def check_ready_escalated_gates(signals)
-        if signals.review_goal_retry_limit_requires_escalation
-          return escalate_result(signals)
-        end
-
-        if signals.followup_limit_reached
-          return noop_result
-        end
-
         nil
       end
 

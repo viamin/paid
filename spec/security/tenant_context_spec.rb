@@ -9,6 +9,7 @@ require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
 require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
 require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
@@ -216,6 +217,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
+      CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       EnableRlsOnNotificationRuleStates.new.up
@@ -225,6 +227,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
+      CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
     end
@@ -251,6 +254,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
+      CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
     end
   end
@@ -293,6 +297,10 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def exception_incidents_table_exists?
     ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
+  def failure_classifications_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:failure_classifications)
   end
 
   def decomposition_decisions_have_rls?
