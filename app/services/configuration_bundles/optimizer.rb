@@ -51,7 +51,7 @@ module ConfigurationBundles
 
       exploitative = exploitative_selection(selections)
       exploratory = exploratory_selection(selections)
-      return annotate_selection(exploitative, selection_mode: "exploitative") unless exploratory_candidate?(exploitative, exploratory)
+      return annotate_selection(exploitative, selection_mode: "exploitative", include_budget: false) unless exploratory_candidate?(exploitative, exploratory)
       return annotate_selection(exploitative, selection_mode: "exploitative") unless exploration_allowed?
 
       annotate_selection(exploratory, selection_mode: "exploratory")
@@ -118,7 +118,8 @@ module ConfigurationBundles
       exploitative&.fingerprint != exploratory&.fingerprint
     end
 
-    def annotate_selection(selection, selection_mode:)
+    def annotate_selection(selection, selection_mode:, include_budget: true)
+      budget_snapshot = include_budget ? exploration_budget_snapshot : nil
       Selection.new(
         definition: selection.definition,
         fingerprint: selection.fingerprint,
@@ -126,7 +127,7 @@ module ConfigurationBundles
         score_inputs: selection.score_inputs,
         selection_mode: selection_mode,
         selection_context: primary_selection_context,
-        budget_snapshot: exploration_budget_snapshot
+        budget_snapshot: budget_snapshot
       )
     end
 
