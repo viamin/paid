@@ -1,7 +1,7 @@
 <%= turbo_stream_from current_account, :dashboard_updates %>
 <%= turbo_stream_from current_account, :live_dashboard %>
 
-<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard">
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard dashboard-frames">
   <div class="sm:flex sm:items-center sm:justify-between">
     <div class="sm:flex-auto">
       <h1 class="text-2xl font-semibold leading-6 text-gray-900">Dashboard</h1>
@@ -46,7 +46,10 @@
         <%= render "dashboard/queue_preview", queue_preview: @queue_preview %>
       </div>
 
-      <turbo-frame id="dashboard-queue-health" src="<%= dashboard_queue_health_path %>" loading="lazy" class="mt-6 block">
+      <turbo-frame id="dashboard-queue-health"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_queue_health_path %>"
+        class="mt-6 block">
         <div class="animate-pulse rounded-lg bg-gray-100 h-24"></div>
       </turbo-frame>
 
@@ -64,7 +67,9 @@
       Cumulative / Periodic Metrics
     </summary>
     <div class="mt-4">
-      <turbo-frame id="dashboard-metrics" src="<%= dashboard_metrics_path(time_range: @time_range) %>" loading="lazy">
+      <turbo-frame id="dashboard-metrics"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_metrics_path(time_range: @time_range) %>">
         <div class="animate-pulse space-y-4">
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div class="rounded-lg bg-gray-100 h-24"></div>
@@ -74,10 +79,15 @@
           </div>
         </div>
       </turbo-frame>
-      <turbo-frame id="dashboard-knowledge-stats" src="<%= dashboard_knowledge_stats_path %>" loading="lazy">
+      <turbo-frame id="dashboard-knowledge-stats"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_knowledge_stats_path %>">
         <div class="animate-pulse mt-8 rounded-lg bg-gray-100 h-24"></div>
       </turbo-frame>
-      <turbo-frame id="dashboard-decision-metrics" src="<%= dashboard_decision_metrics_path(time_range: @time_range) %>" loading="lazy" class="mt-8 block">
+      <turbo-frame id="dashboard-decision-metrics"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_decision_metrics_path(time_range: @time_range) %>"
+        class="mt-8 block">
         <div class="animate-pulse space-y-4">
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div class="rounded-lg bg-gray-100 h-24"></div>
@@ -97,7 +107,9 @@
       Performance
     </summary>
     <div class="mt-4">
-      <turbo-frame id="dashboard-performance" src="<%= dashboard_performance_path(time_range: @time_range, status: @status_filter, goal: @goal_filter) %>" loading="lazy">
+      <turbo-frame id="dashboard-performance"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_performance_path(time_range: @time_range, status: @status_filter, goal: @goal_filter) %>">
         <div class="animate-pulse space-y-4">
           <div class="rounded-lg bg-gray-100 h-48"></div>
           <div class="rounded-lg bg-gray-100 h-48"></div>
