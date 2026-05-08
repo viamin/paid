@@ -2,11 +2,12 @@
 
 module ConfigurationExperiments
   class Assign
-    attr_reader :configuration_experiment, :agent_run
+    attr_reader :configuration_experiment, :agent_run, :variant
 
-    def initialize(configuration_experiment:, agent_run:)
+    def initialize(configuration_experiment:, agent_run:, variant: nil)
       @configuration_experiment = configuration_experiment
       @agent_run = agent_run
+      @variant = variant
     end
 
     def self.call(...)
@@ -41,6 +42,8 @@ module ConfigurationExperiments
     private
 
     def select_variant
+      return validate_variant!(variant) if variant.present?
+
       variants = configuration_experiment.configuration_experiment_variants.order(:id).to_a
       raise ArgumentError, "configuration experiment has no variants" if variants.empty?
       return variants.first if variants.size == 1
@@ -62,6 +65,12 @@ module ConfigurationExperiments
       end
 
       variants.last
+    end
+
+    def validate_variant!(candidate)
+      return candidate if candidate.configuration_experiment_id == configuration_experiment.id
+
+      raise ArgumentError, "configuration experiment variant must belong to the same experiment"
     end
   end
 end

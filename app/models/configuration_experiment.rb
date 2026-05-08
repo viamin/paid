@@ -5,6 +5,7 @@ require "zlib"
 class ConfigurationExperiment < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
   EXPERIMENT_TYPES = %w[agent_output llm_output quality_signal].freeze
+  TRACKED_CONFIG_KEYS = %w[knowledge.token_budget knowledge.section_order].freeze
   MAX_VARIANTS = 3
   ANALYSIS_INTERVAL = AbTest::ANALYSIS_INTERVAL
 

@@ -568,7 +568,8 @@ CREATE TABLE public.agent_runs (
     turns_completed integer DEFAULT 0 NOT NULL,
     streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL,
     mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
-    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL
+    mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL,
+    configuration_bundle_id bigint
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -600,6 +601,13 @@ COMMENT ON COLUMN public.agent_runs.mcp_sidecar_container_ids IS 'Docker contain
 --
 
 COMMENT ON COLUMN public.agent_runs.mcp_provisioned_servers IS 'Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning';
+
+
+--
+-- Name: COLUMN agent_runs.configuration_bundle_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.configuration_bundle_id IS 'Configuration bundle assigned to the run before execution.';
 
 
 --
@@ -1082,7 +1090,8 @@ CREATE TABLE public.configuration_bundles (
     activated_at timestamp(6) without time zone,
     retired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    definition jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 ALTER TABLE ONLY public.configuration_bundles FORCE ROW LEVEL SECURITY;
@@ -1170,6 +1179,13 @@ COMMENT ON COLUMN public.configuration_bundles.activated_at IS 'When the bundle 
 --
 
 COMMENT ON COLUMN public.configuration_bundles.retired_at IS 'When the bundle was retired';
+
+
+--
+-- Name: COLUMN configuration_bundles.definition; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.definition IS 'Canonical runtime configuration snapshot used for optimization and fingerprinting';
 
 
 --
@@ -7315,6 +7331,13 @@ CREATE INDEX index_agent_run_phases_on_phase_key_and_started_at ON public.agent_
 
 
 --
+-- Name: index_agent_runs_on_configuration_bundle_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_runs_on_configuration_bundle_id ON public.agent_runs USING btree (configuration_bundle_id);
+
+
+--
 -- Name: index_agent_runs_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10040,6 +10063,14 @@ ALTER TABLE ONLY public.ab_test_assignments
 
 
 --
+-- Name: agent_runs fk_rails_5e2089720d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_runs
+    ADD CONSTRAINT fk_rails_5e2089720d FOREIGN KEY (configuration_bundle_id) REFERENCES public.configuration_bundles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: billing_line_items fk_rails_60a88c66a0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12578,6 +12609,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508020000'),
 ('20260508014445'),
 ('20260507224416'),
 ('20260507223324'),
