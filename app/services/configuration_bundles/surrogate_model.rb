@@ -29,8 +29,8 @@ module ConfigurationBundles
     def self.default_scope_for(project)
       raise ArgumentError, "project is required when scope is not provided" unless project
 
-      ConfigurationBundleOutcome
-        .includes(:configuration_bundle)
+      BundleOutcome
+        .includes(:configuration_bundle, :agent_run)
         .joins(agent_run: :project)
         .where(agent_runs: { project_id: project.id })
         .where.not(quality_score: nil)
@@ -38,7 +38,11 @@ module ConfigurationBundles
 
     def predict(bundle_definition:, fingerprint: nil)
       bundle_features = feature_map(bundle_definition)
-      matches = weighted_matches(bundle_features:, fingerprint:)
+      matches = weighted_matches(
+        bundle_features:,
+        fingerprint:,
+        scoring_context: scoring_context(bundle_features)
+      )
       return empty_prediction if matches.empty?
 
       total_weight = matches.sum { |match| match[:weight] }
@@ -55,11 +59,13 @@ module ConfigurationBundles
 
     private
 
-    def weighted_matches(bundle_features:, fingerprint:)
-      exact_matches = exact_matches_for(fingerprint)
+    def weighted_matches(bundle_features:, fingerprint:, scoring_context:)
+      exact_matches = exact_matches_for(fingerprint, scoring_context:)
       return exact_matches if exact_matches.present?
 
       outcome_rows.filter_map do |outcome_row|
+        next unless same_scoring_context?(scoring_context, outcome_row[:scoring_context])
+
         similarity = similarity(bundle_features, outcome_row[:features])
         next if similarity.zero?
 
@@ -67,10 +73,12 @@ module ConfigurationBundles
       end
     end
 
-    def exact_matches_for(fingerprint)
+    def exact_matches_for(fingerprint, scoring_context:)
       return [] if fingerprint.blank?
 
-      outcome_rows_by_fingerprint.fetch(fingerprint, []).map do |outcome_row|
+      outcome_rows_by_fingerprint.fetch(fingerprint, []).filter_map do |outcome_row|
+        next unless same_scoring_context?(scoring_context, outcome_row[:scoring_context])
+
         match_row(outcome_row[:quality_score], 1.0)
       end
     end
@@ -79,14 +87,15 @@ module ConfigurationBundles
       @outcome_rows ||= begin
         rows = []
 
-        scope.order(completed_at: :desc).limit(MAX_OUTCOME_ROWS).each do |outcome|
+        scope.order(created_at: :desc).limit(MAX_OUTCOME_ROWS).each do |outcome|
           definition = outcome.configuration_bundle&.definition
           next unless definition.is_a?(Hash)
 
           rows << {
             fingerprint: outcome.configuration_bundle.fingerprint,
             features: feature_map(definition),
-            quality_score: outcome.quality_score.to_f
+            quality_score: outcome.quality_score.to_f,
+            scoring_context: scoring_context_for(outcome)
           }
         end
 
@@ -129,6 +138,22 @@ module ConfigurationBundles
         mcp_servers: Array(definition["mcp_servers"]).sort,
         experiments: experiments.sort.to_h
       }
+    end
+
+    def scoring_context(features)
+      {
+        goal: features[:goal]
+      }
+    end
+
+    def scoring_context_for(outcome)
+      {
+        goal: outcome.agent_run.goal
+      }
+    end
+
+    def same_scoring_context?(lhs, rhs)
+      lhs == rhs
     end
 
     def experiment_feature_value(config_value)

@@ -31,11 +31,41 @@ module ConfigurationBundles
     private
 
     def find_or_create_bundle(fingerprint:, definition:)
-      ConfigurationBundle.find_or_create_by!(fingerprint: fingerprint) do |bundle|
-        bundle.definition = definition
+      existing_bundle = bundle_scope.find_by(fingerprint: fingerprint)
+      return existing_bundle if existing_bundle&.definition == definition
+      return existing_bundle.tap { |bundle| bundle.update!(definition: definition) } if existing_bundle
+
+      account.with_lock do
+        bundle_scope.find_by(fingerprint: fingerprint) || create_runtime_bundle(fingerprint:, definition:)
       end
     rescue ActiveRecord::RecordNotUnique
-      ConfigurationBundle.find_by!(fingerprint: fingerprint)
+      bundle_scope.find_by!(fingerprint: fingerprint)
+    end
+
+    def create_runtime_bundle(fingerprint:, definition:)
+      ConfigurationBundle.create!(
+        account: account,
+        name: "Runtime Bundle #{fingerprint.first(12)}",
+        version: next_runtime_bundle_version,
+        status: "active",
+        strategy: "runtime_snapshot",
+        strategy_params: {},
+        context: {},
+        fingerprint: fingerprint,
+        definition: definition
+      )
+    end
+
+    def next_runtime_bundle_version
+      ConfigurationBundle.where(account: account, project_id: nil).maximum(:version).to_i + 1
+    end
+
+    def bundle_scope
+      ConfigurationBundle.where(account: account)
+    end
+
+    def account
+      agent_run.project.account
     end
 
     def bundle_definition(selected_variants = nil)

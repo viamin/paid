@@ -60,6 +60,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
+  describe "#evaluate_auto_merge" do
+    let(:selected_strategy) { instance_double(Automation::Strategies::AutoMerge) }
+    let(:signals) do
+      Automation::Strategies::AutoMerge::Signals.build(
+        issue_id: 123,
+        pr_number: 42,
+        bot_authored: true,
+        dependabot_eligible: true,
+        checks_green: true,
+        mergeable: true
+      )
+    end
+    let(:merge_result) do
+      Automation::Result.new(decisions: [ Automation::Decision.merge(issue_id: 123, pr_number: 42) ])
+    end
+
+    it "selects the auto-merge strategy through Automation::Strategies::Select" do
+      allow(Automation::Strategies::Select).to receive(:call)
+        .with(strategy_type: :auto_merge, project: project)
+        .and_return(selected_strategy)
+      allow(selected_strategy).to receive(:evaluate).and_return(merge_result)
+
+      result = activity.send(:evaluate_auto_merge, project, signals)
+
+      expect(result).to be(true)
+      expect(Automation::Strategies::Select).to have_received(:call)
+        .with(strategy_type: :auto_merge, project: project)
+      expect(selected_strategy).to have_received(:evaluate).with(
+        have_attributes(project: project)
+      )
+    end
+  end
+
   describe "#execute" do
     context "when project is missing" do
       it "returns empty result with project_missing flag" do

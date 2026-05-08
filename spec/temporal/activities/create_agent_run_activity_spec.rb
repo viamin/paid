@@ -7,6 +7,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
+  let(:claude_provider) { project.created_by.providers.find_by!(provider_key: "claude") }
+  let(:codex_provider) { create(:provider, user: project.created_by, provider_key: "codex") }
 
   before do
     # Stub conversation_section_for so the activity does not make real HTTP
@@ -182,13 +184,72 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
-    it "preserves the existing configuration bundle on resume" do
-      existing_bundle = create(:configuration_bundle)
-      queued_run = create(:agent_run, :queued, project: project, issue: issue, configuration_bundle: existing_bundle)
+    it "preserves the existing configuration bundle on resume when provider selection is unchanged" do
+      existing_bundle = create(:configuration_bundle,
+        account: project.account,
+        definition: existing_create_pr_bundle_definition)
+      queued_run = create(:agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        provider: claude_provider,
+        agent_type: "claude_code",
+        configuration_bundle: existing_bundle)
 
       activity.execute(agent_run_id: queued_run.id)
 
       expect(queued_run.reload.configuration_bundle).to eq(existing_bundle)
+    end
+
+    it "recomputes the configuration bundle on resume when automatic provider selection changes" do
+      existing_bundle = create(:configuration_bundle,
+        account: project.account,
+        definition: existing_review_bundle_definition)
+      queued_run = create_review_run_with_bundle(existing_bundle)
+      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      queued_run.reload
+      expect(queued_run.provider).to eq(codex_provider)
+      expect(queued_run.agent_type).to eq("codex")
+      expect(queued_run.configuration_bundle).not_to eq(existing_bundle)
+      expect(queued_run.configuration_bundle.definition).to include(
+        "provider_id" => codex_provider.id,
+        "agent_type" => "codex"
+      )
+    end
+
+    def existing_review_bundle_definition
+      {
+        "schema_version" => 1,
+        "goal" => "review",
+        "agent_type" => "claude_code",
+        "provider_id" => claude_provider.id
+      }
+    end
+
+    def existing_create_pr_bundle_definition
+      {
+        "schema_version" => 1,
+        "goal" => "create_pr",
+        "agent_type" => "claude_code",
+        "provider_id" => claude_provider.id,
+        "experiments" => {}
+      }
+    end
+
+    def create_review_run_with_bundle(bundle)
+      create(:agent_run,
+        :queued,
+        :automatic,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        goal: "review",
+        provider: claude_provider,
+        agent_type: "claude_code",
+        configuration_bundle: bundle)
     end
 
     it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do

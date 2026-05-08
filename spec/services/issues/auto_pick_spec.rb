@@ -6,6 +6,25 @@ RSpec.describe Issues::AutoPick do
   let(:project) { create(:project, auto_pick_enabled: true) }
 
   describe "#call" do
+    it "selects the auto-pick strategy through Automation::Strategies::Select" do
+      selected_strategy = instance_double(Automation::Strategies::AutoPick)
+      issue = create(:issue, project: project, github_state: "open")
+      result = Automation::Result.new(decisions: [ Automation::Decision.queue_create_pr_run(issue_id: issue.id) ])
+
+      allow(Automation::Strategies::Select).to receive(:call)
+        .with(strategy_type: :auto_pick, project: project)
+        .and_return(selected_strategy)
+      allow(selected_strategy).to receive(:evaluate).and_return(result)
+
+      described_class.new(project).call
+
+      expect(Automation::Strategies::Select).to have_received(:call)
+        .with(strategy_type: :auto_pick, project: project)
+      expect(selected_strategy).to have_received(:evaluate).with(
+        have_attributes(project: project)
+      )
+    end
+
     it "selects the next unblocked open issue and creates a queued agent run" do
       issue = create(:issue, project: project, github_state: "open")
 

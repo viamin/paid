@@ -127,11 +127,11 @@ RSpec.describe ConfigurationBundles::Optimizer do
         }
       }
     }
-    bundle = create(:configuration_bundle, definition: definition)
+    bundle = create(:configuration_bundle, account: project.account, definition: definition)
 
     quality_scores.each do |quality_score|
       run = create(:agent_run, :completed, configuration_bundle: bundle, project: project, issue: create(:issue, project: project))
-      create(:configuration_bundle_outcome,
+      create(:bundle_outcome,
         configuration_bundle: bundle,
         agent_run: run,
         quality_score: quality_score)

@@ -26,18 +26,44 @@ RSpec.describe Automation::Strategies::AutoContinue do
     result.to_h[:decisions].map { |d| d[:type] }
   end
 
+  def ready_scan_payload
+    {
+      issue_id: pull_request.id,
+      pr_number: 42,
+      phase: "ready",
+      triggers: []
+    }
+  end
+
   it "is an Automation::Strategy" do
     expect(described_class.ancestors).to include(Automation::Strategy)
   end
 
   describe "backwards compatibility" do
+    it "selects auto-review through Automation::Strategies::Select when lifecycle signals are absent" do
+      selected_strategy = instance_double(Automation::Strategies::AutoReview)
+      context = Automation::Context.build(
+        record: pull_request,
+        project: project,
+        metadata: { scan: ready_scan_payload }
+      )
+
+      allow(Automation::Strategies::Select).to receive(:call)
+        .with(strategy_type: :auto_review, project: project)
+        .and_return(selected_strategy)
+      allow(selected_strategy).to receive(:evaluate).and_return(Automation::Result.noop)
+
+      strategy.evaluate(context)
+
+      expect(Automation::Strategies::Select).to have_received(:call)
+        .with(strategy_type: :auto_review, project: project)
+      expect(selected_strategy).to have_received(:evaluate).with(
+        have_attributes(project: project, record: pull_request)
+      )
+    end
+
     it "delegates to AutoReview when no lifecycle signals are present" do
-      result = evaluate(scan: {
-        issue_id: pull_request.id,
-        pr_number: 42,
-        phase: "ready",
-        triggers: [ { type: "owner_approved" } ]
-      })
+      result = evaluate(scan: ready_scan_payload.merge(triggers: [ { type: "owner_approved" } ]))
 
       expect(result.to_h[:decisions].first).to include(type: "merge")
     end
