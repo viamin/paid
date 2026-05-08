@@ -111,8 +111,9 @@ module Projects
     def experiment_confidence
       active_experiments.map do |experiment|
         variant_stats = project_scoped_variant_stats(experiment)
+        variants = experiment_variants_by_experiment_id.fetch(experiment.id, [])
 
-        analysis = project_scoped_analysis(experiment, variant_stats)
+        analysis = project_scoped_analysis(experiment, variant_stats, variants: variants)
 
         {
           experiment: experiment,
@@ -124,7 +125,7 @@ module Projects
           winner_label: analysis.winner ? variant_label(analysis.winner) : nil,
           min_samples_per_variant: experiment.min_samples_per_variant,
           confidence_threshold: experiment.confidence_threshold,
-          variants: experiment.configuration_experiment_variants.order(:id).map do |variant|
+          variants: variants.map do |variant|
             stats = variant_stats[variant.id] || { sample_count: 0, avg_quality_score: nil }
 
             {
@@ -228,8 +229,8 @@ module Projects
       end
     end
 
-    def project_scoped_analysis(experiment, variant_stats)
-      variants = experiment.configuration_experiment_variants.order(:id).to_a
+    def project_scoped_analysis(experiment, variant_stats, variants: nil)
+      variants ||= experiment_variants_by_experiment_id.fetch(experiment.id, [])
       control = variants.find(&:is_control)
 
       return ConfigurationExperiments::Analyze::Result.new(status: :insufficient_data) unless control
@@ -301,6 +302,14 @@ module Projects
         .distinct
         .order(:id)
         .to_a
+    end
+
+    def experiment_variants_by_experiment_id
+      @experiment_variants_by_experiment_id ||= ConfigurationExperimentVariant
+        .where(configuration_experiment_id: active_experiments.map(&:id))
+        .order(:configuration_experiment_id, :id)
+        .to_a
+        .group_by(&:configuration_experiment_id)
     end
 
     def representative_runs_by_goal

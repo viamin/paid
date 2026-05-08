@@ -93,6 +93,18 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(treatment_variant[:avg_quality_score]).to be_within(0.001).of(0.82)
     end
 
+    it "loads experiment variants once per experiment when building confidence stats" do
+      experiment, control, variant = create_experiment(project:)
+      create_bundle(project:, experiment:, variant:)
+      populate_experiment(project:, experiment:, control:, variant:)
+      allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates).and_return([])
+
+      queries = capture_queries { described_class.call(project: project) }
+      variant_queries = queries.grep(/FROM "configuration_experiment_variants"/)
+
+      expect(variant_queries.size).to eq(1)
+    end
+
     it "summarizes bundle outcomes and optimizer evidence" do
       experiment, control, variant = create_experiment(project:)
       bundle = create_bundle(project:, experiment:, variant:)

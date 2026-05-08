@@ -77,7 +77,7 @@ module ConfigurationBundles
 
     def candidate_variants
       experiments = active_experiments.filter_map do |experiment|
-        variants = experiment.configuration_experiment_variants.order(:id).filter_map do |variant|
+        variants = active_experiment_variants_by_experiment_id.fetch(experiment.id, []).filter_map do |variant|
           next if parsed_variant_value(variant, experiment:).equal?(INVALID_VARIANT_VALUE)
 
           [ experiment.id, variant ]
@@ -94,9 +94,17 @@ module ConfigurationBundles
     end
 
     def active_experiments
-      ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
         ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
       end
+    end
+
+    def active_experiment_variants_by_experiment_id
+      @active_experiment_variants_by_experiment_id ||= ConfigurationExperimentVariant
+        .where(configuration_experiment_id: active_experiments.map(&:id))
+        .order(:configuration_experiment_id, :id)
+        .to_a
+        .group_by(&:configuration_experiment_id)
     end
 
     def bundle_definition(variant_by_experiment_id)
