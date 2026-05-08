@@ -231,6 +231,44 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
         expect(result.sorted_indices.sort).to eq((0...result.task_count).to_a)
       end
     end
+
+    context "with a custom max_tasks limit" do
+      subject(:result) do
+        described_class.call(
+          title: title,
+          description: description,
+          sub_components: sub_components,
+          max_tasks: 2
+        )
+      end
+
+      let(:title) { "Notification platform" }
+      let(:description) { "Add database, services, API, and UI support." }
+      let(:sub_components) { [ "database", "service layer", "api endpoints", "views" ] }
+
+      it "truncates the generated plan to the configured maximum" do
+        expect(result.task_count).to eq(2)
+      end
+    end
+
+    context "with a custom layer order" do
+      subject(:result) do
+        described_class.call(
+          title: title,
+          description: description,
+          sub_components: sub_components,
+          layer_order: %w[view controller service model]
+        )
+      end
+
+      let(:title) { "Dashboard" }
+      let(:description) { "Add database, services, API, and views." }
+      let(:sub_components) { [ "database", "service layer", "api endpoints", "views" ] }
+
+      it "sorts tasks using the configured layer precedence" do
+        expect(result.tasks.map { |task| task[:scope] }).to eq(%w[view controller service model])
+      end
+    end
   end
 
   describe "immutability" do
