@@ -124,13 +124,14 @@ RSpec.describe PromptVersion do
     end
 
     it "scopes activatable versions to unreviewed and approved records" do
-      pending = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
+      pending_v = create(:prompt_version, :pending_review, prompt: prompt, version: 1)
       approved = create(:prompt_version, :approved, prompt: prompt, version: 2)
       rejected = create(:prompt_version, :rejected, prompt: prompt, version: 3)
       unreviewed = create(:prompt_version, prompt: prompt, version: 4)
 
-      expect(described_class.activatable).to contain_exactly(approved, unreviewed)
-      expect(described_class.activatable).not_to include(pending, rejected)
+      activatable = prompt.prompt_versions.activatable
+      expect(activatable).to contain_exactly(approved, unreviewed)
+      expect(activatable).not_to include(pending_v, rejected)
     end
 
     it "allows review fields to be updated after creation" do
