@@ -618,6 +618,20 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command).to include("copilot", "--autopilot")
         expect(env).to include("COPILOT_ALLOW_ALL" => "true")
       end
+
+      it "does not unset COPILOT_GITHUB_TOKEN in subscription auth wrapper" do
+        context = described_class::CommandContext.new(
+          provider_candidate: "copilot",
+          provider: "copilot",
+          user: nil
+        )
+        command = activity.send(:build_command, context, "ping")
+
+        script = command[2]
+        expect(script).to include("PAID_COPILOT_SUBSCRIPTION_AUTH")
+        expect(script).not_to include("-u COPILOT_GITHUB_TOKEN")
+        expect(script).to include("-u GH_TOKEN")
+      end
     end
   end
 
@@ -2212,7 +2226,25 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "caps startup timeout by the remaining execution budget" do
+        agent_run.update!(status: "running", started_at: 4.minutes.ago)
+        project.update!(max_execution_seconds: 270)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: 30,
+            startup_timeout: 30
           )
         ).and_return(exec_success)
 
@@ -2229,6 +2261,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
             idle_timeout: nil,
             heartbeat_path: nil
           )
@@ -2247,6 +2280,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
@@ -2265,6 +2299,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
@@ -2286,8 +2321,31 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: expected_idle,
             idle_timeout: expected_idle,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "honors longer user-configured startup windows" do
+        agent_run.update!(agent_type: "codex")
+        project.update!(max_execution_seconds: 86_400)
+        user.settings.update!(create_pr_idle_timeout_seconds: 420)
+        allow(activity).to receive(:run_harness_preflight!)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expected_startup = 420 * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: expected_startup,
+            idle_timeout: expected_startup
           )
         ).and_return(exec_success)
 
@@ -2304,6 +2362,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
           )

@@ -7,6 +7,7 @@ module ConfigurationBundles
     include BundleFingerprinting
 
     INVALID_EXPERIMENT_VALUE = Object.new
+    FingerprintMismatchError = Class.new(StandardError)
 
     attr_reader :agent_run
 
@@ -37,7 +38,7 @@ module ConfigurationBundles
     def find_or_create_bundle(fingerprint:, definition:)
       existing_bundle = bundle_scope.find_by(fingerprint: fingerprint)
       return existing_bundle if existing_bundle&.definition == definition
-      return existing_bundle.tap { |bundle| bundle.update!(definition: definition) } if existing_bundle
+      raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}" if existing_bundle
 
       account.with_lock do
         bundle_scope.find_by(fingerprint: fingerprint) || create_runtime_bundle(fingerprint:, definition:)
@@ -49,6 +50,8 @@ module ConfigurationBundles
     def create_runtime_bundle(fingerprint:, definition:)
       ConfigurationBundle.create!(
         account: account,
+        prompt_version: agent_run.prompt_version,
+        llm_model: agent_run.model_selection&.llm_model,
         name: "Runtime Bundle #{fingerprint.first(12)}",
         version: next_runtime_bundle_version,
         status: "active",
@@ -81,6 +84,7 @@ module ConfigurationBundles
           provider_id: agent_run.provider_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
+          model_selection: model_selection_definition,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           experiments: experiment_definitions(selected_variants)

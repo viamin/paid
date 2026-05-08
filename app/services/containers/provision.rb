@@ -4,6 +4,7 @@ require "base64"
 require "digest"
 require "docker-api"
 require "json"
+require "open3"
 require "securerandom"
 require "shellwords"
 
@@ -1261,6 +1262,51 @@ module Containers
       end
     end
 
+    def copilot_config_has_oauth_token?
+      config_path = copilot_config_host_path || copilot_local_config_path
+      return false unless config_path
+
+      json_path = File.join(config_path, "config.json")
+      return false unless File.file?(json_path)
+
+      config = JSON.parse(File.read(json_path))
+      config["oauth_token"] || config["oauthToken"] || config["token"] ||
+        config.dig("auth", "token")
+    rescue JSON::ParserError, Errno::ENOENT, Errno::EACCES
+      false
+    end
+
+    def resolve_copilot_github_token
+      return @resolved_copilot_github_token if defined?(@resolved_copilot_github_token)
+
+      @resolved_copilot_github_token =
+        env_var_token || read_copilot_cli_access_token_from_host || gh_cli_token
+    end
+
+    def env_var_token
+      %w[COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN].filter_map do |var|
+        ENV[var].to_s.strip.presence
+      end.first
+    end
+
+    def read_copilot_cli_access_token_from_host
+      path = File.join(Dir.home, ".copilot-cli-access-token")
+      return nil unless File.file?(path)
+
+      File.read(path).strip.presence
+    rescue Errno::ENOENT, Errno::EACCES
+      nil
+    end
+
+    def gh_cli_token
+      stdout, _stderr, status = Open3.capture3("gh", "auth", "token")
+      return nil unless status.success?
+
+      stdout.strip.presence
+    rescue SystemCallError
+      nil
+    end
+
     def seed_host_credentials!(staging_path:, target_path:, files:, success_log_key:, failure_log_key:)
       copy_commands = files.map do |filename|
         "cp #{Shellwords.escape("#{staging_path}/#{filename}")} #{Shellwords.escape("#{target_path}/#{filename}")} 2>/dev/null"
@@ -1667,10 +1713,12 @@ module Containers
       # a misleading "compiler failed to generate an executable file" error
       # (e.g. bigdecimal extconf) even though the toolchain is fully present.
       # Docker's default tmpfs flags include noexec, so it must be overridden.
-      # /home/agent/.cache only stores cache data and stays noexec.
+      # /home/agent/.cache needs exec because some providers (e.g. GitHub Copilot)
+      # download native Node.js addons (pty.node) into ~/.cache/copilot/pkg/ at
+      # runtime; dlopen() requires mmap(PROT_EXEC), which fails on a noexec mount.
       tmpfs = {
         "/tmp" => "exec,size=#{options[:tmpfs_tmp_size]},mode=1777",
-        "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
+        "/home/agent/.cache" => "exec,size=#{options[:tmpfs_cache_size]},mode=0755"
       }
 
       # Claude CLI needs to write session data, project indexes, todos, debug
@@ -1860,6 +1908,14 @@ module Containers
       env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
 
       env << "PAID_CLAUDE_SUBSCRIPTION_AUTH=#{claude_subscription_auth? ? 1 : 0}"
+
+      if copilot_subscription_auth? && !copilot_config_has_oauth_token?
+        copilot_token = resolve_copilot_github_token
+        if copilot_token.present?
+          env << "COPILOT_GITHUB_TOKEN=#{copilot_token}"
+          log_system("container.copilot_token_resolved")
+        end
+      end
 
       if claude_subscription_auth?
         # Claude subscription mode: let Claude Code use its native auth from
