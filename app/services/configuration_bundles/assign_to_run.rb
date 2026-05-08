@@ -26,8 +26,8 @@ module ConfigurationBundles
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(
         configuration_bundle: bundle,
-        configuration_bundle_selection_mode: selection&.selection_mode || "exploitative",
-        configuration_bundle_selection_context: selection&.selection_context || default_selection_context
+        configuration_bundle_selection_mode: selection&.selection_mode,
+        configuration_bundle_selection_context: selection&.selection_context
       )
       bundle
     end
@@ -136,10 +136,6 @@ module ConfigurationBundles
         error: e.message
       )
       nil
-    end
-
-    def default_selection_context
-      agent_run.issue_id.present? ? "task" : "project"
     end
   end
 end

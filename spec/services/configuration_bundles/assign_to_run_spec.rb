@@ -63,8 +63,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     expect(bundle).to be_persisted
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
-    expect(agent_run.configuration_bundle_selection_mode).to eq("exploitative")
-    expect(agent_run.configuration_bundle_selection_context).to eq("task")
+    expect(agent_run.configuration_bundle_selection_mode).to be_nil
+    expect(agent_run.configuration_bundle_selection_context).to be_nil
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
   end
 
