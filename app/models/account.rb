@@ -32,6 +32,7 @@ class Account < ApplicationRecord
   has_many :chat_sessions, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
+  has_many :configuration_bundles, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }
