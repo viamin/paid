@@ -79,13 +79,6 @@ class CreateOrchestrationDecisions < ActiveRecord::Migration[8.1]
   end
 
   def down
-    # Acquire dependent table locks up front so rollback does not deadlock with
-    # concurrent metadata reads that already hold project/agent_run locks.
-    execute <<~SQL
-      LOCK TABLE projects, agent_runs IN ACCESS SHARE MODE;
-      LOCK TABLE orchestration_decisions IN ACCESS EXCLUSIVE MODE;
-    SQL
-
     execute "DROP POLICY IF EXISTS tenant_isolation ON orchestration_decisions"
     execute "ALTER TABLE orchestration_decisions NO FORCE ROW LEVEL SECURITY"
     execute "ALTER TABLE orchestration_decisions DISABLE ROW LEVEL SECURITY"
