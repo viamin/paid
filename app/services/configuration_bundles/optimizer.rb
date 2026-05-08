@@ -37,13 +37,21 @@ module ConfigurationBundles
       new(...).select_bundle
     end
 
+    def self.ranked_candidates(...)
+      new(...).ranked_candidates
+    end
+
     def select_bundle
+      ranked_candidates.max_by { |selection| selection.score_inputs.acquisition_score }
+    end
+
+    def ranked_candidates
       candidates = candidate_variants
-      return if candidates.empty?
+      return [] if candidates.empty?
 
       candidates
         .map { |variant_by_experiment_id| score_candidate(variant_by_experiment_id) }
-        .max_by { |selection| selection.score_inputs.acquisition_score }
+        .sort_by { |selection| -selection.score_inputs.acquisition_score }
     end
 
     private
