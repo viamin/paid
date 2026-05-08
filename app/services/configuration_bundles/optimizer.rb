@@ -7,12 +7,20 @@ module ConfigurationBundles
     include BundleFingerprinting
 
     INVALID_VARIANT_VALUE = Object.new
+    DEFAULT_EXPLORATION_BUDGETS = {
+      "task" => 0.1,
+      "project" => 0.25
+    }.freeze
+    PRIMARY_SELECTION_CONTEXT = "project"
 
     Selection = Struct.new(
       :definition,
       :fingerprint,
       :variant_by_experiment_id,
       :score_inputs,
+      :selection_mode,
+      :selection_context,
+      :budget_snapshot,
       keyword_init: true
     )
 
@@ -38,12 +46,15 @@ module ConfigurationBundles
     end
 
     def select_bundle
-      candidates = candidate_variants
-      return if candidates.empty?
+      selections = candidate_variants.map { |variant_by_experiment_id| score_candidate(variant_by_experiment_id) }
+      return if selections.empty?
 
-      candidates
-        .map { |variant_by_experiment_id| score_candidate(variant_by_experiment_id) }
-        .max_by { |selection| selection.score_inputs.acquisition_score }
+      exploitative = exploitative_selection(selections)
+      exploratory = exploratory_selection(selections)
+      return annotate_selection(exploitative, selection_mode: "exploitative") unless exploratory_candidate?(exploitative, exploratory)
+      return annotate_selection(exploitative, selection_mode: "exploitative") unless exploration_allowed?
+
+      annotate_selection(exploratory, selection_mode: "exploratory")
     end
 
     private
@@ -83,6 +94,96 @@ module ConfigurationBundles
       experiments.shift.product(*experiments).map do |combination|
         Array(combination).flatten(1).each_slice(2).to_h
       end
+    end
+
+    def exploitative_selection(selections)
+      selections.max_by do |selection|
+        [
+          selection.score_inputs.predicted_quality_score,
+          selection.score_inputs.acquisition_score
+        ]
+      end
+    end
+
+    def exploratory_selection(selections)
+      selections.max_by do |selection|
+        [
+          selection.score_inputs.acquisition_score,
+          selection.score_inputs.predicted_quality_score
+        ]
+      end
+    end
+
+    def exploratory_candidate?(exploitative, exploratory)
+      exploitative&.fingerprint != exploratory&.fingerprint
+    end
+
+    def annotate_selection(selection, selection_mode:)
+      Selection.new(
+        definition: selection.definition,
+        fingerprint: selection.fingerprint,
+        variant_by_experiment_id: selection.variant_by_experiment_id,
+        score_inputs: selection.score_inputs,
+        selection_mode: selection_mode,
+        selection_context: primary_selection_context,
+        budget_snapshot: exploration_budget_snapshot
+      )
+    end
+
+    def exploration_allowed?
+      exploration_budget_snapshot.values.all? { |snapshot| snapshot[:within_budget] }
+    end
+
+    def exploration_budget_snapshot
+      @exploration_budget_snapshot ||= applicable_contexts.index_with do |context|
+        total_runs = prior_runs_for(context).count
+        exploratory_runs = prior_runs_for(context).where(configuration_bundle_selection_mode: "exploratory").count
+        observed_share = total_runs.zero? ? 0.0 : exploratory_runs.to_f / total_runs
+        budget = exploration_budget_for(context)
+
+        {
+          budget: budget,
+          total_runs: total_runs,
+          exploratory_runs: exploratory_runs,
+          observed_share: observed_share.round(4),
+          within_budget: budget.positive? && observed_share < budget
+        }
+      end
+    end
+
+    def applicable_contexts
+      contexts = [ PRIMARY_SELECTION_CONTEXT ]
+      contexts.unshift("task") if agent_run.issue_id.present?
+      contexts
+    end
+
+    def primary_selection_context
+      agent_run.issue_id.present? ? "task" : PRIMARY_SELECTION_CONTEXT
+    end
+
+    def prior_runs_for(context)
+      scope = AgentRun
+        .where(project_id: agent_run.project_id, goal: agent_run.goal)
+        .where.not(id: agent_run.id)
+        .where.not(configuration_bundle_selection_mode: nil)
+
+      context == "task" ? scope.where(issue_id: agent_run.issue_id) : scope
+    end
+
+    def exploration_budget_for(context)
+      raw_value = project_optimizer_setting("exploration_budgets", context) || DEFAULT_EXPLORATION_BUDGETS.fetch(context)
+      budget = Float(raw_value, exception: false)
+      return DEFAULT_EXPLORATION_BUDGETS.fetch(context) unless budget
+
+      budget = budget / 100.0 if budget > 1
+      budget.clamp(0.0, 1.0)
+    end
+
+    def project_optimizer_setting(*path)
+      settings = agent_run.project.fitness_settings
+      return unless settings.is_a?(Hash)
+
+      settings.deep_stringify_keys.dig("configuration_bundle_optimizer", *path)
     end
 
     def active_experiments

@@ -23,6 +23,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     bundle = described_class.call(agent_run: agent_run)
 
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
+    expect(agent_run.configuration_bundle_selection_mode).to eq("exploitative")
+    expect(agent_run.configuration_bundle_selection_context).to eq("task")
     expect(bundle.definition).to include(
       "schema_version" => 1,
       "goal" => agent_run.goal,
@@ -61,6 +63,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     expect(bundle).to be_persisted
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
+    expect(agent_run.configuration_bundle_selection_mode).to eq("exploitative")
+    expect(agent_run.configuration_bundle_selection_context).to eq("task")
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
   end
 
@@ -73,5 +77,19 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
     expect(bundle.definition.fetch("experiments")).to eq({})
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_nil
+  end
+
+  it "records exploratory routing metadata when the optimizer selects an exploratory bundle" do
+    selection = ConfigurationBundles::Optimizer::Selection.new(
+      variant_by_experiment_id: { experiment.id => variant },
+      selection_mode: "exploratory",
+      selection_context: "task"
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    described_class.call(agent_run: agent_run)
+
+    expect(agent_run.reload.configuration_bundle_selection_mode).to eq("exploratory")
+    expect(agent_run.configuration_bundle_selection_context).to eq("task")
   end
 end

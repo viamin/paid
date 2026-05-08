@@ -569,7 +569,9 @@ CREATE TABLE public.agent_runs (
     streaming_turns_data jsonb DEFAULT '[]'::jsonb NOT NULL,
     mcp_sidecar_container_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     mcp_provisioned_servers jsonb DEFAULT '{}'::jsonb NOT NULL,
-    configuration_bundle_id bigint
+    configuration_bundle_id bigint,
+    configuration_bundle_selection_mode character varying,
+    configuration_bundle_selection_context character varying
 );
 
 ALTER TABLE ONLY public.agent_runs FORCE ROW LEVEL SECURITY;
@@ -608,6 +610,20 @@ COMMENT ON COLUMN public.agent_runs.mcp_provisioned_servers IS 'Materialized MCP
 --
 
 COMMENT ON COLUMN public.agent_runs.configuration_bundle_id IS 'Configuration bundle assigned to the run before execution.';
+
+
+--
+-- Name: COLUMN agent_runs.configuration_bundle_selection_mode; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.configuration_bundle_selection_mode IS 'Whether configuration bundle routing favored exploitative or exploratory selection for this run.';
+
+
+--
+-- Name: COLUMN agent_runs.configuration_bundle_selection_context; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.agent_runs.configuration_bundle_selection_context IS 'Primary optimization context used for bundle routing, such as task or project.';
 
 
 --
@@ -12609,6 +12625,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508104610'),
 ('20260508020000'),
 ('20260508014445'),
 ('20260507224416'),
