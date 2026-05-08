@@ -578,6 +578,57 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
     t.index ["started_by_id"], name: "index_context_intake_sessions_on_started_by_id"
   end
 
+  create_table "coordination_experiment_assignments", comment: "Assignment and outcome for one feature orchestration workflow sample", force: :cascade do |t|
+    t.bigint "coordination_experiment_id", null: false
+    t.bigint "coordination_experiment_variant_id", null: false
+    t.decimal "coordination_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.bigint "issue_id"
+    t.jsonb "outcome_metrics", default: {}, null: false, comment: "Aggregated coordination quality and cost metrics"
+    t.string "outcome_status", default: "assigned", null: false
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "workflow_id", null: false, comment: "Temporal workflow ID for the orchestrated feature sample"
+    t.index ["coordination_experiment_id", "workflow_id"], name: "idx_coordination_experiment_assignments_unique", unique: true
+    t.index ["coordination_experiment_id"], name: "idx_on_coordination_experiment_id_73eaaefa30"
+    t.index ["coordination_experiment_variant_id"], name: "idx_on_coordination_experiment_variant_id_d60101236e"
+    t.index ["issue_id"], name: "index_coordination_experiment_assignments_on_issue_id"
+    t.index ["project_id"], name: "index_coordination_experiment_assignments_on_project_id"
+  end
+
+  create_table "coordination_experiment_variants", comment: "Individual policy arms within a coordination experiment", force: :cascade do |t|
+    t.decimal "avg_coordination_score", precision: 5, scale: 4
+    t.bigint "coordination_experiment_id", null: false
+    t.datetime "created_at", null: false
+    t.boolean "is_control", default: false, null: false
+    t.jsonb "policy_config", default: {}, null: false, comment: "Effective policy config for this variant"
+    t.integer "sample_count", default: 0, null: false
+    t.decimal "total_coordination_score", precision: 10, scale: 4, default: "0.0", null: false
+    t.datetime "updated_at", null: false
+    t.index ["coordination_experiment_id", "is_control"], name: "idx_coordination_experiment_variants_one_control", unique: true, where: "(is_control = true)"
+    t.index ["coordination_experiment_id"], name: "idx_on_coordination_experiment_id_3f1ff8497b"
+  end
+
+  create_table "coordination_experiments", comment: "Workflow-scoped A/B tests for feature orchestration coordination policies", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "completed_at"
+    t.jsonb "control_policy", default: {}, null: false, comment: "Baseline coordination policy configuration"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.integer "min_samples_per_variant", default: 10, null: false
+    t.string "name", null: false
+    t.string "policy_name", default: "feature_orchestration", null: false, comment: "Coordination policy family under test"
+    t.datetime "started_at"
+    t.string "status", default: "draft", null: false
+    t.integer "traffic_percentage", default: 100, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "winner_variant_id"
+    t.index ["account_id", "policy_name", "status"], name: "idx_coordination_experiments_account_policy_status"
+    t.index ["account_id", "policy_name"], name: "idx_coordination_experiments_one_running_policy", unique: true, where: "((status)::text = 'running'::text)"
+    t.index ["account_id"], name: "index_coordination_experiments_on_account_id"
+    t.index ["winner_variant_id"], name: "index_coordination_experiments_on_winner_variant_id"
+  end
+
   create_table "cost_budgets", force: :cascade do |t|
     t.datetime "alert_sent_at"
     t.integer "alert_threshold_percent", default: 80, null: false
@@ -1958,6 +2009,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
   add_foreign_key "context_intake_responses", "context_intake_sessions"
   add_foreign_key "context_intake_sessions", "projects"
   add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
+  add_foreign_key "coordination_experiment_assignments", "coordination_experiment_variants", on_delete: :cascade
+  add_foreign_key "coordination_experiment_assignments", "coordination_experiments", on_delete: :cascade
+  add_foreign_key "coordination_experiment_assignments", "issues", on_delete: :nullify
+  add_foreign_key "coordination_experiment_assignments", "projects", on_delete: :cascade
+  add_foreign_key "coordination_experiment_variants", "coordination_experiments", on_delete: :cascade
+  add_foreign_key "coordination_experiments", "accounts", on_delete: :cascade
+  add_foreign_key "coordination_experiments", "coordination_experiment_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
   add_foreign_key "decision_records", "agent_runs", on_delete: :nullify

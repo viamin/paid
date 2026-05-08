@@ -147,6 +147,16 @@ module OrchestrationStrategies
     def feature_orchestration
       {
         "default_timeout_seconds" => 7200,
+        "decomposition" => {
+          "enabled" => true,
+          "max_tasks" => 20,
+          "min_components_to_decompose" => 2,
+          "layer_order" => %w[model service controller view]
+        },
+        "parallel_execution" => {
+          "max_batch_size" => nil,
+          "cancel_remaining_on_failure" => false
+        },
         "planning_phases" => %w[
           fetch_planning_context
           decompose_feature
