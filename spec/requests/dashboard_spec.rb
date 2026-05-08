@@ -74,6 +74,20 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading='lazy']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading='lazy']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[loading='lazy']")).to be_present
+        expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-metrics[data-dashboard-frames-src='#{dashboard_metrics_path(time_range: "cumulative")}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[data-dashboard-frames-src='#{dashboard_knowledge_stats_path}']")).to be_present
+      end
+
+      it "wires queue health and frame serialization on the dashboard shell" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-health[loading='lazy']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-health[data-dashboard-frames-src='#{dashboard_queue_health_path}']")).to be_present
       end
 
       it "shows live metrics section with active runs" do
