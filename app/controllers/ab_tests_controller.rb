@@ -82,9 +82,10 @@ class AbTestsController < ApplicationController
 
   def promote
     authorize @ab_test, :update?
-    AbTests::PromoteWinner.call(ab_test: @ab_test)
+    promoter = AbTests::PromoteWinner.new(ab_test: @ab_test)
+    promoter.promote
     redirect_to prompt_ab_test_path(@prompt, @ab_test),
-                notice: "Winner promoted! v#{@ab_test.winner_variant.prompt_version.version} is now the current version."
+                notice: promotion_notice(promoter)
   rescue ArgumentError, ActiveRecord::RecordInvalid => e
     message = e.is_a?(ActiveRecord::RecordInvalid) ? e.record.errors.full_messages.join(", ") : e.message
     redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: message
@@ -135,5 +136,14 @@ class AbTestsController < ApplicationController
     end
 
     analysis
+  end
+
+  def promotion_notice(promoter)
+    winning_version = @ab_test.winner_variant.prompt_version
+    if promoter.gated?
+      "Winner queued for review. v#{winning_version.version} must be approved before it can become active."
+    else
+      "Winner promoted! v#{winning_version.version} is now the current version."
+    end
   end
 end

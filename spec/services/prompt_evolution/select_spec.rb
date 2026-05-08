@@ -377,6 +377,20 @@ RSpec.describe PromptEvolution::Select do
       expect(result.fitness.keys).to contain_exactly(v2.id)
     end
 
+    it "excludes pending review versions from selection and promotion" do
+      v2 = add_version(parent: v1)
+      v2.update!(review_status: "pending")
+
+      add_metrics(v1, scores: [ 0.5, 0.52, 0.48 ])
+      add_metrics(v2, scores: [ 0.95, 0.94, 0.96 ])
+
+      result = described_class.call(prompt: prompt, retirement_threshold: 0.0)
+
+      expect(result.winner).to eq(v1)
+      expect(result.fitness.keys).to contain_exactly(v1.id)
+      expect(prompt.reload.current_version).to eq(v1)
+    end
+
     it "builds a generation map from the parent_version chain" do
       v2 = add_version(parent: v1)
       v3 = add_version(parent: v2)

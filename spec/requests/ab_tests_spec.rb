@@ -123,6 +123,19 @@ RSpec.describe "AbTests" do
         get prompt_ab_test_path(prompt, ab_test)
         expect(response.body).to include("Promote Winner")
       end
+
+      it "shows review queue action for gated winners awaiting approval" do
+        prompt.update!(requires_review: true)
+        ab_test = create(:ab_test, prompt: prompt, status: "completed", completed_at: Time.current)
+        version = prompt.create_pending_version!(template: "Candidate {{title}}")
+        variant = create(:ab_test_variant, ab_test: ab_test, prompt_version: version)
+        ab_test.update!(winner_variant: variant)
+
+        get prompt_ab_test_path(prompt, ab_test)
+
+        expect(response.body).to include("Queue Winner for Review")
+        expect(response.body).to include("pending review")
+      end
     end
   end
 
@@ -315,6 +328,22 @@ RSpec.describe "AbTests" do
         post promote_prompt_ab_test_path(prompt, ab_test)
         expect(response).to redirect_to(prompt_ab_test_path(prompt, ab_test))
         expect(flash[:alert]).to be_present
+      end
+
+      it "queues the winner for review instead of promoting when the prompt requires review" do
+        prompt.update!(requires_review: true)
+        ab_test = create(:ab_test, prompt: prompt, status: "completed", completed_at: Time.current)
+        version = prompt.create_pending_version!(template: "Candidate {{title}}")
+        variant = create(:ab_test_variant, ab_test: ab_test, prompt_version: version)
+        ab_test.update!(winner_variant: variant)
+        original_version = prompt.current_version
+
+        post promote_prompt_ab_test_path(prompt, ab_test)
+
+        expect(prompt.reload.current_version).to eq(original_version)
+        expect(version.reload).to be_pending_review
+        expect(response).to redirect_to(prompt_ab_test_path(prompt, ab_test))
+        expect(flash[:notice]).to include("queued for review")
       end
     end
 
