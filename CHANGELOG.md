@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.43.0](https://github.com/viamin/paid/compare/v0.42.0...v0.43.0) (2026-05-08)
+
+
+### Features
+
+* **chat:** wire LLM client into chat, add multi-provider smoke tests ([#1831](https://github.com/viamin/paid/issues/1831)) ([2da7445](https://github.com/viamin/paid/commit/2da7445cb67f9511845a7c9a00cd7afe344b118f))
+* **dashboard:** add orchestration decision metrics ([#1828](https://github.com/viamin/paid/issues/1828)) ([996fc00](https://github.com/viamin/paid/commit/996fc00cef06314f93d6382d3a5d3067c0c0c656))
+* **orchestration:** create orchestration decision logging schema ([#1825](https://github.com/viamin/paid/issues/1825)) ([12c87aa](https://github.com/viamin/paid/commit/12c87aaa99b29898cf00274fb6b717bcfd817182))
+* **orchestration:** log decomposition decisions with workflow context ([#1820](https://github.com/viamin/paid/issues/1820)) ([f02981a](https://github.com/viamin/paid/commit/f02981ab13bf58208888ebd0c2ba39895f4fdf9e))
+* **orchestration:** log retry and escalation decisions ([#1822](https://github.com/viamin/paid/issues/1822)) ([d25f42b](https://github.com/viamin/paid/commit/d25f42b2b1483e8665aa68fb12714307920f8384))
+* **screenshots:** container-based screenshot execution via Temporal activity ([#1826](https://github.com/viamin/paid/issues/1826)) ([4a2b48f](https://github.com/viamin/paid/commit/4a2b48ffc90acf2e52f37ffe13fa56cd893c76e0))
+* **screenshots:** Cross-project PR screenshot support ([#1823](https://github.com/viamin/paid/issues/1823)) ([e82a161](https://github.com/viamin/paid/commit/e82a161f8388fea1d9c98660428156b7d0f54063))
+* **strategy:** add human review gate for strategy changes ([#1833](https://github.com/viamin/paid/issues/1833)) ([83742ed](https://github.com/viamin/paid/commit/83742ed89ea3c9143ba0d92966e4d0e468387e81))
+
+
+### Bug Fixes
+
+* 741: Phase 3: Scale — Umbrella Issue ([#1824](https://github.com/viamin/paid/issues/1824)) ([6de4f00](https://github.com/viamin/paid/commit/6de4f0027a00eed15490be1ae6b08b9ab8a62cee))
+
 ## [0.42.0](https://github.com/viamin/paid/compare/v0.41.0...v0.42.0) (2026-05-07)
 
 
