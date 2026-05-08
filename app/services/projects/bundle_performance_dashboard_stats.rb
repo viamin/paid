@@ -170,9 +170,9 @@ module Projects
     def representative_runs_by_goal
       @representative_runs_by_goal ||= project.agent_runs
         .where(goal: AgentRun::GOALS)
-        .order(created_at: :desc)
-        .group_by(&:goal)
-        .transform_values(&:first)
+        .select("DISTINCT ON (goal) agent_runs.*")
+        .order(:goal, created_at: :desc)
+        .index_by(&:goal)
     end
 
     def candidate_summary(selection)

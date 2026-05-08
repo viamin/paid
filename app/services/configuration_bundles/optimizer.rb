@@ -42,7 +42,7 @@ module ConfigurationBundles
     end
 
     def select_bundle
-      ranked_candidates.max_by { |selection| selection.score_inputs.acquisition_score }
+      ranked_candidates.first
     end
 
     def ranked_candidates
