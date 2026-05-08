@@ -73,7 +73,8 @@ RSpec.describe ConfigurationBundle do
       bundle = project.configuration_bundles.build(
         name: "Derived Account Bundle",
         version: 1,
-        status: "draft"
+        status: "draft",
+        definition: { "schema_version" => 1 }
       )
 
       expect(bundle).to be_valid

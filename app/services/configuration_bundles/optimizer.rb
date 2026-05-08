@@ -100,6 +100,7 @@ module ConfigurationBundles
           provider_id: agent_run.provider_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
+          model_selection: model_selection_definition,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           experiments: experiment_definitions(variant_by_experiment_id)

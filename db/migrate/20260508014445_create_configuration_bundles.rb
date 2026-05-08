@@ -79,8 +79,32 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
           ALTER TABLE configuration_bundles ENABLE ROW LEVEL SECURITY;
           ALTER TABLE configuration_bundles FORCE ROW LEVEL SECURITY;
           CREATE POLICY tenant_isolation ON configuration_bundles
-            USING (paid_tenant_bypass() OR (configuration_bundles.account_id = paid_current_account_id()))
-            WITH CHECK (paid_tenant_bypass() OR (configuration_bundles.account_id = paid_current_account_id()));
+            USING (
+              paid_tenant_bypass() OR (
+                configuration_bundles.account_id = paid_current_account_id()
+                AND (
+                  configuration_bundles.project_id IS NULL
+                  OR EXISTS (
+                    SELECT 1 FROM projects
+                    WHERE projects.id = configuration_bundles.project_id
+                      AND projects.account_id = paid_current_account_id()
+                  )
+                )
+              )
+            )
+            WITH CHECK (
+              paid_tenant_bypass() OR (
+                configuration_bundles.account_id = paid_current_account_id()
+                AND (
+                  configuration_bundles.project_id IS NULL
+                  OR EXISTS (
+                    SELECT 1 FROM projects
+                    WHERE projects.id = configuration_bundles.project_id
+                      AND projects.account_id = paid_current_account_id()
+                  )
+                )
+              )
+            );
 
           ALTER TABLE bundle_outcomes ENABLE ROW LEVEL SECURITY;
           ALTER TABLE bundle_outcomes FORCE ROW LEVEL SECURITY;
