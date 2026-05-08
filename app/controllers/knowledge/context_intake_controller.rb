@@ -98,24 +98,26 @@ module Knowledge
       section_key = ContextIntake::QuestionnaireSchema.find_question(question_key)&.dig(:section, :key)
       return unless section_key
 
-      return section_key if section_has_unanswered_questions?(section_key)
+      responses = @session.context_intake_responses.index_by(&:question_key)
 
-      next_incomplete_section_key_for_session || section_key
+      return section_key if section_has_unanswered_questions?(section_key, responses)
+
+      next_incomplete_section_key_for_session(responses) || section_key
     end
 
-    def section_has_unanswered_questions?(section_key)
+    def section_has_unanswered_questions?(section_key, responses)
       section = ContextIntake::QuestionnaireSchema.sections.find { |entry| entry[:key] == section_key }
       return false unless section
 
       section[:questions].any? do |question|
-        !@session.context_intake_responses.find_by(question_key: question[:key])&.answered?
+        !responses[question[:key]]&.answered?
       end
     end
 
-    def next_incomplete_section_key_for_session
+    def next_incomplete_section_key_for_session(responses)
       ContextIntake::QuestionnaireSchema.sections.find do |section|
         section[:questions].any? do |question|
-          !@session.context_intake_responses.find_by(question_key: question[:key])&.answered?
+          !responses[question[:key]]&.answered?
         end
       end&.fetch(:key, nil)
     end
