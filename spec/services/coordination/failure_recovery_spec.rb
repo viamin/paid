@@ -5,6 +5,8 @@ require "rails_helper"
 RSpec.describe Coordination::FailureRecovery do
   let(:project) { create(:project) }
   let(:workflow_id) { "recovery-workflow-#{SecureRandom.hex(4)}" }
+  let(:anthropic_attempt) { { "provider" => "anthropic", "success" => false } }
+  let(:openai_attempt) { { "provider" => "openai", "success" => false } }
 
   describe ".call" do
     context "with a rate-limited agent run" do
@@ -53,7 +55,8 @@ RSpec.describe Coordination::FailureRecovery do
     context "with a timed-out agent run" do
       let(:agent_run) do
         create(:agent_run, :timeout, project: project,
-          error_message: "Agent execution timed out")
+          error_message: "Agent execution timed out",
+          providers_attempted: [ anthropic_attempt ])
       end
 
       it "classifies as timeout and selects retry_same_provider" do
@@ -63,6 +66,12 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result.failure_category).to eq("timeout")
         expect(result.chosen_action).to eq("retry_same_provider")
       end
+
+      it "uses the last attempted provider when final_provider is unavailable" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result.classification.action_params["provider"]).to eq("anthropic")
+      end
     end
 
     context "with a provider exhaustion failure" do
@@ -70,7 +79,7 @@ RSpec.describe Coordination::FailureRecovery do
         create(:agent_run, :failed, project: project,
           parent_workflow_id: workflow_id,
           error_message: "AllProvidersExhausted: no available providers",
-          providers_attempted: %w[anthropic openai])
+          providers_attempted: [ anthropic_attempt, openai_attempt ])
       end
 
       it "classifies as provider_error" do
@@ -185,7 +194,7 @@ RSpec.describe Coordination::FailureRecovery do
         create(:agent_run, :failed, project: project,
           error_message: "AllProvidersExhausted",
           final_provider: "anthropic",
-          providers_attempted: %w[anthropic openai],
+          providers_attempted: [ anthropic_attempt, openai_attempt ],
           provider_switches: 1)
       end
 
@@ -195,7 +204,7 @@ RSpec.describe Coordination::FailureRecovery do
 
         expect(ctx["error_message"]).to eq("AllProvidersExhausted")
         expect(ctx["final_provider"]).to eq("anthropic")
-        expect(ctx["providers_attempted"]).to eq(%w[anthropic openai])
+        expect(ctx["providers_attempted"]).to eq([ anthropic_attempt, openai_attempt ])
         expect(ctx["provider_switches"]).to eq(1)
       end
     end

@@ -2107,6 +2107,8 @@ CREATE TABLE public.failure_classifications (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
+ALTER TABLE ONLY public.failure_classifications FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: TABLE failure_classifications; Type: COMMENT; Schema: public; Owner: -
@@ -11310,6 +11312,12 @@ ALTER TABLE public.decomposition_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exception_incidents ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: failure_classifications; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.failure_classifications ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: github_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11889,6 +11897,17 @@ CREATE POLICY tenant_isolation ON public.decomposition_decisions USING ((public.
 --
 
 CREATE POLICY tenant_isolation ON public.exception_incidents USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+
+
+--
+-- Name: failure_classifications tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.failure_classifications USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = failure_classifications.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = failure_classifications.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
 
 
 --

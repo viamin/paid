@@ -135,14 +135,24 @@ module Coordination
 
       case action
       when "retry_alternate_provider"
-        params[:exclude_providers] = agent_run.providers_attempted
+        params[:exclude_providers] = attempted_provider_identifiers
       when "escalate_model"
-        params[:current_provider] = agent_run.final_provider
+        params[:current_provider] = preferred_provider_identifier
       when "retry_same_provider"
-        params[:provider] = agent_run.final_provider
+        params[:provider] = preferred_provider_identifier
       end
 
       params
+    end
+
+    def attempted_provider_identifiers
+      Array(agent_run.providers_attempted).filter_map do |attempt|
+        attempt.is_a?(Hash) ? attempt["provider"] : attempt
+      end
+    end
+
+    def preferred_provider_identifier
+      agent_run.final_provider.presence || attempted_provider_identifiers.last
     end
 
     class Result
