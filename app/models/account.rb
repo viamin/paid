@@ -33,6 +33,7 @@ class Account < ApplicationRecord
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
   has_many :configuration_bundles, dependent: :destroy
+  has_many :orchestration_strategies, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }

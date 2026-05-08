@@ -68,6 +68,18 @@ RSpec.describe ConfigurationBundle do
       expect(bundle.errors[:project]).to include("must belong to the same account")
     end
 
+    it "derives the account from the project before validation" do
+      project = create(:project)
+      bundle = project.configuration_bundles.build(
+        name: "Derived Account Bundle",
+        version: 1,
+        status: "draft"
+      )
+
+      expect(bundle).to be_valid
+      expect(bundle.account).to eq(project.account)
+    end
+
     it "allows a global prompt version for any bundle scope" do
       prompt = create(:prompt, :global)
       prompt_version = create(:prompt_version, prompt: prompt)

@@ -10,6 +10,8 @@ class ConfigurationBundle < ApplicationRecord
 
   has_many :bundle_outcomes, dependent: :destroy
 
+  before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
+
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :version, presence: true,
@@ -66,6 +68,10 @@ class ConfigurationBundle < ApplicationRecord
   end
 
   private
+
+  def set_account_from_project
+    self.account = project.account
+  end
 
   def raise_invalid_transition!(action, required_status)
     errors.add(:base, "cannot #{action} a bundle that is #{status} (must be #{required_status})")
