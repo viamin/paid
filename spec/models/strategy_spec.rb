@@ -79,6 +79,24 @@ RSpec.describe Strategy do
       expect(strategy).not_to be_valid
       expect(strategy.errors[:current_version]).to include("must belong to this strategy")
     end
+
+    it "rejects a non-active current_version" do
+      strategy = create(:strategy, :global)
+      draft_version = create(:strategy_version, strategy: strategy, promotion_state: "draft")
+      strategy.current_version = draft_version
+
+      expect(strategy).not_to be_valid
+      expect(strategy.errors[:current_version]).to include("must be active before it can become current")
+    end
+
+    it "rejects a retired current_version" do
+      strategy = create(:strategy, :global)
+      retired_version = create(:strategy_version, :retired, strategy: strategy)
+      strategy.current_version = retired_version
+
+      expect(strategy).not_to be_valid
+      expect(strategy.errors[:current_version]).to include("must be active before it can become current")
+    end
   end
 
   describe "scopes" do

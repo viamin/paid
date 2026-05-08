@@ -73,8 +73,13 @@ class Strategy < ApplicationRecord
 
   def current_version_belongs_to_strategy
     return if current_version.nil?
-    return if current_version.strategy_id == id
+    if current_version.strategy_id != id
+      errors.add(:current_version, "must belong to this strategy")
+      return
+    end
 
-    errors.add(:current_version, "must belong to this strategy")
+    return if current_version.active?
+
+    errors.add(:current_version, "must be active before it can become current")
   end
 end
