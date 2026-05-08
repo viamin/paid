@@ -156,6 +156,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   end
 
   def enable_policy(table, condition, insert_allows_missing_tenant: false)
+    return unless table_exists?(table)
+
     qualified_table = quote_table_name(table)
     check_condition = insert_allows_missing_tenant ? "(#{condition} OR paid_current_account_id() IS NULL)" : condition
 
@@ -178,6 +180,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   end
 
   def enable_read_write_policy(table, read_condition, write_condition)
+    return unless table_exists?(table)
+
     qualified_table = quote_table_name(table)
 
     execute "ALTER TABLE #{qualified_table} ENABLE ROW LEVEL SECURITY"
