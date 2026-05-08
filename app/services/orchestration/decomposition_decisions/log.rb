@@ -24,9 +24,9 @@ module Orchestration
 
       def call
         existing = DecompositionDecision.find_by(decision_key: decision_key)
-        return existing if existing
+        return existing.tap { ensure_orchestration_decision! } if existing
 
-        DecompositionDecision.create!(
+        decision = DecompositionDecision.create!(
           project_id: project_id,
           issue_id: issue_id,
           decision_key: decision_key,
@@ -40,8 +40,10 @@ module Orchestration
           error_details: error_details,
           metadata: metadata
         )
+        ensure_orchestration_decision!
+        decision
       rescue ActiveRecord::RecordNotUnique
-        DecompositionDecision.find_by!(decision_key: decision_key)
+        DecompositionDecision.find_by!(decision_key: decision_key).tap { ensure_orchestration_decision! }
       end
 
       private
@@ -93,6 +95,46 @@ module Orchestration
         else
           {}
         end
+      end
+
+      def ensure_orchestration_decision!
+        existing = OrchestrationDecision.find_by(
+          [
+            <<~SQL.squish,
+              project_id = ?
+              AND decision_type = ?
+              AND actor = ?
+              AND context ->> 'decision_key' = ?
+            SQL
+            project_id,
+            decision_type,
+            workflow_name,
+            decision_key
+          ]
+        )
+        return existing if existing
+
+        OrchestrationDecision.create!(
+          project_id: project_id,
+          decision_type: decision_type,
+          actor: workflow_name,
+          context: {
+            decision_key: decision_key,
+            workflow_id: workflow_id,
+            workflow_name: workflow_name,
+            issue_id: issue_id,
+            decision_status: error_details.present? ? "failed" : "applied"
+          },
+          inputs: enriched_input_context,
+          outputs: {
+            outcome: outcome,
+            plan_data: plan_data,
+            hints: derived_hints,
+            error_details: error_details,
+            metadata: metadata
+          },
+          outcome_references: []
+        )
       end
     end
   end

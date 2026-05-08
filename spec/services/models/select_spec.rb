@@ -15,6 +15,7 @@ RSpec.describe Models::Select do
     context "with project model override (required_model_id)" do
       let!(:llm_model) { create(:llm_model, model_id: "claude-sonnet-4-6", tier: "high") }
       let(:decision_log) { agent_run.agent_run_logs.where(log_type: "system").order(:id).last }
+      let(:orchestration_decision) { agent_run.orchestration_decisions.order(:id).last }
 
       before do
         project.update!(model_preferences: { "required_model_id" => "claude-sonnet-4-6" })
@@ -52,6 +53,25 @@ RSpec.describe Models::Select do
         expect(decision_log.metadata.dig("selection", "provider_key")).to eq("claude")
         expect(decision_log.metadata.dig("selection", "model_id")).to eq("claude-sonnet-4-6")
         expect(decision_log.metadata.dig("selection", "model_provider")).to eq(llm_model.provider)
+      end
+
+      it "records an orchestration decision with selection context" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(orchestration_decision).to be_present
+        expect(orchestration_decision.decision_type).to eq("select_agent")
+        expect(orchestration_decision.actor).to eq("override")
+        expect(orchestration_decision.context).to include(
+          "decision_status" => "applied",
+          "issue_id" => agent_run.issue_id
+        )
+        expect(orchestration_decision.outputs).to include(
+          "outcome" => "selected",
+          "selection" => include(
+            "model_selection_id" => selection.id,
+            "model_id" => "claude-sonnet-4-6"
+          )
+        )
       end
 
       it "logs ranked candidates for the selection" do
@@ -305,6 +325,17 @@ RSpec.describe Models::Select do
         expect(log.metadata["selection"]).to be_nil
         expect(log.metadata.dig("inputs", "repository", "full_name")).to eq(project.full_name)
       end
+
+      it "records a noop orchestration decision" do
+        described_class.call(agent_run: agent_run)
+
+        decision = agent_run.orchestration_decisions.order(:id).last
+
+        expect(decision.decision_type).to eq("select_agent")
+        expect(decision.actor).to eq("model_selection")
+        expect(decision.context["decision_status"]).to eq("noop")
+        expect(decision.outputs["outcome"]).to eq("no_selection")
+      end
     end
 
     context "when override model does not exist" do
@@ -454,6 +485,22 @@ RSpec.describe Models::Select do
         expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "failed")
         expect(log.metadata.dig("error", "class")).to eq("StandardError")
         expect(log.metadata.dig("error", "message")).to eq("selector blew up")
+      end
+
+      it "records a failed orchestration decision before re-raising" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to raise_error(StandardError, "selector blew up")
+
+        decision = agent_run.orchestration_decisions.order(:id).last
+
+        expect(decision.decision_type).to eq("select_agent")
+        expect(decision.actor).to eq("model_selection")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.outputs["error"]).to include(
+          "class" => "StandardError",
+          "message" => "selector blew up"
+        )
       end
     end
   end

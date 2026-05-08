@@ -234,6 +234,15 @@ module Models
     end
 
     def persist_decision_log(outcome:, duration_ms:, selected: nil, final_tier: nil, escalation: nil, selection: nil, candidates: nil, error: nil)
+      selection_payload = selection_payload(
+        selected: selected,
+        selection: selection,
+        final_tier: final_tier,
+        escalation: escalation,
+        candidates: candidates
+      )
+      inputs_payload = selection_inputs
+
       agent_run.agent_run_logs.create!(
         log_type: "system",
         content: decision_log_content(outcome: outcome, selected: selected, error: error),
@@ -241,10 +250,18 @@ module Models
           type: DECISION_LOG_TYPE,
           outcome: outcome,
           duration_ms: duration_ms,
-          selection: selection_payload(selected: selected, selection: selection, final_tier: final_tier, escalation: escalation, candidates: candidates),
-          inputs: selection_inputs,
+          selection: selection_payload,
+          inputs: inputs_payload,
           error: error_payload(error)
         }.compact
+      )
+      persist_orchestration_decision(
+        outcome: outcome,
+        duration_ms: duration_ms,
+        selected: selected,
+        selection_payload: selection_payload,
+        inputs_payload: inputs_payload,
+        error: error
       )
     rescue => log_error
       Rails.logger.warn(
@@ -353,6 +370,36 @@ module Models
         class: error.class.name,
         message: error.message
       }
+    end
+
+    def persist_orchestration_decision(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:)
+      OrchestrationDecision.record(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        agent_run: agent_run,
+        action: "select_agent",
+        decision_point: selected&.dig(:selector_type) || "model_selection",
+        status: orchestration_status_for(outcome),
+        signals: inputs_payload.merge(
+          "duration_ms" => duration_ms
+        ),
+        result: {
+          "outcome" => outcome,
+          "selection" => selection_payload,
+          "error" => error_payload(error)
+        }.compact
+      )
+    end
+
+    def orchestration_status_for(outcome)
+      case outcome
+      when "selected"
+        "applied"
+      when "no_selection"
+        "noop"
+      else
+        "failed"
+      end
     end
   end
 end
