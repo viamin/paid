@@ -240,7 +240,7 @@ module Coordination
       OrchestrationDecision.record(
         project: project,
         issue: issue,
-        action: "escalate",
+        action: result.action,
         decision_point: "coordination_escalation_service",
         status: orchestration_status_for(result),
         signals: signals.merge(
