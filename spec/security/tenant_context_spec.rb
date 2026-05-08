@@ -8,6 +8,10 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
+require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
+require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
+require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -168,6 +172,10 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
+      CreateOrchestrationDecisions.new.down if orchestration_decisions_have_rls?
+      disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
+      CreateExceptionIncidents.new.down if exception_incidents_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
       EnableRlsOnChatTables.new.down if chat_tables_have_rls?
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
@@ -182,6 +190,9 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
+      CreateExceptionIncidents.new.up unless exception_incidents_have_rls?
+      CreateOrchestrationDecisions.new.up unless orchestration_decisions_have_rls?
+      EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
@@ -196,6 +207,10 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
+      EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
+      CreateOrchestrationDecisions.new.down if orchestration_decisions_have_rls?
+      disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
+      CreateExceptionIncidents.new.down if exception_incidents_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
       EnableRlsOnChatTables.new.down if chat_tables_have_rls?
       EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
@@ -234,6 +249,39 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'issue_merge_subscriptions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def exception_incidents_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'exception_incidents' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def decomposition_decisions_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def disable_decomposition_decisions_rls
+    ActiveRecord::Base.connection.execute("DROP POLICY IF EXISTS tenant_isolation ON decomposition_decisions")
+    ActiveRecord::Base.connection.execute("ALTER TABLE decomposition_decisions NO FORCE ROW LEVEL SECURITY")
+    ActiveRecord::Base.connection.execute("ALTER TABLE decomposition_decisions DISABLE ROW LEVEL SECURITY")
+  end
+
+  def orchestration_decisions_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decisions' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def strategy_experiment_tables_have_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i == 3
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE policyname = 'tenant_isolation'
+        AND tablename IN ('strategy_experiments', 'strategy_experiment_variants', 'strategy_experiment_assignments')
+    SQL
   end
 
   def cleanup_restricted_role
