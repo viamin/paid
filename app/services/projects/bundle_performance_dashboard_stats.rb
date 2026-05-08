@@ -93,7 +93,7 @@ module Projects
 
     def experiment_confidence
       active_experiments.map do |experiment|
-        analysis = experiment.cached_or_compute_analysis(persist: false) || ConfigurationExperiments::Analyze.call(
+        analysis = ConfigurationExperiments::Analyze.call(
           configuration_experiment: experiment
         )
 
@@ -162,9 +162,17 @@ module Projects
     end
 
     def active_experiments
-      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
-        ConfigurationExperiment.active_for(config_key, project: project)
-      end
+      @active_experiments ||= ConfigurationExperiment
+        .running
+        .where(
+          id: ConfigurationExperimentAssignment
+            .joins(:agent_run)
+            .where(agent_runs: { project_id: project.id })
+            .select(:configuration_experiment_id)
+        )
+        .distinct
+        .order(:id)
+        .to_a
     end
 
     def representative_runs_by_goal
