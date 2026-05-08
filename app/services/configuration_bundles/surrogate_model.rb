@@ -43,31 +43,52 @@ module ConfigurationBundles
     private
 
     def weighted_matches(bundle_features:, fingerprint:)
-      exact_matches = []
-      similar_matches = []
+      exact_matches = exact_matches_for(fingerprint)
+      return exact_matches if exact_matches.present?
 
-      scope.find_each do |outcome|
-        definition = outcome.configuration_bundle&.definition
-        next unless definition.is_a?(Hash)
-
-        if fingerprint.present? && outcome.configuration_bundle.fingerprint == fingerprint
-          exact_matches << match_row(outcome, 1.0)
-          next
-        end
-
-        similarity = similarity(bundle_features, feature_map(definition))
+      outcome_rows.filter_map do |outcome_row|
+        similarity = similarity(bundle_features, outcome_row[:features])
         next if similarity.zero?
 
-        similar_matches << match_row(outcome, similarity)
+        match_row(outcome_row[:quality_score], similarity)
       end
-
-      exact_matches.presence || similar_matches
     end
 
-    def match_row(outcome, weight)
+    def exact_matches_for(fingerprint)
+      return [] if fingerprint.blank?
+
+      outcome_rows_by_fingerprint.fetch(fingerprint, []).map do |outcome_row|
+        match_row(outcome_row[:quality_score], 1.0)
+      end
+    end
+
+    def outcome_rows
+      @outcome_rows ||= begin
+        rows = []
+
+        scope.find_each do |outcome|
+          definition = outcome.configuration_bundle&.definition
+          next unless definition.is_a?(Hash)
+
+          rows << {
+            fingerprint: outcome.configuration_bundle.fingerprint,
+            features: feature_map(definition),
+            quality_score: outcome.quality_score.to_f
+          }
+        end
+
+        rows
+      end
+    end
+
+    def outcome_rows_by_fingerprint
+      @outcome_rows_by_fingerprint ||= outcome_rows.group_by { |outcome_row| outcome_row[:fingerprint] }
+    end
+
+    def match_row(quality_score, weight)
       {
         weight: weight,
-        quality_score: outcome.quality_score.to_f
+        quality_score: quality_score
       }
     end
 
@@ -97,9 +118,23 @@ module ConfigurationBundles
     end
 
     def experiment_feature_value(config_value)
-      return config_value unless config_value.is_a?(Hash)
+      return canonicalize(config_value) unless config_value.is_a?(Hash)
 
-      config_value["configuration_experiment_variant_id"] || config_value["value"]
+      value = config_value.key?("value") ? config_value["value"] : config_value["configuration_experiment_variant_id"]
+      canonicalize(value)
+    end
+
+    def canonicalize(value)
+      case value
+      when Hash
+        value.each_with_object({}) do |(key, nested_value), normalized|
+          normalized[key.to_s] = canonicalize(nested_value)
+        end.sort.to_h
+      when Array
+        value.map { |nested_value| canonicalize(nested_value) }
+      else
+        value
+      end
     end
 
     def similarity(lhs, rhs)
