@@ -3,7 +3,7 @@
 class CreateStrategyExperiments < ActiveRecord::Migration[8.1]
   def change
     create_table :strategy_experiments, comment: "A/B tests comparing evolved automation strategy variants against a baseline" do |t|
-      t.references :account, null: false, foreign_key: { on_delete: :cascade }, index: false
+      t.references :account, null: false, foreign_key: { on_delete: :cascade }
       t.string :name, null: false
       t.text :description
       t.string :strategy_name, limit: 100, null: false, comment: "Automation strategy being tested (e.g. auto_pick, auto_review)"
@@ -21,7 +21,7 @@ class CreateStrategyExperiments < ActiveRecord::Migration[8.1]
     end
 
     create_table :strategy_experiment_variants, comment: "Individual variant arms within a strategy A/B test" do |t|
-      t.references :strategy_experiment, null: false, foreign_key: { on_delete: :cascade }, index: false
+      t.references :strategy_experiment, null: false, foreign_key: { on_delete: :cascade }
       t.text :strategy_config, null: false, comment: "JSON-encoded configuration for this variant"
       t.boolean :is_control, null: false, default: false
       t.integer :sample_count, null: false, default: 0
@@ -32,7 +32,7 @@ class CreateStrategyExperiments < ActiveRecord::Migration[8.1]
     end
 
     create_table :strategy_experiment_assignments, comment: "Maps each agent run to the strategy variant it was assigned" do |t|
-      t.references :strategy_experiment, null: false, foreign_key: { on_delete: :cascade }, index: false
+      t.references :strategy_experiment, null: false, foreign_key: { on_delete: :cascade }
       t.references :strategy_experiment_variant, null: false, foreign_key: { on_delete: :cascade }
       t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
       t.decimal :quality_score, precision: 5, scale: 4
