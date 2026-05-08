@@ -34,7 +34,6 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     cost_budgets
     decision_records
     decomposition_decisions
-    failure_classifications
     issues
     knowledge_artifacts
     knowledge_audit_events

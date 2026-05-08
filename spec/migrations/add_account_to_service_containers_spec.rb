@@ -10,6 +10,7 @@ require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
 require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
 require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
@@ -33,6 +34,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       llm_output_metrics_rls_migration.down if llm_output_metrics_has_rls?
       knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
       notification_rls_migration.down
+      failure_classifications_migration.down if failure_classifications_table_exists?
       rls_migration.down
     end
     restore_service_container_account_reference unless service_containers_have_account_reference?
@@ -53,6 +55,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
       issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
       exception_incidents_migration.up unless exception_incidents_table_exists?
+      failure_classifications_migration.up unless failure_classifications_table_exists?
       orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
       strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
     end
@@ -260,6 +263,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ActiveRecord::Base.connection.table_exists?(:exception_incidents)
   end
 
+  def failure_classifications_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:failure_classifications)
+  end
+
   def decomposition_decisions_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
@@ -335,6 +342,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
   def exception_incidents_migration
     @exception_incidents_migration ||= CreateExceptionIncidents.new
+  end
+
+  def failure_classifications_migration
+    @failure_classifications_migration ||= CreateFailureClassifications.new
   end
 
   def orchestration_decisions_migration

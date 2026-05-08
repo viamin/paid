@@ -152,7 +152,7 @@ module Coordination
     end
 
     def preferred_provider_identifier
-      agent_run.final_provider.presence || attempted_provider_identifiers.last
+      attempted_provider_identifiers.last || agent_run.effective_provider
     end
 
     class Result

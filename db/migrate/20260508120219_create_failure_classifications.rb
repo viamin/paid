@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CreateFailureClassifications < ActiveRecord::Migration[8.1]
-  def change
+  def up
     create_table :failure_classifications, comment: "Persisted failure classification and chosen recovery action for coordination learning" do |t|
       t.references :project, null: false, foreign_key: { on_delete: :cascade }
       t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
@@ -24,5 +24,33 @@ class CreateFailureClassifications < ActiveRecord::Migration[8.1]
     add_index :failure_classifications, :action_status
     add_index :failure_classifications, [ :project_id, :created_at ], name: "idx_failure_classifications_project_created"
     add_index :failure_classifications, :parent_workflow_id
+
+    execute <<~SQL
+      ALTER TABLE failure_classifications ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE failure_classifications FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON failure_classifications
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = failure_classifications.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = failure_classifications.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        );
+    SQL
+  end
+
+  def down
+    execute "DROP POLICY IF EXISTS tenant_isolation ON failure_classifications"
+    execute "ALTER TABLE failure_classifications NO FORCE ROW LEVEL SECURITY"
+    execute "ALTER TABLE failure_classifications DISABLE ROW LEVEL SECURITY"
+
+    drop_table :failure_classifications
   end
 end

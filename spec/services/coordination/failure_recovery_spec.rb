@@ -72,6 +72,14 @@ RSpec.describe Coordination::FailureRecovery do
 
         expect(result.classification.action_params["provider"]).to eq("anthropic")
       end
+
+      it "falls back to the effective provider when no provider metadata was recorded" do
+        agent_run.update!(providers_attempted: [], final_provider: nil, agent_type: "codex")
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result.classification.action_params["provider"]).to eq("codex")
+      end
     end
 
     context "with a provider exhaustion failure" do
