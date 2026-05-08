@@ -7480,13 +7480,6 @@ CREATE UNIQUE INDEX index_configuration_bundle_outcomes_on_agent_run_id ON publi
 
 
 --
--- Name: index_configuration_bundle_outcomes_on_configuration_bundle_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_configuration_bundle_outcomes_on_configuration_bundle_id ON public.configuration_bundle_outcomes USING btree (configuration_bundle_id);
-
-
---
 -- Name: index_configuration_bundles_on_fingerprint; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -12220,6 +12213,8 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508061946'),
+('20260508061539'),
 ('20260508014401'),
 ('20260507224416'),
 ('20260507204652'),
