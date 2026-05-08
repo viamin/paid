@@ -130,7 +130,7 @@ RSpec.describe Coordination::DecompositionService do
       end
     end
 
-    context "with a database-backed strategy" do
+    context "with a database-backed strategy without decomposition config" do
       let(:sub_components) { %w[database models service\ layer] }
       let(:account) { create(:account) }
 
@@ -139,8 +139,25 @@ RSpec.describe Coordination::DecompositionService do
           account: account)
       end
 
-      it "reports database as policy source" do
-        expect(result.policy_source).to eq("database")
+      it "reports defaults as policy source when no decomposition keys are present" do
+        expect(result.policy_source).to eq("defaults")
+      end
+    end
+
+    context "with a database-backed strategy with decomposition config" do
+      let(:sub_components) { %w[database models service\ layer] }
+      let(:account) { create(:account) }
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account,
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.merge(
+            "decomposition" => { "max_tasks" => 10 }
+          ))
+      end
+
+      it "reports feature_orchestration as policy source" do
+        expect(result.policy_source).to eq("feature_orchestration")
       end
     end
 
@@ -165,6 +182,24 @@ RSpec.describe Coordination::DecompositionService do
 
       it "passes the effective layer_order into the generator output" do
         expect(result.tasks.map { |task| task[:scope] }).to eq(%w[view controller])
+      end
+    end
+
+    context "with a high min_components_to_decompose threshold" do
+      let(:sub_components) { (1..30).map { |i| "component_#{i}" } }
+      let(:account) { create(:account) }
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account,
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.merge(
+            "decomposition" => { "min_components_to_decompose" => 50 }
+          ))
+      end
+
+      it "respects thresholds above max_tasks without clamping" do
+        expect(result).to be_skipped
+        expect(result.skip_reason).to eq("below_complexity_threshold")
       end
     end
 

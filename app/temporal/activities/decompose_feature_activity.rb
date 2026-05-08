@@ -169,7 +169,7 @@ module Activities
     end
 
     def use_policy_service_result?(result)
-      result.decomposed? || result.policy_source != "defaults"
+      result.decomposed? || (result.skipped? && result.policy_source != "defaults")
     end
 
     def serialize_policy_tasks(tasks)

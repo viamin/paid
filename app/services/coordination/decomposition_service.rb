@@ -85,7 +85,7 @@ module Coordination
       )
 
       decomposition_config = extract_decomposition_config(strategy)
-      source = strategy&.persisted? ? "database" : "defaults"
+      source = decomposition_config.any? ? STRATEGY_TYPE : "defaults"
 
       normalize_policy(DEFAULT_POLICY.merge(decomposition_config).merge("source" => source))
     rescue => e
@@ -158,7 +158,7 @@ module Coordination
     end
 
     def normalize_min_components(value)
-      Integer(value).clamp(1, DEFAULT_POLICY["max_tasks"])
+      [ Integer(value), 1 ].max
     rescue ArgumentError, TypeError
       DEFAULT_POLICY["min_components_to_decompose"]
     end

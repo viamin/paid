@@ -79,6 +79,27 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
     end
 
+    context "when a strategy exists without decomposition config and issue is below threshold" do
+      let(:project) { create(:project, account: account) }
+      let(:account) { create(:account) }
+
+      before do
+        create(:orchestration_strategy, :feature_orchestration, :with_account,
+          account: account)
+      end
+
+      it "falls back to LLM decomposition" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(AgentHarness).to have_received(:send_message)
+      end
+    end
+
     context "when a custom policy disables decomposition" do
       let(:project) { create(:project, account: account) }
       let(:account) { create(:account) }
