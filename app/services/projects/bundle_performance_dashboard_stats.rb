@@ -182,21 +182,23 @@ module Projects
           .pluck(
             Arel.sql("configuration_bundles.id"),
             Arel.sql("AVG(bundle_outcomes.quality_score)"),
-            Arel.sql("AVG(bundle_outcomes.cost_cents)")
+            Arel.sql("AVG(bundle_outcomes.cost_cents)"),
+            Arel.sql("AVG(bundle_outcomes.tokens_used)")
           )
 
         bundles_by_id = ConfigurationBundle
           .where(id: rows.map(&:first))
           .index_by(&:id)
 
-        rows.filter_map do |bundle_id, avg_quality, avg_cost|
+        rows.filter_map do |bundle_id, avg_quality, avg_cost, avg_tokens|
           bundle = bundles_by_id[bundle_id]
           next unless bundle
 
           {
             bundle: bundle,
             avg_quality_score: avg_quality&.to_f,
-            avg_cost_cents: avg_cost&.to_f&.round
+            avg_cost_cents: avg_cost&.to_f&.round,
+            avg_tokens_used: avg_tokens&.to_f&.round
           }
         end
       end
