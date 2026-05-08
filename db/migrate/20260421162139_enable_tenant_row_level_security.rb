@@ -29,6 +29,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   PROJECT_TABLES = %w[
     agent_run_anomalies
     agent_runs
+    bundle_outcomes
     container_pool_entries
     context_intake_sessions
     cost_budgets
@@ -81,6 +82,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     OPTIONAL_ACCOUNT_TABLES.each do |table|
       enable_optional_account_policy(table)
     end
+
+    enable_policy("configuration_bundles", configuration_bundle_condition)
 
     PROJECT_TABLES.each do |table|
       enable_policy(table, project_condition(table))
@@ -313,6 +316,13 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
         WHERE projects.id = #{table}.project_id
           AND projects.account_id = paid_current_account_id()
       )
+    SQL
+  end
+
+  def configuration_bundle_condition
+    <<~SQL.squish
+      configuration_bundles.account_id IS NULL
+      OR configuration_bundles.account_id = paid_current_account_id()
     SQL
   end
 
@@ -575,6 +585,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   def tenant_tables
     [
       "accounts",
+      "configuration_bundles",
       *DIRECT_ACCOUNT_TABLES,
       *OPTIONAL_ACCOUNT_TABLES,
       *PROJECT_TABLES,

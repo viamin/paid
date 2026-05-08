@@ -805,6 +805,93 @@ ALTER SEQUENCE public.billing_plans_id_seq OWNED BY public.billing_plans.id;
 
 
 --
+-- Name: bundle_outcomes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bundle_outcomes (
+    id bigint NOT NULL,
+    configuration_bundle_id bigint NOT NULL,
+    agent_run_id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    context_features jsonb DEFAULT '{}'::jsonb NOT NULL,
+    outcome_score numeric(5,4) NOT NULL,
+    component_scores jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.bundle_outcomes FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE bundle_outcomes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.bundle_outcomes IS 'Observed execution outcomes attributed to a specific configuration bundle and agent run.';
+
+
+--
+-- Name: COLUMN bundle_outcomes.configuration_bundle_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.configuration_bundle_id IS 'Bundle whose execution produced this outcome.';
+
+
+--
+-- Name: COLUMN bundle_outcomes.agent_run_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.agent_run_id IS 'Agent run that executed the bundle.';
+
+
+--
+-- Name: COLUMN bundle_outcomes.project_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.project_id IS 'Owning project used for tenant isolation and project-specific analysis.';
+
+
+--
+-- Name: COLUMN bundle_outcomes.context_features; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.context_features IS 'Structured context captured at execution time for surrogate-model training.';
+
+
+--
+-- Name: COLUMN bundle_outcomes.outcome_score; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.outcome_score IS 'Normalized objective value for the run, expected on the 0.0 to 1.0 scale.';
+
+
+--
+-- Name: COLUMN bundle_outcomes.component_scores; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bundle_outcomes.component_scores IS 'Supporting metrics that explain how the final outcome score was composed.';
+
+
+--
+-- Name: bundle_outcomes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.bundle_outcomes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: bundle_outcomes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.bundle_outcomes_id_seq OWNED BY public.bundle_outcomes.id;
+
+
+--
 -- Name: chat_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -970,6 +1057,125 @@ CREATE SEQUENCE public.collector_runs_id_seq
 --
 
 ALTER SEQUENCE public.collector_runs_id_seq OWNED BY public.collector_runs.id;
+
+
+--
+-- Name: configuration_bundles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.configuration_bundles (
+    id bigint NOT NULL,
+    account_id bigint,
+    name character varying(255) NOT NULL,
+    description text,
+    prompt_versions jsonb DEFAULT '{}'::jsonb NOT NULL,
+    model_preferences jsonb DEFAULT '{}'::jsonb NOT NULL,
+    orchestration_config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    thresholds jsonb DEFAULT '{}'::jsonb NOT NULL,
+    context_selector jsonb DEFAULT '{}'::jsonb NOT NULL,
+    is_baseline boolean DEFAULT false NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.configuration_bundles FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE configuration_bundles; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.configuration_bundles IS 'Versioned configuration bundles used by the outcome optimizer to select prompts, models, and orchestration settings.';
+
+
+--
+-- Name: COLUMN configuration_bundles.account_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.account_id IS 'Owning account. Null means the bundle is globally visible across accounts.';
+
+
+--
+-- Name: COLUMN configuration_bundles.name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.name IS 'Human-readable label for the bundle.';
+
+
+--
+-- Name: COLUMN configuration_bundles.description; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.description IS 'Optional explanation of what the bundle is intended to optimize.';
+
+
+--
+-- Name: COLUMN configuration_bundles.prompt_versions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.prompt_versions IS 'Prompt version selections keyed by workflow role, such as planning, coding, or review.';
+
+
+--
+-- Name: COLUMN configuration_bundles.model_preferences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.model_preferences IS 'Model or provider preferences keyed by workflow role.';
+
+
+--
+-- Name: COLUMN configuration_bundles.orchestration_config; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.orchestration_config IS 'Orchestration settings such as retries, parallelism, or iteration limits.';
+
+
+--
+-- Name: COLUMN configuration_bundles.thresholds; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.thresholds IS 'Quality, cost, or latency thresholds enforced for the bundle.';
+
+
+--
+-- Name: COLUMN configuration_bundles.context_selector; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.context_selector IS 'Optional matcher metadata describing where this bundle should be considered.';
+
+
+--
+-- Name: COLUMN configuration_bundles.is_baseline; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.is_baseline IS 'Marks the baseline configuration used before the optimizer has enough evidence.';
+
+
+--
+-- Name: COLUMN configuration_bundles.is_active; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.configuration_bundles.is_active IS 'Controls whether the optimizer may consider this bundle for selection.';
+
+
+--
+-- Name: configuration_bundles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.configuration_bundles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: configuration_bundles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.configuration_bundles_id_seq OWNED BY public.configuration_bundles.id;
 
 
 --
@@ -3572,13 +3778,6 @@ COMMENT ON COLUMN public.projects.completed_agent_runs_count IS 'Counter cache f
 
 
 --
--- Name: COLUMN projects.last_issue_reconciliation_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.projects.last_issue_reconciliation_at IS 'Timestamp of the last issue state reconciliation against GitHub';
-
-
---
 -- Name: COLUMN projects.screenshot_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -4884,6 +5083,13 @@ ALTER TABLE ONLY public.billing_plans ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: bundle_outcomes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bundle_outcomes ALTER COLUMN id SET DEFAULT nextval('public.bundle_outcomes_id_seq'::regclass);
+
+
+--
 -- Name: chat_messages id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4909,6 +5115,13 @@ ALTER TABLE ONLY public.chat_sessions ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.collector_runs ALTER COLUMN id SET DEFAULT nextval('public.collector_runs_id_seq'::regclass);
+
+
+--
+-- Name: configuration_bundles id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles ALTER COLUMN id SET DEFAULT nextval('public.configuration_bundles_id_seq'::regclass);
 
 
 --
@@ -5480,6 +5693,14 @@ ALTER TABLE ONLY public.billing_plans
 
 
 --
+-- Name: bundle_outcomes bundle_outcomes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bundle_outcomes
+    ADD CONSTRAINT bundle_outcomes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: chat_messages chat_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5509,6 +5730,14 @@ ALTER TABLE ONLY public.chat_sessions
 
 ALTER TABLE ONLY public.collector_runs
     ADD CONSTRAINT collector_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configuration_bundles configuration_bundles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles
+    ADD CONSTRAINT configuration_bundles_pkey PRIMARY KEY (id);
 
 
 --
@@ -6105,6 +6334,48 @@ CREATE UNIQUE INDEX idx_agent_runs_unique_active_issue ON public.agent_runs USIN
 --
 
 CREATE UNIQUE INDEX idx_agent_runs_unique_active_pr ON public.agent_runs USING btree (project_id, source_pull_request_number, goal) WHERE ((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])));
+
+
+--
+-- Name: idx_bundle_outcomes_agent_run_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_bundle_outcomes_agent_run_unique ON public.bundle_outcomes USING btree (agent_run_id);
+
+
+--
+-- Name: idx_bundle_outcomes_bundle_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bundle_outcomes_bundle_recent ON public.bundle_outcomes USING btree (configuration_bundle_id, created_at, id);
+
+
+--
+-- Name: idx_bundle_outcomes_project_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bundle_outcomes_project_recent ON public.bundle_outcomes USING btree (project_id, created_at, id);
+
+
+--
+-- Name: idx_configuration_bundles_account_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_configuration_bundles_account_active ON public.configuration_bundles USING btree (account_id, is_active, id);
+
+
+--
+-- Name: idx_configuration_bundles_one_baseline_per_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_configuration_bundles_one_baseline_per_account ON public.configuration_bundles USING btree (account_id) WHERE (is_baseline = true);
+
+
+--
+-- Name: idx_configuration_bundles_one_global_baseline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_configuration_bundles_one_global_baseline ON public.configuration_bundles USING btree (is_baseline) WHERE ((is_baseline = true) AND (account_id IS NULL));
 
 
 --
@@ -8937,6 +9208,14 @@ ALTER TABLE ONLY public.agent_runs
 
 
 --
+-- Name: bundle_outcomes fk_rails_0b74105583; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bundle_outcomes
+    ADD CONSTRAINT fk_rails_0b74105583 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_coordination_signals fk_rails_0e200247b7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9369,6 +9648,14 @@ ALTER TABLE ONLY public.provider_states
 
 
 --
+-- Name: bundle_outcomes fk_rails_77962f38a2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bundle_outcomes
+    ADD CONSTRAINT fk_rails_77962f38a2 FOREIGN KEY (configuration_bundle_id) REFERENCES public.configuration_bundles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pr_templates fk_rails_7ac0951baa; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9457,6 +9744,14 @@ ALTER TABLE ONLY public.ab_test_assignments
 
 
 --
+-- Name: bundle_outcomes fk_rails_8c68e8dbfc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bundle_outcomes
+    ADD CONSTRAINT fk_rails_8c68e8dbfc FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: account_memberships fk_rails_8e0ff21478; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9534,6 +9829,14 @@ ALTER TABLE ONLY public.chat_sessions
 
 ALTER TABLE ONLY public.quality_thresholds
     ADD CONSTRAINT fk_rails_9bcd1f06cc FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
+-- Name: configuration_bundles fk_rails_9c1905c6a8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.configuration_bundles
+    ADD CONSTRAINT fk_rails_9c1905c6a8 FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -10141,6 +10444,12 @@ ALTER TABLE public.billing_periods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.billing_plans ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: bundle_outcomes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bundle_outcomes ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: chat_messages; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10163,6 +10472,12 @@ ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.collector_runs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: configuration_bundles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.configuration_bundles ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: container_metrics; Type: ROW SECURITY; Schema: public; Owner: -
@@ -10596,6 +10911,17 @@ CREATE POLICY tenant_isolation ON public.billing_plans USING ((public.paid_tenan
 
 
 --
+-- Name: bundle_outcomes tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.bundle_outcomes USING ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = bundle_outcomes.project_id) AND (projects.account_id = public.paid_current_account_id())))))) WITH CHECK ((public.paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = bundle_outcomes.project_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
 -- Name: chat_messages tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -10655,6 +10981,13 @@ CREATE POLICY tenant_isolation ON public.collector_runs USING ((public.paid_tena
    FROM (public.project_versions
      JOIN public.projects ON ((projects.id = project_versions.project_id)))
   WHERE ((project_versions.id = collector_runs.project_version_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: configuration_bundles tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.configuration_bundles USING ((public.paid_tenant_bypass() OR (account_id IS NULL) OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id IS NULL) OR (account_id = public.paid_current_account_id())));
 
 
 --
@@ -11632,6 +11965,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508021919'),
 ('20260507164917'),
 ('20260507125050'),
 ('20260507011753'),
