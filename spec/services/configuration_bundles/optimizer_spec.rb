@@ -48,13 +48,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
 
     it "routes no-issue runs through the project exploration budget" do
-      project.update!(fitness_settings: {
-        "configuration_bundle_optimizer" => {
-          "exploration_budgets" => {
-            "project" => 100
-          }
-        }
-      })
+      set_exploration_budgets(project: 100)
       run = create(:agent_run, :create_issue_goal, project: project)
       stub_predictions(run, surrogate_model:)
 
@@ -63,17 +57,31 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
       expect(selection.selection_mode).to eq("exploratory")
       expect(selection.selection_context).to eq("project")
-      expect(selection.budget_snapshot.fetch("project")).to include(within_budget: true)
+      expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
+    end
+
+    it "blocks a first exploratory project run that would exceed the configured budget" do
+      set_exploration_budgets(project: 25)
+      run = create(:agent_run, :create_issue_goal, project: project)
+      stub_predictions(run, surrogate_model:)
+
+      selection = described_class.call(agent_run: run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.selection_mode).to eq("exploitative")
+      expect(selection.selection_context).to eq("project")
+      expect_budget_snapshot(selection, "project",
+        budget: 0.25,
+        total_runs: 0,
+        exploratory_runs: 0,
+        observed_share: 0.0,
+        projected_share: 1.0,
+        within_budget: false
+      )
     end
 
     it "enforces the project exploration budget before choosing an exploratory bundle" do
-      project.update!(fitness_settings: {
-        "configuration_bundle_optimizer" => {
-          "exploration_budgets" => {
-            "project" => 25
-          }
-        }
-      })
+      set_exploration_budgets(project: 25)
       seed_project_budget_history(project:, goal: agent_run.goal)
       stub_predictions(agent_run, surrogate_model:)
 
@@ -81,24 +89,18 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
       expect(selection.selection_mode).to eq("exploitative")
-      expect(selection.budget_snapshot.fetch("project")).to include(
+      expect_budget_snapshot(selection, "project",
         budget: 0.25,
         exploratory_runs: 1,
         total_runs: 4,
         observed_share: 0.25,
+        projected_share: 0.4,
         within_budget: false
       )
     end
 
     it "enforces the task exploration budget even when the project budget allows exploration" do
-      project.update!(fitness_settings: {
-        "configuration_bundle_optimizer" => {
-          "exploration_budgets" => {
-            "task" => 0,
-            "project" => 100
-          }
-        }
-      })
+      set_exploration_budgets(task: 0, project: 100)
       stub_predictions(agent_run, surrogate_model:)
 
       selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
@@ -106,8 +108,8 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
       expect(selection.selection_mode).to eq("exploitative")
       expect(selection.selection_context).to eq("task")
-      expect(selection.budget_snapshot.fetch("task")).to include(within_budget: false)
-      expect(selection.budget_snapshot.fetch("project")).to include(within_budget: true)
+      expect_budget_snapshot(selection, "task", projected_share: 1.0, within_budget: false)
+      expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
     end
 
     it "returns nil when there are no active tracked experiments" do
@@ -181,6 +183,18 @@ RSpec.describe ConfigurationBundles::Optimizer do
       variant_id = bundle_definition.dig("experiments", experiment.config_key, "configuration_experiment_variant_id")
       prediction_for(variant_id == control.id ? :exploitative : :exploratory)
     end
+  end
+
+  def set_exploration_budgets(**budgets)
+    project.update!(fitness_settings: {
+      "configuration_bundle_optimizer" => {
+        "exploration_budgets" => budgets.transform_keys(&:to_s)
+      }
+    })
+  end
+
+  def expect_budget_snapshot(selection, context, expected_values)
+    expect(selection.budget_snapshot.fetch(context)).to include(expected_values)
   end
 
   def prediction_for(mode)

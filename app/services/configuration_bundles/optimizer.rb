@@ -139,6 +139,7 @@ module ConfigurationBundles
         total_runs = prior_runs_for(context).count
         exploratory_runs = prior_runs_for(context).where(configuration_bundle_selection_mode: "exploratory").count
         observed_share = total_runs.zero? ? 0.0 : exploratory_runs.to_f / total_runs
+        projected_share = (exploratory_runs + 1).to_f / (total_runs + 1)
         budget = exploration_budget_for(context)
 
         {
@@ -146,7 +147,8 @@ module ConfigurationBundles
           total_runs: total_runs,
           exploratory_runs: exploratory_runs,
           observed_share: observed_share.round(4),
-          within_budget: budget.positive? && observed_share < budget
+          projected_share: projected_share.round(4),
+          within_budget: budget.positive? && projected_share <= budget
         }
       end
     end
