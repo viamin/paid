@@ -31,6 +31,48 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:bundle_rankings].size).to eq(described_class::MAX_BUNDLE_ROWS)
     end
 
+    it "includes Pareto-efficient bundles in tradeoff_frontier even beyond MAX_BUNDLE_ROWS" do
+      # Create MAX_BUNDLE_ROWS bundles with high quality (these fill the rankings table)
+      Array.new(described_class::MAX_BUNDLE_ROWS) do |i|
+        bundle = create(:configuration_bundle, account: project.account, definition: {
+          "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
+        })
+        create_bundle_outcome(project: project, bundle: bundle, quality_score: 0.9 - (i * 0.01), cost_cents: 100)
+        bundle
+      end
+
+      # Create a bundle outside the top rankings that is Pareto-efficient (low cost, moderate quality)
+      pareto_bundle = create(:configuration_bundle, account: project.account, definition: {
+        "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
+      })
+      create_bundle_outcome(project: project, bundle: pareto_bundle, quality_score: 0.5, cost_cents: 5)
+
+      stats = described_class.call(project: project)
+
+      # The pareto bundle should NOT be in bundle_rankings (capped at MAX_BUNDLE_ROWS)
+      ranking_bundles = stats[:bundle_rankings].map { |r| r[:bundle] }
+      expect(ranking_bundles).not_to include(pareto_bundle)
+
+      # But it SHOULD appear in tradeoff_frontier (computed from full set)
+      frontier_bundles = stats[:tradeoff_frontier].map { |r| r[:bundle] }
+      expect(frontier_bundles).to include(pareto_bundle)
+    end
+
+    it "is not sparse when optimizer insights have candidates despite no outcomes or experiments" do
+      run = create(:agent_run, project: project, issue: create(:issue, project: project), goal: "create_pr")
+
+      allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates).and_return([])
+      allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates)
+        .with(agent_run: run)
+        .and_return([ mock_optimizer_selection ])
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:outcome_count]).to eq(0)
+      expect(stats[:summary][:active_experiment_count]).to eq(0)
+      expect(stats[:sparse]).to be(false)
+    end
+
     it "excludes other projects from experiment variant stats" do
       other_project = create(:project, account: project.account)
       experiment, control, variant = create_experiment(project: project)
@@ -145,5 +187,21 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       quality_score: quality_score,
       cost_cents: cost_cents,
       success: true)
+  end
+
+  def mock_optimizer_selection
+    score_inputs = ConfigurationBundles::Optimizer::ScoreInputs.new(
+      predicted_quality_score: 0.8,
+      uncertainty: 0.1,
+      sample_count: 5,
+      acquisition_score: 0.84
+    )
+
+    ConfigurationBundles::Optimizer::Selection.new(
+      definition: { "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {} },
+      fingerprint: "mock_fingerprint",
+      variant_by_experiment_id: {},
+      score_inputs: score_inputs
+    )
   end
 end

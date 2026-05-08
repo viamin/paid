@@ -17,13 +17,15 @@ module Projects
     end
 
     def call
+      insights = optimizer_insights
+
       {
         summary: summary,
         bundle_rankings: bundle_rankings,
         experiment_confidence: experiment_confidence,
-        optimizer_insights: optimizer_insights,
+        optimizer_insights: insights,
         tradeoff_frontier: tradeoff_frontier,
-        sparse: sparse?
+        sparse: sparse?(insights)
       }
     end
 
@@ -52,8 +54,10 @@ module Projects
       end
     end
 
-    def sparse?
-      summary[:outcome_count].zero? && summary[:active_experiment_count].zero?
+    def sparse?(insights)
+      return false unless summary[:outcome_count].zero? && summary[:active_experiment_count].zero?
+
+      insights.none? { |insight| insight[:candidates].present? }
     end
 
     def bundle_rankings
@@ -151,7 +155,7 @@ module Projects
     end
 
     def tradeoff_frontier
-      candidates = bundle_rankings.select { |bundle| bundle[:avg_quality_score].present? && bundle[:avg_cost_cents].present? }
+      candidates = all_bundle_quality_cost.select { |b| b[:avg_quality_score].present? && b[:avg_cost_cents].present? }
       return [] if candidates.empty?
 
       pareto_bundles = candidates.reject do |bundle|
@@ -168,6 +172,34 @@ module Projects
       end
 
       pareto_bundles.sort_by { |bundle| [ -bundle[:avg_quality_score], bundle[:avg_cost_cents] ] }
+    end
+
+    def all_bundle_quality_cost
+      @all_bundle_quality_cost ||= begin
+        rows = bundle_outcomes_scope
+          .joins(:configuration_bundle)
+          .group("configuration_bundles.id")
+          .pluck(
+            Arel.sql("configuration_bundles.id"),
+            Arel.sql("AVG(bundle_outcomes.quality_score)"),
+            Arel.sql("AVG(bundle_outcomes.cost_cents)")
+          )
+
+        bundles_by_id = ConfigurationBundle
+          .where(id: rows.map(&:first))
+          .index_by(&:id)
+
+        rows.filter_map do |bundle_id, avg_quality, avg_cost|
+          bundle = bundles_by_id[bundle_id]
+          next unless bundle
+
+          {
+            bundle: bundle,
+            avg_quality_score: avg_quality&.to_f,
+            avg_cost_cents: avg_cost&.to_f&.round
+          }
+        end
+      end
     end
 
     def bundle_outcomes_scope
