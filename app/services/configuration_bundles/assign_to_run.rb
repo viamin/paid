@@ -36,10 +36,11 @@ module ConfigurationBundles
     def bundle_definition
       canonicalize(
         {
-          schema_version: 1,
+          schema_version: 2,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
           provider_id: agent_run.provider_id,
+          model_selection: model_selection_definition,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           service_container_ids: normalized_service_container_ids,
@@ -55,9 +56,31 @@ module ConfigurationBundles
       Digest::SHA256.hexdigest(agent_run.custom_prompt)
     end
 
+    def model_selection_definition
+      selection = agent_run.model_selection
+      return unless selection
+
+      canonicalize(
+        {
+          llm_model_id: selection.llm_model.model_id,
+          llm_provider: selection.llm_model.provider,
+          selector_type: selection.selector_type,
+          tier: selection.tier,
+          escalated_from_tier: selection.escalated_from_tier,
+          escalated_reason: selection.escalated_reason
+        }.compact
+      )
+    end
+
     def normalized_service_container_ids
-      ids = Array(agent_run.service_container_ids).map { |id| Integer(id, exception: false) || id }.compact.sort
+      ids = configured_service_container_ids
+      ids = Array(agent_run.service_container_ids) if ids.empty?
+      ids = ids.map { |id| Integer(id, exception: false) || id }.compact.sort
       ids if ids.any?
+    end
+
+    def configured_service_container_ids
+      agent_run.project.service_container_ids
     end
 
     def normalized_mcp_servers
