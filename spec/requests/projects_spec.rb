@@ -534,6 +534,7 @@ RSpec.describe "Projects" do
         get project_path(project)
 
         expect(response.body).to include("Average Quality Score")
+        expect(response.body).to include("Bundle Analysis")
         expect(response.body).to include("View Dashboard")
       end
 

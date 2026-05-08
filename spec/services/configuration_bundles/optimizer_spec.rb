@@ -82,6 +82,28 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
   end
 
+  describe ".ranked_candidates" do
+    it "returns candidates sorted by acquisition score" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.65, 0.66, 0.67 ]
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.9, 0.91 ]
+      )
+
+      ranked = described_class.ranked_candidates(agent_run: agent_run)
+
+      expect(ranked.map(&:score_inputs).map(&:acquisition_score)).to eq(
+        ranked.map(&:score_inputs).map(&:acquisition_score).sort.reverse
+      )
+      expect(ranked.first.variant_by_experiment_id).to eq(experiment.id => challenger)
+    end
+  end
+
   def create_prior_history
     create_bundle_history(
       experiment: experiment,

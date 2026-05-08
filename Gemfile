@@ -132,3 +132,9 @@ gem "pagy", "~> 43.5"
 
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"
+
+# Database functions and triggers for schema.rb [https://github.com/teoljungberg/fx]
+gem "fx"
+
+# Model change tracking via PostgreSQL triggers [https://github.com/palkan/logidze]
+gem "logidze"
