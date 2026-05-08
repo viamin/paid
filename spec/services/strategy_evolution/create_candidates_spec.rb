@@ -41,6 +41,16 @@ RSpec.describe StrategyEvolution::CreateCandidates do
       expect(OrchestrationStrategy.active_for("review_settings", account: account)).to eq(strategy)
     end
 
+    it "allocates candidate versions while holding the account lock" do
+      allow(account).to receive(:with_lock).and_wrap_original do |method, *args, &block|
+        method.call(*args, &block)
+      end
+
+      described_class.call(strategy_snapshot: strategy_snapshot, account: account, mutations: [ mutation ])
+
+      expect(account).to have_received(:with_lock)
+    end
+
     it "returns an empty array when no mutations are provided" do
       expect(described_class.call(strategy_snapshot: strategy_snapshot, account: account, mutations: [])).to eq([])
     end

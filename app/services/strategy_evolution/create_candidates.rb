@@ -15,20 +15,22 @@ module StrategyEvolution
     def call
       return [] if mutations.empty?
 
-      next_version = next_version_number
-
       ActiveRecord::Base.transaction do
-        mutations.map do |mutation|
-          candidate = OrchestrationStrategy.create!(
-            account: account,
-            strategy_type: strategy_type,
-            name: strategy_name,
-            version: next_version,
-            configuration: candidate_configuration(mutation),
-            active: false
-          )
-          next_version += 1
-          candidate
+        account.with_lock do
+          next_version = next_version_number
+
+          mutations.map do |mutation|
+            candidate = OrchestrationStrategy.create!(
+              account: account,
+              strategy_type: strategy_type,
+              name: strategy_name,
+              version: next_version,
+              configuration: candidate_configuration(mutation),
+              active: false
+            )
+            next_version += 1
+            candidate
+          end
         end
       end
     end

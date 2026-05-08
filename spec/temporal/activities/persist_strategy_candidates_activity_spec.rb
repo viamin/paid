@@ -34,6 +34,16 @@ RSpec.describe Activities::PersistStrategyCandidatesActivity do
     input[:mutations][0][:diff] = [ { "path" => "/enabled", "from" => false, "to" => true } ]
   end
 
+  it "rehydrates mutations with the canonical mutation type" do
+    allow(StrategyEvolution::CreateCandidates).to receive(:call).and_return([])
+
+    activity.execute(input)
+
+    expect(StrategyEvolution::CreateCandidates).to have_received(:call) do |kwargs|
+      expect(kwargs[:mutations]).to all(be_a(StrategyEvolution::Mutate::Mutation))
+    end
+  end
+
   it "persists inactive candidates and returns their ids" do
     result = activity.execute(input)
 

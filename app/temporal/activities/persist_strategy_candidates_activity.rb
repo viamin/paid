@@ -4,15 +4,7 @@ module Activities
   class PersistStrategyCandidatesActivity < BaseActivity
     activity_name "PersistStrategyCandidates"
 
-    Mutation = Struct.new(
-      :configuration,
-      :strategy,
-      :reasoning,
-      :expected_improvement,
-      :diff,
-      :provenance,
-      keyword_init: true
-    )
+    Mutation = StrategyEvolution::Mutate::Mutation
 
     def execute(input)
       account = Account.find(input.fetch(:account_id))
