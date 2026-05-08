@@ -113,7 +113,7 @@ module OrchestrationStrategies
           "max_attempts" => 2,
           "initial_interval_seconds" => 5,
           "max_interval_seconds" => 5,
-          "backoff_coefficient" => 1.0
+          "backoff_coefficient" => 2.0
         },
         "cleanup" => {
           "max_attempts" => 5,
@@ -159,12 +159,14 @@ module OrchestrationStrategies
           sub_issues_created
           decomposition_failed
           sub_issue_creation_failed
+          planning_failed
         ],
         "parallelization_outcomes" => %w[
           parallel_execution_skipped_empty_plan
           parallel_execution_skipped_single_task
           parallel_execution_planned
           parallelization_planning_failed
+          parallelization_failed
         ],
         "known_failure_types" => %w[
           AllProvidersExhausted
