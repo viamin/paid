@@ -13,8 +13,8 @@ class ConfigurationBundle < ApplicationRecord
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :version, presence: true,
-    numericality: { only_integer: true, greater_than: 0 },
-    uniqueness: { scope: [ :account_id, :project_id ] }
+    numericality: { only_integer: true, greater_than: 0 }
+  validate :version_unique_for_scope
   validates :strategy, length: { maximum: 100 }, allow_nil: true
   validates :fingerprint, length: { maximum: 64 }, uniqueness: true, allow_nil: true
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
@@ -58,10 +58,10 @@ class ConfigurationBundle < ApplicationRecord
   end
 
   def success_rate
-    total = bundle_outcomes.count
-    return nil if total.zero?
+    total, successful = bundle_outcomes.pick(Arel.sql("COUNT(*), COUNT(*) FILTER (WHERE success)"))
+    return nil if total.nil? || total.zero?
 
-    bundle_outcomes.where(success: true).count.to_f / total
+    successful.to_f / total
   end
 
   private
@@ -69,6 +69,16 @@ class ConfigurationBundle < ApplicationRecord
   def raise_invalid_transition!(action, required_status)
     errors.add(:base, "cannot #{action} a bundle that is #{status} (must be #{required_status})")
     raise ActiveRecord::RecordInvalid, self
+  end
+
+  def version_unique_for_scope
+    return if version.blank? || account_id.blank?
+
+    scope = self.class.where(account_id: account_id, version: version)
+    scope = project_id.nil? ? scope.where(project_id: nil) : scope.where(project_id: project_id)
+    scope = scope.where.not(id: id) if persisted?
+
+    errors.add(:version, :taken) if scope.exists?
   end
 
   def project_belongs_to_account

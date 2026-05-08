@@ -49,9 +49,14 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
+    add_index :configuration_bundles, [ :account_id, :version ],
+      unique: true,
+      where: "project_id IS NULL",
+      name: "index_config_bundles_unique_version_account"
     add_index :configuration_bundles, [ :account_id, :project_id, :version ],
       unique: true,
-      name: "index_config_bundles_unique_version"
+      where: "project_id IS NOT NULL",
+      name: "index_config_bundles_unique_version_project"
     add_index :configuration_bundles, [ :account_id, :status ],
       name: "index_config_bundles_on_account_status"
     add_index :configuration_bundles, [ :project_id, :status ],
@@ -67,5 +72,44 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
       name: "index_bundle_outcomes_unique_run"
     add_index :bundle_outcomes, :quality_score
     add_index :bundle_outcomes, :success
+
+    reversible do |dir|
+      dir.up do
+        execute <<~SQL
+          ALTER TABLE configuration_bundles ENABLE ROW LEVEL SECURITY;
+          ALTER TABLE configuration_bundles FORCE ROW LEVEL SECURITY;
+          CREATE POLICY tenant_isolation ON configuration_bundles
+            USING (paid_tenant_bypass() OR (configuration_bundles.account_id = paid_current_account_id()))
+            WITH CHECK (paid_tenant_bypass() OR (configuration_bundles.account_id = paid_current_account_id()));
+
+          ALTER TABLE bundle_outcomes ENABLE ROW LEVEL SECURITY;
+          ALTER TABLE bundle_outcomes FORCE ROW LEVEL SECURITY;
+          CREATE POLICY tenant_isolation ON bundle_outcomes
+            USING (
+              paid_tenant_bypass() OR EXISTS (
+                SELECT 1 FROM configuration_bundles
+                WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
+                  AND configuration_bundles.account_id = paid_current_account_id()
+              )
+            )
+            WITH CHECK (
+              paid_tenant_bypass() OR EXISTS (
+                SELECT 1 FROM configuration_bundles
+                WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
+                  AND configuration_bundles.account_id = paid_current_account_id()
+              )
+            );
+        SQL
+      end
+
+      dir.down do
+        execute "DROP POLICY IF EXISTS tenant_isolation ON bundle_outcomes"
+        execute "ALTER TABLE bundle_outcomes NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE bundle_outcomes DISABLE ROW LEVEL SECURITY"
+        execute "DROP POLICY IF EXISTS tenant_isolation ON configuration_bundles"
+        execute "ALTER TABLE configuration_bundles NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE configuration_bundles DISABLE ROW LEVEL SECURITY"
+      end
+    end
   end
 end

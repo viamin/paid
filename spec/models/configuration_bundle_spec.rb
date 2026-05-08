@@ -30,6 +30,15 @@ RSpec.describe ConfigurationBundle do
       expect(duplicate.errors[:version]).to be_present
     end
 
+    it "prevents duplicate versions for account-level bundles (nil project)" do
+      account = create(:account)
+      create(:configuration_bundle, account: account, project: nil, version: 1)
+
+      duplicate = build(:configuration_bundle, account: account, project: nil, version: 1)
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:version]).to be_present
+    end
+
     it "allows same version for different projects" do
       account = create(:account)
       project_a = create(:project, account: account)
