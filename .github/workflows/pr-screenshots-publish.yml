@@ -86,23 +86,24 @@ jobs:
           raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
 
           jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
-          capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
-          raise "Could not find capture job for workflow run #{run.fetch("id")}" unless capture_job
-
           artifacts = get_json(
             "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
             headers
           ).fetch("artifacts")
           artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
 
+          capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
+
           comment_status =
-            case capture_job["conclusion"]
+            case capture_job&.fetch("conclusion", nil)
             when "success"
               "success"
             when "skipped"
               pr_action == "synchronize" ? "no_ui_changes" : "skip"
             when "cancelled"
               "skip"
+            when nil
+              artifact_present ? "success" : (pr_action == "synchronize" ? "no_ui_changes" : "skip")
             else
               "capture_failed"
             end
