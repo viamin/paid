@@ -347,7 +347,9 @@ module Knowledge
         # producing a misleading "compiler failed to generate an executable
         # file" error (see e.g. bigdecimal-4.1.1 extconf.rb). Docker's
         # default tmpfs flags include noexec, so it must be overridden.
-        # /home/agent/.cache only stores cache data and stays noexec.
+        # /home/agent/.cache needs exec because some providers (e.g. GitHub Copilot)
+        # download native Node.js addons (pty.node) into ~/.cache/copilot/pkg/ at
+        # runtime; dlopen() requires mmap(PROT_EXEC), which fails on a noexec mount.
         #
         # /tmp size must fit the target repo's full gem set because the
         # routes collector sets BUNDLE_PATH=/tmp/bundle and unpacks every
@@ -357,7 +359,7 @@ module Knowledge
         # tmpfs is charged against the container memory cgroup (now 4GB).
         "Tmpfs" => {
           "/tmp" => "exec,size=#{2 * 1024 * 1024 * 1024},mode=1777",
-          "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
+          "/home/agent/.cache" => "exec,size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [
           "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
