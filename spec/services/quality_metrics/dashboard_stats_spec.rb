@@ -6,9 +6,13 @@ RSpec.describe QualityMetrics::DashboardStats do
   describe ".overview" do
     let(:project) { create(:project) }
 
+    before do
+      Rails.cache.clear
+    end
+
     it "delegates to Rails.cache with the project-specific key and TTL" do
       expect(Rails.cache).to receive(:fetch)
-        .with("quality_dashboard_overview/#{project.id}", hash_including(expires_in: described_class::OVERVIEW_CACHE_TTL))
+        .with(described_class.overview_cache_key(project.id), hash_including(expires_in: described_class::OVERVIEW_CACHE_TTL))
         .and_call_original
 
       described_class.overview(project: project)
@@ -22,6 +26,23 @@ RSpec.describe QualityMetrics::DashboardStats do
 
       expect(result[:total_metrics]).to eq(1)
       expect(result[:average_score]).to eq(0.8)
+    end
+
+    it "invalidates the cached overview when quality metrics are created or updated" do
+      automated_run = create(:agent_run, project: project)
+      metric = create(:quality_metric, agent_run: automated_run, composite_score: 0.8)
+
+      expect(described_class.overview(project: project)[:average_score]).to eq(0.8)
+
+      create(:quality_metric, :human, agent_run: create(:agent_run, project: project), composite_score: 0.6)
+      expect(described_class.overview(project: project)[:total_metrics]).to eq(2)
+
+      metric.update!(composite_score: 0.4)
+
+      refreshed = described_class.overview(project: project)
+
+      expect(refreshed[:total_metrics]).to eq(2)
+      expect(refreshed[:average_score]).to eq(0.5)
     end
   end
 

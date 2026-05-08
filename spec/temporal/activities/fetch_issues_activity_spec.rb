@@ -1312,6 +1312,28 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(pr.is_pull_request).to be true
       end
 
+      it "skips end-of-sync broadcasts when an incremental poll makes no visible issue changes" do
+        create(:issue,
+          project: project,
+          github_issue_id: updated_issue.id,
+          github_number: updated_issue.number,
+          title: updated_issue.title,
+          body: updated_issue.body,
+          github_creator_login: updated_issue.user.login,
+          github_state: updated_issue.state,
+          labels: [ "paid-build" ],
+          is_pull_request: false,
+          github_created_at: updated_issue.created_at,
+          github_updated_at: updated_issue.updated_at,
+          relationships_parsed_at: updated_issue.updated_at)
+
+        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+
+        activity.execute(project_id: project.id)
+
+        expect(Turbo::StreamsChannel).not_to have_received(:broadcast_replace_to)
+      end
+
       it "promotes external dependencies after backfilling open pull requests" do
         dependency = create_parsed_issue_with_external_dependency(
           project,

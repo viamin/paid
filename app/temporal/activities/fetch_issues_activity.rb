@@ -33,22 +33,39 @@ module Activities
       github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
       synced_issues = nil
+      sync_changed = false
       closed_count = 0
       stale_pr_count = nil
       stale_issue_count = nil
-      enhance_issue_rechecks = nil
+      enhance_issue_rechecks = []
 
       Project.suppress_broadcasts do
         synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
-        parse_issue_relationships(project, synced_issues)
-        enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
+        sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
+        relationship_changes = parse_issue_relationships(project, synced_issues)
+        sync_changed ||= relationship_changes
+
+        enhance_issue_result = detect_enhance_issue_rechecks(project, synced_issues)
+        enhance_issue_rechecks = enhance_issue_result[:rechecks]
+        sync_changed ||= enhance_issue_result[:changed]
+
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
-        stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
-        stale_issue_count = reconcile_open_issues(project, client) if incremental && !truncated
+        sync_changed ||= closed_count.positive?
+
+        if incremental && !truncated
+          stale_pr_result = reconcile_open_pull_requests(project, client)
+          stale_pr_count = stale_pr_result[:closed_count]
+          sync_changed ||= stale_pr_result[:changed]
+
+          stale_issue_count = reconcile_open_issues(project, client)
+          sync_changed ||= stale_issue_count.positive?
+        end
       end
 
-      project.broadcast_issues_update
-      project.broadcast_pull_requests_update
+      if sync_changed
+        project.broadcast_issues_update
+        project.broadcast_pull_requests_update
+      end
 
       if truncated && incremental
         # Incremental fetches sort ascending (oldest-updated first), so a
@@ -258,19 +275,25 @@ module Activities
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
-        github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels }
+        github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
+        changed: issue.previous_changes.present? }
     end
 
     def detect_enhance_issue_rechecks(project, synced_issues)
       label = project.enhance_issue_needs_input_label_name
-      synced_issues.filter_map do |issue_data|
+      changed = false
+
+      rechecks = synced_issues.filter_map do |issue_data|
         next unless Array(issue_data[:removed_labels]).include?(label)
 
         issue = project.issues.find(issue_data[:id])
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
 
+        changed = true
         enqueue_enhance_issue_recheck(project, issue)
       end
+
+      { rechecks: rechecks, changed: changed }
     end
 
     def enhance_issue_needs_input?(project, issue_data)
@@ -434,6 +457,7 @@ module Activities
 
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
       resolve_external_dependencies(project, synced_numbers)
+      parent_child_changed
     end
 
     def relationship_parse_candidates(project)
@@ -602,11 +626,13 @@ module Activities
 
     def reconcile_open_pull_requests(project, client)
       open_pr_numbers, truncated = fetch_open_pull_request_numbers(client, project.full_name)
-      return 0 if truncated
+      return { changed: false, closed_count: 0 } if truncated
 
-      backfill_open_pull_requests(project, client, open_pr_numbers)
+      backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
       resolve_external_dependencies(project, open_pr_numbers) if open_pr_numbers.any?
-      close_stale_pull_requests(project, open_pr_numbers)
+      closed_count = close_stale_pull_requests(project, open_pr_numbers)
+
+      { changed: backfilled_count.positive? || closed_count.positive?, closed_count: closed_count }
     end
 
     def fetch_open_pull_request_numbers(client, repo_full_name)
@@ -638,7 +664,7 @@ module Activities
     end
 
     def backfill_open_pull_requests(project, client, open_pr_numbers)
-      return if open_pr_numbers.empty?
+      return 0 if open_pr_numbers.empty?
 
       existing_open_numbers = project.issues
         .pull_requests_only
@@ -646,10 +672,14 @@ module Activities
         .pluck(:github_number)
         .to_set
 
-      (open_pr_numbers - existing_open_numbers.to_a).each do |number|
+      missing_numbers = open_pr_numbers - existing_open_numbers.to_a
+
+      missing_numbers.each do |number|
         github_issue = client.issue(project.full_name, number)
         sync_issue(project, github_issue)
       end
+
+      missing_numbers.size
     end
 
     def close_stale_pull_requests(project, open_pr_numbers)

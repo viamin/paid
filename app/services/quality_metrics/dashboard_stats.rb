@@ -22,6 +22,10 @@ module QualityMetrics
       new(...).overview
     end
 
+    def self.overview_cache_key(project_id)
+      "quality_dashboard_overview/#{project_id}"
+    end
+
     def call
       {
         overview: overview,
@@ -94,7 +98,7 @@ module QualityMetrics
     OVERVIEW_CACHE_TTL = 2.minutes
 
     def overview
-      Rails.cache.fetch("quality_dashboard_overview/#{project.id}", expires_in: OVERVIEW_CACHE_TTL) do
+      Rails.cache.fetch(self.class.overview_cache_key(project.id), expires_in: OVERVIEW_CACHE_TTL) do
         compute_overview
       end
     end
