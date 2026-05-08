@@ -678,6 +678,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
     t.index ["severity"], name: "index_exception_incidents_on_severity"
   end
 
+  create_table "failure_classifications", comment: "Persisted failure classification and chosen recovery action for coordination learning", force: :cascade do |t|
+    t.jsonb "action_params", default: {}, null: false, comment: "Parameters passed to the chosen recovery action"
+    t.jsonb "action_result", default: {}, null: false, comment: "Outcome of executing the recovery action"
+    t.string "action_status", limit: 30, default: "pending", null: false, comment: "Lifecycle: pending, executing, completed, skipped"
+    t.bigint "agent_run_id", null: false
+    t.string "chosen_action", limit: 50, null: false, comment: "Recovery action selected from coordination policy"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "executed_at"
+    t.string "failure_category", limit: 50, null: false, comment: "Classified failure type (e.g. provider_error, timeout, auth_failure)"
+    t.jsonb "failure_context", default: {}, null: false, comment: "Structured details about the failure (error message, provider, etc.)"
+    t.string "failure_subcategory", limit: 100, comment: "Optional finer-grained classification"
+    t.string "parent_workflow_id", limit: 255, comment: "Workflow context for coordinated recovery"
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["action_status"], name: "index_failure_classifications_on_action_status"
+    t.index ["agent_run_id"], name: "index_failure_classifications_on_agent_run_id"
+    t.index ["chosen_action"], name: "index_failure_classifications_on_chosen_action"
+    t.index ["failure_category"], name: "index_failure_classifications_on_failure_category"
+    t.index ["parent_workflow_id"], name: "index_failure_classifications_on_parent_workflow_id"
+    t.index ["project_id", "created_at"], name: "idx_failure_classifications_project_created"
+    t.index ["project_id"], name: "index_failure_classifications_on_project_id"
+  end
+
   create_table "flipper_features", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "key", null: false
@@ -1404,7 +1428,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
     t.jsonb "review_settings", default: {}, null: false
     t.string "scheduler_pause_reason"
     t.datetime "scheduler_paused_at"
-    t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
+    t.jsonb "screenshot_settings", default: {}, null: false, comment: "Per-project screenshot capture configuration and detection metadata."
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.integer "token_limit_warning_threshold", default: 80, null: false
@@ -1968,6 +1992,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
+  add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
+  add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
