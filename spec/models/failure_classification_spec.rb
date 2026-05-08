@@ -15,6 +15,22 @@ RSpec.describe FailureClassification do
 
     it { is_expected.to validate_presence_of(:action_status) }
     it { is_expected.to validate_inclusion_of(:action_status).in_array(described_class::ACTION_STATUSES) }
+
+    it "defaults project from the agent run" do
+      classification = build(:failure_classification, project: nil)
+
+      classification.validate
+
+      expect(classification.project).to eq(classification.agent_run.project)
+    end
+
+    it "rejects projects that do not match the agent run" do
+      agent_run = create(:agent_run)
+      classification = build(:failure_classification, project: create(:project), agent_run: agent_run)
+
+      expect(classification).not_to be_valid
+      expect(classification.errors[:project]).to include("must match the agent run's project")
+    end
   end
 
   describe "#execute!" do

@@ -37,6 +37,19 @@ RSpec.describe Coordination::FailureRecovery do
       end
     end
 
+    context "with a non-failure agent run" do
+      let(:agent_run) { create(:agent_run, :completed, project: project) }
+
+      it "rejects the run before persisting a classification" do
+        expect {
+          result = described_class.call(agent_run: agent_run)
+
+          expect(result).not_to be_success
+          expect(result.error).to eq("agent run status must be a failure status")
+        }.not_to change(FailureClassification, :count)
+      end
+    end
+
     context "with an auth-expired agent run" do
       let(:agent_run) do
         create(:agent_run, :auth_expired, project: project,

@@ -2,8 +2,8 @@
 
 FactoryBot.define do
   factory :failure_classification do
-    project
     agent_run
+    project { agent_run.project }
     failure_category { "provider_error" }
     chosen_action { "retry_alternate_provider" }
     action_status { "pending" }

@@ -28,10 +28,13 @@ class FailureClassification < ApplicationRecord
   belongs_to :project
   belongs_to :agent_run
 
+  before_validation :assign_project_from_agent_run
+
   validates :failure_category, presence: true, inclusion: { in: FAILURE_CATEGORIES }
   validates :chosen_action, presence: true, inclusion: { in: ACTIONS }
   validates :action_status, presence: true, inclusion: { in: ACTION_STATUSES }
   validates :parent_workflow_id, length: { maximum: 255 }
+  validate :project_matches_agent_run
 
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :by_category, ->(category) { where(failure_category: category) }
@@ -51,5 +54,18 @@ class FailureClassification < ApplicationRecord
   def skip!(reason = nil)
     result = reason ? { skip_reason: reason } : {}
     update!(action_status: "skipped", action_result: action_result.merge(result))
+  end
+
+  private
+
+  def assign_project_from_agent_run
+    self.project ||= agent_run&.project
+  end
+
+  def project_matches_agent_run
+    return unless project && agent_run
+    return if project_id == agent_run.project_id
+
+    errors.add(:project, "must match the agent run's project")
   end
 end

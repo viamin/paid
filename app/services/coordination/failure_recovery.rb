@@ -45,6 +45,8 @@ module Coordination
     end
 
     def call
+      return non_failure_result unless failed_run?
+
       category = classify_failure
       action = select_action(category)
 
@@ -67,6 +69,14 @@ module Coordination
     private
 
     attr_reader :agent_run, :policy_overrides
+
+    def failed_run?
+      agent_run.status.in?(AgentRun::FAILURE_STATUSES)
+    end
+
+    def non_failure_result
+      Result.new(success: false, error: "agent run status must be a failure status")
+    end
 
     def classify_failure
       error_text = build_error_text
