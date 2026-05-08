@@ -399,21 +399,13 @@ module Projects
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Agent run queued as a retry of run ##{@agent_run.id}."
     rescue ActiveRecord::RecordNotUnique => e
-      OrchestrationDecision.record(
-        project: @project,
-        issue: @agent_run.issue,
-        agent_run: @agent_run,
+      log_failed_retry_decision(
         decision_point: "manual_retry",
-        action: "retry",
-        status: "failed",
         signals: {
           selected_agent_type: agent_type,
           selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
         },
-        result: {
-          error_class: e.class.name,
-          error_message: e.message
-        }
+        error: e
       )
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
@@ -486,18 +478,10 @@ module Projects
     # Catch all harness errors (including AuthenticationError, which is a
     # subclass of Error) so this works even when the shim hasn't loaded yet.
     rescue AgentHarness::Error => e
-      OrchestrationDecision.record(
-        project: @project,
-        issue: @agent_run.issue,
-        agent_run: @agent_run,
+      log_failed_retry_decision(
         decision_point: "refresh_auth_retry",
-        action: "retry",
-        status: "failed",
         signals: { auth_provider: provider&.to_s },
-        result: {
-          error_class: e.class.name,
-          error_message: e.message
-        }
+        error: e
       )
       Rails.logger.error(
         message: "agent_execution.refresh_auth_failed",
@@ -508,18 +492,10 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
     rescue NotImplementedError => e
-      OrchestrationDecision.record(
-        project: @project,
-        issue: @agent_run.issue,
-        agent_run: @agent_run,
+      log_failed_retry_decision(
         decision_point: "refresh_auth_retry",
-        action: "retry",
-        status: "failed",
         signals: { auth_provider: @agent_run.auth_provider },
-        result: {
-          error_class: e.class.name,
-          error_message: e.message
-        }
+        error: e
       )
       Rails.logger.error(
         message: "agent_execution.refresh_auth_unavailable",
@@ -531,18 +507,10 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication is not supported for this provider."
     rescue ActiveRecord::RecordNotUnique => e
-      OrchestrationDecision.record(
-        project: @project,
-        issue: @agent_run.issue,
-        agent_run: @agent_run,
+      log_failed_retry_decision(
         decision_point: "refresh_auth_retry",
-        action: "retry",
-        status: "failed",
         signals: { auth_provider: @agent_run.auth_provider },
-        result: {
-          error_class: e.class.name,
-          error_message: e.message
-        }
+        error: e
       )
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
@@ -814,6 +782,22 @@ module Projects
       return true unless managed_provider_key?(provider_key)
 
       enabled_retry_providers.any? { |provider| provider.provider_key == provider_key }
+    end
+
+    def log_failed_retry_decision(decision_point:, signals:, error:)
+      OrchestrationDecision.record(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_run: @agent_run,
+        decision_point: decision_point,
+        action: "retry",
+        status: "failed",
+        signals: signals,
+        result: {
+          error_class: error.class.name,
+          error_message: error.message
+        }
+      )
     end
 
     def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:, goal:)
