@@ -3,6 +3,28 @@
 require "rails_helper"
 
 RSpec.describe QualityMetrics::DashboardStats do
+  describe ".overview" do
+    let(:project) { create(:project) }
+
+    it "delegates to Rails.cache with the project-specific key and TTL" do
+      expect(Rails.cache).to receive(:fetch)
+        .with("quality_dashboard_overview/#{project.id}", hash_including(expires_in: described_class::OVERVIEW_CACHE_TTL))
+        .and_call_original
+
+      described_class.overview(project: project)
+    end
+
+    it "computes fresh data on cache miss" do
+      automated_run = create(:agent_run, project: project)
+      create(:quality_metric, agent_run: automated_run, composite_score: 0.8)
+
+      result = described_class.overview(project: project)
+
+      expect(result[:total_metrics]).to eq(1)
+      expect(result[:average_score]).to eq(0.8)
+    end
+  end
+
   describe ".call" do
     let(:project) { create(:project) }
 

@@ -513,9 +513,27 @@ class Project < ApplicationRecord
     )
   end
 
+  # Matches the UserSetting max_issues_per_page default (db/schema.rb).
+  # Update both when changing the display limit for broadcasts.
+  BROADCAST_DISPLAY_LIMIT = 50
+
+  def self.suppress_broadcasts
+    previous = Thread.current[:paid_suppress_project_broadcasts]
+    Thread.current[:paid_suppress_project_broadcasts] = true
+    yield
+  ensure
+    Thread.current[:paid_suppress_project_broadcasts] = previous
+  end
+
+  def self.broadcasts_suppressed?
+    Thread.current[:paid_suppress_project_broadcasts] == true
+  end
+
   def broadcast_issues_update
+    return if self.class.broadcasts_suppressed?
+
     open_items = issues.where(github_state: "open").order(github_number: :desc)
-    displayed = open_items.issues_only.includes(:sub_issues).limit(25)
+    displayed = open_items.issues_only.includes(:sub_issues).limit(BROADCAST_DISPLAY_LIMIT)
     lifecycle_statuses = Issue.lifecycle_statuses(displayed)
     paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
       project: self, issue_ids: displayed.map(&:id)
@@ -544,6 +562,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_pull_requests_update
+    return if self.class.broadcasts_suppressed?
+
     open_items = issues.where(github_state: "open").order(github_number: :desc)
     broadcast_replace_to(
       self, :project_updates,
@@ -551,7 +571,7 @@ class Project < ApplicationRecord
       partial: "projects/pull_requests",
       locals: {
         project: self,
-        pull_requests: open_items.pull_requests_only.limit(25),
+        pull_requests: open_items.pull_requests_only.limit(BROADCAST_DISPLAY_LIMIT),
         pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
         pr_numbers_with_active_runs: pr_numbers_with_active_runs,
         merge_notification_issue_ids: Set.new

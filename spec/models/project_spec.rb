@@ -1558,6 +1558,14 @@ RSpec.describe Project do
           locals: hash_including(project: project)
         )
       end
+
+      it "does not broadcast when broadcasts are suppressed" do
+        described_class.suppress_broadcasts do
+          project.broadcast_issues_update
+        end
+
+        expect(project).not_to have_received(:broadcast_replace_to)
+      end
     end
 
     describe "#broadcast_pull_requests_update" do
@@ -1570,6 +1578,50 @@ RSpec.describe Project do
           partial: "projects/pull_requests",
           locals: hash_including(project: project)
         )
+      end
+
+      it "does not broadcast when broadcasts are suppressed" do
+        described_class.suppress_broadcasts do
+          project.broadcast_pull_requests_update
+        end
+
+        expect(project).not_to have_received(:broadcast_replace_to)
+      end
+    end
+
+    describe ".suppress_broadcasts" do
+      it "restores the previous suppression state after the block" do
+        expect(described_class).not_to be_broadcasts_suppressed
+
+        described_class.suppress_broadcasts do
+          expect(described_class).to be_broadcasts_suppressed
+        end
+
+        expect(described_class).not_to be_broadcasts_suppressed
+      end
+
+      it "restores state even when an error is raised" do
+        expect {
+          described_class.suppress_broadcasts do
+            raise "test error"
+          end
+        }.to raise_error("test error")
+
+        expect(described_class).not_to be_broadcasts_suppressed
+      end
+
+      it "supports nesting" do
+        described_class.suppress_broadcasts do
+          expect(described_class).to be_broadcasts_suppressed
+
+          described_class.suppress_broadcasts do
+            expect(described_class).to be_broadcasts_suppressed
+          end
+
+          expect(described_class).to be_broadcasts_suppressed
+        end
+
+        expect(described_class).not_to be_broadcasts_suppressed
       end
     end
 

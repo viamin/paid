@@ -32,12 +32,23 @@ module Activities
 
       github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
-      synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
-      parse_issue_relationships(project, synced_issues)
-      enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
-      closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
-      stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
-      stale_issue_count = reconcile_open_issues(project, client) if incremental && !truncated
+      synced_issues = nil
+      closed_count = 0
+      stale_pr_count = nil
+      stale_issue_count = nil
+      enhance_issue_rechecks = nil
+
+      Project.suppress_broadcasts do
+        synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
+        parse_issue_relationships(project, synced_issues)
+        enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
+        closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
+        stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
+        stale_issue_count = reconcile_open_issues(project, client) if incremental && !truncated
+      end
+
+      project.broadcast_issues_update
+      project.broadcast_pull_requests_update
 
       if truncated && incremental
         # Incremental fetches sort ascending (oldest-updated first), so a

@@ -811,6 +811,24 @@ RSpec.describe Activities::FetchIssuesActivity do
           .with(anything, :project_updates, hash_including(target: pull_requests_target))
           .at_least(:once)
       end
+
+      it "suppresses per-issue broadcasts during sync and broadcasts once at the end" do
+        create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
+
+        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+
+        activity.execute(project_id: project.id)
+
+        issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
+        pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
+
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(anything, :project_updates, hash_including(target: issues_target))
+          .once
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(anything, :project_updates, hash_including(target: pull_requests_target))
+          .once
+      end
     end
 
     context "when fetch returns empty results with existing open issues" do
