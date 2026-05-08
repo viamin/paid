@@ -84,4 +84,47 @@ RSpec.describe StrategyEvolution::Mutate do
 
     expect(described_class.call(strategy: strategy, analysis: analysis)).to eq([])
   end
+
+  context "with array-bearing strategy types" do
+    let(:strategy) do
+      {
+        id: 20,
+        strategy_type: "feature_orchestration",
+        name: "Feature Orchestration",
+        version: 1,
+        account_id: 7,
+        configuration: OrchestrationStrategies::Defaults.feature_orchestration
+      }
+    end
+    let(:candidate_config) do
+      strategy[:configuration].deep_dup.tap do |config|
+        config["planning_phases"] = %w[fetch_planning_context decompose_feature]
+      end
+    end
+
+    it "accepts candidates whose arrays contain valid element types" do
+      mutations = described_class.call(strategy: strategy, analysis: analysis, options: { mutation_count: 1 })
+
+      expect(mutations.size).to eq(1)
+    end
+
+    it "rejects candidates whose arrays contain invalid element types" do
+      bad_config = strategy[:configuration].deep_dup.tap do |config|
+        config["planning_phases"] = [ 1, { "oops" => true } ]
+      end
+      bad_response = JSON.generate(
+        "mutations" => [
+          {
+            "configuration" => bad_config,
+            "strategy" => "risk_reduction",
+            "reasoning" => "invalid array elements",
+            "expected_improvement" => "nothing"
+          }
+        ]
+      )
+      allow(response).to receive(:output).and_return(bad_response)
+
+      expect(described_class.call(strategy: strategy, analysis: analysis)).to eq([])
+    end
+  end
 end

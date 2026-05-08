@@ -25,8 +25,8 @@ module StrategyEvolution
         strategy: serialize_strategy(current_strategy),
         prior_versions: prior_versions.map { |strategy| serialize_strategy(strategy) },
         performance: performance_summary,
-        sample_successes: sampled_decisions(successes),
-        sample_failures: sampled_decisions(failures)
+        sample_successes: serialize_decisions(sample_successes),
+        sample_failures: serialize_decisions(sample_failures)
       }
     end
 
@@ -46,50 +46,84 @@ module StrategyEvolution
         .limit(5)
     end
 
-    def decisions
-      @decisions ||= OrchestrationDecision
-        .includes(:agent_run)
+    def scoped_decisions
+      OrchestrationDecision
         .joins(:project)
         .where(projects: { account_id: account.id })
         .where(created_at: lookback_days.days.ago..Time.current)
-        .order(created_at: :desc, id: :desc)
-        .to_a
+    end
+
+    def aggregates
+      @aggregates ||= scoped_decisions
+        .left_joins(:agent_run)
+        .pick(
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COUNT(agent_runs.id)"),
+          Arel.sql("COUNT(*) FILTER (WHERE agent_runs.status IN ('completed','no_output'))"),
+          Arel.sql("COUNT(*) FILTER (WHERE agent_runs.guardrail_violation_type IS NOT NULL " \
+                   "OR (agent_runs.id IS NOT NULL AND agent_runs.status NOT IN ('completed','no_output')))")
+        )
+    end
+
+    def decision_count
+      aggregates[0]
+    end
+
+    def run_backed_count
+      aggregates[1]
+    end
+
+    def success_count
+      aggregates[2]
+    end
+
+    def failure_count
+      aggregates[3]
+    end
+
+    def tallies
+      @tallies ||= begin
+        base = scoped_decisions.left_joins(:agent_run)
+        {
+          decision_types: tally_column(base, "orchestration_decisions.decision_type"),
+          actors: tally_column(base, "orchestration_decisions.actor"),
+          run_statuses: tally_column(base, "agent_runs.status"),
+          guardrail_violation_types: tally_column(base, "agent_runs.guardrail_violation_type")
+        }
+      end
     end
 
     def performance_summary
-      run_backed = decisions.count { |decision| decision.agent_run.present? }
-      successful = successes.count
-      failed = failures.count
-
       {
-        decision_count: decisions.size,
+        decision_count: decision_count,
         min_decisions: min_decisions,
-        run_backed_decision_count: run_backed,
-        success_count: successful,
-        failure_count: failed,
-        success_rate: success_rate(run_backed, successful),
-        decision_types: tally(decisions.map(&:decision_type)),
-        actors: tally(decisions.map(&:actor)),
-        run_statuses: tally(decisions.filter_map { |decision| decision.agent_run&.status }),
-        guardrail_violation_types: tally(decisions.filter_map { |decision| decision.agent_run&.guardrail_violation_type })
+        run_backed_decision_count: run_backed_count,
+        success_count: success_count,
+        failure_count: failure_count,
+        success_rate: success_rate(run_backed_count, success_count),
+        **tallies
       }
     end
 
-    def successes
-      decisions.select { |decision| successful_run?(decision) }
+    def sample_successes
+      @sample_successes ||= scoped_decisions
+        .includes(:agent_run)
+        .joins(:agent_run)
+        .where(agent_runs: { status: SUCCESSFUL_RUN_STATUSES })
+        .order(created_at: :desc, id: :desc)
+        .limit(sample_limit)
     end
 
-    def failures
-      decisions.select { |decision| failed_run?(decision) }
-    end
-
-    def successful_run?(decision)
-      SUCCESSFUL_RUN_STATUSES.include?(decision.agent_run&.status)
-    end
-
-    def failed_run?(decision)
-      decision.agent_run&.guardrail_violation_type.present? ||
-        (decision.agent_run.present? && !successful_run?(decision))
+    def sample_failures
+      @sample_failures ||= scoped_decisions
+        .includes(:agent_run)
+        .joins(:agent_run)
+        .where(
+          "agent_runs.guardrail_violation_type IS NOT NULL " \
+          "OR agent_runs.status NOT IN (?)", SUCCESSFUL_RUN_STATUSES
+        )
+        .order(created_at: :desc, id: :desc)
+        .limit(sample_limit)
     end
 
     def success_rate(run_backed, successful)
@@ -98,8 +132,8 @@ module StrategyEvolution
       (successful.to_f / run_backed).round(4)
     end
 
-    def sampled_decisions(rows)
-      rows.first(sample_limit).map do |decision|
+    def serialize_decisions(rows)
+      rows.map do |decision|
         {
           id: decision.id,
           decision_type: decision.decision_type,
@@ -128,8 +162,11 @@ module StrategyEvolution
       }
     end
 
-    def tally(values)
-      values.reject(&:blank?).tally
+    def tally_column(relation, column)
+      relation
+        .where.not(column => [ nil, "" ])
+        .group(column)
+        .count
     end
   end
 end

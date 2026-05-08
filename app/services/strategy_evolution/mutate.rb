@@ -226,7 +226,11 @@ module StrategyEvolution
 
         current_value.all? { |key, value| valid_schema?(value, candidate_value[key]) }
       when Array
-        candidate_value.is_a?(Array)
+        return false unless candidate_value.is_a?(Array)
+        return true if current_value.empty?
+
+        element_exemplar = current_value.first
+        candidate_value.all? { |element| valid_schema?(element_exemplar, element) }
       when Numeric
         candidate_value.is_a?(Numeric)
       when TrueClass, FalseClass
