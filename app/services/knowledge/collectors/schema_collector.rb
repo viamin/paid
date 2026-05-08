@@ -42,10 +42,10 @@ module Knowledge
       private
 
       def detect_schema_file
-        return STRUCTURE_SQL if repo_file_exists?(STRUCTURE_SQL)
         return SCHEMA_RB if repo_file_exists?(SCHEMA_RB)
+        return STRUCTURE_SQL if repo_file_exists?(STRUCTURE_SQL)
 
-        skip!("neither #{STRUCTURE_SQL} nor #{SCHEMA_RB} found")
+        skip!("neither #{SCHEMA_RB} nor #{STRUCTURE_SQL} found")
       end
 
       # --- SQL (structure.sql) parsing ---
@@ -226,7 +226,7 @@ module Knowledge
 
         column = { name: name, type: type }
         column[:null] = false if options_str.include?("null: false")
-        if (default_match = options_str.match(/default:\s*("([^"]*)"|(\S+))/))
+        if (default_match = options_str.match(/default:\s*("([^"]*)"|([^,\s}]+))/))
           column[:default] = default_match[2] || default_match[3]
         end
 

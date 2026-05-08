@@ -175,11 +175,11 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
       end
     end
 
-    context "when structure.sql is preferred over schema.rb" do
-      it "uses structure.sql when both files exist" do
+    context "when schema.rb is preferred over structure.sql" do
+      it "uses schema.rb when both files exist" do
         artifacts = collector.collect
 
-        expect(artifacts).to all(include(scope_path: "db/structure.sql"))
+        expect(artifacts).to all(include(scope_path: "db/schema.rb"))
       end
     end
 
@@ -189,7 +189,7 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
       it "raises SkipCollector" do
         expect { collector.collect }.to raise_error(
           Knowledge::SkipCollector,
-          /neither db\/structure\.sql nor db\/schema\.rb found/
+          /neither db\/schema\.rb nor db\/structure\.sql found/
         )
       end
     end
@@ -245,6 +245,7 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
     context "with array and custom PostgreSQL column types" do
       before do
         allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(false)
         allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
         allow(File).to receive(:exist?).with("#{fixture_path}/app/models/setting.rb").and_return(true)
         allow(File).to receive(:read).and_call_original
@@ -279,6 +280,7 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
     context "with trigram indexes containing operator classes" do
       before do
         allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(false)
         allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
         allow(File).to receive(:exist?).with("#{fixture_path}/app/models/artifact.rb").and_return(true)
         allow(File).to receive(:read).and_call_original
@@ -307,6 +309,7 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
     context "with quoted SQL index columns" do
       before do
         allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(false)
         allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
         allow(File).to receive(:exist?).with("#{fixture_path}/app/models/template.rb").and_return(true)
         allow(File).to receive(:read).and_call_original
@@ -341,6 +344,7 @@ RSpec.describe Knowledge::Collectors::SchemaCollector, :no_db do
     context "with SQL columns that have no explicit foreign key" do
       before do
         allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/db/schema.rb").and_return(false)
         allow(File).to receive(:exist?).with("#{fixture_path}/db/structure.sql").and_return(true)
         allow(File).to receive(:exist?).with("#{fixture_path}/app/models/task.rb").and_return(true)
         allow(File).to receive(:read).and_call_original
