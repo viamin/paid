@@ -10,7 +10,7 @@ For product overview and full local environment details, see [README.md](README.
 - [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md)
-- [db/structure.sql](db/structure.sql)
+- [db/schema.rb](db/schema.rb)
 
 ## Before You Start
 

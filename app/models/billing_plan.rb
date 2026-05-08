@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class BillingPlan < ApplicationRecord
+  has_logidze
   BILLING_MODELS = %w[per_token per_run per_project flat_rate].freeze
   PERIOD_TYPES = %w[daily weekly monthly].freeze
 

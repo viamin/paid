@@ -1657,7 +1657,7 @@ Phase 4 (AI-Native Evolution) ────────────────�
 
 1. Clone this repository
 2. Review [ARCHITECTURE.md](./ARCHITECTURE.md) for system design
-3. Review [db/structure.sql](../db/structure.sql) for the canonical database schema
+3. Review [db/schema.rb](../db/schema.rb) for the canonical database schema
 4. Start with Phase 1.1: Rails Application Skeleton
 5. Use the task lists above as implementation checklists
 

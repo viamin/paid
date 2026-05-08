@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class BillingInvoice < ApplicationRecord
+  has_logidze
   STATUSES = %w[draft issued paid void].freeze
 
   belongs_to :account

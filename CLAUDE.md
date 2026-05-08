@@ -184,10 +184,48 @@ When adding a new artifact pattern, update ALL of: `.gitignore`, `CONTAINER_ARTI
 - Always add foreign key constraints
 - Index all foreign keys and frequently queried columns
 - **Always use `rails generate migration`** to create migrations — never create migration files manually. The generator ensures correct timestamps, naming conventions, and boilerplate.
-- **Add `comment:` on tables and columns in migrations** when the purpose isn't obvious from the name alone. This keeps `db/structure.sql` as the self-documenting, canonical schema reference — no separate DATA_MODEL.md is needed.
+- **Add `comment:` on tables and columns in migrations** when the purpose isn't obvious from the name alone. This keeps `db/schema.rb` as the self-documenting, canonical schema reference — no separate DATA_MODEL.md is needed.
 - In devcontainer/Compose environments, the app database host is usually `postgres`, not `localhost`. Paid also uses forced tenant RLS on core tables like `agent_runs`, `projects`, and `issues`, so raw `psql` as app user `paid` may legitimately show `0` rows unless you set the session context first.
 - For Rails console/runner inspection that must ignore tenant filtering, use `TenantContext.with_system_access { ... }`. For raw SQL, set either `SET paid.current_account_id = '<account_id>';` or `SET paid.bypass_tenant_rls = 'true';` before querying tenant-scoped tables.
 - Container-authenticated proxy endpoints run outside the normal `ApplicationController` tenant setup. If you add or debug controller code under `app/controllers/api/` that authenticates agent/knowledge runs directly, make sure it establishes the correct `TenantContext` explicitly.
+
+### Schema Format (`schema.rb` + fx)
+
+The project uses `db/schema.rb` (not `structure.sql`). The [fx gem](https://github.com/teoljungberg/fx) makes this possible by dumping PostgreSQL functions and triggers into `schema.rb` automatically.
+
+- **Schema format**: `config.active_record.schema_format = :ruby`
+- **fx-managed functions**: Versioned SQL files in `db/functions/` (e.g., `logidze_logger_v05.sql`). The fx schema dumper also auto-discovers functions created by raw SQL in past migrations (e.g., `paid_current_account_id`, `paid_tenant_bypass`).
+- **fx-managed triggers**: Versioned SQL files in `db/triggers/` (e.g., `logidze_on_projects_v01.sql`). The fx schema dumper also auto-discovers triggers created by raw SQL in past migrations (e.g., `knowledge_chunks_tsvector_update`).
+- **Adding new functions/triggers**: Use fx generators (`rails generate fx:function name`, `rails generate fx:trigger name on:table_name`) or pass `sql_definition:` inline in migrations. Never use raw `execute "CREATE FUNCTION..."` — use `create_function` / `create_trigger` from fx instead.
+- **Updating functions/triggers**: Use `update_function` / `update_trigger` with a new version number. Create the new versioned SQL file in `db/functions/` or `db/triggers/`.
+- **Do not create `db/structure.sql`** or revert `schema_format` to `:sql`.
+
+### Change Tracking (Logidze)
+
+The [logidze gem](https://github.com/palkan/logidze) tracks ActiveRecord changes via PostgreSQL triggers, storing a versioned diff history in a `log_data` jsonb column on each tracked table. Because fx is installed, logidze auto-detects it and manages its functions/triggers through fx (compatible with `schema.rb`).
+
+**Tables with logidze enabled** (`has_logidze` in model):
+
+- `projects`, `accounts`, `account_memberships` — configuration and access control
+- `user_settings`, `tenant_settings` — user/tenant configuration
+- `cost_budgets`, `billing_plans`, `billing_invoices` — financial controls and audit trail
+
+**Adding logidze to a new table**:
+
+1. Run `rails generate logidze:model ModelName` — creates migration + trigger SQL file + injects `has_logidze` into the model
+2. Run `bin/rails db:migrate && bin/rails db:schema:dump`
+3. Add `frozen_string_literal: true` to the generated migration
+
+**When to add logidze**: Tables where "who changed what and when" matters — settings, configuration, access control, financial data, and any table where changes affect system behavior. Do NOT add logidze to high-volume operational tables (e.g., `agent_runs`, `container_metrics`) or append-only event/log tables — the per-update trigger overhead is not justified.
+
+**Querying history**:
+
+```ruby
+record.log_data                           # raw logidze data
+record.at(time: 1.day.ago)               # snapshot as of a point in time
+record.log_data.versions                  # array of version entries
+record.diff_from(version: 2)             # diff between versions
+```
 
 ## Release Management
 
@@ -252,5 +290,5 @@ Use `WORKLOG.md` as persistent working memory across context compactions:
 - `docs/AGENT_SYSTEM.md` - Temporal workflows and container management
 - `docs/LLM_STYLE_GUIDE.md` - **Read this first** — concise coding rules for AI assistants (with line refs to full guide)
 - `docs/STYLE_GUIDE.md` - Detailed coding standards, rationale, and examples
-- `db/structure.sql` - Canonical database schema with table and column comments
+- `db/schema.rb` - Canonical database schema with table and column comments
 - `docs/rdrs/` - All architectural decision records

@@ -47,7 +47,7 @@ Analyzing meaning or making a judgment?
 - UUIDs for external-facing IDs, bigints for internal FKs. `STYLE_GUIDE:400-415`
 - Always add foreign key constraints and index FK columns. `STYLE_GUIDE:400-415`
 - Prefer `timestamp` over `datetime`. Prefer explicit columns over JSON for queryable data. `STYLE_GUIDE:400-415`
-- Add table/column `comment:` in migrations for non-obvious schema elements. `db/structure.sql` is the canonical schema reference — no separate DATA_MODEL.md needed. `STYLE_GUIDE:400-415`
+- Add table/column `comment:` in migrations for non-obvious schema elements. `db/schema.rb` is the canonical schema reference — no separate DATA_MODEL.md needed. `STYLE_GUIDE:400-415`
 
 ### Naming
 

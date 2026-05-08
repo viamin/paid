@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
+  has_logidze
   MERGE_METHODS = %w[squash merge rebase].freeze
   AUTO_RELEASE_GRANULARITIES = %w[off patch_only minor_only major_only all].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze

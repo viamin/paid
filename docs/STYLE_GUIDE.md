@@ -409,7 +409,7 @@ end
 
 - **Prefer explicit columns over JSON blobs for queryable data**: JSON columns are convenient but harder to query, index, and validate. Use them for truly schemaless data (user preferences, external API responses), not for structured data you'll query.
 
-- **Add table and column comments for non-obvious schema elements**: Use `comment:` on `create_table` and `add_column`/`change_column` in migrations to document purpose. This makes the schema self-documenting via `\d+ tablename` in psql and keeps `db/structure.sql` as the canonical schema reference. Only add comments when the purpose isn't obvious from the name alone.
+- **Add table and column comments for non-obvious schema elements**: Use `comment:` on `create_table` and `add_column`/`change_column` in migrations to document purpose. This makes the schema self-documenting via `\d+ tablename` in psql and keeps `db/schema.rb` as the canonical schema reference. Only add comments when the purpose isn't obvious from the name alone.
 
 ```ruby
 create_table :agent_run_phases, comment: "Tracks discrete phases within a single agent run for granular observability" do |t|
