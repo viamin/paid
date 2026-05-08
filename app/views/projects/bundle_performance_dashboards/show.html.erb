@@ -120,7 +120,7 @@
                 </div>
                 <% if experiment[:winner] %>
                   <p class="mt-3 text-sm text-green-700">
-                    Leading winner: <%= experiment[:winner].parsed_value.inspect %>
+                    Leading winner: <%= experiment[:winner_label] %>
                     <% if experiment[:improvement] %>
                       with <%= number_to_percentage(experiment[:improvement] * 100, precision: 1) %> average-score lift.
                     <% end %>

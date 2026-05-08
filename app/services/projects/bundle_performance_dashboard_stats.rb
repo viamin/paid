@@ -121,6 +121,7 @@ module Projects
           confidence: analysis.confidence,
           improvement: analysis.improvement,
           winner: analysis.winner,
+          winner_label: analysis.winner ? variant_label(analysis.winner) : nil,
           min_samples_per_variant: experiment.min_samples_per_variant,
           confidence_threshold: experiment.confidence_threshold,
           variants: experiment.configuration_experiment_variants.order(:id).map do |variant|
