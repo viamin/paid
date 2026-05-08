@@ -1,9 +1,4 @@
-<%
-  # Helper to determine which section is currently active based on progress
-  current_section_index = @sections.index { |s| s[:questions].any? { |q| !@responses[q[:key]]&.answered? } } || 0
-%>
-<div class="mt-6" data-controller="context-intake">
-  <%# Progress bar %>
+<div class="mt-6">
   <div class="overflow-hidden rounded-lg bg-white shadow">
     <div class="px-4 py-4 sm:px-6">
       <div class="flex items-center justify-between">
@@ -21,15 +16,11 @@
   <%# Section navigation %>
   <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
     <nav class="flex overflow-x-auto px-4 py-3 sm:px-6" aria-label="Sections">
-      <% @sections.each_with_index do |section, idx| %>
-        <button type="button"
-                class="mr-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors
-                       <%= idx == (@session.current_step > 0 ? current_section_index : 0) ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' %>"
-                data-context-intake-target="sectionTab"
-                data-action="click->context-intake#switchSection"
-                data-section="<%= section[:key] %>">
+      <% @sections.each do |section| %>
+        <%= link_to project_context_intake_path(@project, section: section[:key]),
+              class: "mr-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors #{section[:key] == @active_section_key ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}" do %>
           <%= section[:title] %>
-        </button>
+        <% end %>
       <% end %>
     </nav>
   </div>
@@ -37,9 +28,8 @@
   <%# Questions per section %>
   <% @sections.each do |section| %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
-         data-context-intake-target="sectionPanel"
          data-section="<%= section[:key] %>"
-         style="<%= section[:key] == @sections.first[:key] ? '' : 'display: none;' %>">
+         style="<%= section[:key] == @active_section_key ? '' : 'display: none;' %>">
       <div class="px-4 py-5 sm:p-6">
         <h3 class="text-lg font-medium text-gray-900 mb-4"><%= section[:title] %></h3>
 
