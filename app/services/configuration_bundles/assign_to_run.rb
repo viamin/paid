@@ -15,8 +15,9 @@ module ConfigurationBundles
     end
 
     def call
-      definition = bundle_definition
-      fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
+      selection = optimizer_selection
+      definition = bundle_definition(selection&.variant_by_experiment_id)
+      fingerprint = selection&.fingerprint || Digest::SHA256.hexdigest(JSON.generate(definition))
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(configuration_bundle: bundle) unless agent_run.configuration_bundle_id == bundle.id
@@ -33,7 +34,7 @@ module ConfigurationBundles
       ConfigurationBundle.find_by!(fingerprint: fingerprint)
     end
 
-    def bundle_definition
+    def bundle_definition(selected_variants = nil)
       canonicalize(
         {
           schema_version: 1,
@@ -44,7 +45,7 @@ module ConfigurationBundles
           custom_prompt_sha256: custom_prompt_sha256,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
-          experiments: experiment_definitions
+          experiments: experiment_definitions(selected_variants)
         }.compact
       )
     end
@@ -65,14 +66,15 @@ module ConfigurationBundles
       servers if servers.any?
     end
 
-    def experiment_definitions
+    def experiment_definitions(selected_variants = nil)
       ConfigurationExperiment::TRACKED_CONFIG_KEYS.each_with_object({}) do |config_key, definitions|
         experiment = ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
         next unless experiment
 
         assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
-          agent_run: agent_run
+          agent_run: agent_run,
+          variant: selected_variants&.[](experiment.id)
         )
         definitions[config_key] = {
           configuration_experiment_id: experiment.id,
@@ -93,6 +95,18 @@ module ConfigurationBundles
       else
         value
       end
+    end
+
+    def optimizer_selection
+      ConfigurationBundles::Optimizer.call(agent_run: agent_run)
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
     end
   end
 end

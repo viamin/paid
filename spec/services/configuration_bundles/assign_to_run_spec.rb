@@ -53,4 +53,14 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(second_bundle).to eq(first_bundle)
     expect(ConfigurationBundle.count).to eq(1)
   end
+
+  it "falls back to direct experiment assignment when optimization fails" do
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_raise(StandardError, "optimizer unavailable")
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle).to be_persisted
+    expect(agent_run.reload.configuration_bundle).to eq(bundle)
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
+  end
 end
