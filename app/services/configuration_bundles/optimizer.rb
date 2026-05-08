@@ -6,6 +6,8 @@ module ConfigurationBundles
   class Optimizer
     include BundleFingerprinting
 
+    INVALID_VARIANT_VALUE = Object.new
+
     Selection = Struct.new(
       :definition,
       :fingerprint,
@@ -66,14 +68,19 @@ module ConfigurationBundles
     end
 
     def candidate_variants
-      experiments = active_experiments
+      experiments = active_experiments.filter_map do |experiment|
+        variants = experiment.configuration_experiment_variants.order(:id).filter_map do |variant|
+          next if parsed_variant_value(variant, experiment:).equal?(INVALID_VARIANT_VALUE)
+
+          [ experiment.id, variant ]
+        end
+        next if variants.empty?
+
+        variants
+      end
       return [] if experiments.empty?
 
-      combinations = experiments.map do |experiment|
-        experiment.configuration_experiment_variants.order(:id).map { |variant| [ experiment.id, variant ] }
-      end
-
-      combinations.shift.product(*combinations).map do |combination|
+      experiments.shift.product(*experiments).map do |combination|
         Array(combination).flatten(1).each_slice(2).to_h
       end
     end
@@ -106,9 +113,25 @@ module ConfigurationBundles
         definitions[experiment.config_key] = {
           configuration_experiment_id: experiment.id,
           configuration_experiment_variant_id: variant.id,
-          value: variant.parsed_value
+          value: parsed_variant_value(variant, experiment:)
         }
       end
+    end
+
+    def parsed_variant_value(variant, experiment:)
+      @parsed_variant_values ||= {}
+      @parsed_variant_values[variant.id] ||= variant.parsed_value
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.invalid_optimizer_variant_skipped",
+        agent_run_id: agent_run.id,
+        configuration_experiment_id: experiment.id,
+        configuration_experiment_variant_id: variant.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+
+      INVALID_VARIANT_VALUE
     end
   end
 end

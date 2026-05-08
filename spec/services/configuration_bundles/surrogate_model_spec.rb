@@ -16,7 +16,7 @@ RSpec.describe ConfigurationBundles::SurrogateModel do
 
       allow(scope).to receive(:order).with(completed_at: :desc).and_return(ordered_scope)
       allow(ordered_scope).to receive(:limit).with(described_class::MAX_OUTCOME_ROWS).and_return(limited_scope)
-      expect(limited_scope).to receive(:find_each).once.and_yield(outcome)
+      expect(limited_scope).to receive(:each).once.and_yield(outcome)
 
       2.times do
         prediction = model.predict(bundle_definition: bundle.definition, fingerprint: bundle.fingerprint)

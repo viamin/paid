@@ -6,6 +6,8 @@ module ConfigurationBundles
   class AssignToRun
     include BundleFingerprinting
 
+    INVALID_EXPERIMENT_VALUE = Object.new
+
     attr_reader :agent_run
 
     def initialize(agent_run:)
@@ -62,12 +64,32 @@ module ConfigurationBundles
           agent_run: agent_run,
           variant: selected_variants&.[](experiment.id)
         )
+        parsed_value = parsed_assignment_value(assignment, experiment:)
+        next if parsed_value.equal?(INVALID_EXPERIMENT_VALUE)
+
         definitions[config_key] = {
           configuration_experiment_id: experiment.id,
           configuration_experiment_variant_id: assignment.configuration_experiment_variant_id,
-          value: assignment.configuration_experiment_variant.parsed_value
+          value: parsed_value
         }
       end
+    end
+
+    def parsed_assignment_value(assignment, experiment:)
+      assignment.configuration_experiment_variant.parsed_value
+    rescue StandardError => e
+      assignment.destroy! if assignment.persisted?
+
+      Rails.logger.warn(
+        message: "configuration_bundles.invalid_experiment_value_skipped",
+        agent_run_id: agent_run.id,
+        configuration_experiment_id: experiment.id,
+        configuration_experiment_variant_id: assignment.configuration_experiment_variant_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+
+      INVALID_EXPERIMENT_VALUE
     end
 
     def optimizer_selection

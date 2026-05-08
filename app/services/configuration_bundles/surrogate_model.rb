@@ -77,7 +77,7 @@ module ConfigurationBundles
       @outcome_rows ||= begin
         rows = []
 
-        scope.order(completed_at: :desc).limit(MAX_OUTCOME_ROWS).find_each do |outcome|
+        scope.order(completed_at: :desc).limit(MAX_OUTCOME_ROWS).each do |outcome|
           definition = outcome.configuration_bundle&.definition
           next unless definition.is_a?(Hash)
 

@@ -52,6 +52,20 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(described_class.call(agent_run: agent_run)).to be_nil
     end
 
+    it "skips malformed variants while still scoring valid candidates" do
+      challenger.update!(config_value: "{not-json")
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.72, 0.74 ]
+      )
+
+      selection = described_class.call(agent_run: agent_run)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.definition.dig("experiments", experiment.config_key, "value")).to eq(4000)
+    end
+
     it "learns from prior outcomes when an experiment is recreated with the same value" do
       create_prior_history
       experiment.update!(status: "completed", completed_at: Time.current)

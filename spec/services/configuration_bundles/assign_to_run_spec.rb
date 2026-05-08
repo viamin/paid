@@ -63,4 +63,15 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
   end
+
+  it "skips malformed experiment values instead of aborting assignment" do
+    variant.update!(config_value: "{not-json")
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle).to be_persisted
+    expect(agent_run.reload.configuration_bundle).to eq(bundle)
+    expect(bundle.definition.fetch("experiments")).to eq({})
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_nil
+  end
 end
