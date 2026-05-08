@@ -15,6 +15,42 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:experiment_confidence]).to eq([])
     end
 
+    it "computes summary counts from all bundles, not just the displayed rows" do
+      Array.new(12) do
+        bundle = create(:configuration_bundle, account: project.account, definition: {
+          "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
+        })
+        3.times { create_bundle_outcome(project: project, bundle: bundle, quality_score: 0.7, cost_cents: 30) }
+        bundle
+      end
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:bundle_count]).to eq(12)
+      expect(stats[:summary][:reviewable_bundle_count]).to eq(12)
+      expect(stats[:bundle_rankings].size).to eq(described_class::MAX_BUNDLE_ROWS)
+    end
+
+    it "excludes other projects from experiment variant stats" do
+      other_project = create(:project, account: project.account)
+      experiment, control, variant = create_experiment(project: project)
+      create_bundle(project: project, experiment: experiment, variant: variant)
+
+      create_assignment(project: other_project, experiment: experiment, variant: control, quality_scores: [ 0.9, 0.95 ])
+      create_assignment(project: other_project, experiment: experiment, variant: variant, quality_scores: [ 0.1, 0.15 ])
+      create_assignment(project: project, experiment: experiment, variant: control, quality_scores: [ 0.4, 0.5 ])
+      create_assignment(project: project, experiment: experiment, variant: variant, quality_scores: [ 0.8, 0.84 ])
+
+      stats = described_class.call(project: project)
+
+      control_variant = stats[:experiment_confidence].first[:variants].find { |v| v[:is_control] }
+      treatment_variant = stats[:experiment_confidence].first[:variants].find { |v| !v[:is_control] }
+
+      expect(control_variant[:sample_count]).to eq(2)
+      expect(treatment_variant[:sample_count]).to eq(2)
+      expect(treatment_variant[:avg_quality_score]).to be_within(0.001).of(0.82)
+    end
+
     it "summarizes bundle outcomes and optimizer evidence" do
       experiment, control, variant = create_experiment(project:)
       bundle = create_bundle(project:, experiment:, variant:)

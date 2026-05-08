@@ -30,13 +30,26 @@ module Projects
     private
 
     def summary
-      {
-        bundle_count: bundle_rankings.size,
-        outcome_count: bundle_outcomes_scope.count,
-        active_experiment_count: active_experiments.size,
-        reviewable_bundle_count: bundle_rankings.count { |bundle| !bundle[:sparse] },
-        sparse_bundle_count: bundle_rankings.count { |bundle| bundle[:sparse] }
-      }
+      @summary ||= begin
+        counts = bundle_outcomes_scope
+          .joins(:configuration_bundle)
+          .group("configuration_bundles.id")
+          .pluck(
+            Arel.sql("configuration_bundles.id"),
+            Arel.sql("COUNT(bundle_outcomes.quality_score)")
+          )
+
+        total = counts.size
+        reviewable = counts.count { |_, quality_count| quality_count >= MIN_REVIEWABLE_SAMPLE_SIZE }
+
+        {
+          bundle_count: total,
+          outcome_count: bundle_outcomes_scope.count,
+          active_experiment_count: active_experiments.size,
+          reviewable_bundle_count: reviewable,
+          sparse_bundle_count: total - reviewable
+        }
+      end
     end
 
     def sparse?
@@ -93,9 +106,9 @@ module Projects
 
     def experiment_confidence
       active_experiments.map do |experiment|
-        analysis = ConfigurationExperiments::Analyze.call(
-          configuration_experiment: experiment
-        )
+        variant_stats = project_scoped_variant_stats(experiment)
+
+        analysis = project_scoped_analysis(experiment, variant_stats)
 
         {
           experiment: experiment,
@@ -107,13 +120,15 @@ module Projects
           min_samples_per_variant: experiment.min_samples_per_variant,
           confidence_threshold: experiment.confidence_threshold,
           variants: experiment.configuration_experiment_variants.order(:id).map do |variant|
+            stats = variant_stats[variant.id] || { sample_count: 0, avg_quality_score: nil }
+
             {
               variant: variant,
               label: variant_label(variant),
               is_control: variant.is_control,
-              sample_count: variant.sample_count,
-              avg_quality_score: variant.avg_quality_score&.to_f,
-              sparse: variant.sample_count < experiment.min_samples_per_variant
+              sample_count: stats[:sample_count],
+              avg_quality_score: stats[:avg_quality_score],
+              sparse: stats[:sample_count] < experiment.min_samples_per_variant
             }
           end
         }
@@ -159,6 +174,84 @@ module Projects
       @bundle_outcomes_scope ||= BundleOutcome
         .joins(:agent_run)
         .where(agent_runs: { project_id: project.id })
+    end
+
+    def project_scoped_variant_stats(experiment)
+      rows = ConfigurationExperimentAssignment
+        .joins(:agent_run)
+        .where(agent_runs: { project_id: project.id })
+        .where(configuration_experiment_id: experiment.id)
+        .group(:configuration_experiment_variant_id)
+        .pluck(
+          Arel.sql("configuration_experiment_variant_id"),
+          Arel.sql("COUNT(*)"),
+          Arel.sql("AVG(quality_score)")
+        )
+
+      rows.to_h do |variant_id, count, avg_score|
+        [ variant_id, { sample_count: count.to_i, avg_quality_score: avg_score&.to_f } ]
+      end
+    end
+
+    def project_scoped_analysis(experiment, variant_stats)
+      variants = experiment.configuration_experiment_variants.order(:id).to_a
+      control = variants.find(&:is_control)
+
+      return ConfigurationExperiments::Analyze::Result.new(status: :insufficient_data) unless control
+
+      all_ready = variants.all? do |v|
+        (variant_stats.dig(v.id, :sample_count) || 0) >= experiment.min_samples_per_variant
+      end
+      return ConfigurationExperiments::Analyze::Result.new(status: :insufficient_data) unless all_ready
+
+      control_scores = project_scoped_scores(control)
+      return ConfigurationExperiments::Analyze::Result.new(status: :insufficient_data) if control_scores.size < 2
+
+      results = variants.reject(&:is_control).filter_map do |variant|
+        variant_scores = project_scoped_scores(variant)
+        next if variant_scores.size < 2
+
+        t_result = AbTests::Statistics.welch_t_test(control_scores, variant_scores)
+        {
+          variant: variant,
+          mean_diff: AbTests::Statistics.mean(variant_scores) - AbTests::Statistics.mean(control_scores),
+          p_value: t_result[:p_value],
+          significant: t_result[:p_value] < (1 - experiment.confidence_threshold)
+        }
+      end
+
+      determine_experiment_outcome(results)
+    end
+
+    def project_scoped_scores(variant)
+      ConfigurationExperimentAssignment
+        .joins(:agent_run)
+        .where(agent_runs: { project_id: project.id })
+        .where(configuration_experiment_variant_id: variant.id)
+        .where.not(quality_score: nil)
+        .pluck(:quality_score)
+        .map(&:to_f)
+    end
+
+    def determine_experiment_outcome(results)
+      return ConfigurationExperiments::Analyze::Result.new(status: :insufficient_data) if results.empty?
+
+      significant_improvements = results.select { |r| r[:significant] && r[:mean_diff] > 0 }
+
+      if significant_improvements.any?
+        winner = significant_improvements.max_by { |r| r[:mean_diff] }
+        ConfigurationExperiments::Analyze::Result.new(
+          status: :winner_found,
+          winner: winner[:variant],
+          confidence: 1 - winner[:p_value],
+          improvement: winner[:mean_diff],
+          details: results
+        )
+      elsif results.all? { |r| r[:significant] && r[:mean_diff] < 0 }
+        ConfigurationExperiments::Analyze::Result.new(status: :control_wins, details: results)
+      else
+        ConfigurationExperiments::Analyze::Result.new(status: :no_significant_difference, details: results)
+      end
     end
 
     def active_experiments
