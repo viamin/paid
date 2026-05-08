@@ -503,5 +503,28 @@ RSpec.describe Models::Select do
         )
       end
     end
+
+    context "when the legacy system log write fails" do
+      before do
+        create(:llm_model, model_id: "claude-sonnet-4-6", tier: "high")
+        project.update!(model_preferences: { "required_model_id" => "claude-sonnet-4-6" })
+        allow(agent_run.agent_run_logs).to receive(:create!).and_raise(ActiveRecord::ActiveRecordError, "log write failed")
+      end
+
+      it "still records the orchestration decision" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_present
+        decision = agent_run.orchestration_decisions.order(:id).last
+
+        expect(decision).to be_present
+        expect(decision.decision_type).to eq("select_agent")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.outputs).to include(
+          "outcome" => "selected",
+          "selection" => include("model_id" => "claude-sonnet-4-6")
+        )
+      end
+    end
   end
 end

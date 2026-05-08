@@ -243,6 +243,25 @@ module Models
       )
       inputs_payload = selection_inputs
 
+      persist_orchestration_decision_safely(
+        outcome: outcome,
+        duration_ms: duration_ms,
+        selected: selected,
+        selection_payload: selection_payload,
+        inputs_payload: inputs_payload,
+        error: error
+      )
+      persist_agent_run_decision_log(
+        outcome: outcome,
+        duration_ms: duration_ms,
+        selected: selected,
+        selection_payload: selection_payload,
+        inputs_payload: inputs_payload,
+        error: error
+      )
+    end
+
+    def persist_agent_run_decision_log(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:)
       agent_run.agent_run_logs.create!(
         log_type: "system",
         content: decision_log_content(outcome: outcome, selected: selected, error: error),
@@ -255,6 +274,16 @@ module Models
           error: error_payload(error)
         }.compact
       )
+    rescue => log_error
+      Rails.logger.warn(
+        message: "model_selection.decision_log_failed",
+        agent_run_id: agent_run.id,
+        error_class: log_error.class.name,
+        error: log_error.message
+      )
+    end
+
+    def persist_orchestration_decision_safely(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:)
       persist_orchestration_decision(
         outcome: outcome,
         duration_ms: duration_ms,
@@ -265,7 +294,7 @@ module Models
       )
     rescue => log_error
       Rails.logger.warn(
-        message: "model_selection.decision_log_failed",
+        message: "model_selection.orchestration_decision_failed",
         agent_run_id: agent_run.id,
         error_class: log_error.class.name,
         error: log_error.message

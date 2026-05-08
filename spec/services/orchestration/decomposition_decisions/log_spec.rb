@@ -38,6 +38,23 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       }
     end
 
+    def orchestration_decision_for(decision_key)
+      OrchestrationDecision.find_by!(
+        [
+          <<~SQL.squish,
+            project_id = ?
+            AND decision_type = ?
+            AND actor = ?
+            AND context ->> 'decision_key' = ?
+          SQL
+          project.id,
+          "planning_outcome",
+          "Workflows::PlanningWorkflow",
+          decision_key
+        ]
+      )
+    end
+
     it "persists structured context, plan data, and derived hints" do
       decision = described_class.call(**payload)
 
@@ -85,6 +102,32 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
         "outcome" => "sub_issues_created",
         "hints" => include("task_count" => 3)
       )
+    end
+
+    it "marks skipped decomposition outcomes as noop" do
+      decision_key = "wf-123:planning_outcome:single-task"
+      described_class.call(**payload.merge(
+        decision_key: decision_key,
+        outcome: "single_task_plan",
+        plan_data: { tasks: [ { index: 0, title: "Only task", dependencies: [], parallel_group: 0 } ] }
+      ))
+      orchestration_decision = orchestration_decision_for(decision_key)
+
+      expect(orchestration_decision.context["decision_status"]).to eq("noop")
+      expect(orchestration_decision.outputs["outcome"]).to eq("single_task_plan")
+    end
+
+    it "marks failed decomposition outcomes as failed" do
+      decision_key = "wf-123:planning_outcome:failed"
+      described_class.call(**payload.merge(
+        decision_key: decision_key,
+        outcome: "decomposition_failed",
+        error_details: { error_message: "LLM failed" }
+      ))
+      orchestration_decision = orchestration_decision_for(decision_key)
+
+      expect(orchestration_decision.context["decision_status"]).to eq("failed")
+      expect(orchestration_decision.outputs["error_details"]).to include("error_message" => "LLM failed")
     end
 
     it "is idempotent on decision_key" do

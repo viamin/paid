@@ -3,6 +3,13 @@
 module Orchestration
   module DecompositionDecisions
     class Log
+      NOOP_OUTCOMES = %w[
+        empty_plan
+        single_task_plan
+        parallel_execution_skipped_empty_plan
+        parallel_execution_skipped_single_task
+      ].freeze
+
       def self.call(...)
         new(...).call
       end
@@ -123,7 +130,7 @@ module Orchestration
             workflow_id: workflow_id,
             workflow_name: workflow_name,
             issue_id: issue_id,
-            decision_status: error_details.present? ? "failed" : "applied"
+            decision_status: orchestration_status
           },
           inputs: enriched_input_context,
           outputs: {
@@ -135,6 +142,13 @@ module Orchestration
           },
           outcome_references: []
         )
+      end
+
+      def orchestration_status
+        return "failed" if error_details.present?
+        return "noop" if NOOP_OUTCOMES.include?(outcome)
+
+        "applied"
       end
     end
   end
