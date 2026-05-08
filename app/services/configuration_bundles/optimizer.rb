@@ -137,8 +137,7 @@ module ConfigurationBundles
 
     def exploration_budget_snapshot
       @exploration_budget_snapshot ||= applicable_contexts.index_with do |context|
-        total_runs = prior_runs_for(context).count
-        exploratory_runs = prior_runs_for(context).where(configuration_bundle_selection_mode: "exploratory").count
+        total_runs, exploratory_runs = prior_run_counts_for(context)
         observed_share = total_runs.zero? ? 0.0 : exploratory_runs.to_f / total_runs
         projected_share = (exploratory_runs + 1).to_f / (total_runs + 1)
         budget = exploration_budget_for(context)
@@ -171,6 +170,13 @@ module ConfigurationBundles
         .where.not(configuration_bundle_selection_mode: nil)
 
       context == "task" ? scope.where(issue_id: agent_run.issue_id) : scope
+    end
+
+    def prior_run_counts_for(context)
+      prior_runs_for(context).pick(
+        Arel.sql("COUNT(*)"),
+        Arel.sql("COUNT(*) FILTER (WHERE configuration_bundle_selection_mode = 'exploratory')")
+      )
     end
 
     def exploration_budget_for(context)
