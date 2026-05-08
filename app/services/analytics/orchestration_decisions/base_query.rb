@@ -65,7 +65,7 @@ module Analytics
       def distinct_completed_run_count
         Arel.sql(
           "COUNT(DISTINCT CASE " \
-          "WHEN agent_runs.status = 'completed' THEN orchestration_decisions.id END)"
+          "WHEN agent_runs.status = 'completed' THEN agent_runs.id END)"
         )
       end
     end

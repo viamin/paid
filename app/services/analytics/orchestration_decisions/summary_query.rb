@@ -11,9 +11,9 @@ module Analytics
             "COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'applied') AS applied_count",
             "COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'noop') AS noop_count",
             "COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'failed') AS failed_count",
-            "COUNT(*) FILTER (WHERE orchestration_decisions.agent_run_id IS NOT NULL) AS linked_agent_run_count",
-            "COUNT(*) FILTER (WHERE agent_runs.status = 'completed') AS completed_run_count",
-            "COUNT(*) FILTER (WHERE agent_runs.status IN ('failed', 'timeout', 'auth_expired', 'rate_limited', 'cancelled')) AS failed_run_count",
+            "COUNT(DISTINCT orchestration_decisions.agent_run_id) AS linked_agent_run_count",
+            "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status = 'completed') AS completed_run_count",
+            "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status IN ('failed', 'timeout', 'auth_expired', 'rate_limited', 'cancelled')) AS failed_run_count",
             "COUNT(DISTINCT orchestration_decisions.project_id) AS project_count",
             "COUNT(DISTINCT orchestration_decisions.actor) AS actor_count"
           )

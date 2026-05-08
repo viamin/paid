@@ -10,6 +10,7 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
   let(:account) { create(:account) }
   let(:project_a) { create(:project, account: account, name: "Alpha") }
   let(:project_b) { create(:project, account: account, name: "Beta") }
+  let(:completed_select_agent_run) { create(:agent_run, :completed, project: project_b) }
 
   before do
     create_decision(
@@ -41,11 +42,20 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
 
     create_decision(
       project: project_b,
-      agent_run: create(:agent_run, :completed, project: project_b),
+      agent_run: completed_select_agent_run,
       decision_type: "select_agent",
       actor: "rules",
       context: { decision_status: "applied" },
       created_at: 14.days.ago
+    )
+
+    create_decision(
+      project: project_b,
+      agent_run: completed_select_agent_run,
+      decision_type: "select_agent",
+      actor: "fallback_rules",
+      context: { decision_status: "applied" },
+      created_at: 13.days.ago
     )
   end
 
@@ -53,13 +63,13 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     create(:orchestration_decision, ...)
   end
 
-  def expected_summary(total_count:, applied_count:, noop_count:, failed_count:, completed_run_count:, failed_run_count:, project_count:, actor_count:)
+  def expected_summary(total_count:, applied_count:, noop_count:, failed_count:, linked_agent_run_count:, completed_run_count:, failed_run_count:, project_count:, actor_count:)
     {
       total_count: total_count,
       applied_count: applied_count,
       noop_count: noop_count,
       failed_count: failed_count,
-      linked_agent_run_count: total_count,
+      linked_agent_run_count: linked_agent_run_count,
       completed_run_count: completed_run_count,
       failed_run_count: failed_run_count,
       project_count: project_count,
@@ -105,6 +115,15 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
   def expected_project_rollup
     [
       expected_project(
+        project: project_b,
+        total_count: 3,
+        decision_type_count: 1,
+        actor_count: 3,
+        applied_count: 2,
+        noop_count: 1,
+        failed_count: 0
+      ),
+      expected_project(
         project: project_a,
         total_count: 2,
         decision_type_count: 2,
@@ -112,15 +131,6 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
         applied_count: 1,
         noop_count: 0,
         failed_count: 1
-      ),
-      expected_project(
-        project: project_b,
-        total_count: 2,
-        decision_type_count: 1,
-        actor_count: 2,
-        applied_count: 1,
-        noop_count: 1,
-        failed_count: 0
       )
     ]
   end
@@ -129,9 +139,9 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     [
       expected_decision_type(
         decision_type: "select_agent",
-        total_count: 2,
+        total_count: 3,
         project_count: 1,
-        actor_count: 2,
+        actor_count: 3,
         failed_count: 0,
         completed_run_count: 1
       ),
@@ -164,6 +174,13 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
         failed_count: 0
       ),
       expected_daily_volume(
+        day: 13.days.ago.to_date,
+        total_count: 1,
+        applied_count: 1,
+        noop_count: 0,
+        failed_count: 0
+      ),
+      expected_daily_volume(
         day: 2.days.ago.to_date,
         total_count: 1,
         applied_count: 1,
@@ -189,14 +206,15 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
 
   def expected_select_agent_summary
     expected_summary(
-      total_count: 2,
-      applied_count: 1,
+      total_count: 3,
+      applied_count: 2,
       noop_count: 1,
       failed_count: 0,
+      linked_agent_run_count: 2,
       completed_run_count: 1,
       failed_run_count: 1,
       project_count: 1,
-      actor_count: 2
+      actor_count: 3
     )
   end
 
@@ -219,14 +237,15 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
 
       expect(report[:summary]).to eq(
         expected_summary(
-          total_count: 4,
-          applied_count: 2,
+          total_count: 5,
+          applied_count: 3,
           noop_count: 1,
           failed_count: 1,
+          linked_agent_run_count: 4,
           completed_run_count: 2,
           failed_run_count: 2,
           project_count: 2,
-          actor_count: 4
+          actor_count: 5
         )
       )
     end
@@ -252,6 +271,7 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
           applied_count: 1,
           noop_count: 1,
           failed_count: 1,
+          linked_agent_run_count: 3,
           completed_run_count: 1,
           failed_run_count: 2,
           project_count: 2,
@@ -269,14 +289,15 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
 
       expect(report[:summary]).to eq(
         expected_summary(
-          total_count: 2,
-          applied_count: 1,
+          total_count: 3,
+          applied_count: 2,
           noop_count: 1,
           failed_count: 0,
+          linked_agent_run_count: 2,
           completed_run_count: 1,
           failed_run_count: 1,
           project_count: 1,
-          actor_count: 2
+          actor_count: 3
         )
       )
       expect(report[:by_project].pluck(:project_name)).to eq([ "Beta" ])
