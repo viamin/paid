@@ -147,6 +147,34 @@ module OrchestrationStrategies
     def feature_orchestration
       {
         "default_timeout_seconds" => 7200,
+        "escalation" => {
+          "human_value_threshold" => 0.65,
+          "explicit_triggers" => %w[
+            operational_failure_breaker
+            review_goal_retry_limit_requires_escalation
+            draft_review_limit_reached
+            consecutive_draft_failures_breaker
+          ],
+          "auto_resolve_trigger_types" => %w[
+            owner_approved
+            ready_for_owner
+          ],
+          "weights" => {
+            "operational_failure_breaker" => 0.45,
+            "review_goal_retry_pressure" => 0.3,
+            "draft_review_pressure" => 0.2,
+            "followup_pressure" => 0.15,
+            "blocking_triggers" => 0.15,
+            "owner_reviewer_present" => 0.1,
+            "escalated_phase" => 0.1
+          },
+          "interruption_cost" => {
+            "base" => 0.3,
+            "missing_owner_reviewer" => 0.25,
+            "draft_phase_discount" => 0.05,
+            "escalated_phase_discount" => 0.1
+          }
+        },
         "planning_phases" => %w[
           fetch_planning_context
           decompose_feature

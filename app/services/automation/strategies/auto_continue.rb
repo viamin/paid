@@ -55,7 +55,7 @@ module Automation
         return noop_result if signals.active_run_exists
 
         # Gate: lifecycle breakers and limits.
-        gate_result = check_lifecycle_gates(signals)
+        gate_result = check_lifecycle_gates(context:, signals:)
         return gate_result if gate_result
 
         # No gate tripped — delegate to AutoReview for scan-based
@@ -68,17 +68,24 @@ module Automation
 
       private
 
-      def check_lifecycle_gates(signals)
+      def check_lifecycle_gates(context:, signals:)
         # Operational failure breaker — fires for any phase. The check
         # runs before phase-specific gates so that persistent provider
         # exhaustion/timeout failures always surface an escalation.
         if signals.operational_failure_breaker
-          return escalate_result(signals)
+          return escalation_service_result(
+            signals,
+            evaluate_escalation(context:, signals:)
+          )
         end
 
         # Escalation dismissal — owner removed the escalated label.
         if signals.escalation_dismissed
           return dismiss_escalation_result(signals)
+        end
+
+        if (service_result = evaluate_escalation(context:, signals:))
+          return escalation_service_result(signals, service_result)
         end
 
         if signals.draft_phase?
@@ -116,13 +123,37 @@ module Automation
         nil
       end
 
-      def escalate_result(signals)
+      def evaluate_escalation(context:, signals:)
+        return unless escalation_candidate?(signals)
+
+        Coordination::EscalationService.call(
+          project: context.project,
+          issue: context.record,
+          signals: signals
+        )
+      end
+
+      def escalation_candidate?(signals)
+        signals.operational_failure_breaker ||
+          signals.draft_review_limit_reached ||
+          signals.consecutive_draft_failures_breaker ||
+          signals.review_goal_retry_limit_requires_escalation ||
+          signals.followup_limit_reached
+      end
+
+      def escalation_service_result(signals, service_result)
+        return escalate_result(signals, reason: service_result.reason) if service_result.escalate?
+
+        noop_result
+      end
+
+      def escalate_result(signals, reason: signals.escalation_reason)
         Result.new(decisions: [
           Decision.escalate(
             issue_id: signals.issue_id,
             pr_number: signals.pr_number,
             owner_reviewer_login: signals.owner_reviewer_login,
-            reason: signals.escalation_reason
+            reason: reason
           )
         ])
       end
