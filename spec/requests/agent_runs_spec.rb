@@ -1890,6 +1890,7 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.guardrail_violation_type).to be_nil
         expect(agent_run.temporal_workflow_id).to be_nil
         expect(agent_run.temporal_run_id).to be_nil
+        expect(OrchestrationDecision.last.actor).to eq("manual_resume")
       end
 
       it "rejects non-paused runs" do
@@ -1899,6 +1900,11 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:alert]).to eq("Only paused runs can be resumed.")
+        decision = OrchestrationDecision.last
+        expect(decision.actor).to eq("manual_resume")
+        expect(decision.decision_type).to eq("resume")
+        expect(decision.context["decision_status"]).to eq("noop")
+        expect(decision.agent_run).to eq(agent_run)
       end
 
       it "does not resume when the previous workflow cannot be cancelled" do
@@ -2174,6 +2180,19 @@ RSpec.describe "AgentRuns" do
         expect(AgentRun.last.status).to eq("queued")
       end
 
+      it "records a retry decision event" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        event = OrchestrationDecision.last
+        expect(event.actor).to eq("manual_retry")
+        expect(event.context["decision_status"]).to eq("applied")
+        expect(event.outputs["new_agent_run_id"]).to eq(AgentRun.last.id)
+      end
+
       it "rejects retrying an active run" do
         agent_run = create(:agent_run, :running, project: project)
 
@@ -2249,6 +2268,7 @@ RSpec.describe "AgentRuns" do
         expect(new_run.trigger_type).to eq("manual")
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
+        expect(OrchestrationDecision.last.actor).to eq("refresh_auth_retry")
         without_partial_double_verification do
           expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token")
         end

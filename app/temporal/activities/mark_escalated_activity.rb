@@ -15,6 +15,7 @@ module Activities
 
       project = issue.project
       client = project.github_token.client
+      phase_before = issue.pr_review_phase
       issue.update!(pr_review_phase: "escalated")
 
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
@@ -24,6 +25,23 @@ module Activities
         message: "pr_review.marked_escalated",
         issue_id: issue.id,
         pr_number: issue.github_number
+      )
+
+      OrchestrationDecision.record(
+        project: project,
+        issue: issue,
+        decision_point: "mark_escalated",
+        action: "escalate",
+        status: "applied",
+        signals: {
+          trigger: "escalate_to_owner",
+          reason: input[:reason],
+          phase_before: phase_before
+        },
+        result: {
+          updated: true,
+          phase: issue.pr_review_phase
+        }
       )
 
       { updated: true }

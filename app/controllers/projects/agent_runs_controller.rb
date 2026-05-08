@@ -274,6 +274,7 @@ module Projects
       authorize @agent_run
 
       unless @agent_run.paused?
+        @agent_run.resume!(decision_point: "manual_resume")
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Only paused runs can be resumed."
         return
@@ -293,7 +294,7 @@ module Projects
         return
       end
 
-      resumed = @agent_run.resume!
+      resumed = @agent_run.resume!(decision_point: "manual_resume")
       unless resumed
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "The agent run state changed and could not be resumed."
@@ -385,13 +386,28 @@ module Projects
         status: "queued"
       )
 
-      @agent_run.retry!
+      @agent_run.retry!(
+        decision_point: "manual_retry",
+        signals: {
+          selected_agent_type: agent_type,
+          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+        },
+        result: { new_agent_run_id: new_run.id }
+      )
 
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Agent run queued as a retry of run ##{@agent_run.id}."
     rescue ActiveRecord::RecordNotUnique => e
+      log_failed_retry_decision(
+        decision_point: "manual_retry",
+        signals: {
+          selected_agent_type: agent_type,
+          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+        },
+        error: e
+      )
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else
@@ -451,7 +467,11 @@ module Projects
         trigger_type: "manual",
         status: "queued"
       )
-      @agent_run.retry!
+      @agent_run.retry!(
+        decision_point: "refresh_auth_retry",
+        signals: { auth_provider: provider.to_s },
+        result: { new_agent_run_id: new_run.id }
+      )
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),
@@ -459,6 +479,11 @@ module Projects
     # Catch all harness errors (including AuthenticationError, which is a
     # subclass of Error) so this works even when the shim hasn't loaded yet.
     rescue AgentHarness::Error => e
+      log_failed_retry_decision(
+        decision_point: "refresh_auth_retry",
+        signals: { auth_provider: provider&.to_s },
+        error: e
+      )
       Rails.logger.error(
         message: "agent_execution.refresh_auth_failed",
         agent_run_id: @agent_run.id,
@@ -468,6 +493,11 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
     rescue NotImplementedError => e
+      log_failed_retry_decision(
+        decision_point: "refresh_auth_retry",
+        signals: { auth_provider: @agent_run.auth_provider },
+        error: e
+      )
       Rails.logger.error(
         message: "agent_execution.refresh_auth_unavailable",
         agent_run_id: @agent_run.id,
@@ -478,6 +508,11 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication is not supported for this provider."
     rescue ActiveRecord::RecordNotUnique => e
+      log_failed_retry_decision(
+        decision_point: "refresh_auth_retry",
+        signals: { auth_provider: @agent_run.auth_provider },
+        error: e
+      )
       alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else
@@ -748,6 +783,22 @@ module Projects
       return true unless managed_provider_key?(provider_key)
 
       enabled_retry_providers.any? { |provider| provider.provider_key == provider_key }
+    end
+
+    def log_failed_retry_decision(decision_point:, signals:, error:)
+      OrchestrationDecision.record(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_run: @agent_run,
+        decision_point: decision_point,
+        action: "retry",
+        status: "failed",
+        signals: signals,
+        result: {
+          error_class: error.class.name,
+          error_message: error.message
+        }
+      )
     end
 
     def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:, goal:)

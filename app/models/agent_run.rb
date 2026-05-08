@@ -1200,16 +1200,32 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def pause!(violation_type:, context: nil)
+  def pause!(violation_type:, context: nil, decision_point: "agent_run.pause")
     with_lock do
       reload
-      return false unless running?
+      unless running?
+        log_orchestration_decision(
+          action: "pause",
+          decision_point: decision_point,
+          status: "noop",
+          signals: { violation_type: violation_type, context: context, current_status: status },
+          result: { status: status }
+        )
+        return false
+      end
 
       update!(
         status: "paused",
         paused_at: Time.current,
         guardrail_violation_type: violation_type,
         guardrail_context: context
+      )
+      log_orchestration_decision(
+        action: "pause",
+        decision_point: decision_point,
+        status: "applied",
+        signals: { violation_type: violation_type, context: context },
+        result: { status: status, paused_at: paused_at }
       )
       true
     end
@@ -1219,10 +1235,19 @@ class AgentRun < ApplicationRecord
     status == "paused"
   end
 
-  def resume!
+  def resume!(decision_point: "agent_run.resume")
     with_lock do
       reload
-      return false unless paused?
+      unless paused?
+        log_orchestration_decision(
+          action: "resume",
+          decision_point: decision_point,
+          status: "noop",
+          signals: { current_status: status, paused_at: paused_at },
+          result: { status: status }
+        )
+        return false
+      end
 
       update!(
         status: "queued",
@@ -1234,6 +1259,13 @@ class AgentRun < ApplicationRecord
         guardrail_context: nil,
         temporal_workflow_id: nil,
         temporal_run_id: nil
+      )
+      log_orchestration_decision(
+        action: "resume",
+        decision_point: decision_point,
+        status: "applied",
+        signals: { guardrail_violation_type: guardrail_violation_type_before_last_save, paused_at: paused_at_before_last_save },
+        result: { status: status }
       )
       true
     end
@@ -1284,8 +1316,17 @@ class AgentRun < ApplicationRecord
     status == "retried"
   end
 
-  def retry!
-    update!(status: "retried")
+  def retry!(decision_point: "agent_run.retry", signals: {}, result: {})
+    with_lock do
+      update!(status: "retried")
+      log_orchestration_decision(
+        action: "retry",
+        decision_point: decision_point,
+        status: "applied",
+        signals: signals.merge(previous_status: status_before_last_save),
+        result: result.merge(status: status)
+      )
+    end
   end
 
   def auth_expired?
@@ -1383,6 +1424,20 @@ class AgentRun < ApplicationRecord
 
     logs_text(log_type: "stderr", limit: limit)
   end
+
+  def log_orchestration_decision(action:, decision_point:, status:, signals:, result:)
+    OrchestrationDecision.record(
+      project: project,
+      issue: issue,
+      agent_run: self,
+      decision_point: decision_point,
+      action: action,
+      status: status,
+      signals: signals,
+      result: result
+    )
+  end
+  private :log_orchestration_decision
 
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.

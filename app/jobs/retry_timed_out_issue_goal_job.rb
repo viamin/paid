@@ -30,6 +30,12 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         previous_retries = count_previous_retries(locked_run)
         if previous_retries >= MAX_RETRIES
           locked_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} retries)")
+          log_retry_decision(
+            agent_run: locked_run,
+            status: "noop",
+            signals: { previous_retries: previous_retries, max_retries: MAX_RETRIES },
+            result: { reason: "retry_limit_reached" }
+          )
 
           Rails.logger.info(
             message: "agent_execution.issue_goal_retry_limit_reached",
@@ -58,7 +64,11 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
           trigger_type: "manual",
           status: "queued"
         )
-        locked_run.retry!
+        locked_run.retry!(
+          decision_point: "timeout_auto_retry",
+          signals: { previous_retries: previous_retries, max_retries: MAX_RETRIES },
+          result: { new_agent_run_id: created.id }
+        )
         created
       end
     rescue ActiveRecord::RecordNotUnique => e
@@ -87,7 +97,11 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       # the exception so unexpected unique violations aren't silently hidden.
       raise unless existing_run
 
-      agent_run.retry!
+      agent_run.retry!(
+        decision_point: "timeout_auto_retry",
+        signals: { max_retries: MAX_RETRIES },
+        result: { existing_agent_run_id: existing_run.id, reason: "existing_active_run" }
+      )
 
       Rails.logger.info(
         message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
@@ -150,5 +164,18 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       .where(status: %w[timeout retried])
       .where.not(id: agent_run.id)
       .count
+  end
+
+  def log_retry_decision(agent_run:, status:, signals:, result:)
+    OrchestrationDecision.record(
+      project: agent_run.project,
+      issue: agent_run.issue,
+      agent_run: agent_run,
+      decision_point: "timeout_auto_retry",
+      action: "retry",
+      status: status,
+      signals: signals,
+      result: result
+    )
   end
 end
