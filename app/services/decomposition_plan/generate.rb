@@ -29,7 +29,6 @@ module DecompositionPlan
       "controller" => 2,
       "view" => 3
     }.freeze
-    LAYER_ORDER = DEFAULT_LAYER_ORDER
 
     MAX_DESCRIPTION_LENGTH = 5000
     MAX_TITLE_LENGTH = 255
