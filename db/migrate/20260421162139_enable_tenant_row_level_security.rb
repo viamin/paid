@@ -633,7 +633,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       "orchestration_decisions",
       "token_usages",
       "tracker_configurations",
-      "exception_incidents"
+      "exception_incidents",
+      "failure_classifications"
     ].uniq
   end
 end
