@@ -291,12 +291,9 @@ module Projects
     end
 
     def active_experiments
-      @active_experiments ||= ConfigurationExperiment
-        .running
-        .where(account_id: [ project.account_id, nil ])
-        .distinct
-        .order(:id)
-        .to_a
+      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+        ConfigurationExperiment.active_for(config_key, project: project)
+      end
     end
 
     def experiment_variants_by_experiment_id

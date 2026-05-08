@@ -93,6 +93,32 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(treatment_variant[:avg_quality_score]).to be_within(0.001).of(0.82)
     end
 
+    it "only counts experiments that are active for the project" do
+      selected_experiment, selected_control, selected_variant = create_experiment(
+        project: project,
+        config_key: "knowledge.token_budget"
+      )
+      create_bundle(project:, experiment: selected_experiment, variant: selected_variant)
+      populate_experiment(project:, experiment: selected_experiment, control: selected_control, variant: selected_variant)
+
+      create_experiment(
+        project: project,
+        account: nil,
+        config_key: "knowledge.token_budget"
+      )
+
+      create_experiment(
+        project: project,
+        config_key: "knowledge.section_order",
+        traffic_percentage: 0
+      )
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
+    end
+
     it "loads experiment variants once per experiment when building confidence stats" do
       experiment, control, variant = create_experiment(project:)
       create_bundle(project:, experiment:, variant:)
@@ -122,10 +148,12 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
   end
 
-  def create_experiment(project:)
+  def create_experiment(project:, account: project.account, config_key: "knowledge.token_budget", traffic_percentage: 100)
     experiment = create(:configuration_experiment,
-      account: project.account,
+      account: account,
       status: "running",
+      config_key: config_key,
+      traffic_percentage: traffic_percentage,
       min_samples_per_variant: 2)
     control = create(:configuration_experiment_variant,
       configuration_experiment: experiment,
