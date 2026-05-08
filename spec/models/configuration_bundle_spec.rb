@@ -67,6 +67,34 @@ RSpec.describe ConfigurationBundle do
       expect(bundle).not_to be_valid
       expect(bundle.errors[:project]).to include("must belong to the same account")
     end
+
+    it "allows a global prompt version for any bundle scope" do
+      prompt = create(:prompt, :global)
+      prompt_version = create(:prompt_version, prompt: prompt)
+      project = create(:project)
+
+      expect(build(:configuration_bundle, prompt_version: prompt_version)).to be_valid
+      expect(build(:configuration_bundle, account: project.account, project: project, prompt_version: prompt_version)).to be_valid
+    end
+
+    it "requires account-scoped prompt versions to match the bundle account" do
+      prompt = create(:prompt, :for_account)
+      prompt_version = create(:prompt_version, prompt: prompt)
+      bundle = build(:configuration_bundle, prompt_version: prompt_version)
+
+      expect(bundle).not_to be_valid
+      expect(bundle.errors[:prompt_version]).to include("must match the bundle account/project scope")
+    end
+
+    it "requires project-scoped prompt versions to match the bundle project" do
+      bundle_project = create(:project)
+      prompt = create(:prompt, project: create(:project, account: bundle_project.account), account: bundle_project.account)
+      prompt_version = create(:prompt_version, prompt: prompt)
+      bundle = build(:configuration_bundle, account: bundle_project.account, project: bundle_project, prompt_version: prompt_version)
+
+      expect(bundle).not_to be_valid
+      expect(bundle.errors[:prompt_version]).to include("must match the bundle account/project scope")
+    end
   end
 
   describe "scopes" do

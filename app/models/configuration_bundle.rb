@@ -18,6 +18,7 @@ class ConfigurationBundle < ApplicationRecord
   validates :strategy, length: { maximum: 100 }, allow_nil: true
   validates :fingerprint, length: { maximum: 64 }, uniqueness: { scope: :account_id }, allow_nil: true
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
+  validate :prompt_version_matches_scope, if: -> { prompt_version.present? }
 
   scope :draft, -> { where(status: "draft") }
   scope :active, -> { where(status: "active") }
@@ -85,5 +86,14 @@ class ConfigurationBundle < ApplicationRecord
     return if project.account_id == account_id
 
     errors.add(:project, "must belong to the same account")
+  end
+
+  def prompt_version_matches_scope
+    prompt = prompt_version.prompt
+    return if prompt.global?
+    return if prompt.account_level? && prompt.account_id == account_id
+    return if prompt.project_level? && prompt.account_id == account_id && prompt.project_id == project_id
+
+    errors.add(:prompt_version, "must match the bundle account/project scope")
   end
 end

@@ -23,5 +23,26 @@ RSpec.describe BundleOutcome do
       expect(duplicate).not_to be_valid
       expect(duplicate.errors[:agent_run_id]).to be_present
     end
+
+    it "requires the agent run to stay within the bundle account" do
+      outcome = build(:bundle_outcome)
+      other_project = create(:project)
+      outcome.agent_run = build(:agent_run, project: other_project, issue: build(:issue, project: other_project))
+
+      expect(outcome).not_to be_valid
+      expect(outcome.errors[:agent_run]).to include("must belong to the same account and project scope as the configuration bundle")
+    end
+
+    it "requires project-scoped bundles to use runs from the same project" do
+      project = create(:project)
+      bundle = build(:configuration_bundle, account: project.account, project: project)
+      other_project = create(:project, account: project.account)
+      outcome = build(:bundle_outcome,
+        configuration_bundle: bundle,
+        agent_run: build(:agent_run, project: other_project, issue: build(:issue, project: other_project)))
+
+      expect(outcome).not_to be_valid
+      expect(outcome.errors[:agent_run]).to include("must belong to the same account and project scope as the configuration bundle")
+    end
   end
 end

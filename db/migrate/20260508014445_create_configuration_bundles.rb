@@ -90,6 +90,11 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
                 SELECT 1 FROM configuration_bundles
                 WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
                   AND configuration_bundles.account_id = paid_current_account_id()
+              ) AND EXISTS (
+                SELECT 1 FROM agent_runs
+                INNER JOIN projects ON projects.id = agent_runs.project_id
+                WHERE agent_runs.id = bundle_outcomes.agent_run_id
+                  AND projects.account_id = paid_current_account_id()
               )
             )
             WITH CHECK (
@@ -97,6 +102,11 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
                 SELECT 1 FROM configuration_bundles
                 WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
                   AND configuration_bundles.account_id = paid_current_account_id()
+              ) AND EXISTS (
+                SELECT 1 FROM agent_runs
+                INNER JOIN projects ON projects.id = agent_runs.project_id
+                WHERE agent_runs.id = bundle_outcomes.agent_run_id
+                  AND projects.account_id = paid_current_account_id()
               )
             );
         SQL
