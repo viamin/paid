@@ -155,6 +155,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   end
 
   def enable_policy(table, condition, insert_allows_missing_tenant: false)
+    return unless table_exists?(table)
+
     qualified_table = quote_table_name(table)
     check_condition = insert_allows_missing_tenant ? "(#{condition} OR paid_current_account_id() IS NULL)" : condition
 
@@ -181,6 +183,8 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   end
 
   def enable_read_write_policy(table, read_condition, write_condition)
+    return unless table_exists?(table)
+
     qualified_table = quote_table_name(table)
 
     execute "ALTER TABLE #{qualified_table} ENABLE ROW LEVEL SECURITY"
@@ -581,14 +585,19 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   def bundle_outcome_condition
     <<~SQL.squish
       EXISTS (
-        SELECT 1 FROM configuration_bundles
+        SELECT 1
+        FROM configuration_bundles
+        INNER JOIN agent_runs
+          ON agent_runs.id = bundle_outcomes.agent_run_id
+        INNER JOIN projects
+          ON projects.id = agent_runs.project_id
         WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
-          AND #{optional_account_write_condition("configuration_bundles")}
-      ) AND EXISTS (
-        SELECT 1 FROM agent_runs
-        INNER JOIN projects ON projects.id = agent_runs.project_id
-        WHERE agent_runs.id = bundle_outcomes.agent_run_id
+          AND configuration_bundles.account_id = paid_current_account_id()
           AND projects.account_id = paid_current_account_id()
+          AND (
+            configuration_bundles.project_id IS NULL
+            OR configuration_bundles.project_id = projects.id
+          )
       )
     SQL
   end
@@ -596,6 +605,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   def tenant_tables
     [
       "accounts",
+      "configuration_bundles",
       *DIRECT_ACCOUNT_TABLES,
       *OPTIONAL_ACCOUNT_TABLES,
       *PROJECT_TABLES,
