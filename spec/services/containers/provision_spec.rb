@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "timeout"
+require "timeout"
 
 RSpec.describe Containers::Provision do
   # Extracts and decodes the base64 payload from a write_container_file command
@@ -2872,7 +2873,9 @@ RSpec.describe Containers::Provision do
 
       watchdog = service.send(:start_watchdog, watchdog_ctx)
 
-      sleep 0.12
+      Timeout.timeout(1) do
+        sleep 0.01 until heartbeat_checks >= 2
+      end
       watchdog_state[:exec_completed] = true
       service.send(:stop_watchdog, watchdog)
 
