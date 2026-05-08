@@ -6869,13 +6869,6 @@ CREATE INDEX idx_on_project_id_status_warmed_at_d791387888 ON public.container_p
 
 
 --
--- Name: idx_on_strategy_experiment_id_c7c524095e; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_on_strategy_experiment_id_c7c524095e ON public.strategy_experiment_assignments USING btree (strategy_experiment_id);
-
-
---
 -- Name: idx_on_strategy_experiment_variant_id_95cba2d3c7; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7517,13 +7510,6 @@ CREATE INDEX index_billing_plans_on_account_id_and_active ON public.billing_plan
 --
 
 CREATE INDEX index_bundle_outcomes_on_agent_run_id ON public.bundle_outcomes USING btree (agent_run_id);
-
-
---
--- Name: index_bundle_outcomes_on_configuration_bundle_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_bundle_outcomes_on_configuration_bundle_id ON public.bundle_outcomes USING btree (configuration_bundle_id);
 
 
 --
@@ -9396,24 +9382,10 @@ CREATE INDEX index_strategy_experiment_variants_on_experiment_control ON public.
 
 
 --
--- Name: index_strategy_experiment_variants_on_strategy_experiment_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_strategy_experiment_variants_on_strategy_experiment_id ON public.strategy_experiment_variants USING btree (strategy_experiment_id);
-
-
---
 -- Name: index_strategy_experiment_variants_one_control; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_strategy_experiment_variants_one_control ON public.strategy_experiment_variants USING btree (strategy_experiment_id) WHERE (is_control = true);
-
-
---
--- Name: index_strategy_experiments_on_account_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_strategy_experiments_on_account_id ON public.strategy_experiments USING btree (account_id);
 
 
 --
@@ -11602,7 +11574,11 @@ CREATE POLICY tenant_isolation ON public.collector_runs USING ((public.paid_tena
 -- Name: configuration_bundles tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation ON public.configuration_bundles USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
+CREATE POLICY tenant_isolation ON public.configuration_bundles USING ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = configuration_bundles.project_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((account_id = public.paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM public.projects
+  WHERE ((projects.id = configuration_bundles.project_id) AND (projects.account_id = public.paid_current_account_id()))))))));
 
 
 --
@@ -12609,6 +12585,8 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508061946'),
+('20260508061539'),
 ('20260508020000'),
 ('20260508014445'),
 ('20260507224416'),

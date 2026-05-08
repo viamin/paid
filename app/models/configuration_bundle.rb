@@ -20,6 +20,7 @@ class ConfigurationBundle < ApplicationRecord
   validate :version_unique_for_scope
   validates :strategy, length: { maximum: 100 }, allow_nil: true
   validates :fingerprint, length: { maximum: 64 }, uniqueness: { scope: :account_id }, allow_nil: true
+  validates :definition, presence: true
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
   validate :prompt_version_matches_scope, if: -> { prompt_version.present? }
 
