@@ -64,6 +64,16 @@ RSpec.describe Automation::Strategies::Select do
 
         expect(strategy).to be_a(Automation::Strategies::AutoPick)
       end
+
+      it "uses project.account_id without touching project.account" do
+        registry.register_global("auto_pick", Automation::Strategies::AutoPick)
+        registry.register_account("auto_pick", account.id, Automation::Strategies::AutoContinue)
+        project_without_account = Struct.new(:id, :account_id).new(project.id, account.id)
+
+        strategy = select(strategy_type: :auto_pick, project: project_without_account)
+
+        expect(strategy).to be_a(Automation::Strategies::AutoContinue)
+      end
     end
 
     context "with project-scoped registration" do

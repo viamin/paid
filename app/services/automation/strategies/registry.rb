@@ -102,9 +102,10 @@ module Automation
       end
 
       def find_account(ctx)
-        return nil unless ctx.account
+        account_id = ctx.account_id || ctx.account&.id
+        return nil unless account_id
 
-        @account[[ ctx.strategy_type, ctx.account.id ]]
+        @account[[ ctx.strategy_type, account_id ]]
       end
 
       def find_global(ctx)

@@ -36,6 +36,7 @@ RSpec.describe Automation::Strategies::SelectionContext do
       ctx = described_class.build(strategy_type: "auto_pick", project: project)
 
       expect(ctx.account).to eq(account)
+      expect(ctx.account_id).to eq(account.id)
     end
 
     it "uses the explicit account when provided" do
@@ -50,12 +51,23 @@ RSpec.describe Automation::Strategies::SelectionContext do
       )
 
       expect(ctx.account).to eq(account)
+      expect(ctx.account_id).to eq(account.id)
     end
 
     it "leaves account nil when neither project nor account is given" do
       ctx = described_class.build(strategy_type: "auto_pick")
 
       expect(ctx.account).to be_nil
+      expect(ctx.account_id).to be_nil
+    end
+
+    it "derives account_id from project without loading account" do
+      project = Struct.new(:id, :account_id).new(123, 456)
+
+      ctx = described_class.build(strategy_type: "auto_pick", project: project)
+
+      expect(ctx.account).to be_nil
+      expect(ctx.account_id).to eq(456)
     end
   end
 end

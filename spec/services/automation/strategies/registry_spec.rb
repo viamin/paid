@@ -90,6 +90,16 @@ RSpec.describe Automation::Strategies::Registry do
       expect(reg.strategy_class).to eq(global_strategy)
     end
 
+    it "resolves an account registration from project.account_id without an account object" do
+      registry.register_account("auto_pick", account.id, account_strategy)
+      project_without_account = Struct.new(:id, :account_id).new(project.id, account.id)
+      ctx = build_ctx(proj: project_without_account)
+
+      reg = registry.resolve(ctx)
+
+      expect(reg.strategy_class).to eq(account_strategy)
+    end
+
     it "preserves constructor args in the registration" do
       registry.register_global("auto_pick", global_strategy, candidate_source: :custom)
       ctx = build_ctx

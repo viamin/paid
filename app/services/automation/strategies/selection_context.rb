@@ -13,19 +13,36 @@ module Automation
     # +metadata+ carries optional runtime signals (e.g. issue complexity,
     # language, test coverage) that registrations can use for finer-grained
     # matching in future iterations.
-    class SelectionContext < Data.define(:strategy_type, :project, :account, :task_type, :metadata)
+    class SelectionContext < Data.define(:strategy_type, :project, :account, :account_id, :task_type, :metadata)
       EMPTY_METADATA = {}.freeze
 
       def self.build(strategy_type:, project: nil, account: nil, task_type: nil, metadata: nil)
-        account ||= project&.respond_to?(:account) ? project.account : nil
+        account_id = account&.id || account_id_from(project)
+        account ||= loaded_project_account(project)
 
         new(
           strategy_type: strategy_type.to_s,
           project: project,
           account: account,
+          account_id: account_id,
           task_type: task_type&.to_s,
           metadata: (metadata || EMPTY_METADATA).freeze
         )
+      end
+
+      def self.account_id_from(project)
+        return unless project&.respond_to?(:account_id)
+
+        project.account_id
+      end
+
+      def self.loaded_project_account(project)
+        return unless project&.respond_to?(:association)
+
+        association = project.association(:account)
+        return unless association.loaded?
+
+        project.account
       end
     end
   end
