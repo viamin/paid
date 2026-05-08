@@ -14,6 +14,7 @@ class PromptVersion < ApplicationRecord
   has_many :ab_test_variants, dependent: :restrict_with_error
   has_many :quality_metrics, dependent: :nullify
   has_many :llm_output_metrics, dependent: :nullify
+  has_many :configuration_bundles, dependent: :nullify
 
   validates :version, presence: true,
     numericality: { only_integer: true, greater_than: 0 },

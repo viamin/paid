@@ -4,6 +4,11 @@ require "digest"
 
 module ConfigurationBundles
   class AssignToRun
+    include BundleFingerprinting
+
+    INVALID_EXPERIMENT_VALUE = Object.new
+    FingerprintMismatchError = Class.new(StandardError)
+
     attr_reader :agent_run
 
     def initialize(agent_run:)
@@ -15,7 +20,8 @@ module ConfigurationBundles
     end
 
     def call
-      definition = bundle_definition
+      selection = optimizer_selection
+      definition = bundle_definition(selection&.variant_by_experiment_id)
       fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
@@ -26,96 +32,110 @@ module ConfigurationBundles
     private
 
     def find_or_create_bundle(fingerprint:, definition:)
-      ConfigurationBundle.find_or_create_by!(fingerprint: fingerprint) do |bundle|
-        bundle.definition = definition
+      existing_bundle = bundle_scope.find_by(fingerprint: fingerprint)
+      return existing_bundle if existing_bundle&.definition == definition
+      raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}" if existing_bundle
+
+      account.with_lock do
+        bundle_scope.find_by(fingerprint: fingerprint) || create_runtime_bundle(fingerprint:, definition:)
       end
     rescue ActiveRecord::RecordNotUnique
-      ConfigurationBundle.find_by!(fingerprint: fingerprint)
+      bundle_scope.find_by!(fingerprint: fingerprint)
     end
 
-    def bundle_definition
+    def create_runtime_bundle(fingerprint:, definition:)
+      ConfigurationBundle.create!(
+        account: account,
+        prompt_version: agent_run.prompt_version,
+        llm_model: agent_run.model_selection&.llm_model,
+        name: "Runtime Bundle #{fingerprint.first(12)}",
+        version: next_runtime_bundle_version,
+        status: "active",
+        strategy: "runtime_snapshot",
+        strategy_params: {},
+        context: {},
+        fingerprint: fingerprint,
+        definition: definition
+      )
+    end
+
+    def next_runtime_bundle_version
+      ConfigurationBundle.where(account: account, project_id: nil).maximum(:version).to_i + 1
+    end
+
+    def bundle_scope
+      ConfigurationBundle.where(account: account)
+    end
+
+    def account
+      agent_run.project.account
+    end
+
+    def bundle_definition(selected_variants = nil)
       canonicalize(
         {
-          schema_version: 2,
+          schema_version: 1,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
           provider_id: agent_run.provider_id,
-          model_selection: model_selection_definition,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
+          model_selection: model_selection_definition,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
-          experiments: experiment_definitions
+          experiments: experiment_definitions(selected_variants)
         }.compact
       )
     end
 
-    def custom_prompt_sha256
-      return if agent_run.custom_prompt.blank?
-
-      Digest::SHA256.hexdigest(agent_run.custom_prompt)
-    end
-
-    def model_selection_definition
-      selection = agent_run.model_selection
-      return unless selection
-
-      canonicalize(
-        {
-          llm_model_id: selection.llm_model.model_id,
-          llm_provider: selection.llm_model.provider,
-          selector_type: selection.selector_type,
-          tier: selection.tier,
-          escalated_from_tier: selection.escalated_from_tier,
-          escalated_reason: selection.escalated_reason
-        }.compact
-      )
-    end
-
-    def normalized_service_container_ids
-      ids = configured_service_container_ids
-      ids = Array(agent_run.service_container_ids) if ids.empty?
-      ids = ids.map { |id| Integer(id, exception: false) || id }.compact.sort
-      ids if ids.any?
-    end
-
-    def configured_service_container_ids
-      agent_run.project.service_container_ids
-    end
-
-    def normalized_mcp_servers
-      servers = Array(agent_run.mcp_server_snapshot).filter_map { |snapshot| snapshot["name"].presence }.sort
-      servers if servers.any?
-    end
-
-    def experiment_definitions
+    def experiment_definitions(selected_variants = nil)
       ConfigurationExperiment::TRACKED_CONFIG_KEYS.each_with_object({}) do |config_key, definitions|
         experiment = ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
         next unless experiment
 
         assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
-          agent_run: agent_run
+          agent_run: agent_run,
+          variant: selected_variants&.[](experiment.id)
         )
+        parsed_value = parsed_assignment_value(assignment, experiment:)
+        next if parsed_value.equal?(INVALID_EXPERIMENT_VALUE)
+
         definitions[config_key] = {
           configuration_experiment_id: experiment.id,
           configuration_experiment_variant_id: assignment.configuration_experiment_variant_id,
-          value: assignment.configuration_experiment_variant.parsed_value
+          value: parsed_value
         }
       end
     end
 
-    def canonicalize(value)
-      case value
-      when Hash
-        value.each_with_object({}) do |(key, nested_value), normalized|
-          normalized[key.to_s] = canonicalize(nested_value)
-        end.sort.to_h
-      when Array
-        value.map { |nested_value| canonicalize(nested_value) }
-      else
-        value
-      end
+    def parsed_assignment_value(assignment, experiment:)
+      assignment.configuration_experiment_variant.parsed_value
+    rescue StandardError => e
+      assignment.destroy! if assignment.persisted?
+
+      Rails.logger.warn(
+        message: "configuration_bundles.invalid_experiment_value_skipped",
+        agent_run_id: agent_run.id,
+        configuration_experiment_id: experiment.id,
+        configuration_experiment_variant_id: assignment.configuration_experiment_variant_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+
+      INVALID_EXPERIMENT_VALUE
+    end
+
+    def optimizer_selection
+      ConfigurationBundles::Optimizer.call(agent_run: agent_run)
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
     end
   end
 end

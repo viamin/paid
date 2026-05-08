@@ -16,15 +16,21 @@ module ConfigurationBundles
     def call
       return unless agent_run.configuration_bundle
 
-      outcome = ConfigurationBundleOutcome.find_or_initialize_by(agent_run: agent_run)
-      outcome.assign_attributes(
+      outcome = BundleOutcome.find_or_initialize_by(
         configuration_bundle: agent_run.configuration_bundle,
-        status: agent_run.status,
+        agent_run: agent_run
+      )
+      outcome.assign_attributes(
         quality_score: quality_metric.composite_score,
         cost_cents: agent_run.cost_cents.to_i,
         duration_seconds: agent_run.duration_seconds,
-        completed_at: agent_run.completed_at,
-        component_scores: quality_metric.scores || {}
+        tokens_used: agent_run.tokens_input.to_i + agent_run.tokens_output.to_i,
+        success: agent_run.status == "completed",
+        metrics: {
+          "component_scores" => quality_metric.scores || {},
+          "completed_at" => agent_run.completed_at&.iso8601,
+          "status" => agent_run.status
+        }
       )
       outcome.save!
       outcome

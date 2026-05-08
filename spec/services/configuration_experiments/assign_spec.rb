@@ -41,5 +41,30 @@ RSpec.describe ConfigurationExperiments::Assign do
         described_class.call(configuration_experiment: draft, agent_run: create(:agent_run))
       }.to raise_error(ArgumentError, /not running/)
     end
+
+    it "uses an explicitly selected variant when provided" do
+      agent_run = create(:agent_run)
+
+      assignment = described_class.call(
+        configuration_experiment: configuration_experiment,
+        agent_run: agent_run,
+        variant: variant
+      )
+
+      expect(assignment.configuration_experiment_variant).to eq(variant)
+    end
+
+    it "raises when the explicit variant belongs to another experiment" do
+      agent_run = create(:agent_run)
+      other_variant = create(:configuration_experiment_variant)
+
+      expect {
+        described_class.call(
+          configuration_experiment: configuration_experiment,
+          agent_run: agent_run,
+          variant: other_variant
+        )
+      }.to raise_error(ArgumentError, /same experiment/)
+    end
   end
 end

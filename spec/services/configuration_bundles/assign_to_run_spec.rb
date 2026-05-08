@@ -4,7 +4,12 @@ require "rails_helper"
 
 RSpec.describe ConfigurationBundles::AssignToRun do
   let(:project) { create(:project) }
-  let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }
+  let(:agent_run) do
+    create(:agent_run,
+      project: project,
+      issue: create(:issue, project: project),
+      mcp_server_snapshot: [ filesystem_mcp_snapshot ])
+  end
   let(:llm_model) { create(:llm_model, provider: "openai", model_id: "gpt-5.4") }
   let(:first_service) { create(:service_container, account: project.account) }
   let(:second_service) { create(:service_container, :redis, account: project.account) }
@@ -55,12 +60,13 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
     expect(bundle.definition).to include(
-      "schema_version" => 2,
+      "schema_version" => 1,
       "goal" => agent_run.goal,
       "agent_type" => agent_run.agent_type
     )
     expect(bundle.definition["model_selection"]).to eq(expected_model_selection)
     expect(bundle.definition["service_container_ids"]).to eq([ first_service.id, second_service.id ].sort)
+    expect(bundle.definition["mcp_servers"]).to eq([ filesystem_mcp_snapshot ])
     expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to eq(
       "configuration_experiment_id" => experiment.id,
       "configuration_experiment_variant_id" => variant.id,
@@ -106,5 +112,51 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     expect(second_bundle).not_to eq(first_bundle)
     expect(ConfigurationBundle.count).to eq(2)
+  end
+
+  it "creates different bundles when MCP snapshots differ behind the same name" do
+    first_run = create(:agent_run,
+      project: project,
+      issue: create(:issue, project: project),
+      mcp_server_snapshot: [ { "name" => "filesystem", "command" => "npx" } ])
+    second_run = create(:agent_run,
+      project: project,
+      issue: create(:issue, project: project),
+      mcp_server_snapshot: [ { "name" => "filesystem", "command" => "uvx" } ])
+
+    first_bundle = described_class.call(agent_run: first_run)
+    second_bundle = described_class.call(agent_run: second_run)
+
+    expect(second_bundle).not_to eq(first_bundle)
+  end
+
+  it "falls back to direct experiment assignment when optimization fails" do
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_raise(StandardError, "optimizer unavailable")
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle).to be_persisted
+    expect(agent_run.reload.configuration_bundle).to eq(bundle)
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
+  end
+
+  it "skips malformed experiment values instead of aborting assignment" do
+    variant.update!(config_value: "{not-json")
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle).to be_persisted
+    expect(agent_run.reload.configuration_bundle).to eq(bundle)
+    expect(bundle.definition.fetch("experiments")).to eq({})
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_nil
+  end
+
+  def filesystem_mcp_snapshot
+    {
+      "args" => [ "-y", "@modelcontextprotocol/server-filesystem", "/workspace" ],
+      "command" => "npx",
+      "env" => { "WORKDIR" => "/workspace" },
+      "name" => "filesystem"
+    }
   end
 end

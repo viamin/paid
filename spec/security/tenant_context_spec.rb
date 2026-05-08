@@ -51,6 +51,29 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
+  it "filters configuration bundles and outcomes through the database policy" do
+    bundle_a, outcome_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      bundle = create(:configuration_bundle, account: account_a, project: project)
+      run = create(:agent_run, :completed, project: project, issue: create(:issue, project: project), configuration_bundle: bundle)
+
+      [ bundle, create(:bundle_outcome, configuration_bundle: bundle, agent_run: run) ]
+    end
+    described_class.with_system_access do
+      project = create(:project, account: account_b)
+      bundle = create(:configuration_bundle, account: account_b, project: project)
+      run = create(:agent_run, :completed, project: project, issue: create(:issue, project: project), configuration_bundle: bundle)
+      create(:bundle_outcome, configuration_bundle: bundle, agent_run: run)
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ConfigurationBundle.all).to contain_exactly(bundle_a)
+        expect(BundleOutcome.all).to contain_exactly(outcome_a)
+      end
+    end
+  end
+
   it "filters issue merge subscriptions and rejects cross-tenant users at the database policy" do
     subscription_a = described_class.with_system_access do
       issue = create(:issue, project: create(:project, account: account_a))
@@ -121,6 +144,23 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
+  it "rejects cross-tenant configuration bundle references at the database policy" do
+    account = described_class.with_system_access { account_a }
+    project_a = described_class.with_system_access { create(:project, account: account_a) }
+    project_b = described_class.with_system_access { create(:project, account: account_b) }
+    bundle_a = described_class.with_system_access { create(:configuration_bundle, account: account_a, project: project_a) }
+    run_b = described_class.with_system_access do
+      create(:agent_run, :completed, project: project_b, issue: create(:issue, project: project_b))
+    end
+
+    as_restricted_role do
+      described_class.with(account) do
+        expect_rls_rejection { insert_configuration_bundle(account, project_id: project_b.id) }
+        expect_rls_rejection { insert_bundle_outcome(bundle_a, run_b) }
+      end
+    end
+  end
+
   it "allows tenant reads but blocks tenant writes for global prompts and style guides" do
     global_prompt = described_class.with_system_access { create(:prompt, :global, :with_version) }
     tenant_prompt = described_class.with_system_access { create(:prompt, :for_account, account: account_a) }
@@ -173,7 +213,7 @@ RSpec.describe TenantContext, :tenant_isolation do
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
-      CreateOrchestrationDecisions.new.down if orchestration_decisions_have_rls?
+      CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
       CreateExceptionIncidents.new.down if exception_incidents_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
@@ -190,8 +230,8 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
-      CreateExceptionIncidents.new.up unless exception_incidents_have_rls?
-      CreateOrchestrationDecisions.new.up unless orchestration_decisions_have_rls?
+      CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
+      CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
     end
     ActiveRecord::Base.connection.execute("RESET ROLE")
@@ -208,7 +248,7 @@ RSpec.describe TenantContext, :tenant_isolation do
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
-      CreateOrchestrationDecisions.new.down if orchestration_decisions_have_rls?
+      CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
       CreateExceptionIncidents.new.down if exception_incidents_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
@@ -257,6 +297,10 @@ RSpec.describe TenantContext, :tenant_isolation do
     ).to_i.positive?
   end
 
+  def exception_incidents_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
   def decomposition_decisions_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
@@ -273,6 +317,10 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'orchestration_decisions' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def orchestration_decisions_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:orchestration_decisions)
   end
 
   def strategy_experiment_tables_have_rls?
@@ -421,6 +469,56 @@ RSpec.describe TenantContext, :tenant_isolation do
         #{user.id},
         #{quote("RLS Token #{SecureRandom.hex(4)}")},
         'ghp_test',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_configuration_bundle(account, project_id: nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO configuration_bundles (
+        account_id,
+        project_id,
+        version,
+        name,
+        status,
+        strategy_params,
+        context,
+        definition,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{account.id},
+        #{sql_value(project_id)},
+        999999,
+        #{quote("RLS Bundle #{SecureRandom.hex(4)}")},
+        'draft',
+        '{}'::jsonb,
+        '{}'::jsonb,
+        '{"schema_version":1}'::jsonb,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_bundle_outcome(configuration_bundle, agent_run)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO bundle_outcomes (
+        configuration_bundle_id,
+        agent_run_id,
+        success,
+        metrics,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{configuration_bundle.id},
+        #{agent_run.id},
+        TRUE,
+        '{}'::jsonb,
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP
       )
