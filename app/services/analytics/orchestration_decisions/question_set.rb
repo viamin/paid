@@ -11,7 +11,7 @@ module Analytics
         },
         {
           key: "decision_mix_by_type",
-          question: "Which decision types appear most often, based on decision-record tags?",
+          question: "Which orchestration decision types appear most often across workflows, retries, and selection paths?",
           query: "Analytics::OrchestrationDecisions::ByDecisionTypeQuery"
         },
         {
@@ -21,7 +21,7 @@ module Analytics
         },
         {
           key: "decision_outcomes",
-          question: "How often do decisions remain active versus becoming superseded or reverted?",
+          question: "How often are orchestration decisions applied, skipped as no-ops, or recorded as failures?",
           query: "Analytics::OrchestrationDecisions::SummaryQuery"
         }
       ].freeze
