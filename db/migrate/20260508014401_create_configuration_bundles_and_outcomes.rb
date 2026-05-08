@@ -10,7 +10,7 @@ class CreateConfigurationBundlesAndOutcomes < ActiveRecord::Migration[8.1]
     end
 
     create_table :configuration_bundle_outcomes, comment: "Optimization-facing outcome metrics observed for a specific agent run and bundle pairing." do |t|
-      t.references :configuration_bundle, null: false, foreign_key: { on_delete: :cascade }
+      t.references :configuration_bundle, null: false, foreign_key: { on_delete: :cascade }, index: false
       t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }, index: { unique: true }
       t.string :status, null: false, comment: "Terminal agent run status captured for optimization analysis."
       t.decimal :quality_score, precision: 5, scale: 4, comment: "Composite quality score attributed to the completed agent run."
