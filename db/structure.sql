@@ -3169,6 +3169,91 @@ ALTER SEQUENCE public.orchestration_decisions_id_seq OWNED BY public.orchestrati
 
 
 --
+-- Name: orchestration_strategies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.orchestration_strategies (
+    id bigint NOT NULL,
+    account_id bigint,
+    strategy_type character varying NOT NULL,
+    name character varying NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE orchestration_strategies; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.orchestration_strategies IS 'Persisted orchestration workflow configurations extracted from hardcoded defaults';
+
+
+--
+-- Name: COLUMN orchestration_strategies.account_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.account_id IS 'NULL = system-wide default; set = account-level override';
+
+
+--
+-- Name: COLUMN orchestration_strategies.strategy_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.strategy_type IS 'Category: review_settings, quality_gate, execution_timeouts, retry_policies, agent_settings, feature_orchestration, provider_resolution';
+
+
+--
+-- Name: COLUMN orchestration_strategies.name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.name IS 'Human-readable name for this strategy';
+
+
+--
+-- Name: COLUMN orchestration_strategies.version; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.version IS 'Monotonically increasing version for audit trail';
+
+
+--
+-- Name: COLUMN orchestration_strategies.configuration; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.configuration IS 'Strategy-specific configuration data';
+
+
+--
+-- Name: COLUMN orchestration_strategies.active; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.orchestration_strategies.active IS 'Whether this strategy is currently in effect';
+
+
+--
+-- Name: orchestration_strategies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.orchestration_strategies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: orchestration_strategies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.orchestration_strategies_id_seq OWNED BY public.orchestration_strategies.id;
+
+
+--
 -- Name: pr_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5312,6 +5397,13 @@ ALTER TABLE ONLY public.orchestration_decisions ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: orchestration_strategies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_strategies ALTER COLUMN id SET DEFAULT nextval('public.orchestration_strategies_id_seq'::regclass);
+
+
+--
 -- Name: pr_templates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6016,6 +6108,14 @@ ALTER TABLE ONLY public.orchestration_decisions
 
 
 --
+-- Name: orchestration_strategies orchestration_strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_strategies
+    ADD CONSTRAINT orchestration_strategies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pr_templates pr_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6550,6 +6650,13 @@ CREATE INDEX idx_orchestration_decisions_run_recent ON public.orchestration_deci
 --
 
 CREATE INDEX idx_orchestration_decisions_run_type_created ON public.orchestration_decisions USING btree (agent_run_id, decision_type, created_at);
+
+
+--
+-- Name: idx_orchestration_strategies_active_type_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_orchestration_strategies_active_type_account ON public.orchestration_strategies USING btree (strategy_type, account_id) NULLS NOT DISTINCT WHERE (active = true);
 
 
 --
@@ -8289,6 +8396,27 @@ CREATE UNIQUE INDEX index_onboarding_steps_on_account_id_and_step ON public.onbo
 
 
 --
+-- Name: index_orchestration_strategies_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_strategies_on_account_id ON public.orchestration_strategies USING btree (account_id);
+
+
+--
+-- Name: index_orchestration_strategies_on_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_strategies_on_active ON public.orchestration_strategies USING btree (active);
+
+
+--
+-- Name: index_orchestration_strategies_on_strategy_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orchestration_strategies_on_strategy_type ON public.orchestration_strategies USING btree (strategy_type);
+
+
+--
 -- Name: index_pr_templates_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9611,6 +9739,14 @@ ALTER TABLE ONLY public.decision_records
 
 ALTER TABLE ONLY public.quality_pause_events
     ADD CONSTRAINT fk_rails_65e6e9ab0a FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id);
+
+
+--
+-- Name: orchestration_strategies fk_rails_68b1d7e980; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orchestration_strategies
+    ADD CONSTRAINT fk_rails_68b1d7e980 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -12005,7 +12141,10 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260507224416'),
+('20260507223324'),
+('20260507223302'),
 ('20260507204652'),
+('20260507204357'),
 ('20260507164917'),
 ('20260507125050'),
 ('20260507011753'),
@@ -12258,4 +12397,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-
