@@ -31,6 +31,9 @@ application.register("chat-stream", ChatStreamController)
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
 
+import DashboardFramesController from "./dashboard_frames_controller"
+application.register("dashboard-frames", DashboardFramesController)
+
 import DropdownController from "./dropdown_controller"
 application.register("dropdown", DropdownController)
 

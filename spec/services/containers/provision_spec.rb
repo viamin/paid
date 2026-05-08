@@ -1430,8 +1430,8 @@ RSpec.describe Containers::Provision do
         )
       end
 
-      it "sets COPILOT_GITHUB_TOKEN from gh auth when config.json lacks oauth_token" do
-        allow(service).to receive(:gh_cli_token).and_return("gho_test_token_from_gh")
+      it "sets COPILOT_GITHUB_TOKEN when config.json lacks oauth_token and token resolution succeeds" do
+        allow(service).to receive(:resolve_copilot_github_token).and_return("gho_test_token_from_gh")
 
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["Env"]).to include("COPILOT_GITHUB_TOKEN=gho_test_token_from_gh")
