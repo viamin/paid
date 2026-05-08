@@ -2086,6 +2086,111 @@ ALTER SEQUENCE public.exception_incidents_id_seq OWNED BY public.exception_incid
 
 
 --
+-- Name: failure_classifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.failure_classifications (
+    id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    agent_run_id bigint NOT NULL,
+    failure_category character varying(50) NOT NULL,
+    failure_subcategory character varying(100),
+    chosen_action character varying(50) NOT NULL,
+    action_status character varying(30) DEFAULT 'pending'::character varying NOT NULL,
+    failure_context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    action_params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    action_result jsonb DEFAULT '{}'::jsonb NOT NULL,
+    parent_workflow_id character varying(255),
+    executed_at timestamp(6) without time zone,
+    completed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE failure_classifications; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.failure_classifications IS 'Persisted failure classification and chosen recovery action for coordination learning';
+
+
+--
+-- Name: COLUMN failure_classifications.failure_category; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.failure_category IS 'Classified failure type (e.g. provider_error, timeout, auth_failure)';
+
+
+--
+-- Name: COLUMN failure_classifications.failure_subcategory; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.failure_subcategory IS 'Optional finer-grained classification';
+
+
+--
+-- Name: COLUMN failure_classifications.chosen_action; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.chosen_action IS 'Recovery action selected from coordination policy';
+
+
+--
+-- Name: COLUMN failure_classifications.action_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.action_status IS 'Lifecycle: pending, executing, completed, skipped';
+
+
+--
+-- Name: COLUMN failure_classifications.failure_context; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.failure_context IS 'Structured details about the failure (error message, provider, etc.)';
+
+
+--
+-- Name: COLUMN failure_classifications.action_params; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.action_params IS 'Parameters passed to the chosen recovery action';
+
+
+--
+-- Name: COLUMN failure_classifications.action_result; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.action_result IS 'Outcome of executing the recovery action';
+
+
+--
+-- Name: COLUMN failure_classifications.parent_workflow_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.failure_classifications.parent_workflow_id IS 'Workflow context for coordinated recovery';
+
+
+--
+-- Name: failure_classifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.failure_classifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: failure_classifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.failure_classifications_id_seq OWNED BY public.failure_classifications.id;
+
+
+--
 -- Name: flipper_features; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5485,6 +5590,13 @@ ALTER TABLE ONLY public.exception_incidents ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: failure_classifications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.failure_classifications ALTER COLUMN id SET DEFAULT nextval('public.failure_classifications_id_seq'::regclass);
+
+
+--
 -- Name: flipper_features id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6141,6 +6253,14 @@ ALTER TABLE ONLY public.exception_incidents
 
 
 --
+-- Name: failure_classifications failure_classifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.failure_classifications
+    ADD CONSTRAINT failure_classifications_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: flipper_features flipper_features_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6698,6 +6818,13 @@ CREATE INDEX idx_coordination_signals_target_type ON public.agent_coordination_s
 --
 
 CREATE INDEX idx_coordination_signals_workflow_type ON public.agent_coordination_signals USING btree (parent_workflow_id, signal_type);
+
+
+--
+-- Name: idx_failure_classifications_project_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_failure_classifications_project_created ON public.failure_classifications USING btree (project_id, created_at);
 
 
 --
@@ -8028,6 +8155,48 @@ CREATE INDEX index_exception_incidents_on_status ON public.exception_incidents U
 --
 
 CREATE INDEX index_exception_incidents_on_subsystem ON public.exception_incidents USING btree (account_id, subsystem);
+
+
+--
+-- Name: index_failure_classifications_on_action_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_failure_classifications_on_action_status ON public.failure_classifications USING btree (action_status);
+
+
+--
+-- Name: index_failure_classifications_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_failure_classifications_on_agent_run_id ON public.failure_classifications USING btree (agent_run_id);
+
+
+--
+-- Name: index_failure_classifications_on_chosen_action; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_failure_classifications_on_chosen_action ON public.failure_classifications USING btree (chosen_action);
+
+
+--
+-- Name: index_failure_classifications_on_failure_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_failure_classifications_on_failure_category ON public.failure_classifications USING btree (failure_category);
+
+
+--
+-- Name: index_failure_classifications_on_parent_workflow_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_failure_classifications_on_parent_workflow_id ON public.failure_classifications USING btree (parent_workflow_id);
+
+
+--
+-- Name: index_failure_classifications_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_failure_classifications_on_project_id ON public.failure_classifications USING btree (project_id);
 
 
 --
@@ -10023,6 +10192,14 @@ ALTER TABLE ONLY public.github_tokens
 
 
 --
+-- Name: failure_classifications fk_rails_4e1b406057; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.failure_classifications
+    ADD CONSTRAINT fk_rails_4e1b406057 FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: cost_budgets fk_rails_4e6c4ff426; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10180,6 +10357,14 @@ ALTER TABLE ONLY public.knowledge_links
 
 ALTER TABLE ONLY public.project_service_containers
     ADD CONSTRAINT fk_rails_71eeef6b43 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: failure_classifications fk_rails_74ca3e43a0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.failure_classifications
+    ADD CONSTRAINT fk_rails_74ca3e43a0 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
 
 
 --
@@ -12609,6 +12794,7 @@ ALTER TABLE public.worktrees ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260508120219'),
 ('20260508020000'),
 ('20260508014445'),
 ('20260507224416'),
