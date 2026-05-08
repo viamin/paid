@@ -830,6 +830,8 @@ CREATE TABLE public.bundle_outcomes (
     updated_at timestamp(6) without time zone NOT NULL
 );
 
+ALTER TABLE ONLY public.bundle_outcomes FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: TABLE bundle_outcomes; Type: COMMENT; Schema: public; Owner: -
@@ -1091,6 +1093,8 @@ CREATE TABLE public.configuration_bundles (
     updated_at timestamp(6) without time zone NOT NULL,
     definition jsonb DEFAULT '{}'::jsonb NOT NULL
 );
+
+ALTER TABLE ONLY public.configuration_bundles FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -11218,6 +11222,12 @@ ALTER TABLE public.billing_periods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.billing_plans ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: bundle_outcomes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bundle_outcomes ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: chat_messages; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11240,6 +11250,12 @@ ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.collector_runs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: configuration_bundles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.configuration_bundles ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: container_metrics; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11697,6 +11713,23 @@ CREATE POLICY tenant_isolation ON public.billing_plans USING ((public.paid_tenan
 
 
 --
+-- Name: bundle_outcomes tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.bundle_outcomes USING ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.configuration_bundles
+  WHERE ((configuration_bundles.id = bundle_outcomes.configuration_bundle_id) AND (configuration_bundles.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = bundle_outcomes.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))))) WITH CHECK ((public.paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM public.configuration_bundles
+  WHERE ((configuration_bundles.id = bundle_outcomes.configuration_bundle_id) AND (configuration_bundles.account_id = public.paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (public.agent_runs
+     JOIN public.projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = bundle_outcomes.agent_run_id) AND (projects.account_id = public.paid_current_account_id())))))));
+
+
+--
 -- Name: chat_messages tenant_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11756,6 +11789,13 @@ CREATE POLICY tenant_isolation ON public.collector_runs USING ((public.paid_tena
    FROM (public.project_versions
      JOIN public.projects ON ((projects.id = project_versions.project_id)))
   WHERE ((project_versions.id = collector_runs.project_version_id) AND (projects.account_id = public.paid_current_account_id()))))));
+
+
+--
+-- Name: configuration_bundles tenant_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation ON public.configuration_bundles USING ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id()))) WITH CHECK ((public.paid_tenant_bypass() OR (account_id = public.paid_current_account_id())));
 
 
 --
@@ -12375,13 +12415,17 @@ CREATE POLICY tenant_isolation ON public.token_usages USING ((public.paid_tenant
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id())))))))) WITH CHECK ((public.paid_tenant_bypass() OR (((agent_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.agent_runs
      JOIN public.projects ON ((projects.id = agent_runs.project_id)))
   WHERE ((agent_runs.id = token_usages.agent_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((knowledge_run_id IS NOT NULL) AND (EXISTS ( SELECT 1
    FROM (public.knowledge_runs
      JOIN public.projects ON ((projects.id = knowledge_runs.project_id)))
-  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))))));
+  WHERE ((knowledge_runs.id = token_usages.knowledge_run_id) AND (projects.account_id = public.paid_current_account_id()))))) OR ((chat_session_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.chat_sessions
+  WHERE ((chat_sessions.id = token_usages.chat_session_id) AND (chat_sessions.account_id = public.paid_current_account_id()))))))));
 
 
 --

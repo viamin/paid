@@ -13,8 +13,8 @@ module Coordination
   #   result.chosen_action       # => "retry_alternate_provider"
   class FailureRecovery
     CATEGORY_PATTERNS = {
-      "rate_limit" => [ /RateLimit/i, /rate.?limit/i, /429/ ],
-      "auth_failure" => [ /AuthenticationError/i, /auth.?expir/i, /unauthorized/i, /403/ ],
+      "rate_limit" => [ /RateLimit/i, /rate.?limit/i, /\b429\b/ ],
+      "auth_failure" => [ /AuthenticationError/i, /auth.?expir/i, /unauthorized/i, /\b403\b/ ],
       "timeout" => [ /timeout/i, /timed?\s*out/i ],
       "provider_error" => [ /AllProvidersExhausted/i, /ProxyUnavailable/i, /provider/i ],
       "container_error" => [ /ContainerNotProvisioned/i, /container/i, /docker/i ],
