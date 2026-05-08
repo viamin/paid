@@ -2,6 +2,8 @@
 
 module ConfigurationBundles
   class SurrogateModel
+    include Canonicalization
+
     Prediction = Struct.new(
       :mean_quality_score,
       :uncertainty,
@@ -134,19 +136,6 @@ module ConfigurationBundles
 
       value = config_value.key?("value") ? config_value["value"] : config_value["configuration_experiment_variant_id"]
       canonicalize(value)
-    end
-
-    def canonicalize(value)
-      case value
-      when Hash
-        value.each_with_object({}) do |(key, nested_value), normalized|
-          normalized[key.to_s] = canonicalize(nested_value)
-        end.sort.to_h
-      when Array
-        value.map { |nested_value| canonicalize(nested_value) }
-      else
-        value
-      end
     end
 
     def similarity(lhs, rhs)

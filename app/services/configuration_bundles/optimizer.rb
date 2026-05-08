@@ -120,7 +120,9 @@ module ConfigurationBundles
 
     def parsed_variant_value(variant, experiment:)
       @parsed_variant_values ||= {}
-      @parsed_variant_values[variant.id] ||= variant.parsed_value
+      return @parsed_variant_values[variant.id] if @parsed_variant_values.key?(variant.id)
+
+      @parsed_variant_values[variant.id] = variant.parsed_value
     rescue StandardError => e
       Rails.logger.warn(
         message: "configuration_bundles.invalid_optimizer_variant_skipped",
@@ -131,7 +133,7 @@ module ConfigurationBundles
         error: e.message
       )
 
-      INVALID_VARIANT_VALUE
+      @parsed_variant_values[variant.id] = INVALID_VARIANT_VALUE
     end
   end
 end
