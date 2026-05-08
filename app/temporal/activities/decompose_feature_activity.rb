@@ -69,6 +69,13 @@ module Activities
         policy_source: decomposition_result.policy_source,
         skip_reason: decomposition_result.skip_reason
       }
+    rescue StandardError => e
+      logger.warn(
+        message: "planning.policy_decomposition_failed",
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
     end
 
     def decompose(prompt)

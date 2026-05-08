@@ -153,6 +153,62 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
     end
 
+    context "when scope analysis raises" do
+      let(:logger) { instance_spy(Logger) }
+
+      before do
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(ScopeAnalysis::Analyze).to receive(:call)
+          .and_raise(StandardError, "scope failure")
+      end
+
+      it "logs and falls back to LLM decomposition" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(result[:tasks]).not_to be_empty
+        expect(AgentHarness).to have_received(:send_message)
+        expect(logger).to have_received(:warn).with(
+          message: "planning.policy_decomposition_failed",
+          error_class: "StandardError",
+          error: "scope failure"
+        )
+      end
+    end
+
+    context "when policy decomposition raises" do
+      let(:logger) { instance_spy(Logger) }
+      let(:scope_result) { double(sub_components: [ "api" ]) }
+
+      before do
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(ScopeAnalysis::Analyze).to receive(:call).and_return(scope_result)
+        allow(Coordination::DecompositionService).to receive(:call)
+          .and_raise(StandardError, "decomposition failure")
+      end
+
+      it "logs and falls back to LLM decomposition" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(result[:tasks]).not_to be_empty
+        expect(AgentHarness).to have_received(:send_message)
+        expect(logger).to have_received(:warn).with(
+          message: "planning.policy_decomposition_failed",
+          error_class: "StandardError",
+          error: "decomposition failure"
+        )
+      end
+    end
+
     it "calls AgentHarness with the correct provider and model" do
       activity.execute(
         project_id: project.id,
