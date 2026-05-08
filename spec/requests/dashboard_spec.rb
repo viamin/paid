@@ -389,12 +389,13 @@ RSpec.describe "Dashboard" do
 
     before { sign_in user }
 
-    def create_decision_metric(project:, created_at:, status: "active", tags: %w[routing], agent_run_traits: [ :completed ])
-      create(:decision_record,
+    def create_decision_metric(project:, created_at:, decision_status: "applied", decision_type: "retry", actor: "timeout_auto_retry", agent_run_traits: [ :completed ])
+      create(:orchestration_decision,
         project: project,
         agent_run: create(:agent_run, *agent_run_traits, project: project),
-        status: status,
-        tags: tags,
+        decision_type: decision_type,
+        actor: actor,
+        context: { decision_status: decision_status },
         created_at: created_at)
     end
 
@@ -409,11 +410,11 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Decision Types by Context")
     end
 
-    it "shows an empty state when no decision records exist" do
+    it "shows an empty state when no orchestration decisions exist" do
       get dashboard_decision_metrics_path(time_range: "cumulative")
 
       expect(response.body).to include("No orchestration decisions yet")
-      expect(response.body).to include("Decision metrics will appear after agent runs publish decision records.")
+      expect(response.body).to include("Decision metrics will appear after workflows, retries, and agent selection paths emit orchestration events.")
     end
 
     it "shows a low-data message when the sample is too small for stable comparisons" do
@@ -422,26 +423,33 @@ RSpec.describe "Dashboard" do
       get dashboard_decision_metrics_path(time_range: "7d")
 
       expect(response.body).to include("Treat trend and context comparisons as directional until more data arrives.")
-      expect(response.body).to include("Only 1 decision record across 1 project match this window.")
+      expect(response.body).to include("Only 1 orchestration decision across 1 project match this window.")
       expect(response.body).to include("Not enough daily history yet for a useful trend view.")
     end
 
     it "scopes decision metrics to the current account and time window" do
       create_decision_metric(project: project, created_at: 2.days.ago)
-      create_decision_metric(project: project, created_at: 1.day.ago, status: "superseded", agent_run_traits: [ :failed ])
-      create(:decision_record,
+      create_decision_metric(project: project, created_at: 1.day.ago, decision_status: "failed", agent_run_traits: [ :failed ])
+      create(:orchestration_decision, :without_agent_run,
         project: create(:project, name: "Ignored", owner: "ignored", repo: "ignored"),
-        tags: %w[routing],
+        decision_type: "retry",
+        actor: "timeout_auto_retry",
+        context: { decision_status: "applied" },
         created_at: 1.day.ago)
-      create_decision_metric(project: project, created_at: 45.days.ago, tags: %w[planning])
+      create_decision_metric(
+        project: project,
+        created_at: 45.days.ago,
+        decision_type: "planning_outcome",
+        actor: "Workflows::PlanningWorkflow"
+      )
 
       get dashboard_decision_metrics_path(time_range: "7d")
 
       expect(response.body).to include("Total Decisions")
-      expect(response.body).to include("Routing")
+      expect(response.body).to include("Retry")
       expect(response.body).to include("Alpha")
       expect(response.body).not_to include("Ignored")
-      expect(response.body).not_to include("Planning")
+      expect(response.body).not_to include("Planning Outcome")
     end
   end
 

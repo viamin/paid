@@ -5,23 +5,23 @@ module Analytics
     class DailyVolumeQuery < BaseQuery
       def call
         rows = filtered_scope
-          .group(Arel.sql("DATE(decision_records.created_at)"))
-          .order(Arel.sql("DATE(decision_records.created_at) ASC"))
+          .group(Arel.sql("DATE(orchestration_decisions.created_at)"))
+          .order(Arel.sql("DATE(orchestration_decisions.created_at) ASC"))
           .pluck(
-            Arel.sql("DATE(decision_records.created_at)"),
+            Arel.sql("DATE(orchestration_decisions.created_at)"),
             Arel.sql("COUNT(*)"),
-            Arel.sql("COUNT(*) FILTER (WHERE decision_records.status = 'active')"),
-            Arel.sql("COUNT(*) FILTER (WHERE decision_records.status = 'superseded')"),
-            Arel.sql("COUNT(*) FILTER (WHERE decision_records.status = 'reverted')")
+            Arel.sql("COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'applied')"),
+            Arel.sql("COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'noop')"),
+            Arel.sql("COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'failed')")
           )
 
-        rows.map do |day, total_count, active_count, superseded_count, reverted_count|
+        rows.map do |day, total_count, applied_count, noop_count, failed_count|
           {
             day: day,
             total_count: total_count,
-            active_count: active_count,
-            superseded_count: superseded_count,
-            reverted_count: reverted_count
+            applied_count: applied_count,
+            noop_count: noop_count,
+            failed_count: failed_count
           }
         end
       end

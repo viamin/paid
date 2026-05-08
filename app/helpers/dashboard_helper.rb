@@ -82,9 +82,9 @@ module DashboardHelper
   }.freeze
 
   DECISION_STATUS_BADGE_CLASSES = {
-    "active" => "bg-emerald-100 text-emerald-700",
-    "superseded" => "bg-amber-100 text-amber-700",
-    "reverted" => "bg-rose-100 text-rose-700"
+    "applied" => "bg-emerald-100 text-emerald-700",
+    "noop" => "bg-amber-100 text-amber-700",
+    "failed" => "bg-rose-100 text-rose-700"
   }.freeze
 
   def time_range_label(range)
