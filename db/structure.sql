@@ -7557,7 +7557,7 @@ CREATE INDEX index_config_bundles_on_project_status ON public.configuration_bund
 -- Name: index_config_bundles_unique_fingerprint; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_config_bundles_unique_fingerprint ON public.configuration_bundles USING btree (fingerprint) WHERE (fingerprint IS NOT NULL);
+CREATE UNIQUE INDEX index_config_bundles_unique_fingerprint ON public.configuration_bundles USING btree (account_id, fingerprint) WHERE (fingerprint IS NOT NULL);
 
 
 --
@@ -12657,4 +12657,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260128004342'),
 ('20260128004305'),
 ('20260127154444');
-

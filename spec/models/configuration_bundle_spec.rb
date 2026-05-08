@@ -22,6 +22,16 @@ RSpec.describe ConfigurationBundle do
     it { is_expected.to validate_numericality_of(:version).only_integer.is_greater_than(0) }
     it { is_expected.to validate_length_of(:strategy).is_at_most(100) }
 
+    it "validates fingerprint uniqueness within an account" do
+      bundle = create(:configuration_bundle, fingerprint: "shared-fingerprint")
+      duplicate = build(:configuration_bundle, account: bundle.account, fingerprint: bundle.fingerprint)
+      other_account_bundle = build(:configuration_bundle, fingerprint: bundle.fingerprint)
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:fingerprint]).to be_present
+      expect(other_account_bundle).to be_valid
+    end
+
     it "validates version uniqueness scoped to account and project" do
       bundle = create(:configuration_bundle)
       duplicate = build(:configuration_bundle, account: bundle.account, project: bundle.project, version: bundle.version)

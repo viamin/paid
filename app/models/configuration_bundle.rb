@@ -16,7 +16,7 @@ class ConfigurationBundle < ApplicationRecord
     numericality: { only_integer: true, greater_than: 0 }
   validate :version_unique_for_scope
   validates :strategy, length: { maximum: 100 }, allow_nil: true
-  validates :fingerprint, length: { maximum: 64 }, uniqueness: true, allow_nil: true
+  validates :fingerprint, length: { maximum: 64 }, uniqueness: { scope: :account_id }, allow_nil: true
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
 
   scope :draft, -> { where(status: "draft") }

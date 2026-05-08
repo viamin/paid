@@ -61,7 +61,7 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
       name: "index_config_bundles_on_account_status"
     add_index :configuration_bundles, [ :project_id, :status ],
       name: "index_config_bundles_on_project_status"
-    add_index :configuration_bundles, :fingerprint,
+    add_index :configuration_bundles, [ :account_id, :fingerprint ],
       unique: true,
       where: "fingerprint IS NOT NULL",
       name: "index_config_bundles_unique_fingerprint"
