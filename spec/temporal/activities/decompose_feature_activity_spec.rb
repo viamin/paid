@@ -134,6 +134,25 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
     end
 
+    context "when strategy resolution raises and issue is below threshold" do
+      before do
+        allow(OrchestrationStrategies::Resolve).to receive(:call)
+          .and_raise(StandardError, "connection timeout")
+      end
+
+      it "falls back to LLM decomposition instead of returning an empty plan" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context
+        )
+
+        expect(result[:prompt_source]).to eq("fallback_prompt")
+        expect(result[:tasks]).not_to be_empty
+        expect(AgentHarness).to have_received(:send_message)
+      end
+    end
+
     it "calls AgentHarness with the correct provider and model" do
       activity.execute(
         project_id: project.id,
