@@ -22,7 +22,11 @@ module Activities
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
 
-      policy_result = decompose_with_policy_service(project: project, issue: issue)
+      policy_result = decompose_with_policy_service(
+        project: project,
+        issue: issue,
+        coordination_policy: input[:coordination_policy]
+      )
       return policy_result if policy_result
 
       prompt_data = render_prompt(issue, knowledge_context)
@@ -41,13 +45,14 @@ module Activities
 
     private
 
-    def decompose_with_policy_service(project:, issue:)
+    def decompose_with_policy_service(project:, issue:, coordination_policy:)
       scope_result = ScopeAnalysis::Analyze.call(text: issue.body)
       decomposition_result = Coordination::DecompositionService.call(
         title: issue.title,
         description: issue.body,
         sub_components: scope_result.sub_components,
-        account: project.account
+        account: project.account,
+        policy_override: coordination_policy
       )
 
       return unless use_policy_service_result?(decomposition_result)

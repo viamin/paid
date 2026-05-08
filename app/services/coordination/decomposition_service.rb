@@ -35,11 +35,12 @@ module Coordination
       new(...).call
     end
 
-    def initialize(title:, description:, sub_components:, account: nil)
+    def initialize(title:, description:, sub_components:, account: nil, policy_override: nil)
       @title = title.to_s
       @description = description.to_s
       @sub_components = Array(sub_components)
       @account = account
+      @policy_override = policy_override
     end
 
     def call
@@ -76,9 +77,16 @@ module Coordination
 
     private
 
-    attr_reader :title, :description, :sub_components, :account
+    attr_reader :title, :description, :sub_components, :account, :policy_override
 
     def resolve_policy
+      if policy_override.present?
+        return normalize_policy(
+          DEFAULT_POLICY.merge(extract_decomposition_config_from_hash(policy_override))
+            .merge("source" => "experiment")
+        )
+      end
+
       strategy = OrchestrationStrategies::Resolve.call(
         strategy_type: STRATEGY_TYPE,
         account: account
@@ -99,18 +107,23 @@ module Coordination
 
     def extract_decomposition_config(strategy)
       return {} unless strategy
+      extract_decomposition_config_from_hash(strategy.configuration)
+    end
 
-      config = strategy.configuration
+    def extract_decomposition_config_from_hash(config)
       return {} unless config.is_a?(Hash)
 
-      # Extract decomposition-relevant keys from the feature_orchestration config.
-      # Strategy may contain a nested "decomposition" key with overrides, or
-      # top-level keys that map to decomposition parameters.
-      decomposition = config.fetch("decomposition", {})
-      return decomposition if decomposition.is_a?(Hash) && decomposition.any?
-
-      # Fall back to inferring from top-level feature_orchestration config
       {}.tap do |result|
+        decomposition = config.fetch("decomposition", {})
+        if decomposition.is_a?(Hash)
+          result["max_tasks"] = decomposition["max_tasks"] if decomposition.key?("max_tasks") && decomposition["max_tasks"] != DEFAULT_POLICY["max_tasks"]
+          result["min_components_to_decompose"] = decomposition["min_components_to_decompose"] if decomposition.key?("min_components_to_decompose") && decomposition["min_components_to_decompose"] != DEFAULT_POLICY["min_components_to_decompose"]
+          result["enabled"] = decomposition["enabled"] if decomposition.key?("enabled") && decomposition["enabled"] != DEFAULT_POLICY["enabled"]
+          if decomposition.key?("layer_order") && Array(decomposition["layer_order"]) != DEFAULT_POLICY["layer_order"]
+            result["layer_order"] = decomposition["layer_order"]
+          end
+        end
+
         result["max_tasks"] = config["max_tasks"] if config.key?("max_tasks")
         result["min_components_to_decompose"] = config["min_components_to_decompose"] if config.key?("min_components_to_decompose")
         result["enabled"] = config["decomposition_enabled"] if config.key?("decomposition_enabled")
