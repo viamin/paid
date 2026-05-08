@@ -122,6 +122,7 @@ module ConfigurationBundles
         agent_type: definition["agent_type"],
         provider_id: definition["provider_id"],
         prompt_version_id: definition["prompt_version_id"],
+        custom_prompt_sha256: definition["custom_prompt_sha256"],
         service_container_ids: Array(definition["service_container_ids"]).sort,
         mcp_servers: Array(definition["mcp_servers"]).sort,
         experiments: experiments.sort.to_h

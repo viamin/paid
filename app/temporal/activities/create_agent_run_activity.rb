@@ -180,7 +180,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      assign_configuration_bundle(agent_run)
+      assign_configuration_bundle(agent_run) unless agent_run.configuration_bundle
 
       logger.info(
         message: "agent_execution.queued_run_resumed",

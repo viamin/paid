@@ -182,6 +182,15 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "preserves the existing configuration bundle on resume" do
+      existing_bundle = create(:configuration_bundle)
+      queued_run = create(:agent_run, :queued, project: project, issue: issue, configuration_bundle: existing_bundle)
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      expect(queued_run.reload.configuration_bundle).to eq(existing_bundle)
+    end
+
     it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do
       codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
       claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
