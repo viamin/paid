@@ -52,7 +52,7 @@ class DashboardController < ApplicationController
   def decision_metrics
     @time_range = valid_time_range
     @decision_metrics = Analytics::OrchestrationDecisions::Report.call(
-      relation: decision_records_scope,
+      relation: orchestration_decisions_scope,
       filters: decision_metrics_filters
     )
     render partial: "dashboard/orchestration_decisions",
@@ -98,8 +98,8 @@ class DashboardController < ApplicationController
     Dashboard::Stats::VALID_GOALS.include?(goal) ? goal : "all"
   end
 
-  def decision_records_scope
-    DecisionRecord.joins(:project).where(projects: { account_id: current_account.id })
+  def orchestration_decisions_scope
+    OrchestrationDecision.joins(:project).where(projects: { account_id: current_account.id })
   end
 
   def decision_metrics_filters
