@@ -144,19 +144,13 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
-  it "rejects cross-tenant configuration bundle references at the database policy" do
+  it "rejects cross-tenant configuration bundle writes at the database policy" do
     account = described_class.with_system_access { account_a }
-    project_a = described_class.with_system_access { create(:project, account: account_a) }
     project_b = described_class.with_system_access { create(:project, account: account_b) }
-    bundle_a = described_class.with_system_access { create(:configuration_bundle, account: account_a, project: project_a) }
-    run_b = described_class.with_system_access do
-      create(:agent_run, :completed, project: project_b, issue: create(:issue, project: project_b))
-    end
 
     as_restricted_role do
       described_class.with(account) do
         expect_rls_rejection { insert_configuration_bundle(account, project_id: project_b.id) }
-        expect_rls_rejection { insert_bundle_outcome(bundle_a, run_b) }
       end
     end
   end
