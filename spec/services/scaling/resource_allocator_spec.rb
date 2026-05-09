@@ -180,6 +180,18 @@ RSpec.describe Scaling::ResourceAllocator do
         expect(result.agent_count).to eq(2)
       end
 
+      it "preserves explicit zero durations when ranking experiment leaders" do
+        summaries = [
+          { assigned_value: 1, success_rate: 0.8, avg_duration_seconds: 10, sample_count: 10 },
+          { assigned_value: 2, success_rate: 0.8, avg_duration_seconds: 0, sample_count: 10 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+      end
+
       it "caps experiment parallelism by max parallelism width" do
         inputs = Scaling::AllocationInputs.new(
           task_count: 4,

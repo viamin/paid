@@ -273,7 +273,8 @@ module Scaling
     end
 
     def summary_value(summary, key, default: nil)
-      summary[key] || summary[key.to_s] || default
+      val = summary.fetch(key) { summary.fetch(key.to_s, default) }
+      val.nil? ? default : val
     end
 
     def parallelism_cap(agent_count)
