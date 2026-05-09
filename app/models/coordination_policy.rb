@@ -37,9 +37,13 @@ class CoordinationPolicy < ApplicationRecord
     candidates = active.for_account(account).by_type(policy_type)
     return candidates.where(project_id: nil).order(:id).first unless project
 
+    project_first_order_sql = ActiveRecord::Base.sanitize_sql_array(
+      [ "CASE WHEN project_id = ? THEN 0 ELSE 1 END", project.id ]
+    )
+
     candidates
       .where(project_id: [ project.id, nil ])
-      .order(Arel.sql("CASE WHEN project_id = #{project.id} THEN 0 ELSE 1 END"), :id)
+      .order(Arel.sql(project_first_order_sql), :id)
       .first
   end
 

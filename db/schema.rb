@@ -644,8 +644,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_101016) do
     t.bigint "project_id", comment: "Optional project-specific override; nil means account-wide default."
     t.string "status", limit: 30, default: "draft", null: false, comment: "Catalog lifecycle state: draft, active, or archived."
     t.datetime "updated_at", null: false
+    t.index ["account_id", "policy_type", "policy_key"], name: "idx_coordination_policies_account_scope_key", unique: true, where: "(project_id IS NULL)"
     t.index ["account_id", "policy_type", "status"], name: "idx_coordination_policies_account_type_status"
-    t.index ["account_id", "project_id", "policy_type", "policy_key"], name: "idx_coordination_policies_scope_key"
+    t.index ["account_id", "project_id", "policy_type", "policy_key"], name: "idx_coordination_policies_project_scope_key", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["account_id"], name: "index_coordination_policies_on_account_id"
     t.index ["current_version_id"], name: "index_coordination_policies_on_current_version_id"
     t.index ["project_id", "policy_type", "status"], name: "idx_coordination_policies_project_type_status"
