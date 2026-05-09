@@ -394,66 +394,6 @@ RSpec.describe Issues::AutoPick do
       expect(result.issue).to eq(standalone)
     end
 
-    it "publishes a review notification for a blocking parent with open sub-issues" do
-      parent = create(:issue, project: project, github_number: 1)
-      create(:issue, project: project, github_number: 2, parent_issue: parent)
-      blocked = create(:issue, project: project, github_number: 3)
-      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
-
-      described_class.new(project).call
-
-      notification = Notification.find_by!(
-        account: project.account,
-        user: project.effective_owner,
-        source: "blocking_parent_issue_review",
-        subject: parent
-      )
-
-      expect(notification.severity).to eq("warning")
-      expect(notification.title).to eq("Parent issue ##{parent.github_number} is blocking auto-pick")
-      expect(notification.metadata).to include(
-        "open_child_issue_numbers" => [ 2 ],
-        "blocking_issue_count" => 1
-      )
-    end
-
-    it "publishes a review notification for a blocking parent even when auto-pick excludes it by label" do
-      parent = create(:issue, project: project, github_number: 1, labels: [ "epic" ])
-      create(:issue, project: project, github_number: 2, parent_issue: parent)
-      blocked = create(:issue, project: project, github_number: 3)
-      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
-
-      described_class.new(project).call
-
-      expect(Notification.find_by(
-        account: project.account,
-        user: project.effective_owner,
-        source: "blocking_parent_issue_review",
-        subject: parent
-      )).to be_present
-    end
-
-    it "resolves a blocking-parent review notification once the parent is no longer blocking" do
-      parent = create(:issue, project: project, github_number: 1)
-      child = create(:issue, project: project, github_number: 2, parent_issue: parent)
-      blocked = create(:issue, project: project, github_number: 3)
-      create(:issue_dependency, issue: blocked, depends_on_issue: parent)
-
-      described_class.new(project).call
-
-      child.update!(github_state: "closed")
-      described_class.new(project).call
-
-      notification = Notification.find_by!(
-        account: project.account,
-        user: project.effective_owner,
-        source: "blocking_parent_issue_review",
-        subject: parent
-      )
-
-      expect(notification.resolved_at).to be_present
-    end
-
     it "picks the oldest issue regardless of unblock count" do
       # leaf_b is older (lower number) but unblocks fewer issues
       leaf_b = create(:issue, project: project, github_number: 5)
