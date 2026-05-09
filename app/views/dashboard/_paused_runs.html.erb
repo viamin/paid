@@ -37,12 +37,14 @@
             <p class="mt-1 text-xs text-gray-500">Paused <%= time_ago_in_words(run.paused_at || run.updated_at) %> ago</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <%= button_to "Resume",
-                  resume_project_agent_run_path(run.project, run),
-                  method: :post,
-                  params: { return_to: dashboard_path },
-                  form: { data: { turbo_confirm: "Resume this paused agent run?" } },
-                  class: "inline-flex items-center rounded-md bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-500" %>
+            <% if policy(run).resume? %>
+              <%= button_to "Resume",
+                    resume_project_agent_run_path(run.project, run),
+                    method: :post,
+                    params: { return_to: dashboard_path },
+                    form: { data: { turbo_confirm: "Resume this paused agent run?" } },
+                    class: "inline-flex items-center rounded-md bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-500" %>
+            <% end %>
             <%= link_to "View run",
                   project_agent_run_path(run.project, run),
                   class: "inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-yellow-900 ring-1 ring-inset ring-yellow-300 hover:bg-yellow-100" %>
