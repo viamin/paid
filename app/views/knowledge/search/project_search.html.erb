@@ -53,9 +53,13 @@
     </div>
   </div>
 
-  <%= render "knowledge/search/semantic_search_settings" %>
+  <%= render "knowledge/search/semantic_search_settings",
+        semantic_search_source: @semantic_search_source,
+        semantic_search_provider_config: @semantic_search_provider_config,
+        semantic_search_api_key_record: @semantic_search_api_key_record,
+        search_mode: @search_mode %>
 
   <%= turbo_frame_tag "search-results" do %>
-    <%= render "knowledge/search/results" %>
+    <%= render "knowledge/search/results", error: @error, results: @results, meta: @meta %>
   <% end %>
 </div>

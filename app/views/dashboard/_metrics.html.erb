@@ -13,7 +13,7 @@
 
   <%# Run Volume & Outcome %>
   <div>
-    <h2 class="text-lg font-semibold text-gray-900">Run Volume & Outcome</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Run Volume &amp; Outcome</h2>
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Total Runs</dt>
@@ -123,7 +123,7 @@
   <% has_cost_or_token_data = cost_tokens[:total_cost_cents].to_i > 0 || cost_tokens[:trailing_30d_tokens].to_i > 0 %>
   <% if has_cost_or_token_data %>
     <div class="mt-8">
-      <h2 class="text-lg font-semibold text-gray-900">Cost & Token Usage</h2>
+      <h2 class="text-lg font-semibold text-gray-900">Cost &amp; Token Usage</h2>
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
@@ -216,8 +216,8 @@
             <% width_pct = total_avg_seconds.zero? ? 0 : ((avg_seconds.to_f / total_avg_seconds) * 100).round(1) %>
             <div class="<%= phase_group_bar_style(phase_group) %> h-4 float-left"
                  style="width: <%= width_pct %>%"
-                 title="<%= "#{phase_group_label(phase_group)}: #{format_duration(avg_seconds)}" %>"
-                 aria-label="<%= "#{phase_group_label(phase_group)} average duration #{format_duration(avg_seconds)} (#{width_pct}%) of total run time" %>"
+                 title="<%= phase_group_label(phase_group) %>: <%= format_duration(avg_seconds) %>"
+                 aria-label="<%= phase_group_label(phase_group) %> average duration <%= format_duration(avg_seconds) %> (<%= width_pct %>%) of total run time"
                  tabindex="0"></div>
           <% end %>
         </div>

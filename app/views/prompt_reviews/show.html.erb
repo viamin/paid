@@ -89,14 +89,22 @@
   </div>
 
   <%# Diff: parent vs candidate %>
-  <% if parent %>
-    <div class="mt-8 bg-white shadow sm:rounded-lg">
-      <div class="px-4 py-5 sm:px-6">
-        <h2 class="text-lg font-medium text-gray-900">Template Diff</h2>
+  <div class="mt-8 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h2 class="text-lg font-medium text-gray-900">
+        <% if parent %>
+          Template Diff
+        <% else %>
+          Template
+        <% end %>
+      </h2>
+      <% if parent %>
         <p class="mt-1 text-sm text-gray-500">
           Current v<%= parent.version %> (left) vs. proposed v<%= @prompt_version.version %> (right).
         </p>
-      </div>
+      <% end %>
+    </div>
+    <% if parent %>
       <div class="grid grid-cols-2 divide-x divide-gray-200 border-t border-gray-200">
         <div class="p-4">
           <pre class="overflow-x-auto rounded-lg bg-red-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= parent.template %></pre>
@@ -105,17 +113,12 @@
           <pre class="overflow-x-auto rounded-lg bg-green-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= @prompt_version.template %></pre>
         </div>
       </div>
-    </div>
-  <% else %>
-    <div class="mt-8 bg-white shadow sm:rounded-lg">
-      <div class="px-4 py-5 sm:px-6">
-        <h2 class="text-lg font-medium text-gray-900">Template</h2>
-      </div>
+    <% else %>
       <div class="border-t border-gray-200 p-4">
         <pre class="overflow-x-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= @prompt_version.template %></pre>
       </div>
-    </div>
-  <% end %>
+    <% end %>
+  </div>
 
   <% if policy(@prompt).update? %>
     <%# Approve form %>

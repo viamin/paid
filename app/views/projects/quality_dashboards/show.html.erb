@@ -53,26 +53,26 @@
                 <tr>
                   <td class="whitespace-nowrap py-3 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
                     <%= threshold.goal_type.humanize %>
-                    <input type="hidden" name="quality_thresholds[<%= index %>][goal_type]" value="<%= threshold.goal_type %>" />
-                    <input type="hidden" name="quality_thresholds[<%= index %>][metric_type]" value="<%= threshold.metric_type %>" />
+                    <input type="hidden" name="quality_thresholds[<%= index %>][goal_type]" value="<%= threshold.goal_type %>">
+                    <input type="hidden" name="quality_thresholds[<%= index %>][metric_type]" value="<%= threshold.metric_type %>">
                   </td>
                   <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-700"><%= QualityThreshold.metric_label(threshold.metric_type) %></td>
                   <td class="whitespace-nowrap px-3 py-3">
                     <input type="number" name="quality_thresholds[<%= index %>][min_value]"
-                      value="<%= format('%.2f', threshold.min_value) %>" min="0" max="1" step="0.01"
-                      class="block w-24 rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                      value="<%= format('%.2f', threshold.min_value) %>" min="0" max="1" step="0.01" autocomplete="off"
+                      class="block w-24 rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
                   </td>
                   <td class="whitespace-nowrap px-3 py-3">
-                    <input type="hidden" name="quality_thresholds[<%= index %>][override]" value="0" />
+                    <input type="hidden" name="quality_thresholds[<%= index %>][override]" value="0">
                     <input type="checkbox" name="quality_thresholds[<%= index %>][override]" value="1"
-                      <%= "checked" unless threshold.inherited? %>
-                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                      <% unless threshold.inherited? %>checked<% end %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
                   </td>
                   <td class="whitespace-nowrap px-3 py-3">
-                    <input type="hidden" name="quality_thresholds[<%= index %>][enabled]" value="0" />
+                    <input type="hidden" name="quality_thresholds[<%= index %>][enabled]" value="0">
                     <input type="checkbox" name="quality_thresholds[<%= index %>][enabled]" value="1"
-                      <%= "checked" if threshold.enabled? %>
-                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                      <% if threshold.enabled? %>checked<% end %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
                   </td>
                   <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= threshold.source_scope.humanize %></td>
                 </tr>
@@ -216,8 +216,9 @@
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Quality Trends</h2>
       <% trends = @stats[:trends] %>
-      <% if trends.any? %>
-        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if trends.any? %>
+
           <div class="px-4 py-5 sm:p-6">
             <% max_score = [trends.map { |t| t[:score] }.max, 0.01].max %>
             <% composite_thresholds = gate[:thresholds].select { |t| t[:metric_key] == "composite_score" } %>
@@ -292,12 +293,13 @@
               </div>
             </div>
           </div>
-        </div>
-      <% else %>
-        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+
+        <% else %>
+
           <div class="px-4 py-5 text-sm text-gray-500">Not enough data for trend analysis.</div>
-        </div>
-      <% end %>
+
+        <% end %>
+      </div>
     </div>
 
     <%# Gate Events Timeline %>
@@ -337,7 +339,7 @@
                               on <span class="font-medium text-gray-900"><%= event[:metric_key].titleize %></span>
                               <span class="text-gray-400">
                                 (score: <%= format('%.1f%%', event[:score_value] * 100) %>,
-                                 threshold: <%= format('%.1f%%', event[:threshold_value] * 100) %>)
+                                threshold: <%= format('%.1f%%', event[:threshold_value] * 100) %>)
                               </span>
                             </p>
                           </div>
@@ -360,8 +362,9 @@
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Score Breakdown</h2>
       <% breakdown = @stats[:breakdown] %>
-      <% if breakdown.any? %>
-        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if breakdown.any? %>
+
           <div class="px-4 py-5 sm:p-6">
             <div class="space-y-4">
               <% breakdown.each do |key, avg_value| %>
@@ -381,12 +384,13 @@
               <% end %>
             </div>
           </div>
-        </div>
-      <% else %>
-        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+
+        <% else %>
+
           <div class="px-4 py-5 text-sm text-gray-500">No automated metrics available for breakdown.</div>
-        </div>
-      <% end %>
+
+        <% end %>
+      </div>
     </div>
 
     <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
