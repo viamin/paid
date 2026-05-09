@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1584,6 +1584,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
     t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
     t.jsonb "config", default: {}, null: false
     t.datetime "created_at", null: false
+    t.datetime "discarded_at", comment: "Soft-delete timestamp so historical provider names remain available for filters and run history."
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
     t.string "fallback_role", limit: 30, default: "standard", null: false
@@ -1595,12 +1596,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
+    t.index ["discarded_at"], name: "index_providers_on_discarded_at"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
-    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
-    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
     t.index ["user_id"], name: "index_providers_on_user_id"
-    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
     t.check_constraint "weight >= 1", name: "providers_weight_positive"
   end
@@ -1823,13 +1825,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
   end
 
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
-    t.bigint "account_id"
+    t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
     t.bigint "current_version_id", comment: "Currently promoted strategy version used by selection."
     t.string "decision_type", limit: 100, null: false, comment: "Workflow decision boundary this strategy governs, such as issue_execution or retry."
     t.text "description", comment: "Optional description of when and why this strategy should be selected."
     t.string "name", limit: 255, null: false, comment: "Human-readable strategy name."
-    t.bigint "project_id"
+    t.bigint "project_id", comment: "Owning project for project-specific strategy overrides."
     t.jsonb "selection_rules", default: {}, null: false, comment: "Structured scope and context rules used to select the strategy."
     t.string "slug", limit: 100, null: false, comment: "Stable identifier used to resolve a strategy within its scope."
     t.string "status", limit: 20, default: "active", null: false, comment: "Lifecycle state controlling whether the strategy is eligible for selection."
@@ -1915,6 +1917,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
     t.index ["retired_at"], name: "index_strategy_versions_on_retired_at"
     t.index ["strategy_id", "promotion_state"], name: "index_strategy_versions_on_strategy_and_promotion_state"
     t.index ["strategy_id", "version"], name: "index_strategy_versions_on_strategy_id_and_version", unique: true
+    t.index ["strategy_id"], name: "index_strategy_versions_on_strategy_id"
     t.index ["strategy_id"], name: "index_strategy_versions_one_active_per_strategy", unique: true, where: "(((promotion_state)::text = 'active'::text) AND (retired_at IS NULL))"
   end
 
@@ -3113,10 +3116,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
       CREATE TRIGGER knowledge_chunks_tsvector_update BEFORE INSERT OR UPDATE OF content ON public.knowledge_chunks FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('content_tsvector', 'pg_catalog.english', 'content')
   SQL
 
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
-  SQL
-
   create_trigger :logidze_on_projects, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_projects BEFORE INSERT OR UPDATE ON public.projects FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_polled_at,last_agent_run_at,last_github_activity_at,last_issue_sync_at,total_cost_cents,total_tokens_used}')
   SQL
@@ -3127,5 +3126,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_083302) do
 
   create_trigger :logidze_on_user_settings, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_user_settings BEFORE INSERT OR UPDATE ON public.user_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

@@ -18,7 +18,7 @@ module Projects
       AgentRun.preload_final_provider_records(@agent_runs)
       AgentRun.preload_source_pull_requests(@agent_runs)
       cache_key = AgentRun.provider_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
-      @provider_options = base_scope.distinct_effective_providers(cache_key: cache_key)
+      @provider_options = base_scope.distinct_effective_provider_options(account_id: @project.account_id, cache_key: cache_key)
     end
 
     def show
@@ -854,8 +854,8 @@ module Projects
             end
           end
 
-          providers_by_id = owner.providers.where(id: routing_ids).index_by(&:id)
-          providers_by_key = owner.providers.where(provider_key: plain_keys).ordered
+          providers_by_id = owner.providers.kept_only.where(id: routing_ids).index_by(&:id)
+          providers_by_key = owner.providers.kept_only.where(provider_key: plain_keys).ordered
             .group_by(&:provider_key)
 
           identifiers.filter_map do |identifier|

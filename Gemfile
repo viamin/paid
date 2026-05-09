@@ -29,6 +29,9 @@ gem "devise"
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
 
+# Soft-delete for low-volume reference records
+gem "discard"
+
 # CSV parsing (bundled gem since Ruby 3.4)
 gem "csv"
 

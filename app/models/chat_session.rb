@@ -14,7 +14,7 @@ class ChatSession < ApplicationRecord
   after_destroy_commit :broadcast_sidebar_remove
 
   belongs_to :project, optional: true
-  belongs_to :provider, optional: true
+  belongs_to :provider, -> { with_discarded }, optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
