@@ -7,9 +7,10 @@ class ResolveOrphanedBlockingParentReviewNotifications < ActiveRecord::Migration
   end
 
   def down
-    Notification.where(source: "blocking_parent_issue_review")
-      .where.not(resolved_at: nil)
-      .where("resolved_at >= ?", Time.utc(2026, 5, 9))
-      .update_all(resolved_at: nil)
+    # This migration is irreversible because we cannot distinguish between
+    # notifications resolved by this migration vs. those resolved for other reasons.
+    # Reopening all notifications from this source could resurrect notifications
+    # that were legitimately resolved elsewhere.
+    raise ActiveRecord::IrreversibleMigration, "Cannot reverse notification cleanup - would resurrect legitimately resolved notifications"
   end
 end
