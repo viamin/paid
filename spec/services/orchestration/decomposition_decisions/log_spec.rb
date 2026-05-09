@@ -38,7 +38,7 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       }
     end
 
-    def orchestration_decision_for(decision_key)
+    def orchestration_decision_for(decision_key, decision_type: "planning_outcome")
       OrchestrationDecision.find_by!(
         [
           <<~SQL.squish,
@@ -48,7 +48,7 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
             AND context ->> 'decision_key' = ?
           SQL
           project.id,
-          "planning_outcome",
+          decision_type,
           "Workflows::PlanningWorkflow",
           decision_key
         ]
@@ -139,6 +139,22 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
 
       expect(orchestration_decision.context["decision_status"]).to eq("noop")
       expect(orchestration_decision.outputs["outcome"]).to eq("single_task_plan")
+    end
+
+    it "marks policy-skipped decomposition strategy outcomes as noop" do
+      decision_key = "wf-123:decomposition_strategy:policy-skipped"
+      described_class.call(**payload.merge(
+        decision_key: decision_key,
+        decision_type: "decomposition_strategy",
+        outcome: "policy_skipped"
+      ))
+      orchestration_decision = orchestration_decision_for(
+        decision_key,
+        decision_type: "decomposition_strategy"
+      )
+
+      expect(orchestration_decision.context["decision_status"]).to eq("noop")
+      expect(orchestration_decision.outputs["outcome"]).to eq("policy_skipped")
     end
 
     it "marks failed decomposition outcomes as failed" do

@@ -58,6 +58,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           workflow_id: workflow_id,
           decision_type: "decomposition_strategy",
           outcome: outcome,
+          input_context: hash_including(
+            coordination_policy_present: false
+          ),
           metadata: hash_including(
             workflow_step: "decompose_feature",
             prompt_source: prompt_source,
@@ -67,12 +70,15 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       )
     end
 
-    def expect_policy_decomposition_logged(workflow_name:, workflow_id:, outcome:)
+    def expect_policy_decomposition_logged(workflow_name:, workflow_id:, outcome:, coordination_policy_present:)
       expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
         hash_including(
           workflow_name: workflow_name,
           workflow_id: workflow_id,
           outcome: outcome,
+          input_context: hash_including(
+            coordination_policy_present: coordination_policy_present
+          ),
           metadata: hash_including(
             prompt_source: "policy_service",
             policy_attempted: true
@@ -133,7 +139,8 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
           workflow_id: "orchestration-wf-1",
-          outcome: "policy_decomposed"
+          outcome: "policy_decomposed",
+          coordination_policy_present: false
         )
       end
     end
@@ -195,6 +202,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
           hash_including(
             outcome: "policy_skipped",
+            input_context: hash_including(
+              coordination_policy_present: true
+            ),
             plan_data: hash_including(tasks: [])
           )
         )

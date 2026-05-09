@@ -107,6 +107,7 @@ module Activities
         policy_override: coordination_policy
       )
       context[:source] = decomposition_result.policy_source
+      context[:present] = policy_source_present?(decomposition_result.policy_source)
       context[:skip_reason] = decomposition_result.skip_reason
 
       return [ nil, context ] unless use_policy_service_result?(decomposition_result)
@@ -305,6 +306,7 @@ module Activities
     def default_policy_context
       {
         attempted: false,
+        present: false,
         source: nil,
         skip_reason: nil,
         error_details: {},
@@ -326,7 +328,7 @@ module Activities
         outcome: outcome,
         input_context: input_context.merge(
           scope_analysis: policy_context[:scope_analysis],
-          coordination_policy_present: policy_context[:attempted]
+          coordination_policy_present: policy_context[:present]
         ),
         plan_data: { tasks: tasks },
         error_details: error_details,
@@ -360,6 +362,10 @@ module Activities
       return "policy_skipped" if policy_result[:skip_reason].present?
 
       "policy_decomposed"
+    end
+
+    def policy_source_present?(policy_source)
+      %w[experiment feature_orchestration].include?(policy_source)
     end
 
     def llm_strategy_outcome_for(policy_context)
