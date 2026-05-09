@@ -120,9 +120,10 @@ module Orchestration
             decision_key
           ]
         )
-        return existing if existing
+        return attach_strategy_version(existing) if existing
 
-        OrchestrationDecision.create!(
+        attach_strategy_version(
+          OrchestrationDecision.create!(
           project_id: project_id,
           decision_type: decision_type,
           actor: workflow_name,
@@ -141,7 +142,9 @@ module Orchestration
             error_details: error_details,
             metadata: metadata
           },
-          outcome_references: []
+          outcome_references: [],
+          strategy_version: resolved_strategy_version
+        )
         )
       rescue StandardError => e
         Rails.logger.warn(
@@ -159,6 +162,27 @@ module Orchestration
         return "noop" if NOOP_OUTCOMES.include?(outcome)
 
         "applied"
+      end
+
+      def resolved_strategy_version
+        slug = Strategies::BaselineOrchestration.slug_for_decision_type(decision_type)
+        return if slug.blank?
+
+        Strategies::ResolveVersion.call(slug: slug, project: project)
+      end
+
+      def project
+        @project ||= Project.find(project_id)
+      end
+
+      def attach_strategy_version(orchestration_decision)
+        return orchestration_decision unless orchestration_decision&.strategy_version_id.nil?
+
+        strategy_version = resolved_strategy_version
+        return orchestration_decision unless strategy_version
+
+        orchestration_decision.update!(strategy_version: strategy_version)
+        orchestration_decision
       end
     end
   end
