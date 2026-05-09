@@ -4,7 +4,15 @@ require "zlib"
 
 class ScalingExperiment < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
-  DIMENSIONS = %w[agent_count iteration_count].freeze
+  DIMENSIONS = %w[agent_count iteration_count max_iterations parallelism].freeze
+  OUTCOME_METRIC_KEYS = %w[
+    success_rate
+    duration_seconds
+    total_cost_cents
+    agent_launch_success_rate
+    blocked_task_rate
+    parallelism_observed
+  ].freeze
 
   belongs_to :project
 
@@ -20,6 +28,13 @@ class ScalingExperiment < ApplicationRecord
   validate :values_tested_are_positive_integers
   validate :control_value_in_values_tested
   validate :context_filter_is_object
+  validate :independent_variables_is_array
+  validate :outcome_metrics_is_array
+  validate :control_definition_is_object
+  validate :cohort_settings_is_object
+  validate :primary_dimension_variable_matches_plan
+  validate :outcome_metrics_are_supported
+  validate :primary_outcome_metric_present
 
   scope :draft, -> { where(status: "draft") }
   scope :running, -> { where(status: "running") }
@@ -89,13 +104,20 @@ class ScalingExperiment < ApplicationRecord
 
   def eligible_values(task_count:)
     case dimension
-    when "agent_count"
+    when "agent_count", "parallelism"
       normalized_values_tested.select { |value| value <= task_count.to_i }
-    when "iteration_count"
-      normalized_values_tested
     else
-      []
+      normalized_values_tested
     end
+  end
+
+  def cohort_label(task_count:, assigned_value:)
+    format(
+      cohort_label_template,
+      dimension: dimension,
+      value: assigned_value,
+      task_bucket: cohort_task_bucket(task_count:)
+    )
   end
 
   def sufficient_samples?
@@ -128,7 +150,7 @@ class ScalingExperiment < ApplicationRecord
   private
 
   def normalized_values_tested
-    @normalized_values_tested ||= Array(values_tested).map { |value| Integer(value) }.uniq.sort
+    Array(values_tested).map { |value| Integer(value) }.uniq.sort
   rescue ArgumentError, TypeError
     []
   end
@@ -150,6 +172,21 @@ class ScalingExperiment < ApplicationRecord
     return nil if raw.blank?
 
     raw.to_i
+  end
+
+  def cohort_label_template
+    cohort_settings.fetch("label_template", "%<dimension>s-%<value>s__%<task_bucket>s")
+  end
+
+  def cohort_task_bucket(task_count:)
+    bucket = Array(cohort_settings["task_count_buckets"]).find do |candidate|
+      minimum = candidate["min"].to_i
+      maximum = candidate["max"]
+
+      task_count.to_i >= minimum && (maximum.blank? || task_count.to_i <= maximum.to_i)
+    end
+
+    bucket&.fetch("label", nil) || "tasks-unspecified"
   end
 
   def raise_invalid_status!(action)
@@ -191,5 +228,65 @@ class ScalingExperiment < ApplicationRecord
     return if context_filter.is_a?(Hash)
 
     errors.add(:context_filter, "must be an object")
+  end
+
+  def independent_variables_is_array
+    return if independent_variables.is_a?(Array)
+
+    errors.add(:independent_variables, "must be an array")
+  end
+
+  def outcome_metrics_is_array
+    return if outcome_metrics.is_a?(Array)
+
+    errors.add(:outcome_metrics, "must be an array")
+  end
+
+  def control_definition_is_object
+    return if control_definition.is_a?(Hash)
+
+    errors.add(:control_definition, "must be an object")
+  end
+
+  def cohort_settings_is_object
+    return if cohort_settings.is_a?(Hash)
+
+    errors.add(:cohort_settings, "must be an object")
+  end
+
+  def primary_dimension_variable_matches_plan
+    return unless independent_variables.is_a?(Array)
+
+    primary_variable = independent_variables.find { |variable| variable.is_a?(Hash) && variable["key"] == dimension }
+    if primary_variable.blank?
+      errors.add(:independent_variables, "must include the tested dimension")
+      return
+    end
+
+    variable_values = Array(primary_variable["values"]).map(&:to_i).uniq.sort
+    return if variable_values == normalized_values_tested && primary_variable["control_value"].to_i == control_value
+
+    errors.add(:independent_variables, "must match values_tested and control_value for the tested dimension")
+  end
+
+  def outcome_metrics_are_supported
+    return unless outcome_metrics.is_a?(Array)
+
+    invalid_keys = outcome_metrics.filter_map do |metric|
+      next unless metric.is_a?(Hash)
+
+      key = metric["key"].to_s
+      key unless OUTCOME_METRIC_KEYS.include?(key)
+    end
+    return if invalid_keys.empty?
+
+    errors.add(:outcome_metrics, "contains unsupported keys: #{invalid_keys.sort.join(', ')}")
+  end
+
+  def primary_outcome_metric_present
+    return unless outcome_metrics.is_a?(Array)
+    return if outcome_metrics.any? { |metric| metric.is_a?(Hash) && metric["primary"] == true }
+
+    errors.add(:outcome_metrics, "must include one primary metric")
   end
 end

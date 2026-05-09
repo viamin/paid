@@ -62,37 +62,39 @@ module ScalingExperiments
     end
 
     def build_execution_plan(value)
+      plan = {
+        "dimension" => scaling_experiment.dimension,
+        "dimension_value" => value,
+        "task_count" => task_count,
+        "cohort_label" => scaling_experiment.cohort_label(task_count:, assigned_value: value),
+        "cohort_schedule" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "assignment_unit"),
+        "eligible_values" => scaling_experiment.eligible_values(task_count:),
+        "safety_limits" => {
+          "task_count_cap" => task_count,
+          "project_capacity_checked_during_execution" => true,
+          "dependency_order_respected" => true
+        }
+      }
+
       case scaling_experiment.dimension
       when "agent_count"
-        {
-          "dimension" => scaling_experiment.dimension,
+        plan.merge!(
           "requested_agent_count" => value,
-          "max_batch_size" => value,
-          "task_count" => task_count,
-          "eligible_values" => scaling_experiment.eligible_values(task_count:),
-          "safety_limits" => {
-            "task_count_cap" => task_count,
-            "project_capacity_checked_during_execution" => true,
-            "dependency_order_respected" => true
-          }
-        }
+          "max_batch_size" => value
+        )
       when "iteration_count"
-        {
-          "dimension" => scaling_experiment.dimension,
+        plan.merge!(
           "requested_iteration_count" => value,
-          "task_count" => task_count,
-          "eligible_values" => scaling_experiment.eligible_values(task_count:),
           "application_mode" => "task_prompt_budget",
-          "prompt_suffix" => iteration_budget_prompt(value),
-          "safety_limits" => {
-            "minimum_iteration_count" => 1,
-            "dependency_order_respected" => true,
-            "parallel_batch_size_unchanged" => true
-          }
-        }
-      else
-        {}
+          "prompt_suffix" => iteration_budget_prompt(value)
+        )
+      when "max_iterations"
+        plan["max_iterations_per_agent"] = value
+      when "parallelism"
+        plan["max_batch_size"] = value
       end
+
+      plan
     end
 
     def iteration_budget_prompt(value)
