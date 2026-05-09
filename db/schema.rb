@@ -1291,14 +1291,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_081315) do
     t.jsonb "outcome_references", default: [], null: false, comment: "References to later runs, metrics, or artifacts used to attribute outcomes back to this decision."
     t.jsonb "outputs", default: {}, null: false, comment: "Structured payload describing what the workflow decided."
     t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and project-level analysis."
-    t.bigint "strategy_version_id", comment: "Strategy version that influenced this decision when applicable."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "created_at", "id"], name: "idx_orchestration_decisions_run_recent"
     t.index ["agent_run_id", "decision_type", "created_at"], name: "idx_orchestration_decisions_run_type_created"
     t.index ["project_id", "actor", "created_at"], name: "idx_orchestration_decisions_project_actor_created"
     t.index ["project_id", "created_at", "id"], name: "idx_orchestration_decisions_project_recent"
     t.index ["project_id", "decision_type", "created_at"], name: "idx_orchestration_decisions_project_type_created"
-    t.index ["strategy_version_id"], name: "index_orchestration_decisions_on_strategy_version_id"
   end
 
   create_table "orchestration_strategies", comment: "Persisted orchestration workflow configurations extracted from hardcoded defaults", force: :cascade do |t|
@@ -2219,7 +2217,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_081315) do
   add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "orchestration_decisions", "agent_runs", on_delete: :nullify
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
-  add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify
   add_foreign_key "orchestration_strategies", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
