@@ -44,8 +44,7 @@ module Workflows
       prompt_source = nil
       coordination_policy = nil
       coordination_assignment_id = nil
-      scaling_execution_plan = nil
-      scaling_assignment_id = nil
+      scaling_assignments = []
       decision_phase = "planning"
       decision_step = "fetch_planning_context"
       @decision_step = decision_step
@@ -72,9 +71,8 @@ module Workflows
         workflow_id: workflow_id,
         task_count: tasks.size
       )
-      scaling_execution_plan = scaling_experiment_context[:execution_plan]
-      scaling_assignment_id = scaling_experiment_context[:assignment_id]
-      coordination_policy = apply_scaling_execution_plan(coordination_policy, scaling_execution_plan)
+      scaling_assignments = Array(scaling_experiment_context[:assignments])
+      coordination_policy = apply_scaling_execution_plans(coordination_policy, scaling_assignments)
 
       # Update labels/state immediately after planning completes (mirrors PlanningWorkflow step 4)
       decision_step = "update_planning_labels"
@@ -160,11 +158,11 @@ module Workflows
           metadata: {
             prompt_source: prompt_source,
             created_issues: created_issues,
-            scaling_experiment: scaling_metadata(scaling_execution_plan, scaling_assignment_id)
+            scaling_experiments: scaling_metadata(scaling_assignments)
           }
         )
-        safely_record_scaling_experiment_result(
-          assignment_id: scaling_assignment_id,
+        safely_record_scaling_experiment_results(
+          assignment_ids: scaling_assignments.map { |assignment| assignment[:assignment_id] || assignment["assignment_id"] },
           scaling_observation_id: scaling_observation&.dig(:scaling_observation_id)
         )
         safely_record_coordination_outcome(
@@ -179,7 +177,7 @@ module Workflows
       # Phase 2: Launch parallel execution on all sub-tasks
       decision_step = "build_sub_tasks"
       @decision_step = decision_step
-      sub_tasks = build_sub_tasks(tasks, created_issues)
+      sub_tasks = build_sub_tasks(tasks, created_issues, scaling_assignments: scaling_assignments)
 
       safe_log_decomposition_decision(
         project_id: project_id,
@@ -239,11 +237,11 @@ module Workflows
         metadata: {
           prompt_source: prompt_source,
           created_issues: created_issues,
-          scaling_experiment: scaling_metadata(scaling_execution_plan, scaling_assignment_id)
+          scaling_experiments: scaling_metadata(scaling_assignments)
         }
       )
-      safely_record_scaling_experiment_result(
-        assignment_id: scaling_assignment_id,
+      safely_record_scaling_experiment_results(
+        assignment_ids: scaling_assignments.map { |assignment| assignment[:assignment_id] || assignment["assignment_id"] },
         scaling_observation_id: scaling_observation&.dig(:scaling_observation_id)
       )
 
@@ -300,11 +298,11 @@ module Workflows
         metadata: {
           prompt_source: prompt_source,
           created_issues: created_issues,
-          scaling_experiment: scaling_metadata(scaling_execution_plan, scaling_assignment_id)
+          scaling_experiments: scaling_metadata(scaling_assignments)
         }
       )
-      safely_record_scaling_experiment_result(
-        assignment_id: scaling_assignment_id,
+      safely_record_scaling_experiment_results(
+        assignment_ids: scaling_assignments.map { |assignment| assignment[:assignment_id] || assignment["assignment_id"] },
         scaling_observation_id: scaling_observation&.dig(:scaling_observation_id)
       )
 
@@ -390,14 +388,15 @@ module Workflows
       { tasks: tasks, created_issues: created_issues, context: context_result[:context], prompt_source: prompt_source }
     end
 
-    def build_sub_tasks(tasks, created_issues)
+    def build_sub_tasks(tasks, created_issues, scaling_assignments:)
+      iteration_prompt_suffix = iteration_prompt_suffix_for(scaling_assignments)
       created_issues_by_index = created_issues.each_with_index.each_with_object({}) do |(issue, fallback_index), memo|
         memo[issue.fetch(:index, fallback_index)] = issue
       end
 
       tasks.each_with_index.map do |task, index|
         sub_task = {
-          custom_prompt: task[:description],
+          custom_prompt: append_scaling_prompt(task[:description], iteration_prompt_suffix),
           task_index: task.fetch(:index, index),
           dependencies: Array(task[:dependencies]),
           parallel_group: task[:parallel_group]
@@ -520,7 +519,7 @@ module Workflows
         error_class: e.class.to_s,
         error: e.message
       )
-      { assignment_id: nil, execution_plan: nil }
+      { assignment_ids: [], assignments: [] }
     end
 
     def safely_resolve_coordination_experiment(project_id:, issue_id:, workflow_id:)
@@ -564,49 +563,83 @@ module Workflows
       )
     end
 
-    def safely_record_scaling_experiment_result(assignment_id:, scaling_observation_id:)
-      return unless assignment_id && scaling_observation_id
+    def safely_record_scaling_experiment_results(assignment_ids:, scaling_observation_id:)
+      return if assignment_ids.blank? || scaling_observation_id.blank?
 
-      run_activity(
-        Activities::RecordScalingExperimentResultActivity,
+      Array(assignment_ids).each do |assignment_id|
+        run_activity(
+          Activities::RecordScalingExperimentResultActivity,
+          {
+            assignment_id: assignment_id,
+            scaling_observation_id: scaling_observation_id
+          },
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      rescue => e
+        Temporalio::Workflow.logger.warn(
+          message: "feature_orchestration.scaling_experiment_record_failed",
+          workflow_id: Temporalio::Workflow.info.workflow_id,
+          assignment_id: assignment_id,
+          scaling_observation_id: scaling_observation_id,
+          error_class: e.class.to_s,
+          error: e.message
+        )
+      end
+    end
+
+    def apply_scaling_execution_plans(policy, scaling_assignments)
+      normalized_policy = (policy || {}).deep_dup
+
+      Array(scaling_assignments).each do |assignment|
+        execution_plan = assignment[:execution_plan] || assignment["execution_plan"] || {}
+        dimension = execution_plan[:dimension] || execution_plan["dimension"]
+        next unless dimension == "agent_count"
+
+        requested_agent_count = execution_plan[:max_batch_size] || execution_plan["max_batch_size"]
+        next unless requested_agent_count
+
+        normalized_policy["parallel_execution"] ||= {}
+        normalized_policy["parallel_execution"]["max_batch_size"] = requested_agent_count
+      end
+
+      normalized_policy.presence || policy
+    end
+
+    def scaling_metadata(scaling_assignments)
+      Array(scaling_assignments).filter_map do |assignment|
+        execution_plan = assignment[:execution_plan] || assignment["execution_plan"] || {}
+        assignment_id = assignment[:assignment_id] || assignment["assignment_id"]
+        dimension = assignment[:dimension] || assignment["dimension"] || execution_plan[:dimension] || execution_plan["dimension"]
+        next unless assignment_id && dimension
+
         {
           assignment_id: assignment_id,
-          scaling_observation_id: scaling_observation_id
-        },
-        timeout: 30,
-        retry_policy: NO_RETRY
-      )
-    rescue => e
-      Temporalio::Workflow.logger.warn(
-        message: "feature_orchestration.scaling_experiment_record_failed",
-        workflow_id: Temporalio::Workflow.info.workflow_id,
-        assignment_id: assignment_id,
-        scaling_observation_id: scaling_observation_id,
-        error_class: e.class.to_s,
-        error: e.message
-      )
+          dimension: dimension,
+          requested_agent_count: execution_plan[:requested_agent_count] || execution_plan["requested_agent_count"],
+          max_batch_size: execution_plan[:max_batch_size] || execution_plan["max_batch_size"],
+          requested_iteration_count: execution_plan[:requested_iteration_count] || execution_plan["requested_iteration_count"],
+          application_mode: execution_plan[:application_mode] || execution_plan["application_mode"]
+        }.compact
+      end
     end
 
-    def apply_scaling_execution_plan(policy, execution_plan)
-      return policy unless execution_plan.present?
+    def iteration_prompt_suffix_for(scaling_assignments)
+      iteration_assignment = Array(scaling_assignments).find do |assignment|
+        execution_plan = assignment[:execution_plan] || assignment["execution_plan"] || {}
+        dimension = assignment[:dimension] || assignment["dimension"] || execution_plan[:dimension] || execution_plan["dimension"]
+        dimension == "iteration_count"
+      end
+      return unless iteration_assignment
 
-      requested_agent_count = execution_plan[:max_batch_size] || execution_plan["max_batch_size"]
-      return policy unless requested_agent_count
-
-      normalized_policy = (policy || {}).deep_dup
-      normalized_policy["parallel_execution"] ||= {}
-      normalized_policy["parallel_execution"]["max_batch_size"] = requested_agent_count
-      normalized_policy
+      execution_plan = iteration_assignment[:execution_plan] || iteration_assignment["execution_plan"] || {}
+      execution_plan[:prompt_suffix] || execution_plan["prompt_suffix"]
     end
 
-    def scaling_metadata(execution_plan, assignment_id)
-      return unless assignment_id && execution_plan.present?
+    def append_scaling_prompt(prompt, prompt_suffix)
+      return prompt if prompt_suffix.blank?
 
-      {
-        assignment_id: assignment_id,
-        requested_agent_count: execution_plan[:requested_agent_count] || execution_plan["requested_agent_count"],
-        max_batch_size: execution_plan[:max_batch_size] || execution_plan["max_batch_size"]
-      }.compact
+      [ prompt, prompt_suffix ].compact.join("\n\n")
     end
   end
 end

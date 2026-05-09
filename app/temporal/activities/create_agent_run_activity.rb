@@ -26,20 +26,15 @@ module Activities
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
-      provider_id, agent_type = resolve_provider_selection(
+      provider_selection_options = {
         project: project,
-        requested_agent_type: input[:agent_type],
-        requested_provider_id: provider_id,
+        issue: issue,
         goal: goal,
-        respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
-      )
-      validate_requested_provider_resolution!(
-        project: project,
+        requested_agent_type: input[:agent_type],
         requested_provider_id: input[:provider_id],
-        resolved_provider_id: provider_id
-      )
-
-      validate_runnable_provider!(project: project, provider_id: provider_id, agent_type: agent_type, goal: goal)
+        respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
+      }
+      provider_id, agent_type = resolve_and_validate_provider_selection!(**provider_selection_options)
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -93,6 +88,7 @@ module Activities
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
       agent_run = AgentRun.create!(**attrs)
+      log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
       track_phase(
         agent_run_id: agent_run.id,
@@ -150,6 +146,41 @@ module Activities
         respect_requested: respect_requested,
         logger: logger
       )
+    end
+
+    def resolve_and_validate_provider_selection!(project:, issue:, requested_agent_type:, requested_provider_id:, goal:, respect_requested:)
+      provider_id = nil
+      agent_type = nil
+      provider_id, agent_type = resolve_provider_selection(
+        project: project,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: requested_provider_id,
+        goal: goal,
+        respect_requested: respect_requested
+      )
+
+      validate_requested_provider_resolution!(
+        project: project,
+        requested_provider_id: requested_provider_id,
+        resolved_provider_id: provider_id
+      )
+
+      validate_runnable_provider!(project: project, provider_id: provider_id, agent_type: agent_type, goal: goal)
+      [ provider_id, agent_type ]
+    rescue Temporalio::Error::ApplicationError => error
+      log_provider_selection(
+        project: project,
+        issue: issue,
+        goal: goal,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: requested_provider_id,
+        respect_requested: respect_requested,
+        resolved_provider_id: provider_id,
+        resolved_agent_type: agent_type,
+        outcome: "failed",
+        error: error
+      )
+      raise
     end
 
     def refresh_automatic_run_provider!(agent_run)
@@ -236,6 +267,23 @@ module Activities
 
     def resolve_user_settings(project)
       AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+    end
+
+    def log_provider_selection(project:, goal:, resolved_agent_type:, resolved_provider_id:, issue: nil, agent_run: nil,
+      requested_agent_type: nil, requested_provider_id: nil, respect_requested: false, outcome: "selected", error: nil)
+      AgentRuns::ProviderSelectionLogger.call(
+        project: project,
+        issue: issue,
+        agent_run: agent_run,
+        goal: goal,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: requested_provider_id,
+        respect_requested: respect_requested,
+        resolved_provider_id: resolved_provider_id,
+        resolved_agent_type: resolved_agent_type,
+        outcome: outcome,
+        error: error
+      )
     end
 
     def provider_attempt_count_for(agent_run, user_settings)

@@ -79,6 +79,22 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_type).to eq("cursor")
     end
 
+    it "records the provider selection decision with requested and ranked alternatives" do
+      provider = create(:provider, user: project.created_by, provider_key: "cursor")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      decision = agent_run.orchestration_decisions.where(decision_type: "select_agent").find_by(actor: "requested_provider")
+
+      expect_requested_provider_decision(
+        decision: decision,
+        provider_id: provider.id,
+        provider_key: "cursor",
+        agent_type: "cursor"
+      )
+    end
+
     it "falls back to the runnable default when a requested provider_id is not container executable" do
       provider = create(:provider, user: project.created_by, provider_key: "copilot")
       allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
@@ -141,6 +157,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(error.type).to eq("NoRunnableProvider")
         expect(error.non_retryable).to be(true)
       }
+
+      decision = project.orchestration_decisions.order(:id).last
+
+      expect_failed_provider_decision(decision: decision, provider_id: missing_provider_id)
     end
 
     it "uses the goal-specific provider for fresh review runs" do
@@ -707,5 +727,37 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(queued_run.agent_type).to eq("claude_code")
       end
     end
+  end
+
+  def expect_requested_provider_decision(decision:, provider_id:, provider_key:, agent_type:)
+    expect(decision).to be_present
+    expect(decision.context).to include(
+      "decision_status" => "applied",
+      "issue_id" => issue.id
+    )
+    expect(decision.inputs.dig("requested_selection", "provider_id")).to eq(provider_id)
+    expect(decision.inputs.dig("repository", "full_name")).to eq(project.full_name)
+    expect(decision.outputs).to include(
+      "outcome" => "selected",
+      "selection" => include(
+        "provider_id" => provider_id,
+        "provider_key" => provider_key,
+        "agent_type" => agent_type,
+        "candidates" => include(
+          include("rank" => 1, "selected" => true, "provider_id" => provider_id, "provider_key" => provider_key)
+        )
+      )
+    )
+  end
+
+  def expect_failed_provider_decision(decision:, provider_id:)
+    expect(decision.agent_run_id).to be_nil
+    expect(decision.decision_type).to eq("select_agent")
+    expect(decision.context["decision_status"]).to eq("failed")
+    expect(decision.inputs.dig("requested_selection", "provider_id")).to eq(provider_id)
+    expect(decision.outputs["error"]).to include(
+      "class" => "Temporalio::Error::ApplicationError",
+      "message" => include("provider_id=#{provider_id}")
+    )
   end
 end

@@ -145,9 +145,9 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             Workflows::ParallelAgentExecutionWorkflow,
             hash_including(
               sub_tasks: [
-                { custom_prompt: "Create users table", issue_id: 10, task_index: 0, dependencies: [], parallel_group: 0 },
-                { custom_prompt: "Create User model", issue_id: 11, task_index: 1, dependencies: [ 0 ], parallel_group: 1 },
-                { custom_prompt: "Create UsersController", issue_id: 12, task_index: 2, dependencies: [ 1 ], parallel_group: 2 }
+                { custom_prompt: include("Create users table"), issue_id: 10, task_index: 0, dependencies: [], parallel_group: 0 },
+                { custom_prompt: include("Create User model"), issue_id: 11, task_index: 1, dependencies: [ 0 ], parallel_group: 1 },
+                { custom_prompt: include("Create UsersController"), issue_id: 12, task_index: 2, dependencies: [ 1 ], parallel_group: 2 }
               ]
             ),
             anything
@@ -179,16 +179,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
       it "records the experiment result against the captured scaling observation" do
         workflow.execute(input)
 
-        expect(workflow).to have_received(:run_activity)
-          .with(
-            Activities::RecordScalingExperimentResultActivity,
-            hash_including(
-              assignment_id: 88,
-              scaling_observation_id: 1
-            ),
-            timeout: 30,
-            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
-          )
+        expect_scaling_result_recorded!(88)
+        expect_scaling_result_recorded!(99)
       end
 
       it "passes aggregate_pr option to child workflow when provided" do
@@ -409,11 +401,27 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
           when "Activities::ResolveScalingExperimentActivity"
             {
-              assignment_id: 88,
-              execution_plan: {
-                "requested_agent_count" => 2,
-                "max_batch_size" => 2
-              }
+              assignments: [
+                {
+                  assignment_id: 88,
+                  dimension: "agent_count",
+                  execution_plan: {
+                    "dimension" => "agent_count",
+                    "requested_agent_count" => 2,
+                    "max_batch_size" => 2
+                  }
+                },
+                {
+                  assignment_id: 99,
+                  dimension: "iteration_count",
+                  execution_plan: {
+                    "dimension" => "iteration_count",
+                    "requested_iteration_count" => 3,
+                    "application_mode" => "task_prompt_budget",
+                    "prompt_suffix" => "Iteration budget: aim to complete this task within 3 agent iterations."
+                  }
+                }
+              ]
             }
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
@@ -545,11 +553,27 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
       when "Activities::ResolveScalingExperimentActivity"
         {
-          assignment_id: 88,
-          execution_plan: {
-            "requested_agent_count" => 2,
-            "max_batch_size" => 2
-          }
+          assignments: [
+            {
+              assignment_id: 88,
+              dimension: "agent_count",
+              execution_plan: {
+                "dimension" => "agent_count",
+                "requested_agent_count" => 2,
+                "max_batch_size" => 2
+              }
+            },
+            {
+              assignment_id: 99,
+              dimension: "iteration_count",
+              execution_plan: {
+                "dimension" => "iteration_count",
+                "requested_iteration_count" => 3,
+                "application_mode" => "task_prompt_budget",
+                "prompt_suffix" => "Iteration budget: aim to complete this task within 3 agent iterations."
+              }
+            }
+          ]
         }
       when "Activities::FetchPlanningContextActivity"
         { context: { issue_title: "Feature", knowledge_snippets: [] } }
@@ -617,12 +641,34 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             execution_summary: hash_including(max_parallelism_observed: 1)
           ),
           metadata: hash_including(
-            scaling_experiment: hash_including(
-              assignment_id: 88,
-              requested_agent_count: 2,
-              max_batch_size: 2
+            scaling_experiments: array_including(
+              hash_including(
+                assignment_id: 88,
+                dimension: "agent_count",
+                requested_agent_count: 2,
+                max_batch_size: 2
+              ),
+              hash_including(
+                assignment_id: 99,
+                dimension: "iteration_count",
+                requested_iteration_count: 3,
+                application_mode: "task_prompt_budget"
+              )
             )
           )
+        ),
+        timeout: 30,
+        retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
+      )
+  end
+
+  def expect_scaling_result_recorded!(assignment_id)
+    expect(workflow).to have_received(:run_activity)
+      .with(
+        Activities::RecordScalingExperimentResultActivity,
+        hash_including(
+          assignment_id: assignment_id,
+          scaling_observation_id: 1
         ),
         timeout: 30,
         retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
