@@ -39,6 +39,21 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def github_issue(number, id: 6000 + number, title: "Open issue", labels: [ "paid-build" ])
+    OpenStruct.new(
+      id: id,
+      number: number,
+      title: title,
+      body: "Body",
+      state: "open",
+      labels: labels.map { |label| OpenStruct.new(name: label) },
+      pull_request: nil,
+      user: OpenStruct.new(login: "viamin"),
+      created_at: 2.days.ago,
+      updated_at: 5.minutes.ago
+    )
+  end
+
   def create_parsed_issue_with_external_dependency(project, issue_number:, depends_on_number:)
     issue = create(:issue,
       project: project,
@@ -1476,6 +1491,42 @@ RSpec.describe Activities::FetchIssuesActivity do
 
             expect(project.reload.last_issue_reconciliation_at).to be_within(0.1).of(Time.current)
           end
+        end
+
+        it "backfills open issues missing from the local cache" do
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([
+            OpenStruct.new(number: 52, pull_request: nil)
+          ])
+          allow(github_client).to receive(:issue).with(project.full_name, 52).and_return(
+            github_issue(52, id: 6002, title: "Recovered issue")
+          )
+
+          activity.execute(project_id: project.id)
+
+          issue = project.issues.find_by!(github_issue_id: 6002)
+          expect(issue.github_number).to eq(52)
+          expect(issue.github_state).to eq("open")
+          expect(issue.is_pull_request).to be false
+        end
+
+        it "does not backfill pull requests from the open issue reconciliation set" do
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([
+            OpenStruct.new(number: 52, pull_request: OpenStruct.new(html_url: "https://github.com/owner/repo/pull/52"))
+          ])
+          allow(github_client).to receive(:issue)
+
+          activity.execute(project_id: project.id)
+
+          expect(github_client).not_to have_received(:issue).with(project.full_name, 52)
+          expect(project.issues.find_by(github_number: 52)).to be_nil
         end
 
         it "skips reconciliation when truncated" do

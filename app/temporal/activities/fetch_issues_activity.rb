@@ -682,6 +682,8 @@ module Activities
         return 0
       end
 
+      backfill_open_issues(project, client, open_numbers)
+
       stale = project.issues
         .where(github_state: "open", is_pull_request: false, source: Issue::GITHUB_SOURCE)
       stale = stale.where.not(github_number: open_numbers) if open_numbers.any?
@@ -699,6 +701,20 @@ module Activities
       end
 
       count
+    end
+
+    def backfill_open_issues(project, client, open_issue_numbers)
+      return if open_issue_numbers.empty?
+
+      existing_open_numbers = project.issues
+        .where(github_state: "open", is_pull_request: false, github_number: open_issue_numbers)
+        .pluck(:github_number)
+        .to_set
+
+      (open_issue_numbers - existing_open_numbers.to_a).each do |number|
+        github_issue = client.issue(project.full_name, number)
+        sync_issue(project, github_issue)
+      end
     end
 
     def issue_reconciliation_due?(project)
