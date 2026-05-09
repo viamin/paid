@@ -97,6 +97,28 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.agent_type).to eq("codex")
     end
 
+    it "records a provider selection decision for queued runs" do
+      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
+      user.settings.update!(default_agent_provider: codex_provider.routing_key)
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      decision = agent_run.orchestration_decisions.where(decision_type: "select_agent").find_by(actor: "provider_selection")
+
+      expect(decision).to be_present
+      expect(decision.context["decision_status"]).to eq("applied")
+      expect(decision.outputs).to include(
+        "outcome" => "selected",
+        "selection" => include(
+          "provider_id" => codex_provider.id,
+          "provider_key" => "codex",
+          "agent_type" => "codex"
+        )
+      )
+      expect(decision.inputs.dig("policy_constraints", "default_agent_provider")).to eq(codex_provider.routing_key)
+    end
+
     it "uses the tenant API key provider for the default provider" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       create(:tenant_setting, account: user.account,

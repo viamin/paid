@@ -18,6 +18,7 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      respect_requested = input.key?(:agent_type) || input.key?(:provider_id)
       provider_id, agent_type = resolve_provider_selection(
         project: project,
         requested_agent_type: requested_agent_type,
@@ -78,6 +79,18 @@ module Activities
         )
         return { agent_run_id: agent_run.id, queued: false, duplicate: true }
       end
+
+      AgentRuns::ProviderSelectionLogger.call(
+        project: project,
+        issue: issue,
+        agent_run: agent_run,
+        goal: goal,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: input[:provider_id],
+        respect_requested: respect_requested,
+        resolved_provider_id: provider_id,
+        resolved_agent_type: agent_type
+      )
 
       logger.info(
         message: "concurrency.agent_run_queued",
