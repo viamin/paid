@@ -38,6 +38,17 @@ class ProjectsController < ApplicationController
     @merge_notification_issue_ids = current_user.issue_merge_subscriptions.on_merge
       .where(issue_id: visible_issue_ids)
       .pluck(:issue_id)
+    @paused_agent_runs = @project.agent_runs.paused
+      .includes(:issue, :provider, project: [ :created_by, :account ])
+      .order(paused_at: :desc, created_at: :desc)
+      .to_a
+    AgentRun.preload_final_provider_records(@paused_agent_runs)
+    @paused_runs_by_issue_id = @paused_agent_runs.filter_map do |run|
+      [ run.issue_id, run ] if run.issue_id.present?
+    end.to_h
+    @paused_runs_by_pr_number = @paused_agent_runs.filter_map do |run|
+      [ run.source_pull_request_number, run ] if run.source_pull_request_number.present?
+    end.to_h
     @pr_numbers_with_queued_auto_continue = @project.pr_numbers_with_queued_auto_continue
     @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs
     @cost_budgets = @project.cost_budgets.load

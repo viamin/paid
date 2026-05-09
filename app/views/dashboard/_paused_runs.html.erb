@@ -1,0 +1,58 @@
+<% if paused_runs.any? %>
+  <div class="overflow-hidden rounded-lg border border-yellow-200 bg-yellow-50 shadow">
+    <div class="flex items-center justify-between gap-4 border-b border-yellow-200 px-4 py-4">
+      <div>
+        <h3 class="text-base font-semibold text-yellow-900">Paused Runs</h3>
+        <p class="mt-1 text-sm text-yellow-800">These runs are blocking Paid until someone resumes or inspects them.</p>
+      </div>
+      <span class="inline-flex items-center rounded-full bg-yellow-200 px-2.5 py-1 text-xs font-semibold text-yellow-900">
+        <%= paused_runs.size %>
+      </span>
+    </div>
+    <ul role="list" class="divide-y divide-yellow-200">
+      <% paused_runs.each do |run| %>
+        <li class="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <%= link_to run.project.full_name, project_path(run.project), class: "text-sm font-medium text-yellow-950 hover:text-yellow-700" %>
+              <span class="inline-flex items-center rounded-full bg-yellow-200 px-2 py-0.5 text-xs font-medium text-yellow-900">
+                <%= guardrail_violation_label_for(run) %>
+              </span>
+            </div>
+            <p class="mt-1 text-sm text-gray-900">
+              <% if run.source_pull_request_number.present? %>
+                PR #<%= run.source_pull_request_number %>
+              <% elsif run.issue.present? %>
+                Issue #<%= run.issue.github_number %>
+              <% else %>
+                Run #<%= run.id %>
+              <% end %>
+              <% if run.issue.present? %>
+                <span class="text-gray-600">· <%= run.issue.title.truncate(80) %></span>
+              <% end %>
+            </p>
+            <p class="mt-1 text-sm text-gray-700">
+              <%= guardrail_violation_detail_for(run) || "Paused by a guardrail." %>
+            </p>
+            <p class="mt-1 text-xs text-gray-500">Paused <%= time_ago_in_words(run.paused_at || run.updated_at) %> ago</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <%= button_to "Resume",
+                  resume_project_agent_run_path(run.project, run),
+                  method: :post,
+                  params: { return_to: dashboard_path },
+                  form: { data: { turbo_confirm: "Resume this paused agent run?" } },
+                  class: "inline-flex items-center rounded-md bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-500" %>
+            <%= link_to "View run",
+                  project_agent_run_path(run.project, run),
+                  class: "inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-yellow-900 ring-1 ring-inset ring-yellow-300 hover:bg-yellow-100" %>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+<% else %>
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 text-sm text-gray-500">No paused runs right now.</div>
+  </div>
+<% end %>
