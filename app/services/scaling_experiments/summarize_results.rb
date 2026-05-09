@@ -12,6 +12,7 @@ module ScalingExperiments
 
     def call
       summaries = value_summaries
+      analysis = parallelism_analysis
       control = summaries.find { |summary| summary["assigned_value"] == scaling_experiment.control_value }
       leader = summaries.max_by do |summary|
         [
@@ -29,6 +30,8 @@ module ScalingExperiments
         "cohort_strategy" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "label_template"),
         "sample_count" => summaries.sum { |summary| summary["sample_count"] },
         "values" => summaries,
+        "parallelism_analysis" => analysis,
+        "allocator_decision" => analysis["allocator_decision"],
         "leading_value" => leader&.fetch("assigned_value", nil),
         "improvement_over_control" => improvement_over_control(control:, leader:)
       }.compact
@@ -44,10 +47,7 @@ module ScalingExperiments
     end
 
     def value_summaries
-      assignments_by_value = scaling_experiment.scaling_experiment_assignments
-        .recorded
-        .includes(:scaling_observation)
-        .group_by(&:assigned_value)
+      assignments_by_value = loaded_assignments.group_by(&:assigned_value)
 
       scaling_experiment.values_tested.map(&:to_i).uniq.sort.map do |value|
         assignments = assignments_by_value.fetch(value, [])
@@ -63,6 +63,21 @@ module ScalingExperiments
           "status_tally" => observations.map(&:status).tally
         }
       end
+    end
+
+    def loaded_assignments
+      @loaded_assignments ||= scaling_experiment.scaling_experiment_assignments
+        .recorded
+        .includes(:scaling_observation)
+        .to_a
+    end
+
+    def recorded_observations
+      @recorded_observations ||= loaded_assignments.filter_map(&:scaling_observation)
+    end
+
+    def parallelism_analysis
+      ScalingObservations::AnalyzeParallelism.call(observations: recorded_observations).to_h
     end
 
     def improvement_over_control(control:, leader:)

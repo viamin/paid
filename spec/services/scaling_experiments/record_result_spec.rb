@@ -62,14 +62,8 @@ RSpec.describe ScalingExperiments::RecordResult do
     assignment = result.assignment.reload
     experiment.reload
 
-    expect(assignment.outcome_status).to eq("recorded")
-    expect_recorded_summary(assignment)
-    expect(experiment.cached_summary).to include(
-      "status" => "collecting",
-      "primary_metric" => "success_rate",
-      "sample_count" => 1,
-      "values" => array_including(hash_including("assigned_value" => 2, "sample_count" => 1))
-    )
+    expect_assignment_snapshot(assignment)
+    expect_collecting_summary(experiment)
   end
 
   it "completes the experiment once every value reaches the minimum sample count" do
@@ -81,6 +75,33 @@ RSpec.describe ScalingExperiments::RecordResult do
     experiment.reload
 
     expect(experiment.status).to eq("completed")
-    expect(experiment.cached_summary).to include("status" => "ready_for_analysis", "leading_value" => 1)
+    expect(experiment.cached_summary).to include(
+      "status" => "ready_for_analysis",
+      "leading_value" => 1,
+      "parallelism_analysis" => hash_including(
+        "status" => "ready",
+        "recommended_agent_count" => 1
+      ),
+      "allocator_decision" => hash_including(
+        "requested_agent_count" => 1,
+        "max_batch_size" => 1
+      )
+    )
+  end
+
+  def expect_assignment_snapshot(assignment)
+    expect(assignment.outcome_status).to eq("recorded")
+    expect_recorded_summary(assignment)
+  end
+
+  def expect_collecting_summary(experiment)
+    expect(experiment.cached_summary).to include(
+      "status" => "collecting",
+      "primary_metric" => "success_rate",
+      "sample_count" => 1,
+      "values" => array_including(hash_including("assigned_value" => 2, "sample_count" => 1)),
+      "parallelism_analysis" => hash_including("status" => "insufficient_data")
+    )
+    expect(experiment.cached_summary).not_to have_key("allocator_decision")
   end
 end
