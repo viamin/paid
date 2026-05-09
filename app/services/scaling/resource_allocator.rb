@@ -73,7 +73,7 @@ module Scaling
       build_allocation(
         agent_count: agent_count,
         max_iterations: 3,
-        parallelism_level: [ agent_count, inputs.parallelizable_group_count ].min,
+        parallelism_level: parallelism_cap(agent_count),
         source: :experiment,
         reason: "experiment leading value=#{value} success_rate=#{format_rate(summary_value(best_summary, :success_rate, default: 0.0))}"
       )
@@ -84,7 +84,7 @@ module Scaling
       build_allocation(
         agent_count: conservative_agents,
         max_iterations: 3,
-        parallelism_level: [ conservative_agents, inputs.parallelizable_group_count ].min,
+        parallelism_level: parallelism_cap(conservative_agents),
         source: :fallback,
         reason: fallback_reason
       )
@@ -113,7 +113,7 @@ module Scaling
 
     def compute_group_stats(group)
       success_rate = group.count(&:success).to_f / group.size
-      avg_duration = group.sum(&:duration_seconds).to_f / group.size
+      avg_duration = group.sum { |obs| obs.duration_seconds.to_i }.to_f / group.size
       avg_cost = group.sum(&:total_cost_cents).to_f / group.size
       avg_iterations = group.sum { |obs| obs.total_iterations.to_i }.to_f / group.size
 
@@ -192,10 +192,10 @@ module Scaling
       stats = grouped[best_value]
       observed = stats&.dig(:observations)&.map { |obs| obs.parallelism_observed.to_i } || []
 
-      return [ best_value, inputs.parallelizable_group_count ].min if observed.empty?
+      return parallelism_cap(best_value) if observed.empty?
 
       avg_parallelism = (observed.sum.to_f / observed.size).round
-      [ avg_parallelism, best_value, inputs.parallelizable_group_count ].min
+      parallelism_cap([ avg_parallelism, best_value ].min)
     end
 
     def conservative_agent_count
@@ -239,6 +239,10 @@ module Scaling
 
     def summary_value(summary, key, default: nil)
       summary[key] || summary[key.to_s] || default
+    end
+
+    def parallelism_cap(agent_count)
+      [ agent_count, inputs.parallelism_limit ].min
     end
 
     def fallback_reason

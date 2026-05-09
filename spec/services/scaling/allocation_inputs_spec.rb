@@ -11,7 +11,8 @@ RSpec.describe Scaling::AllocationInputs do
         max_agent_count: 4,
         max_duration_seconds: 300,
         dependency_edge_count: 3,
-        parallelizable_group_count: 2
+        parallelizable_group_count: 2,
+        max_parallelism: 4
       )
 
       expect(inputs.task_count).to eq(5)
@@ -20,6 +21,7 @@ RSpec.describe Scaling::AllocationInputs do
       expect(inputs.max_duration_seconds).to eq(300)
       expect(inputs.dependency_edge_count).to eq(3)
       expect(inputs.parallelizable_group_count).to eq(2)
+      expect(inputs.max_parallelism).to eq(4)
     end
 
     it "applies defaults for optional parameters" do
@@ -30,6 +32,7 @@ RSpec.describe Scaling::AllocationInputs do
       expect(inputs.max_duration_seconds).to eq(0)
       expect(inputs.dependency_edge_count).to eq(0)
       expect(inputs.parallelizable_group_count).to eq(0)
+      expect(inputs.max_parallelism).to be_nil
     end
 
     it "raises on zero task_count" do
@@ -46,6 +49,10 @@ RSpec.describe Scaling::AllocationInputs do
 
     it "raises on negative dependency_edge_count" do
       expect { described_class.new(task_count: 3, dependency_edge_count: -1) }.to raise_error(ArgumentError, /dependency_edge_count must be non-negative/)
+    end
+
+    it "raises on negative max_parallelism" do
+      expect { described_class.new(task_count: 3, max_parallelism: -1) }.to raise_error(ArgumentError, /max_parallelism must be non-negative/)
     end
 
     it "is frozen" do
@@ -108,6 +115,23 @@ RSpec.describe Scaling::AllocationInputs do
     it "returns 0 for a single task with no edges or parallelism" do
       inputs = described_class.new(task_count: 1)
       expect(inputs.complexity_score).to eq(0.3)
+    end
+  end
+
+  describe "#parallelism_limit" do
+    it "uses the configured max parallelism when present" do
+      inputs = described_class.new(task_count: 6, max_parallelism: 4)
+      expect(inputs.parallelism_limit).to eq(4)
+    end
+
+    it "falls back to task_count when max parallelism is unspecified" do
+      inputs = described_class.new(task_count: 6)
+      expect(inputs.parallelism_limit).to eq(6)
+    end
+
+    it "never exceeds task_count" do
+      inputs = described_class.new(task_count: 3, max_parallelism: 8)
+      expect(inputs.parallelism_limit).to eq(3)
     end
   end
 end

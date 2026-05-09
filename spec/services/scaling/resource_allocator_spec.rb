@@ -52,6 +52,19 @@ RSpec.describe Scaling::ResourceAllocator do
 
         expect(result.agent_count).to be <= 3
       end
+
+      it "caps fallback parallelism by max parallelism width" do
+        inputs = Scaling::AllocationInputs.new(
+          task_count: 4,
+          max_agent_count: 8,
+          parallelizable_group_count: 1,
+          max_parallelism: 4
+        )
+
+        result = described_class.call(inputs: inputs)
+
+        expect(result.parallelism_level).to eq(2)
+      end
     end
 
     context "with too few observations" do
@@ -151,6 +164,22 @@ RSpec.describe Scaling::ResourceAllocator do
 
         expect(result.source).to eq(:experiment)
         expect(result.agent_count).to eq(2)
+      end
+
+      it "caps experiment parallelism by max parallelism width" do
+        inputs = Scaling::AllocationInputs.new(
+          task_count: 4,
+          max_agent_count: 8,
+          parallelizable_group_count: 1,
+          max_parallelism: 4
+        )
+        summaries = [
+          { assigned_value: 4, success_rate: 0.8, avg_duration_seconds: 150, sample_count: 10 }
+        ]
+
+        result = described_class.call(inputs: inputs, experiment_summaries: summaries)
+
+        expect(result.parallelism_level).to eq(4)
       end
 
       it "ignores unusable experiment cohorts when selecting the leader" do
@@ -305,11 +334,12 @@ RSpec.describe Scaling::ResourceAllocator do
     end
 
     context "with parallelism recommendation" do
-      it "limits parallelism to parallelizable group count" do
+      it "limits parallelism to configured max parallelism width" do
         inputs = Scaling::AllocationInputs.new(
           task_count: 6,
           max_agent_count: 8,
-          parallelizable_group_count: 2
+          parallelizable_group_count: 2,
+          max_parallelism: 2
         )
         observations = 6.times.map do
           build_observation(
@@ -329,7 +359,7 @@ RSpec.describe Scaling::ResourceAllocator do
         inputs = Scaling::AllocationInputs.new(
           task_count: 4,
           max_agent_count: 2,
-          parallelizable_group_count: 4
+          max_parallelism: 4
         )
         observations = 6.times.map do
           build_observation(agent_count: 2, success: true, parallelism_observed: 2, duration_seconds: 120)
@@ -338,6 +368,31 @@ RSpec.describe Scaling::ResourceAllocator do
         result = described_class.call(inputs: inputs, observations: observations)
 
         expect(result.parallelism_level).to be <= 2
+      end
+
+      it "uses max parallelism width instead of parallel group count" do
+        inputs = Scaling::AllocationInputs.new(
+          task_count: 4,
+          max_agent_count: 8,
+          parallelizable_group_count: 1,
+          max_parallelism: 4
+        )
+        observations = 6.times.map do
+          build_observation(agent_count: 4, success: true, parallelism_observed: 4, duration_seconds: 120)
+        end
+
+        result = described_class.call(inputs: inputs, observations: observations)
+
+        expect(result.parallelism_level).to eq(4)
+      end
+
+      it "treats nil durations as zero when averaging observation cohorts" do
+        observations = [
+          *3.times.map { build_observation(agent_count: 2, success: true, duration_seconds: nil) },
+          *3.times.map { build_observation(agent_count: 2, success: true, duration_seconds: 120) }
+        ]
+
+        expect { described_class.call(inputs: default_inputs, observations: observations) }.not_to raise_error
       end
     end
 

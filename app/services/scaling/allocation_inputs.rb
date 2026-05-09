@@ -3,7 +3,7 @@
 module Scaling
   class AllocationInputs
     attr_reader :task_count, :budget_cents, :max_agent_count, :max_duration_seconds,
-                :dependency_edge_count, :parallelizable_group_count
+                :dependency_edge_count, :parallelizable_group_count, :max_parallelism
 
     def initialize(
       task_count:,
@@ -11,7 +11,8 @@ module Scaling
       max_agent_count: 8,
       max_duration_seconds: 0,
       dependency_edge_count: 0,
-      parallelizable_group_count: 0
+      parallelizable_group_count: 0,
+      max_parallelism: nil
     )
       @task_count = Integer(task_count)
       @budget_cents = Integer(budget_cents)
@@ -19,6 +20,7 @@ module Scaling
       @max_duration_seconds = Integer(max_duration_seconds)
       @dependency_edge_count = Integer(dependency_edge_count)
       @parallelizable_group_count = Integer(parallelizable_group_count)
+      @max_parallelism = max_parallelism.nil? ? nil : Integer(max_parallelism)
 
       validate!
       freeze
@@ -45,6 +47,11 @@ module Scaling
       parallelism_potential * 0.4 + edge_density * 0.3 + (1.0 / task_count) * 0.3
     end
 
+    def parallelism_limit
+      configured_limit = max_parallelism if max_parallelism&.positive?
+      [ configured_limit || task_count, task_count ].min
+    end
+
     private
 
     def validate!
@@ -54,6 +61,7 @@ module Scaling
       raise ArgumentError, "max_duration_seconds must be non-negative" if max_duration_seconds.negative?
       raise ArgumentError, "dependency_edge_count must be non-negative" if dependency_edge_count.negative?
       raise ArgumentError, "parallelizable_group_count must be non-negative" if parallelizable_group_count.negative?
+      raise ArgumentError, "max_parallelism must be non-negative" if max_parallelism&.negative?
     end
   end
 end
