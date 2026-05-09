@@ -34,11 +34,20 @@ module Providers
       tokens_by_provider = seven_day_token_data[:tokens]
       fallback_stats = compute_fallback_stats(seven_day_runs)
 
-      all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, attempt_metrics)
+      status_rate_limits = status_based_rate_limit_counts(seven_day_runs)
+
+      all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, attempt_metrics, status_rate_limits)
       all_keys.index_with do |key|
         attempt_stats = attempt_metrics.fetch(key, {})
         attempts = attempt_stats.fetch(:attempts, 0)
         successes = attempt_stats.fetch(:successes, 0)
+
+        # Use the higher of attempt-level and status-based rate-limit counts so
+        # runs marked rate_limited without providers_attempted data (e.g. via
+        # AgentRun#rate_limit!) are not silently undercounted.
+        attempt_rate_limits = attempt_stats.fetch(:rate_limits, 0)
+        status_rate_limits_count = status_rate_limits.fetch(key) { 0 }
+        rate_limits = [ attempt_rate_limits, status_rate_limits_count ].max
 
         {
           runs_7d: run_counts.fetch(key) { 0 },
@@ -51,7 +60,7 @@ module Providers
           fallback_rate: fallback_stats.dig(key, :rate) || 0.0,
           fallback_total: fallback_stats.dig(key, :total) || 0,
           fallback_switched: fallback_stats.dig(key, :switched) || 0,
-          rate_limit_events_7d: attempt_stats.fetch(:rate_limits, 0),
+          rate_limit_events_7d: rate_limits,
           error_events_7d: attempt_stats.fetch(:errors, 0),
           avg_attempt_duration_seconds: attempt_stats.fetch(:avg_duration_seconds, 0.0)
         }
@@ -124,6 +133,12 @@ module Providers
           rate: total.zero? ? 0.0 : (switched.to_f / total * 100).round(1)
         }
       end
+    end
+
+    def status_based_rate_limit_counts(runs)
+      runs.where(status: "rate_limited")
+        .group(Arel.sql(effective_provider_sql))
+        .count
     end
 
     def provider_attempt_metrics(since)

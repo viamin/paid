@@ -122,6 +122,18 @@ RSpec.describe Providers::UsageStats do
       end
     end
 
+    context "with status-based rate-limited runs missing providers_attempted data" do
+      before do
+        create(:agent_run, project: project, agent_type: "claude_code",
+          status: "rate_limited", created_at: 1.day.ago,
+          providers_attempted: [])
+      end
+
+      it "counts rate limit events from run status as fallback" do
+        expect(stats["claude"][:rate_limit_events_7d]).to eq(1)
+      end
+    end
+
     context "with runs outside the 7-day window" do
       before do
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
