@@ -258,6 +258,20 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include(project_agent_run_path(project, issue_run))
       end
 
+      it "shows named provider filter labels and omits unresolved routed ids" do
+        kept_provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_provider: kept_provider.routing_key)
+        create(:agent_run, project: project, final_provider: "provider:999999")
+        kept_provider.discard!
+
+        get agent_runs_path
+
+        option_text = parsed_html.css('select[name="q[effective_provider_eq]"] option').map { |option| option.text.squish }
+
+        expect(option_text).to include("Kimi K2.5")
+        expect(option_text).not_to include("provider:999999")
+      end
+
       it "shows the goal filter dropdown" do
         get agent_runs_path
 
@@ -1900,11 +1914,9 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:alert]).to eq("Only paused runs can be resumed.")
-        decision = OrchestrationDecision.last
-        expect(decision.actor).to eq("manual_resume")
-        expect(decision.decision_type).to eq("resume")
-        expect(decision.context["decision_status"]).to eq("noop")
-        expect(decision.agent_run).to eq(agent_run)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("running")
       end
 
       it "does not resume when the previous workflow cannot be cancelled" do

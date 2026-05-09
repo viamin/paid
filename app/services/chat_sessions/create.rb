@@ -83,7 +83,7 @@ module ChatSessions
 
     def resolved_provider
       @resolved_provider ||= if provider_id.present?
-        Provider.find(provider_id).tap do |provider|
+        Provider.kept_only.find(provider_id).tap do |provider|
           unless provider.user&.account_id == account.id
             raise ArgumentError, "provider must belong to the same account"
           end

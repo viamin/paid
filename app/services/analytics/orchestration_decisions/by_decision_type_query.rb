@@ -4,8 +4,6 @@ module Analytics
   module OrchestrationDecisions
     class ByDecisionTypeQuery < BaseQuery
       def call
-        total_count = distinct_count(orchestration_decisions_table[:id])
-
         scope = filtered_scope
           .left_joins(:agent_run)
 
@@ -14,8 +12,8 @@ module Analytics
           .pluck(
             orchestration_decisions_table[:decision_type],
             total_count,
-            distinct_count(orchestration_decisions_table[:project_id]),
-            distinct_count(orchestration_decisions_table[:actor]),
+            project_count,
+            actor_count,
             distinct_status_count("failed"),
             distinct_completed_run_count
           )

@@ -16,6 +16,11 @@ class DashboardController < ApplicationController
       .order("agent_runs.created_at DESC")
       .limit(20)
     AgentRun.preload_final_provider_records(@active_runs)
+    @paused_runs = live_agent_runs.paused.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
+      .order(paused_at: :desc, created_at: :desc)
+      .limit(20)
+      .to_a
+    AgentRun.preload_final_provider_records(@paused_runs)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)
@@ -62,6 +67,11 @@ class DashboardController < ApplicationController
   def knowledge_stats
     @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
     render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: @knowledge_stats }
+  end
+
+  def provider_health
+    @provider_health = Dashboard::ProviderHealth.call(account: current_account)
+    render partial: "dashboard/provider_health", locals: @provider_health
   end
 
   def queue_health

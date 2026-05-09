@@ -9,7 +9,7 @@ module AgentRuns
     def self.selected_provider(project:, provider_id:)
       return if provider_id.blank?
 
-      project.effective_owner&.providers&.find_by(id: provider_id)
+      project.effective_owner&.providers&.kept_only&.find_by(id: provider_id)
     end
 
     def initialize(project:, goal:, requested_agent_type: nil, requested_provider_id: nil, respect_requested: true, logger: nil)
@@ -55,7 +55,7 @@ module AgentRuns
       owner = project.effective_owner
       return [ nil, agent_type ] unless owner
 
-      provider = owner.providers.find_by(provider_key: provider_key)
+      provider = owner.providers.kept_only.find_by(provider_key: provider_key)
       provider ? [ provider.id, agent_type ] : [ nil, agent_type ]
     end
 
@@ -106,13 +106,13 @@ module AgentRuns
       return unless api_key
       return unless api_key.compatible_with?(base_provider.provider_key)
 
-      owner.providers.find_or_create_by!(
+      owner.providers.kept_only.find_or_create_by!(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
         provider_api_key: api_key
       )
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
-      owner.providers.find_by(
+      owner.providers.kept_only.find_by(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
         provider_api_key: api_key

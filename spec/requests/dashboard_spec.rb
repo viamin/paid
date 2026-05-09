@@ -65,7 +65,7 @@ RSpec.describe "Dashboard" do
         expect(chart).to be_present
       end
 
-      it "renders deferred turbo frame wiring for metrics, performance, knowledge, and queue health", :aggregate_failures do
+      it "renders deferred turbo frame wiring for metrics, performance, knowledge, provider health, and queue health", :aggregate_failures do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
@@ -74,16 +74,34 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[data-dashboard-frames-src='#{dashboard_knowledge_stats_path}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-provider-health[data-dashboard-frames-src='#{dashboard_provider_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-provider-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[src]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-provider-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
+      end
+
+      it "renders provider health above queue health in the dashboard shell" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-provider-health[data-dashboard-frames-src='#{dashboard_provider_health_path}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-health[data-dashboard-frames-src='#{dashboard_queue_health_path}']")).to be_present
+        provider_frame = doc.at_css("turbo-frame#dashboard-provider-health")
+        queue_frame = doc.at_css("turbo-frame#dashboard-queue-health")
+
+        expect(provider_frame).to be_present
+        expect(queue_frame).to be_present
+        expect(provider_frame.path).to be < queue_frame.path
       end
 
       it "wires queue health and frame serialization on the dashboard shell" do
@@ -91,7 +109,6 @@ RSpec.describe "Dashboard" do
 
         doc = Nokogiri::HTML(response.body)
         expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
-        expect(doc.at_css("turbo-frame#dashboard-queue-health[data-dashboard-frames-src='#{dashboard_queue_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
       end
 
@@ -236,6 +253,24 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Paused Project")
         expect(response.body).to include("34.0%")
         expect(response.body).to include(edit_project_path(project))
+      end
+
+      it "shows paused runs with resume actions on the dashboard" do
+        issue = create(:issue, :pull_request, project: project,
+          github_number: 88, title: "Handle paused runs better")
+        run = create(:agent_run, :paused, project: project, issue: issue,
+          source_pull_request_number: issue.github_number,
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { "details" => "Execution time limit of 3600s exceeded" })
+
+        get dashboard_path
+
+        expect(response.body).to include("Paused Runs")
+        expect(response.body).to include(project.full_name)
+        expect(response.body).to include("PR ##{issue.github_number}")
+        expect(response.body).to include("Execution time limit of 3600s exceeded")
+        expect(response.body).to include(resume_project_agent_run_path(project, run))
+        expect(response.body).to include("View run")
       end
 
       it "does not link viewers to quality pause review actions" do
@@ -501,6 +536,48 @@ RSpec.describe "Dashboard" do
       get dashboard_queue_health_path
 
       expect(Scaling::QueueMonitor).to have_received(:cached_for_account).with(account)
+    end
+  end
+
+  describe "GET /dashboard/provider_health" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns provider health partial within a turbo frame" do
+      provider = user.providers.find_by!(provider_key: Provider.default_provider_key, auth_type: "subscription")
+      create(:provider_state, :rate_limited, user: user, provider_name: provider.state_key)
+
+      get dashboard_provider_health_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-provider-health")
+      expect(response.body).to include("Provider Health")
+      expect(response.body).to include(provider.display_name)
+      expect(response.body).to include("Rate limited")
+      expect(response.body).to include("Configured")
+    end
+
+    it "uses plural grammar for multiple recovering providers" do
+      create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
+      first_provider = user.providers.find_by!(provider_key: Provider.default_provider_key, auth_type: "subscription")
+      second_provider_key = (ProviderSupport.container_executable_provider_keys - [ first_provider.provider_key ]).first || "cursor"
+      second_provider = create(:provider, user: user, provider_key: second_provider_key, auth_type: "subscription")
+
+      [ first_provider, second_provider ].each do |provider|
+        create(
+          :provider_state,
+          :circuit_open,
+          user: user,
+          provider_name: provider.state_key,
+          circuit_opened_at: 31.seconds.ago
+        )
+      end
+
+      get dashboard_provider_health_path
+
+      expect(response.body).to include("2 providers are recovering in half-open mode.")
     end
   end
 

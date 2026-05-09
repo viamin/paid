@@ -9,6 +9,7 @@ module ApplicationHelper
   AGENT_RUN_STATUS_STYLES = {
     "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
     "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
+    "paused" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Paused" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
     "no_output" => { bg: "bg-slate-100", text: "text-slate-600", label: "No Output" },
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
@@ -25,6 +26,19 @@ module ApplicationHelper
       styles[:label],
       class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
     )
+  end
+
+  def guardrail_violation_type_for(agent_run)
+    agent_run.guardrail_violation_type.presence ||
+      agent_run.guardrail_context&.dig("violation_type").presence
+  end
+
+  def guardrail_violation_label_for(agent_run)
+    guardrail_violation_type_for(agent_run)&.tr("_", " ")&.capitalize || "Guardrail violation"
+  end
+
+  def guardrail_violation_detail_for(agent_run)
+    agent_run.guardrail_context&.dig("details").presence
   end
 
   def agent_harness_auth_url(provider)
@@ -521,7 +535,7 @@ module ApplicationHelper
     end
     return {} if provider_ids_by_owner_id.empty?
 
-    Provider.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
+    Provider.with_discarded.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
       .index_by { |provider| [ provider.user_id, provider.id ] }
   end
 
@@ -536,7 +550,7 @@ module ApplicationHelper
     end
     return {} if owner_ids_by_provider_key.empty?
 
-    Provider.where(
+    Provider.with_discarded.where(
       user_id: owner_ids_by_provider_key.values.flatten.uniq,
       provider_key: owner_ids_by_provider_key.keys
     ).ordered.group_by { |provider| [ provider.user_id, provider.provider_key ] }
