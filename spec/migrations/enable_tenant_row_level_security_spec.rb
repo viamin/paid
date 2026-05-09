@@ -9,6 +9,7 @@ require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
+require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_strategy_versions")
 require Rails.root.join("db/migrate/20260508014445_create_configuration_bundles")
 require Rails.root.join("db/migrate/20260508020000_add_runtime_fields_to_configuration_bundles")
 
@@ -23,6 +24,7 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   let(:knowledge_recommendations_migration) { EnableRlsOnKnowledgeRecommendations.new }
   let(:issue_merge_subscriptions_migration) { EnableRlsOnIssueMergeSubscriptions.new }
   let(:strategy_experiment_tables_migration) { EnableRlsOnStrategyExperimentTables.new }
+  let(:strategy_rls_migration) { EnableRlsOnStrategiesAndStrategyVersions.new }
   let(:configuration_bundles_migration) { CreateConfigurationBundles.new }
   let(:configuration_bundle_runtime_fields_migration) { AddRuntimeFieldsToConfigurationBundles.new }
 
@@ -70,6 +72,7 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   end
 
   def disable_later_rls_migrations
+    strategy_rls_migration.down if strategies_have_rls?
     strategy_experiment_tables_migration.down if strategy_experiment_tables_have_rls?
     issue_merge_subscriptions_migration.down if issue_merge_subscriptions_have_rls?
     knowledge_recommendations_migration.down if knowledge_recommendations_has_rls?
@@ -87,6 +90,7 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
     knowledge_recommendations_migration.up unless knowledge_recommendations_has_rls?
     issue_merge_subscriptions_migration.up unless issue_merge_subscriptions_have_rls?
     strategy_experiment_tables_migration.up unless strategy_experiment_tables_have_rls?
+    strategy_rls_migration.up unless strategies_have_rls?
   end
 
   def issue_merge_subscriptions_have_rls?
@@ -99,6 +103,10 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
       strategy_experiment_variants
       strategy_experiment_assignments
     ].all? { |table| tenant_policy_count(table).positive? }
+  end
+
+  def strategies_have_rls?
+    %w[strategies strategy_versions].any? { |table| tenant_policy_count(table).positive? }
   end
 
   def knowledge_recommendations_has_rls?
