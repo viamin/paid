@@ -26,6 +26,8 @@ module ScalingExperiments
         "status" => scaling_experiment.sufficient_samples? ? "ready_for_analysis" : "collecting",
         "dimension" => scaling_experiment.dimension,
         "control_value" => scaling_experiment.control_value,
+        "primary_metric" => primary_metric,
+        "cohort_strategy" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "label_template"),
         "sample_count" => summaries.sum { |summary| summary["sample_count"] },
         "values" => summaries,
         "parallelism_analysis" => analysis,
@@ -39,18 +41,13 @@ module ScalingExperiments
 
     attr_reader :scaling_experiment
 
-    def recorded_observations
-      @recorded_observations ||= scaling_experiment.scaling_experiment_assignments
-        .recorded
-        .includes(:scaling_observation)
-        .filter_map(&:scaling_observation)
+    def primary_metric
+      metric = scaling_experiment.outcome_metrics.find { |candidate| candidate["primary"] == true }
+      metric&.fetch("key", nil)
     end
 
     def value_summaries
-      assignments_by_value = scaling_experiment.scaling_experiment_assignments
-        .recorded
-        .includes(:scaling_observation)
-        .group_by(&:assigned_value)
+      assignments_by_value = loaded_assignments.group_by(&:assigned_value)
 
       scaling_experiment.values_tested.map(&:to_i).uniq.sort.map do |value|
         assignments = assignments_by_value.fetch(value, [])
@@ -66,6 +63,17 @@ module ScalingExperiments
           "status_tally" => observations.map(&:status).tally
         }
       end
+    end
+
+    def loaded_assignments
+      @loaded_assignments ||= scaling_experiment.scaling_experiment_assignments
+        .recorded
+        .includes(:scaling_observation)
+        .to_a
+    end
+
+    def recorded_observations
+      @recorded_observations ||= loaded_assignments.filter_map(&:scaling_observation)
     end
 
     def parallelism_analysis

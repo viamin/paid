@@ -45,6 +45,7 @@ module ScalingExperiments
     def build_outcome_summary
       {
         "observation_id" => scaling_observation.id,
+        "cohort_label" => assignment.execution_plan["cohort_label"],
         "status" => scaling_observation.status,
         "success" => scaling_observation.success,
         "parallel_execution" => scaling_observation.parallel_execution,
