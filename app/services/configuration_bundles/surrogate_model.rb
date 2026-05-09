@@ -31,7 +31,7 @@ module ConfigurationBundles
       raise ArgumentError, "project is required when scope is not provided" unless project
 
       BundleOutcome
-        .includes(:configuration_bundle, :agent_run)
+        .includes(:configuration_bundle, agent_run: :project)
         .joins(agent_run: :project)
         .where(agent_runs: { project_id: project.id })
         .where.not(quality_score: nil)
