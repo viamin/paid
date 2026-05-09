@@ -1479,7 +1479,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
     t.jsonb "review_settings", default: {}, null: false
     t.string "scheduler_pause_reason"
     t.datetime "scheduler_paused_at"
-    t.jsonb "screenshot_settings", default: {}, null: false, comment: "Per-project screenshot capture configuration and detection metadata."
+    t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.integer "token_limit_warning_threshold", default: 80, null: false

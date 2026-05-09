@@ -164,6 +164,9 @@ module Activities
         escalation_dismissed: escalation_dismissed?(issue),
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
+        draft_review_count: issue.draft_review_count,
+        review_goal_retry_count: issue.review_goal_retry_count,
+        pr_followup_count: issue.pr_followup_count,
         draft: issue.pr_review_phase.in?(%w[draft restarted])
       }
     end
