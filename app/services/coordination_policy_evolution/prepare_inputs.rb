@@ -72,7 +72,7 @@ module CoordinationPolicyEvolution
     end
 
     def performance_summary
-      decision_count = scoped_decisions.count
+      decision_count = outcome_counts.values.sum
       failure_count = count_outcomes(FAILURE_OUTCOMES)
       noop_count = count_outcomes(NOOP_OUTCOMES)
       success_count = decision_count - failure_count - noop_count
