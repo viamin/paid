@@ -8,12 +8,14 @@
         <ul role="list" class="divide-y divide-gray-200">
           <% statuses = local_assigns.fetch(:issue_lifecycle_statuses, {}) %>
           <% paid_prs_by_issue_id = local_assigns.fetch(:paid_prs_by_issue_id, {}) %>
+          <% paused_runs_by_issue_id = local_assigns.fetch(:paused_runs_by_issue_id, {}) %>
           <% issues.each do |issue| %>
             <% issue_locals = {
               issue: issue,
               project: project,
               lifecycle_status: statuses[issue.id],
-              paid_pr: paid_prs_by_issue_id[issue.id]
+              paid_pr: paid_prs_by_issue_id[issue.id],
+              paused_run: paused_runs_by_issue_id[issue.id]
             } %>
             <% if local_assigns.key?(:merge_notification_issue_ids) %>
               <% issue_locals[:merge_notification_issue_ids] = local_assigns[:merge_notification_issue_ids] %>

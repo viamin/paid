@@ -255,6 +255,24 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include(edit_project_path(project))
       end
 
+      it "shows paused runs with resume actions on the dashboard" do
+        issue = create(:issue, :pull_request, project: project,
+          github_number: 88, title: "Handle paused runs better")
+        run = create(:agent_run, :paused, project: project, issue: issue,
+          source_pull_request_number: issue.github_number,
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { "details" => "Execution time limit of 3600s exceeded" })
+
+        get dashboard_path
+
+        expect(response.body).to include("Paused Runs")
+        expect(response.body).to include(project.full_name)
+        expect(response.body).to include("PR ##{issue.github_number}")
+        expect(response.body).to include("Execution time limit of 3600s exceeded")
+        expect(response.body).to include(resume_project_agent_run_path(project, run))
+        expect(response.body).to include("View run")
+      end
+
       it "does not link viewers to quality pause review actions" do
         viewer = create(:user, :viewer, account: account)
         sign_in viewer

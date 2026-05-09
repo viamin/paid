@@ -33,6 +33,10 @@
     </div>
   <% end %>
 
+  <% if @paused_agent_runs.any? %>
+    <%= render "projects/paused_work", project: @project, paused_runs: @paused_agent_runs %>
+  <% end %>
+
   <div class="bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:px-6">
       <div class="flex items-center justify-between">
@@ -213,10 +217,12 @@
     <%= render "projects/issues", project: @project, issues: @issues,
                issue_lifecycle_statuses: @issue_lifecycle_statuses,
                paid_prs_by_issue_id: @paid_prs_by_issue_id,
+               paused_runs_by_issue_id: @paused_runs_by_issue_id,
                merge_notification_issue_ids: @merge_notification_issue_ids %>
 
     <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests,
                merge_notification_issue_ids: @merge_notification_issue_ids,
+               paused_runs_by_pr_number: @paused_runs_by_pr_number,
                pr_numbers_with_queued_auto_continue: @pr_numbers_with_queued_auto_continue,
                pr_numbers_with_active_runs: @pr_numbers_with_active_runs %>
 

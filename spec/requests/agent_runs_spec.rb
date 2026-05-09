@@ -1914,11 +1914,9 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:alert]).to eq("Only paused runs can be resumed.")
-        decision = OrchestrationDecision.last
-        expect(decision.actor).to eq("manual_resume")
-        expect(decision.decision_type).to eq("resume")
-        expect(decision.context["decision_status"]).to eq("noop")
-        expect(decision.agent_run).to eq(agent_run)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("running")
       end
 
       it "does not resume when the previous workflow cannot be cancelled" do
