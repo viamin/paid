@@ -68,6 +68,28 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def create_synced_issue_from_github(project, github_issue, relationships_parsed_at: nil)
+    create(:issue,
+      project: project,
+      github_issue_id: github_issue.id,
+      github_number: github_issue.number,
+      title: github_issue.title,
+      body: github_issue.body,
+      github_creator_login: github_issue.user.login,
+      github_state: github_issue.state,
+      labels: [ "paid-build" ],
+      is_pull_request: false,
+      github_created_at: github_issue.created_at,
+      github_updated_at: github_issue.updated_at,
+      relationships_parsed_at: relationships_parsed_at)
+  end
+
+  def expect_single_project_show_refresh(project)
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_refresh_to)
+      .with(project, :project_updates)
+      .once
+  end
+
   describe "#execute" do
     context "when issues are found" do
       let(:build_issue) do
@@ -797,19 +819,19 @@ RSpec.describe Activities::FetchIssuesActivity do
       it "broadcasts updated lists after closing stale items" do
         create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
 
-        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
 
         activity.execute(project_id: project.id)
 
-        issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
-        pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
+        expect_single_project_show_refresh(project)
+      end
 
-        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-          .with(anything, :project_updates, hash_including(target: issues_target))
-          .at_least(:once)
-        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-          .with(anything, :project_updates, hash_including(target: pull_requests_target))
-          .at_least(:once)
+      it "suppresses per-issue broadcasts during sync and broadcasts once at the end" do
+        create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
+
+        expect(Turbo::StreamsChannel).to receive(:broadcast_refresh_to).with(project, :project_updates).once.and_call_original
+
+        activity.execute(project_id: project.id)
       end
     end
 
@@ -1180,6 +1202,50 @@ RSpec.describe Activities::FetchIssuesActivity do
         child = project.issues.find_by!(github_number: 61)
         expect(child.parent_issue_id).to eq(parent.id)
       end
+
+      it "treats comment-only parent changes as visible sync changes for the batched refresh" do
+        parent_issue.body = "Just a regular body"
+        child_issue.body = "Just a regular body"
+
+        create_synced_issue_from_github(project, parent_issue, relationships_parsed_at: parent_issue.updated_at)
+        create_synced_issue_from_github(project, child_issue)
+
+        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 61, pages: 2).and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
+        ])
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        child = project.issues.find_by!(github_number: 61)
+
+        expect(child.reload.parent_issue_id).to eq(parent.id)
+        expect_single_project_show_refresh(project)
+      end
+
+      it "treats external dependency promotion as a visible sync change for the batched refresh" do
+        create_synced_issue_from_github(project, parent_issue, relationships_parsed_at: parent_issue.updated_at)
+        child = create_synced_issue_from_github(project, child_issue, relationships_parsed_at: child_issue.updated_at)
+        dependency = child.issue_dependencies.create!(
+          depends_on_owner: project.owner.downcase,
+          depends_on_repo: project.repo.downcase,
+          depends_on_number: 60
+        )
+
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        dependency.reload
+
+        expect(dependency.depends_on_issue_id).to eq(parent.id)
+        expect(dependency.depends_on_owner).to be_nil
+        expect(dependency.depends_on_repo).to be_nil
+        expect(dependency.depends_on_number).to be_nil
+        expect_single_project_show_refresh(project)
+      end
     end
 
     context "when paid-generated PRs exist on GitHub" do
@@ -1294,6 +1360,28 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(pr.is_pull_request).to be true
       end
 
+      it "skips end-of-sync broadcasts when an incremental poll makes no visible issue changes" do
+        create(:issue,
+          project: project,
+          github_issue_id: updated_issue.id,
+          github_number: updated_issue.number,
+          title: updated_issue.title,
+          body: updated_issue.body,
+          github_creator_login: updated_issue.user.login,
+          github_state: updated_issue.state,
+          labels: [ "paid-build" ],
+          is_pull_request: false,
+          github_created_at: updated_issue.created_at,
+          github_updated_at: updated_issue.updated_at,
+          relationships_parsed_at: updated_issue.updated_at)
+
+        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+
+        activity.execute(project_id: project.id)
+
+        expect(Turbo::StreamsChannel).not_to have_received(:broadcast_replace_to)
+      end
+
       it "promotes external dependencies after backfilling open pull requests" do
         dependency = create_parsed_issue_with_external_dependency(
           project,
@@ -1314,6 +1402,24 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(dependency.depends_on_owner).to be_nil
         expect(dependency.depends_on_repo).to be_nil
         expect(dependency.depends_on_number).to be_nil
+      end
+
+      it "refreshes the project show page when PR reconciliation only promotes an external dependency" do
+        create(:issue, :pull_request, project: project, github_number: 52, github_state: "open")
+        create_parsed_issue_with_external_dependency(
+          project,
+          issue_number: 53,
+          depends_on_number: 52
+        )
+
+        allow(github_client).to receive(:pull_requests).and_return([
+          OpenStruct.new(number: 52)
+        ])
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+        activity.execute(project_id: project.id)
+
+        expect_single_project_show_refresh(project)
       end
 
       it "does not close local pull requests when the open PR reconciliation is truncated" do
@@ -1511,6 +1617,27 @@ RSpec.describe Activities::FetchIssuesActivity do
           expect(issue.github_number).to eq(52)
           expect(issue.github_state).to eq("open")
           expect(issue.is_pull_request).to be false
+        end
+
+        it "refreshes the project show page when issue reconciliation only backfills a missing issue" do
+          create_synced_issue_from_github(project, updated_issue, relationships_parsed_at: updated_issue.updated_at)
+
+          allow(github_client).to receive(:issues).and_return([])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([
+            OpenStruct.new(number: updated_issue.number, pull_request: nil),
+            OpenStruct.new(number: 52, pull_request: nil)
+          ])
+          allow(github_client).to receive(:issue).with(project.full_name, 52).and_return(
+            github_issue(52, id: 6002, title: "Recovered issue")
+          )
+          allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+          activity.execute(project_id: project.id)
+
+          expect_single_project_show_refresh(project)
         end
 
         it "does not backfill pull requests from the open issue reconciliation set" do

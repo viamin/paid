@@ -153,6 +153,9 @@ class Project < ApplicationRecord
   has_many :service_containers, through: :project_service_containers
   has_many :decision_records, dependent: :destroy
   has_many :orchestration_decisions, dependent: :destroy
+  has_many :scaling_observations, dependent: :destroy
+  has_many :scaling_experiments, dependent: :destroy
+  has_many :scaling_experiment_assignments, dependent: :destroy
   has_many :llm_output_metrics, dependent: :destroy
   has_many :knowledge_runs, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
@@ -512,22 +515,26 @@ class Project < ApplicationRecord
     )
   end
 
+  def self.suppress_broadcasts
+    previous = Thread.current[:paid_suppress_project_broadcasts]
+    Thread.current[:paid_suppress_project_broadcasts] = true
+    yield
+  ensure
+    Thread.current[:paid_suppress_project_broadcasts] = previous
+  end
+
+  def self.broadcasts_suppressed?
+    Thread.current[:paid_suppress_project_broadcasts] == true
+  end
+
   def broadcast_issues_update
-    open_items = issues.where(github_state: "open").order(github_number: :desc)
-    displayed = open_items.issues_only.includes(:sub_issues).limit(25)
-    lifecycle_statuses = Issue.lifecycle_statuses(displayed)
-    paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
-      project: self, issue_ids: displayed.map(&:id)
-    )
-    broadcast_replace_to(
-      self, :project_updates,
-      target: ActionView::RecordIdentifier.dom_id(self, :issues),
-      partial: "projects/issues",
-      locals: { project: self, issues: displayed,
-                issue_lifecycle_statuses: lifecycle_statuses,
-                paid_prs_by_issue_id: paid_prs_by_issue_id,
-                merge_notification_issue_ids: Set.new }
-    )
+    return if self.class.broadcasts_suppressed?
+
+    # The project show page renders issue/PR sections from current_user
+    # settings and other per-user state, so a shared server-rendered partial
+    # broadcast can desynchronize viewers. Refresh lets each client re-render
+    # with its own settings.
+    broadcast_project_show_refresh
   end
 
   def broadcast_workflow_status_update
@@ -543,23 +550,17 @@ class Project < ApplicationRecord
   end
 
   def broadcast_pull_requests_update
-    open_items = issues.where(github_state: "open").order(github_number: :desc)
-    broadcast_replace_to(
-      self, :project_updates,
-      target: ActionView::RecordIdentifier.dom_id(self, :pull_requests),
-      partial: "projects/pull_requests",
-      locals: {
-        project: self,
-        pull_requests: open_items.pull_requests_only.limit(25),
-        pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
-        pr_numbers_with_active_runs: pr_numbers_with_active_runs,
-        merge_notification_issue_ids: Set.new
-      }
-    )
+    return if self.class.broadcasts_suppressed?
+
+    broadcast_project_show_refresh
   end
 
   def auto_release_enabled?
     auto_release_granularity != "off"
+  end
+
+  def broadcast_project_show_refresh
+    broadcast_refresh_to(self, :project_updates)
   end
 
   def auto_release_allows_bump?(bump_type)
