@@ -2113,6 +2113,84 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when a timeout invalidates the container before fallback" do
+      before do
+        user.providers.find_or_create_by!(provider_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+          raise Containers::Provision::TimeoutError, "execution timed out"
+        end
+      end
+
+      it "preserves the timeout instead of failing the fallback with no container" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
+        expect(agent_run.error_message).not_to include("No container provisioned")
+        expect(agent_run.providers_attempted).to contain_exactly(
+          hash_including("provider" => "claude_code", "success" => false, "error_type" => "timeout")
+        )
+        expect(agent_run.provider_switches).to eq(0)
+        expect(container_service).to have_received(:execute).once
+      end
+    end
+
+    context "when a timeout is followed by a transient reconnect failure during fallback availability checks" do
+      before do
+        user.providers.find_or_create_by!(provider_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+
+        execute_calls = 0
+        allow(container_service).to receive(:execute) do
+          execute_calls += 1
+          if execute_calls == 1
+            raise Containers::Provision::TimeoutError, "execution timed out"
+          else
+            exec_success
+          end
+        end
+
+        reconnect_calls = 0
+        allow(Containers::Provision).to receive(:reconnect) do
+          reconnect_calls += 1
+          if reconnect_calls == 2
+            raise wrap_error(
+              Containers::Provision::ProvisionError.new("Failed to reconnect to container: connection reset")
+            )
+          end
+
+          container_service
+        end
+      end
+
+      it "still attempts fallback and succeeds" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_provider: "cursor")
+        expect(agent_run.providers_attempted).to contain_exactly(
+          hash_including("provider" => "claude_code", "success" => false, "error_type" => "timeout"),
+          hash_including("provider" => "cursor", "success" => true)
+        )
+        expect(agent_run.provider_switches).to eq(1)
+      end
+    end
+
     context "when no container is provisioned" do
       it "raises an ApplicationError" do
         other_issue = create(:issue, project: project)

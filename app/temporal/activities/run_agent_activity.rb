@@ -258,6 +258,16 @@ module Activities
               duration_seconds: attempt_duration
             )
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
+            if container_unavailable_for_fallback?(agent_run)
+              logger.error(
+                message: "agent_execution.container_unavailable_breaking_provider_loop",
+                agent_run_id: agent_run.id,
+                container_id: agent_run.container_id,
+                error: e.message,
+                error_type: "rate_limited"
+              )
+              break
+            end
             insert_rate_limit_fallbacks!(
               providers: providers,
               index: index,
@@ -314,6 +324,16 @@ module Activities
               duration_seconds: attempt_duration
             )
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+            if container_unavailable_for_fallback?(agent_run)
+              logger.error(
+                message: "agent_execution.container_unavailable_breaking_provider_loop",
+                agent_run_id: agent_run.id,
+                container_id: agent_run.container_id,
+                error: e.message,
+                error_type: "timeout"
+              )
+              break
+            end
             # Fall through to next provider instead of breaking — per-provider
             # timeout should not fail the entire run when fallback providers
             # are available. Only break when max_execution_seconds is exceeded
@@ -1848,10 +1868,29 @@ module Activities
       return false unless error.message.match?(/container.*is not running/i)
       return false if agent_run.container_id.blank?
 
+      container_service = reconnect_container(agent_run)
+      return false unless container_service
+
+      !container_service.container_running?
+    end
+
+    def container_unavailable_for_fallback?(agent_run)
+      agent_run.reload
+      return true if agent_run.container_id.blank?
+
       container_service = reconnect_container(agent_run) rescue nil
       return false unless container_service
 
       !container_service.container_running?
+    rescue StandardError => e
+      return true if e.is_a?(ActiveRecord::RecordNotFound)
+      return true if e.is_a?(Temporalio::Error::ApplicationError) && e.type == "ContainerNotProvisioned"
+      return true if error_or_cause_matches?(e, Containers::Provision::ProvisionError) { |candidate|
+        candidate.message.match?(/\AContainer .* not found\z/)
+      }
+      return false if reconnect_failure?(e)
+
+      false
     end
 
     def container_exit_diagnostics(container_service)
