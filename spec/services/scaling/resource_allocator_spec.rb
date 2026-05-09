@@ -91,6 +91,20 @@ RSpec.describe Scaling::ResourceAllocator do
         result = described_class.call(inputs: default_inputs, observations: observations)
         expect(result.source).to eq(:fallback)
       end
+
+      it "excludes stale observations from scoring even when fresh ones exist" do
+        stale_high_count = 4.times.map do
+          build_observation(agent_count: 4, success: true, total_cost_cents: 100, duration_seconds: 80, created_at: 10.days.ago)
+        end
+        fresh_low_count = 6.times.map do
+          build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120)
+        end
+
+        result = described_class.call(inputs: default_inputs, observations: stale_high_count + fresh_low_count)
+
+        expect(result.source).to eq(:observations)
+        expect(result.agent_count).to eq(2)
+      end
     end
 
     context "with fresh sufficient observations showing clear winner" do
@@ -203,6 +217,41 @@ RSpec.describe Scaling::ResourceAllocator do
         result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
 
         expect(result.source).to eq(:fallback)
+      end
+    end
+
+    context "with nested cached_summary format from SummarizeResults" do
+      it "extracts per-value data from the values array" do
+        summaries = [
+          {
+            "status" => "ready_for_analysis",
+            "dimension" => "agent_count",
+            "sample_count" => 20,
+            "values" => [
+              { "assigned_value" => 1, "success_rate" => 0.4, "avg_duration_seconds" => 300, "sample_count" => 10, "avg_cost_cents" => 50.0 },
+              { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 10, "avg_cost_cents" => 100.0 }
+            ]
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+      end
+    end
+
+    context "with experiment-based budget constraint" do
+      it "caps agent count using experiment avg_cost_cents when no observations exist" do
+        inputs = Scaling::AllocationInputs.new(task_count: 8, max_agent_count: 8, budget_cents: 150)
+        summaries = [
+          { assigned_value: 4, success_rate: 0.8, avg_duration_seconds: 100, sample_count: 10, avg_cost_cents: 100.0 }
+        ]
+
+        result = described_class.call(inputs: inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(1)
       end
     end
 

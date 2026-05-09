@@ -92,12 +92,11 @@ module Scaling
     end
 
     def observations_fresh_and_sufficient?
-      return false if observations.size < MIN_OBSERVATIONS_FOR_CONFIDENCE
+      fresh_observations.size >= MIN_OBSERVATIONS_FOR_CONFIDENCE
+    end
 
-      latest = observations.max_by(&:created_at)
-      return false unless latest
-
-      latest.created_at > STALE_THRESHOLD.ago
+    def fresh_observations
+      @fresh_observations ||= observations.select { |obs| obs.created_at > STALE_THRESHOLD.ago }
     end
 
     def experiment_summaries_usable?
@@ -105,7 +104,7 @@ module Scaling
     end
 
     def group_by_agent_count
-      observations
+      fresh_observations
         .select { |obs| obs.agent_count_launched.to_i.positive? }
         .group_by { |obs| obs.agent_count_launched.to_i }
         .transform_values { |group| compute_group_stats(group) }
@@ -208,17 +207,37 @@ module Scaling
     def apply_budget_cap(agent_count)
       return agent_count unless inputs.budget_constrained?
 
-      observations_with_cost = observations.select { |obs| obs.total_cost_cents.to_i.positive? }
-      if observations_with_cost.any?
-        avg_cost_per_agent = observations_with_cost.sum(&:total_cost_cents).to_f /
-                             observations_with_cost.sum { |obs| obs.agent_count_launched.to_i }
-        if avg_cost_per_agent.positive?
-          max_affordable = (inputs.budget_cents / avg_cost_per_agent).floor
-          return [ agent_count, [ max_affordable, 1 ].max ].min
-        end
+      avg_cost_per_agent = avg_cost_per_agent_from_observations
+      avg_cost_per_agent ||= avg_cost_per_agent_from_experiments
+
+      if avg_cost_per_agent&.positive?
+        max_affordable = (inputs.budget_cents / avg_cost_per_agent).floor
+        return [ agent_count, [ max_affordable, 1 ].max ].min
       end
 
       agent_count
+    end
+
+    def avg_cost_per_agent_from_observations
+      observations_with_cost = observations.select { |obs| obs.total_cost_cents.to_i.positive? }
+      return nil unless observations_with_cost.any?
+
+      total_cost = observations_with_cost.sum(&:total_cost_cents).to_f
+      total_agents = observations_with_cost.sum { |obs| obs.agent_count_launched.to_i }
+      return nil unless total_agents.positive?
+
+      total_cost / total_agents
+    end
+
+    def avg_cost_per_agent_from_experiments
+      values_with_cost = normalized_experiment_values.select do |v|
+        cost = summary_value(v, :avg_cost_cents, default: 0)
+        cost.to_f.positive?
+      end
+      return nil unless values_with_cost.any?
+
+      total_cost = values_with_cost.sum { |v| summary_value(v, :avg_cost_cents, default: 0).to_f }
+      total_cost / values_with_cost.size
     end
 
     def clamp_agents(value)
@@ -232,9 +251,24 @@ module Scaling
     end
 
     def usable_experiment_summaries
-      @usable_experiment_summaries ||= experiment_summaries.select do |summary|
+      @usable_experiment_summaries ||= normalized_experiment_values.select do |summary|
         summary_value(summary, :sample_count, default: 0) >= MIN_OBSERVATIONS_FOR_CONFIDENCE &&
           summary_value(summary, :success_rate, default: 0.0) > MIN_SUCCESS_RATE_FOR_LEARNING
+      end
+    end
+
+    # Normalizes experiment summaries to a flat per-value format.
+    # Accepts both flat value hashes (already per-value) and the nested
+    # cached_summary shape produced by ScalingExperiments::SummarizeResults,
+    # which wraps per-value data in a top-level hash with a "values" array.
+    def normalized_experiment_values
+      @normalized_experiment_values ||= experiment_summaries.flat_map do |summary|
+        values = summary_value(summary, :values)
+        if values.is_a?(Array)
+          values
+        else
+          [ summary ]
+        end
       end
     end
 
