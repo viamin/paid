@@ -148,12 +148,14 @@ elif [ "$SAFE_AUTOFIX" = true ]; then
 fi
 if [ "$FILE_FILTER" = true ]; then
   if [ -n "$erb_files" ]; then
+    # The Ruby herb CLI delegates linting to the Node package at runtime.
     # shellcheck disable=SC2086
     bundle exec herb lint $HERB_ARGS $erb_files
   else
     echo "  No ERB files to lint."
   fi
 else
+  # The Ruby herb CLI delegates linting to the Node package at runtime.
   # shellcheck disable=SC2086
   bundle exec herb lint $HERB_ARGS app/views
 fi

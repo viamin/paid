@@ -40,6 +40,10 @@ version: 0.10.1
 
 linter:
   enabled: true
+  rules:
+    # TODO(#1882): Re-enable once the application CSP policy and nonce generator are enabled.
+    html-require-script-nonce:
+      enabled: false
 
   # # Exit with error code when diagnostics of this severity or higher are present
   # # Valid values: error (default), warning, info, hint
