@@ -12,7 +12,11 @@ require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
 require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
 require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
 require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
+require Rails.root.join("db/migrate/20260507202027_add_strategy_version_to_orchestration_decisions")
+require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_strategy_versions")
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
+require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisions_strategy_version_tenant_check")
+require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -198,6 +202,21 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
+  it "rejects orchestration decisions that attach another account's strategy version" do
+    project_a = described_class.with_system_access { create(:project, account: account_a) }
+    strategy_version_b = described_class.with_system_access do
+      create(:strategy_version, strategy: create(:strategy, :for_account, account: account_b))
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect_db_rejection(/strategy_version_id must reference a global or same-tenant strategy version/) do
+          insert_orchestration_decision(project_a, strategy_version_b)
+        end
+      end
+    end
+  end
+
   def as_restricted_role
     ActiveRecord::Base.connection.execute("SET ROLE paid_rls_spec")
     yield
@@ -207,6 +226,9 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
+      TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.down if orchestration_decisions_have_strategy_version_reference?
+      AddStrategyVersionToOrchestrationDecisions.new.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
+      EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
       CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
@@ -229,8 +251,13 @@ RSpec.describe TenantContext, :tenant_isolation do
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
+      AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
+      ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
+      TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.up if orchestration_decisions_have_strategy_version_reference?
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
+      EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
     end
+    OrchestrationDecision.reset_column_information
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Base.connection.execute("CREATE ROLE paid_rls_spec NOLOGIN")
@@ -244,6 +271,9 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
+      TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.down if orchestration_decisions_have_strategy_version_reference?
+      AddStrategyVersionToOrchestrationDecisions.new.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
+      EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
       CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
@@ -325,12 +355,49 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.table_exists?(:orchestration_decisions)
   end
 
+  def orchestration_decisions_have_strategy_version_reference?
+    orchestration_decisions_table_exists? &&
+      ActiveRecord::Base.connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+  end
+
+  def ensure_strategy_version_id_on_orchestration_decisions
+    connection = ActiveRecord::Base.connection
+    return if connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+
+    connection.execute("ALTER TABLE orchestration_decisions ADD COLUMN strategy_version_id bigint")
+    connection.execute("CREATE INDEX IF NOT EXISTS index_orchestration_decisions_on_strategy_version_id ON orchestration_decisions (strategy_version_id)")
+    if connection.table_exists?(:strategy_versions)
+      connection.execute(<<~SQL.squish)
+        ALTER TABLE orchestration_decisions
+        ADD CONSTRAINT fk_orchestration_decisions_strategy_version
+        FOREIGN KEY (strategy_version_id) REFERENCES strategy_versions(id) ON DELETE SET NULL
+      SQL
+    end
+  rescue ActiveRecord::StatementInvalid => e
+    Rails.logger.warn(message: "ensure_strategy_version_id_failed", error: e.message)
+  end
+
   def strategy_experiment_tables_have_rls?
     ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i == 3
       SELECT COUNT(*)
       FROM pg_policies
       WHERE policyname = 'tenant_isolation'
         AND tablename IN ('strategy_experiments', 'strategy_experiment_variants', 'strategy_experiment_assignments')
+    SQL
+  end
+
+  def strategies_have_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i.positive?
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE policyname IN (
+        'tenant_isolation',
+        'tenant_isolation_select',
+        'tenant_isolation_insert',
+        'tenant_isolation_update',
+        'tenant_isolation_delete'
+      )
+        AND tablename IN ('strategies', 'strategy_versions')
     SQL
   end
 
@@ -360,6 +427,14 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute("RELEASE SAVEPOINT rls_rejection")
   end
 
+  def expect_db_rejection(pattern)
+    ActiveRecord::Base.connection.execute("SAVEPOINT rls_rejection")
+    expect { yield }.to raise_error(ActiveRecord::StatementInvalid, pattern)
+  ensure
+    ActiveRecord::Base.connection.execute("ROLLBACK TO SAVEPOINT rls_rejection")
+    ActiveRecord::Base.connection.execute("RELEASE SAVEPOINT rls_rejection")
+  end
+
   def insert_project_membership(project, user)
     ActiveRecord::Base.connection.execute(<<~SQL.squish)
       INSERT INTO project_memberships (project_id, user_id, role, created_at, updated_at)
@@ -378,6 +453,35 @@ RSpec.describe TenantContext, :tenant_isolation do
     ActiveRecord::Base.connection.execute(<<~SQL.squish)
       INSERT INTO project_service_containers (project_id, service_container_id, created_at, updated_at)
       VALUES (#{project.id}, #{service_container.id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_orchestration_decision(project, strategy_version)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO orchestration_decisions (
+        project_id,
+        decision_type,
+        actor,
+        context,
+        inputs,
+        outputs,
+        outcome_references,
+        strategy_version_id,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{project.id},
+        'select_agent',
+        'rls',
+        '{}'::jsonb,
+        '{}'::jsonb,
+        '{}'::jsonb,
+        '[]'::jsonb,
+        #{strategy_version.id},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
     SQL
   end
 
