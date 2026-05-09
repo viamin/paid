@@ -61,7 +61,7 @@ module Scaling
       raise ArgumentError, "max_duration_seconds must be non-negative" if max_duration_seconds.negative?
       raise ArgumentError, "dependency_edge_count must be non-negative" if dependency_edge_count.negative?
       raise ArgumentError, "parallelizable_group_count must be non-negative" if parallelizable_group_count.negative?
-      raise ArgumentError, "max_parallelism must be non-negative" if max_parallelism&.negative?
+      raise ArgumentError, "max_parallelism must be positive" if max_parallelism && !max_parallelism.positive?
     end
   end
 end

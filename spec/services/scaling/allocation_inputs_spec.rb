@@ -51,8 +51,12 @@ RSpec.describe Scaling::AllocationInputs do
       expect { described_class.new(task_count: 3, dependency_edge_count: -1) }.to raise_error(ArgumentError, /dependency_edge_count must be non-negative/)
     end
 
+    it "raises on zero max_parallelism" do
+      expect { described_class.new(task_count: 3, max_parallelism: 0) }.to raise_error(ArgumentError, /max_parallelism must be positive/)
+    end
+
     it "raises on negative max_parallelism" do
-      expect { described_class.new(task_count: 3, max_parallelism: -1) }.to raise_error(ArgumentError, /max_parallelism must be non-negative/)
+      expect { described_class.new(task_count: 3, max_parallelism: -1) }.to raise_error(ArgumentError, /max_parallelism must be positive/)
     end
 
     it "is frozen" do
