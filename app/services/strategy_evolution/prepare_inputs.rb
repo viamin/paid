@@ -101,6 +101,7 @@ module StrategyEvolution
         success_count: success_count,
         failure_count: failure_count,
         success_rate: success_rate(run_backed_count, success_count),
+        lookback_days: lookback_days,
         **tallies
       }
     end
