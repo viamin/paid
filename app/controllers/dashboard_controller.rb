@@ -21,6 +21,7 @@ class DashboardController < ApplicationController
       .limit(20)
       .to_a
     AgentRun.preload_final_provider_records(@paused_runs)
+    @can_resume_paused = @paused_runs.any? && @paused_runs.any? { |run| policy(run).resume? }
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)

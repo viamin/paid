@@ -3,6 +3,7 @@
 module Dashboard
   class RecentActivity
     DEFAULT_LIMIT = 10
+    CACHE_TTL = 15.seconds
 
     def self.call(...)
       new(...).call
@@ -14,14 +15,18 @@ module Dashboard
     end
 
     def call
-      (recent_agent_runs + recent_merged_prs + recent_quality_pause_events)
-        .sort_by { |item| -item_timestamp(item).to_i }
-        .first(limit)
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_items }
     end
 
     private
 
     attr_reader :account, :limit
+
+    def build_items
+      (recent_agent_runs + recent_merged_prs + recent_quality_pause_events)
+        .sort_by { |item| -item_timestamp(item).to_i }
+        .first(limit)
+    end
 
     def recent_agent_runs
       AgentRun.joins(:project)
@@ -58,6 +63,10 @@ module Dashboard
       when Issue    then item.github_updated_at
       when QualityPauseEvent then item.created_at
       end
+    end
+
+    def cache_key
+      "dashboard/recent_activity/#{account.id}/#{limit}"
     end
   end
 end

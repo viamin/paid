@@ -25,6 +25,8 @@ module Dashboard
 
     def broadcast_live_stats
       Rails.cache.delete("dashboard/live_stats/#{account.id}")
+      Rails.cache.delete_matched("dashboard/queue_preview/#{account.id}/*")
+      Rails.cache.delete_matched("dashboard/recent_activity/#{account.id}/*")
 
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,
@@ -60,7 +62,7 @@ module Dashboard
         stream_name,
         target: "paused-runs",
         partial: "dashboard/paused_runs",
-        locals: { paused_runs: paused_runs }
+        locals: { paused_runs: paused_runs, can_resume: false }
       )
     end
 
