@@ -64,6 +64,8 @@ class CreateCoordinationPolicies < ActiveRecord::Migration[8.1]
 
   def down
     %w[coordination_policy_versions coordination_policies].each do |table|
+      next unless table_exists?(table)
+
       execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
       execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
       execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"

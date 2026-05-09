@@ -13,6 +13,15 @@ FactoryBot.define do
 
     trait :active do
       status { "active" }
+
+      after(:build) do |policy|
+        policy.current_version ||= build(:coordination_policy_version, :active, coordination_policy: policy)
+      end
+
+      after(:create) do |policy|
+        policy.current_version.save! unless policy.current_version.persisted?
+        policy.update!(current_version: policy.current_version) unless policy.current_version_id == policy.current_version.id
+      end
     end
 
     trait :project_scoped do

@@ -17,6 +17,7 @@ class CoordinationPolicy < ApplicationRecord
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validate :current_version_belongs_to_policy
+  validate :status_matches_current_version
   validate :project_belongs_to_account
   validate :context_selector_is_object
   validate :metadata_is_object
@@ -68,6 +69,19 @@ class CoordinationPolicy < ApplicationRecord
     return if current_version.coordination_policy_id == id
 
     errors.add(:current_version, "must belong to this coordination policy")
+  end
+
+  def status_matches_current_version
+    if status == "active"
+      unless current_version&.status == "active"
+        errors.add(:current_version, "must be active before it can become current on an active policy")
+      end
+      return
+    end
+
+    return if current_version.nil? || current_version.status != "active"
+
+    errors.add(:status, "must be active when current_version is active")
   end
 
   def project_belongs_to_account

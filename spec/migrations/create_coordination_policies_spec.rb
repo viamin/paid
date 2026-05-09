@@ -33,6 +33,15 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     expect_rls("coordination_policy_versions")
   end
 
+  it "allows rollback to continue when one policy table was already dropped" do
+    migration.up
+    connection.remove_reference(:coordination_policies, :current_version, index: true)
+    connection.drop_table(:coordination_policy_versions)
+
+    expect { migration.down }.not_to raise_error
+    expect(connection.table_exists?(:coordination_policies)).to be(false)
+  end
+
   private
 
   def expect_policy_schema

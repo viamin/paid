@@ -51,6 +51,22 @@ RSpec.describe CoordinationPolicy do
       expect(coordination_policy).not_to be_valid
       expect(coordination_policy.errors[:current_version]).to include("must belong to this coordination policy")
     end
+
+    it "rejects an active policy whose current version is not active" do
+      coordination_policy.status = "active"
+      coordination_policy.current_version = build(:coordination_policy_version, coordination_policy:, status: "draft")
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:current_version]).to include("must be active before it can become current on an active policy")
+    end
+
+    it "rejects an inactive policy that still points at an active current version" do
+      active_version = create(:coordination_policy_version, :active, coordination_policy: coordination_policy)
+      coordination_policy.current_version = active_version
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:status]).to include("must be active when current_version is active")
+    end
   end
 
   describe ".resolve_for" do

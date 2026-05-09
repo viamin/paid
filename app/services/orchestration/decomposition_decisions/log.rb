@@ -6,6 +6,7 @@ module Orchestration
       NOOP_OUTCOMES = %w[
         empty_plan
         single_task_plan
+        policy_skipped
         parallel_execution_skipped_empty_plan
         parallel_execution_skipped_single_task
       ].freeze
