@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.44.0](https://github.com/viamin/paid/compare/v0.43.0...v0.44.0) (2026-05-09)
+
+
+### Features
+
+* **coordination:** add orchestration policy experiments ([#1861](https://github.com/viamin/paid/issues/1861)) ([96e4a56](https://github.com/viamin/paid/commit/96e4a56a919c7d796b2b9eb126a8b4a7aed91a1c))
+* **coordination:** build coordination policy evolution workflow ([#1859](https://github.com/viamin/paid/issues/1859)) ([84634b5](https://github.com/viamin/paid/commit/84634b5e4b3f422599478bcccf37b3652f118466))
+* **coordination:** implement escalation service with human-value prediction ([#1857](https://github.com/viamin/paid/issues/1857)) ([bbd0274](https://github.com/viamin/paid/commit/bbd027476831048d7f443ee46a9b00d6382834eb))
+* **coordination:** implement learned failure recovery service ([#1848](https://github.com/viamin/paid/issues/1848)) ([db32669](https://github.com/viamin/paid/commit/db3266938fa1f245b9aed130a276c00cab56f2b1))
+* **coordination:** implement policy-based decomposition service ([#1847](https://github.com/viamin/paid/issues/1847)) ([f6a680e](https://github.com/viamin/paid/commit/f6a680e8f86bfd0765f377884daf2654853eac80))
+* **dashboard:** add bundle performance analysis dashboard ([#1844](https://github.com/viamin/paid/issues/1844)) ([c402626](https://github.com/viamin/paid/commit/c402626932f5e67f45f7556aa8d97c71b6b1d42f))
+* **optimization:** balance exploration and exploitation by context ([#1846](https://github.com/viamin/paid/issues/1846)) ([9c8a74f](https://github.com/viamin/paid/commit/9c8a74fef0a9bc77534f1064d2404683da57e07b))
+* **optimization:** build initial surrogate outcome model ([#1838](https://github.com/viamin/paid/issues/1838)) ([59f1856](https://github.com/viamin/paid/commit/59f18563fe8637b704c25bc4248daf7d4be6df72))
+* **optimization:** create configuration bundle schema ([#1834](https://github.com/viamin/paid/issues/1834)) ([a98439b](https://github.com/viamin/paid/commit/a98439b38480bdedb42e6fc7866a7ae9c474227a))
+* **optimization:** implement Bayesian bundle selection ([#1839](https://github.com/viamin/paid/issues/1839)) ([cc5cdd3](https://github.com/viamin/paid/commit/cc5cdd3466013ccd24058cbca60c147773edb854))
+* **optimization:** Phase 4.3 — End-to-End Outcome Optimization ([#1868](https://github.com/viamin/paid/issues/1868)) ([7061ff2](https://github.com/viamin/paid/commit/7061ff22ade031afe963020234f259614988597d))
+* **optimization:** track configuration bundles per agent run ([#1836](https://github.com/viamin/paid/issues/1836)) ([a97a392](https://github.com/viamin/paid/commit/a97a39212f618d17038005a3f1ef79687de696fd))
+* **orchestration:** log decomposition decisions with workflow context ([#1876](https://github.com/viamin/paid/issues/1876)) ([247c8cc](https://github.com/viamin/paid/commit/247c8cc0aa4045b8a96a6d2a1942e69176ad802a))
+* **orchestration:** log provider selection context ([#1878](https://github.com/viamin/paid/issues/1878)) ([feef4b8](https://github.com/viamin/paid/commit/feef4b8d1745824477e6aedd7ba02f344d4df66a))
+* **orchestration:** Phase 4.1 — Orchestration Decision Logging ([#1837](https://github.com/viamin/paid/issues/1837)) ([bd02c40](https://github.com/viamin/paid/commit/bd02c4037fac33c3a620fc7b98b7373429ecf3d0))
+* **scaling:** add agent-count experiment flow ([#1866](https://github.com/viamin/paid/issues/1866)) ([c12b4cc](https://github.com/viamin/paid/commit/c12b4cc70fbc31deae17c5c4a45bf7d66dc188e5))
+* **scaling:** add scaling observation instrumentation ([#1860](https://github.com/viamin/paid/issues/1860)) ([62e4221](https://github.com/viamin/paid/commit/62e4221b8234302580b3c811ad2ab1ac42936273))
+* **scaling:** analyze orchestration parallelism effects ([#1872](https://github.com/viamin/paid/issues/1872)) ([407c440](https://github.com/viamin/paid/commit/407c44099e851fb9e3440ddbe6bef1be4d80e753))
+* **scaling:** define orchestration experiment plans ([#1869](https://github.com/viamin/paid/issues/1869)) ([259b151](https://github.com/viamin/paid/commit/259b1512151738e39ef86cf8bc89356a6c27d62f))
+* **scaling:** run iteration-count scaling experiment ([#1867](https://github.com/viamin/paid/issues/1867)) ([95e9fad](https://github.com/viamin/paid/commit/95e9fad47b19a7000b5abad1b80bb3a48f882ece))
+* **schema:** add fx and logidze gems, migrate from structure.sql to schema.rb ([#1853](https://github.com/viamin/paid/issues/1853)) ([6f7dced](https://github.com/viamin/paid/commit/6f7dcedc29b2c810cb2cf6ad32e6d0711a75b2fb))
+* **strategy:** A/B test evolved strategies against baseline ([#1832](https://github.com/viamin/paid/issues/1832)) ([8aac822](https://github.com/viamin/paid/commit/8aac822e5737839041922334ce3871df5b4a7a4c))
+* **strategy:** build strategy evolution workflow ([#1845](https://github.com/viamin/paid/issues/1845)) ([36dc106](https://github.com/viamin/paid/commit/36dc106d10ff52687b5e98dbecec04dac642a74c))
+* **strategy:** extract hardcoded workflows into database strategies ([#1830](https://github.com/viamin/paid/issues/1830)) ([d09ea3a](https://github.com/viamin/paid/commit/d09ea3aa1fd5ea9917198f08d8de7cbce26688f1))
+* **strategy:** implement context-aware strategy selection ([#1835](https://github.com/viamin/paid/issues/1835)) ([e295f6f](https://github.com/viamin/paid/commit/e295f6febbbffcfb1ac4cd247241871d02cd378a))
+
+
+### Bug Fixes
+
+* 1843: Add end-to-end system coverage for full business context questionnaire completion and KB persistence ([#1862](https://github.com/viamin/paid/issues/1862)) ([83d8bdc](https://github.com/viamin/paid/commit/83d8bdc524686f64aac994872e2789d757bc34e1))
+* **copilot:** resolve pty.node mmap failure and subscription auth in agent containers ([#1850](https://github.com/viamin/paid/issues/1850)) ([2d18ecc](https://github.com/viamin/paid/commit/2d18eccb47a61c64cfc2f23608bfbfe29666509d))
+* **dashboard:** remove redundant live stats cards ([#1873](https://github.com/viamin/paid/issues/1873)) ([d3c8651](https://github.com/viamin/paid/commit/d3c8651d65b98796717c61a8cfeb3874271992f8))
+* **dashboard:** serialize deferred frame loading ([#1851](https://github.com/viamin/paid/issues/1851)) ([01b923f](https://github.com/viamin/paid/commit/01b923f6f4658625e6190f8ed97b5828836c6475))
+* **notifications:** remove blocking-parent review notifications ([#1864](https://github.com/viamin/paid/issues/1864)) ([d822b0e](https://github.com/viamin/paid/commit/d822b0eaba15068265fa2ffe157c2807fecde688))
+* **projects:** batch broadcasts during sync and fix missing issues in show page ([#1856](https://github.com/viamin/paid/issues/1856)) ([66a7278](https://github.com/viamin/paid/commit/66a7278904f8c9824b5ec36f68dce8cde371e8d7))
+* **sync:** backfill open issues during reconciliation ([#1863](https://github.com/viamin/paid/issues/1863)) ([1709cd9](https://github.com/viamin/paid/commit/1709cd9749465877a959a6119ef2eb6da7268de9))
+
 ## [0.43.0](https://github.com/viamin/paid/compare/v0.42.0...v0.43.0) (2026-05-08)
 
 
