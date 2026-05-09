@@ -3,6 +3,7 @@
 module ScalingObservations
   class Record
     NON_LAUNCHED_ERRORS = %w[dependencies_failed unresolvable_dependencies].freeze
+    TERMINAL_STATUS_ERRORS = %w[deadline_exceeded no_capacity cancelled_by_policy unresolvable_dependencies].freeze
 
     def self.call(...)
       new(...).call
@@ -157,6 +158,7 @@ module ScalingObservations
       return "failed" if error_details.present?
       return "skipped" unless parallel_execution?
       return parallel_result[:error].to_s if parallel_result[:error].present?
+      return terminal_status_from_results if terminal_status_from_results
       return "completed" if parallel_result[:success]
       return "partial_failure" if succeeded_count.positive? && failed_count.positive?
 
@@ -172,6 +174,12 @@ module ScalingObservations
 
     def parallel_execution?
       tasks.size > 1
+    end
+
+    def terminal_status_from_results
+      terminal_errors = result_rows.filter_map { |result| result[:error].presence }.uniq
+
+      TERMINAL_STATUS_ERRORS.find { |error| terminal_errors.include?(error) }
     end
 
     def observation_metadata

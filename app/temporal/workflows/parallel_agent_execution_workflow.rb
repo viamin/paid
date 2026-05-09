@@ -30,6 +30,7 @@ module Workflows
       sub_tasks = normalize_sub_tasks(input.fetch(:sub_tasks, []))
       parent_wf_id = input[:parent_workflow_id] || Temporalio::Workflow.info.workflow_id
       timeout_seconds = input.fetch(:timeout_seconds, DEFAULT_TIMEOUT_SECONDS)
+      coordination_policy = normalize_coordination_policy(input[:coordination_policy])
 
       Temporalio::Workflow.logger.info(
         message: "parallel_execution.started",
@@ -69,7 +70,8 @@ module Workflows
         sub_tasks: sub_tasks,
         max_concurrent: max_concurrent,
         parent_wf_id: parent_wf_id,
-        timeout_seconds: timeout_seconds
+        timeout_seconds: timeout_seconds,
+        coordination_policy: coordination_policy
       )
 
       # Step 3: Detect and resolve conflicts between successful runs.
@@ -215,7 +217,7 @@ module Workflows
     # then waits for all to complete. Recomputes batch size from the latest
     # capacity check before each batch, and enforces an overall deadline
     # derived from timeout_seconds.
-    def launch_and_monitor_children(project_id:, sub_tasks:, max_concurrent:, parent_wf_id:, timeout_seconds:)
+    def launch_and_monitor_children(project_id:, sub_tasks:, max_concurrent:, parent_wf_id:, timeout_seconds:, coordination_policy:)
       deadline = Temporalio::Workflow.now + timeout_seconds
       remaining_tasks = sub_tasks.dup
       all_results = []
@@ -290,7 +292,11 @@ module Workflows
           break
         end
 
-        batch_size = [ current_slots, ready_tasks.size ].min
+        batch_size = [
+          current_slots,
+          ready_tasks.size,
+          max_batch_size_for(coordination_policy)
+        ].compact.min
         batch = ready_tasks.first(batch_size)
         remaining_tasks -= batch
         batch_sizes << batch.size
@@ -304,6 +310,18 @@ module Workflows
         )
 
         all_results.concat(batch_results)
+        if cancel_remaining_on_failure?(coordination_policy) && batch_results.any? { |batch_result| batch_result[:success] == false }
+          all_results.concat(
+            build_terminal_results_for_remaining(
+              all_results: all_results,
+              remaining_tasks: remaining_tasks,
+              ready_tasks: remaining_tasks,
+              blocked_tasks: [],
+              ready_error: "cancelled_by_policy"
+            )
+          )
+          break
+        end
         batch_index += 1
       end
 
@@ -517,6 +535,20 @@ module Workflows
         resolution: nil,
         error: nil
       }
+    end
+
+    def normalize_coordination_policy(policy)
+      (policy || {}).deep_symbolize_keys
+    end
+
+    def max_batch_size_for(policy)
+      Integer(policy.dig(:parallel_execution, :max_batch_size))
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def cancel_remaining_on_failure?(policy)
+      policy.dig(:parallel_execution, :cancel_remaining_on_failure) == true
     end
 
     # Launches a batch of child workflows in parallel and waits for all to complete.

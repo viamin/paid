@@ -43,6 +43,26 @@ RSpec.describe ScalingObservations::Record do
         parallelism_observed: 0
       )
     end
+
+    it "preserves no_capacity when capacity is exhausted after some tasks launch" do
+      expect(build_no_capacity_observation).to have_attributes(
+        status: "no_capacity",
+        success: false,
+        agent_count_launched: 1,
+        agent_count_failed: 0,
+        agent_count_blocked: 2
+      )
+    end
+
+    it "preserves deadline_exceeded when the workflow times out mid-run" do
+      expect(build_deadline_exceeded_observation).to have_attributes(
+        status: "deadline_exceeded",
+        success: false,
+        agent_count_launched: 1,
+        agent_count_failed: 0,
+        agent_count_blocked: 1
+      )
+    end
   end
 
   def create_parallel_child_runs
@@ -94,6 +114,54 @@ RSpec.describe ScalingObservations::Record do
         max_parallelism_observed: 2
       }
     }
+  end
+
+  def build_no_capacity_observation
+    described_class.call(
+      project_id: project.id,
+      issue_id: issue.id,
+      workflow_id: workflow_id,
+      workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+      tasks: [
+        { index: 0, parallel_group: 0, dependencies: [] },
+        { index: 1, parallel_group: 0, dependencies: [] },
+        { index: 2, parallel_group: 1, dependencies: [ 1 ] }
+      ],
+      parallel_result: {
+        success: false,
+        total: 3,
+        completed: 1,
+        failed: 0,
+        results: [
+          { issue_id: 10, task_index: 0, success: true, agent_run_id: 101 },
+          { issue_id: 11, task_index: 1, success: false, error: "no_capacity", queued: true },
+          { issue_id: 12, task_index: 2, success: false, error: "dependencies_failed", blocked_by: [ 1 ] }
+        ]
+      }
+    )
+  end
+
+  def build_deadline_exceeded_observation
+    described_class.call(
+      project_id: project.id,
+      issue_id: issue.id,
+      workflow_id: workflow_id,
+      workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+      tasks: [
+        { index: 0, parallel_group: 0, dependencies: [] },
+        { index: 1, parallel_group: 1, dependencies: [] }
+      ],
+      parallel_result: {
+        success: false,
+        total: 2,
+        completed: 1,
+        failed: 0,
+        results: [
+          { issue_id: 10, task_index: 0, success: true, agent_run_id: 101 },
+          { issue_id: 11, task_index: 1, success: false, error: "deadline_exceeded", queued: true }
+        ]
+      }
+    )
   end
 
   def expect_completed_parallel_observation(observation, project:, issue:, workflow_id:, child_run_ids:)

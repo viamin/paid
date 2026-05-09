@@ -108,6 +108,15 @@ RSpec.describe OrchestrationStrategies::Defaults do
       expect(config["planning_phases"]).to include("fetch_planning_context", "decompose_feature")
     end
 
+    it "includes escalation policy defaults" do
+      expect(config["escalation"]).to include(
+        "human_value_threshold",
+        "explicit_triggers",
+        "weights",
+        "interruption_cost"
+      )
+    end
+
     it "preserves all planning outcomes returned by the workflow" do
       outcomes = [
         workflow.send(:planning_outcome_for, []),

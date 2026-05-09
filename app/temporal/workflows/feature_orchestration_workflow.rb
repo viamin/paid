@@ -42,12 +42,22 @@ module Workflows
       parallel_result = nil
       planning_context = {}
       prompt_source = nil
+      coordination_policy = nil
+      coordination_assignment_id = nil
       decision_phase = "planning"
       decision_step = "fetch_planning_context"
       @decision_step = decision_step
 
+      experiment_context = safely_resolve_coordination_experiment(
+        project_id: project_id,
+        issue_id: issue_id,
+        workflow_id: workflow_id
+      )
+      coordination_policy = experiment_context[:coordination_policy]
+      coordination_assignment_id = experiment_context[:assignment_id]
+
       # Phase 1: Decompose the feature into sub-tasks
-      planning_result = run_planning(project_id, issue_id)
+      planning_result = run_planning(project_id, issue_id, coordination_policy:)
 
       tasks = planning_result[:tasks] || []
       created_issues = planning_result[:created_issues]
@@ -121,6 +131,13 @@ module Workflows
           issue_id: issue_id,
           task_count: tasks.size
         )
+        result = {
+          success: true,
+          project_id: project_id,
+          issue_id: issue_id,
+          task_count: tasks.size,
+          parallel_execution: false
+        }
         safe_record_scaling_observation(
           project_id: project_id,
           issue_id: issue_id,
@@ -133,13 +150,13 @@ module Workflows
             created_issues: created_issues
           }
         )
-        return {
-          success: true,
-          project_id: project_id,
-          issue_id: issue_id,
+        safely_record_coordination_outcome(
+          assignment_id: coordination_assignment_id,
           task_count: tasks.size,
-          parallel_execution: false
-        }
+          parallel_execution: false,
+          result: result
+        )
+        return result
       end
 
       # Phase 2: Launch parallel execution on all sub-tasks
@@ -175,7 +192,15 @@ module Workflows
         issue_id: issue_id,
         sub_tasks: sub_tasks,
         timeout_seconds: timeout_seconds,
-        aggregate_pr: input[:aggregate_pr]
+        aggregate_pr: input[:aggregate_pr],
+        coordination_policy:
+      )
+
+      safely_record_coordination_outcome(
+        assignment_id: coordination_assignment_id,
+        task_count: tasks.size,
+        parallel_execution: true,
+        result: parallel_result
       )
 
       Temporalio::Workflow.logger.info(
@@ -263,6 +288,19 @@ module Workflows
         error_class: e.class.to_s,
         error: e.message
       )
+      safely_record_coordination_outcome(
+        assignment_id: coordination_assignment_id,
+        task_count: tasks.size,
+        parallel_execution: tasks.size > 1,
+        result: {
+          success: false,
+          completed: 0,
+          failed: tasks.size,
+          results: [],
+          conflicts: { has_conflicts: false, requires_manual_review: false },
+          error: e.message
+        }
+      )
       raise
     end
 
@@ -272,7 +310,7 @@ module Workflows
     # workflow because orchestration needs direct access to the decomposed tasks and created
     # issues to build sub_tasks for parallel execution. A child workflow would only return a
     # summary, requiring re-fetching. Shared activities keep the actual logic deduplicated.
-    def run_planning(project_id, issue_id)
+    def run_planning(project_id, issue_id, coordination_policy:)
       # Step 1: Fetch knowledge base context
       @decision_step = "fetch_planning_context"
       context_result = run_activity(
@@ -288,7 +326,8 @@ module Workflows
         {
           project_id: project_id,
           issue_id: issue_id,
-          knowledge_context: context_result[:context]
+          knowledge_context: context_result[:context],
+          coordination_policy: coordination_policy
         },
         timeout: 120
       )
@@ -355,7 +394,7 @@ module Workflows
       end
     end
 
-    def run_parallel_execution(project_id:, issue_id:, sub_tasks:, timeout_seconds:, aggregate_pr:)
+    def run_parallel_execution(project_id:, issue_id:, sub_tasks:, timeout_seconds:, aggregate_pr:, coordination_policy:)
       parent_wf_id = Temporalio::Workflow.info.workflow_id
 
       child_input = {
@@ -366,6 +405,7 @@ module Workflows
         timeout_seconds: timeout_seconds
       }
       child_input[:aggregate_pr] = aggregate_pr unless aggregate_pr.nil?
+      child_input[:coordination_policy] = coordination_policy if coordination_policy.present?
 
       workflow_id = "parallel-#{parent_wf_id}-#{Temporalio::Workflow.now.to_i}"
 
@@ -436,6 +476,47 @@ module Workflows
         workflow_id: Temporalio::Workflow.info.workflow_id,
         error_class: record_error.class.to_s,
         error: record_error.message
+      )
+    end
+
+    def safely_resolve_coordination_experiment(project_id:, issue_id:, workflow_id:)
+      run_activity(
+        Activities::ResolveCoordinationExperimentActivity,
+        { project_id:, issue_id:, workflow_id: },
+        timeout: 30,
+        retry_policy: NO_RETRY
+      )
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "feature_orchestration.coordination_experiment_resolution_failed",
+        workflow_id: Temporalio::Workflow.info.workflow_id,
+        error_class: e.class.to_s,
+        error: e.message
+      )
+      { assignment_id: nil, coordination_policy: nil }
+    end
+
+    def safely_record_coordination_outcome(assignment_id:, task_count:, parallel_execution:, result:)
+      return unless assignment_id
+
+      run_activity(
+        Activities::RecordCoordinationExperimentOutcomeActivity,
+        {
+          assignment_id: assignment_id,
+          task_count: task_count,
+          parallel_execution: parallel_execution,
+          result: result
+        },
+        timeout: 30,
+        retry_policy: NO_RETRY
+      )
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "feature_orchestration.coordination_experiment_record_failed",
+        workflow_id: Temporalio::Workflow.info.workflow_id,
+        assignment_id: assignment_id,
+        error_class: e.class.to_s,
+        error: e.message
       )
     end
   end

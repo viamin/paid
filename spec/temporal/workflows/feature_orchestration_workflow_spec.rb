@@ -114,9 +114,26 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             hash_including(
               project_id: 1,
               parent_issue_id: 2,
+              coordination_policy: hash_including("parallel_execution" => anything),
               sub_tasks: array_including(hash_including(:custom_prompt))
             ),
             hash_including(task_queue: Paid::AGENT_TASK_QUEUE)
+          )
+      end
+
+      it "records coordination experiment outcomes after parallel execution" do
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(
+            Activities::RecordCoordinationExperimentOutcomeActivity,
+            hash_including(
+              assignment_id: 77,
+              task_count: 3,
+              parallel_execution: true
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
           )
       end
 
@@ -389,10 +406,14 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
       before do
         allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
           case activity_class.name
+          when "Activities::ResolveCoordinationExperimentActivity"
+            { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
             raise Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+          when "Activities::RecordCoordinationExperimentOutcomeActivity"
+            { assignment_id: 77, outcome_status: "recorded" }
           when "Activities::LogDecompositionDecisionActivity"
             { decomposition_decision_id: 9 }
           else
@@ -511,6 +532,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
   def stub_planning_activities(tasks:, created_issues:)
     allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
       case activity_class.name
+      when "Activities::ResolveCoordinationExperimentActivity"
+        { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
       when "Activities::FetchPlanningContextActivity"
         { context: { issue_title: "Feature", knowledge_snippets: [] } }
       when "Activities::DecomposeFeatureActivity"
@@ -519,6 +542,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         { created_issues: created_issues }
       when "Activities::UpdatePlanningLabelsActivity"
         { success: true }
+      when "Activities::RecordCoordinationExperimentOutcomeActivity"
+        { assignment_id: 77, outcome_status: "recorded" }
       when "Activities::LogDecompositionDecisionActivity"
         { decomposition_decision_id: 1 }
       when "Activities::RecordScalingObservationActivity"

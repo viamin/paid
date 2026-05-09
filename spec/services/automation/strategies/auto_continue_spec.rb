@@ -195,6 +195,19 @@ RSpec.describe Automation::Strategies::AutoContinue do
     end
 
     context "when in ready phase" do
+      let(:deferred_service_result) do
+        Coordination::EscalationService::Result.new(
+          action: "defer",
+          reason: "followup_limit_reached",
+          human_value_score: 0.2,
+          interruption_cost: 0.3,
+          net_value: -0.1,
+          threshold: 0.65,
+          explicit_trigger: nil,
+          policy_source: "feature_orchestration"
+        )
+      end
+
       it "escalates when review goal retry limit requires escalation" do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
@@ -213,6 +226,22 @@ RSpec.describe Automation::Strategies::AutoContinue do
         )
 
         expect(decision_types(result)).to eq([ "noop" ])
+      end
+
+      it "routes followup limit decisions through the escalation service" do
+        allow(Coordination::EscalationService).to receive(:call).and_return(deferred_service_result)
+
+        result = evaluate(
+          lifecycle: base_lifecycle.merge(followup_limit_reached: true),
+          scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
+        )
+
+        expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
+        expect(Coordination::EscalationService).to have_received(:call).with(
+          project: project,
+          issue: pull_request,
+          signals: have_attributes(followup_limit_reached: true)
+        )
       end
     end
 

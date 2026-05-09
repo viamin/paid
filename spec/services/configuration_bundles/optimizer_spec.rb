@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe ConfigurationBundles::Optimizer do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }
+  let(:surrogate_model) { instance_double(ConfigurationBundles::SurrogateModel) }
   let(:experiment) do
     create(:configuration_experiment,
       account: project.account,
@@ -44,6 +45,92 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(selection.score_inputs.uncertainty).to be > 0
       expect(selection.score_inputs.acquisition_score).to be >
         selection.score_inputs.predicted_quality_score
+    end
+
+    it "routes no-issue runs through the project exploration budget" do
+      set_exploration_budgets(project: 100)
+      run = create(:agent_run, :create_issue_goal, project: project)
+      stub_predictions(run, surrogate_model:)
+
+      selection = described_class.call(agent_run: run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
+      expect(selection.selection_mode).to eq("exploratory")
+      expect(selection.selection_context).to eq("project")
+      expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
+    end
+
+    it "blocks a first exploratory project run that would exceed the configured budget" do
+      set_exploration_budgets(project: 25)
+      run = create(:agent_run, :create_issue_goal, project: project)
+      stub_predictions(run, surrogate_model:)
+
+      selection = described_class.call(agent_run: run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.selection_mode).to eq("exploitative")
+      expect(selection.selection_context).to eq("project")
+      expect_budget_snapshot(selection, "project",
+        budget: 0.25,
+        total_runs: 0,
+        exploratory_runs: 0,
+        observed_share: 0.0,
+        projected_share: 1.0,
+        within_budget: false
+      )
+    end
+
+    it "enforces the project exploration budget before choosing an exploratory bundle" do
+      set_exploration_budgets(project: 25)
+      seed_project_budget_history(project:, goal: agent_run.goal)
+      stub_predictions(agent_run, surrogate_model:)
+
+      selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.selection_mode).to eq("exploitative")
+      expect_budget_snapshot(selection, "project",
+        budget: 0.25,
+        exploratory_runs: 1,
+        total_runs: 4,
+        observed_share: 0.25,
+        projected_share: 0.4,
+        within_budget: false
+      )
+    end
+
+    it "enforces the task exploration budget even when the project budget allows exploration" do
+      set_exploration_budgets(task: 0, project: 100)
+      stub_predictions(agent_run, surrogate_model:)
+
+      selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.selection_mode).to eq("exploitative")
+      expect(selection.selection_context).to eq("task")
+      expect_budget_snapshot(selection, "task", projected_share: 1.0, within_budget: false)
+      expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
+    end
+
+    it "bootstraps task exploration from the project budget until the issue has enough routing history" do
+      set_exploration_budgets(task: 10, project: 100)
+      stub_predictions(agent_run, surrogate_model:)
+
+      selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
+      expect(selection.selection_mode).to eq("exploratory")
+      expect(selection.selection_context).to eq("task")
+      expect_budget_snapshot(selection, "task",
+        budget: 0.1,
+        total_runs: 0,
+        exploratory_runs: 0,
+        projected_share: 1.0,
+        within_budget: true,
+        bootstrap_active: true,
+        bootstrap_minimum_runs: 9
+      )
+      expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
     end
 
     it "returns nil when there are no active tracked experiments" do
@@ -102,6 +189,23 @@ RSpec.describe ConfigurationBundles::Optimizer do
       )
       expect(ranked.first.variant_by_experiment_id).to eq(experiment.id => challenger)
     end
+
+    it "loads experiment variants in a single query" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.65, 0.66, 0.67 ]
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.9, 0.91 ]
+      )
+
+      queries = capture_queries { described_class.ranked_candidates(agent_run: agent_run) }
+
+      expect(queries.grep(/FROM "configuration_experiment_variants"/).size).to eq(1)
+    end
   end
 
   def create_prior_history
@@ -132,6 +236,52 @@ RSpec.describe ConfigurationBundles::Optimizer do
       config_value: JSON.generate(8000))
 
     [ recreated_experiment, recreated_control, recreated_challenger ]
+  end
+
+  def stub_predictions(_run, surrogate_model:)
+    allow(surrogate_model).to receive(:predict) do |bundle_definition:, **|
+      variant_id = bundle_definition.dig("experiments", experiment.config_key, "configuration_experiment_variant_id")
+      prediction_for(variant_id == control.id ? :exploitative : :exploratory)
+    end
+  end
+
+  def set_exploration_budgets(**budgets)
+    project.update!(fitness_settings: {
+      "configuration_bundle_optimizer" => {
+        "exploration_budgets" => budgets.transform_keys(&:to_s)
+      }
+    })
+  end
+
+  def expect_budget_snapshot(selection, context, expected_values)
+    expect(selection.budget_snapshot.fetch(context)).to include(expected_values)
+  end
+
+  def prediction_for(mode)
+    if mode == :exploitative
+      ConfigurationBundles::SurrogateModel::Prediction.new(
+        mean_quality_score: 0.82,
+        uncertainty: 0.01,
+        sample_count: 4,
+        matched_outcomes: 4
+      )
+    else
+      ConfigurationBundles::SurrogateModel::Prediction.new(
+        mean_quality_score: 0.72,
+        uncertainty: 0.35,
+        sample_count: 1,
+        matched_outcomes: 1
+      )
+    end
+  end
+
+  def seed_project_budget_history(project:, goal:)
+    create(:agent_run, project: project, issue: create(:issue, project: project),
+      goal: goal, configuration_bundle_selection_mode: "exploratory")
+    3.times do
+      create(:agent_run, project: project, issue: create(:issue, project: project),
+        goal: goal, configuration_bundle_selection_mode: "exploitative")
+    end
   end
 
   def create_bundle_history(experiment:, variant:, quality_scores:)
