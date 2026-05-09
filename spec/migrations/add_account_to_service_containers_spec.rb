@@ -17,6 +17,7 @@ require Rails.root.join("db/migrate/20260507202027_add_strategy_version_to_orche
 require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_strategy_versions")
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
 require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisions_strategy_version_tenant_check")
+require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -38,6 +39,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
     if tenant_policy_count.positive?
       tighten_orchestration_decisions_strategy_version_tenant_check_migration.down if orchestration_decisions_have_strategy_version_reference?
+      ensure_strategy_version_id_migration.down if orchestration_decisions_have_strategy_version_reference?
       add_strategy_version_to_orchestration_decisions_migration.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
       strategy_rls_migration.down if strategies_have_rls?
       strategy_experiments_rls_migration.down if strategy_experiment_tables_have_rls?
@@ -75,6 +77,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
       add_strategy_version_to_orchestration_decisions_migration.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       tighten_orchestration_decisions_strategy_version_tenant_check_migration.up if orchestration_decisions_have_strategy_version_reference?
+      ensure_strategy_version_id_migration.up unless orchestration_decisions_have_strategy_version_reference?
       strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
       strategy_rls_migration.up unless strategies_have_rls?
     end
@@ -347,6 +350,10 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   def tighten_orchestration_decisions_strategy_version_tenant_check_migration
     @tighten_orchestration_decisions_strategy_version_tenant_check_migration ||=
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new
+  end
+
+  def ensure_strategy_version_id_migration
+    @ensure_strategy_version_id_migration ||= EnsureStrategyVersionIdOnOrchestrationDecisions.new
   end
 
   def strategy_experiments_rls_migration

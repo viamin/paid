@@ -12,7 +12,6 @@ class EnsureStrategyVersionIdOnOrchestrationDecisions < ActiveRecord::Migration[
 
   def down
     remove_reference :orchestration_decisions, :strategy_version,
-      null: true,
       foreign_key: { on_delete: :nullify },
       index: true,
       if_exists: true
