@@ -25,7 +25,11 @@ module ConfigurationBundles
       fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
-      agent_run.update!(configuration_bundle: bundle) unless agent_run.configuration_bundle_id == bundle.id
+      agent_run.update!(
+        configuration_bundle: bundle,
+        configuration_bundle_selection_mode: selection&.selection_mode,
+        configuration_bundle_selection_context: selection&.selection_context
+      )
       bundle
     end
 

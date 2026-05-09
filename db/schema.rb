@@ -173,6 +173,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
+    t.string "configuration_bundle_selection_context", comment: "Primary optimization context used for bundle routing, such as task or project."
+    t.string "configuration_bundle_selection_mode", comment: "Whether configuration bundle routing favored exploitative or exploratory selection for this run."
     t.string "container_id", limit: 128
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
