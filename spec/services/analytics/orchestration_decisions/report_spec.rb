@@ -102,6 +102,28 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     }
   end
 
+  def expected_outcome_by_decision_type(decision_type:, total_count:, applied_count:, noop_count:, failed_count:)
+    {
+      decision_type: decision_type,
+      total_count: total_count,
+      applied_count: applied_count,
+      noop_count: noop_count,
+      failed_count: failed_count
+    }
+  end
+
+  def expected_actor(actor:, total_count:, project_count:, decision_type_count:, applied_count:, noop_count:, failed_count:)
+    {
+      actor: actor,
+      total_count: total_count,
+      project_count: project_count,
+      decision_type_count: decision_type_count,
+      applied_count: applied_count,
+      noop_count: noop_count,
+      failed_count: failed_count
+    }
+  end
+
   def expected_daily_volume(day:, total_count:, applied_count:, noop_count:, failed_count:)
     {
       day: day,
@@ -218,6 +240,146 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     )
   end
 
+  def expected_outcome_by_decision_type_rollup
+    [
+      expected_outcome_by_decision_type(
+        decision_type: "select_agent",
+        total_count: 3,
+        applied_count: 2,
+        noop_count: 1,
+        failed_count: 0
+      ),
+      expected_outcome_by_decision_type(
+        decision_type: "planning_outcome",
+        total_count: 1,
+        applied_count: 1,
+        noop_count: 0,
+        failed_count: 0
+      ),
+      expected_outcome_by_decision_type(
+        decision_type: "retry",
+        total_count: 1,
+        applied_count: 0,
+        noop_count: 0,
+        failed_count: 1
+      )
+    ]
+  end
+
+  def expected_actor_rollup
+    [
+      expected_actor(
+        actor: "fallback_rules",
+        total_count: 1,
+        project_count: 1,
+        decision_type_count: 1,
+        applied_count: 1,
+        noop_count: 0,
+        failed_count: 0
+      ),
+      expected_actor(
+        actor: "model_selection",
+        total_count: 1,
+        project_count: 1,
+        decision_type_count: 1,
+        applied_count: 0,
+        noop_count: 1,
+        failed_count: 0
+      ),
+      expected_actor(
+        actor: "rules",
+        total_count: 1,
+        project_count: 1,
+        decision_type_count: 1,
+        applied_count: 1,
+        noop_count: 0,
+        failed_count: 0
+      ),
+      expected_actor(
+        actor: "timeout_auto_retry",
+        total_count: 1,
+        project_count: 1,
+        decision_type_count: 1,
+        applied_count: 0,
+        noop_count: 0,
+        failed_count: 1
+      ),
+      expected_actor(
+        actor: "Workflows::PlanningWorkflow",
+        total_count: 1,
+        project_count: 1,
+        decision_type_count: 1,
+        applied_count: 1,
+        noop_count: 0,
+        failed_count: 0
+      )
+    ]
+  end
+
+  def expect_time_window_rollups(report)
+    expect(report[:summary]).to eq(
+      expected_summary(
+        total_count: 3,
+        applied_count: 1,
+        noop_count: 1,
+        failed_count: 1,
+        linked_agent_run_count: 3,
+        completed_run_count: 1,
+        failed_run_count: 2,
+        project_count: 2,
+        actor_count: 3
+      )
+    )
+    expect(report[:by_project].map { |row| row[:project_name] }).to eq(%w[Alpha Beta])
+    expect(report[:by_decision_type].map { |row| row[:decision_type] }).to eq(
+      %w[planning_outcome retry select_agent]
+    )
+    expect(report[:outcome_by_decision_type].map { |row| row[:decision_type] }).to eq(
+      %w[planning_outcome retry select_agent]
+    )
+    expect(report[:by_actor].map { |row| row[:actor] }).to eq(
+      %w[model_selection timeout_auto_retry Workflows::PlanningWorkflow]
+    )
+  end
+
+  def expect_select_agent_rollups(report)
+    expect(report[:summary]).to eq(expected_select_agent_summary)
+    expect(report[:by_project].pluck(:project_name)).to eq([ "Beta" ])
+    expect(report[:by_decision_type]).to eq([ expected_decision_type_rollup.first ])
+    expect(report[:outcome_by_decision_type]).to eq([ expected_outcome_by_decision_type_rollup.first ])
+    expect(report[:by_actor]).to eq(
+      [
+        expected_actor(
+          actor: "fallback_rules",
+          total_count: 1,
+          project_count: 1,
+          decision_type_count: 1,
+          applied_count: 1,
+          noop_count: 0,
+          failed_count: 0
+        ),
+        expected_actor(
+          actor: "model_selection",
+          total_count: 1,
+          project_count: 1,
+          decision_type_count: 1,
+          applied_count: 0,
+          noop_count: 1,
+          failed_count: 0
+        ),
+        expected_actor(
+          actor: "rules",
+          total_count: 1,
+          project_count: 1,
+          decision_type_count: 1,
+          applied_count: 1,
+          noop_count: 0,
+          failed_count: 0
+        )
+      ]
+    )
+  end
+
   describe ".call" do
     it "returns the initial question set" do
       report = described_class.call
@@ -226,6 +388,8 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
         %w[
           decision_volume_over_time
           decision_mix_by_type
+          decision_outcomes_by_type
+          decision_activity_by_actor
           project_level_decision_patterns
           decision_outcomes
         ]
@@ -258,6 +422,14 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
       expect(described_class.call[:by_decision_type]).to eq(expected_decision_type_rollup)
     end
 
+    it "builds the outcome-by-decision-type rollup" do
+      expect(described_class.call[:outcome_by_decision_type]).to eq(expected_outcome_by_decision_type_rollup)
+    end
+
+    it "builds the actor rollup" do
+      expect(described_class.call[:by_actor]).to eq(expected_actor_rollup)
+    end
+
     it "builds the daily volume rollup" do
       expect(described_class.call[:daily_volume]).to eq(expected_daily_volume_rollup)
     end
@@ -265,23 +437,7 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
     it "filters by time window" do
       report = described_class.call(filters: { from: 3.days.ago, to: Time.current })
 
-      expect(report[:summary]).to eq(
-        expected_summary(
-          total_count: 3,
-          applied_count: 1,
-          noop_count: 1,
-          failed_count: 1,
-          linked_agent_run_count: 3,
-          completed_run_count: 1,
-          failed_run_count: 2,
-          project_count: 2,
-          actor_count: 3
-        )
-      )
-      expect(report[:by_project].map { |row| row[:project_name] }).to eq(%w[Alpha Beta])
-      expect(report[:by_decision_type].map { |row| row[:decision_type] }).to eq(
-        %w[planning_outcome retry select_agent]
-      )
+      expect_time_window_rollups(report)
     end
 
     it "filters by project" do
@@ -302,14 +458,14 @@ RSpec.describe Analytics::OrchestrationDecisions::Report do
       )
       expect(report[:by_project].pluck(:project_name)).to eq([ "Beta" ])
       expect(report[:by_decision_type].pluck(:decision_type)).to eq([ "select_agent" ])
+      expect(report[:outcome_by_decision_type]).to eq([ expected_outcome_by_decision_type_rollup.first ])
+      expect(report[:by_actor].pluck(:actor)).to eq(%w[fallback_rules model_selection rules])
     end
 
     it "filters by decision type" do
       report = described_class.call(filters: { decision_types: [ "SELECT_AGENT" ] })
 
-      expect(report[:summary]).to eq(expected_select_agent_summary)
-      expect(report[:by_project].pluck(:project_name)).to eq([ "Beta" ])
-      expect(report[:by_decision_type]).to eq([ expected_decision_type_rollup.first ])
+      expect_select_agent_rollups(report)
     end
   end
 end

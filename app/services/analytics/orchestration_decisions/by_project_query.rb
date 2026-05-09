@@ -4,10 +4,6 @@ module Analytics
   module OrchestrationDecisions
     class ByProjectQuery < BaseQuery
       def call
-        total_count = distinct_count(orchestration_decisions_table[:id])
-        decision_type_count = distinct_count(orchestration_decisions_table[:decision_type])
-        actor_count = distinct_count(orchestration_decisions_table[:actor])
-
         scope = filtered_scope
           .joins(:project)
 
