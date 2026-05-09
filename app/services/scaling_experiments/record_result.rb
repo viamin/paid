@@ -58,8 +58,30 @@ module ScalingExperiments
         "duration_seconds" => scaling_observation.duration_seconds,
         "total_cost_cents" => scaling_observation.total_cost_cents,
         "total_input_tokens" => scaling_observation.total_input_tokens,
-        "total_output_tokens" => scaling_observation.total_output_tokens
+        "total_output_tokens" => scaling_observation.total_output_tokens,
+        "quality_metric_sample_count" => quality_scores.size,
+        "avg_quality_score" => average_quality_score
       }
+    end
+
+    def child_runs
+      @child_runs ||= AgentRun
+        .includes(:quality_metrics)
+        .where(project_id: scaling_observation.project_id, parent_workflow_id: scaling_observation.workflow_id)
+    end
+
+    def quality_scores
+      @quality_scores ||= child_runs.filter_map do |run|
+        run.quality_metrics.find do |metric|
+          metric.metric_type == "automated" && metric.composite_score.present?
+        end&.composite_score&.to_f
+      end
+    end
+
+    def average_quality_score
+      return nil if quality_scores.empty?
+
+      (quality_scores.sum / quality_scores.size).round(4)
     end
   end
 end

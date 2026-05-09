@@ -66,7 +66,7 @@ module ScalingObservations
     end
 
     def child_runs
-      @child_runs ||= AgentRun.where(project: project, parent_workflow_id: workflow_id).to_a
+      @child_runs ||= AgentRun.includes(:quality_metrics).where(project: project, parent_workflow_id: workflow_id).to_a
     end
 
     def execution_summary
@@ -192,6 +192,7 @@ module ScalingObservations
         "batch_sizes" => Array(execution_summary[:batch_sizes]),
         "error_tally" => result_rows.filter_map { |result| result[:error].presence }.tally,
         "child_agent_run_ids" => child_runs.map(&:id),
+        "quality_summary" => quality_summary,
         "parallel_result" => {
           "completed" => parallel_result[:completed],
           "failed" => parallel_result[:failed],
@@ -205,6 +206,25 @@ module ScalingObservations
 
     def normalize_hash(value)
       value.is_a?(Hash) ? value.deep_stringify_keys : {}
+    end
+
+    def quality_summary
+      quality_scores = child_runs.filter_map do |run|
+        run.quality_metrics.find do |metric|
+          metric.metric_type == "automated" && metric.composite_score.present?
+        end&.composite_score&.to_f
+      end
+
+      {
+        "avg_quality_score" => average(quality_scores),
+        "quality_metric_sample_count" => quality_scores.size
+      }.compact
+    end
+
+    def average(values)
+      return if values.empty?
+
+      (values.sum / values.size).round(4)
     end
   end
 end

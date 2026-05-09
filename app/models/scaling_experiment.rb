@@ -4,7 +4,7 @@ require "zlib"
 
 class ScalingExperiment < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
-  DIMENSIONS = %w[agent_count max_iterations parallelism].freeze
+  DIMENSIONS = %w[agent_count iteration_count max_iterations parallelism].freeze
   OUTCOME_METRIC_KEYS = %w[
     success_rate
     duration_seconds
@@ -103,7 +103,12 @@ class ScalingExperiment < ApplicationRecord
   end
 
   def eligible_values(task_count:)
-    normalized_values_tested.select { |value| value <= task_count.to_i }
+    case dimension
+    when "agent_count", "parallelism"
+      normalized_values_tested.select { |value| value <= task_count.to_i }
+    else
+      normalized_values_tested
+    end
   end
 
   def cohort_label(task_count:, assigned_value:)

@@ -82,6 +82,12 @@ module ScalingExperiments
           "requested_agent_count" => value,
           "max_batch_size" => value
         )
+      when "iteration_count"
+        plan.merge!(
+          "requested_iteration_count" => value,
+          "application_mode" => "task_prompt_budget",
+          "prompt_suffix" => iteration_budget_prompt(value)
+        )
       when "max_iterations"
         plan["max_iterations_per_agent"] = value
       when "parallelism"
@@ -89,6 +95,13 @@ module ScalingExperiments
       end
 
       plan
+    end
+
+    def iteration_budget_prompt(value)
+      <<~PROMPT.strip
+        Iteration budget: aim to complete this task within #{value} agent iterations.
+        If you cannot finish safely within that budget, stop and report the blocker instead of continuing indefinitely.
+      PROMPT
     end
   end
 end
