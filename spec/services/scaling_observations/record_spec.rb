@@ -63,6 +63,21 @@ RSpec.describe ScalingObservations::Record do
         agent_count_blocked: 1
       )
     end
+
+    it "derives fallback counts from child run status buckets when result rows are missing" do
+      create_mixed_status_child_runs
+
+      observation = build_fallback_status_observation
+
+      expect(observation).to have_attributes(
+        status: "partial_failure",
+        success: false,
+        agent_count_launched: 5,
+        agent_count_succeeded: 1,
+        agent_count_failed: 1,
+        agent_count_blocked: 1
+      )
+    end
   end
 
   def create_parallel_child_runs
@@ -73,6 +88,34 @@ RSpec.describe ScalingObservations::Record do
         parent_workflow_id: workflow_id, iterations: 1, cost_cents: 80, tokens_input: 300, tokens_output: 125),
       create(:agent_run, :failed, project: project, issue: issue,
         parent_workflow_id: workflow_id, iterations: 2, cost_cents: 60, tokens_input: 200, tokens_output: 50)
+    ]
+  end
+
+  def create_mixed_status_child_runs
+    %i[completed failed running cancelled retried].each do |status|
+      create(:agent_run, status, project: project, issue: issue, parent_workflow_id: workflow_id)
+    end
+  end
+
+  def build_fallback_status_observation
+    described_class.call(
+      project_id: project.id,
+      issue_id: issue.id,
+      workflow_id: workflow_id,
+      workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+      tasks: fallback_status_tasks,
+      parallel_result: { success: false }
+    )
+  end
+
+  def fallback_status_tasks
+    [
+      { index: 0, parallel_group: 0, dependencies: [] },
+      { index: 1, parallel_group: 0, dependencies: [] },
+      { index: 2, parallel_group: 0, dependencies: [] },
+      { index: 3, parallel_group: 0, dependencies: [] },
+      { index: 4, parallel_group: 0, dependencies: [] },
+      { index: 5, parallel_group: 1, dependencies: [ 4 ] }
     ]
   end
 

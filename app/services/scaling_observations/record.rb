@@ -108,20 +108,25 @@ module ScalingObservations
     def succeeded_count
       return successful_results.size if result_rows.any?
 
-      child_runs.count { |run| run.status == "completed" }
+      child_run_status_counts.fetch("completed", 0)
     end
 
     def failed_count
       return launched_failed_results.size if result_rows.any?
 
-      child_runs.count { |run| run.status != "completed" }
+      AgentRun::FAILURE_STATUSES.sum { |status| child_run_status_counts.fetch(status, 0) }
     end
 
     def blocked_count
       return blocked_results.size if result_rows.any?
-      return tasks.size if parallel_result[:error].present? && parallel_execution?
 
-      0
+      return 0 unless parallel_execution?
+
+      [ tasks.size - launched_count, 0 ].max
+    end
+
+    def child_run_status_counts
+      @child_run_status_counts ||= child_runs.group_by(&:status).transform_values(&:size)
     end
 
     def launched_results
