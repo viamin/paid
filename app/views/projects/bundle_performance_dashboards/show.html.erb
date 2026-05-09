@@ -46,7 +46,7 @@
 
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Bundle Performance</h2>
-      <p class="mt-1 text-sm text-gray-500">Top bundles ranked by observed quality, with sparse evidence called out directly.</p>
+      <p class="mt-1 text-sm text-gray-500">Top bundles ranked by the observed outcome-cost objective, with raw quality and efficiency shown alongside sparse evidence warnings.</p>
       <% if @stats[:bundle_rankings].any? %>
         <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
           <table class="min-w-full divide-y divide-gray-200">
@@ -54,7 +54,9 @@
               <tr>
                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bundle</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Objective</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Quality / $</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Success</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Duration</th>
@@ -79,7 +81,9 @@
                     <% end %>
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= row[:quality_sample_count] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(row[:avg_objective_score]) %>"><%= format_quality_score(row[:avg_objective_score]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(row[:avg_quality_score]) %>"><%= format_quality_score(row[:avg_quality_score]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= row[:avg_quality_per_dollar] ? number_with_precision(row[:avg_quality_per_dollar], precision: 2, strip_insignificant_zeros: true) : "--" %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage((row[:success_rate] || 0) * 100, precision: 0) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= row[:avg_cost_cents] ? format_cost_cents(row[:avg_cost_cents]) : "--" %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= format_duration(row[:avg_duration_seconds]) %></td>
@@ -167,13 +171,14 @@
 
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Outcome-Cost Tradeoffs</h2>
-      <p class="mt-1 text-sm text-gray-500">Pareto-efficient bundles keep quality high without paying more than a clearly better alternative.</p>
+      <p class="mt-1 text-sm text-gray-500">Pareto-efficient bundles keep the cost-aware objective high without paying more than a clearly better alternative.</p>
       <% if @stats[:tradeoff_frontier].any? %>
         <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bundle</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Objective</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Tokens</th>
@@ -183,6 +188,7 @@
               <% @stats[:tradeoff_frontier].each do |bundle| %>
                 <tr>
                   <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= bundle[:bundle].name %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_objective_score]) %>"><%= format_quality_score(bundle[:avg_objective_score]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_quality_score]) %>"><%= format_quality_score(bundle[:avg_quality_score]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= format_cost_cents(bundle[:avg_cost_cents]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_delimiter(bundle[:avg_tokens_used]) %></td>
@@ -225,6 +231,7 @@
                     <thead class="bg-gray-50">
                       <tr>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Candidate</th>
+                        <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Predicted Objective</th>
                         <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Predicted Quality</th>
                         <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Confidence Proxy</th>
                         <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Weighted Samples</th>
@@ -235,6 +242,7 @@
                       <% insight[:candidates].each do |candidate| %>
                         <tr>
                           <td class="px-4 py-3 text-sm text-gray-900"><%= candidate[:experiment_values].presence&.join(", ") || "Baseline configuration" %></td>
+                          <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(candidate[:predicted_objective_score]) %>"><%= format_quality_score(candidate[:predicted_objective_score]) %></td>
                           <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(candidate[:predicted_quality_score]) %>"><%= format_quality_score(candidate[:predicted_quality_score]) %></td>
                           <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage(candidate[:confidence_proxy] * 100, precision: 0) %></td>
                           <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_precision(candidate[:sample_count], precision: 2, strip_insignificant_zeros: true) %></td>
