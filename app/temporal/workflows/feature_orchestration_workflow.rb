@@ -29,6 +29,7 @@ module Workflows
       issue_id = input[:issue_id]
       timeout_seconds = input.fetch(:timeout_seconds, DEFAULT_TIMEOUT_SECONDS)
       workflow_id = Temporalio::Workflow.info.workflow_id
+      workflow_started_at = Temporalio::Workflow.now
 
       Temporalio::Workflow.logger.info(
         message: "feature_orchestration.started",
@@ -38,6 +39,7 @@ module Workflows
 
       tasks = []
       created_issues = []
+      parallel_result = nil
       planning_context = {}
       prompt_source = nil
       coordination_policy = nil
@@ -136,6 +138,18 @@ module Workflows
           task_count: tasks.size,
           parallel_execution: false
         }
+        safe_record_scaling_observation(
+          project_id: project_id,
+          issue_id: issue_id,
+          workflow_id: workflow_id,
+          workflow_name: self.class.name,
+          tasks: tasks,
+          started_at: workflow_started_at,
+          metadata: {
+            prompt_source: prompt_source,
+            created_issues: created_issues
+          }
+        )
         safely_record_coordination_outcome(
           assignment_id: coordination_assignment_id,
           task_count: tasks.size,
@@ -197,6 +211,20 @@ module Workflows
         failed: parallel_result[:failed]
       )
 
+      safe_record_scaling_observation(
+        project_id: project_id,
+        issue_id: issue_id,
+        workflow_id: workflow_id,
+        workflow_name: self.class.name,
+        tasks: tasks,
+        parallel_result: parallel_result,
+        started_at: workflow_started_at,
+        metadata: {
+          prompt_source: prompt_source,
+          created_issues: created_issues
+        }
+      )
+
       {
         success: parallel_result[:success],
         project_id: project_id,
@@ -231,6 +259,25 @@ module Workflows
         metadata: {
           prompt_source: prompt_source,
           failed_step: failed_step
+        }
+      )
+
+      safe_record_scaling_observation(
+        project_id: project_id,
+        issue_id: issue_id,
+        workflow_id: workflow_id,
+        workflow_name: self.class.name,
+        tasks: tasks,
+        parallel_result: parallel_result,
+        started_at: workflow_started_at,
+        error_details: {
+          error_class: e.class.to_s,
+          error_message: e.message,
+          failed_step: failed_step
+        },
+        metadata: {
+          prompt_source: prompt_source,
+          created_issues: created_issues
         }
       )
 
@@ -413,6 +460,22 @@ module Workflows
         workflow_id: Temporalio::Workflow.info.workflow_id,
         error_class: log_error.class.to_s,
         error: log_error.message
+      )
+    end
+
+    def safe_record_scaling_observation(payload)
+      run_activity(
+        Activities::RecordScalingObservationActivity,
+        payload,
+        timeout: 30,
+        retry_policy: NO_RETRY
+      )
+    rescue => record_error
+      Temporalio::Workflow.logger.warn(
+        message: "feature_orchestration.scaling_observation_record_failed",
+        workflow_id: Temporalio::Workflow.info.workflow_id,
+        error_class: record_error.class.to_s,
+        error: record_error.message
       )
     end
 

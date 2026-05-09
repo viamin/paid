@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_08_212202) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1705,6 +1705,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
   end
 
+  create_table "scaling_observations", comment: "Run-level observations for studying orchestration scaling behavior across agent count, iterations, and parallelism.", force: :cascade do |t|
+    t.integer "agent_count_blocked", default: 0, null: false, comment: "Number of planned tasks that never launched because of dependencies, deadlines, or capacity."
+    t.integer "agent_count_failed", default: 0, null: false, comment: "Number of launched child agent runs that completed unsuccessfully."
+    t.integer "agent_count_launched", default: 0, null: false, comment: "Number of child agent runs actually launched."
+    t.integer "agent_count_planned", default: 0, null: false, comment: "Number of agents the orchestration planned to use."
+    t.integer "agent_count_succeeded", default: 0, null: false, comment: "Number of launched child agent runs that completed successfully."
+    t.integer "batch_count", default: 0, null: false, comment: "Number of execution batches used by the parallel workflow."
+    t.datetime "created_at", null: false
+    t.integer "dependency_edge_count", default: 0, null: false, comment: "Total dependency edges across planned sub-tasks."
+    t.integer "duration_seconds", comment: "Elapsed wall-clock seconds for the orchestration workflow."
+    t.bigint "issue_id", comment: "Parent feature issue whose orchestration emitted the observation."
+    t.integer "max_iterations", default: 0, null: false, comment: "Maximum iterations observed on any launched child agent run."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured detail for experiments, including batch sizes, errors, and linked child runs."
+    t.string "observation_type", limit: 100, default: "feature_orchestration", null: false, comment: "Observation category used to group comparable orchestration runs."
+    t.boolean "parallel_execution", default: false, null: false, comment: "Whether the workflow attempted parallel child execution."
+    t.integer "parallelism_observed", default: 0, null: false, comment: "Maximum child workflow batch size actually launched concurrently."
+    t.integer "parallelism_planned", default: 0, null: false, comment: "Maximum planned same-wave task count from decomposition parallel groups."
+    t.integer "parallelizable_group_count", default: 0, null: false, comment: "Count of planned parallel groups containing more than one task."
+    t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and experiment segmentation."
+    t.string "status", limit: 100, default: "completed", null: false, comment: "Terminal orchestration outcome such as completed, skipped, no_capacity, partial_failure, or failed."
+    t.boolean "success", default: false, null: false, comment: "Whether the orchestration run achieved its intended terminal outcome."
+    t.integer "task_count", default: 0, null: false, comment: "Number of planned sub-tasks in the decomposition."
+    t.integer "total_cost_cents", default: 0, null: false, comment: "Sum of cost_cents across launched child agent runs."
+    t.integer "total_input_tokens", default: 0, null: false, comment: "Sum of input tokens across launched child agent runs."
+    t.integer "total_iterations", default: 0, null: false, comment: "Sum of iterations across launched child agent runs."
+    t.integer "total_output_tokens", default: 0, null: false, comment: "Sum of output tokens across launched child agent runs."
+    t.datetime "updated_at", null: false
+    t.string "workflow_id", limit: 255, null: false, comment: "Temporal workflow ID for the orchestration run."
+    t.string "workflow_name", limit: 255, null: false, comment: "Workflow class that emitted the observation."
+    t.index ["issue_id", "created_at"], name: "idx_scaling_observations_issue_created"
+    t.index ["project_id", "created_at", "id"], name: "idx_scaling_observations_project_recent"
+    t.index ["project_id", "observation_type", "created_at"], name: "idx_scaling_observations_project_type_created"
+    t.index ["project_id", "status", "created_at"], name: "idx_scaling_observations_project_status_created"
+    t.index ["project_id", "workflow_id"], name: "idx_scaling_observations_project_workflow", unique: true
+  end
+
   create_table "service_container_metrics", force: :cascade do |t|
     t.string "container_id", limit: 128, null: false
     t.float "cpu_percent", default: 0.0, null: false
@@ -2131,6 +2167,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_180905) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "scaling_observations", "issues", on_delete: :nullify
+  add_foreign_key "scaling_observations", "projects", on_delete: :cascade
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "service_containers", "accounts"
   add_foreign_key "strategy_experiment_assignments", "agent_runs", on_delete: :cascade

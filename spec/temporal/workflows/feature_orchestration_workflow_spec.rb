@@ -170,6 +170,28 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
 
+      it "records a scaling observation after parallel execution" do
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(
+            Activities::RecordScalingObservationActivity,
+            hash_including(
+              project_id: 1,
+              issue_id: 2,
+              workflow_id: "test-orchestration-wf",
+              workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+              tasks: tasks,
+              parallel_result: hash_including(
+                success: true,
+                execution_summary: hash_including(max_parallelism_observed: 1)
+              )
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
+          )
+      end
+
       it "passes aggregate_pr option to child workflow when provided" do
         result = workflow.execute(input.merge(aggregate_pr: true))
 
@@ -226,6 +248,23 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+      end
+
+      it "records a skipped scaling observation" do
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(
+            Activities::RecordScalingObservationActivity,
+            hash_including(
+              project_id: 1,
+              issue_id: 2,
+              workflow_id: "test-orchestration-wf",
+              tasks: tasks
+            ),
+            timeout: 30,
+            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
+          )
       end
     end
 
@@ -393,6 +432,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+        expect_failed_scaling_observation_recorded!
       end
     end
 
@@ -506,6 +546,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         { assignment_id: 77, outcome_status: "recorded" }
       when "Activities::LogDecompositionDecisionActivity"
         { decomposition_decision_id: 1 }
+      when "Activities::RecordScalingObservationActivity"
+        { scaling_observation_id: 1 }
       else
         {}
       end
@@ -515,10 +557,29 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
   def stub_parallel_execution(result)
     allow(Temporalio::Workflow).to receive(:execute_child_workflow)
       .with(Workflows::ParallelAgentExecutionWorkflow, anything, anything)
-      .and_return(result)
+      .and_return(result.deep_merge(execution_summary: { batch_count: result[:total], batch_sizes: Array.new(result[:total], 1), max_parallelism_observed: 1 }))
   end
 
   def stub_update_labels
     # Already handled by stub_planning_activities
+  end
+
+  def expect_failed_scaling_observation_recorded!
+    expect(workflow).to have_received(:run_activity)
+      .with(
+        Activities::RecordScalingObservationActivity,
+        hash_including(
+          project_id: 1,
+          issue_id: 2,
+          workflow_id: "test-orchestration-wf",
+          error_details: hash_including(
+            error_class: "Temporalio::Error::ApplicationError",
+            error_message: "LLM failed",
+            failed_step: "decompose_feature"
+          )
+        ),
+        timeout: 30,
+        retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
+      )
   end
 end
