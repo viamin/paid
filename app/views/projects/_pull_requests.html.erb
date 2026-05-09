@@ -10,6 +10,7 @@
             <% pull_request_locals = {
               pull_request: pr,
               project: project,
+              paused_run: local_assigns.fetch(:paused_runs_by_pr_number, {})[pr.github_number],
               pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
               pr_numbers_with_active_runs: pr_numbers_with_active_runs
             } %>
