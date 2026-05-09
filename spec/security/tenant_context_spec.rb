@@ -227,7 +227,6 @@ RSpec.describe TenantContext, :tenant_isolation do
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.down if orchestration_decisions_have_strategy_version_reference?
-      EnsureStrategyVersionIdOnOrchestrationDecisions.new.down if orchestration_decisions_have_strategy_version_reference?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
       EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
@@ -272,7 +271,6 @@ RSpec.describe TenantContext, :tenant_isolation do
     cleanup_restricted_role
     ActiveRecord::Migration.suppress_messages do
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.down if orchestration_decisions_have_strategy_version_reference?
-      EnsureStrategyVersionIdOnOrchestrationDecisions.new.down if orchestration_decisions_have_strategy_version_reference?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
       EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
       EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
