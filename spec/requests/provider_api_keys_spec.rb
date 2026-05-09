@@ -291,6 +291,18 @@ RSpec.describe "ProviderApiKeys" do
         expect(response).to redirect_to(provider_api_key_path(api_key))
         expect(flash[:alert]).to include("Cannot delete")
       end
+
+      it "allows deletion after the referencing provider has been soft deleted" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+        provider = create(:provider, :api_key, user: user, provider_key: "cursor", provider_api_key: api_key)
+        provider.discard!
+
+        expect {
+          delete provider_api_key_path(api_key)
+        }.to change(ProviderApiKey, :count).by(-1)
+
+        expect(response).to redirect_to(provider_api_keys_path)
+      end
     end
   end
 end

@@ -77,6 +77,7 @@ class Provider < ApplicationRecord
   before_validation :normalize_agent_co_author_trailer
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
+  before_discard :clear_provider_api_key_reference
   before_discard :prevent_destroying_last_agent_run_provider
   before_discard :prevent_destroying_default_provider
   after_commit :invalidate_agent_run_provider_option_caches
@@ -608,6 +609,10 @@ class Provider < ApplicationRecord
     Project.where(account_id: account_id).pluck(:id).each do |project_id|
       AgentRun.invalidate_provider_options_cache(account_id: account_id, project_id: project_id)
     end
+  end
+
+  def clear_provider_api_key_reference
+    self.provider_api_key = nil if provider_api_key_id.present?
   end
 
   def api_key_auth_requires_provider_api_key

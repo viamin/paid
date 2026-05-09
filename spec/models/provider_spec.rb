@@ -953,4 +953,18 @@ RSpec.describe Provider do
       expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
     end
   end
+
+  describe "soft delete lifecycle" do
+    it "clears the API key reference when discarding an api-key provider" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      provider = create(:provider, :api_key, user: user, provider_key: "cursor", provider_api_key: api_key)
+
+      expect(provider.discard).to be(true)
+
+      discarded_provider = described_class.with_discarded.find(provider.id)
+      expect(discarded_provider).to be_discarded
+      expect(discarded_provider.provider_api_key_id).to be_nil
+    end
+  end
 end
