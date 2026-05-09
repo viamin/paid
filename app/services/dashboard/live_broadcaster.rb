@@ -14,7 +14,12 @@ module Dashboard
     def call
       broadcast_live_stats
       broadcast_active_runs
-      broadcast_paused_runs
+      # Paused runs are intentionally NOT broadcast here. The paused-runs
+      # partial includes per-viewer authorization (can_resume) that the
+      # broadcaster cannot evaluate without a request context. Broadcasting
+      # with can_resume: false would strip Resume buttons from users who
+      # had them on initial page load. The section refreshes on full page
+      # load where the controller provides the correct policy check.
       broadcast_activity_stream
       broadcast_alert if alert_worthy?
     end
@@ -48,21 +53,6 @@ module Dashboard
         target: "active-runs",
         partial: "dashboard/active_runs",
         locals: { active_runs: active_runs }
-      )
-    end
-
-    def broadcast_paused_runs
-      paused_runs = account_agent_runs.paused.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
-        .order(paused_at: :desc, created_at: :desc)
-        .limit(20)
-        .to_a
-      AgentRun.preload_final_provider_records(paused_runs)
-
-      Turbo::StreamsChannel.broadcast_update_to(
-        stream_name,
-        target: "paused-runs",
-        partial: "dashboard/paused_runs",
-        locals: { paused_runs: paused_runs, can_resume: false }
       )
     end
 
