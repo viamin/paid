@@ -2009,7 +2009,7 @@ module Activities
         "configured_idle_timeout_seconds" => effective_idle_timeout,
         "idle_timeout_seconds" => provider_idle_timeout || effective_idle_timeout,
         "heartbeat_supported" => heartbeat&.available? || false,
-        "heartbeat_path_configured" => heartbeat&.available? || false
+        "heartbeat_path_configured" => heartbeat&.heartbeat_path.present? || false
       ).compact
     end
 

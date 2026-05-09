@@ -572,8 +572,6 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
-
-
     end
 
     context "with a direct-outbound kilocode provider" do
