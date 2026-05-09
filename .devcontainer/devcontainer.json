@@ -136,7 +136,8 @@
         "DavidAnson.vscode-markdownlint",
         "Tyriar.sort-lines",
         "ryu1kn.partial-diff",
-        "bierner.markdown-mermaid"
+        "bierner.markdown-mermaid",
+        "marcoroth.herb-lsp"
       ],
       "settings": {
         // Ruby
