@@ -15,11 +15,10 @@ module Dashboard
       broadcast_live_stats
       broadcast_active_runs
       # Paused runs are intentionally NOT broadcast here. The paused-runs
-      # partial includes per-viewer authorization (can_resume) that the
-      # broadcaster cannot evaluate without a request context. Broadcasting
-      # with can_resume: false would strip Resume buttons from users who
-      # had them on initial page load. The section refreshes on full page
-      # load where the controller provides the correct policy check.
+      # partial calls policy(run).resume? per-run, which requires a request
+      # context (current_user) the broadcaster does not have. The section
+      # refreshes on full page load where the controller provides the
+      # correct policy check.
       broadcast_activity_stream
       broadcast_alert if alert_worthy?
     end
