@@ -352,7 +352,9 @@ module Workflows
           project_id: project_id,
           issue_id: issue_id,
           knowledge_context: context_result[:context],
-          coordination_policy: coordination_policy
+          coordination_policy: coordination_policy,
+          workflow_name: self.class.name,
+          workflow_id: Temporalio::Workflow.info.workflow_id
         },
         timeout: 120
       )

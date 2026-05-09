@@ -39,6 +39,15 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
         hints: { "task_count" => 0 },
         metadata: { "policy_source" => "feature_orchestration" }
       )
+      create(
+        :decomposition_decision,
+        project: project,
+        issue: create(:issue, project: project),
+        decision_type: "decomposition_strategy",
+        outcome: "decomposed",
+        hints: { "task_count" => 99 },
+        metadata: { "policy_source" => "feature_orchestration" }
+      )
       other_project = create(:project)
       create(:decomposition_decision, project: other_project, issue: create(:issue, project: other_project))
     end
@@ -62,6 +71,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
         "planning_outcome" => 2,
         "parallelization_outcome" => 1
       )
+      expect(result.dig(:performance, :decision_type_counts)).not_to include("decomposition_strategy")
       expect(result.dig(:performance, :policy_source_counts)).to include(
         "feature_orchestration" => 2,
         "defaults" => 1
