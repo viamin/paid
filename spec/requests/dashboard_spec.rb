@@ -103,6 +103,10 @@ RSpec.describe "Dashboard" do
 
         expect(response.body).to include("Live Metrics")
         expect(response.body).to include("Active Runs")
+        expect(response.body).not_to include("Active Containers")
+        expect(response.body).not_to include("Warm Containers")
+        expect(response.body).not_to include("Total Projects")
+        expect(response.body).not_to include("Active Projects")
         expect(response.body).to include("Recent Activity")
       end
 
