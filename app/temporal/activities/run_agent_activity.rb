@@ -261,12 +261,17 @@ module Activities
             )
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
+              # Peek at rate-limit fallback candidates without consuming them so
+              # insert_rate_limit_fallbacks! can still insert after recovery.
+              remaining_after_rate_limit_insertion = providers[(index + 1)..].to_a +
+                peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+
               break unless recover_container_for_fallback!(
                 agent_run: agent_run,
                 provider: provider,
                 error_type: "rate_limited",
                 error_message: e.message,
-                fallback_remaining: providers[(index + 1)..]
+                fallback_remaining: remaining_after_rate_limit_insertion
               )
             end
             insert_rate_limit_fallbacks!(
@@ -327,12 +332,17 @@ module Activities
             )
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
+              # Peek without consuming so future rate-limit fallback insertion
+              # is not affected by this timeout recovery check.
+              remaining_after_rate_limit_insertion = providers[(index + 1)..].to_a +
+                peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+
               break unless recover_container_for_fallback!(
                 agent_run: agent_run,
                 provider: provider,
                 error_type: "timeout",
                 error_message: e.message,
-                fallback_remaining: providers[(index + 1)..]
+                fallback_remaining: remaining_after_rate_limit_insertion
               )
             end
             # Fall through to next provider instead of breaking — per-provider
@@ -1590,6 +1600,15 @@ module Activities
     end
 
     def rate_limit_fallback_candidates_for(provider_candidate, provider, providers)
+      candidates = peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+      @inserted_rate_limit_fallbacks.merge(candidates)
+      candidates
+    end
+
+    # Returns eligible rate-limit fallback candidates without marking them as
+    # inserted. Use this when you need to check whether fallbacks exist (e.g.,
+    # for container recovery decisions) without consuming them.
+    def peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
       @inserted_rate_limit_fallbacks ||= Set.new
 
       canonical_key = canonical_provider(provider)
@@ -1603,8 +1622,6 @@ module Activities
         candidate == current_provider ||
           @inserted_rate_limit_fallbacks.include?(candidate) ||
           already_scheduled.include?(candidate)
-      end.tap do |new_candidates|
-        @inserted_rate_limit_fallbacks.merge(new_candidates)
       end
     end
 
