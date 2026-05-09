@@ -103,6 +103,31 @@ RSpec.describe "Providers" do
         expect(response.body).not_to match(/Kimi K2\.5.*Circuit Open/m)
       end
 
+      it "prefers routed usage stats over provider-key aggregates for api-key entries" do
+        provider = user.providers.create!(
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: opencode_api_key,
+          name: "Kimi K2.5",
+          enabled_for_agent_runs: true,
+          config: {
+            "opencode" => {
+              "api_provider" => "openrouter",
+              "model" => "moonshotai/kimi-k2-0905"
+            }
+          }
+        )
+        allow(Providers::UsageStats).to receive(:call).and_return(
+          "opencode" => { runs_7d: 99, cost_cents_7d: 123_45, tokens_7d: 500_000, fallback_total: 0, fallback_rate: 0, fallback_switched: 0, rate_limit_events_7d: 0 },
+          provider.routing_key => { runs_7d: 3, cost_cents_7d: 250, tokens_7d: 1_500, fallback_total: 0, fallback_rate: 0, fallback_switched: 0, rate_limit_events_7d: 0 }
+        )
+
+        get providers_path
+
+        expect(response.body).to match(/Kimi K2\.5.*3 runs/m)
+        expect(response.body).not_to match(/Kimi K2\.5.*99 runs/m)
+      end
+
       it "renders multi-provider options only when more than one provider is enabled" do
         get providers_path
         expect(response.body).not_to include("Round Robin")

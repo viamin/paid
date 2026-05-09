@@ -522,6 +522,9 @@
             <div class="rounded-md border border-amber-200 bg-white/70 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/50">
               <p class="text-xs font-medium text-amber-900 dark:text-amber-100"><%= provider_display_for_identifier(attempt["provider"], provider: attempt_provider) %></p>
               <p class="mt-1 text-xs text-amber-800 dark:text-amber-200"><%= truncate(redacted_error_message(attempt["error_message"]), length: 300) %></p>
+              <% if (diagnostics_summary = provider_attempt_diagnostics_summary(attempt)).present? %>
+                <p class="mt-1 text-[11px] text-amber-700 dark:text-amber-300"><%= diagnostics_summary %></p>
+              <% end %>
             </div>
           <% end %>
         </div>

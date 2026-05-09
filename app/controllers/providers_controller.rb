@@ -366,7 +366,7 @@ class ProvidersController < ApplicationController
     @usage_stats = Providers::UsageStats.call(user: current_user)
     # Pre-index stats per provider to avoid duplicate lookups in views
     @provider_stats_by_id = @providers.each_with_object({}) do |provider, hash|
-      stats = @usage_stats[provider.provider_key] || @usage_stats[provider.routing_key]
+      stats = @usage_stats[provider.routing_key] || @usage_stats[provider.provider_key]
       hash[provider.id] = stats
     end
     @available_api_keys = current_user.provider_api_keys.ordered

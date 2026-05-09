@@ -369,6 +369,20 @@ module ApplicationHelper
     Knowledge::Redaction::Redactor.call(text: message).clean_text
   end
 
+  def provider_attempt_diagnostics_summary(attempt)
+    diagnostics = attempt["diagnostics"]
+    return nil unless diagnostics.is_a?(Hash)
+
+    summary = []
+    summary << "#{diagnostics['timeout_type'].to_s.humanize} timeout" if diagnostics["timeout_type"].present?
+    summary << "elapsed #{number_with_precision(diagnostics['elapsed_seconds'], precision: 1)}s" if diagnostics["elapsed_seconds"].present?
+    summary << "idle #{number_with_precision(diagnostics['idle_seconds'], precision: 1)}s" if diagnostics["idle_seconds"].present?
+    summary << "limit #{number_with_precision(diagnostics['effective_timeout_seconds'], precision: 0)}s" if diagnostics["effective_timeout_seconds"].present?
+    summary << "heartbeat active" if diagnostics["heartbeat_active"]
+    summary << "no output" if diagnostics["output_received"] == false
+    summary.presence&.join(" • ")
+  end
+
   private
 
   def create_pr_context(run)

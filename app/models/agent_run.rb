@@ -220,7 +220,8 @@ class AgentRun < ApplicationRecord
   NORMALIZABLE_COLUMNS = [
     "agent_type",
     "final_provider",
-    "NULLIF(final_provider, '')"
+    "NULLIF(final_provider, '')",
+    "attempt->>'provider'"
   ].freeze
 
   # SQL CASE expression that normalizes a column's value to its canonical
@@ -1569,7 +1570,7 @@ class AgentRun < ApplicationRecord
   # @param provider [String] The provider name
   # @param success [Boolean] Whether the attempt succeeded
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
-  def record_provider_attempt(provider, success:, error_type: nil, error_message: nil, duration_seconds: nil)
+  def record_provider_attempt(provider, success:, error_type: nil, error_message: nil, duration_seconds: nil, diagnostics: nil)
     attempt = {
       "provider" => provider,
       "success" => success,
@@ -1579,6 +1580,7 @@ class AgentRun < ApplicationRecord
     sanitized_error_message = sanitize_provider_attempt_error_message(error_message)
     attempt["error_message"] = sanitized_error_message if sanitized_error_message.present?
     attempt["duration_seconds"] = duration_seconds if duration_seconds.present?
+    attempt["diagnostics"] = sanitize_provider_attempt_diagnostics(diagnostics) if diagnostics.present?
 
     self.providers_attempted = (providers_attempted || []) + [ attempt ]
     save!
@@ -1592,6 +1594,32 @@ class AgentRun < ApplicationRecord
   def log_provider_switch!(from, to, reason)
     log!("system", "Provider fallback: #{from} -> #{to} (#{reason})")
     increment!(:provider_switches)
+  end
+
+  def sanitize_provider_attempt_diagnostics(diagnostics)
+    return unless diagnostics.is_a?(Hash)
+
+    diagnostics.deep_stringify_keys.each_with_object({}) do |(key, value), sanitized|
+      sanitized[key] = case value
+      when Hash
+        sanitize_provider_attempt_diagnostics(value)
+      when Array
+        value.map do |entry|
+          case entry
+          when Hash
+            sanitize_provider_attempt_diagnostics(entry)
+          when String
+            sanitize_provider_attempt_error_message(entry)
+          else
+            entry
+          end
+        end
+      when String
+        sanitize_provider_attempt_error_message(value)
+      else
+        value
+      end
+    end.reject { |_, value| value.nil? || value == "" || value == {} || value == [] }
   end
 
   # Container management integration methods.

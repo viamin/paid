@@ -290,6 +290,23 @@ module Containers
       )
     end
 
+    # Restores a previously-prepared branch into a fresh container after the
+    # original container was invalidated mid-run. Existing-PR runs re-checkout
+    # the remote branch, while new-PR runs recreate the local branch from the
+    # originally recorded base commit so fallback providers continue from the
+    # same starting point.
+    def clone_and_restore_branch(branch_name:, base_commit_sha:, pull_request_number: nil)
+      clone_repo
+
+      if pull_request_number.present?
+        checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
+      else
+        checkout_local_branch(branch_name, base_commit_sha: base_commit_sha)
+      end
+
+      record_restored_base_commit(base_commit_sha)
+    end
+
     # Pushes the agent's branch to the remote.
     #
     # Uses --force-with-lease for existing PR branches to safely handle
@@ -910,6 +927,20 @@ module Containers
       else
         "agent-#{agent_run.id}"
       end
+    end
+
+    def checkout_local_branch(branch_name, base_commit_sha:)
+      if base_commit_sha.present?
+        result = execute_git("checkout", base_commit_sha)
+        raise Error, "Base commit checkout failed: #{error_with_stderr(result)}" if result.failure?
+      end
+
+      result = execute_git("checkout", "-b", branch_name)
+      raise Error, "Branch restore failed: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    def record_restored_base_commit(base_commit_sha)
+      base_commit_sha.presence || record_base_commit
     end
 
     def slugify(text)

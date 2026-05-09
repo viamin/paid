@@ -64,22 +64,25 @@ module Containers
 
     # Raised when operation times out
     class TimeoutError < Error
-      def initialize(msg = "Operation timed out")
-        super
+      attr_reader :diagnostics
+
+      def initialize(msg = "Operation timed out", diagnostics: {})
+        @diagnostics = diagnostics
+        super(msg)
       end
     end
 
     # Raised when no output is received within the startup timeout
     class StartupTimeoutError < TimeoutError
-      def initialize(msg = "No output received within startup timeout")
-        super
+      def initialize(msg = "No output received within startup timeout", diagnostics: {})
+        super(msg, diagnostics: diagnostics)
       end
     end
 
     # Raised when output stops flowing for longer than the idle timeout
     class IdleTimeoutError < TimeoutError
-      def initialize(msg = "No output received within idle timeout")
-        super
+      def initialize(msg = "No output received within idle timeout", diagnostics: {})
+        super(msg, diagnostics: diagnostics)
       end
     end
 
@@ -108,7 +111,7 @@ module Containers
     # and check_deadline_exceeded! to keep their parameter lists under 4.
     TimeoutCheckState = Struct.new(
       :mutex, :timeout_reason_ref, :startup_timeout, :idle_timeout,
-      :timeout, :started_at, :heartbeat_path,
+      :timeout, :started_at, :heartbeat_path, :output_received_ref, :last_activity_ref,
       keyword_init: true
     )
 
@@ -390,7 +393,9 @@ module Containers
         idle_timeout: idle_timeout,
         timeout: timeout,
         started_at: started_at,
-        heartbeat_path: heartbeat_path
+        heartbeat_path: heartbeat_path,
+        output_received_ref: -> { output_received },
+        last_activity_ref: -> { last_activity_at }
       )
 
       watchdog_ctx = WatchdogContext.new(
@@ -2379,9 +2384,15 @@ module Containers
 
       case reason
       when :startup
-        raise StartupTimeoutError, "No output received within #{timeout_check.startup_timeout} seconds"
+        raise StartupTimeoutError.new(
+          "No output received within #{timeout_check.startup_timeout} seconds",
+          diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: false)
+        )
       when :idle
-        raise IdleTimeoutError, "No output received for #{timeout_check.idle_timeout} seconds"
+        raise IdleTimeoutError.new(
+          "No output received for #{timeout_check.idle_timeout} seconds",
+          diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: true)
+        )
       when :wall_clock
         elapsed_seconds = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - timeout_check.started_at)).round(1)
         hb_age = heartbeat_age_seconds(timeout_check.heartbeat_path)
@@ -2391,7 +2402,13 @@ module Containers
           elapsed_seconds: elapsed_seconds,
           heartbeat_active: hb_age && hb_age <= elapsed_seconds,
           heartbeat_age_seconds: hb_age&.round(1))
-        raise TimeoutError, "Command timed out after #{timeout_check.timeout} seconds"
+        raise TimeoutError.new(
+          "Command timed out after #{timeout_check.timeout} seconds",
+          diagnostics: timeout_diagnostics_for_state(
+            timeout_check,
+            output_received: hb_age && hb_age <= elapsed_seconds
+          )
+        )
       end
     end
 
@@ -2422,16 +2439,64 @@ module Containers
       # Check startup/idle before wall-clock to match the watchdog's precedence —
       # more specific timeouts take priority over the catch-all wall-clock.
       if !output_received && tc.startup_timeout && elapsed_since_activity >= tc.startup_timeout
-        raise StartupTimeoutError, "No output received within #{tc.startup_timeout} seconds"
+        raise StartupTimeoutError.new(
+          "No output received within #{tc.startup_timeout} seconds",
+          diagnostics: timeout_diagnostics_from_elapsed(
+            elapsed_since_start,
+            elapsed_since_activity,
+            output_received,
+            tc.heartbeat_path,
+            heartbeat_age
+          )
+        )
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
-        raise IdleTimeoutError, "No output received for #{tc.idle_timeout} seconds"
+        raise IdleTimeoutError.new(
+          "No output received for #{tc.idle_timeout} seconds",
+          diagnostics: timeout_diagnostics_from_elapsed(
+            elapsed_since_start,
+            elapsed_since_activity,
+            output_received,
+            tc.heartbeat_path,
+            heartbeat_age
+          )
+        )
       elsif tc.timeout && elapsed_since_start >= tc.timeout && !heartbeat_fresh
         log_system("container.execute.timeout",
           timeout_type: "wall_clock",
           timeout: tc.timeout,
           **timeout_diagnostics_from_elapsed(elapsed_since_start, elapsed_since_activity, output_received, tc.heartbeat_path, heartbeat_age))
-        raise TimeoutError, "Command timed out after #{tc.timeout} seconds"
+        raise TimeoutError.new(
+          "Command timed out after #{tc.timeout} seconds",
+          diagnostics: timeout_diagnostics_from_elapsed(
+            elapsed_since_start,
+            elapsed_since_activity,
+            output_received,
+            tc.heartbeat_path,
+            heartbeat_age
+          )
+        )
       end
+    end
+
+    def timeout_diagnostics_for_state(timeout_check, output_received:)
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      elapsed_since_start = now - timeout_check.started_at
+      heartbeat_age = heartbeat_age_seconds(timeout_check.heartbeat_path)
+      output_received = timeout_check.output_received_ref&.call || output_received
+      elapsed_since_activity = if output_received
+        last_activity_at = timeout_check.last_activity_ref&.call || timeout_check.started_at
+        [ now - last_activity_at, heartbeat_age || Float::INFINITY ].min
+      else
+        elapsed_since_start
+      end
+
+      timeout_diagnostics_from_elapsed(
+        elapsed_since_start,
+        elapsed_since_activity,
+        output_received,
+        timeout_check.heartbeat_path,
+        heartbeat_age
+      )
     end
 
     # Starts a watchdog thread that monitors output activity and stops the

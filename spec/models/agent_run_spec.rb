@@ -2315,6 +2315,28 @@ RSpec.describe AgentRun do
       expect(attempt["error_message"].length).to be <= AgentRun::MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH
     end
 
+    it "sanitizes nested diagnostic string entries" do
+      agent_run = create(:agent_run)
+      secret = "sk-test-super-secret-value"
+
+      agent_run.record_provider_attempt(
+        "claude",
+        success: false,
+        error_type: "timeout",
+        diagnostics: {
+          "argv" => [ secret, { "message" => "Bearer #{secret}" } ],
+          "messages" => [ "token #{secret}" ]
+        }
+      )
+
+      attempt = agent_run.reload.providers_attempted.last
+      diagnostics = attempt["diagnostics"]
+
+      expect(diagnostics["argv"].first).not_to include(secret)
+      expect(diagnostics["argv"].second["message"]).not_to include(secret)
+      expect(diagnostics["messages"].first).not_to include(secret)
+    end
+
     it "accumulates multiple attempts" do
       agent_run = create(:agent_run)
       agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")

@@ -27,23 +27,42 @@ module Providers
     def build_stats
       seven_day_runs = time_filtered_runs(7.days.ago)
       seven_day_token_data = token_data_by_provider(7.days.ago)
+      attempt_metrics = provider_attempt_metrics(7.days.ago)
 
       run_counts = seven_day_runs.group(Arel.sql(effective_provider_sql)).count
       cost_by_provider = seven_day_token_data[:cost]
       tokens_by_provider = seven_day_token_data[:tokens]
       fallback_stats = compute_fallback_stats(seven_day_runs)
-      rate_limit_counts = compute_rate_limit_counts(seven_day_runs)
 
-      all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, rate_limit_counts)
+      status_rate_limits = status_based_rate_limit_counts(seven_day_runs)
+
+      all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, attempt_metrics, status_rate_limits)
       all_keys.index_with do |key|
+        attempt_stats = attempt_metrics.fetch(key, {})
+        attempts = attempt_stats.fetch(:attempts, 0)
+        successes = attempt_stats.fetch(:successes, 0)
+
+        # Use the higher of attempt-level and status-based rate-limit counts so
+        # runs marked rate_limited without providers_attempted data (e.g. via
+        # AgentRun#rate_limit!) are not silently undercounted.
+        attempt_rate_limits = attempt_stats.fetch(:rate_limits, 0)
+        status_rate_limits_count = status_rate_limits.fetch(key) { 0 }
+        rate_limits = [ attempt_rate_limits, status_rate_limits_count ].max
+
         {
           runs_7d: run_counts.fetch(key) { 0 },
           cost_cents_7d: cost_by_provider.fetch(key) { 0 },
           tokens_7d: tokens_by_provider.fetch(key) { 0 },
+          attempts_7d: attempts,
+          success_attempts_7d: successes,
+          success_rate_7d: attempts.zero? ? 0.0 : (successes.to_f / attempts * 100).round(1),
+          timeout_events_7d: attempt_stats.fetch(:timeouts, 0),
           fallback_rate: fallback_stats.dig(key, :rate) || 0.0,
           fallback_total: fallback_stats.dig(key, :total) || 0,
           fallback_switched: fallback_stats.dig(key, :switched) || 0,
-          rate_limit_events_7d: rate_limit_counts.fetch(key) { 0 }
+          rate_limit_events_7d: rate_limits,
+          error_events_7d: attempt_stats.fetch(:errors, 0),
+          avg_attempt_duration_seconds: attempt_stats.fetch(:avg_duration_seconds, 0.0)
         }
       end
     end
@@ -116,10 +135,39 @@ module Providers
       end
     end
 
-    def compute_rate_limit_counts(runs)
+    def status_based_rate_limit_counts(runs)
       runs.where(status: "rate_limited")
         .group(Arel.sql(effective_provider_sql))
         .count
+    end
+
+    def provider_attempt_metrics(since)
+      normalized_attempt_provider_sql = AgentRun.normalize_provider_sql("attempt->>'provider'")
+
+      account_runs
+        .where(created_at: since..)
+        .joins("CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.providers_attempted, '[]'::jsonb)) AS attempt")
+        .group(Arel.sql(normalized_attempt_provider_sql))
+        .pluck(
+          Arel.sql(normalized_attempt_provider_sql),
+          Arel.sql("COUNT(*)::integer"),
+          Arel.sql("COUNT(*) FILTER (WHERE COALESCE((attempt->>'success')::boolean, false))::integer"),
+          Arel.sql("COUNT(*) FILTER (WHERE attempt->>'error_type' = 'timeout')::integer"),
+          Arel.sql("COUNT(*) FILTER (WHERE attempt->>'error_type' = 'rate_limited')::integer"),
+          Arel.sql("COUNT(*) FILTER (WHERE attempt->>'error_type' = 'error')::integer"),
+          Arel.sql("COALESCE(ROUND(AVG(NULLIF(attempt->>'duration_seconds', '')::numeric), 1), 0)::float")
+        ).each_with_object({}) do |row, metrics|
+        provider, attempts, successes, timeouts, rate_limits, errors, avg_duration_seconds = row
+
+        metrics[provider] = {
+          attempts: attempts.to_i,
+          successes: successes.to_i,
+          timeouts: timeouts.to_i,
+          rate_limits: rate_limits.to_i,
+          errors: errors.to_i,
+          avg_duration_seconds: avg_duration_seconds.to_f
+        }
+      end
     end
   end
 end
