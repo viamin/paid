@@ -27,23 +27,33 @@ module Providers
     def build_stats
       seven_day_runs = time_filtered_runs(7.days.ago)
       seven_day_token_data = token_data_by_provider(7.days.ago)
+      attempt_metrics = provider_attempt_metrics(7.days.ago)
 
       run_counts = seven_day_runs.group(Arel.sql(effective_provider_sql)).count
       cost_by_provider = seven_day_token_data[:cost]
       tokens_by_provider = seven_day_token_data[:tokens]
       fallback_stats = compute_fallback_stats(seven_day_runs)
-      rate_limit_counts = compute_rate_limit_counts(seven_day_runs)
 
-      all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, rate_limit_counts)
+      all_keys = provider_keys(run_counts, cost_by_provider, tokens_by_provider, fallback_stats, attempt_metrics)
       all_keys.index_with do |key|
+        attempt_stats = attempt_metrics.fetch(key, {})
+        attempts = attempt_stats.fetch(:attempts, 0)
+        successes = attempt_stats.fetch(:successes, 0)
+
         {
           runs_7d: run_counts.fetch(key) { 0 },
           cost_cents_7d: cost_by_provider.fetch(key) { 0 },
           tokens_7d: tokens_by_provider.fetch(key) { 0 },
+          attempts_7d: attempts,
+          success_attempts_7d: successes,
+          success_rate_7d: attempts.zero? ? 0.0 : (successes.to_f / attempts * 100).round(1),
+          timeout_events_7d: attempt_stats.fetch(:timeouts, 0),
           fallback_rate: fallback_stats.dig(key, :rate) || 0.0,
           fallback_total: fallback_stats.dig(key, :total) || 0,
           fallback_switched: fallback_stats.dig(key, :switched) || 0,
-          rate_limit_events_7d: rate_limit_counts.fetch(key) { 0 }
+          rate_limit_events_7d: attempt_stats.fetch(:rate_limits, 0),
+          error_events_7d: attempt_stats.fetch(:errors, 0),
+          avg_attempt_duration_seconds: attempt_stats.fetch(:avg_duration_seconds, 0.0)
         }
       end
     end
@@ -116,10 +126,33 @@ module Providers
       end
     end
 
-    def compute_rate_limit_counts(runs)
-      runs.where(status: "rate_limited")
-        .group(Arel.sql(effective_provider_sql))
-        .count
+    def provider_attempt_metrics(since)
+      sql = <<~SQL.squish
+        SELECT attempt->>'provider' AS provider,
+               COUNT(*)::integer AS attempts,
+               COUNT(*) FILTER (WHERE COALESCE((attempt->>'success')::boolean, false))::integer AS successes,
+               COUNT(*) FILTER (WHERE attempt->>'error_type' = 'timeout')::integer AS timeouts,
+               COUNT(*) FILTER (WHERE attempt->>'error_type' = 'rate_limited')::integer AS rate_limits,
+               COUNT(*) FILTER (WHERE attempt->>'error_type' = 'error')::integer AS errors,
+               COALESCE(ROUND(AVG(NULLIF(attempt->>'duration_seconds', '')::numeric), 1), 0)::float AS avg_duration_seconds
+        FROM agent_runs
+        INNER JOIN projects ON projects.id = agent_runs.project_id
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.providers_attempted, '[]'::jsonb)) AS attempt
+        WHERE projects.account_id = #{ActiveRecord::Base.connection.quote(user.account_id)}
+          AND agent_runs.created_at >= #{ActiveRecord::Base.connection.quote(since)}
+        GROUP BY attempt->>'provider'
+      SQL
+
+      ActiveRecord::Base.connection.select_all(sql).each_with_object({}) do |row, metrics|
+        metrics[row.fetch("provider")] = {
+          attempts: row.fetch("attempts", 0).to_i,
+          successes: row.fetch("successes", 0).to_i,
+          timeouts: row.fetch("timeouts", 0).to_i,
+          rate_limits: row.fetch("rate_limits", 0).to_i,
+          errors: row.fetch("errors", 0).to_i,
+          avg_duration_seconds: row.fetch("avg_duration_seconds", 0).to_f
+        }
+      end
     end
   end
 end

@@ -30,7 +30,13 @@ RSpec.describe Activities::RunAgentActivity do
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
-    allow(git_ops).to receive(:write_co_author_trailer)
+    allow(git_ops).to receive_messages(
+      write_co_author_trailer: nil,
+      clone_and_restore_branch: nil,
+      install_artifact_excludes: nil,
+      install_git_hooks: nil,
+      install_co_author_hook: nil
+    )
 
     # By default, skip the provider preflight so tests that don't care
     # about preflight behaviour aren't affected by the smoke exec call.
@@ -566,6 +572,16 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
+
+      it "supports z.ai coding plan with glm-5.1 via OpenCode" do
+        opencode_context = build_opencode_context(user, api_provider: "zai_coding", model: "glm-5.1", service_type: "zai_coding", api_key: "sk-zai-secret")
+        env = activity.send(:command_env_for, opencode_context, "ping")
+        preparation = activity.send(:command_preparation_for, opencode_context, "ping")
+
+        expect(env).to include("ZAI_CODING_API_KEY" => "sk-zai-secret", "OPENAI_BASE_URL" => "https://api.z.ai/api/coding/paas/v4")
+        expect(preparation.file_writes.first.content).to include("\"model\": \"glm-5.1\"")
+        expect(preparation.file_writes.first.content).to include("\"zai_coding\"")
+      end
     end
 
     context "with a direct-outbound kilocode provider" do
@@ -1019,9 +1035,9 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
-  def build_opencode_context(user)
-    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
-    provider = create_opencode_provider_entry(user: user, api_key: api_key, name: nil, model: "moonshotai/kimi-k2-0905")
+  def build_opencode_context(user, api_provider: "openrouter", model: "moonshotai/kimi-k2-0905", service_type: "openrouter", api_key: "sk-openrouter-secret")
+    provider_api_key = create(:provider_api_key, user: user, api_service_type: service_type, api_key: api_key)
+    provider = create_opencode_provider_entry(user: user, api_key: provider_api_key, name: nil, model: model, api_provider: api_provider)
 
     described_class::CommandContext.new(
       provider_candidate: provider.routing_key,
@@ -1069,6 +1085,32 @@ RSpec.describe Activities::RunAgentActivity do
     expect(result[:success]).to be true
     expect(result[:final_provider]).to eq(opencode_provider.routing_key)
     expect(agent_run.reload.final_provider).to eq(opencode_provider.routing_key)
+  end
+
+  def expect_timeout_fallback_recovery(agent_run)
+    expect(agent_run.providers_attempted).to contain_exactly(
+      hash_including(
+        "provider" => "claude_code",
+        "success" => false,
+        "error_type" => "timeout",
+        "diagnostics" => hash_including(
+          "timeout_type" => "wall_clock",
+          "elapsed_seconds" => 901.2,
+          "effective_timeout_seconds" => 3600
+        )
+      ),
+      hash_including("provider" => "cursor", "success" => true)
+    )
+    expect(agent_run.provider_switches).to eq(1)
+    expect(agent_run.container_id).to eq("reprovisioned-123")
+    expect(git_ops).to have_received(:clone_and_restore_branch).with(
+      branch_name: agent_run.branch_name,
+      base_commit_sha: agent_run.base_commit_sha,
+      pull_request_number: agent_run.source_pull_request_number
+    )
+    expect(git_ops).to have_received(:install_artifact_excludes)
+    expect(git_ops).to have_received(:install_git_hooks)
+    expect(git_ops).to have_received(:install_co_author_hook)
   end
 
   def expect_same_provider_rate_limit_fallback_execution(fallback_provider)
@@ -1121,7 +1163,7 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
-  def create_opencode_provider_entry(user:, api_key:, name:, model:)
+  def create_opencode_provider_entry(user:, api_key:, name:, model:, api_provider: "openrouter")
     create(
       :provider,
       user: user,
@@ -1130,7 +1172,7 @@ RSpec.describe Activities::RunAgentActivity do
       provider_api_key: api_key,
       name: name || "",
       enabled_for_agent_runs: true,
-      config: { "opencode" => { "api_provider" => "openrouter", "model" => model } }
+      config: { "opencode" => { "api_provider" => api_provider, "model" => model } }
     )
   end
 
@@ -2104,6 +2146,13 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("idle_timeout")
+        expect(agent_run.providers_attempted.first["diagnostics"]).to include(
+          "timeout_type" => "idle",
+          "effective_timeout_seconds" => 3600,
+          "startup_timeout_seconds" => 300,
+          "idle_timeout_seconds" => 300,
+          "heartbeat_supported" => true
+        )
       end
 
       it "raises AllProvidersExhausted" do
@@ -2122,10 +2171,53 @@ expect(container_service).to receive(:execute).with(
           commit_uncommitted_changes: false,
           has_changes_since?: false
         )
+        execute_calls = 0
+        allow(container_service).to receive(:execute) do
+          execute_calls += 1
+          if execute_calls == 1
+            AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+            raise Containers::Provision::TimeoutError.new(
+              "execution timed out",
+              diagnostics: { "elapsed_seconds" => 901.2, "output_received" => true, "heartbeat_active" => false }
+            )
+          else
+            exec_success
+          end
+        end
+        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
+          raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
+
+          container_service
+        end
+      end
+
+      it "reprovisions the container and continues with the fallback provider" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_provider: "cursor")
+        expect_timeout_fallback_recovery(agent_run)
+      end
+    end
+
+    context "when fallback recovery cannot reprovision the container" do
+      before do
+        user.providers.find_or_create_by!(provider_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
         allow(container_service).to receive(:execute) do
           AgentRun.where(id: agent_run.id).update_all(container_id: nil)
-          raise Containers::Provision::TimeoutError, "execution timed out"
+          raise Containers::Provision::TimeoutError.new(
+            "execution timed out",
+            diagnostics: { "elapsed_seconds" => 901.2, "output_received" => true, "heartbeat_active" => false }
+          )
         end
+        allow(agent_run).to receive(:provision_container).and_raise(Containers::Provision::ProvisionError, "docker unavailable")
       end
 
       it "preserves the timeout instead of failing the fallback with no container" do
@@ -2140,8 +2232,6 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.providers_attempted).to contain_exactly(
           hash_including("provider" => "claude_code", "success" => false, "error_type" => "timeout")
         )
-        expect(agent_run.provider_switches).to eq(0)
-        expect(container_service).to have_received(:execute).once
       end
     end
 

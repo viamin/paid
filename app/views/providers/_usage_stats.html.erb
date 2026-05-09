@@ -13,10 +13,14 @@
           <% next unless stats %>
           <div class="px-4 py-3">
             <h3 class="text-sm font-semibold text-gray-900"><%= provider.display_name %></h3>
-            <div class="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div class="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
               <div>
                 <p class="text-xs text-gray-500">Runs</p>
                 <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:runs_7d]) %></p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Attempts</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:attempts_7d]) %></p>
               </div>
               <div>
                 <p class="text-xs text-gray-500">Cost</p>
@@ -30,11 +34,30 @@
                 <p class="text-xs text-gray-500">Rate Limit Events</p>
                 <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:rate_limit_events_7d]) %></p>
               </div>
+              <div>
+                <p class="text-xs text-gray-500">Timeouts</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:timeout_events_7d]) %></p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Other Errors</p>
+                <p class="text-sm font-medium text-gray-900"><%= number_with_delimiter(stats[:error_events_7d]) %></p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Success Rate</p>
+                <p class="text-sm font-medium text-gray-900"><%= stats[:success_rate_7d] %>%</p>
+              </div>
             </div>
             <% if stats[:fallback_total] > 0 %>
               <div class="mt-2">
                 <p class="text-xs text-gray-500">
                   Fallback: <%= stats[:fallback_switched] %> of <%= stats[:fallback_total] %> runs switched away (<%= stats[:fallback_rate] %>%)
+                </p>
+              </div>
+            <% end %>
+            <% if stats[:attempts_7d].positive? %>
+              <div class="mt-1">
+                <p class="text-xs text-gray-500">
+                  Avg attempt duration: <%= number_with_precision(stats[:avg_attempt_duration_seconds], precision: 1) %>s
                 </p>
               </div>
             <% end %>

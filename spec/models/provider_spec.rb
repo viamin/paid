@@ -843,6 +843,27 @@ RSpec.describe Provider do
       expect(runtime.metadata[:config]["provider"]).to eq({ "openrouter" => {} })
     end
 
+    it "supports z.ai coding plan through the OpenCode runtime contract" do
+      zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding", api_key: "sk-zai-secret")
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: zai_key,
+        config: { "opencode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+      )
+
+      runtime = provider.agent_harness_provider_runtime
+
+      expect(runtime.model).to eq("glm-5.1")
+      expect(runtime.env).to include(
+        "ZAI_CODING_API_KEY" => "sk-zai-secret",
+        "OPENAI_BASE_URL" => "https://api.z.ai/api/coding/paas/v4"
+      )
+      expect(runtime.metadata[:config]["provider"]).to eq({ "zai_coding" => {} })
+    end
+
     it "does not enable direct outbound when the OpenCode model id is missing" do
       provider = build(
         :provider,

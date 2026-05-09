@@ -259,14 +259,13 @@ module Activities
             )
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
-              logger.error(
-                message: "agent_execution.container_unavailable_breaking_provider_loop",
-                agent_run_id: agent_run.id,
-                container_id: agent_run.container_id,
-                error: e.message,
-                error_type: "rate_limited"
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                provider: provider,
+                error_type: "rate_limited",
+                error_message: e.message,
+                fallback_remaining: providers[(index + 1)..]
               )
-              break
             end
             insert_rate_limit_fallbacks!(
               providers: providers,
@@ -321,18 +320,18 @@ module Activities
               success: false,
               error_type: "timeout",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              diagnostics: e.diagnostics
             )
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
-              logger.error(
-                message: "agent_execution.container_unavailable_breaking_provider_loop",
-                agent_run_id: agent_run.id,
-                container_id: agent_run.container_id,
-                error: e.message,
-                error_type: "timeout"
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                provider: provider,
+                error_type: "timeout",
+                error_message: e.message,
+                fallback_remaining: providers[(index + 1)..]
               )
-              break
             end
             # Fall through to next provider instead of breaking — per-provider
             # timeout should not fail the entire run when fallback providers
@@ -448,7 +447,15 @@ module Activities
     end
 
     class ProviderExecutionError < StandardError; end
-    class ProviderTimeoutError < StandardError; end
+    class ProviderTimeoutError < StandardError
+      attr_reader :timeout_type, :diagnostics
+
+      def initialize(message, timeout_type: nil, diagnostics: {})
+        @timeout_type = timeout_type
+        @diagnostics = diagnostics
+        super(message)
+      end
+    end
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
 
@@ -818,7 +825,18 @@ module Activities
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
       end
-      raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+      raise ProviderTimeoutError.new(
+        "#{timeout_type}_timeout: #{e.message}",
+        timeout_type: timeout_type,
+        diagnostics: timeout_attempt_diagnostics(
+          timeout_error: e,
+          timeout_type: timeout_type,
+          heartbeat: heartbeat,
+          effective_timeout: effective_timeout,
+          startup_timeout: startup_timeout,
+          effective_idle_timeout: effective_idle_timeout
+        )
+      )
     rescue Containers::Provision::OutputAbortError => e
       # The container was stopped early because stderr matched a fatal
       # provider quota pattern (e.g. KiloCode "Free tier limit reached").
@@ -1864,6 +1882,39 @@ module Activities
       end
     end
 
+    def recover_container_for_fallback!(agent_run:, provider:, error_type:, error_message:, fallback_remaining:)
+      if Array(fallback_remaining).blank?
+        logger.error(
+          message: "agent_execution.container_unavailable_breaking_provider_loop",
+          agent_run_id: agent_run.id,
+          container_id: agent_run.container_id,
+          error: error_message,
+          error_type: error_type,
+          reason: "no_fallback_remaining"
+        )
+        return false
+      end
+
+      reprovision_container_for_fallback!(agent_run)
+      logger.info(
+        message: "agent_execution.container_reprovisioned_for_fallback",
+        agent_run_id: agent_run.id,
+        provider: provider,
+        next_providers: Array(fallback_remaining).take(3)
+      )
+      true
+    rescue StandardError => e
+      logger.error(
+        message: "agent_execution.container_unavailable_breaking_provider_loop",
+        agent_run_id: agent_run.id,
+        container_id: agent_run.container_id,
+        error: error_message,
+        error_type: error_type,
+        reprovision_error: e.message
+      )
+      false
+    end
+
     def container_dead_after_exec_error?(agent_run, error)
       return false unless error.message.match?(/container.*is not running/i)
       return false if agent_run.container_id.blank?
@@ -1893,6 +1944,52 @@ module Activities
       false
     end
 
+    def reprovision_container_for_fallback!(agent_run)
+      agent_run.ensure_proxy_token!
+      agent_run.provision_container
+      return unless agent_run.repo_cloned?
+
+      container_service = reconnect_container(agent_run)
+      git_ops = Containers::GitOperations.new(container_service: container_service, agent_run: agent_run)
+      restore_repo_for_fallback!(git_ops, agent_run)
+      git_ops.install_artifact_excludes
+      install_quality_hooks_for_fallback(git_ops, agent_run)
+      git_ops.install_co_author_hook
+    end
+
+    def restore_repo_for_fallback!(git_ops, agent_run)
+      branch_name = agent_run.branch_name
+      raise ProviderExecutionError, "Cannot restore repo without branch name" if branch_name.blank?
+
+      git_ops.clone_and_restore_branch(
+        branch_name: branch_name,
+        base_commit_sha: agent_run.base_commit_sha,
+        pull_request_number: agent_run.source_pull_request_number
+      )
+    end
+
+    def install_quality_hooks_for_fallback(git_ops, agent_run)
+      language = detect_project_language(agent_run.project)
+      lint_cmd = Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language]
+      test_cmd = Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language]
+      return unless lint_cmd || test_cmd
+
+      if Activities::CloneRepoActivity::DB_DEPENDENT_TEST_LANGUAGES.include?(language) &&
+          !agent_run.project.has_running_database_container?
+        test_cmd = nil
+      end
+
+      git_ops.install_git_hooks(
+        lint_command: lint_cmd || "true",
+        test_command: test_cmd || "true"
+      )
+    end
+
+    def detect_project_language(project)
+      language = project.detected_language if project.respond_to?(:detected_language)
+      language.presence || "ruby"
+    end
+
     def container_exit_diagnostics(container_service)
       container = container_service.container
       return "Container object unavailable." unless container
@@ -1913,6 +2010,19 @@ module Activities
       "Container state: #{reasons.join(', ').presence || 'unknown'}"
     rescue Docker::Error::DockerError => e
       "Could not inspect container: #{e.message}"
+    end
+
+    def timeout_attempt_diagnostics(timeout_error:, timeout_type:, heartbeat:, effective_timeout:, startup_timeout:, effective_idle_timeout:)
+      provider_idle_timeout = heartbeat&.idle_timeout_for(effective_idle_timeout)
+      timeout_error.diagnostics.merge(
+        "timeout_type" => timeout_type,
+        "effective_timeout_seconds" => effective_timeout,
+        "startup_timeout_seconds" => startup_timeout,
+        "configured_idle_timeout_seconds" => effective_idle_timeout,
+        "idle_timeout_seconds" => provider_idle_timeout || effective_idle_timeout,
+        "heartbeat_supported" => heartbeat&.available? || false,
+        "heartbeat_path_configured" => heartbeat&.available? || false
+      ).compact
     end
 
     def error_or_cause_matches?(error, klass, &)
