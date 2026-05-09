@@ -368,7 +368,7 @@ module Projects
         AVG(
           COALESCE(
             NULLIF(bundle_outcomes.metrics ->> 'objective_score', '')::double precision,
-            bundle_outcomes.quality_score
+            #{objective_score_fallback_sql}
           )
         )
       SQL
@@ -386,6 +386,63 @@ module Projects
           )
         )
       SQL
+    end
+
+    def objective_score_fallback_sql
+      <<~SQL.squish
+        ROUND(
+          (
+            (#{optimizer_weights[:quality]} * COALESCE(LEAST(GREATEST(bundle_outcomes.quality_score, 0.0), 1.0), 0.0)) +
+            (#{optimizer_weights[:cost]} * #{normalized_inverse_sql("bundle_outcomes.cost_cents", optimizer_reference_cost_cents)}) +
+            (#{optimizer_weights[:speed]} * #{normalized_inverse_sql("bundle_outcomes.duration_seconds", optimizer_reference_duration_seconds)})
+          )::numeric,
+          4
+        )::double precision
+      SQL
+    end
+
+    def normalized_inverse_sql(column_name, reference)
+      <<~SQL.squish
+        CASE
+          WHEN #{column_name} IS NULL THEN 0.0
+          ELSE #{reference} / (GREATEST(#{column_name}, 0.0) + #{reference})
+        END
+      SQL
+    end
+
+    def optimizer_weights
+      @optimizer_weights ||= begin
+        configured = project_optimizer_setting("weights")
+        PromptEvolution::FitnessFunction.new(samples: [], weights: configured)
+          .score
+          .weights
+      end
+    end
+
+    def optimizer_reference_cost_cents
+      @optimizer_reference_cost_cents ||= positive_optimizer_setting(
+        project_optimizer_setting("reference_cost_cents"),
+        PromptEvolution::FitnessFunction::DEFAULT_REFERENCE_COST_CENTS
+      )
+    end
+
+    def optimizer_reference_duration_seconds
+      @optimizer_reference_duration_seconds ||= positive_optimizer_setting(
+        project_optimizer_setting("reference_duration_seconds"),
+        PromptEvolution::FitnessFunction::DEFAULT_REFERENCE_DURATION_SECONDS
+      )
+    end
+
+    def project_optimizer_setting(*path)
+      settings = project.fitness_settings
+      return unless settings.is_a?(Hash)
+
+      settings.deep_stringify_keys.dig("configuration_bundle_optimizer", *path)
+    end
+
+    def positive_optimizer_setting(value, fallback)
+      numeric = Float(value, exception: false)
+      numeric&.positive? ? numeric : fallback.to_f
     end
   end
 end
