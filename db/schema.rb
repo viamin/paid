@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_08_212202) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1705,6 +1705,45 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_212202) do
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
   end
 
+  create_table "scaling_experiment_assignments", comment: "Workflow-scoped assignments and result snapshots for scaling experiments.", force: :cascade do |t|
+    t.integer "assigned_value", null: false, comment: "Experiment arm chosen for the workflow, such as the requested agent count cap."
+    t.datetime "created_at", null: false
+    t.jsonb "execution_plan", default: {}, null: false, comment: "Structured execution plan describing how the assigned arm should be applied safely."
+    t.bigint "issue_id", comment: "Parent feature issue whose orchestration workflow was assigned."
+    t.string "outcome_status", limit: 50, default: "assigned", null: false, comment: "Capture state for the assignment: assigned, recorded, or skipped."
+    t.jsonb "outcome_summary", default: {}, null: false, comment: "Normalized snapshot of the resulting observation for downstream analysis services."
+    t.bigint "project_id", null: false, comment: "Owning project copied onto the assignment to simplify isolation and queries."
+    t.bigint "scaling_experiment_id", null: false, comment: "Parent scaling experiment for this assignment."
+    t.bigint "scaling_observation_id", comment: "Captured observation recorded for this assigned workflow once execution completes."
+    t.datetime "updated_at", null: false
+    t.string "workflow_id", limit: 255, null: false, comment: "Temporal workflow ID used as the stable experiment sample identifier."
+    t.index ["project_id", "created_at"], name: "idx_scaling_experiment_assignments_project_recent"
+    t.index ["project_id", "outcome_status", "created_at"], name: "idx_scaling_experiment_assignments_project_status"
+    t.index ["scaling_experiment_id", "workflow_id"], name: "idx_scaling_experiment_assignments_unique", unique: true
+    t.index ["scaling_observation_id"], name: "idx_scaling_experiment_assignments_observation_unique", unique: true, where: "(scaling_observation_id IS NOT NULL)"
+  end
+
+  create_table "scaling_experiments", comment: "Controlled orchestration experiments for measuring how feature outcomes change as the agent count changes.", force: :cascade do |t|
+    t.jsonb "cached_summary", default: {}, null: false, comment: "Persisted descriptive summary for later analysis services and polling UIs."
+    t.datetime "completed_at", comment: "Timestamp when the experiment stopped collecting data."
+    t.jsonb "context_filter", default: {}, null: false, comment: "Eligibility filter for safely including only comparable workflows in the experiment."
+    t.integer "control_value", null: false, comment: "Baseline arm used as the control when comparing experiment results."
+    t.datetime "created_at", null: false
+    t.string "dimension", limit: 50, default: "agent_count", null: false, comment: "Scaling dimension under test. Agent count is the initial supported dimension."
+    t.text "hypothesis", null: false, comment: "Expected scaling behavior being tested, such as diminishing returns after a certain agent count."
+    t.integer "min_samples_per_value", default: 2, null: false, comment: "Minimum number of recorded workflows required for each tested value before the experiment can complete."
+    t.string "name", limit: 255, null: false, comment: "Human-readable experiment name displayed in dashboards and logs."
+    t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and experiment segmentation."
+    t.datetime "started_at", comment: "Timestamp when the experiment started assigning workflows."
+    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the experiment: draft, running, completed, or cancelled."
+    t.string "summary_samples_key", comment: "Cache key derived from per-arm sample counts so summaries can be reused until data changes."
+    t.integer "traffic_percentage", default: 100, null: false, comment: "Percent of eligible workflows allowed into the experiment."
+    t.datetime "updated_at", null: false
+    t.jsonb "values_tested", default: [], null: false, comment: "Ordered list of experiment arms, such as [1, 2, 4], for the tested dimension."
+    t.index ["project_id", "dimension", "status"], name: "idx_scaling_experiments_project_dimension_status"
+    t.index ["project_id", "dimension"], name: "idx_scaling_experiments_one_running_dimension", unique: true, where: "((status)::text = 'running'::text)"
+  end
+
   create_table "scaling_observations", comment: "Run-level observations for studying orchestration scaling behavior across agent count, iterations, and parallelism.", force: :cascade do |t|
     t.integer "agent_count_blocked", default: 0, null: false, comment: "Number of planned tasks that never launched because of dependencies, deadlines, or capacity."
     t.integer "agent_count_failed", default: 0, null: false, comment: "Number of launched child agent runs that completed unsuccessfully."
@@ -2167,6 +2206,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_212202) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "scaling_experiment_assignments", "issues", on_delete: :nullify
+  add_foreign_key "scaling_experiment_assignments", "projects", on_delete: :cascade
+  add_foreign_key "scaling_experiment_assignments", "scaling_experiments", on_delete: :cascade
+  add_foreign_key "scaling_experiment_assignments", "scaling_observations", on_delete: :nullify
+  add_foreign_key "scaling_experiments", "projects", on_delete: :cascade
   add_foreign_key "scaling_observations", "issues", on_delete: :nullify
   add_foreign_key "scaling_observations", "projects", on_delete: :cascade
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
@@ -2190,26 +2234,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_212202) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -2943,6 +2967,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_08_212202) do
           END IF;
           RETURN buf;
         END;
+      $function$
+  SQL
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 

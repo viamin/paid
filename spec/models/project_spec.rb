@@ -13,6 +13,8 @@ RSpec.describe Project do
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:destroy) }
     it { is_expected.to have_many(:scaling_observations).dependent(:destroy) }
+    it { is_expected.to have_many(:scaling_experiments).dependent(:destroy) }
+    it { is_expected.to have_many(:scaling_experiment_assignments).dependent(:destroy) }
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
   end
 
