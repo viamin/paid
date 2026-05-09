@@ -34,6 +34,8 @@ RSpec.describe ConfigurationBundles::RecordOutcome do
     expect(outcome.tokens_used).to eq(agent_run.tokens_input + agent_run.tokens_output)
     expect(outcome.metrics).to include(
       "component_scores" => { "pr_created" => 1.0 },
+      "objective_score" => be_within(0.001).of(0.684),
+      "quality_per_dollar" => be_within(0.001).of(0.56),
       "status" => "completed"
     )
   end
