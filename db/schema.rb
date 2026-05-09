@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_09_060036) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_081315) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3052,46 +3052,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_060036) do
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
    SQL
-
-  create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
-       RETURNS trigger
-       LANGUAGE plpgsql
-       SECURITY DEFINER
-       SET search_path = public, pg_temp
-      AS $function$
-      BEGIN
-        IF NEW.strategy_version_id IS NULL THEN
-          RETURN NEW;
-        END IF;
-
-        IF EXISTS (
-          SELECT 1
-          FROM strategy_versions
-          INNER JOIN strategies ON strategies.id = strategy_versions.strategy_id
-          WHERE strategy_versions.id = NEW.strategy_version_id
-            AND (
-              strategies.account_id IS NULL
-              OR (
-                strategies.account_id = paid_current_account_id()
-                AND (
-                  strategies.project_id IS NULL
-                  OR strategies.project_id = NEW.project_id
-                )
-              )
-            )
-        ) THEN
-          RETURN NEW;
-        END IF;
-
-        RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
-      END;
-      $function$
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
-  SQL
 
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_account_memberships BEFORE INSERT OR UPDATE ON public.account_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')

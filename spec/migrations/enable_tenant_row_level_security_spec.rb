@@ -24,7 +24,6 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   let(:knowledge_recommendations_migration) { EnableRlsOnKnowledgeRecommendations.new }
   let(:issue_merge_subscriptions_migration) { EnableRlsOnIssueMergeSubscriptions.new }
   let(:strategy_experiment_tables_migration) { EnableRlsOnStrategyExperimentTables.new }
-  let(:strategy_rls_migration) { EnableRlsOnStrategiesAndStrategyVersions.new }
   let(:configuration_bundles_migration) { CreateConfigurationBundles.new }
   let(:configuration_bundle_runtime_fields_migration) { AddRuntimeFieldsToConfigurationBundles.new }
 
@@ -54,6 +53,10 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   end
 
   private
+
+  def strategy_rls_migration
+    @strategy_rls_migration ||= EnableRlsOnStrategiesAndStrategyVersions.new
+  end
 
   def tenant_policy_count(table_name)
     connection = ActiveRecord::Base.connection
