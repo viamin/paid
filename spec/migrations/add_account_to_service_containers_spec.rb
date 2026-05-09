@@ -57,6 +57,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     restore_service_container_account_reference unless service_containers_have_account_reference?
     migration.down
     ServiceContainer.reset_column_information
+    OrchestrationDecision.reset_column_information
   end
 
   after do
@@ -80,6 +81,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
       strategy_rls_migration.up unless strategies_have_rls?
     end
+    OrchestrationDecision.reset_column_information
     ServiceContainer.reset_column_information
   end
 

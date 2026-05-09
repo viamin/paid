@@ -257,6 +257,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
       EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
     end
+    OrchestrationDecision.reset_column_information
     ActiveRecord::Base.connection.execute("RESET ROLE")
     cleanup_restricted_role
     ActiveRecord::Base.connection.execute("CREATE ROLE paid_rls_spec NOLOGIN")
