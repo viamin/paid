@@ -80,7 +80,7 @@ class ProvidersController < ApplicationController
   def destroy
     authorize @provider
 
-    if @provider.destroy
+    if @provider.discard
       if reconcile_settings!
         redirect_to providers_path, notice: "Provider deleted successfully."
       else

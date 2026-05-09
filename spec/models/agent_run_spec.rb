@@ -2342,7 +2342,7 @@ RSpec.describe AgentRun do
     end
   end
 
-  describe ".distinct_effective_providers caching" do
+  describe ".distinct_effective_provider_options caching" do
     around do |example|
       original_cache = Rails.cache
       Rails.cache = ActiveSupport::Cache::MemoryStore.new
@@ -2358,10 +2358,10 @@ RSpec.describe AgentRun do
       account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
       scope = described_class.where(project_id: project.id)
 
-      first_call = scope.distinct_effective_providers(cache_key: account_key)
-      expect(first_call).to include("claude")
+      first_call = scope.distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+      expect(first_call).to include({ label: Provider.display_name_for("claude"), value: "claude" })
 
-      second_call = scope.distinct_effective_providers(cache_key: account_key)
+      second_call = scope.distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
       expect(second_call).to eq(first_call)
     end
 
@@ -2371,13 +2371,13 @@ RSpec.describe AgentRun do
 
       scope = described_class.where(project_id: project.id)
 
-      first = scope.distinct_effective_providers
-      expect(first).to include("claude")
+      first = scope.distinct_effective_provider_options(account_id: project.account_id)
+      expect(first).to include({ label: Provider.display_name_for("claude"), value: "claude" })
 
       create(:agent_run, :completed, project: project, agent_type: "cursor")
 
-      second = scope.distinct_effective_providers
-      expect(second).to include("cursor")
+      second = scope.distinct_effective_provider_options(account_id: project.account_id)
+      expect(second).to include({ label: Provider.display_name_for("cursor"), value: "cursor" })
     end
 
     it "uses separate cache keys for account and project scope" do
@@ -2387,11 +2387,31 @@ RSpec.describe AgentRun do
       account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
       project_key = described_class.provider_options_cache_key_for(account_id: project.account_id, project_id: project.id)
 
-      described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
-      described_class.where(project_id: project.id).distinct_effective_providers(cache_key: project_key)
+      described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+      described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: project_key)
 
       expect(Rails.cache.read(account_key)).not_to be_nil
       expect(Rails.cache.read(project_key)).not_to be_nil
+    end
+
+    it "keeps discarded provider names available for routed filter options" do
+      project = create(:project)
+      provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
+      create(:agent_run, :completed, project: project, final_provider: provider.routing_key)
+      provider.discard!
+
+      options = described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id)
+
+      expect(options).to include({ label: "Kimi K2.5", value: provider.routing_key })
+    end
+
+    it "omits unresolved routed provider ids from filter options" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project, final_provider: "provider:999999")
+
+      options = described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id)
+
+      expect(options).to be_empty
     end
 
     it "includes account_id in project-scoped cache key" do
@@ -2405,7 +2425,7 @@ RSpec.describe AgentRun do
         project = create(:project)
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
-        described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
         create(:agent_run, project: project, agent_type: "cursor")
@@ -2418,7 +2438,7 @@ RSpec.describe AgentRun do
         agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code")
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
-        described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
         agent_run.update!(final_provider: "cursor")
@@ -2431,7 +2451,7 @@ RSpec.describe AgentRun do
         agent_run = create(:agent_run, :queued, project: project, agent_type: "claude_code")
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
-        described_class.where(project_id: project.id).distinct_effective_providers(cache_key: account_key)
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
         agent_run.update!(status: "running", started_at: Time.current)
@@ -2451,6 +2471,34 @@ RSpec.describe AgentRun do
 
         expect(Rails.cache.read(account_key)).to be_nil
         expect(Rails.cache.read(project_key)).to be_nil
+      end
+
+      it "invalidates provider option caches when a routed provider is renamed" do
+        project = create(:project)
+        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_provider: provider.routing_key)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        provider.update!(name: "Kimi K2.6")
+
+        expect(Rails.cache.read(account_key)).to be_nil
+      end
+
+      it "invalidates provider option caches when a provider is discarded" do
+        project = create(:project)
+        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_provider: provider.routing_key)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        provider.discard!
+
+        expect(Rails.cache.read(account_key)).to be_nil
       end
     end
   end

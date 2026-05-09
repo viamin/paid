@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_100259) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1582,6 +1582,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
     t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
     t.jsonb "config", default: {}, null: false
     t.datetime "created_at", null: false
+    t.datetime "discarded_at", comment: "Soft-delete timestamp so historical provider names remain available for filters and run history."
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
     t.string "fallback_role", limit: 30, default: "standard", null: false
@@ -1593,10 +1594,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
+    t.index ["discarded_at"], name: "index_providers_on_discarded_at"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
-    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
-    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
     t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"

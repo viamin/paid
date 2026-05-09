@@ -5,6 +5,8 @@ require "set"
 require "shellwords"
 
 class Provider < ApplicationRecord
+  include Discard::Model
+
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "provider:".freeze
@@ -58,6 +60,8 @@ class Provider < ApplicationRecord
     "glm-4.5-air" => "low"
   }.freeze
 
+  default_scope -> { kept }
+
   belongs_to :user
   belongs_to :provider_api_key, optional: true
 
@@ -73,6 +77,9 @@ class Provider < ApplicationRecord
   before_validation :normalize_agent_co_author_trailer
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
+  before_discard :prevent_destroying_last_agent_run_provider
+  before_discard :prevent_destroying_default_provider
+  after_commit :invalidate_agent_run_provider_option_caches
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :provider_key, presence: true, length: { maximum: 50 }
@@ -459,16 +466,42 @@ class Provider < ApplicationRecord
     id
   end
 
-  def self.for_identifier(user, identifier)
+  def self.for_identifier(user, identifier, include_discarded: false)
     return nil unless user
     return nil if identifier.blank?
 
+    relation = include_discarded ? with_discarded : all
+
     if routing_key?(identifier)
-      user.providers.find_by(id: id_from_routing_key(identifier))
+      relation.where(user: user).find_by(id: id_from_routing_key(identifier))
     else
-      matching_providers = user.providers.where(provider_key: identifier).ordered
+      matching_providers = relation.where(user: user, provider_key: identifier).ordered
       matching_providers.subscription.first || matching_providers.first
     end
+  end
+
+  def self.filter_option_for_identifier(identifier, account_id:)
+    return if identifier.blank?
+
+    if routing_key?(identifier)
+      provider_id = id_from_routing_key(identifier)
+      return unless provider_id
+
+      provider = with_discarded.joins(:user).find_by(id: provider_id, users: { account_id: account_id })
+      return unless provider
+
+      return {
+        label: provider.display_name,
+        value: identifier
+      }
+    end
+
+    normalized_identifier = ProviderSupport.provider_key_for_agent_type(identifier)
+
+    {
+      label: display_name_for(normalized_identifier),
+      value: normalized_identifier
+    }
   end
 
   # Updates the enabled_for_fallback flag on each of the user's providers
@@ -565,6 +598,16 @@ class Provider < ApplicationRecord
 
     errors.add(:base, "Cannot delete the #{Provider.display_name(default_key)} provider")
     throw(:abort)
+  end
+
+  def invalidate_agent_run_provider_option_caches
+    return unless user
+
+    account_id = user.account_id
+    AgentRun.invalidate_provider_options_cache(account_id: account_id)
+    Project.where(account_id: account_id).pluck(:id).each do |project_id|
+      AgentRun.invalidate_provider_options_cache(account_id: account_id, project_id: project_id)
+    end
   end
 
   def api_key_auth_requires_provider_api_key
