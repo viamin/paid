@@ -19,7 +19,10 @@ RSpec.describe Providers::UsageStats do
     context "with agent runs and token usages" do
       before do
         run = create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          cost_cents: 50, tokens_input: 1000, tokens_output: 500, created_at: 2.days.ago)
+          cost_cents: 50, tokens_input: 1000, tokens_output: 500, created_at: 2.days.ago,
+          providers_attempted: [
+            { "provider" => "claude", "success" => true, "duration_seconds" => 42.5 }
+          ])
         create(:token_usage, agent_run: run, cost_cents: 50,
           input_tokens: 1000, output_tokens: 500, created_at: 2.days.ago)
       end
@@ -45,6 +48,17 @@ RSpec.describe Providers::UsageStats do
       it "returns zero rate limit events when none occurred" do
         expect(stats["claude"][:rate_limit_events_7d]).to eq(0)
       end
+
+      it "includes attempt-level success and duration metrics" do
+        expect(stats["claude"]).to include(
+          attempts_7d: 1,
+          success_attempts_7d: 1,
+          success_rate_7d: 100.0,
+          timeout_events_7d: 0,
+          error_events_7d: 0,
+          avg_attempt_duration_seconds: 42.5
+        )
+      end
     end
 
     context "with fallback runs" do
@@ -67,10 +81,77 @@ RSpec.describe Providers::UsageStats do
     context "with rate-limited runs" do
       before do
         create(:agent_run, project: project, agent_type: "claude_code",
-          status: "rate_limited", created_at: 1.day.ago)
+          status: "rate_limited", created_at: 1.day.ago,
+          providers_attempted: [
+            { "provider" => "claude", "success" => false, "error_type" => "rate_limited", "duration_seconds" => 90.0 }
+          ])
       end
 
       it "counts rate limit events" do
+        expect(stats["claude"][:rate_limit_events_7d]).to eq(1)
+      end
+    end
+
+    context "with attempt metrics stored under an agent-type alias" do
+      before do
+        create(:agent_run, :failed, project: project, agent_type: "claude_code", created_at: 1.day.ago,
+          providers_attempted: [
+            { "provider" => "claude_code", "success" => false, "error_type" => "timeout", "duration_seconds" => 900.0 },
+            { "provider" => "claude_code", "success" => true, "duration_seconds" => 30.0 }
+          ])
+      end
+
+      it "normalizes attempt metrics to the provider key" do
+        expect(stats["claude"]).to include(
+          attempts_7d: 2,
+          success_attempts_7d: 1,
+          success_rate_7d: 50.0,
+          timeout_events_7d: 1,
+          rate_limit_events_7d: 0,
+          error_events_7d: 0,
+          avg_attempt_duration_seconds: 465.0
+        )
+      end
+    end
+
+    context "with timeout and error attempts for a routed provider entry" do
+      let(:owner) { project.effective_owner }
+      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "zai_coding") }
+      let!(:provider) do
+        create(:provider, :api_key, user: owner, provider_key: "kilocode",
+          provider_api_key: api_key, name: "Kilocode GLM 5.1",
+          config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } })
+      end
+
+      before do
+        create(:agent_run, :failed, project: project, agent_type: "kilocode", created_at: 1.day.ago,
+          providers_attempted: [
+            { "provider" => provider.routing_key, "success" => false, "error_type" => "timeout", "duration_seconds" => 900.0 },
+            { "provider" => provider.routing_key, "success" => false, "error_type" => "error", "duration_seconds" => 30.0 }
+          ])
+      end
+
+      it "aggregates attempt-level failure metrics by provider identifier" do
+        expect(stats[provider.routing_key]).to include(
+          attempts_7d: 2,
+          success_attempts_7d: 0,
+          success_rate_7d: 0.0,
+          timeout_events_7d: 1,
+          rate_limit_events_7d: 0,
+          error_events_7d: 1,
+          avg_attempt_duration_seconds: 465.0
+        )
+      end
+    end
+
+    context "with status-based rate-limited runs missing providers_attempted data" do
+      before do
+        create(:agent_run, project: project, agent_type: "claude_code",
+          status: "rate_limited", created_at: 1.day.ago,
+          providers_attempted: [])
+      end
+
+      it "counts rate limit events from run status as fallback" do
         expect(stats["claude"][:rate_limit_events_7d]).to eq(1)
       end
     end
