@@ -327,7 +327,7 @@ class Project < ApplicationRecord
   # first user by ID) when the creating user has been deleted.
   # Uses Account#fallback_owner for deterministic, shared resolution.
   def effective_owner
-    created_by || account.fallback_owner
+    @effective_owner ||= (created_by || account.fallback_owner)
   end
 
   def knowledge_embedding_provider_configuration

@@ -3,12 +3,8 @@
 module Dashboard
   class QueuePreview
     Entry = Struct.new(:position, :run, keyword_init: true)
+    CACHE_TTL = 10.seconds
 
-    # Cap on the number of rows fetched from the queue. This limits the
-    # single snapshot query rather than controlling a loop, so there is no
-    # N+1 concern. The cap exists to keep the result set reasonable; when
-    # the user's visible runs are all beyond this window we show a
-    # truncation notice rather than silently dropping them.
     MAX_SCAN = 200
 
     def self.call(...)
@@ -23,6 +19,14 @@ module Dashboard
     def call
       return [] if visible_project_ids.empty?
 
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_entries }
+    end
+
+    private
+
+    attr_reader :user, :limit
+
+    def build_entries
       snapshot = fetch_snapshot
       visible_runs = snapshot.select { |run| visible_project_ids.include?(run.project_id) }
       preload_associations(visible_runs)
@@ -31,10 +35,6 @@ module Dashboard
         Entry.new(position: index + 1, run:)
       end
     end
-
-    private
-
-    attr_reader :user, :limit
 
     def visible_project_ids
       @visible_project_ids ||= begin
@@ -47,12 +47,6 @@ module Dashboard
       end
     end
 
-    # Fetch the ordered snapshot in a single query instead of iterating
-    # peek_next_queued_run one-at-a-time. This uses the raw QUEUE_ORDER
-    # rather than the fair-queue round-robin reordering that
-    # next_queued_run_from applies, so the result is an approximation of
-    # scheduler priority rather than an exact dequeue sequence. That keeps
-    # the preview informative while avoiding up to 3 queries per iteration.
     def fetch_snapshot
       AgentRun.schedulable_queued_with_priority
               .reorder(*AgentRun::QUEUE_ORDER)
@@ -66,6 +60,10 @@ module Dashboard
         associations: [ { issue: :project }, :project ]
       ).call
       AgentRun.preload_source_pull_requests(runs)
+    end
+
+    def cache_key
+      "dashboard/queue_preview/#{user.account_id}/#{user.id}"
     end
   end
 end
