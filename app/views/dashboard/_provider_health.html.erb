@@ -33,7 +33,7 @@
 
       <% if recovering.positive? %>
         <p class="mt-3 text-sm text-gray-600">
-          <%= pluralize(recovering, "provider") %> is recovering in half-open mode.
+          <%= pluralize(recovering, "provider") %> <%= recovering == 1 ? "is" : "are" %> recovering in half-open mode.
         </p>
       <% end %>
 

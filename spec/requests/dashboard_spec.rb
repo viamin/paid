@@ -540,6 +540,27 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Rate limited")
       expect(response.body).to include("Configured")
     end
+
+    it "uses plural grammar for multiple recovering providers" do
+      create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
+      first_provider = user.providers.find_by!(provider_key: Provider.default_provider_key, auth_type: "subscription")
+      second_provider_key = (ProviderSupport.container_executable_provider_keys - [ first_provider.provider_key ]).first || "cursor"
+      second_provider = create(:provider, user: user, provider_key: second_provider_key, auth_type: "subscription")
+
+      [ first_provider, second_provider ].each do |provider|
+        create(
+          :provider_state,
+          :circuit_open,
+          user: user,
+          provider_name: provider.state_key,
+          circuit_opened_at: 31.seconds.ago
+        )
+      end
+
+      get dashboard_provider_health_path
+
+      expect(response.body).to include("2 providers are recovering in half-open mode.")
+    end
   end
 
   describe "GET /dashboard/live" do

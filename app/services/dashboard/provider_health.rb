@@ -3,6 +3,7 @@
 module Dashboard
   class ProviderHealth
     CACHE_TTL = 20.seconds
+    DEFAULT_CIRCUIT_BREAKER_TIMEOUT = UserSetting.column_defaults["circuit_breaker_timeout_seconds"]
 
     ProviderStatus = Struct.new(
       :provider,
@@ -60,7 +61,7 @@ module Dashboard
         .joins(:user)
         .where(users: { account_id: account.id })
         .for_agent_runs
-        .includes(:user)
+        .includes(user: :user_setting)
         .ordered
     end
 
@@ -72,7 +73,7 @@ module Dashboard
     end
 
     def build_provider_status(provider, state)
-      state&.check_circuit_recovery!
+      state&.check_circuit_recovery!(timeout: circuit_breaker_timeout_for(provider))
 
       status =
         if state&.rate_limited?
@@ -96,6 +97,10 @@ module Dashboard
         failure_count: state&.failure_count || 0,
         rate_limited_until: state&.rate_limited_until
       )
+    end
+
+    def circuit_breaker_timeout_for(provider)
+      provider.user.user_setting&.circuit_breaker_timeout_seconds || DEFAULT_CIRCUIT_BREAKER_TIMEOUT
     end
 
     def status_priority(status)

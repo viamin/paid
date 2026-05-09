@@ -47,5 +47,23 @@ RSpec.describe Dashboard::ProviderHealth do
       expect(stats[:total]).to eq(1)
       expect(stats[:providers].map(&:owner_email)).to eq([ user.email ])
     end
+
+    it "uses each provider owner's configured circuit breaker timeout when checking recovery" do
+      provider = default_provider
+      create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
+      create(
+        :provider_state,
+        :circuit_open,
+        user: user,
+        provider_name: provider.state_key,
+        circuit_opened_at: 31.seconds.ago
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:circuit_open]).to eq(0)
+      expect(stats[:recovering]).to eq(1)
+      expect(stats[:providers].map(&:status)).to eq([ :recovering ])
+    end
   end
 end
