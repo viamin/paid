@@ -49,7 +49,7 @@ class CoordinationPolicy < ApplicationRecord
   end
 
   def activate_version!(policy_version)
-    raise ActiveRecord::RecordInvalid, self unless policy_version.coordination_policy_id == id
+    raise ArgumentError, "policy_version must belong to this coordination policy" unless policy_version.coordination_policy_id == id
 
     transaction do
       now = Time.current

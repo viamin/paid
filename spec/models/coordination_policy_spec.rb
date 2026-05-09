@@ -83,6 +83,15 @@ RSpec.describe CoordinationPolicy do
   end
 
   describe "#activate_version!" do
+    it "rejects a version from another policy" do
+      policy = create(:coordination_policy)
+      other_version = create(:coordination_policy_version)
+
+      expect {
+        policy.activate_version!(other_version)
+      }.to raise_error(ArgumentError, "policy_version must belong to this coordination policy")
+    end
+
     it "promotes the requested version and supersedes the prior active version" do
       policy = create(:coordination_policy)
       previous_version = create(:coordination_policy_version, :active, coordination_policy: policy, version: 1)
