@@ -57,8 +57,9 @@ module Activities
           stale_pr_count = stale_pr_result[:closed_count]
           sync_changed ||= stale_pr_result[:changed]
 
-          stale_issue_count = reconcile_open_issues(project, client)
-          sync_changed ||= stale_issue_count.positive?
+          stale_issue_result = reconcile_open_issues(project, client)
+          stale_issue_count = stale_issue_result[:closed_count]
+          sync_changed ||= stale_issue_result[:changed]
         end
       end
 
@@ -719,7 +720,7 @@ module Activities
     # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API
     # cost, since issue counts can be much larger than PR counts.
     def reconcile_open_issues(project, client)
-      return 0 unless issue_reconciliation_due?(project)
+      return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
 
@@ -730,10 +731,10 @@ module Activities
           message: "github_sync.issue_reconciliation_skipped_truncated",
           project_id: project.id
         )
-        return 0
+        return { changed: false, closed_count: 0 }
       end
 
-      backfill_open_issues(project, client, open_numbers)
+      backfilled_count = backfill_open_issues(project, client, open_numbers)
 
       stale = project.issues
         .where(github_state: "open", is_pull_request: false, source: Issue::GITHUB_SOURCE)
@@ -751,21 +752,28 @@ module Activities
         )
       end
 
-      count
+      {
+        changed: backfilled_count.positive? || count.positive?,
+        closed_count: count
+      }
     end
 
     def backfill_open_issues(project, client, open_issue_numbers)
-      return if open_issue_numbers.empty?
+      return 0 if open_issue_numbers.empty?
 
       existing_open_numbers = project.issues
         .where(github_state: "open", is_pull_request: false, github_number: open_issue_numbers)
         .pluck(:github_number)
         .to_set
 
-      (open_issue_numbers - existing_open_numbers.to_a).each do |number|
+      missing_numbers = open_issue_numbers - existing_open_numbers.to_a
+
+      missing_numbers.each do |number|
         github_issue = client.issue(project.full_name, number)
         sync_issue(project, github_issue)
       end
+
+      missing_numbers.size
     end
 
     def issue_reconciliation_due?(project)

@@ -1619,6 +1619,27 @@ RSpec.describe Activities::FetchIssuesActivity do
           expect(issue.is_pull_request).to be false
         end
 
+        it "refreshes the project show page when issue reconciliation only backfills a missing issue" do
+          create_synced_issue_from_github(project, updated_issue, relationships_parsed_at: updated_issue.updated_at)
+
+          allow(github_client).to receive(:issues).and_return([])
+          allow(github_client).to receive(:issues).with(
+            project.full_name,
+            hash_including(state: "open")
+          ).and_return([
+            OpenStruct.new(number: updated_issue.number, pull_request: nil),
+            OpenStruct.new(number: 52, pull_request: nil)
+          ])
+          allow(github_client).to receive(:issue).with(project.full_name, 52).and_return(
+            github_issue(52, id: 6002, title: "Recovered issue")
+          )
+          allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+          activity.execute(project_id: project.id)
+
+          expect_single_project_show_refresh(project)
+        end
+
         it "does not backfill pull requests from the open issue reconciliation set" do
           allow(github_client).to receive(:issues).and_return([ updated_issue ])
           allow(github_client).to receive(:issues).with(
