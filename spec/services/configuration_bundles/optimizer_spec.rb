@@ -112,6 +112,27 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
     end
 
+    it "bootstraps task exploration from the project budget until the issue has enough routing history" do
+      set_exploration_budgets(task: 10, project: 100)
+      stub_predictions(agent_run, surrogate_model:)
+
+      selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
+      expect(selection.selection_mode).to eq("exploratory")
+      expect(selection.selection_context).to eq("task")
+      expect_budget_snapshot(selection, "task",
+        budget: 0.1,
+        total_runs: 0,
+        exploratory_runs: 0,
+        projected_share: 1.0,
+        within_budget: true,
+        bootstrap_active: true,
+        bootstrap_minimum_runs: 9
+      )
+      expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
+    end
+
     it "returns nil when there are no active tracked experiments" do
       experiment.update!(status: "completed", completed_at: Time.current)
 

@@ -12,6 +12,7 @@ module ConfigurationBundles
       "project" => 0.25
     }.freeze
     PRIMARY_SELECTION_CONTEXT = "project"
+    TASK_BOOTSTRAP_CONTEXT = "task"
 
     Selection = Struct.new(
       :definition,
@@ -154,6 +155,13 @@ module ConfigurationBundles
         observed_share = total_runs.zero? ? 0.0 : exploratory_runs.to_f / total_runs
         projected_share = (exploratory_runs + 1).to_f / (total_runs + 1)
         budget = exploration_budget_for(context)
+        bootstrap_minimum_runs = bootstrap_minimum_runs_for(context, budget:)
+        bootstrap_active = bootstrap_minimum_runs && total_runs < bootstrap_minimum_runs
+        within_budget = if bootstrap_active
+          true
+        else
+          budget.positive? && projected_share <= budget
+        end
 
         {
           budget: budget,
@@ -161,7 +169,9 @@ module ConfigurationBundles
           exploratory_runs: exploratory_runs,
           observed_share: observed_share.round(4),
           projected_share: projected_share.round(4),
-          within_budget: budget.positive? && projected_share <= budget
+          within_budget: within_budget,
+          bootstrap_active: bootstrap_active,
+          bootstrap_minimum_runs: bootstrap_minimum_runs
         }
       end
     end
@@ -199,6 +209,13 @@ module ConfigurationBundles
 
       budget = budget / 100.0 if budget > 1
       budget.clamp(0.0, 1.0)
+    end
+
+    def bootstrap_minimum_runs_for(context, budget:)
+      return unless context == TASK_BOOTSTRAP_CONTEXT
+      return unless budget.positive? && budget < 1
+
+      (1.0 / budget).ceil - 1
     end
 
     def project_optimizer_setting(*path)
