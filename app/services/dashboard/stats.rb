@@ -15,14 +15,14 @@ module Dashboard
     SECTIONS = %i[
       run_volume daily_run_status_chart duration_percentiles phase_breakdown cost_and_tokens
       performance_by_outcome performance_by_goal
-      runs_by_agent_type runs_by_provider provider_attempt_performance provider_fallback_stats
+      runs_by_agent_type runs_by_provider provider_fallback_stats
       runs_by_project cost_by_project issue_completion
     ].freeze
 
     METRICS_SECTIONS = %i[
       run_volume daily_run_status_chart cost_and_tokens duration_percentiles phase_breakdown
       issue_completion cost_by_project provider_fallback_stats
-      runs_by_provider provider_attempt_performance runs_by_project
+      runs_by_provider runs_by_project
     ].freeze
 
     PERFORMANCE_SECTIONS = %i[performance_by_outcome performance_by_goal].freeze
@@ -384,62 +384,6 @@ module Dashboard
           .group(Arel.sql(effective_provider_sql))
           .count
       )
-    end
-
-    def provider_attempt_performance
-      sql = <<~SQL.squish
-        WITH selected_runs AS (
-          #{time_filtered_runs.select(:id).to_sql}
-        )
-        SELECT attempt->>'provider' AS provider_identifier,
-               COUNT(*)::integer AS attempts,
-               COUNT(*) FILTER (WHERE COALESCE((attempt->>'success')::boolean, false))::integer AS successes,
-               COUNT(*) FILTER (WHERE attempt->>'error_type' = 'timeout')::integer AS timeouts,
-               COUNT(*) FILTER (WHERE attempt->>'error_type' = 'rate_limited')::integer AS rate_limits,
-               COUNT(*) FILTER (WHERE attempt->>'error_type' = 'error')::integer AS errors,
-               COALESCE(ROUND(AVG(NULLIF(attempt->>'duration_seconds', '')::numeric)::numeric, 1), 0)::float AS avg_attempt_duration_seconds,
-               COALESCE(ROUND((
-                 percentile_cont(0.5) WITHIN GROUP (
-                   ORDER BY NULLIF(attempt->>'duration_seconds', '')::numeric
-                 )
-               )::numeric, 1), 0)::float AS p50_attempt_duration_seconds
-        FROM agent_runs
-        INNER JOIN selected_runs ON selected_runs.id = agent_runs.id
-        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.providers_attempted, '[]'::jsonb)) AS attempt
-        GROUP BY attempt->>'provider'
-        ORDER BY attempts DESC, provider_identifier ASC
-      SQL
-
-      providers_by_routing_key = provider_records_by_routing_key(
-        ActiveRecord::Base.connection.select_values(<<~SQL.squish)
-          WITH selected_runs AS (
-            #{time_filtered_runs.select(:id).to_sql}
-          )
-          SELECT DISTINCT attempt->>'provider'
-          FROM agent_runs
-          INNER JOIN selected_runs ON selected_runs.id = agent_runs.id
-          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.providers_attempted, '[]'::jsonb)) AS attempt
-        SQL
-      )
-
-      ActiveRecord::Base.connection.select_all(sql).map do |row|
-        identifier = row.fetch("provider_identifier")
-        attempts = row.fetch("attempts", 0).to_i
-        successes = row.fetch("successes", 0).to_i
-
-        {
-          identifier: identifier,
-          label: provider_label(identifier, providers_by_routing_key[identifier]),
-          attempts: attempts,
-          successes: successes,
-          timeouts: row.fetch("timeouts", 0).to_i,
-          rate_limits: row.fetch("rate_limits", 0).to_i,
-          errors: row.fetch("errors", 0).to_i,
-          success_rate: attempts.zero? ? 0.0 : (successes.to_f / attempts * 100).round(1),
-          avg_attempt_duration_seconds: row.fetch("avg_attempt_duration_seconds", 0).to_f,
-          p50_attempt_duration_seconds: row.fetch("p50_attempt_duration_seconds", 0).to_f
-        }
-      end
     end
 
     def provider_fallback_stats

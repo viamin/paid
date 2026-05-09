@@ -1603,7 +1603,16 @@ class AgentRun < ApplicationRecord
       when Hash
         sanitize_provider_attempt_diagnostics(value)
       when Array
-        value.map { |entry| entry.is_a?(Hash) ? sanitize_provider_attempt_diagnostics(entry) : entry }
+        value.map do |entry|
+          case entry
+          when Hash
+            sanitize_provider_attempt_diagnostics(entry)
+          when String
+            sanitize_provider_attempt_error_message(entry)
+          else
+            entry
+          end
+        end
       when String
         sanitize_provider_attempt_error_message(value)
       else

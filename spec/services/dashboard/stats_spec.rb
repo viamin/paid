@@ -66,7 +66,6 @@ RSpec.describe Dashboard::Stats do
       it "returns empty agent type, provider, and project breakdowns" do
         expect(stats[:runs_by_agent_type]).to be_empty
         expect(stats[:runs_by_provider]).to be_empty
-        expect(stats[:provider_attempt_performance]).to be_empty
         expect(stats[:runs_by_project]).to be_empty
       end
 
@@ -615,48 +614,6 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
-    context "with provider attempt metrics" do
-      let(:owner) { project.effective_owner }
-      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "zai_coding") }
-      let!(:kilocode_provider) do
-        create(:provider, :api_key, user: owner, provider_key: "kilocode",
-          provider_api_key: api_key, name: "Kilocode GLM 5.1",
-          config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } })
-      end
-      let!(:fallback_provider) do
-        create(:provider, :api_key, user: owner, provider_key: "opencode",
-          provider_api_key: api_key, name: "OpenCode GLM 5.1",
-          config: { "opencode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } })
-      end
-
-      before do
-        create(:agent_run, :completed, project: project, agent_type: "kilocode",
-          providers_attempted: [
-            {
-              "provider" => kilocode_provider.routing_key,
-              "success" => false,
-              "error_type" => "timeout",
-              "duration_seconds" => 900.0
-            },
-            {
-              "provider" => fallback_provider.routing_key,
-              "success" => true,
-              "duration_seconds" => 120.0
-            }
-          ])
-      end
-
-      it "reports attempt-level provider outcomes separately from final provider runs" do
-        provider_attempts = stats[:provider_attempt_performance]
-        expect_provider_attempt_row(provider_attempts, "Kilocode GLM 5.1",
-          attempts: 1, successes: 0, timeouts: 1, rate_limits: 0,
-          errors: 0, success_rate: 0.0, avg_attempt_duration_seconds: 900.0)
-        expect_provider_attempt_row(provider_attempts, "OpenCode GLM 5.1",
-          attempts: 1, successes: 1, timeouts: 0, rate_limits: 0,
-          errors: 0, success_rate: 100.0, avg_attempt_duration_seconds: 120.0)
-      end
-    end
-
     context "with multiple projects" do
       let(:project2) { create(:project, account: account, name: "Active Project") }
 
@@ -858,10 +815,5 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:issue_completion][:merged_count]).to eq(0)
       end
     end
-  end
-
-  def expect_provider_attempt_row(rows, label, **expected)
-    row = rows.find { |entry| entry[:label] == label }
-    expect(row).to include(expected)
   end
 end
