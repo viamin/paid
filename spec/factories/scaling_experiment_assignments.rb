@@ -9,7 +9,15 @@ FactoryBot.define do
     sequence(:workflow_id) { |n| "scaling-workflow-#{n}" }
     assigned_value { 1 }
     outcome_status { "assigned" }
-    execution_plan { { "max_batch_size" => assigned_value, "requested_agent_count" => assigned_value } }
+    execution_plan do
+      {
+        "dimension" => scaling_experiment.dimension,
+        "dimension_value" => assigned_value,
+        "requested_agent_count" => assigned_value,
+        "max_batch_size" => assigned_value,
+        "cohort_label" => "agent_count-#{assigned_value}__tasks-2-3"
+      }
+    end
     outcome_summary { {} }
   end
 end

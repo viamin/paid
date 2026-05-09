@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1725,14 +1725,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
 
   create_table "scaling_experiments", comment: "Controlled orchestration experiments for measuring how feature outcomes change as the agent count changes.", force: :cascade do |t|
     t.jsonb "cached_summary", default: {}, null: false, comment: "Persisted descriptive summary for later analysis services and polling UIs."
+    t.jsonb "cohort_settings", default: {}, null: false, comment: "Scheduling and labeling rules for experiment cohorts, such as task buckets and label templates."
     t.datetime "completed_at", comment: "Timestamp when the experiment stopped collecting data."
     t.jsonb "context_filter", default: {}, null: false, comment: "Eligibility filter for safely including only comparable workflows in the experiment."
+    t.jsonb "control_definition", default: {}, null: false, comment: "Control conditions and fairness guardrails that must hold for cohort-to-cohort comparisons."
     t.integer "control_value", null: false, comment: "Baseline arm used as the control when comparing experiment results."
     t.datetime "created_at", null: false
     t.string "dimension", limit: 50, default: "agent_count", null: false, comment: "Scaling dimension under test. Agent count is the initial supported dimension."
     t.text "hypothesis", null: false, comment: "Expected scaling behavior being tested, such as diminishing returns after a certain agent count."
+    t.jsonb "independent_variables", default: [], null: false, comment: "Declared primary and contextual variables for the controlled scaling plan, including the tested arm values."
     t.integer "min_samples_per_value", default: 2, null: false, comment: "Minimum number of recorded workflows required for each tested value before the experiment can complete."
     t.string "name", limit: 255, null: false, comment: "Human-readable experiment name displayed in dashboards and logs."
+    t.jsonb "outcome_metrics", default: [], null: false, comment: "Outcome metrics tracked for the experiment plan, including optimization direction and primary-vs-guardrail roles."
     t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and experiment segmentation."
     t.datetime "started_at", comment: "Timestamp when the experiment started assigning workflows."
     t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the experiment: draft, running, completed, or cancelled."

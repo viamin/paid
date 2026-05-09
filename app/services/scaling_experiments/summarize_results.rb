@@ -25,6 +25,8 @@ module ScalingExperiments
         "status" => scaling_experiment.sufficient_samples? ? "ready_for_analysis" : "collecting",
         "dimension" => scaling_experiment.dimension,
         "control_value" => scaling_experiment.control_value,
+        "primary_metric" => primary_metric,
+        "cohort_strategy" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "label_template"),
         "sample_count" => summaries.sum { |summary| summary["sample_count"] },
         "values" => summaries,
         "leading_value" => leader&.fetch("assigned_value", nil),
@@ -35,6 +37,11 @@ module ScalingExperiments
     private
 
     attr_reader :scaling_experiment
+
+    def primary_metric
+      metric = scaling_experiment.outcome_metrics.find { |candidate| candidate["primary"] == true }
+      metric&.fetch("key", nil)
+    end
 
     def value_summaries
       assignments_by_value = scaling_experiment.scaling_experiment_assignments

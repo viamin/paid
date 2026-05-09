@@ -62,11 +62,12 @@ module ScalingExperiments
     end
 
     def build_execution_plan(value)
-      {
+      plan = {
         "dimension" => scaling_experiment.dimension,
-        "requested_agent_count" => value,
-        "max_batch_size" => value,
+        "dimension_value" => value,
         "task_count" => task_count,
+        "cohort_label" => scaling_experiment.cohort_label(task_count:, assigned_value: value),
+        "cohort_schedule" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "assignment_unit"),
         "eligible_values" => scaling_experiment.eligible_values(task_count:),
         "safety_limits" => {
           "task_count_cap" => task_count,
@@ -74,6 +75,20 @@ module ScalingExperiments
           "dependency_order_respected" => true
         }
       }
+
+      case scaling_experiment.dimension
+      when "agent_count"
+        plan.merge!(
+          "requested_agent_count" => value,
+          "max_batch_size" => value
+        )
+      when "max_iterations"
+        plan["max_iterations_per_agent"] = value
+      when "parallelism"
+        plan["max_batch_size"] = value
+      end
+
+      plan
     end
   end
 end
