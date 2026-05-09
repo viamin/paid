@@ -64,6 +64,22 @@ RSpec.describe OrchestrationStrategySelector do
         }
       )
     end
+    let(:broad_language_account_strategy) do
+      create_strategy_with_version(
+        :for_account,
+        account: account,
+        decision_type: "issue_execution",
+        selection_rules: { "language" => [ "ruby", "python" ] }
+      )
+    end
+    let(:specific_language_account_strategy) do
+      create_strategy_with_version(
+        :for_account,
+        account: account,
+        decision_type: "issue_execution",
+        selection_rules: { "language" => "ruby" }
+      )
+    end
 
     def create_strategy_with_version(*traits, **attributes)
       strategy = create(:strategy, *traits, **attributes)
@@ -115,6 +131,16 @@ RSpec.describe OrchestrationStrategySelector do
 
       expect(result.strategy).to eq(strategy)
       expect(result.matched_rule_count).to eq(2)
+    end
+
+    it "treats array alternatives as broader than an exact match" do
+      broad_language_account_strategy
+      strategy = specific_language_account_strategy
+
+      result = selector_result(account: account, context: { language: "ruby" })
+
+      expect(result.strategy).to eq(strategy)
+      expect(result.matched_rule_count).to eq(1)
     end
 
     it "ignores strategies whose current version is not active" do

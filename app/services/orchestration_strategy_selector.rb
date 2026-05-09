@@ -118,7 +118,7 @@ class OrchestrationStrategySelector
     when Hash
       value.sum { |_key, nested| count_rules(nested) }
     when Array
-      value.size
+      1
     else
       1
     end
