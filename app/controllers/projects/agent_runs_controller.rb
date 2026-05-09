@@ -275,7 +275,6 @@ module Projects
       redirect_target = safe_return_target || project_agent_run_path(@project, @agent_run)
 
       unless @agent_run.paused?
-        @agent_run.resume!(decision_point: "manual_resume")
         redirect_to redirect_target,
           alert: "Only paused runs can be resumed."
         return
