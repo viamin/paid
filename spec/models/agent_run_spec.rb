@@ -2505,6 +2505,64 @@ RSpec.describe AgentRun do
         expect(Rails.cache.read(account_key)).to be_nil
       end
 
+      it "does not invalidate provider option caches for non-label provider changes" do
+        project = create(:project)
+        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_provider: provider.routing_key)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        provider.update!(weight: provider.weight + 1)
+
+        expect(Rails.cache.read(account_key)).not_to be_nil
+      end
+
+      it "does not invalidate provider option caches for unrelated config changes" do
+        project = create(:project)
+        provider = create(
+          :provider,
+          user: project.effective_owner,
+          provider_key: "opencode",
+          name: "",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+        )
+        create(:agent_run, project: project, final_provider: provider.routing_key)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        provider.update!(
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" }, "extra" => "value" }
+        )
+
+        expect(Rails.cache.read(account_key)).not_to be_nil
+      end
+
+      it "invalidates provider option caches when model-driven display names change" do
+        project = create(:project)
+        provider = create(
+          :provider,
+          user: project.effective_owner,
+          provider_key: "opencode",
+          name: "",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+        )
+        create(:agent_run, project: project, final_provider: provider.routing_key)
+        account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
+
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
+        expect(Rails.cache.read(account_key)).not_to be_nil
+
+        provider.update!(
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0906" } }
+        )
+
+        expect(Rails.cache.read(account_key)).to be_nil
+      end
+
       it "invalidates provider option caches when a provider is discarded" do
         project = create(:project)
         provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")

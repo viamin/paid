@@ -80,7 +80,7 @@ class Provider < ApplicationRecord
   before_discard :clear_provider_api_key_reference
   before_discard :prevent_destroying_last_agent_run_provider
   before_discard :prevent_destroying_default_provider
-  after_commit :invalidate_agent_run_provider_option_caches
+  after_commit :invalidate_agent_run_provider_option_caches, if: :agent_run_provider_option_cache_invalidation_needed?
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :provider_key, presence: true, length: { maximum: 50 }
@@ -90,7 +90,11 @@ class Provider < ApplicationRecord
   validates :fallback_role, presence: true, inclusion: { in: FALLBACK_ROLES }
   validates :name, length: { maximum: 100 }
   validates :provider_key,
-    uniqueness: { scope: [ :user_id, :auth_type ], message: "already has a subscription entry" },
+    uniqueness: {
+      scope: [ :user_id, :auth_type ],
+      conditions: -> { kept },
+      message: "already has a subscription entry"
+    },
     if: -> { subscription? }
 
   validate :must_keep_at_least_one_agent_run_provider
@@ -471,13 +475,16 @@ class Provider < ApplicationRecord
     return nil unless user
     return nil if identifier.blank?
 
-    relation = include_discarded ? with_discarded : all
-
     if routing_key?(identifier)
+      relation = include_discarded ? with_discarded : all
       relation.where(user: user).find_by(id: id_from_routing_key(identifier))
     else
-      matching_providers = relation.where(user: user, provider_key: identifier).ordered
-      matching_providers.subscription.first || matching_providers.first
+      if include_discarded
+        preferred_identifier_match(all.where(user: user, provider_key: identifier).ordered) ||
+          preferred_identifier_match(with_discarded.where(user: user, provider_key: identifier).discarded.ordered)
+      else
+        preferred_identifier_match(all.where(user: user, provider_key: identifier).ordered)
+      end
     end
   end
 
@@ -614,6 +621,40 @@ class Provider < ApplicationRecord
   def clear_provider_api_key_reference
     self.provider_api_key = nil if provider_api_key_id.present?
   end
+
+  def agent_run_provider_option_cache_invalidation_needed?
+    previous_changes.key?("id") ||
+      previous_changes.key?("discarded_at") ||
+      previous_changes.key?("name") ||
+      previous_changes.key?("provider_key") ||
+      previous_changes.key?("auth_type") ||
+      display_name_config_changed?
+  end
+
+  def display_name_config_changed?
+    previous_config, current_config = previous_changes["config"]
+    return false unless previous_changes.key?("config")
+
+    display_name_config_value(previous_config) != display_name_config_value(current_config)
+  end
+
+  def display_name_config_value(config_value)
+    config = config_value.is_a?(Hash) ? config_value : {}
+
+    case provider_key
+    when "opencode"
+      config.dig("opencode", "model")
+    when "kilocode"
+      config.dig("kilocode", "model")
+    when "aider"
+      config.dig("aider", "model")
+    end
+  end
+
+  def self.preferred_identifier_match(matching_providers)
+    matching_providers.subscription.first || matching_providers.first
+  end
+  private_class_method :preferred_identifier_match
 
   def api_key_auth_requires_provider_api_key
     return unless api_key?

@@ -494,6 +494,14 @@ RSpec.describe Provider do
 
       expect(described_class.for_identifier(user, "claude")).to eq(subscription)
     end
+
+    it "prefers kept rows before discarded rows when including discarded matches" do
+      discarded_subscription = create(:provider, user: user, provider_key: "opencode", name: "Legacy Name")
+      discarded_subscription.update_column(:discarded_at, Time.current)
+      kept_subscription = create(:provider, user: user, provider_key: "opencode", name: "Current Name")
+
+      expect(described_class.for_identifier(user, "opencode", include_discarded: true)).to eq(kept_subscription)
+    end
   end
 
   describe "#display_name" do
