@@ -48,7 +48,9 @@ module Workflows
         {
           project_id: project_id,
           issue_id: issue_id,
-          knowledge_context: context_result[:context]
+          knowledge_context: context_result[:context],
+          workflow_name: self.class.name,
+          workflow_id: workflow_id
         },
         timeout: 120
       )

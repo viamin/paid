@@ -38,7 +38,7 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       }
     end
 
-    def orchestration_decision_for(decision_key)
+    def orchestration_decision_for(decision_key, decision_type: "planning_outcome")
       OrchestrationDecision.find_by!(
         [
           <<~SQL.squish,
@@ -48,7 +48,7 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
             AND context ->> 'decision_key' = ?
           SQL
           project.id,
-          "planning_outcome",
+          decision_type,
           "Workflows::PlanningWorkflow",
           decision_key
         ]
@@ -77,6 +77,30 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       )
       expect(decision.hints["parallelizable_groups"]).to eq({ "0" => [ 0, 2 ] })
       expect(decision.metadata["prompt_source"]).to eq("fallback_prompt")
+    end
+
+    it "persists decomposition strategy decisions with workflow context" do
+      decision = described_class.call(**payload.merge(
+        decision_key: "wf-123:decomposition_strategy:final",
+        decision_type: "decomposition_strategy",
+        outcome: "llm_fallback_after_policy_failure",
+        metadata: payload[:metadata].merge(
+          workflow_step: "decompose_feature",
+          policy_source: "experiment",
+          policy_error: { error_message: "scope failure" }
+        )
+      ))
+
+      expect(decision.decision_type).to eq("decomposition_strategy")
+      expect(decision.metadata).to include(
+        "workflow_step" => "decompose_feature",
+        "policy_source" => "experiment",
+        "policy_error" => include("error_message" => "scope failure")
+      )
+      expect(decision.hints).to include(
+        "task_count" => 3,
+        "dependency_edges" => 1
+      )
     end
 
     it "mirrors the decomposition record into orchestration decisions" do
@@ -115,6 +139,22 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
 
       expect(orchestration_decision.context["decision_status"]).to eq("noop")
       expect(orchestration_decision.outputs["outcome"]).to eq("single_task_plan")
+    end
+
+    it "marks policy-skipped decomposition strategy outcomes as noop" do
+      decision_key = "wf-123:decomposition_strategy:policy-skipped"
+      described_class.call(**payload.merge(
+        decision_key: decision_key,
+        decision_type: "decomposition_strategy",
+        outcome: "policy_skipped"
+      ))
+      orchestration_decision = orchestration_decision_for(
+        decision_key,
+        decision_type: "decomposition_strategy"
+      )
+
+      expect(orchestration_decision.context["decision_status"]).to eq("noop")
+      expect(orchestration_decision.outputs["outcome"]).to eq("policy_skipped")
     end
 
     it "marks failed decomposition outcomes as failed" do
