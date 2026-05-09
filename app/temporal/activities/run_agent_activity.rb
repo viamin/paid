@@ -1919,7 +1919,7 @@ module Activities
       return false unless error.message.match?(/container.*is not running/i)
       return false if agent_run.container_id.blank?
 
-      container_service = reconnect_container(agent_run)
+      container_service = reconnect_container(agent_run) rescue nil
       return false unless container_service
 
       !container_service.container_running?
