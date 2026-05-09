@@ -1,0 +1,70 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe CoordinationPolicy do
+  describe "associations" do
+    it { is_expected.to belong_to(:account) }
+    it { is_expected.to belong_to(:project).optional }
+    it { is_expected.to belong_to(:current_version).class_name("CoordinationPolicyVersion").optional }
+    it { is_expected.to have_many(:coordination_policy_versions).dependent(:destroy) }
+  end
+
+  describe "validations" do
+    subject(:coordination_policy) { build(:coordination_policy) }
+
+    it { is_expected.to validate_presence_of(:policy_type) }
+    it { is_expected.to validate_inclusion_of(:policy_type).in_array(described_class::POLICY_TYPES) }
+    it { is_expected.to validate_presence_of(:policy_key) }
+    it { is_expected.to validate_presence_of(:name) }
+    it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+
+    it "rejects a project from another account" do
+      coordination_policy.project = create(:project)
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:project]).to include("must belong to the same account")
+    end
+
+    it "rejects a current version from another policy" do
+      coordination_policy.current_version = create(:coordination_policy_version)
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:current_version]).to include("must belong to this coordination policy")
+    end
+  end
+
+  describe ".resolve_for" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    it "prefers a project-scoped active policy over the account default" do
+      default_policy = create(:coordination_policy, :active, account: account, policy_type: "decomposition")
+      project_policy = create(:coordination_policy, :active, :project_scoped, account: account, project: project, policy_type: "decomposition")
+
+      expect(described_class.resolve_for(account:, project:, policy_type: "decomposition")).to eq(project_policy)
+      expect(described_class.resolve_for(account:, policy_type: "decomposition")).to eq(default_policy)
+    end
+  end
+
+  describe "#activate_version!" do
+    it "promotes the requested version and supersedes the prior active version" do
+      policy = create(:coordination_policy)
+      previous_version = create(:coordination_policy_version, :active, coordination_policy: policy, version: 1)
+      next_version = create(:coordination_policy_version, coordination_policy: policy, version: 2)
+
+      policy.update!(current_version: previous_version, status: "active")
+
+      freeze_time do
+        policy.activate_version!(next_version)
+
+        expect(policy.reload.current_version).to eq(next_version)
+        expect(policy.status).to eq("active")
+        expect(previous_version.reload.status).to eq("superseded")
+        expect(previous_version.retired_at).to eq(Time.current)
+        expect(next_version.reload.status).to eq("active")
+        expect(next_version.activated_at).to eq(Time.current)
+      end
+    end
+  end
+end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_101016) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -629,6 +629,46 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
     t.index ["account_id", "policy_name"], name: "idx_coordination_experiments_one_running_policy", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["account_id"], name: "index_coordination_experiments_on_account_id"
     t.index ["winner_variant_id"], name: "index_coordination_experiments_on_winner_variant_id"
+  end
+
+  create_table "coordination_policies", comment: "Versioned coordination policy catalogs that drive decomposition, recovery, escalation, and lifecycle decisions.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Tenant that owns this policy family."
+    t.jsonb "context_selector", default: {}, null: false, comment: "Structured selector used to decide when this policy applies."
+    t.datetime "created_at", null: false
+    t.bigint "current_version_id"
+    t.text "description", comment: "Long-form summary of what this policy is intended to optimize or protect."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional structured provenance, rollout, and audit details."
+    t.string "name", null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
+    t.string "policy_key", limit: 100, null: false, comment: "Stable identifier used by runtime policy selection."
+    t.string "policy_type", limit: 50, null: false, comment: "Decision domain controlled by this policy: decomposition, recovery, escalation, or lifecycle_state."
+    t.bigint "project_id", comment: "Optional project-specific override; nil means account-wide default."
+    t.string "status", limit: 30, default: "draft", null: false, comment: "Catalog lifecycle state: draft, active, or archived."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "policy_type", "status"], name: "idx_coordination_policies_account_type_status"
+    t.index ["account_id", "project_id", "policy_type", "policy_key"], name: "idx_coordination_policies_scope_key"
+    t.index ["account_id"], name: "index_coordination_policies_on_account_id"
+    t.index ["current_version_id"], name: "index_coordination_policies_on_current_version_id"
+    t.index ["project_id", "policy_type", "status"], name: "idx_coordination_policies_project_type_status"
+    t.index ["project_id"], name: "index_coordination_policies_on_project_id"
+  end
+
+  create_table "coordination_policy_versions", comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy.", force: :cascade do |t|
+    t.datetime "activated_at", comment: "When this version became the policy's active revision."
+    t.bigint "coordination_policy_id", null: false, comment: "Owning policy catalog entry."
+    t.datetime "created_at", null: false
+    t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
+    t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
+    t.text "reasoning", comment: "Why this policy version exists and what changed from the prior version."
+    t.datetime "retired_at", comment: "When this version stopped being eligible for runtime selection."
+    t.jsonb "rules", default: {}, null: false, comment: "Structured decision rules executed by coordination services."
+    t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
+    t.datetime "updated_at", null: false
+    t.integer "version", null: false, comment: "Monotonic version number within the owning coordination policy."
+    t.index ["coordination_policy_id", "status", "created_at"], name: "idx_coordination_policy_versions_policy_status_created"
+    t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_unique_version", unique: true
+    t.index ["coordination_policy_id"], name: "idx_coordination_policy_versions_one_active", unique: true, where: "((status)::text = 'active'::text)"
+    t.index ["coordination_policy_id"], name: "index_coordination_policy_versions_on_coordination_policy_id"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -2121,6 +2161,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_045503) do
   add_foreign_key "coordination_experiment_variants", "coordination_experiments", on_delete: :cascade
   add_foreign_key "coordination_experiments", "accounts", on_delete: :cascade
   add_foreign_key "coordination_experiments", "coordination_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "coordination_policies", "accounts", on_delete: :cascade
+  add_foreign_key "coordination_policies", "coordination_policy_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "coordination_policies", "projects", on_delete: :cascade
+  add_foreign_key "coordination_policy_versions", "coordination_policies", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
   add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
