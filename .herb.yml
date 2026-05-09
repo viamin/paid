@@ -41,7 +41,7 @@ version: 0.10.1
 linter:
   enabled: true
   rules:
-    # TODO(#1882): Re-enable once the application CSP policy and nonce generator are enabled.
+    # TODO(#1887): Re-enable once the application CSP policy and nonce generator are enabled.
     html-require-script-nonce:
       enabled: false
 
