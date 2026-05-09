@@ -62,16 +62,16 @@ module Issues
       new(...).call
     end
 
-    # Returns true if sync_children made changes via update_all (which
-    # bypasses callbacks and needs a manual broadcast). sync_parent uses
-    # update! which triggers after_update_commit broadcasts on its own.
+    # Returns true if either relationship sync path persisted a visible
+    # change. Callers that suppress model broadcasts can use this to
+    # decide whether a manual refresh is needed after the batch.
     def call
       child_numbers = resolve_child_numbers
       parent_number, parent_declared = resolve_parent_number
 
       children_changed = sync_children(child_numbers)
-      sync_parent(parent_number, parent_declared)
-      children_changed
+      parent_changed = sync_parent(parent_number, parent_declared)
+      children_changed || parent_changed
     end
 
     private

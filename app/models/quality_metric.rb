@@ -41,6 +41,8 @@ class QualityMetric < ApplicationRecord
   belongs_to :agent_run
   belongs_to :prompt_version, optional: true
 
+  after_commit :invalidate_dashboard_overview_cache
+
   validates :metric_type, presence: true, inclusion: { in: METRIC_TYPES }
   validates :feedback_source, inclusion: { in: FEEDBACK_SOURCES }, allow_nil: true
   validates :composite_score,
@@ -117,5 +119,11 @@ class QualityMetric < ApplicationRecord
     self.composite_score = calculate_composite_score
     save! if composite_score_changed?
     composite_score
+  end
+
+  private
+
+  def invalidate_dashboard_overview_cache
+    Rails.cache.delete(QualityMetrics::DashboardStats.overview_cache_key(agent_run.project_id))
   end
 end

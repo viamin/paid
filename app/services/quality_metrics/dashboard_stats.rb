@@ -22,6 +22,10 @@ module QualityMetrics
       new(...).overview
     end
 
+    def self.overview_cache_key(project_id)
+      "quality_dashboard_overview/#{project_id}"
+    end
+
     def call
       {
         overview: overview,
@@ -91,7 +95,15 @@ module QualityMetrics
       { label: "80–100", min: 0.8, max: 1.01 }
     ].freeze
 
+    OVERVIEW_CACHE_TTL = 2.minutes
+
     def overview
+      Rails.cache.fetch(self.class.overview_cache_key(project.id), expires_in: OVERVIEW_CACHE_TTL) do
+        compute_overview
+      end
+    end
+
+    def compute_overview
       row = metrics
         .select(
           "COUNT(*) AS total_metrics",
@@ -113,6 +125,8 @@ module QualityMetrics
         score_distribution: score_distribution
       }
     end
+
+    private :compute_overview
 
     def export_data(limit: 10_000)
       metrics_scope = QualityMetric.by_project(project.id)

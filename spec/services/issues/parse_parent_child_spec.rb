@@ -227,8 +227,9 @@ RSpec.describe Issues::ParseParentChild do
         parent = create(:issue, project: project, github_number: 8100)
         child = create(:issue, project: project, body: "Part of #8100")
 
-        described_class.call(issue: child)
+        changed = described_class.call(issue: child)
 
+        expect(changed).to be(true)
         expect(child.reload.parent_issue_id).to eq(parent.id)
       end
 
@@ -319,6 +320,19 @@ RSpec.describe Issues::ParseParentChild do
           ]
         )
 
+        expect(child.reload.parent_issue_id).to eq(parent.id)
+      end
+
+      it "returns true when a comment-only parent declaration changes the issue" do
+        parent = create(:issue, project: project, github_number: 8221)
+        child = create(:issue, project: project, body: "Some body text")
+
+        changed = described_class.call(
+          issue: child,
+          comments: [ "Part of #8221" ]
+        )
+
+        expect(changed).to be(true)
         expect(child.reload.parent_issue_id).to eq(parent.id)
       end
 
