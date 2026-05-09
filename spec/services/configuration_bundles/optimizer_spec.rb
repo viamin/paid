@@ -30,21 +30,22 @@ RSpec.describe ConfigurationBundles::Optimizer do
       create_bundle_history(
         experiment: experiment,
         variant: control,
-        quality_scores: [ 0.72, 0.74, 0.76, 0.78 ]
+        quality_scores: [ 0.62, 0.64, 0.66, 0.68 ]
       )
       create_bundle_history(
         experiment: experiment,
         variant: challenger,
-        quality_scores: [ 0.9 ]
+        quality_scores: [ 0.98 ]
       )
 
       selection = described_class.call(agent_run: agent_run)
 
       expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
+      expect(selection.score_inputs.predicted_objective_score).to be > 0
       expect(selection.score_inputs.predicted_quality_score).to be > 0
       expect(selection.score_inputs.uncertainty).to be > 0
       expect(selection.score_inputs.acquisition_score).to be >
-        selection.score_inputs.predicted_quality_score
+        selection.score_inputs.predicted_objective_score
     end
 
     it "routes no-issue runs through the project exploration budget" do
@@ -137,6 +138,26 @@ RSpec.describe ConfigurationBundles::Optimizer do
       experiment.update!(status: "completed", completed_at: Time.current)
 
       expect(described_class.call(agent_run: agent_run)).to be_nil
+    end
+
+    it "prefers the cheaper bundle when quality is matched" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.8, 0.8 ],
+        cost_cents: 25
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.8, 0.8 ],
+        cost_cents: 200
+      )
+
+      selection = described_class.call(agent_run: agent_run)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.score_inputs.predicted_objective_score).to be <= selection.score_inputs.predicted_quality_score
     end
 
     it "skips malformed variants while still scoring valid candidates" do
@@ -260,6 +281,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
   def prediction_for(mode)
     if mode == :exploitative
       ConfigurationBundles::SurrogateModel::Prediction.new(
+        mean_objective_score: 0.82,
         mean_quality_score: 0.82,
         uncertainty: 0.01,
         sample_count: 4,
@@ -267,6 +289,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
       )
     else
       ConfigurationBundles::SurrogateModel::Prediction.new(
+        mean_objective_score: 0.72,
         mean_quality_score: 0.72,
         uncertainty: 0.35,
         sample_count: 1,
@@ -284,7 +307,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
   end
 
-  def create_bundle_history(experiment:, variant:, quality_scores:)
+  def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40)
     definition = {
       "schema_version" => 1,
       "goal" => agent_run.goal,
@@ -302,11 +325,17 @@ RSpec.describe ConfigurationBundles::Optimizer do
     bundle = create(:configuration_bundle, account: project.account, definition: definition)
 
     quality_scores.each do |quality_score|
-      run = create(:agent_run, :completed, configuration_bundle: bundle, project: project, issue: create(:issue, project: project))
+      run = create(:agent_run,
+        :completed,
+        configuration_bundle: bundle,
+        project: project,
+        issue: create(:issue, project: project),
+        cost_cents: cost_cents)
       create(:bundle_outcome,
         configuration_bundle: bundle,
         agent_run: run,
-        quality_score: quality_score)
+        quality_score: quality_score,
+        cost_cents: cost_cents)
     end
   end
 end

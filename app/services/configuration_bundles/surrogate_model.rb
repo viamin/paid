@@ -5,6 +5,7 @@ module ConfigurationBundles
     include Canonicalization
 
     Prediction = Struct.new(
+      :mean_objective_score,
       :mean_quality_score,
       :uncertainty,
       :sample_count,
@@ -46,10 +47,13 @@ module ConfigurationBundles
       return empty_prediction if matches.empty?
 
       total_weight = matches.sum { |match| match[:weight] }
+      weighted_objective_sum = matches.sum { |match| match[:weight] * match[:objective_score] }
       weighted_sum = matches.sum { |match| match[:weight] * match[:quality_score] }
+      weighted_objective = ((PRIOR_MEAN * PRIOR_WEIGHT) + weighted_objective_sum) / (PRIOR_WEIGHT + total_weight)
       weighted_mean = ((PRIOR_MEAN * PRIOR_WEIGHT) + weighted_sum) / (PRIOR_WEIGHT + total_weight)
 
       Prediction.new(
+        mean_objective_score: weighted_objective,
         mean_quality_score: weighted_mean,
         uncertainty: 1.0 / Math.sqrt(PRIOR_WEIGHT + total_weight),
         sample_count: total_weight.round(4),
@@ -69,7 +73,7 @@ module ConfigurationBundles
         similarity = similarity(bundle_features, outcome_row[:features])
         next if similarity.zero?
 
-        match_row(outcome_row[:quality_score], similarity)
+        match_row(outcome_row[:objective_score], outcome_row[:quality_score], similarity)
       end
     end
 
@@ -79,7 +83,7 @@ module ConfigurationBundles
       outcome_rows_by_fingerprint.fetch(fingerprint, []).filter_map do |outcome_row|
         next unless same_scoring_context?(scoring_context, outcome_row[:scoring_context])
 
-        match_row(outcome_row[:quality_score], 1.0)
+        match_row(outcome_row[:objective_score], outcome_row[:quality_score], 1.0)
       end
     end
 
@@ -94,6 +98,7 @@ module ConfigurationBundles
           rows << {
             fingerprint: outcome.configuration_bundle.fingerprint,
             features: feature_map(definition),
+            objective_score: outcome_objective_score(outcome),
             quality_score: outcome.quality_score.to_f,
             scoring_context: scoring_context_for(outcome)
           }
@@ -107,8 +112,9 @@ module ConfigurationBundles
       @outcome_rows_by_fingerprint ||= outcome_rows.group_by { |outcome_row| outcome_row[:fingerprint] }
     end
 
-    def match_row(quality_score, weight)
+    def match_row(objective_score, quality_score, weight)
       {
+        objective_score: objective_score,
         weight: weight,
         quality_score: quality_score
       }
@@ -116,6 +122,7 @@ module ConfigurationBundles
 
     def empty_prediction
       Prediction.new(
+        mean_objective_score: PRIOR_MEAN,
         mean_quality_score: PRIOR_MEAN,
         uncertainty: 1.0,
         sample_count: 0.0,
@@ -168,6 +175,18 @@ module ConfigurationBundles
       Array(definition["mcp_servers"])
         .map { |snapshot| canonicalize(snapshot) }
         .sort_by { |snapshot| JSON.generate(snapshot) }
+    end
+
+    def outcome_objective_score(outcome)
+      objective_score = outcome.metrics&.fetch("objective_score", nil)
+      return objective_score.to_f if objective_score.present?
+
+      ConfigurationBundles::ObjectiveScore.call(
+        project: outcome.agent_run.project,
+        quality_score: outcome.quality_score,
+        cost_cents: outcome.cost_cents,
+        duration_seconds: outcome.duration_seconds
+      ).objective_score
     end
 
     def similarity(lhs, rhs)

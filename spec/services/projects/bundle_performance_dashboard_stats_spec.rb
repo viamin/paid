@@ -141,6 +141,8 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
       expect(stats[:sparse]).to be(false)
       expect(stats[:summary][:bundle_count]).to eq(1)
+      expect(stats[:bundle_rankings].first[:avg_objective_score]).to be < stats[:bundle_rankings].first[:avg_quality_score]
+      expect(stats[:bundle_rankings].first[:avg_quality_per_dollar]).to be > 1
       expect(stats[:bundle_rankings].first[:avg_quality_score]).to be_within(0.001).of(0.85)
       expect(stats[:experiment_confidence].first[:variants].size).to eq(2)
       expect(stats[:tradeoff_frontier].first[:bundle]).to eq(bundle)
@@ -221,16 +223,29 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       configuration_bundle: bundle,
       cost_cents: cost_cents)
 
+    objective = ConfigurationBundles::ObjectiveScore.call(
+      project: project,
+      quality_score: quality_score,
+      cost_cents: cost_cents,
+      duration_seconds: run.duration_seconds
+    )
+
     create(:bundle_outcome,
       configuration_bundle: bundle,
       agent_run: run,
       quality_score: quality_score,
       cost_cents: cost_cents,
+      duration_seconds: run.duration_seconds,
+      metrics: {
+        "objective_score" => objective.objective_score,
+        "quality_per_dollar" => objective.quality_per_dollar
+      },
       success: true)
   end
 
   def mock_optimizer_selection
     score_inputs = ConfigurationBundles::Optimizer::ScoreInputs.new(
+      predicted_objective_score: 0.76,
       predicted_quality_score: 0.8,
       uncertainty: 0.1,
       sample_count: 5,
