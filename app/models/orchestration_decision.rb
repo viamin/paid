@@ -3,6 +3,7 @@
 class OrchestrationDecision < ApplicationRecord
   belongs_to :project
   belongs_to :agent_run, optional: true
+  belongs_to :strategy_version, optional: true
 
   before_validation :assign_project_from_agent_run
 
@@ -21,25 +22,9 @@ class OrchestrationDecision < ApplicationRecord
   scope :by_actor, ->(actor) { where(actor: actor) }
   scope :recent, -> { order(created_at: :desc, id: :desc) }
 
-  def strategy_version
-    return nil unless has_attribute?(:strategy_version_id)
-    return nil if strategy_version_id.blank?
-
-    @strategy_version ||= StrategyVersion.find_by(id: strategy_version_id)
-  end
-
-  def strategy_version=(value)
-    return unless has_attribute?(:strategy_version_id)
-
-    self.strategy_version_id = value&.id
-    @strategy_version = value
-  end
-
-  def strategy_version_id=(value)
-    clear_strategy_version_cache
-    super
-  end
-
+  # Convenience factory for retry/escalation decision logging. Maps the
+  # action/decision_point/signals/result interface used by orchestration
+  # callers onto the generic OrchestrationDecision schema.
   def self.record!(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
     ctx = {}
     ctx[:issue_id] = issue.id if issue
@@ -57,6 +42,9 @@ class OrchestrationDecision < ApplicationRecord
     )
   end
 
+  # Non-bang variant that silently swallows failures. Use this inside rescue
+  # blocks or lifecycle transactions so a logging failure cannot mask the
+  # original exception or poison the caller's transaction.
   def self.record(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
     transaction(requires_new: true) do
       record!(
@@ -90,7 +78,6 @@ class OrchestrationDecision < ApplicationRecord
   end
 
   def strategy_version_matches_project_scope
-    return unless has_attribute?(:strategy_version_id)
     return unless project && strategy_version
 
     strategy = strategy_version.strategy
@@ -123,9 +110,5 @@ class OrchestrationDecision < ApplicationRecord
     return if public_send(attribute).is_a?(Hash)
 
     errors.add(attribute, "must be an object")
-  end
-
-  def clear_strategy_version_cache
-    remove_instance_variable(:@strategy_version) if instance_variable_defined?(:@strategy_version)
   end
 end
