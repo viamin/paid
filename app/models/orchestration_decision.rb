@@ -3,12 +3,14 @@
 class OrchestrationDecision < ApplicationRecord
   belongs_to :project
   belongs_to :agent_run, optional: true
+  belongs_to :strategy_version, optional: true
 
   before_validation :assign_project_from_agent_run
 
   validates :decision_type, presence: true, length: { maximum: 100 }
   validates :actor, presence: true, length: { maximum: 100 }
   validate :project_matches_agent_run
+  validate :strategy_version_matches_project_scope
   validate :context_is_object
   validate :inputs_is_object
   validate :outputs_is_object
@@ -73,6 +75,17 @@ class OrchestrationDecision < ApplicationRecord
     return if project_id == agent_run.project_id
 
     errors.add(:project, "must match the agent run's project")
+  end
+
+  def strategy_version_matches_project_scope
+    return unless project && strategy_version
+
+    strategy = strategy_version.strategy
+    return if strategy.account_id.nil?
+    return if strategy.account_id == project.account_id && strategy.project_id.nil?
+    return if strategy.account_id == project.account_id && strategy.project_id == project_id
+
+    errors.add(:strategy_version, "must be global or scoped to the decision's account/project")
   end
 
   def context_is_object

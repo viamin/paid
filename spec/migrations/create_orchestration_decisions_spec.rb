@@ -2,21 +2,45 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
+require Rails.root.join("db/migrate/20260507202027_add_strategy_version_to_orchestration_decisions")
+require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisions_strategy_version_tenant_check")
+require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
 
 RSpec.describe CreateOrchestrationDecisions, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:add_strategy_version_migration) { AddStrategyVersionToOrchestrationDecisions.new }
+  let(:ensure_strategy_version_migration) { EnsureStrategyVersionIdOnOrchestrationDecisions.new }
+  let(:tighten_strategy_version_scope_migration) { TightenOrchestrationDecisionsStrategyVersionTenantCheck.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
     table_existed = connection.table_exists?(:orchestration_decisions)
+    strategy_version_reference_existed =
+      table_existed && connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+
+    if strategy_version_reference_existed
+      tighten_strategy_version_scope_migration.down
+      add_strategy_version_migration.migrate(:down)
+    end
     migration.down if table_existed
+    OrchestrationDecision.reset_column_information
 
     example.run
   ensure
     migration.down if connection.table_exists?(:orchestration_decisions)
-    migration.up if table_existed
+    if table_existed
+      migration.up
+
+      if strategy_version_reference_existed
+        add_strategy_version_migration.migrate(:up)
+        ensure_strategy_version_migration.migrate(:up)
+        tighten_strategy_version_scope_migration.up
+      end
+    end
+
+    OrchestrationDecision.reset_column_information
   end
 
   it "creates the table with indexes, foreign keys, comments, and tenant RLS" do
