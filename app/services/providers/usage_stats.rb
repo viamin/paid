@@ -142,8 +142,10 @@ module Providers
     end
 
     def provider_attempt_metrics(since)
+      normalized_attempt_provider_sql = AgentRun.normalize_provider_sql("attempt->>'provider'")
+
       sql = <<~SQL.squish
-        SELECT attempt->>'provider' AS provider,
+        SELECT #{normalized_attempt_provider_sql} AS provider,
                COUNT(*)::integer AS attempts,
                COUNT(*) FILTER (WHERE COALESCE((attempt->>'success')::boolean, false))::integer AS successes,
                COUNT(*) FILTER (WHERE attempt->>'error_type' = 'timeout')::integer AS timeouts,
@@ -155,7 +157,7 @@ module Providers
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.providers_attempted, '[]'::jsonb)) AS attempt
         WHERE projects.account_id = #{ActiveRecord::Base.connection.quote(user.account_id)}
           AND agent_runs.created_at >= #{ActiveRecord::Base.connection.quote(since)}
-        GROUP BY attempt->>'provider'
+        GROUP BY #{normalized_attempt_provider_sql}
       SQL
 
       ActiveRecord::Base.connection.select_all(sql).each_with_object({}) do |row, metrics|

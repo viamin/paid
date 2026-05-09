@@ -220,7 +220,8 @@ class AgentRun < ApplicationRecord
   NORMALIZABLE_COLUMNS = [
     "agent_type",
     "final_provider",
-    "NULLIF(final_provider, '')"
+    "NULLIF(final_provider, '')",
+    "attempt->>'provider'"
   ].freeze
 
   # SQL CASE expression that normalizes a column's value to its canonical

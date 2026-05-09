@@ -92,6 +92,28 @@ RSpec.describe Providers::UsageStats do
       end
     end
 
+    context "with attempt metrics stored under an agent-type alias" do
+      before do
+        create(:agent_run, :failed, project: project, agent_type: "claude_code", created_at: 1.day.ago,
+          providers_attempted: [
+            { "provider" => "claude_code", "success" => false, "error_type" => "timeout", "duration_seconds" => 900.0 },
+            { "provider" => "claude_code", "success" => true, "duration_seconds" => 30.0 }
+          ])
+      end
+
+      it "normalizes attempt metrics to the provider key" do
+        expect(stats["claude"]).to include(
+          attempts_7d: 2,
+          success_attempts_7d: 1,
+          success_rate_7d: 50.0,
+          timeout_events_7d: 1,
+          rate_limit_events_7d: 0,
+          error_events_7d: 0,
+          avg_attempt_duration_seconds: 465.0
+        )
+      end
+    end
+
     context "with timeout and error attempts for a routed provider entry" do
       let(:owner) { project.effective_owner }
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "zai_coding") }
