@@ -58,4 +58,11 @@ Rails.application.configure do
   config.active_record.encryption.primary_key = "test0primary0key0for0encryption0"
   config.active_record.encryption.deterministic_key = "test0deterministic0key0for0encr"
   config.active_record.encryption.key_derivation_salt = "test0key0derivation0salt0value0"
+
+  config.after_initialize do
+    next unless ENV["PROSOPITE"] == "true"
+
+    Prosopite.raise = ENV["PROSOPITE_RAISE"] == "true"
+    Prosopite.stderr_logger = true unless Prosopite.raise?
+  end
 end
