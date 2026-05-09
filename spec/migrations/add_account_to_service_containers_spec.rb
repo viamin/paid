@@ -37,7 +37,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     if tenant_policy_count.positive?
-      tighten_orchestration_decisions_strategy_version_tenant_check_migration.down if orchestration_decisions_have_rls?
+      tighten_orchestration_decisions_strategy_version_tenant_check_migration.down if orchestration_decisions_have_strategy_version_reference?
       add_strategy_version_to_orchestration_decisions_migration.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
       strategy_rls_migration.down if strategies_have_rls?
       strategy_experiments_rls_migration.down if strategy_experiment_tables_have_rls?
