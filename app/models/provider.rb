@@ -76,9 +76,9 @@ class Provider < ApplicationRecord
   before_validation :normalize_agent_co_author_trailer
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
-  before_discard :clear_provider_api_key_reference
   before_discard :prevent_destroying_last_agent_run_provider
   before_discard :prevent_destroying_default_provider
+  before_discard :clear_provider_api_key_reference
   after_commit :invalidate_agent_run_provider_option_caches, if: :agent_run_provider_option_cache_invalidation_needed?
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
