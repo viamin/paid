@@ -450,11 +450,7 @@ module Activities
       end
 
       # ParseParentChild returns true when either child-list reconciliation or
-      # inline parent declarations changed visible issue relationships. During
-      # sync we suppress per-record broadcasts, so both paths need one
-      # batched manual refresh here.
-      project.broadcast_issues_update if parent_child_changed
-
+      # inline parent declarations changed visible issue relationships.
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
       dependency_changed = resolve_external_dependencies(project, synced_numbers)
       parent_child_changed || dependency_changed
@@ -617,11 +613,6 @@ module Activities
       if count > 0
         stale_issues.update_all(github_state: "closed", updated_at: Time.current)
 
-        # update_all bypasses ActiveRecord callbacks, so manually broadcast
-        # the updated lists to remove closed items from connected browsers.
-        project.broadcast_issues_update
-        project.broadcast_pull_requests_update
-
         logger.info(
           message: "github_sync.closed_stale_issues",
           project_id: project.id,
@@ -703,8 +694,6 @@ module Activities
       return 0 if count.zero?
 
       stale_prs.update_all(github_state: "closed", updated_at: Time.current)
-      project.broadcast_issues_update
-      project.broadcast_pull_requests_update
 
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
@@ -743,7 +732,6 @@ module Activities
       count = stale.count
       if count > 0
         stale.update_all(github_state: "closed", updated_at: Time.current)
-        project.broadcast_issues_update
 
         logger.info(
           message: "github_sync.reconciled_stale_issues",
