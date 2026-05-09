@@ -212,4 +212,16 @@ RSpec.describe User do
       end
     end
   end
+
+  describe "provider cleanup" do
+    it "destroys discarded providers when the user is destroyed" do
+      user = create(:user)
+      provider = create(:provider, user: user, provider_key: "cursor")
+      provider.discard!
+
+      expect { user.destroy! }
+        .to change { Provider.with_discarded.where(id: provider.id).count }
+        .from(1).to(0)
+    end
+  end
 end

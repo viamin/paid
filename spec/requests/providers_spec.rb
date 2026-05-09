@@ -758,5 +758,15 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
       expect(flash[:alert]).to include("Cannot delete the last provider")
     end
+
+    it "soft deletes providers instead of removing the row" do
+      provider = create(:provider, user: user, provider_key: "cursor", name: "Cursor Stable")
+
+      delete provider_path(provider)
+
+      expect(response).to redirect_to(providers_path)
+      expect(Provider.kept_only.find_by(id: provider.id)).to be_nil
+      expect(Provider.with_discarded.find(provider.id)).to be_discarded
+    end
   end
 end

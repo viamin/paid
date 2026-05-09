@@ -92,6 +92,15 @@ RSpec.describe ProviderApiKey do
 
       expect(api_key.destroy).to be_truthy
     end
+
+    it "allows deletion after the referencing provider has been discarded" do
+      api_key = create(:provider_api_key, api_service_type: "anthropic")
+      provider = create(:provider, :api_key, user: api_key.user, provider_key: "cursor", provider_api_key: api_key)
+      provider.discard!
+
+      expect(api_key.providers).to be_empty
+      expect(api_key.destroy).to be_truthy
+    end
   end
 
   describe ".for_api_service_type" do

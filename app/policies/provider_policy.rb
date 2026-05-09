@@ -38,7 +38,7 @@ class ProviderPolicy < ApplicationPolicy
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
-      scope.where(user: user)
+      scope.kept_only.where(user: user)
     end
 
     private

@@ -521,7 +521,7 @@ module ApplicationHelper
     end
     return {} if provider_ids_by_owner_id.empty?
 
-    Provider.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
+    Provider.with_discarded.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
       .index_by { |provider| [ provider.user_id, provider.id ] }
   end
 
@@ -536,7 +536,7 @@ module ApplicationHelper
     end
     return {} if owner_ids_by_provider_key.empty?
 
-    Provider.where(
+    Provider.with_discarded.where(
       user_id: owner_ids_by_provider_key.values.flatten.uniq,
       provider_key: owner_ids_by_provider_key.keys
     ).ordered.group_by { |provider| [ provider.user_id, provider.provider_key ] }

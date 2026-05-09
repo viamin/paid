@@ -178,7 +178,7 @@ module Issues
 
     def resolve_provider(goal)
       provider_id, = AgentRuns::ProviderResolver.call(project: @project, goal: goal)
-      Provider.find_by(id: provider_id) if provider_id
+      Provider.kept_only.find_by(id: provider_id) if provider_id
     end
   end
 end

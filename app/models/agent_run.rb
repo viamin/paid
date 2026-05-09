@@ -91,7 +91,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
-  belongs_to :provider, optional: true
+  belongs_to :provider, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
@@ -279,21 +279,23 @@ class AgentRun < ApplicationRecord
 
   PROVIDER_OPTIONS_CACHE_TTL = 5.minutes
 
-  def self.distinct_effective_providers(cache_key: nil)
+  def self.distinct_effective_provider_options(account_id:, cache_key: nil)
     if cache_key
       Rails.cache.fetch(cache_key, expires_in: PROVIDER_OPTIONS_CACHE_TTL) do
-        compute_distinct_effective_providers
+        compute_distinct_effective_provider_options(account_id: account_id)
       end
     else
-      compute_distinct_effective_providers
+      compute_distinct_effective_provider_options(account_id: account_id)
     end
   end
 
   def self.provider_options_cache_key_for(account_id:, project_id: nil)
+    generation = provider_options_cache_generation_for(account_id: account_id)
+
     if project_id
-      "agent_runs/providers/account/#{account_id}/project/#{project_id}"
+      "agent_runs/providers/account/#{account_id}/v#{generation}/project/#{project_id}"
     else
-      "agent_runs/providers/account/#{account_id}"
+      "agent_runs/providers/account/#{account_id}/v#{generation}"
     end
   end
 
@@ -301,6 +303,10 @@ class AgentRun < ApplicationRecord
     keys = [ provider_options_cache_key_for(account_id: account_id) ]
     keys << provider_options_cache_key_for(account_id: account_id, project_id: project_id) if project_id
     keys.each { |key| Rails.cache.delete(key) }
+
+    return if project_id
+
+    invalidate_provider_options_cache_for_account(account_id: account_id)
   end
 
   def self.preload_final_provider_records(runs)
@@ -329,12 +335,65 @@ class AgentRun < ApplicationRecord
     runs
   end
 
-  def self.compute_distinct_effective_providers
-    pluck(Arel.sql("DISTINCT #{effective_provider_sql}"))
-      .compact
-      .sort
+  def self.compute_distinct_effective_provider_options(account_id:)
+    identifiers = pluck(Arel.sql("DISTINCT #{effective_provider_sql}")).compact
+    routed_options = routed_provider_filter_options_by_identifier(identifiers, account_id:)
+
+    identifiers
+      .filter_map do |identifier|
+        if Provider.routing_key?(identifier)
+          routed_options[identifier]
+        else
+          Provider.filter_option_for_identifier(identifier, account_id: account_id)
+        end
+      end
+      .uniq
+      .sort_by { |option| [ option[:label], option[:value] ] }
   end
-  private_class_method :compute_distinct_effective_providers
+  private_class_method :compute_distinct_effective_provider_options
+
+  def self.provider_options_cache_generation_for(account_id:)
+    Rails.cache.read(provider_options_cache_generation_key_for(account_id: account_id)) || 1
+  end
+  private_class_method :provider_options_cache_generation_for
+
+  def self.provider_options_cache_generation_key_for(account_id:)
+    "agent_runs/providers/account/#{account_id}/generation"
+  end
+  private_class_method :provider_options_cache_generation_key_for
+
+  def self.invalidate_provider_options_cache_for_account(account_id:)
+    prefix = /\Aagent_runs\/providers\/account\/#{account_id}(?:\/|\z)/
+    Rails.cache.delete_matched(prefix)
+  rescue NotImplementedError
+    generation_key = provider_options_cache_generation_key_for(account_id: account_id)
+    current_generation = provider_options_cache_generation_for(account_id: account_id)
+    Rails.cache.write(generation_key, current_generation + 1)
+  end
+  private_class_method :invalidate_provider_options_cache_for_account
+
+  def self.routed_provider_filter_options_by_identifier(identifiers, account_id:)
+    provider_ids_by_identifier = identifiers.each_with_object({}) do |identifier, memo|
+      provider_id = Provider.id_from_routing_key(identifier)
+      memo[identifier] = provider_id if provider_id
+    end
+    return {} if provider_ids_by_identifier.empty?
+
+    providers_by_id = Provider.with_discarded.joins(:user)
+      .where(id: provider_ids_by_identifier.values.uniq, users: { account_id: account_id })
+      .index_by(&:id)
+
+    provider_ids_by_identifier.each_with_object({}) do |(identifier, provider_id), memo|
+      provider = providers_by_id[provider_id]
+      next unless provider
+
+      memo[identifier] = {
+        label: provider.display_name,
+        value: identifier
+      }
+    end
+  end
+  private_class_method :routed_provider_filter_options_by_identifier
 
   def self.final_provider_records_by_lookup(runs, fallback_owner_ids)
     lookup_pairs = runs.filter_map do |run|
@@ -351,7 +410,7 @@ class AgentRun < ApplicationRecord
     provider_ids = lookup_pairs.map { |(_, identifier)| Provider.id_from_routing_key(identifier) }.uniq
     owner_ids = lookup_pairs.map(&:first).uniq
 
-    Provider.where(id: provider_ids, user_id: owner_ids).index_by { |provider| [ provider.user_id, provider.routing_key ] }
+    Provider.with_discarded.where(id: provider_ids, user_id: owner_ids).index_by { |provider| [ provider.user_id, provider.routing_key ] }
   end
   private_class_method :final_provider_records_by_lookup
 
@@ -1471,13 +1530,15 @@ class AgentRun < ApplicationRecord
   end
 
   def final_provider_record
+    return preloaded_final_provider_record if preloaded_final_provider_record_loaded
+
     owner = project&.effective_owner
     return unless owner
 
     return unless final_provider.present?
 
     provider_id = Provider.id_from_routing_key(final_provider)
-    owner.providers.find_by(id: provider_id) if provider_id
+    owner.providers.with_discarded.find_by(id: provider_id) if provider_id
   end
 
   # Returns the Provider record that reflects which provider actually ran the
@@ -1486,7 +1547,9 @@ class AgentRun < ApplicationRecord
   # provider-key forms of final_provider via Provider.for_identifier. Returns
   # nil if neither can be resolved.
   def effective_provider_record
-    Provider.for_identifier(project&.effective_owner, final_provider) || provider
+    Provider.for_identifier(project&.effective_owner, final_provider, include_discarded: true) ||
+      provider ||
+      Provider.with_discarded.find_by(id: provider_id)
   end
 
   def attempted_providers_by_routing_key
@@ -1498,7 +1561,7 @@ class AgentRun < ApplicationRecord
     end
     return {} if routing_ids.empty?
 
-    owner.providers.where(id: routing_ids).index_by(&:routing_key)
+    owner.providers.with_discarded.where(id: routing_ids).index_by(&:routing_key)
   end
 
   # Records a provider attempt in the providers_attempted array.

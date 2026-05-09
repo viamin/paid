@@ -155,7 +155,7 @@ class UserSetting < ApplicationRecord
     return executable_keys if user.new_record?
 
     provider_identifiers_for(
-      user.providers.for_agent_runs.where(provider_key: executable_keys).ordered,
+      user.providers.kept_only.for_agent_runs.where(provider_key: executable_keys).ordered,
       identifiers: identifiers
     )
   end
@@ -169,7 +169,7 @@ class UserSetting < ApplicationRecord
     return executable_keys if user.new_record?
 
     provider_identifiers_for(
-      user.providers.for_fallback.where(provider_key: executable_keys).ordered,
+      user.providers.kept_only.for_fallback.where(provider_key: executable_keys).ordered,
       identifiers: identifiers
     )
   end
@@ -182,7 +182,7 @@ class UserSetting < ApplicationRecord
     return [] if user.new_record?
 
     executable_keys = ProviderSupport.container_executable_provider_keys
-    user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
+    user.providers.kept_only.api_key.rate_limit_fallback.for_agent_runs.for_fallback
       .where(provider_key: executable_keys)
       .distinct
       .pluck(:provider_key)
@@ -434,7 +434,7 @@ class UserSetting < ApplicationRecord
     routing_ids = candidates.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
     return {} if routing_ids.empty?
 
-    user.providers.where(id: routing_ids).pluck(:id, :weight).to_h do |id, weight|
+    user.providers.kept_only.where(id: routing_ids).pluck(:id, :weight).to_h do |id, weight|
       [ "#{Provider::ROUTING_KEY_PREFIX}#{id}", weight || Provider::DEFAULT_WEIGHT ]
     end
   end
@@ -568,7 +568,7 @@ class UserSetting < ApplicationRecord
 
     executable_keys = ProviderSupport.container_executable_provider_keys
     self.class.provider_identifiers_for(
-      user.providers.for_agent_runs.where(provider_key: executable_keys).ordered,
+      user.providers.kept_only.for_agent_runs.where(provider_key: executable_keys).ordered,
       identifiers: true
     )
   end
@@ -579,7 +579,7 @@ class UserSetting < ApplicationRecord
 
     executable_keys = ProviderSupport.container_executable_provider_keys
     self.class.provider_identifiers_for(
-      user.providers.for_fallback.where(provider_key: executable_keys).ordered,
+      user.providers.kept_only.for_fallback.where(provider_key: executable_keys).ordered,
       identifiers: true
     )
   end
@@ -604,7 +604,7 @@ class UserSetting < ApplicationRecord
     end
     return [] if routing_ids.empty?
 
-    matching_providers = user.providers.where(id: routing_ids, provider_key: token).ordered.to_a
+    matching_providers = user.providers.kept_only.where(id: routing_ids, provider_key: token).ordered.to_a
     return [] if matching_providers.empty?
 
     preferred_provider = matching_providers.min_by do |provider|

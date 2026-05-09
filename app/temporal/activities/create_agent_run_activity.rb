@@ -382,7 +382,7 @@ module Activities
       return false if agent_run.provider_id == provider_id && agent_run.agent_type == agent_type
 
       agent_run.update!(
-        provider: Provider.find_by(id: provider_id),
+        provider: Provider.kept_only.find_by(id: provider_id),
         agent_type: agent_type
       )
       true

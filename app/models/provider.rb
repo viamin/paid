@@ -5,6 +5,8 @@ require "set"
 require "shellwords"
 
 class Provider < ApplicationRecord
+  include Discard::Model
+
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "provider:".freeze
@@ -63,6 +65,7 @@ class Provider < ApplicationRecord
 
   has_many :chat_sessions, dependent: :nullify
 
+  scope :kept_only, -> { kept }
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
   scope :ordered, -> { order(:provider_key, :auth_type, :name, :id) }
@@ -73,6 +76,10 @@ class Provider < ApplicationRecord
   before_validation :normalize_agent_co_author_trailer
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
+  before_discard :prevent_destroying_last_agent_run_provider
+  before_discard :prevent_destroying_default_provider
+  before_discard :clear_provider_api_key_reference
+  after_commit :invalidate_agent_run_provider_option_caches, if: :agent_run_provider_option_cache_invalidation_needed?
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :provider_key, presence: true, length: { maximum: 50 }
@@ -82,7 +89,11 @@ class Provider < ApplicationRecord
   validates :fallback_role, presence: true, inclusion: { in: FALLBACK_ROLES }
   validates :name, length: { maximum: 100 }
   validates :provider_key,
-    uniqueness: { scope: [ :user_id, :auth_type ], message: "already has a subscription entry" },
+    uniqueness: {
+      scope: [ :user_id, :auth_type ],
+      conditions: -> { kept },
+      message: "already has a subscription entry"
+    },
     if: -> { subscription? }
 
   validate :must_keep_at_least_one_agent_run_provider
@@ -383,16 +394,16 @@ class Provider < ApplicationRecord
     key = default_provider_key
     return unless key
 
-    user.providers.find_or_create_by!(provider_key: key, auth_type: "subscription")
+    user.providers.kept_only.find_or_create_by!(provider_key: key, auth_type: "subscription")
   rescue ActiveRecord::RecordNotUnique
-    user.providers.find_by!(provider_key: key, auth_type: "subscription")
+    user.providers.kept_only.find_by!(provider_key: key, auth_type: "subscription")
   end
 
   def self.first_enabled_for_owner(owner)
     return unless owner
 
     executable_keys = ProviderSupport.container_executable_provider_keys
-    owner.providers.for_agent_runs.where(provider_key: executable_keys).ordered.first
+    owner.providers.kept_only.for_agent_runs.where(provider_key: executable_keys).ordered.first
   end
 
   def self.display_name_for(provider_key)
@@ -459,23 +470,52 @@ class Provider < ApplicationRecord
     id
   end
 
-  def self.for_identifier(user, identifier)
+  def self.for_identifier(user, identifier, include_discarded: false)
     return nil unless user
     return nil if identifier.blank?
 
     if routing_key?(identifier)
-      user.providers.find_by(id: id_from_routing_key(identifier))
+      relation = include_discarded ? with_discarded : kept_only
+      relation.where(user: user).find_by(id: id_from_routing_key(identifier))
     else
-      matching_providers = user.providers.where(provider_key: identifier).ordered
-      matching_providers.subscription.first || matching_providers.first
+      if include_discarded
+        preferred_identifier_match(kept_only.where(user: user, provider_key: identifier).ordered) ||
+          preferred_identifier_match(with_discarded.where(user: user, provider_key: identifier).discarded.ordered)
+      else
+        preferred_identifier_match(kept_only.where(user: user, provider_key: identifier).ordered)
+      end
     end
+  end
+
+  def self.filter_option_for_identifier(identifier, account_id:)
+    return if identifier.blank?
+
+    if routing_key?(identifier)
+      provider_id = id_from_routing_key(identifier)
+      return unless provider_id
+
+      provider = with_discarded.joins(:user).find_by(id: provider_id, users: { account_id: account_id })
+      return unless provider
+
+      return {
+        label: provider.display_name,
+        value: identifier
+      }
+    end
+
+    normalized_identifier = ProviderSupport.provider_key_for_agent_type(identifier)
+
+    {
+      label: display_name_for(normalized_identifier),
+      value: normalized_identifier
+    }
   end
 
   # Updates the enabled_for_fallback flag on each of the user's providers
   # based on the given set of enabled provider identifiers.
   def self.update_fallback_flags(user, enabled_keys)
-    user.providers.transaction do
-      user.providers.find_each do |provider|
+    user.providers.kept_only.transaction do
+      user.providers.kept_only.find_each do |provider|
         new_value = enabled_keys.any? { |identifier| provider.matches_identifier?(identifier) }
         next if provider.enabled_for_fallback? == new_value
 
@@ -533,7 +573,7 @@ class Provider < ApplicationRecord
   def must_keep_at_least_one_agent_run_provider
     return unless user
     return unless will_save_change_to_enabled_for_agent_runs?(from: true, to: false)
-    return if user.providers.where.not(id: id).for_agent_runs.exists?
+    return if user.providers.kept_only.where.not(id: id).for_agent_runs.exists?
 
     errors.add(:enabled_for_agent_runs, "must keep at least one provider enabled for agent runs")
   end
@@ -541,7 +581,7 @@ class Provider < ApplicationRecord
   def prevent_destroying_last_agent_run_provider
     return if destroyed_by_association.present?
     return unless enabled_for_agent_runs?
-    return if user.providers.where.not(id: id).for_agent_runs.exists?
+    return if user.providers.kept_only.where.not(id: id).for_agent_runs.exists?
 
     errors.add(:base, "Cannot delete the last provider enabled for agent runs")
     throw(:abort)
@@ -566,6 +606,50 @@ class Provider < ApplicationRecord
     errors.add(:base, "Cannot delete the #{Provider.display_name(default_key)} provider")
     throw(:abort)
   end
+
+  def invalidate_agent_run_provider_option_caches
+    return unless user
+
+    AgentRun.invalidate_provider_options_cache(account_id: user.account_id)
+  end
+
+  def clear_provider_api_key_reference
+    self.provider_api_key = nil if provider_api_key_id.present?
+  end
+
+  def agent_run_provider_option_cache_invalidation_needed?
+    previous_changes.key?("id") ||
+      previous_changes.key?("discarded_at") ||
+      previous_changes.key?("name") ||
+      previous_changes.key?("provider_key") ||
+      previous_changes.key?("auth_type") ||
+      display_name_config_changed?
+  end
+
+  def display_name_config_changed?
+    previous_config, current_config = previous_changes["config"]
+    return false unless previous_changes.key?("config")
+
+    display_name_config_value(previous_config) != display_name_config_value(current_config)
+  end
+
+  def display_name_config_value(config_value)
+    config = config_value.is_a?(Hash) ? config_value : {}
+
+    case provider_key
+    when "opencode"
+      config.dig("opencode", "model")
+    when "kilocode"
+      config.dig("kilocode", "model")
+    when "aider"
+      config.dig("aider", "model")
+    end
+  end
+
+  def self.preferred_identifier_match(matching_providers)
+    matching_providers.subscription.first || matching_providers.first
+  end
+  private_class_method :preferred_identifier_match
 
   def api_key_auth_requires_provider_api_key
     return unless api_key?
@@ -619,7 +703,7 @@ class Provider < ApplicationRecord
     return unless user
 
     normalized_name = name.to_s
-    duplicate = user.providers.api_key.where(
+    duplicate = user.providers.kept_only.api_key.where(
       provider_key: provider_key,
       provider_api_key_id: provider_api_key_id
     ).where.not(id: id).where("COALESCE(name, '') = ?", normalized_name).exists?

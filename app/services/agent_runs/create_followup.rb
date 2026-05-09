@@ -56,7 +56,7 @@ module AgentRuns
       end
 
       provider_id, agent_type = AgentRuns::ProviderResolver.call(project: agent_run.project, goal: goal)
-      provider = Provider.find_by(id: provider_id) if provider_id
+      provider = Provider.kept_only.find_by(id: provider_id) if provider_id
       agent_type ||= provider ? Provider.agent_type_for(provider.provider_key) : fallback_agent_type
 
       [ provider, agent_type ]

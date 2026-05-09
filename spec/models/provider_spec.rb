@@ -494,6 +494,14 @@ RSpec.describe Provider do
 
       expect(described_class.for_identifier(user, "claude")).to eq(subscription)
     end
+
+    it "prefers kept rows before discarded rows when including discarded matches" do
+      discarded_subscription = create(:provider, user: user, provider_key: "opencode", name: "Legacy Name")
+      discarded_subscription.update_column(:discarded_at, Time.current)
+      kept_subscription = create(:provider, user: user, provider_key: "opencode", name: "Current Name")
+
+      expect(described_class.for_identifier(user, "opencode", include_discarded: true)).to eq(kept_subscription)
+    end
   end
 
   describe "#display_name" do
@@ -951,6 +959,36 @@ RSpec.describe Provider do
       duplicate = user.providers.new(provider_key: "claude", auth_type: "subscription")
 
       expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
+
+  describe "soft delete lifecycle" do
+    it "clears the API key reference when discarding an api-key provider" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      provider = create(:provider, :api_key, user: user, provider_key: "cursor", provider_api_key: api_key)
+
+      expect(provider.discard).to be(true)
+
+      discarded_provider = described_class.with_discarded.find(provider.id)
+      expect(discarded_provider).to be_discarded
+      expect(discarded_provider.provider_api_key_id).to be_nil
+    end
+
+    it "does not clear the API key reference when discard is aborted by a guard" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      provider = create(:provider, :api_key, user: user, provider_key: "cursor", provider_api_key: api_key)
+      user.providers.kept_only.where.not(id: provider.id).update_all(enabled_for_agent_runs: false, enabled_for_fallback: false)
+
+      expect(provider.discard).to be(false)
+
+      expect(provider.provider_api_key_id).to eq(api_key.id)
+      expect(provider.errors[:base]).to include("Cannot delete the last provider enabled for agent runs")
+
+      persisted_provider = described_class.find(provider.id)
+      expect(persisted_provider).to be_kept
+      expect(persisted_provider.provider_api_key_id).to eq(api_key.id)
     end
   end
 end
