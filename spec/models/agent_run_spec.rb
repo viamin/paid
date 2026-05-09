@@ -2405,6 +2405,24 @@ RSpec.describe AgentRun do
       expect(options).to include({ label: "Kimi K2.5", value: provider.routing_key })
     end
 
+    it "bulk-loads routed provider filter options without N+1 queries" do
+      project = create(:project)
+      providers = %w[opencode cursor gemini].map.with_index do |provider_key, index|
+        create(:provider, user: project.effective_owner, provider_key:, name: "Routed Provider #{index}")
+      end
+      providers.each do |provider|
+        create(:agent_run, :completed, project: project, final_provider: provider.routing_key)
+      end
+
+      queries = capture_queries do
+        described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id)
+      end
+
+      provider_queries = queries.grep(/FROM "providers"/)
+
+      expect(provider_queries.size).to eq(1)
+    end
+
     it "omits unresolved routed provider ids from filter options" do
       project = create(:project)
       create(:agent_run, :completed, project: project, final_provider: "provider:999999")

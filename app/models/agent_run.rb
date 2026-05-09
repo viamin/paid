@@ -330,13 +330,44 @@ class AgentRun < ApplicationRecord
   end
 
   def self.compute_distinct_effective_provider_options(account_id:)
-    pluck(Arel.sql("DISTINCT #{effective_provider_sql}"))
-      .compact
-      .filter_map { |identifier| Provider.filter_option_for_identifier(identifier, account_id: account_id) }
+    identifiers = pluck(Arel.sql("DISTINCT #{effective_provider_sql}")).compact
+    routed_options = routed_provider_filter_options_by_identifier(identifiers, account_id:)
+
+    identifiers
+      .filter_map do |identifier|
+        if Provider.routing_key?(identifier)
+          routed_options[identifier]
+        else
+          Provider.filter_option_for_identifier(identifier, account_id: account_id)
+        end
+      end
       .uniq
       .sort_by { |option| [ option[:label], option[:value] ] }
   end
   private_class_method :compute_distinct_effective_provider_options
+
+  def self.routed_provider_filter_options_by_identifier(identifiers, account_id:)
+    provider_ids_by_identifier = identifiers.each_with_object({}) do |identifier, memo|
+      provider_id = Provider.id_from_routing_key(identifier)
+      memo[identifier] = provider_id if provider_id
+    end
+    return {} if provider_ids_by_identifier.empty?
+
+    providers_by_id = Provider.with_discarded.joins(:user)
+      .where(id: provider_ids_by_identifier.values.uniq, users: { account_id: account_id })
+      .index_by(&:id)
+
+    provider_ids_by_identifier.each_with_object({}) do |(identifier, provider_id), memo|
+      provider = providers_by_id[provider_id]
+      next unless provider
+
+      memo[identifier] = {
+        label: provider.display_name,
+        value: identifier
+      }
+    end
+  end
+  private_class_method :routed_provider_filter_options_by_identifier
 
   def self.final_provider_records_by_lookup(runs, fallback_owner_ids)
     lookup_pairs = runs.filter_map do |run|
