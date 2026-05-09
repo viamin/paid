@@ -610,11 +610,7 @@ class Provider < ApplicationRecord
   def invalidate_agent_run_provider_option_caches
     return unless user
 
-    account_id = user.account_id
-    AgentRun.invalidate_provider_options_cache(account_id: account_id)
-    Project.where(account_id: account_id).pluck(:id).each do |project_id|
-      AgentRun.invalidate_provider_options_cache(account_id: account_id, project_id: project_id)
-    end
+    AgentRun.invalidate_provider_options_cache(account_id: user.account_id)
   end
 
   def clear_provider_api_key_reference

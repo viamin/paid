@@ -2576,6 +2576,23 @@ RSpec.describe AgentRun do
 
         expect(Rails.cache.read(account_key)).to be_nil
       end
+
+      it "invalidates project-scoped provider option caches when a provider label changes" do
+        project = create(:project)
+        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_provider: provider.routing_key)
+        project_key = described_class.provider_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+
+        described_class.where(project_id: project.id).distinct_effective_provider_options(
+          account_id: project.account_id,
+          cache_key: project_key
+        )
+        expect(Rails.cache.read(project_key)).not_to be_nil
+
+        provider.update!(name: "Kimi K2.6")
+
+        expect(Rails.cache.read(project_key)).to be_nil
+      end
     end
   end
 

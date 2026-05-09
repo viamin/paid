@@ -1291,12 +1291,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
     t.jsonb "outcome_references", default: [], null: false, comment: "References to later runs, metrics, or artifacts used to attribute outcomes back to this decision."
     t.jsonb "outputs", default: {}, null: false, comment: "Structured payload describing what the workflow decided."
     t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and project-level analysis."
+    t.bigint "strategy_version_id"
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "created_at", "id"], name: "idx_orchestration_decisions_run_recent"
     t.index ["agent_run_id", "decision_type", "created_at"], name: "idx_orchestration_decisions_run_type_created"
     t.index ["project_id", "actor", "created_at"], name: "idx_orchestration_decisions_project_actor_created"
     t.index ["project_id", "created_at", "id"], name: "idx_orchestration_decisions_project_recent"
     t.index ["project_id", "decision_type", "created_at"], name: "idx_orchestration_decisions_project_type_created"
+    t.index ["strategy_version_id"], name: "index_orchestration_decisions_on_strategy_version_id"
   end
 
   create_table "orchestration_strategies", comment: "Persisted orchestration workflow configurations extracted from hardcoded defaults", force: :cascade do |t|
@@ -1822,6 +1824,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
+  create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
+    t.datetime "created_at", null: false
+    t.bigint "current_version_id", comment: "Currently promoted strategy version used by selection."
+    t.string "decision_type", limit: 100, null: false, comment: "Workflow decision boundary this strategy governs, such as issue_execution or retry."
+    t.text "description", comment: "Optional description of when and why this strategy should be selected."
+    t.string "name", limit: 255, null: false, comment: "Human-readable strategy name."
+    t.bigint "project_id", comment: "Owning project for project-specific strategy overrides."
+    t.jsonb "selection_rules", default: {}, null: false, comment: "Structured scope and context rules used to select the strategy."
+    t.string "slug", limit: 100, null: false, comment: "Stable identifier used to resolve a strategy within its scope."
+    t.string "status", limit: 20, default: "active", null: false, comment: "Lifecycle state controlling whether the strategy is eligible for selection."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_strategies_on_account_id"
+    t.index ["current_version_id"], name: "index_strategies_on_current_version_id"
+    t.index ["decision_type", "status"], name: "index_strategies_on_decision_type_and_status"
+    t.index ["decision_type"], name: "index_strategies_on_decision_type"
+    t.index ["project_id"], name: "index_strategies_on_project_id"
+    t.index ["slug", "account_id"], name: "index_strategies_on_slug_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["slug", "project_id"], name: "index_strategies_on_slug_project", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["slug"], name: "index_strategies_on_slug_global", unique: true, where: "((account_id IS NULL) AND (project_id IS NULL))"
+    t.index ["status"], name: "index_strategies_on_status"
+    t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_strategies_scope_consistency"
+  end
+
   create_table "strategy_experiment_assignments", comment: "Maps each agent run to the strategy variant it was assigned", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
@@ -1867,6 +1893,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
     t.index ["account_id", "strategy_name", "status"], name: "index_strategy_experiments_on_account_strategy_status"
     t.index ["account_id", "strategy_name"], name: "index_strategy_experiments_one_running_per_account_strategy", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["winner_variant_id"], name: "index_strategy_experiments_on_winner_variant_id"
+  end
+
+  create_table "strategy_versions", comment: "Versioned orchestration strategy payloads and promotion history.", force: :cascade do |t|
+    t.text "change_notes", comment: "Operator- or workflow-authored notes about the change."
+    t.jsonb "content", default: {}, null: false, comment: "Structured orchestration behavior moved out of hardcoded workflow logic."
+    t.datetime "created_at", null: false
+    t.string "created_by", limit: 50, comment: "Origin label such as seed, human, or evolution."
+    t.bigint "created_by_user_id", comment: "User who created the version when applicable."
+    t.bigint "parent_version_id", comment: "Previous version this candidate was derived from."
+    t.datetime "promoted_at", comment: "When this version became current."
+    t.bigint "promoted_by_user_id", comment: "User who promoted this version to current."
+    t.string "promotion_state", limit: 20, default: "draft", null: false, comment: "Promotion lifecycle state for this version."
+    t.jsonb "provenance", default: {}, null: false, comment: "Origin metadata such as manual creation, evolution run, or experiment lineage."
+    t.text "reasoning", comment: "Why this version exists or differs from its parent."
+    t.datetime "retired_at", comment: "When this version stopped being eligible for execution."
+    t.bigint "strategy_id", null: false, comment: "Parent strategy whose behavior this version defines."
+    t.datetime "updated_at", null: false
+    t.integer "version", null: false, comment: "Monotonic version number within a strategy."
+    t.index ["created_by_user_id"], name: "index_strategy_versions_on_created_by_user_id"
+    t.index ["parent_version_id"], name: "index_strategy_versions_on_parent_version_id"
+    t.index ["promoted_by_user_id"], name: "index_strategy_versions_on_promoted_by_user_id"
+    t.index ["retired_at"], name: "index_strategy_versions_on_retired_at"
+    t.index ["strategy_id", "promotion_state"], name: "index_strategy_versions_on_strategy_and_promotion_state"
+    t.index ["strategy_id", "version"], name: "index_strategy_versions_on_strategy_id_and_version", unique: true
+    t.index ["strategy_id"], name: "index_strategy_versions_on_strategy_id"
+    t.index ["strategy_id"], name: "index_strategy_versions_one_active_per_strategy", unique: true, where: "(((promotion_state)::text = 'active'::text) AND (retired_at IS NULL))"
   end
 
   create_table "style_guides", force: :cascade do |t|
@@ -2170,6 +2222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
   add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "orchestration_decisions", "agent_runs", on_delete: :nullify
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
+  add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify
   add_foreign_key "orchestration_strategies", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
@@ -2221,12 +2274,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
   add_foreign_key "scaling_observations", "projects", on_delete: :cascade
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "service_containers", "accounts"
+  add_foreign_key "strategies", "accounts", on_delete: :cascade
+  add_foreign_key "strategies", "projects", on_delete: :cascade
+  add_foreign_key "strategies", "strategy_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "strategy_experiment_assignments", "agent_runs", on_delete: :cascade
   add_foreign_key "strategy_experiment_assignments", "strategy_experiment_variants", on_delete: :cascade
   add_foreign_key "strategy_experiment_assignments", "strategy_experiments", on_delete: :cascade
   add_foreign_key "strategy_experiment_variants", "strategy_experiments", on_delete: :cascade
   add_foreign_key "strategy_experiments", "accounts", on_delete: :cascade
   add_foreign_key "strategy_experiments", "strategy_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "strategy_versions", "strategies", on_delete: :cascade
+  add_foreign_key "strategy_versions", "strategy_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "strategy_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "strategy_versions", "users", column: "promoted_by_user_id", on_delete: :nullify
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "tenant_settings", "accounts"
@@ -2996,6 +3056,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
       $function$
   SQL
 
+  create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
+       RETURNS trigger
+       LANGUAGE plpgsql
+       SECURITY DEFINER
+       SET search_path TO 'public', 'pg_temp'
+      AS $function$
+      BEGIN
+        IF NEW.strategy_version_id IS NULL THEN
+          RETURN NEW;
+        END IF;
+
+        IF EXISTS (
+          SELECT 1
+          FROM strategy_versions
+          INNER JOIN strategies ON strategies.id = strategy_versions.strategy_id
+          WHERE strategy_versions.id = NEW.strategy_version_id
+            AND (
+              strategies.account_id IS NULL
+              OR (
+                strategies.account_id = paid_current_account_id()
+                AND (
+                  strategies.project_id IS NULL
+                  OR strategies.project_id = NEW.project_id
+                )
+              )
+            )
+        ) THEN
+          RETURN NEW;
+        END IF;
+
+        RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
+      END;
+      $function$
+  SQL
+
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_account_memberships BEFORE INSERT OR UPDATE ON public.account_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3030,5 +3126,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_121018) do
 
   create_trigger :logidze_on_user_settings, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_user_settings BEFORE INSERT OR UPDATE ON public.user_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

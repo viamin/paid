@@ -290,10 +290,12 @@ class AgentRun < ApplicationRecord
   end
 
   def self.provider_options_cache_key_for(account_id:, project_id: nil)
+    generation = provider_options_cache_generation_for(account_id: account_id)
+
     if project_id
-      "agent_runs/providers/account/#{account_id}/project/#{project_id}"
+      "agent_runs/providers/account/#{account_id}/v#{generation}/project/#{project_id}"
     else
-      "agent_runs/providers/account/#{account_id}"
+      "agent_runs/providers/account/#{account_id}/v#{generation}"
     end
   end
 
@@ -301,6 +303,10 @@ class AgentRun < ApplicationRecord
     keys = [ provider_options_cache_key_for(account_id: account_id) ]
     keys << provider_options_cache_key_for(account_id: account_id, project_id: project_id) if project_id
     keys.each { |key| Rails.cache.delete(key) }
+
+    return if project_id
+
+    invalidate_provider_options_cache_for_account(account_id: account_id)
   end
 
   def self.preload_final_provider_records(runs)
@@ -345,6 +351,26 @@ class AgentRun < ApplicationRecord
       .sort_by { |option| [ option[:label], option[:value] ] }
   end
   private_class_method :compute_distinct_effective_provider_options
+
+  def self.provider_options_cache_generation_for(account_id:)
+    Rails.cache.read(provider_options_cache_generation_key_for(account_id: account_id)) || 1
+  end
+  private_class_method :provider_options_cache_generation_for
+
+  def self.provider_options_cache_generation_key_for(account_id:)
+    "agent_runs/providers/account/#{account_id}/generation"
+  end
+  private_class_method :provider_options_cache_generation_key_for
+
+  def self.invalidate_provider_options_cache_for_account(account_id:)
+    prefix = /\Aagent_runs\/providers\/account\/#{account_id}(?:\/|\z)/
+    Rails.cache.delete_matched(prefix)
+  rescue NotImplementedError
+    generation_key = provider_options_cache_generation_key_for(account_id: account_id)
+    current_generation = provider_options_cache_generation_for(account_id: account_id)
+    Rails.cache.write(generation_key, current_generation + 1)
+  end
+  private_class_method :invalidate_provider_options_cache_for_account
 
   def self.routed_provider_filter_options_by_identifier(identifiers, account_id:)
     provider_ids_by_identifier = identifiers.each_with_object({}) do |identifier, memo|
