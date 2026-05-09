@@ -2195,6 +2195,55 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when a timeout leaves a stale container id before fallback" do
+      before do
+        user.providers.find_or_create_by!(provider_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+
+        execute_calls = 0
+        allow(container_service).to receive(:execute) do
+          execute_calls += 1
+          if execute_calls == 1
+            raise Containers::Provision::TimeoutError.new(
+              "execution timed out",
+              diagnostics: { "elapsed_seconds" => 901.2, "output_received" => true, "heartbeat_active" => false }
+            )
+          else
+            exec_success
+          end
+        end
+
+        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+
+        reconnect_calls = 0
+        allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
+          reconnect_calls += 1
+          if reconnect_calls == 2
+            raise wrap_error(
+              Containers::Provision::ProvisionError.new("Container #{container_id} not found")
+            )
+          end
+
+          raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
+
+          container_service
+        end
+      end
+
+      it "reprovisions the container and continues with the fallback provider" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_provider: "cursor")
+        expect_timeout_fallback_recovery(agent_run)
+      end
+    end
+
     context "when fallback recovery cannot reprovision the container" do
       before do
         user.providers.find_or_create_by!(provider_key: "cursor")

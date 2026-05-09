@@ -1931,8 +1931,7 @@ module Activities
       agent_run.reload
       return true if agent_run.container_id.blank?
 
-      container_service = reconnect_container(agent_run) rescue nil
-      return false unless container_service
+      container_service = reconnect_container(agent_run)
 
       !container_service.container_running?
     rescue StandardError => e
