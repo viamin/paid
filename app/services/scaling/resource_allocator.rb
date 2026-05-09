@@ -47,11 +47,12 @@ module Scaling
       best_value = find_optimal_agent_count(grouped)
       iterations = recommend_iterations(grouped, best_value)
       parallelism = recommend_parallelism(grouped, best_value)
+      agent_count = clamp_agents(best_value)
 
       build_allocation(
-        agent_count: clamp_agents(best_value),
+        agent_count: agent_count,
         max_iterations: iterations,
-        parallelism_level: parallelism,
+        parallelism_level: [ parallelism, agent_count ].min,
         source: :observations,
         reason: observation_reason(grouped, best_value)
       )
@@ -263,7 +264,7 @@ module Scaling
       Allocation.new(
         agent_count: agent_count,
         max_iterations: max_iterations,
-        parallelism_level: parallelism_level,
+        parallelism_level: [ parallelism_level, agent_count ].min,
         source: source,
         reason: reason,
         metrics: {

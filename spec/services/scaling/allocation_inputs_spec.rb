@@ -51,6 +51,12 @@ RSpec.describe Scaling::AllocationInputs do
       expect { described_class.new(task_count: 3, dependency_edge_count: -1) }.to raise_error(ArgumentError, /dependency_edge_count must be non-negative/)
     end
 
+    it "raises when parallelizable groups exceed task count" do
+      expect do
+        described_class.new(task_count: 3, parallelizable_group_count: 4)
+      end.to raise_error(ArgumentError, /parallelizable_group_count must not exceed task_count/)
+    end
+
     it "raises on zero max_parallelism" do
       expect { described_class.new(task_count: 3, max_parallelism: 0) }.to raise_error(ArgumentError, /max_parallelism must be positive/)
     end

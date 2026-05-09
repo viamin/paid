@@ -370,6 +370,23 @@ RSpec.describe Scaling::ResourceAllocator do
         expect(result.parallelism_level).to be <= 2
       end
 
+      it "caps observed parallelism after clamping the chosen agent count" do
+        inputs = Scaling::AllocationInputs.new(
+          task_count: 8,
+          max_agent_count: 2,
+          max_parallelism: 8
+        )
+        observations = [
+          *4.times.map { build_observation(agent_count: 1, success: false, total_cost_cents: 50, duration_seconds: 300) },
+          *4.times.map { build_observation(agent_count: 4, success: true, parallelism_observed: 4, total_cost_cents: 200, duration_seconds: 80) }
+        ]
+
+        result = described_class.call(inputs: inputs, observations: observations)
+
+        expect(result.agent_count).to eq(2)
+        expect(result.parallelism_level).to eq(2)
+      end
+
       it "uses max parallelism width instead of parallel group count" do
         inputs = Scaling::AllocationInputs.new(
           task_count: 4,
