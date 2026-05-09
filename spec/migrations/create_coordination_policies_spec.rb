@@ -61,15 +61,20 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   end
 
   def expect_indexes
-    policy_indexes = connection.indexes(:coordination_policies).map(&:name)
+    policy_indexes = connection.indexes(:coordination_policies).index_by(&:name)
     version_indexes = connection.indexes(:coordination_policy_versions).map(&:name)
 
-    expect(policy_indexes).to include(
+    expect(policy_indexes.keys).to include(
       "idx_coordination_policies_account_type_status",
       "idx_coordination_policies_project_type_status",
-      "idx_coordination_policies_scope_key",
+      "idx_coordination_policies_account_scope_key",
+      "idx_coordination_policies_project_scope_key",
       "index_coordination_policies_on_current_version_id"
     )
+    expect(policy_indexes.fetch("idx_coordination_policies_account_scope_key").unique).to be(true)
+    expect(policy_indexes.fetch("idx_coordination_policies_account_scope_key").where).to include("project_id IS NULL")
+    expect(policy_indexes.fetch("idx_coordination_policies_project_scope_key").unique).to be(true)
+    expect(policy_indexes.fetch("idx_coordination_policies_project_scope_key").where).to include("project_id IS NOT NULL")
     expect(version_indexes).to include(
       "idx_coordination_policy_versions_unique_version",
       "idx_coordination_policy_versions_one_active",
@@ -90,6 +95,20 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     expect(tenant_policy_present?(table_name)).to be(true)
     expect(row_level_security_enabled?(table_name)).to be(true)
     expect(row_level_security_forced?(table_name)).to be(true)
+    return unless table_name == "coordination_policies"
+
+    expect(coordination_policy_policy.fetch("qual")).to include("projects.account_id = paid_current_account_id()")
+    expect(coordination_policy_policy.fetch("with_check")).to include("projects.account_id = paid_current_account_id()")
+  end
+
+  def coordination_policy_policy
+    connection.select_one(<<~SQL.squish)
+      SELECT qual, with_check
+      FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = 'coordination_policies'
+        AND policyname = 'tenant_isolation'
+    SQL
   end
 
   def table_comment(table_name)

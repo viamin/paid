@@ -11,13 +11,32 @@ RSpec.describe CoordinationPolicy do
   end
 
   describe "validations" do
-    subject(:coordination_policy) { build(:coordination_policy) }
+    subject(:coordination_policy) { build(:coordination_policy, account: account) }
+
+    let(:account) { create(:account) }
 
     it { is_expected.to validate_presence_of(:policy_type) }
     it { is_expected.to validate_inclusion_of(:policy_type).in_array(described_class::POLICY_TYPES) }
     it { is_expected.to validate_presence_of(:policy_key) }
     it { is_expected.to validate_presence_of(:name) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+
+    it "rejects duplicate account-wide policy keys within a policy type" do
+      create(:coordination_policy, account: coordination_policy.account, policy_type: coordination_policy.policy_type, policy_key: coordination_policy.policy_key)
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:policy_key]).to include("has already been taken")
+    end
+
+    it "rejects duplicate project-scoped policy keys within the same project and policy type" do
+      project = create(:project, account: account)
+      create(:coordination_policy, :project_scoped, account: account, project:, policy_type: coordination_policy.policy_type, policy_key: coordination_policy.policy_key)
+
+      coordination_policy.project = project
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:policy_key]).to include("has already been taken")
+    end
 
     it "rejects a project from another account" do
       coordination_policy.project = create(:project)

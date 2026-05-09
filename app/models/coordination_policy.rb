@@ -12,6 +12,8 @@ class CoordinationPolicy < ApplicationRecord
 
   validates :policy_type, presence: true, inclusion: { in: POLICY_TYPES }
   validates :policy_key, presence: true, length: { maximum: 100 }
+  validates :policy_key, uniqueness: { scope: [ :account_id, :policy_type ], conditions: -> { where(project_id: nil) } }, if: :account_level?
+  validates :policy_key, uniqueness: { scope: [ :account_id, :project_id, :policy_type ] }, if: :project_level?
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validate :current_version_belongs_to_policy
@@ -22,6 +24,14 @@ class CoordinationPolicy < ApplicationRecord
   scope :active, -> { where(status: "active") }
   scope :by_type, ->(policy_type) { where(policy_type:) }
   scope :for_account, ->(account) { where(account:) }
+
+  def account_level?
+    project_id.nil?
+  end
+
+  def project_level?
+    project_id.present?
+  end
 
   def self.resolve_for(account:, policy_type:, project: nil)
     candidates = active.for_account(account).by_type(policy_type)

@@ -40,8 +40,14 @@ class CreateCoordinationPolicies < ActiveRecord::Migration[8.1]
       name: "idx_coordination_policies_account_type_status"
     add_index :coordination_policies, [ :project_id, :policy_type, :status ],
       name: "idx_coordination_policies_project_type_status"
+    add_index :coordination_policies, [ :account_id, :policy_type, :policy_key ],
+      unique: true,
+      where: "project_id IS NULL",
+      name: "idx_coordination_policies_account_scope_key"
     add_index :coordination_policies, [ :account_id, :project_id, :policy_type, :policy_key ],
-      name: "idx_coordination_policies_scope_key"
+      unique: true,
+      where: "project_id IS NOT NULL",
+      name: "idx_coordination_policies_project_scope_key"
 
     add_index :coordination_policy_versions, [ :coordination_policy_id, :version ],
       unique: true,
@@ -79,8 +85,8 @@ class CreateCoordinationPolicies < ActiveRecord::Migration[8.1]
       ALTER TABLE coordination_policies FORCE ROW LEVEL SECURITY;
       CREATE POLICY tenant_isolation ON coordination_policies
         AS PERMISSIVE FOR ALL
-        USING (paid_tenant_bypass() OR (coordination_policies.account_id = paid_current_account_id()))
-        WITH CHECK (paid_tenant_bypass() OR (coordination_policies.account_id = paid_current_account_id()));
+        USING (paid_tenant_bypass() OR (#{coordination_policy_tenant_condition}))
+        WITH CHECK (paid_tenant_bypass() OR (#{coordination_policy_tenant_condition}));
     SQL
 
     execute <<~SQL
@@ -102,6 +108,20 @@ class CreateCoordinationPolicies < ActiveRecord::Migration[8.1]
               AND coordination_policies.account_id = paid_current_account_id()
           )
         );
+    SQL
+  end
+
+  def coordination_policy_tenant_condition
+    <<~SQL.squish
+      coordination_policies.account_id = paid_current_account_id()
+      AND (
+        coordination_policies.project_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM projects
+          WHERE projects.id = coordination_policies.project_id
+            AND projects.account_id = paid_current_account_id()
+        )
+      )
     SQL
   end
 end
