@@ -99,10 +99,18 @@ RSpec.configure do |config|
   end
 
   config.around do |example|
-    if database_available && !example.metadata[:tenant_isolation]
-      TenantContext.with_system_access { example.run }
+    run_example = proc do
+      if database_available && !example.metadata[:tenant_isolation]
+        TenantContext.with_system_access { example.run }
+      else
+        example.run
+      end
+    end
+
+    if ENV["PROSOPITE"] == "true"
+      Prosopite.scan { run_example.call }
     else
-      example.run
+      run_example.call
     end
   ensure
     next unless database_available
