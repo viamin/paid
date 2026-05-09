@@ -13,8 +13,7 @@
         <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
           Paused by <%= guardrail_violation_label_for(paused_run).downcase %>
         </span>
-      <% end %>
-      <% if pull_request.auto_continue_paused? && automation_enabled %>
+      <% elsif pull_request.auto_continue_paused? && automation_enabled %>
         <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Paused</span>
       <% end %>
     </div>
