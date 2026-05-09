@@ -122,12 +122,12 @@ module Activities
         skip_reason: decomposition_result.skip_reason
       )
 
-      {
+      [ {
         tasks: tasks,
         prompt_source: POLICY_PROMPT_SOURCE,
         policy_source: decomposition_result.policy_source,
         skip_reason: decomposition_result.skip_reason
-      }
+      }, context ]
     rescue StandardError => e
       context[:error_details] = {
         error_class: e.class.name,
@@ -139,13 +139,6 @@ module Activities
         error: e.message
       )
       [ nil, context ]
-    else
-      [ {
-        tasks: tasks,
-        prompt_source: POLICY_PROMPT_SOURCE,
-        policy_source: decomposition_result.policy_source,
-        skip_reason: decomposition_result.skip_reason
-      }, context ]
     end
 
     def decompose(prompt)
