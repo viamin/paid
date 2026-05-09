@@ -96,7 +96,16 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(workflow).to have_received(:run_activity)
           .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), timeout: 60)
         expect(workflow).to have_received(:run_activity)
-          .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
+          .with(
+            Activities::DecomposeFeatureActivity,
+            hash_including(
+              project_id: 1,
+              issue_id: 2,
+              workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+              workflow_id: "test-orchestration-wf"
+            ),
+            timeout: 120
+          )
         expect_orchestration_sub_issue_creation!
         expect(workflow).to have_received(:run_activity)
           .with(Activities::LogDecompositionDecisionActivity,

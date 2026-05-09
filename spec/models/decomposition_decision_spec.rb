@@ -18,6 +18,10 @@ RSpec.describe DecompositionDecision do
     it { is_expected.to validate_presence_of(:decision_type) }
     it { is_expected.to validate_presence_of(:outcome) }
     it { is_expected.to validate_inclusion_of(:decision_type).in_array(described_class::DECISION_TYPES) }
+
+    it "supports decomposition strategy decisions" do
+      expect(described_class::DECISION_TYPES).to include("decomposition_strategy")
+    end
   end
 
   describe "defaults" do

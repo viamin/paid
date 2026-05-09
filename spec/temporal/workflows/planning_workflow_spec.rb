@@ -23,6 +23,20 @@ RSpec.describe Workflows::PlanningWorkflow do
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info)
     end
 
+    def expect_decompose_feature_activity_called
+      expect(workflow).to have_received(:run_activity)
+        .with(
+          Activities::DecomposeFeatureActivity,
+          hash_including(
+            project_id: 1,
+            issue_id: 2,
+            workflow_name: "Workflows::PlanningWorkflow",
+            workflow_id: "test-planning-wf"
+          ),
+          timeout: 120
+        )
+    end
+
     it "accepts a single input parameter" do
       params = workflow.method(:execute).parameters
       expect(params).to eq([ [ :req, :input ] ])
@@ -70,8 +84,7 @@ RSpec.describe Workflows::PlanningWorkflow do
 
         expect(workflow).to have_received(:run_activity)
           .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), timeout: 60)
-        expect(workflow).to have_received(:run_activity)
-          .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
+        expect_decompose_feature_activity_called
         expected_sub_tasks = tasks.map { |t| { title: t[:title], body: t[:description] } }
         expect(workflow).to have_received(:run_activity)
           .with(Activities::CreateSubIssuesActivity,

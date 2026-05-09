@@ -18,16 +18,33 @@ module Activities
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       knowledge_context = input[:knowledge_context] || {}
+      workflow_name = input[:workflow_name]
+      workflow_id = input[:workflow_id]
 
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
+      prompt_data = nil
+      policy_context = default_policy_context
 
-      policy_result = decompose_with_policy_service(
+      policy_result, policy_context = decompose_with_policy_service(
         project: project,
         issue: issue,
         coordination_policy: input[:coordination_policy]
       )
-      return policy_result if policy_result
+      if policy_result
+        log_decomposition_strategy_decision(
+          project: project,
+          issue: issue,
+          workflow_name: workflow_name,
+          workflow_id: workflow_id,
+          input_context: knowledge_context,
+          tasks: policy_result[:tasks],
+          prompt_source: policy_result[:prompt_source],
+          policy_context: policy_context,
+          outcome: policy_strategy_outcome_for(policy_result)
+        )
+        return policy_result
+      end
 
       prompt_data = render_prompt(issue, knowledge_context)
       tasks = decompose(prompt_data[:prompt])
@@ -40,13 +57,48 @@ module Activities
         prompt_source: prompt_data[:prompt_source]
       )
 
+      log_decomposition_strategy_decision(
+        project: project,
+        issue: issue,
+        workflow_name: workflow_name,
+        workflow_id: workflow_id,
+        input_context: knowledge_context,
+        tasks: tasks,
+        prompt_source: prompt_data[:prompt_source],
+        policy_context: policy_context,
+        outcome: llm_strategy_outcome_for(policy_context)
+      )
+
       { tasks: tasks, prompt_source: prompt_data[:prompt_source] }
+    rescue Temporalio::Error::ApplicationError => e
+      log_decomposition_strategy_decision(
+        project: project,
+        issue: issue,
+        workflow_name: workflow_name,
+        workflow_id: workflow_id,
+        input_context: knowledge_context,
+        tasks: [],
+        prompt_source: prompt_data&.dig(:prompt_source),
+        policy_context: policy_context,
+        outcome: llm_failure_outcome_for(policy_context),
+        error_details: {
+          error_class: e.class.name,
+          error_message: e.message
+        }
+      )
+      raise
     end
 
     private
 
     def decompose_with_policy_service(project:, issue:, coordination_policy:)
+      context = default_policy_context.merge(attempted: true)
       scope_result = ScopeAnalysis::Analyze.call(text: issue.body)
+      context[:scope_analysis] = {
+        should_decompose: scope_result.should_decompose?,
+        confidence: scope_result.confidence,
+        sub_components: scope_result.sub_components
+      }
       decomposition_result = Coordination::DecompositionService.call(
         title: issue.title,
         description: issue.body,
@@ -54,8 +106,11 @@ module Activities
         account: project.account,
         policy_override: coordination_policy
       )
+      context[:source] = decomposition_result.policy_source
+      context[:present] = policy_source_present?(decomposition_result.policy_source)
+      context[:skip_reason] = decomposition_result.skip_reason
 
-      return unless use_policy_service_result?(decomposition_result)
+      return [ nil, context ] unless use_policy_service_result?(decomposition_result)
 
       tasks = serialize_policy_tasks(decomposition_result.tasks)
       logger.info(
@@ -68,19 +123,23 @@ module Activities
         skip_reason: decomposition_result.skip_reason
       )
 
-      {
+      [ {
         tasks: tasks,
         prompt_source: POLICY_PROMPT_SOURCE,
         policy_source: decomposition_result.policy_source,
         skip_reason: decomposition_result.skip_reason
-      }
+      }, context ]
     rescue StandardError => e
+      context[:error_details] = {
+        error_class: e.class.name,
+        error_message: e.message
+      }
       logger.warn(
         message: "planning.policy_decomposition_failed",
         error_class: e.class.name,
         error: e.message
       )
-      nil
+      [ nil, context ]
     end
 
     def decompose(prompt)
@@ -242,6 +301,83 @@ module Activities
         type: "DecompositionFailed",
         non_retryable: true
       )
+    end
+
+    def default_policy_context
+      {
+        attempted: false,
+        present: false,
+        source: nil,
+        skip_reason: nil,
+        error_details: {},
+        scope_analysis: {}
+      }
+    end
+
+    def log_decomposition_strategy_decision(project:, issue:, workflow_name:, workflow_id:, input_context:, tasks:,
+      prompt_source:, policy_context:, outcome:, error_details: {})
+      return if workflow_name.blank? || workflow_id.blank?
+
+      Orchestration::DecompositionDecisions::Log.call(
+        project_id: project.id,
+        issue_id: issue.id,
+        decision_key: decomposition_decision_key(workflow_id, error_details),
+        workflow_name: workflow_name,
+        workflow_id: workflow_id,
+        decision_type: "decomposition_strategy",
+        outcome: outcome,
+        input_context: input_context.merge(
+          scope_analysis: policy_context[:scope_analysis],
+          coordination_policy_present: policy_context[:present]
+        ),
+        plan_data: { tasks: tasks },
+        error_details: error_details,
+        metadata: {
+          prompt_source: prompt_source,
+          workflow_step: "decompose_feature",
+          activity_boundaries: [ self.class.name ],
+          policy_attempted: policy_context[:attempted],
+          policy_source: policy_context[:source],
+          skip_reason: policy_context[:skip_reason],
+          policy_error: policy_context[:error_details]
+        }
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "planning.decomposition_strategy_log_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        workflow_id: workflow_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def decomposition_decision_key(workflow_id, error_details)
+      suffix = error_details.present? ? "failure" : "final"
+      "#{workflow_id}:decomposition_strategy:#{suffix}"
+    end
+
+    def policy_strategy_outcome_for(policy_result)
+      return "policy_skipped" if policy_result[:skip_reason].present?
+
+      "policy_decomposed"
+    end
+
+    def policy_source_present?(policy_source)
+      %w[experiment feature_orchestration].include?(policy_source)
+    end
+
+    def llm_strategy_outcome_for(policy_context)
+      return "llm_fallback_after_policy_failure" if policy_context[:error_details].present?
+
+      "llm_generated_plan"
+    end
+
+    def llm_failure_outcome_for(policy_context)
+      return "llm_fallback_failed_after_policy_failure" if policy_context[:error_details].present?
+
+      "llm_decomposition_failed"
     end
   end
 end

@@ -60,6 +60,7 @@ module CoordinationPolicyEvolution
       @scoped_decisions ||= DecompositionDecision
         .joins(:project)
         .where(projects: { account_id: account.id })
+        .where(decision_type: DecompositionDecision::POLICY_OUTCOME_DECISION_TYPES)
         .where(created_at: lookback_days.days.ago..Time.current)
     end
 
