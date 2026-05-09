@@ -21,8 +21,10 @@ RSpec.describe CoordinationPolicyEvolution::GenerateCandidates do
         ],
         performance: {
           decision_count: 12,
+          classified_decision_count: 9,
           success_count: 8,
           failure_count: 4,
+          noop_count: 3,
           success_rate: 0.6667,
           lookback_days: 45,
           decision_type_counts: { "planning_outcome" => 7 },
@@ -63,7 +65,9 @@ RSpec.describe CoordinationPolicyEvolution::GenerateCandidates do
       )
       expect(result.first.provenance.fetch("measured_outcomes")).to include(
         decision_count: 12,
+        classified_decision_count: 9,
         failure_count: 4,
+        noop_count: 3,
         success_rate: 0.6667
       )
     end

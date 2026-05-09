@@ -6,6 +6,7 @@ module CoordinationPolicyEvolution
     DEFAULT_MIN_DECISIONS = 10
     DEFAULT_SAMPLE_LIMIT = 5
     POLICY_TYPE = Coordination::DecompositionService::STRATEGY_TYPE
+    NOOP_OUTCOMES = Orchestration::DecompositionDecisions::Log::NOOP_OUTCOMES
     FAILURE_OUTCOMES = %w[
       decomposition_failed
       sub_issue_creation_failed
@@ -62,8 +63,18 @@ module CoordinationPolicyEvolution
         .where(created_at: lookback_days.days.ago..Time.current)
     end
 
+    def aggregates
+      @aggregates ||= scoped_decisions.pick(
+        Arel.sql("COUNT(*)"),
+        Arel.sql("COUNT(*) FILTER (WHERE outcome NOT IN ('#{noop_and_failure_outcomes_sql}'))"),
+        Arel.sql("COUNT(*) FILTER (WHERE outcome IN ('#{FAILURE_OUTCOMES.join("','")}'))"),
+        Arel.sql("COUNT(*) FILTER (WHERE outcome IN ('#{NOOP_OUTCOMES.join("','")}'))"),
+        Arel.sql("AVG(COALESCE((hints->>'task_count')::numeric, 0))")
+      )
+    end
+
     def successful_decisions
-      @successful_decisions ||= scoped_decisions.where.not(outcome: FAILURE_OUTCOMES)
+      @successful_decisions ||= scoped_decisions.where.not(outcome: NOOP_OUTCOMES + FAILURE_OUTCOMES)
     end
 
     def failed_decisions
@@ -71,16 +82,20 @@ module CoordinationPolicyEvolution
     end
 
     def performance_summary
-      decision_count = scoped_decisions.count
-      success_count = successful_decisions.count
-      failure_count = failed_decisions.count
+      decision_count = aggregates[0]
+      success_count = aggregates[1]
+      failure_count = aggregates[2]
+      noop_count = aggregates[3]
+      classified_decision_count = success_count + failure_count
 
       {
         decision_count: decision_count,
+        classified_decision_count: classified_decision_count,
         min_decisions: min_decisions,
         success_count: success_count,
         failure_count: failure_count,
-        success_rate: success_rate(decision_count, success_count),
+        noop_count: noop_count,
+        success_rate: success_rate(classified_decision_count, success_count),
         lookback_days: lookback_days,
         decision_type_counts: scoped_decisions.group(:decision_type).count,
         outcome_counts: scoped_decisions.group(:outcome).count,
@@ -97,23 +112,27 @@ module CoordinationPolicyEvolution
       @sample_failures ||= failed_decisions.order(created_at: :desc, id: :desc).limit(sample_limit)
     end
 
-    def success_rate(decision_count, success_count)
-      return nil if decision_count.zero?
+    def success_rate(classified_decision_count, success_count)
+      return nil if classified_decision_count.zero?
 
-      (success_count.to_f / decision_count).round(4)
+      (success_count.to_f / classified_decision_count).round(4)
     end
 
     def policy_source_counts
-      values = scoped_decisions.pluck(Arel.sql("COALESCE(metadata->>'policy_source', 'unknown')"))
-
-      values.each_with_object(Hash.new(0)) { |value, counts| counts[value] += 1 }
+      scoped_decisions
+        .group(Arel.sql("COALESCE(metadata->>'policy_source', 'unknown')"))
+        .count
     end
 
     def average_task_count
-      counts = scoped_decisions.pluck(Arel.sql("COALESCE((hints->>'task_count')::integer, 0)"))
-      return nil if counts.empty?
+      average = aggregates[4]
+      return nil if average.nil?
 
-      (counts.sum.to_f / counts.size).round(2)
+      average.to_f.round(2)
+    end
+
+    def noop_and_failure_outcomes_sql
+      (NOOP_OUTCOMES + FAILURE_OUTCOMES).join("','")
     end
 
     def serialize_decisions(rows)

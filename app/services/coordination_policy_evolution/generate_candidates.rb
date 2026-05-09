@@ -65,8 +65,10 @@ module CoordinationPolicyEvolution
     def measured_outcomes
       analysis.fetch(:performance, {}).slice(
         :decision_count,
+        :classified_decision_count,
         :success_count,
         :failure_count,
+        :noop_count,
         :success_rate,
         :lookback_days,
         :decision_type_counts,
