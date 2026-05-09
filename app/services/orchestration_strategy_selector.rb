@@ -82,7 +82,7 @@ class OrchestrationStrategySelector
         "account_id" => effective_account_id
       }.compact
 
-      derived.merge(context)
+      context.merge(derived)
     end
   end
 

@@ -51,6 +51,19 @@ RSpec.describe OrchestrationStrategySelector do
         }
       )
     end
+    let(:scope_key_strategy) do
+      create_strategy_with_version(
+        :for_project,
+        project: project,
+        account: account,
+        decision_type: "issue_execution",
+        selection_rules: {
+          "decision_type" => "issue_execution",
+          "project_id" => project.id.to_s,
+          "account_id" => account.id.to_s
+        }
+      )
+    end
 
     def create_strategy_with_version(*traits, **attributes)
       strategy = create(:strategy, *traits, **attributes)
@@ -144,6 +157,22 @@ RSpec.describe OrchestrationStrategySelector do
 
       expect(result.strategy).to eq(strategy)
       expect(result.scope).to eq(:account)
+    end
+
+    it "does not let caller context override derived scope keys" do
+      strategy = scope_key_strategy
+
+      result = selector_result(
+        project: project,
+        context: {
+          decision_type: "wrong_decision",
+          project_id: SecureRandom.uuid,
+          account_id: SecureRandom.uuid
+        }
+      )
+
+      expect(result.strategy).to eq(strategy)
+      expect(result.scope).to eq(:project)
     end
   end
 end
