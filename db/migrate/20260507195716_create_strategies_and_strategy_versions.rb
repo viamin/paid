@@ -112,7 +112,7 @@ class CreateStrategiesAndStrategyVersions < ActiveRecord::Migration[8.1]
     add_index :strategy_versions, :retired_at
     add_index :strategy_versions, :strategy_id,
       unique: true,
-      where: "promotion_state = 'active'",
+      where: "promotion_state = 'active' AND retired_at IS NULL",
       name: "index_strategy_versions_one_active_per_strategy"
 
     add_foreign_key :strategies, :strategy_versions, column: :current_version_id, on_delete: :nullify

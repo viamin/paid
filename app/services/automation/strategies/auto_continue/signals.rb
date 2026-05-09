@@ -25,6 +25,9 @@ module Automation
         :escalation_dismissed,
         :owner_reviewer_login,
         :escalation_reason,
+        :draft_review_count,
+        :review_goal_retry_count,
+        :pr_followup_count,
         :draft,
         :scan
       )
@@ -43,11 +46,15 @@ module Automation
               operational_failure_breaker: lifecycle[:operational_failure_breaker] == true,
               draft_review_limit_reached: lifecycle[:draft_review_limit_reached] == true,
               consecutive_draft_failures_breaker: lifecycle[:consecutive_draft_failures_breaker] == true,
-              review_goal_retry_limit_requires_escalation: lifecycle[:review_goal_retry_limit_requires_escalation] == true,
+              review_goal_retry_limit_requires_escalation:
+                lifecycle[:review_goal_retry_limit_requires_escalation] == true,
               followup_limit_reached: lifecycle[:followup_limit_reached] == true,
               escalation_dismissed: lifecycle[:escalation_dismissed] == true,
               owner_reviewer_login: lifecycle[:owner_reviewer_login],
               escalation_reason: lifecycle[:escalation_reason],
+              draft_review_count: lifecycle[:draft_review_count].to_i,
+              review_goal_retry_count: lifecycle[:review_goal_retry_count].to_i,
+              pr_followup_count: lifecycle[:pr_followup_count].to_i,
               draft: lifecycle[:draft] == true,
               scan: metadata[:scan]
             )

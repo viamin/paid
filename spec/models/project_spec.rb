@@ -12,6 +12,9 @@ RSpec.describe Project do
     it { is_expected.to have_many(:issues).dependent(:destroy) }
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:destroy) }
+    it { is_expected.to have_many(:scaling_observations).dependent(:destroy) }
+    it { is_expected.to have_many(:scaling_experiments).dependent(:destroy) }
+    it { is_expected.to have_many(:scaling_experiment_assignments).dependent(:destroy) }
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
   end
 
@@ -1505,6 +1508,7 @@ RSpec.describe Project do
 
     before do
       allow(project).to receive(:broadcast_replace_to)
+      allow(project).to receive(:broadcast_refresh_to)
     end
 
     describe "#broadcast_stats_update" do
@@ -1547,28 +1551,78 @@ RSpec.describe Project do
     end
 
     describe "#broadcast_issues_update" do
-      it "broadcasts replace to the project_updates stream with issues partial" do
+      it "broadcasts a refresh to the project_updates stream" do
         project.broadcast_issues_update
 
-        expect(project).to have_received(:broadcast_replace_to).with(
-          project, :project_updates,
-          target: "issues_project_#{project.id}",
-          partial: "projects/issues",
-          locals: hash_including(project: project)
-        )
+        expect(project).to have_received(:broadcast_refresh_to).with(project, :project_updates)
+      end
+
+      it "does not broadcast when broadcasts are suppressed" do
+        described_class.suppress_broadcasts do
+          project.broadcast_issues_update
+        end
+
+        expect(project).not_to have_received(:broadcast_refresh_to)
       end
     end
 
     describe "#broadcast_pull_requests_update" do
-      it "broadcasts replace to the project_updates stream with pull_requests partial" do
+      it "broadcasts a refresh to the project_updates stream" do
         project.broadcast_pull_requests_update
 
-        expect(project).to have_received(:broadcast_replace_to).with(
-          project, :project_updates,
-          target: "pull_requests_project_#{project.id}",
-          partial: "projects/pull_requests",
-          locals: hash_including(project: project)
-        )
+        expect(project).to have_received(:broadcast_refresh_to).with(project, :project_updates)
+      end
+
+      it "does not broadcast when broadcasts are suppressed" do
+        described_class.suppress_broadcasts do
+          project.broadcast_pull_requests_update
+        end
+
+        expect(project).not_to have_received(:broadcast_refresh_to)
+      end
+    end
+
+    describe "#broadcast_project_show_refresh" do
+      it "broadcasts a refresh to the project_updates stream" do
+        project.broadcast_project_show_refresh
+
+        expect(project).to have_received(:broadcast_refresh_to).with(project, :project_updates)
+      end
+    end
+
+    describe ".suppress_broadcasts" do
+      it "restores the previous suppression state after the block" do
+        expect(described_class).not_to be_broadcasts_suppressed
+
+        described_class.suppress_broadcasts do
+          expect(described_class).to be_broadcasts_suppressed
+        end
+
+        expect(described_class).not_to be_broadcasts_suppressed
+      end
+
+      it "restores state even when an error is raised" do
+        expect {
+          described_class.suppress_broadcasts do
+            raise "test error"
+          end
+        }.to raise_error("test error")
+
+        expect(described_class).not_to be_broadcasts_suppressed
+      end
+
+      it "supports nesting" do
+        described_class.suppress_broadcasts do
+          expect(described_class).to be_broadcasts_suppressed
+
+          described_class.suppress_broadcasts do
+            expect(described_class).to be_broadcasts_suppressed
+          end
+
+          expect(described_class).to be_broadcasts_suppressed
+        end
+
+        expect(described_class).not_to be_broadcasts_suppressed
       end
     end
 

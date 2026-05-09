@@ -150,6 +150,11 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:success]).to be true
       expect(result[:total]).to eq(2)
       expect(result[:completed]).to eq(2)
+      expect(result[:execution_summary]).to eq(
+        batch_count: 1,
+        batch_sizes: [ 2 ],
+        max_parallelism_observed: 2
+      )
     end
 
     it "reports failures from child workflows" do
@@ -188,6 +193,11 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
       expect(capacity_call_count.call).to eq(3)
       expect(result[:total]).to eq(3)
+      expect(result[:execution_summary]).to eq(
+        batch_count: 3,
+        batch_sizes: [ 1, 1, 1 ],
+        max_parallelism_observed: 1
+      )
     end
 
     it "marks remaining tasks as no_capacity when capacity runs out" do
@@ -232,6 +242,22 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:completed]).to eq(3)
     end
 
+    it "caps batch size when coordination policy sets max_batch_size" do
+      stub_full_capacity
+      stub_successful_futures(count: 3)
+      stub_no_conflicts
+
+      workflow.execute(
+        three_task_input.merge(
+          coordination_policy: {
+            "parallel_execution" => { "max_batch_size" => 1 }
+          }
+        )
+      )
+
+      expect(Temporalio::Workflow::Future).to have_received(:try_all_of).exactly(3).times
+    end
+
     it "waits to launch dependent tasks until prerequisites complete" do
       stub_full_capacity
       stub_successful_futures(count: 3)
@@ -266,6 +292,25 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:failed]).to eq(2)
       expect(result[:results]).to include(
         include(issue_id: 20, task_index: 1, success: false, error: "dependencies_failed", blocked_by: [ 0 ])
+      )
+    end
+
+    it "cancels remaining ready tasks when policy forbids continuing after a failure" do
+      stub_incremental_capacity
+      stub_dependency_failure_sequence
+      stub_no_conflicts
+
+      result = workflow.execute(
+        three_task_input.merge(
+          coordination_policy: {
+            "parallel_execution" => { "cancel_remaining_on_failure" => true }
+          }
+        )
+      )
+
+      expect(result[:results]).to include(
+        include(issue_id: 20, success: false, error: "cancelled_by_policy", queued: true),
+        include(issue_id: 30, success: false, error: "cancelled_by_policy", queued: true)
       )
     end
 

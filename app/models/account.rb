@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Account < ApplicationRecord
+  has_logidze
   MAX_SLUG_GENERATION_ATTEMPTS = 10
   PLANS = %w[trial free professional enterprise].freeze
   TRIAL_DURATION = 14.days
@@ -34,6 +35,7 @@ class Account < ApplicationRecord
   has_many :chat_sessions, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
+  has_many :configuration_bundles, dependent: :destroy
   has_many :orchestration_strategies, dependent: :destroy
 
   validates :name, presence: true

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
+  has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647
   # Reasonable upper bound for container memory (64 GB in bytes)

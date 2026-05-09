@@ -10,6 +10,7 @@ module Activities
     activity_name "DecomposeFeature"
 
     DEFAULT_MODEL = "claude-sonnet-4-6"
+    POLICY_PROMPT_SOURCE = "policy_service"
     TIMEOUT = 60
     MAX_TASKS = 20
 
@@ -20,6 +21,13 @@ module Activities
 
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
+
+      policy_result = decompose_with_policy_service(
+        project: project,
+        issue: issue,
+        coordination_policy: input[:coordination_policy]
+      )
+      return policy_result if policy_result
 
       prompt_data = render_prompt(issue, knowledge_context)
       tasks = decompose(prompt_data[:prompt])
@@ -36,6 +44,44 @@ module Activities
     end
 
     private
+
+    def decompose_with_policy_service(project:, issue:, coordination_policy:)
+      scope_result = ScopeAnalysis::Analyze.call(text: issue.body)
+      decomposition_result = Coordination::DecompositionService.call(
+        title: issue.title,
+        description: issue.body,
+        sub_components: scope_result.sub_components,
+        account: project.account,
+        policy_override: coordination_policy
+      )
+
+      return unless use_policy_service_result?(decomposition_result)
+
+      tasks = serialize_policy_tasks(decomposition_result.tasks)
+      logger.info(
+        message: "planning.decomposition_complete",
+        project_id: project.id,
+        issue_id: issue.id,
+        task_count: tasks.size,
+        prompt_source: POLICY_PROMPT_SOURCE,
+        policy_source: decomposition_result.policy_source,
+        skip_reason: decomposition_result.skip_reason
+      )
+
+      {
+        tasks: tasks,
+        prompt_source: POLICY_PROMPT_SOURCE,
+        policy_source: decomposition_result.policy_source,
+        skip_reason: decomposition_result.skip_reason
+      }
+    rescue StandardError => e
+      logger.warn(
+        message: "planning.policy_decomposition_failed",
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
+    end
 
     def decompose(prompt)
       response = AgentHarness.send_message(
@@ -132,6 +178,30 @@ module Activities
         The following knowledge from the codebase may help inform your decomposition:
         #{formatted}
       SECTION
+    end
+
+    def use_policy_service_result?(result)
+      result.decomposed? || (result.skipped? && !%w[defaults fallback].include?(result.policy_source))
+    end
+
+    def serialize_policy_tasks(tasks)
+      parallel_groups = {}
+
+      tasks.map do |task|
+        dependencies = Array(task[:deps])
+        parallel_group = parallel_groups.fetch(dependencies) do
+          parallel_groups[dependencies] = parallel_groups.size
+        end
+
+        {
+          index: task[:index],
+          title: task[:title],
+          description: task[:description],
+          dependencies: dependencies,
+          parallel_group: parallel_group,
+          scope: task[:scope]
+        }
+      end
     end
 
     def parse_tasks(output)

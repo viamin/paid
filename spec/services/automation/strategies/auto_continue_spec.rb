@@ -26,18 +26,44 @@ RSpec.describe Automation::Strategies::AutoContinue do
     result.to_h[:decisions].map { |d| d[:type] }
   end
 
+  def ready_scan_payload
+    {
+      issue_id: pull_request.id,
+      pr_number: 42,
+      phase: "ready",
+      triggers: []
+    }
+  end
+
   it "is an Automation::Strategy" do
     expect(described_class.ancestors).to include(Automation::Strategy)
   end
 
   describe "backwards compatibility" do
+    it "selects auto-review through Automation::Strategies::Select when lifecycle signals are absent" do
+      selected_strategy = instance_double(Automation::Strategies::AutoReview)
+      context = Automation::Context.build(
+        record: pull_request,
+        project: project,
+        metadata: { scan: ready_scan_payload }
+      )
+
+      allow(Automation::Strategies::Select).to receive(:call)
+        .with(strategy_type: :auto_review, project: project)
+        .and_return(selected_strategy)
+      allow(selected_strategy).to receive(:evaluate).and_return(Automation::Result.noop)
+
+      strategy.evaluate(context)
+
+      expect(Automation::Strategies::Select).to have_received(:call)
+        .with(strategy_type: :auto_review, project: project)
+      expect(selected_strategy).to have_received(:evaluate).with(
+        have_attributes(project: project, record: pull_request)
+      )
+    end
+
     it "delegates to AutoReview when no lifecycle signals are present" do
-      result = evaluate(scan: {
-        issue_id: pull_request.id,
-        pr_number: 42,
-        phase: "ready",
-        triggers: [ { type: "owner_approved" } ]
-      })
+      result = evaluate(scan: ready_scan_payload.merge(triggers: [ { type: "owner_approved" } ]))
 
       expect(result.to_h[:decisions].first).to include(type: "merge")
     end
@@ -169,6 +195,19 @@ RSpec.describe Automation::Strategies::AutoContinue do
     end
 
     context "when in ready phase" do
+      let(:deferred_service_result) do
+        Coordination::EscalationService::Result.new(
+          action: "defer",
+          reason: "followup_limit_reached",
+          human_value_score: 0.2,
+          interruption_cost: 0.3,
+          net_value: -0.1,
+          threshold: 0.65,
+          explicit_trigger: nil,
+          policy_source: "feature_orchestration"
+        )
+      end
+
       it "escalates when review goal retry limit requires escalation" do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
@@ -187,6 +226,22 @@ RSpec.describe Automation::Strategies::AutoContinue do
         )
 
         expect(decision_types(result)).to eq([ "noop" ])
+      end
+
+      it "routes followup limit decisions through the escalation service" do
+        allow(Coordination::EscalationService).to receive(:call).and_return(deferred_service_result)
+
+        result = evaluate(
+          lifecycle: base_lifecycle.merge(followup_limit_reached: true),
+          scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
+        )
+
+        expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
+        expect(Coordination::EscalationService).to have_received(:call).with(
+          project: project,
+          issue: pull_request,
+          signals: have_attributes(followup_limit_reached: true)
+        )
       end
     end
 

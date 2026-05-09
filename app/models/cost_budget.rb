@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class CostBudget < ApplicationRecord
+  has_logidze
   BUDGET_TYPES = %w[daily monthly per_run].freeze
   ENFORCEMENT_MODES = %w[alert hard_stop].freeze
 

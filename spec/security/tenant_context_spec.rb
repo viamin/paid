@@ -7,8 +7,9 @@ require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_ru
 require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metrics")
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
-require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
+require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
 require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
 require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
 require Rails.root.join("db/migrate/20260507202027_add_strategy_version_to_orchestration_decisions")
@@ -50,6 +51,29 @@ RSpec.describe TenantContext, :tenant_isolation do
     as_restricted_role do
       described_class.with(account_a) do
         expect(AgentRun.all).to contain_exactly(run_a)
+      end
+    end
+  end
+
+  it "filters configuration bundles and outcomes through the database policy" do
+    bundle_a, outcome_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      bundle = create(:configuration_bundle, account: account_a, project: project)
+      run = create(:agent_run, :completed, project: project, issue: create(:issue, project: project), configuration_bundle: bundle)
+
+      [ bundle, create(:bundle_outcome, configuration_bundle: bundle, agent_run: run) ]
+    end
+    described_class.with_system_access do
+      project = create(:project, account: account_b)
+      bundle = create(:configuration_bundle, account: account_b, project: project)
+      run = create(:agent_run, :completed, project: project, issue: create(:issue, project: project), configuration_bundle: bundle)
+      create(:bundle_outcome, configuration_bundle: bundle, agent_run: run)
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ConfigurationBundle.all).to contain_exactly(bundle_a)
+        expect(BundleOutcome.all).to contain_exactly(outcome_a)
       end
     end
   end
@@ -120,6 +144,17 @@ RSpec.describe TenantContext, :tenant_isolation do
         expect_rls_rejection { insert_quality_threshold(account, project_b) }
         expect_rls_rejection { insert_notification(account, user_b) }
         expect_rls_rejection { insert_github_token(account, user_b) }
+      end
+    end
+  end
+
+  it "rejects cross-tenant configuration bundle writes at the database policy" do
+    account = described_class.with_system_access { account_a }
+    project_b = described_class.with_system_access { create(:project, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account) do
+        expect_rls_rejection { insert_configuration_bundle(account, project_id: project_b.id) }
       end
     end
   end
@@ -203,6 +238,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
+      CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       EnableRlsOnNotificationRuleStates.new.up
@@ -211,7 +247,8 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
-      CreateExceptionIncidents.new.up unless exception_incidents_have_rls?
+      CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
+      CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.up if orchestration_decisions_have_strategy_version_reference?
@@ -244,6 +281,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
       EnableRlsOnNotificationRuleStates.new.down
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
+      CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
     end
   end
@@ -284,6 +322,14 @@ RSpec.describe TenantContext, :tenant_isolation do
     ).to_i.positive?
   end
 
+  def exception_incidents_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
+  def failure_classifications_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:failure_classifications)
+  end
+
   def decomposition_decisions_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'decomposition_decisions' AND policyname = 'tenant_isolation'"
@@ -291,7 +337,7 @@ RSpec.describe TenantContext, :tenant_isolation do
   end
 
   def disable_decomposition_decisions_rls
-    ActiveRecord::Base.connection.execute("DROP POLICY IF EXISTS tenant_isolation ON decomposition_decisions")
+    ActiveRecord::Base.connection.execute("DROP POLICY IF EXISTS tenant_isolation ON decomposition_decidents")
     ActiveRecord::Base.connection.execute("ALTER TABLE decomposition_decisions NO FORCE ROW LEVEL SECURITY")
     ActiveRecord::Base.connection.execute("ALTER TABLE decomposition_decisions DISABLE ROW LEVEL SECURITY")
   end
@@ -509,6 +555,56 @@ RSpec.describe TenantContext, :tenant_isolation do
         #{user.id},
         #{quote("RLS Token #{SecureRandom.hex(4)}")},
         'ghp_test',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_configuration_bundle(account, project_id: nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO configuration_bundles (
+        account_id,
+        project_id,
+        version,
+        name,
+        status,
+        strategy_params,
+        context,
+        definition,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{account.id},
+        #{sql_value(project_id)},
+        999999,
+        #{quote("RLS Bundle #{SecureRandom.hex(4)}")},
+        'draft',
+        '{}'::jsonb,
+        '{}'::jsonb,
+        '{"schema_version":1}'::jsonb,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_bundle_outcome(configuration_bundle, agent_run)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO bundle_outcomes (
+        configuration_bundle_id,
+        agent_run_id,
+        success,
+        metrics,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        #{configuration_bundle.id},
+        #{agent_run.id},
+        TRUE,
+        '{}'::jsonb,
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP
       )

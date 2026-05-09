@@ -273,9 +273,13 @@ module Providers
     end
 
     def subscription_provider_runtime
-      AgentHarness::ProviderRuntime.new(
-        unset_env: ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key)
-      )
+      unset_vars = ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key)
+
+      if provider.provider_key == "copilot"
+        unset_vars.delete("COPILOT_GITHUB_TOKEN")
+      end
+
+      AgentHarness::ProviderRuntime.new(unset_env: unset_vars)
     end
 
     # Builds a ProviderRuntime for kilocode direct-outbound smoke tests.
