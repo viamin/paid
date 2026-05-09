@@ -7,6 +7,28 @@ RSpec.describe ScalingExperiments::Assign do
   let(:issue) { create(:issue, project: project) }
   let(:experiment) { create(:scaling_experiment, project: project, values_tested: [ 1, 2, 4 ]) }
 
+  def configure_iteration_experiment!
+    experiment.update!(
+      dimension: "max_iterations",
+      values_tested: [ 1, 3, 5 ],
+      control_value: 1,
+      independent_variables: [
+        {
+          "key" => "max_iterations",
+          "role" => "primary",
+          "values" => [ 1, 3, 5 ],
+          "control_value" => 1,
+          "source" => "execution_plan"
+        },
+        {
+          "key" => "task_count",
+          "role" => "stratification",
+          "source" => "scaling_observations.task_count"
+        }
+      ]
+    )
+  end
+
   it "creates a workflow-scoped assignment with a safe execution plan" do
     assignment = described_class.call(
       scaling_experiment: experiment,
@@ -21,8 +43,10 @@ RSpec.describe ScalingExperiments::Assign do
     expect(assignment.workflow_id).to eq("wf-123")
     expect(assignment.execution_plan).to include(
       "dimension" => "agent_count",
+      "dimension_value" => assignment.assigned_value,
       "task_count" => 4
     )
+    expect(assignment.execution_plan["cohort_label"]).to eq("agent_count-#{assignment.assigned_value}__tasks-4-6")
   end
 
   it "reuses the existing assignment for the same workflow" do
@@ -69,5 +93,22 @@ RSpec.describe ScalingExperiments::Assign do
     )
 
     expect(assignment).to be_nil
+  end
+
+  it "builds a dimension-specific execution plan for iteration experiments" do
+    configure_iteration_experiment!
+
+    assignment = described_class.call(
+      scaling_experiment: experiment,
+      project: project,
+      workflow_id: "wf-iteration",
+      task_count: 4
+    )
+
+    expect(assignment.execution_plan).to include(
+      "dimension" => "max_iterations",
+      "dimension_value" => assignment.assigned_value,
+      "max_iterations_per_agent" => assignment.assigned_value
+    )
   end
 end

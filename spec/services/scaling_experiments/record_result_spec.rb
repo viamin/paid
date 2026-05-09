@@ -32,9 +32,22 @@ RSpec.describe ScalingExperiments::RecordResult do
       issue: issue,
       workflow_id: workflow_id,
       assigned_value: assigned_value,
-      execution_plan: { "max_batch_size" => assigned_value, "requested_agent_count" => assigned_value })
+      execution_plan: {
+        "max_batch_size" => assigned_value,
+        "requested_agent_count" => assigned_value,
+        "cohort_label" => experiment.cohort_label(task_count: assigned_value, assigned_value: assigned_value)
+      })
 
     described_class.call(assignment: assignment, scaling_observation: observation)
+  end
+
+  def expect_recorded_summary(assignment)
+    expect(assignment.outcome_summary).to include(
+      "cohort_label" => "agent_count-2__tasks-2-3",
+      "status" => "completed",
+      "success" => true,
+      "total_cost_cents" => 350
+    )
   end
 
   it "captures a normalized outcome snapshot and refreshes the experiment summary" do
@@ -50,13 +63,10 @@ RSpec.describe ScalingExperiments::RecordResult do
     experiment.reload
 
     expect(assignment.outcome_status).to eq("recorded")
-    expect(assignment.outcome_summary).to include(
-      "status" => "completed",
-      "success" => true,
-      "total_cost_cents" => 350
-    )
+    expect_recorded_summary(assignment)
     expect(experiment.cached_summary).to include(
       "status" => "collecting",
+      "primary_metric" => "success_rate",
       "sample_count" => 1,
       "values" => array_including(hash_including("assigned_value" => 2, "sample_count" => 1))
     )
