@@ -59,9 +59,9 @@ module ScalingExperiments
 
       {
         "quality_score_delta" => delta(leader["avg_quality_score"], control["avg_quality_score"]),
-        "success_rate_delta" => (leader["success_rate"] - control["success_rate"]).round(4),
-        "duration_seconds_delta" => (leader["avg_duration_seconds"] - control["avg_duration_seconds"]).round(4),
-        "cost_cents_delta" => (leader["avg_cost_cents"] - control["avg_cost_cents"]).round(4)
+        "success_rate_delta" => delta(leader["success_rate"], control["success_rate"]),
+        "duration_seconds_delta" => delta(leader["avg_duration_seconds"], control["avg_duration_seconds"]),
+        "cost_cents_delta" => delta(leader["avg_cost_cents"], control["avg_cost_cents"])
       }
     end
 
