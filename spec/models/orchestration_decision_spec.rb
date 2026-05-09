@@ -18,6 +18,27 @@ RSpec.describe OrchestrationDecision do
       decision.strategy_version = sv
       expect(decision.strategy_version_id).to eq(sv.id)
     end
+
+    it "memoizes strategy_version lookups and clears the cache when reassigned" do
+      column_exists = ActiveRecord::Base.connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+      skip "strategy_version_id column not present" unless column_exists
+
+      first_version = create(:strategy_version)
+      second_version = create(:strategy_version)
+      decision = build(:orchestration_decision, :without_agent_run)
+      decision.strategy_version_id = first_version.id
+
+      allow(StrategyVersion).to receive(:find_by).and_call_original
+
+      2.times { expect(decision.strategy_version).to eq(first_version) }
+
+      expect(StrategyVersion).to have_received(:find_by).once.with(id: first_version.id)
+
+      decision.strategy_version = second_version
+
+      expect(decision.strategy_version).to eq(second_version)
+      expect(decision.strategy_version_id).to eq(second_version.id)
+    end
   end
 
   describe "validations" do

@@ -23,12 +23,21 @@ class OrchestrationDecision < ApplicationRecord
 
   def strategy_version
     return nil unless has_attribute?(:strategy_version_id)
-    StrategyVersion.find_by(id: strategy_version_id)
+    return nil if strategy_version_id.blank?
+
+    @strategy_version ||= StrategyVersion.find_by(id: strategy_version_id)
   end
 
   def strategy_version=(value)
     return unless has_attribute?(:strategy_version_id)
+
     self.strategy_version_id = value&.id
+    @strategy_version = value
+  end
+
+  def strategy_version_id=(value)
+    clear_strategy_version_cache
+    super
   end
 
   def self.record!(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
@@ -114,5 +123,9 @@ class OrchestrationDecision < ApplicationRecord
     return if public_send(attribute).is_a?(Hash)
 
     errors.add(attribute, "must be an object")
+  end
+
+  def clear_strategy_version_cache
+    remove_instance_variable(:@strategy_version) if instance_variable_defined?(:@strategy_version)
   end
 end
