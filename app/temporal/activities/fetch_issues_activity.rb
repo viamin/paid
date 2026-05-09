@@ -636,10 +636,13 @@ module Activities
       return { changed: false, closed_count: 0 } if truncated
 
       backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
-      resolve_external_dependencies(project, open_pr_numbers) if open_pr_numbers.any?
+      dependency_changed = open_pr_numbers.any? && resolve_external_dependencies(project, open_pr_numbers)
       closed_count = close_stale_pull_requests(project, open_pr_numbers)
 
-      { changed: backfilled_count.positive? || closed_count.positive?, closed_count: closed_count }
+      {
+        changed: backfilled_count.positive? || dependency_changed || closed_count.positive?,
+        closed_count: closed_count
+      }
     end
 
     def fetch_open_pull_request_numbers(client, repo_full_name)

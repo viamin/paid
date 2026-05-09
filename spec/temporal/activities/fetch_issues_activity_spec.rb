@@ -1404,6 +1404,24 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(dependency.depends_on_number).to be_nil
       end
 
+      it "refreshes the project show page when PR reconciliation only promotes an external dependency" do
+        create(:issue, :pull_request, project: project, github_number: 52, github_state: "open")
+        create_parsed_issue_with_external_dependency(
+          project,
+          issue_number: 53,
+          depends_on_number: 52
+        )
+
+        allow(github_client).to receive(:pull_requests).and_return([
+          OpenStruct.new(number: 52)
+        ])
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+        activity.execute(project_id: project.id)
+
+        expect_single_project_show_refresh(project)
+      end
+
       it "does not close local pull requests when the open PR reconciliation is truncated" do
         stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
         stub_const("#{described_class}::DEFAULT_MAX_PAGES", 1)
