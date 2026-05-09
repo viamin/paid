@@ -62,6 +62,22 @@ module Analytics
         )
       end
 
+      def total_count
+        distinct_count(orchestration_decisions_table[:id])
+      end
+
+      def project_count
+        distinct_count(orchestration_decisions_table[:project_id])
+      end
+
+      def actor_count
+        distinct_count(orchestration_decisions_table[:actor])
+      end
+
+      def decision_type_count
+        distinct_count(orchestration_decisions_table[:decision_type])
+      end
+
       def distinct_completed_run_count
         Arel.sql(
           "COUNT(DISTINCT CASE " \

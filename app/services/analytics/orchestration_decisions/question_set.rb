@@ -15,6 +15,16 @@ module Analytics
           query: "Analytics::OrchestrationDecisions::ByDecisionTypeQuery"
         },
         {
+          key: "decision_outcomes_by_type",
+          question: "Which decision types are usually applied, skipped as no-ops, or recorded as failures?",
+          query: "Analytics::OrchestrationDecisions::OutcomeByDecisionTypeQuery"
+        },
+        {
+          key: "decision_activity_by_actor",
+          question: "Which actors drive the most orchestration decisions, and how broad is each actor's decision mix?",
+          query: "Analytics::OrchestrationDecisions::ByActorQuery"
+        },
+        {
           key: "project_level_decision_patterns",
           question: "Which projects produce the most decisions and how broad is their decision mix?",
           query: "Analytics::OrchestrationDecisions::ByProjectQuery"
