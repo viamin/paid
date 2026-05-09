@@ -64,6 +64,11 @@ class DashboardController < ApplicationController
     render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: @knowledge_stats }
   end
 
+  def provider_health
+    @provider_health = Dashboard::ProviderHealth.call(account: current_account)
+    render partial: "dashboard/provider_health", locals: @provider_health
+  end
+
   def queue_health
     @queue_health = Scaling::QueueMonitor.cached_for_account(current_account)
     render partial: "dashboard/queue_health", locals: { queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? }
