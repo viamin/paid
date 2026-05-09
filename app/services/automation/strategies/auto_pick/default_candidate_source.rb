@@ -93,11 +93,6 @@ module Automation
             scope
           end
 
-          def review_required_parent_scope(project)
-            with_open_non_pr_subissues(parent_review_scope(project))
-              .where(id: blocking_parent_issue_ids(project))
-          end
-
           def next_candidate(project)
             eligible_scope(project)
               .order(
@@ -200,11 +195,6 @@ module Automation
             end
           end
 
-          def parent_review_scope(project)
-            Issue.where(project: project, github_state: "open", is_pull_request: false)
-              .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
-          end
-
           def without_open_non_pr_subissues(scope)
             scope.where(<<~SQL.squish)
               NOT EXISTS (
@@ -216,27 +206,6 @@ module Automation
                   AND sub_issues.github_state = 'open'
               )
             SQL
-          end
-
-          def with_open_non_pr_subissues(scope)
-            scope.where(<<~SQL.squish)
-              EXISTS (
-                SELECT 1
-                FROM issues sub_issues
-                WHERE sub_issues.parent_issue_id = issues.id
-                  AND sub_issues.project_id = issues.project_id
-                  AND sub_issues.is_pull_request = FALSE
-                  AND sub_issues.github_state = 'open'
-              )
-            SQL
-          end
-
-          def blocking_parent_issue_ids(project)
-            IssueDependency.joins(:issue)
-              .where(issues: { project_id: project.id, github_state: "open", is_pull_request: false })
-              .where.not(depends_on_issue_id: nil)
-              .distinct
-              .select(:depends_on_issue_id)
           end
 
           # Returns a CASE expression that maps each issue to a numeric
