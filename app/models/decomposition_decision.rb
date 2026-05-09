@@ -2,6 +2,7 @@
 
 class DecompositionDecision < ApplicationRecord
   DECISION_TYPES = %w[decomposition_strategy planning_outcome parallelization_outcome].freeze
+  POLICY_OUTCOME_DECISION_TYPES = %w[planning_outcome parallelization_outcome].freeze
 
   belongs_to :project
   belongs_to :issue
