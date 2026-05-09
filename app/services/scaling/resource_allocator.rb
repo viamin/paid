@@ -42,7 +42,6 @@ module Scaling
     private
 
     def allocate_from_observations
-      grouped = group_by_agent_count
       return allocate_fallback if grouped.empty?
 
       best_value = find_optimal_agent_count(grouped)

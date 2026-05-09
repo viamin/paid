@@ -84,8 +84,8 @@ RSpec.describe Scaling::ResourceAllocator do
       it "allocates based on the best-performing agent count" do
         observations = [
           *3.times.map { build_observation(agent_count: 1, success: false, total_cost_cents: 50, duration_seconds: 200) },
-          *3.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120) },
-          *3.times.map { build_observation(agent_count: 4, success: true, total_cost_cents: 250, duration_seconds: 80) }
+          *3.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 200, duration_seconds: 200) },
+          *3.times.map { build_observation(agent_count: 4, success: true, total_cost_cents: 150, duration_seconds: 80) }
         ]
 
         result = described_class.call(inputs: default_inputs, observations: observations)
@@ -164,7 +164,7 @@ RSpec.describe Scaling::ResourceAllocator do
       end
     end
 
-    context "preferring observations over experiments" do
+    context "when both observations and experiments are available" do
       it "uses observations when both sources are available and sufficient" do
         observations = 6.times.map do
           build_observation(agent_count: 3, success: true, total_cost_cents: 150, duration_seconds: 100)
@@ -221,7 +221,7 @@ RSpec.describe Scaling::ResourceAllocator do
       end
     end
 
-    context "allocation struct" do
+    context "with allocation struct" do
       it "includes metrics about the decision context" do
         result = described_class.call(inputs: default_inputs)
 
@@ -235,7 +235,7 @@ RSpec.describe Scaling::ResourceAllocator do
       end
     end
 
-    context "iteration recommendation" do
+    context "with iteration recommendation" do
       it "recommends iterations based on observed average" do
         observations = 6.times.map do
           build_observation(agent_count: 2, success: true, total_iterations: 5, duration_seconds: 120)
@@ -267,7 +267,7 @@ RSpec.describe Scaling::ResourceAllocator do
       end
     end
 
-    context "parallelism recommendation" do
+    context "with parallelism recommendation" do
       it "limits parallelism to parallelizable group count" do
         inputs = Scaling::AllocationInputs.new(
           task_count: 6,
@@ -344,7 +344,7 @@ RSpec.describe Scaling::ResourceAllocator do
       end
     end
 
-    context "edge case: all observations fail" do
+    context "when all observations fail" do
       it "still allocates based on cost/duration efficiency" do
         observations = [
           *3.times.map { build_observation(agent_count: 1, success: false, total_cost_cents: 50, duration_seconds: 100) },
@@ -358,14 +358,15 @@ RSpec.describe Scaling::ResourceAllocator do
       end
     end
 
-    context "edge case: observations with only one agent count group"
-    it "picks the single available value" do
-      observations = Array.new(6) do
-        build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120)
-      end
+    context "with only one agent count group in observations" do
+      it "picks the single available value" do
+        observations = Array.new(6) do
+          build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120)
+        end
 
-      result = described_class.call(inputs: default_inputs, observations: observations)
-      expect(result.agent_count).to eq(2)
+        result = described_class.call(inputs: default_inputs, observations: observations)
+        expect(result.agent_count).to eq(2)
+      end
     end
   end
 end

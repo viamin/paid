@@ -2,8 +2,6 @@
 
 module Scaling
   class AllocationInputs
-    STALE_THRESHOLD_SECONDS = 7.days.to_i
-
     attr_reader :task_count, :budget_cents, :max_agent_count, :max_duration_seconds,
                 :dependency_edge_count, :parallelizable_group_count
 
