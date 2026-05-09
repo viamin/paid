@@ -41,8 +41,6 @@ module Activities
 
     private
 
-
-
     def fetch_pr_branch(agent_run)
       project = agent_run.project
       client = project.github_token.client

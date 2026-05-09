@@ -843,8 +843,6 @@ RSpec.describe Provider do
       expect(runtime.metadata[:config]["provider"]).to eq({ "openrouter" => {} })
     end
 
-
-
     it "does not enable direct outbound when the OpenCode model id is missing" do
       provider = build(
         :provider,
