@@ -62,18 +62,44 @@ module ScalingExperiments
     end
 
     def build_execution_plan(value)
-      {
-        "dimension" => scaling_experiment.dimension,
-        "requested_agent_count" => value,
-        "max_batch_size" => value,
-        "task_count" => task_count,
-        "eligible_values" => scaling_experiment.eligible_values(task_count:),
-        "safety_limits" => {
-          "task_count_cap" => task_count,
-          "project_capacity_checked_during_execution" => true,
-          "dependency_order_respected" => true
+      case scaling_experiment.dimension
+      when "agent_count"
+        {
+          "dimension" => scaling_experiment.dimension,
+          "requested_agent_count" => value,
+          "max_batch_size" => value,
+          "task_count" => task_count,
+          "eligible_values" => scaling_experiment.eligible_values(task_count:),
+          "safety_limits" => {
+            "task_count_cap" => task_count,
+            "project_capacity_checked_during_execution" => true,
+            "dependency_order_respected" => true
+          }
         }
-      }
+      when "iteration_count"
+        {
+          "dimension" => scaling_experiment.dimension,
+          "requested_iteration_count" => value,
+          "task_count" => task_count,
+          "eligible_values" => scaling_experiment.eligible_values(task_count:),
+          "application_mode" => "task_prompt_budget",
+          "prompt_suffix" => iteration_budget_prompt(value),
+          "safety_limits" => {
+            "minimum_iteration_count" => 1,
+            "dependency_order_respected" => true,
+            "parallel_batch_size_unchanged" => true
+          }
+        }
+      else
+        {}
+      end
+    end
+
+    def iteration_budget_prompt(value)
+      <<~PROMPT.strip
+        Iteration budget: aim to complete this task within #{value} agent iterations.
+        If you cannot finish safely within that budget, stop and report the blocker instead of continuing indefinitely.
+      PROMPT
     end
   end
 end

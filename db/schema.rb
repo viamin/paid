@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_09_044911) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -580,6 +580,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
     t.index ["started_by_id"], name: "index_context_intake_sessions_on_started_by_id"
   end
 
+  create_table "coordination_decisions", comment: "Execution-time coordination decisions pinned to the exact policy version used so outcomes can be attributed later.", force: :cascade do |t|
+    t.bigint "agent_run_id", comment: "Optional agent run whose workflow emitted the coordination decision."
+    t.jsonb "alternatives", default: {}, null: false, comment: "Alternative actions or scores considered before the final decision."
+    t.jsonb "context_snapshot", default: {}, null: false, comment: "Context snapshot used as policy input when the decision was made."
+    t.bigint "coordination_policy_id", null: false, comment: "Stable coordination policy selected when the decision was made."
+    t.bigint "coordination_policy_version_id", null: false, comment: "Exact immutable coordination policy version evaluated for this decision."
+    t.datetime "created_at", null: false
+    t.jsonb "decision_made", default: {}, null: false, comment: "Structured payload describing the selected action, plan, or classification."
+    t.string "decision_type", limit: 100, null: false, comment: "Decision boundary, such as should_decompose, decomposition_plan, recovery_action, or should_escalate."
+    t.decimal "outcome_contribution", precision: 5, scale: 4, comment: "Attributed contribution score from later outcomes, typically normalized to the 0.0-1.0 range."
+    t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and workflow-level analysis."
+    t.string "workflow_id", limit: 255, comment: "Temporal or orchestration workflow identifier used to correlate related decisions."
+    t.index ["agent_run_id", "created_at", "id"], name: "idx_coordination_decisions_run_recent"
+    t.index ["coordination_policy_id", "decision_type", "created_at"], name: "idx_coordination_decisions_policy_type_created"
+    t.index ["coordination_policy_version_id", "created_at", "id"], name: "idx_coordination_decisions_version_recent"
+    t.index ["project_id", "created_at", "id"], name: "idx_coordination_decisions_project_recent"
+    t.index ["workflow_id"], name: "idx_coordination_decisions_workflow_id"
+  end
+
   create_table "coordination_experiment_assignments", comment: "Assignment and outcome for one feature orchestration workflow sample", force: :cascade do |t|
     t.bigint "coordination_experiment_id", null: false
     t.bigint "coordination_experiment_variant_id", null: false
@@ -629,6 +648,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
     t.index ["account_id", "policy_name"], name: "idx_coordination_experiments_one_running_policy", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["account_id"], name: "index_coordination_experiments_on_account_id"
     t.index ["winner_variant_id"], name: "index_coordination_experiments_on_winner_variant_id"
+  end
+
+  create_table "coordination_policies", comment: "Account-scoped coordination policies that select rules for decomposition, recovery, escalation, and lifecycle handling.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning tenant for policy isolation and account-level overrides."
+    t.datetime "activated_at", comment: "When the policy first became active for execution."
+    t.jsonb "context_selector", default: {}, null: false, comment: "Structured applicability filter used to match this policy to a workflow or project context."
+    t.datetime "created_at", null: false
+    t.bigint "current_version_id", comment: "Promoted immutable policy version currently used for execution."
+    t.text "description", comment: "Optional operator-facing description of the coordination policy intent."
+    t.string "lifecycle_state", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the policy record: draft, active, or retired."
+    t.string "name", limit: 255, null: false, comment: "Human-readable identifier for this policy within its account and policy family."
+    t.string "policy_type", limit: 50, null: false, comment: "Coordination policy family such as decomposition, recovery, escalation, or lifecycle."
+    t.datetime "retired_at", comment: "When the policy was retired from active use."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "policy_type", "lifecycle_state"], name: "idx_coordination_policies_account_type_state"
+    t.index ["account_id", "policy_type", "name"], name: "idx_coordination_policies_account_type_name", unique: true
+    t.index ["account_id"], name: "index_coordination_policies_on_account_id"
+    t.index ["context_selector"], name: "idx_coordination_policies_context_selector", using: :gin
+    t.index ["current_version_id"], name: "index_coordination_policies_on_current_version_id"
+  end
+
+  create_table "coordination_policy_versions", comment: "Immutable rule snapshots for coordination policies, allowing evolution and decision attribution by exact version.", force: :cascade do |t|
+    t.bigint "coordination_policy_id", null: false, comment: "Stable policy record that owns this immutable version."
+    t.datetime "created_at", null: false
+    t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
+    t.jsonb "parameters", default: {}, null: false, comment: "Tunable thresholds, weights, and other policy parameters separated from rule structure."
+    t.text "reasoning", comment: "Why this version was created or promoted, including evolution rationale."
+    t.jsonb "rules", default: {}, null: false, comment: "Structured decision rules, mappings, and heuristics executed by coordination services."
+    t.integer "version", null: false, comment: "Monotonic version number within a coordination policy."
+    t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_policy_version", unique: true
+    t.index ["coordination_policy_id"], name: "index_coordination_policy_versions_on_coordination_policy_id"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -2110,6 +2160,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
   add_foreign_key "context_intake_responses", "context_intake_sessions"
   add_foreign_key "context_intake_sessions", "projects"
   add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
+  add_foreign_key "coordination_decisions", "agent_runs", on_delete: :nullify
+  add_foreign_key "coordination_decisions", "coordination_policies"
+  add_foreign_key "coordination_decisions", "coordination_policy_versions"
+  add_foreign_key "coordination_decisions", "projects", on_delete: :cascade
   add_foreign_key "coordination_experiment_assignments", "coordination_experiment_variants", on_delete: :cascade
   add_foreign_key "coordination_experiment_assignments", "coordination_experiments", on_delete: :cascade
   add_foreign_key "coordination_experiment_assignments", "issues", on_delete: :nullify
@@ -2117,6 +2171,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
   add_foreign_key "coordination_experiment_variants", "coordination_experiments", on_delete: :cascade
   add_foreign_key "coordination_experiments", "accounts", on_delete: :cascade
   add_foreign_key "coordination_experiments", "coordination_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "coordination_policies", "accounts", on_delete: :cascade
+  add_foreign_key "coordination_policies", "coordination_policy_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "coordination_policy_versions", "coordination_policies", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
   add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
@@ -2234,6 +2291,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -2967,26 +3044,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_09_034206) do
           END IF;
           RETURN buf;
         END;
-      $function$
-  SQL
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 

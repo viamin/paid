@@ -13,13 +13,7 @@ module ScalingExperiments
     def call
       summaries = value_summaries
       control = summaries.find { |summary| summary["assigned_value"] == scaling_experiment.control_value }
-      leader = summaries.max_by do |summary|
-        [
-          summary["success_rate"],
-          summary["sample_count"],
-          -summary["avg_duration_seconds"]
-        ]
-      end
+      leader = summaries.max_by { |summary| leader_sort_key(summary) }
 
       {
         "status" => scaling_experiment.sufficient_samples? ? "ready_for_analysis" : "collecting",
@@ -51,6 +45,8 @@ module ScalingExperiments
           "success_rate" => rate(observations, &:success),
           "avg_duration_seconds" => average(observations, &:duration_seconds),
           "avg_cost_cents" => average(observations, &:total_cost_cents),
+          "avg_quality_score" => average_quality_score(assignments),
+          "quality_metric_sample_count" => quality_metric_sample_count(assignments),
           "avg_parallelism_observed" => average(observations, &:parallelism_observed),
           "avg_agent_count_launched" => average(observations, &:agent_count_launched),
           "status_tally" => observations.map(&:status).tally
@@ -62,10 +58,39 @@ module ScalingExperiments
       return unless control && leader
 
       {
+        "quality_score_delta" => delta(leader["avg_quality_score"], control["avg_quality_score"]),
         "success_rate_delta" => (leader["success_rate"] - control["success_rate"]).round(4),
         "duration_seconds_delta" => (leader["avg_duration_seconds"] - control["avg_duration_seconds"]).round(4),
         "cost_cents_delta" => (leader["avg_cost_cents"] - control["avg_cost_cents"]).round(4)
       }
+    end
+
+    def leader_sort_key(summary)
+      [
+        summary["quality_metric_sample_count"].to_i.positive? ? 1 : 0,
+        summary["avg_quality_score"].to_f,
+        summary["success_rate"],
+        summary["sample_count"],
+        -summary["avg_duration_seconds"],
+        -summary["avg_cost_cents"]
+      ]
+    end
+
+    def average_quality_score(assignments)
+      quality_scores = assignments.filter_map { |assignment| assignment.outcome_summary["avg_quality_score"]&.to_f }
+      return nil if quality_scores.empty?
+
+      (quality_scores.sum / quality_scores.size).round(4)
+    end
+
+    def quality_metric_sample_count(assignments)
+      assignments.sum { |assignment| assignment.outcome_summary["quality_metric_sample_count"].to_i }
+    end
+
+    def delta(value, control)
+      return unless value && control
+
+      (value - control).round(4)
     end
 
     def rate(observations)

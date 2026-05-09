@@ -31,4 +31,18 @@ RSpec.describe ScalingExperiment do
       ).to be_nil
     end
   end
+
+  describe "#eligible_values" do
+    it "caps agent_count values by task count" do
+      experiment = build(:scaling_experiment, dimension: "agent_count", values_tested: [ 1, 2, 4 ])
+
+      expect(experiment.eligible_values(task_count: 2)).to eq([ 1, 2 ])
+    end
+
+    it "keeps iteration_count values independent of task count" do
+      experiment = build(:scaling_experiment, dimension: "iteration_count", values_tested: [ 1, 2, 4 ])
+
+      expect(experiment.eligible_values(task_count: 2)).to eq([ 1, 2, 4 ])
+    end
+  end
 end

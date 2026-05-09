@@ -38,6 +38,27 @@ RSpec.describe QualityMetrics::Collect do
       expect { described_class.call(agent_run: agent_run) }.not_to change(QualityMetric, :count)
     end
 
+    it "refreshes linked scaling experiment results for orchestration child runs" do
+      parent_workflow_id = "feature-wf-123"
+      agent_run.update!(parent_workflow_id: parent_workflow_id)
+      observation = create(:scaling_observation, project: agent_run.project, issue: agent_run.issue, workflow_id: parent_workflow_id)
+      experiment = create(:scaling_experiment, project: agent_run.project)
+      assignment = create(:scaling_experiment_assignment,
+        scaling_experiment: experiment,
+        project: agent_run.project,
+        issue: agent_run.issue,
+        scaling_observation: observation)
+
+      allow(ScalingExperiments::RecordResult).to receive(:call)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(ScalingExperiments::RecordResult).to have_received(:call).with(
+        assignment: assignment,
+        scaling_observation: observation
+      )
+    end
+
     context "with create_pr goal" do
       it "includes agent_rerun_count but omits review_comment_count until collected" do
         metric = described_class.call(agent_run: agent_run)

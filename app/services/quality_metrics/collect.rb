@@ -26,6 +26,7 @@ module QualityMetrics
         check_quality_pause
       end
       record_bundle_outcome
+      refresh_scaling_experiment_results
 
       enqueue_quality_gate_check
       automated_metric
@@ -256,6 +257,23 @@ module QualityMetrics
       variant.total_quality_score = (variant.total_quality_score || BigDecimal(0)) - old_decimal + new_decimal
       variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
       variant.save!
+    end
+
+    def refresh_scaling_experiment_results
+      return if agent_run.parent_workflow_id.blank?
+
+      observation = ScalingObservation.find_by(
+        project_id: agent_run.project_id,
+        workflow_id: agent_run.parent_workflow_id
+      )
+      return unless observation
+
+      ScalingExperimentAssignment.where(scaling_observation: observation).find_each do |assignment|
+        ScalingExperiments::RecordResult.call(
+          assignment: assignment,
+          scaling_observation: observation
+        )
+      end
     end
 
     def update_prompt_version_stats

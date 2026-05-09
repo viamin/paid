@@ -13,7 +13,7 @@ RSpec.describe ScalingExperiments::RecordResult do
       cached_summary: {})
   end
 
-  def create_observation!(workflow_id:, assigned_value:, success:, cost_cents:, duration_seconds:)
+  def create_observation!(workflow_id:, assigned_value:, success:, cost_cents:, duration_seconds:, quality_scores: [])
     observation = create(:scaling_observation,
       project: project,
       issue: issue,
@@ -34,6 +34,11 @@ RSpec.describe ScalingExperiments::RecordResult do
       assigned_value: assigned_value,
       execution_plan: { "max_batch_size" => assigned_value, "requested_agent_count" => assigned_value })
 
+    quality_scores.each do |score|
+      run = create(:agent_run, :completed, project: project, issue: issue, parent_workflow_id: workflow_id)
+      create(:quality_metric, agent_run: run, metric_type: "automated", composite_score: score)
+    end
+
     described_class.call(assignment: assignment, scaling_observation: observation)
   end
 
@@ -43,23 +48,15 @@ RSpec.describe ScalingExperiments::RecordResult do
       assigned_value: 2,
       success: true,
       cost_cents: 350,
-      duration_seconds: 180
+      duration_seconds: 180,
+      quality_scores: [ 0.7, 0.9 ]
     )
 
     assignment = result.assignment.reload
     experiment.reload
 
-    expect(assignment.outcome_status).to eq("recorded")
-    expect(assignment.outcome_summary).to include(
-      "status" => "completed",
-      "success" => true,
-      "total_cost_cents" => 350
-    )
-    expect(experiment.cached_summary).to include(
-      "status" => "collecting",
-      "sample_count" => 1,
-      "values" => array_including(hash_including("assigned_value" => 2, "sample_count" => 1))
-    )
+    expect_recorded_assignment_summary(assignment)
+    expect_cached_experiment_summary(experiment)
   end
 
   it "completes the experiment once every value reaches the minimum sample count" do
@@ -72,5 +69,24 @@ RSpec.describe ScalingExperiments::RecordResult do
 
     expect(experiment.status).to eq("completed")
     expect(experiment.cached_summary).to include("status" => "ready_for_analysis", "leading_value" => 1)
+  end
+
+  def expect_recorded_assignment_summary(assignment)
+    expect(assignment.outcome_status).to eq("recorded")
+    expect(assignment.outcome_summary).to include(
+      "status" => "completed",
+      "success" => true,
+      "total_cost_cents" => 350,
+      "quality_metric_sample_count" => 2,
+      "avg_quality_score" => 0.8
+    )
+  end
+
+  def expect_cached_experiment_summary(experiment)
+    expect(experiment.cached_summary).to include(
+      "status" => "collecting",
+      "sample_count" => 1,
+      "values" => array_including(hash_including("assigned_value" => 2, "sample_count" => 1, "avg_quality_score" => 0.8))
+    )
   end
 end

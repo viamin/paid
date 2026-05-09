@@ -4,7 +4,7 @@ require "zlib"
 
 class ScalingExperiment < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
-  DIMENSIONS = %w[agent_count].freeze
+  DIMENSIONS = %w[agent_count iteration_count].freeze
 
   belongs_to :project
 
@@ -88,7 +88,14 @@ class ScalingExperiment < ApplicationRecord
   end
 
   def eligible_values(task_count:)
-    normalized_values_tested.select { |value| value <= task_count.to_i }
+    case dimension
+    when "agent_count"
+      normalized_values_tested.select { |value| value <= task_count.to_i }
+    when "iteration_count"
+      normalized_values_tested
+    else
+      []
+    end
   end
 
   def sufficient_samples?

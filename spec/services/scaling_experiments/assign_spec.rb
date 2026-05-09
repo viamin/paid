@@ -70,4 +70,27 @@ RSpec.describe ScalingExperiments::Assign do
 
     expect(assignment).to be_nil
   end
+
+  it "builds an iteration-budget execution plan for iteration_count experiments" do
+    iteration_experiment = create(:scaling_experiment,
+      project: project,
+      dimension: "iteration_count",
+      values_tested: [ 1, 2, 4 ])
+
+    assignment = described_class.call(
+      scaling_experiment: iteration_experiment,
+      project: project,
+      issue: issue,
+      workflow_id: "wf-iterations",
+      task_count: 2
+    )
+
+    expect(assignment.execution_plan).to include(
+      "dimension" => "iteration_count",
+      "requested_iteration_count" => assignment.assigned_value,
+      "application_mode" => "task_prompt_budget"
+    )
+    expect(assignment.execution_plan["eligible_values"]).to eq([ 1, 2, 4 ])
+    expect(assignment.execution_plan["prompt_suffix"]).to include("Iteration budget")
+  end
 end
