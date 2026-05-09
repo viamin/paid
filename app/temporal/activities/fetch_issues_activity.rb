@@ -63,8 +63,7 @@ module Activities
       end
 
       if sync_changed
-        project.broadcast_issues_update
-        project.broadcast_pull_requests_update
+        project.broadcast_project_show_refresh
       end
 
       if truncated && incremental
@@ -456,8 +455,8 @@ module Activities
       project.broadcast_issues_update if parent_child_changed
 
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
-      resolve_external_dependencies(project, synced_numbers)
-      parent_child_changed
+      dependency_changed = resolve_external_dependencies(project, synced_numbers)
+      parent_child_changed || dependency_changed
     end
 
     def relationship_parse_candidates(project)
@@ -486,12 +485,15 @@ module Activities
         .where(github_number: scope.select(:depends_on_number))
         .index_by(&:github_number)
 
+      changed = false
+
       scope.find_each do |dep|
         resolved_issue = issues_by_number[dep.depends_on_number]
         next unless resolved_issue
 
         if IssueDependency.exists?(issue_id: dep.issue_id, depends_on_issue_id: resolved_issue.id)
           dep.destroy!
+          changed = true
           next
         end
 
@@ -502,6 +504,7 @@ module Activities
             depends_on_repo: nil,
             depends_on_number: nil
           )
+          changed = true
         rescue ActiveRecord::RecordNotUnique => e
           logger.warn(
             message: "github_sync.resolve_external_dependency_duplicate",
@@ -513,8 +516,11 @@ module Activities
             error: e.message
           )
           dep.destroy!
+          changed = true
         end
       end
+
+      changed
     rescue => e
       logger.warn(
         message: "github_sync.resolve_external_dependencies_failed",
@@ -522,6 +528,7 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+      false
     end
 
     # Returns trusted comment bodies, or nil if comments could not be fetched.

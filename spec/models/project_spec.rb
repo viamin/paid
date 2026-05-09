@@ -1506,6 +1506,7 @@ RSpec.describe Project do
 
     before do
       allow(project).to receive(:broadcast_replace_to)
+      allow(project).to receive(:broadcast_refresh_to)
     end
 
     describe "#broadcast_stats_update" do
@@ -1548,15 +1549,10 @@ RSpec.describe Project do
     end
 
     describe "#broadcast_issues_update" do
-      it "broadcasts replace to the project_updates stream with issues partial" do
+      it "broadcasts a refresh to the project_updates stream" do
         project.broadcast_issues_update
 
-        expect(project).to have_received(:broadcast_replace_to).with(
-          project, :project_updates,
-          target: "issues_project_#{project.id}",
-          partial: "projects/issues",
-          locals: hash_including(project: project)
-        )
+        expect(project).to have_received(:broadcast_refresh_to).with(project, :project_updates)
       end
 
       it "does not broadcast when broadcasts are suppressed" do
@@ -1564,20 +1560,15 @@ RSpec.describe Project do
           project.broadcast_issues_update
         end
 
-        expect(project).not_to have_received(:broadcast_replace_to)
+        expect(project).not_to have_received(:broadcast_refresh_to)
       end
     end
 
     describe "#broadcast_pull_requests_update" do
-      it "broadcasts replace to the project_updates stream with pull_requests partial" do
+      it "broadcasts a refresh to the project_updates stream" do
         project.broadcast_pull_requests_update
 
-        expect(project).to have_received(:broadcast_replace_to).with(
-          project, :project_updates,
-          target: "pull_requests_project_#{project.id}",
-          partial: "projects/pull_requests",
-          locals: hash_including(project: project)
-        )
+        expect(project).to have_received(:broadcast_refresh_to).with(project, :project_updates)
       end
 
       it "does not broadcast when broadcasts are suppressed" do
@@ -1585,7 +1576,15 @@ RSpec.describe Project do
           project.broadcast_pull_requests_update
         end
 
-        expect(project).not_to have_received(:broadcast_replace_to)
+        expect(project).not_to have_received(:broadcast_refresh_to)
+      end
+    end
+
+    describe "#broadcast_project_show_refresh" do
+      it "broadcasts a refresh to the project_updates stream" do
+        project.broadcast_project_show_refresh
+
+        expect(project).to have_received(:broadcast_refresh_to).with(project, :project_updates)
       end
     end
 

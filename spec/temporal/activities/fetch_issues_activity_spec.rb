@@ -84,15 +84,9 @@ RSpec.describe Activities::FetchIssuesActivity do
       relationships_parsed_at: relationships_parsed_at)
   end
 
-  def expect_single_project_list_broadcasts(project)
-    issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
-    pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
-
-    expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-      .with(anything, :project_updates, hash_including(target: issues_target))
-      .once
-    expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-      .with(anything, :project_updates, hash_including(target: pull_requests_target))
+  def expect_single_project_show_refresh(project)
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_refresh_to)
+      .with(project, :project_updates)
       .once
   end
 
@@ -825,37 +819,19 @@ RSpec.describe Activities::FetchIssuesActivity do
       it "broadcasts updated lists after closing stale items" do
         create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
 
-        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
 
         activity.execute(project_id: project.id)
 
-        issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
-        pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
-
-        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-          .with(anything, :project_updates, hash_including(target: issues_target))
-          .at_least(:once)
-        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-          .with(anything, :project_updates, hash_including(target: pull_requests_target))
-          .at_least(:once)
+        expect_single_project_show_refresh(project)
       end
 
       it "suppresses per-issue broadcasts during sync and broadcasts once at the end" do
         create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
 
-        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+        expect(Turbo::StreamsChannel).to receive(:broadcast_refresh_to).with(project, :project_updates).once.and_call_original
 
         activity.execute(project_id: project.id)
-
-        issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
-        pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
-
-        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-          .with(anything, :project_updates, hash_including(target: issues_target))
-          .once
-        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-          .with(anything, :project_updates, hash_including(target: pull_requests_target))
-          .once
       end
     end
 
@@ -1237,7 +1213,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 61, pages: 2).and_return([
           OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
         ])
-        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
 
         activity.execute(project_id: project.id)
 
@@ -1245,7 +1221,30 @@ RSpec.describe Activities::FetchIssuesActivity do
         child = project.issues.find_by!(github_number: 61)
 
         expect(child.reload.parent_issue_id).to eq(parent.id)
-        expect_single_project_list_broadcasts(project)
+        expect_single_project_show_refresh(project)
+      end
+
+      it "treats external dependency promotion as a visible sync change for the batched refresh" do
+        create_synced_issue_from_github(project, parent_issue, relationships_parsed_at: parent_issue.updated_at)
+        child = create_synced_issue_from_github(project, child_issue, relationships_parsed_at: child_issue.updated_at)
+        dependency = child.issue_dependencies.create!(
+          depends_on_owner: project.owner.downcase,
+          depends_on_repo: project.repo.downcase,
+          depends_on_number: 60
+        )
+
+        allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        dependency.reload
+
+        expect(dependency.depends_on_issue_id).to eq(parent.id)
+        expect(dependency.depends_on_owner).to be_nil
+        expect(dependency.depends_on_repo).to be_nil
+        expect(dependency.depends_on_number).to be_nil
+        expect_single_project_show_refresh(project)
       end
     end
 
