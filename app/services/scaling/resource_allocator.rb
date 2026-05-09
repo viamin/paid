@@ -58,23 +58,24 @@ module Scaling
     end
 
     def allocate_from_experiments
-      best_summary = experiment_summaries.max_by do |summary|
+      best_summary = usable_experiment_summaries.max_by do |summary|
         [
-          summary[:success_rate] || 0.0,
-          -(summary[:avg_duration_seconds] || Float::INFINITY)
+          summary_value(summary, :success_rate, default: 0.0),
+          -summary_value(summary, :avg_duration_seconds, default: Float::INFINITY)
         ]
       end
       return allocate_fallback unless best_summary
 
-      value = best_summary[:assigned_value] || best_summary[:value]
+      value = summary_value(best_summary, :assigned_value) || summary_value(best_summary, :value)
       return allocate_fallback unless value
 
+      agent_count = clamp_agents(value)
       build_allocation(
-        agent_count: clamp_agents(value),
+        agent_count: agent_count,
         max_iterations: 3,
-        parallelism_level: [ value, inputs.parallelizable_group_count ].min,
+        parallelism_level: [ agent_count, inputs.parallelizable_group_count ].min,
         source: :experiment,
-        reason: "experiment leading value=#{value} success_rate=#{format_rate(best_summary[:success_rate])}"
+        reason: "experiment leading value=#{value} success_rate=#{format_rate(summary_value(best_summary, :success_rate, default: 0.0))}"
       )
     end
 
@@ -99,12 +100,7 @@ module Scaling
     end
 
     def experiment_summaries_usable?
-      return false if experiment_summaries.empty?
-
-      experiment_summaries.any? do |summary|
-        (summary[:sample_count] || 0) >= MIN_OBSERVATIONS_FOR_CONFIDENCE &&
-          (summary[:success_rate] || 0.0) > MIN_SUCCESS_RATE_FOR_LEARNING
-      end
+      usable_experiment_summaries.any?
     end
 
     def group_by_agent_count
@@ -217,7 +213,7 @@ module Scaling
                              observations_with_cost.sum { |obs| obs.agent_count_launched.to_i }
         if avg_cost_per_agent.positive?
           max_affordable = (inputs.budget_cents / avg_cost_per_agent).floor
-          return [ agent_count, max_affordable ].min
+          return [ agent_count, [ max_affordable, 1 ].max ].min
         end
       end
 
@@ -232,6 +228,17 @@ module Scaling
 
     def grouped
       @grouped ||= group_by_agent_count
+    end
+
+    def usable_experiment_summaries
+      @usable_experiment_summaries ||= experiment_summaries.select do |summary|
+        summary_value(summary, :sample_count, default: 0) >= MIN_OBSERVATIONS_FOR_CONFIDENCE &&
+          summary_value(summary, :success_rate, default: 0.0) > MIN_SUCCESS_RATE_FOR_LEARNING
+      end
+    end
+
+    def summary_value(summary, key, default: nil)
+      summary[key] || summary[key.to_s] || default
     end
 
     def fallback_reason

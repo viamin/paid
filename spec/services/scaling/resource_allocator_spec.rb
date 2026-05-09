@@ -141,6 +141,31 @@ RSpec.describe Scaling::ResourceAllocator do
         expect(result.reason).to include("experiment leading value=2")
       end
 
+      it "supports string-keyed experiment summaries" do
+        summaries = [
+          { "assigned_value" => 1, "success_rate" => 0.4, "avg_duration_seconds" => 300, "sample_count" => 10 },
+          { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 10 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+      end
+
+      it "ignores unusable experiment cohorts when selecting the leader" do
+        summaries = [
+          { assigned_value: 1, success_rate: 0.31, avg_duration_seconds: 300, sample_count: 10 },
+          { assigned_value: 2, success_rate: 1.0, avg_duration_seconds: 100, sample_count: 1 },
+          { assigned_value: 3, success_rate: 0.9, avg_duration_seconds: 90, sample_count: 2 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(1)
+      end
+
       it "falls back when experiment sample counts are too low" do
         summaries = [
           { assigned_value: 2, success_rate: 0.9, avg_duration_seconds: 100, sample_count: 2 }
@@ -203,7 +228,19 @@ RSpec.describe Scaling::ResourceAllocator do
 
         result = described_class.call(inputs: inputs, observations: observations)
 
-        expect(result.agent_count).to be <= 4
+        expect(result.agent_count).to eq(1)
+      end
+
+      it "never returns zero agents when the budget is below observed per-agent cost" do
+        inputs = Scaling::AllocationInputs.new(task_count: 8, max_agent_count: 8, budget_cents: 10)
+        observations = [
+          *4.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120) },
+          *4.times.map { build_observation(agent_count: 4, success: true, total_cost_cents: 200, duration_seconds: 80) }
+        ]
+
+        result = described_class.call(inputs: inputs, observations: observations)
+
+        expect(result.agent_count).to eq(1)
       end
     end
 
