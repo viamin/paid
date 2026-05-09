@@ -2014,7 +2014,10 @@ module Activities
 
     def timeout_attempt_diagnostics(timeout_error:, timeout_type:, heartbeat:, effective_timeout:, startup_timeout:, effective_idle_timeout:)
       provider_idle_timeout = heartbeat&.idle_timeout_for(effective_idle_timeout)
-      timeout_error.diagnostics.merge(
+      diagnostics = timeout_error.diagnostics.dup
+      diagnostics["output_received"] = timeout_type != "startup" if !diagnostics.key?("output_received") && timeout_type.present?
+
+      diagnostics.merge(
         "timeout_type" => timeout_type,
         "effective_timeout_seconds" => effective_timeout,
         "startup_timeout_seconds" => startup_timeout,

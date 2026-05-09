@@ -1609,7 +1609,7 @@ class AgentRun < ApplicationRecord
       else
         value
       end
-    end.compact_blank
+    end.reject { |_, value| value.nil? || value == "" || value == {} || value == [] }
   end
 
   # Container management integration methods.

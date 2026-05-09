@@ -54,10 +54,10 @@
                 </p>
               </div>
             <% end %>
-            <% if stats[:attempts_7d].positive? %>
+            <% if stats[:attempts_7d].to_i.positive? %>
               <div class="mt-1">
                 <p class="text-xs text-gray-500">
-                  Avg attempt duration: <%= number_with_precision(stats[:avg_attempt_duration_seconds], precision: 1) %>s
+                  Avg attempt duration: <%= number_with_precision(stats[:avg_attempt_duration_seconds].to_f, precision: 1) %>s
                 </p>
               </div>
             <% end %>

@@ -2120,6 +2120,10 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("startup_timeout")
+        expect(agent_run.providers_attempted.first["diagnostics"]).to include(
+          "timeout_type" => "startup",
+          "output_received" => false
+        )
       end
 
       it "raises AllProvidersExhausted" do
