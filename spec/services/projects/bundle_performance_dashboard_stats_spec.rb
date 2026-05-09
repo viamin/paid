@@ -58,6 +58,31 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(frontier_bundles).to include(pareto_bundle)
     end
 
+    it "recomputes objective scores for historical outcomes missing persisted metrics" do
+      expensive_bundle = create_simple_bundle(project:)
+      create_bundle_outcome(
+        project: project,
+        bundle: expensive_bundle,
+        quality_score: 0.8,
+        cost_cents: 10_000,
+        metrics: {}
+      )
+
+      efficient_bundle = create_simple_bundle(project:)
+      create_bundle_outcome(
+        project: project,
+        bundle: efficient_bundle,
+        quality_score: 0.79,
+        cost_cents: 10
+      )
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:bundle_rankings].first[:bundle]).to eq(efficient_bundle)
+      expect(stats[:bundle_rankings].find { |row| row[:bundle] == expensive_bundle }[:avg_objective_score]).to be < 0.8
+      expect(stats[:tradeoff_frontier].first[:bundle]).to eq(efficient_bundle)
+    end
+
     it "is not sparse when optimizer insights have candidates despite no outcomes or experiments" do
       run = create(:agent_run, project: project, issue: create(:issue, project: project), goal: "create_pr")
 
@@ -141,6 +166,8 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
       expect(stats[:sparse]).to be(false)
       expect(stats[:summary][:bundle_count]).to eq(1)
+      expect(stats[:bundle_rankings].first[:avg_objective_score]).to be < stats[:bundle_rankings].first[:avg_quality_score]
+      expect(stats[:bundle_rankings].first[:avg_quality_per_dollar]).to be > 1
       expect(stats[:bundle_rankings].first[:avg_quality_score]).to be_within(0.001).of(0.85)
       expect(stats[:experiment_confidence].first[:variants].size).to eq(2)
       expect(stats[:tradeoff_frontier].first[:bundle]).to eq(bundle)
@@ -168,6 +195,12 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       avg_quality_score: 0.82)
 
     [ experiment, control, variant ]
+  end
+
+  def create_simple_bundle(project:)
+    create(:configuration_bundle, account: project.account, definition: {
+      "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
+    })
   end
 
   def create_bundle(project:, experiment:, variant:)
@@ -212,7 +245,7 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
   end
 
-  def create_bundle_outcome(project:, bundle:, quality_score:, cost_cents:)
+  def create_bundle_outcome(project:, bundle:, quality_score:, cost_cents:, metrics: nil)
     run = create(:agent_run,
       :completed,
       project: project,
@@ -221,16 +254,29 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       configuration_bundle: bundle,
       cost_cents: cost_cents)
 
+    objective = ConfigurationBundles::ObjectiveScore.call(
+      project: project,
+      quality_score: quality_score,
+      cost_cents: cost_cents,
+      duration_seconds: run.duration_seconds
+    )
+
     create(:bundle_outcome,
       configuration_bundle: bundle,
       agent_run: run,
       quality_score: quality_score,
       cost_cents: cost_cents,
+      duration_seconds: run.duration_seconds,
+      metrics: metrics || {
+        "objective_score" => objective.objective_score,
+        "quality_per_dollar" => objective.quality_per_dollar
+      },
       success: true)
   end
 
   def mock_optimizer_selection
     score_inputs = ConfigurationBundles::Optimizer::ScoreInputs.new(
+      predicted_objective_score: 0.76,
       predicted_quality_score: 0.8,
       uncertainty: 0.1,
       sample_count: 5,

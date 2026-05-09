@@ -16,6 +16,13 @@ module ConfigurationBundles
     def call
       return unless agent_run.configuration_bundle
 
+      objective_result = ConfigurationBundles::ObjectiveScore.call(
+        project: agent_run.project,
+        quality_score: quality_metric.composite_score,
+        cost_cents: agent_run.cost_cents,
+        duration_seconds: agent_run.duration_seconds
+      )
+
       outcome = BundleOutcome.find_or_initialize_by(
         configuration_bundle: agent_run.configuration_bundle,
         agent_run: agent_run
@@ -29,6 +36,10 @@ module ConfigurationBundles
         metrics: {
           "component_scores" => quality_metric.scores || {},
           "completed_at" => agent_run.completed_at&.iso8601,
+          "cost_score" => objective_result.cost_score,
+          "objective_score" => objective_result.objective_score,
+          "quality_per_dollar" => objective_result.quality_per_dollar,
+          "speed_score" => objective_result.speed_score,
           "status" => agent_run.status
         }
       )

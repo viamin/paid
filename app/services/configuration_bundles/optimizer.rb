@@ -26,6 +26,7 @@ module ConfigurationBundles
     )
 
     ScoreInputs = Struct.new(
+      :predicted_objective_score,
       :predicted_quality_score,
       :uncertainty,
       :sample_count,
@@ -77,13 +78,14 @@ module ConfigurationBundles
       definition = bundle_definition(variant_by_experiment_id)
       fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
       prediction = surrogate_model.predict(bundle_definition: definition, fingerprint: fingerprint)
-      acquisition_score = prediction.mean_quality_score + (EXPLORATION_WEIGHT * prediction.uncertainty)
+      acquisition_score = prediction.mean_objective_score + (EXPLORATION_WEIGHT * prediction.uncertainty)
 
       Selection.new(
         definition: definition,
         fingerprint: fingerprint,
         variant_by_experiment_id: variant_by_experiment_id,
         score_inputs: ScoreInputs.new(
+          predicted_objective_score: prediction.mean_objective_score,
           predicted_quality_score: prediction.mean_quality_score,
           uncertainty: prediction.uncertainty,
           sample_count: prediction.sample_count,
@@ -113,6 +115,7 @@ module ConfigurationBundles
     def exploitative_selection(selections)
       selections.max_by do |selection|
         [
+          selection.score_inputs.predicted_objective_score,
           selection.score_inputs.predicted_quality_score,
           selection.score_inputs.acquisition_score
         ]
@@ -123,6 +126,7 @@ module ConfigurationBundles
       selections.max_by do |selection|
         [
           selection.score_inputs.acquisition_score,
+          selection.score_inputs.predicted_objective_score,
           selection.score_inputs.predicted_quality_score
         ]
       end

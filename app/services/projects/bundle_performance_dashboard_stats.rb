@@ -65,13 +65,15 @@ module Projects
         rows = bundle_outcomes_scope
           .joins(:configuration_bundle)
           .group("configuration_bundles.id")
-          .order(Arel.sql("AVG(bundle_outcomes.quality_score) DESC NULLS LAST, COUNT(bundle_outcomes.id) DESC"))
+          .order(Arel.sql("#{average_objective_score_sql} DESC NULLS LAST, AVG(bundle_outcomes.quality_score) DESC NULLS LAST, COUNT(bundle_outcomes.id) DESC"))
           .limit(MAX_BUNDLE_ROWS)
           .pluck(
             Arel.sql("configuration_bundles.id"),
             Arel.sql("COUNT(bundle_outcomes.id)"),
             Arel.sql("COUNT(bundle_outcomes.quality_score)"),
+            Arel.sql(average_objective_score_sql),
             Arel.sql("AVG(bundle_outcomes.quality_score)"),
+            Arel.sql(average_quality_per_dollar_sql),
             Arel.sql("COUNT(*) FILTER (WHERE bundle_outcomes.success)"),
             Arel.sql("AVG(bundle_outcomes.cost_cents)"),
             Arel.sql("AVG(bundle_outcomes.duration_seconds)"),
@@ -84,7 +86,7 @@ module Projects
           .where(id: rows.map(&:first))
           .index_by(&:id)
 
-        rows.filter_map do |bundle_id, outcome_count, quality_count, avg_quality, success_count, avg_cost, avg_duration, avg_tokens, last_seen_at|
+        rows.filter_map do |bundle_id, outcome_count, quality_count, avg_objective, avg_quality, avg_quality_per_dollar, success_count, avg_cost, avg_duration, avg_tokens, last_seen_at|
           bundle = bundles_by_id[bundle_id]
           next unless bundle
 
@@ -95,7 +97,9 @@ module Projects
             bundle: bundle,
             outcome_count: outcome_count,
             quality_sample_count: quality_count,
+            avg_objective_score: avg_objective&.to_f,
             avg_quality_score: avg_quality&.to_f,
+            avg_quality_per_dollar: avg_quality_per_dollar&.to_f,
             success_rate: outcome_count.zero? ? nil : success_count.to_f / outcome_count,
             avg_cost_cents: avg_cost&.to_f&.round,
             avg_duration_seconds: avg_duration&.to_f&.round,
@@ -157,23 +161,23 @@ module Projects
     end
 
     def tradeoff_frontier
-      candidates = all_bundle_quality_cost.select { |b| b[:avg_quality_score].present? && b[:avg_cost_cents].present? }
+      candidates = all_bundle_quality_cost.select { |b| b[:avg_objective_score].present? && b[:avg_cost_cents].present? }
       return [] if candidates.empty?
 
       pareto_bundles = candidates.reject do |bundle|
         candidates.any? do |other|
           next if other.equal?(bundle)
 
-          other[:avg_quality_score] >= bundle[:avg_quality_score] &&
+          other[:avg_objective_score] >= bundle[:avg_objective_score] &&
             other[:avg_cost_cents] <= bundle[:avg_cost_cents] &&
             (
-              other[:avg_quality_score] > bundle[:avg_quality_score] ||
+              other[:avg_objective_score] > bundle[:avg_objective_score] ||
               other[:avg_cost_cents] < bundle[:avg_cost_cents]
             )
         end
       end
 
-      pareto_bundles.sort_by { |bundle| [ -bundle[:avg_quality_score], bundle[:avg_cost_cents] ] }
+      pareto_bundles.sort_by { |bundle| [ -bundle[:avg_objective_score], bundle[:avg_cost_cents] ] }
     end
 
     def all_bundle_quality_cost
@@ -183,6 +187,7 @@ module Projects
           .group("configuration_bundles.id")
           .pluck(
             Arel.sql("configuration_bundles.id"),
+            Arel.sql(average_objective_score_sql),
             Arel.sql("AVG(bundle_outcomes.quality_score)"),
             Arel.sql("AVG(bundle_outcomes.cost_cents)"),
             Arel.sql("AVG(bundle_outcomes.tokens_used)")
@@ -192,12 +197,13 @@ module Projects
           .where(id: rows.map(&:first))
           .index_by(&:id)
 
-        rows.filter_map do |bundle_id, avg_quality, avg_cost, avg_tokens|
+        rows.filter_map do |bundle_id, avg_objective, avg_quality, avg_cost, avg_tokens|
           bundle = bundles_by_id[bundle_id]
           next unless bundle
 
           {
             bundle: bundle,
+            avg_objective_score: avg_objective&.to_f,
             avg_quality_score: avg_quality&.to_f,
             avg_cost_cents: avg_cost&.to_f&.round,
             avg_tokens_used: avg_tokens&.to_f&.round
@@ -324,6 +330,7 @@ module Projects
 
       {
         acquisition_score: selection.score_inputs.acquisition_score.to_f,
+        predicted_objective_score: selection.score_inputs.predicted_objective_score.to_f,
         predicted_quality_score: selection.score_inputs.predicted_quality_score.to_f,
         uncertainty: uncertainty,
         confidence_proxy: 1.0 - uncertainty.clamp(0.0, 1.0),
@@ -354,6 +361,88 @@ module Projects
       "#{prefix}: #{parsed_value.inspect}"
     rescue JSON::ParserError
       "#{variant.is_control ? 'Control' : 'Variant'}: invalid JSON"
+    end
+
+    def average_objective_score_sql
+      <<~SQL.squish
+        AVG(
+          COALESCE(
+            NULLIF(bundle_outcomes.metrics ->> 'objective_score', '')::double precision,
+            #{objective_score_fallback_sql}
+          )
+        )
+      SQL
+    end
+
+    def average_quality_per_dollar_sql
+      <<~SQL.squish
+        AVG(
+          COALESCE(
+            NULLIF(bundle_outcomes.metrics ->> 'quality_per_dollar', '')::double precision,
+            CASE
+              WHEN bundle_outcomes.quality_score IS NULL OR bundle_outcomes.cost_cents IS NULL THEN NULL
+              ELSE bundle_outcomes.quality_score / GREATEST(bundle_outcomes.cost_cents / 100.0, 0.01)
+            END
+          )
+        )
+      SQL
+    end
+
+    def objective_score_fallback_sql
+      <<~SQL.squish
+        ROUND(
+          (
+            (#{optimizer_weights[:quality]} * COALESCE(LEAST(GREATEST(bundle_outcomes.quality_score, 0.0), 1.0), 0.0)) +
+            (#{optimizer_weights[:cost]} * #{normalized_inverse_sql("bundle_outcomes.cost_cents", optimizer_reference_cost_cents)}) +
+            (#{optimizer_weights[:speed]} * #{normalized_inverse_sql("bundle_outcomes.duration_seconds", optimizer_reference_duration_seconds)})
+          )::numeric,
+          4
+        )::double precision
+      SQL
+    end
+
+    def normalized_inverse_sql(column_name, reference)
+      <<~SQL.squish
+        CASE
+          WHEN #{column_name} IS NULL THEN 0.0
+          ELSE #{reference} / (GREATEST(#{column_name}, 0.0) + #{reference})
+        END
+      SQL
+    end
+
+    def optimizer_weights
+      @optimizer_weights ||= begin
+        configured = project_optimizer_setting("weights")
+        PromptEvolution::FitnessFunction.new(samples: [], weights: configured)
+          .score
+          .weights
+      end
+    end
+
+    def optimizer_reference_cost_cents
+      @optimizer_reference_cost_cents ||= positive_optimizer_setting(
+        project_optimizer_setting("reference_cost_cents"),
+        PromptEvolution::FitnessFunction::DEFAULT_REFERENCE_COST_CENTS
+      )
+    end
+
+    def optimizer_reference_duration_seconds
+      @optimizer_reference_duration_seconds ||= positive_optimizer_setting(
+        project_optimizer_setting("reference_duration_seconds"),
+        PromptEvolution::FitnessFunction::DEFAULT_REFERENCE_DURATION_SECONDS
+      )
+    end
+
+    def project_optimizer_setting(*path)
+      settings = project.fitness_settings
+      return unless settings.is_a?(Hash)
+
+      settings.deep_stringify_keys.dig("configuration_bundle_optimizer", *path)
+    end
+
+    def positive_optimizer_setting(value, fallback)
+      numeric = Float(value, exception: false)
+      numeric&.positive? ? numeric : fallback.to_f
     end
   end
 end
