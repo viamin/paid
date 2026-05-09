@@ -32,12 +32,40 @@ module Activities
 
       github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
-      synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
-      parse_issue_relationships(project, synced_issues)
-      enhance_issue_rechecks = detect_enhance_issue_rechecks(project, synced_issues)
-      closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
-      stale_pr_count = reconcile_open_pull_requests(project, client) if incremental && !truncated
-      stale_issue_count = reconcile_open_issues(project, client) if incremental && !truncated
+      synced_issues = nil
+      sync_changed = false
+      closed_count = 0
+      stale_pr_count = nil
+      stale_issue_count = nil
+      enhance_issue_rechecks = []
+
+      Project.suppress_broadcasts do
+        synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
+        sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
+        relationship_changes = parse_issue_relationships(project, synced_issues)
+        sync_changed ||= relationship_changes
+
+        enhance_issue_result = detect_enhance_issue_rechecks(project, synced_issues)
+        enhance_issue_rechecks = enhance_issue_result[:rechecks]
+        sync_changed ||= enhance_issue_result[:changed]
+
+        closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
+        sync_changed ||= closed_count.positive?
+
+        if incremental && !truncated
+          stale_pr_result = reconcile_open_pull_requests(project, client)
+          stale_pr_count = stale_pr_result[:closed_count]
+          sync_changed ||= stale_pr_result[:changed]
+
+          stale_issue_result = reconcile_open_issues(project, client)
+          stale_issue_count = stale_issue_result[:closed_count]
+          sync_changed ||= stale_issue_result[:changed]
+        end
+      end
+
+      if sync_changed
+        project.broadcast_project_show_refresh
+      end
 
       if truncated && incremental
         # Incremental fetches sort ascending (oldest-updated first), so a
@@ -247,19 +275,25 @@ module Activities
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
-        github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels }
+        github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
+        changed: issue.previous_changes.present? }
     end
 
     def detect_enhance_issue_rechecks(project, synced_issues)
       label = project.enhance_issue_needs_input_label_name
-      synced_issues.filter_map do |issue_data|
+      changed = false
+
+      rechecks = synced_issues.filter_map do |issue_data|
         next unless Array(issue_data[:removed_labels]).include?(label)
 
         issue = project.issues.find(issue_data[:id])
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
 
+        changed = true
         enqueue_enhance_issue_recheck(project, issue)
       end
+
+      { rechecks: rechecks, changed: changed }
     end
 
     def enhance_issue_needs_input?(project, issue_data)
@@ -415,14 +449,11 @@ module Activities
         )
       end
 
-      # ParseParentChild returns true only when sync_children changed rows
-      # via update_all (which bypasses callbacks). sync_parent uses update!
-      # and triggers its own after_update_commit broadcasts, so we only need
-      # a manual broadcast for the update_all path.
-      project.broadcast_issues_update if parent_child_changed
-
+      # ParseParentChild returns true when either child-list reconciliation or
+      # inline parent declarations changed visible issue relationships.
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
-      resolve_external_dependencies(project, synced_numbers)
+      dependency_changed = resolve_external_dependencies(project, synced_numbers)
+      parent_child_changed || dependency_changed
     end
 
     def relationship_parse_candidates(project)
@@ -451,12 +482,15 @@ module Activities
         .where(github_number: scope.select(:depends_on_number))
         .index_by(&:github_number)
 
+      changed = false
+
       scope.find_each do |dep|
         resolved_issue = issues_by_number[dep.depends_on_number]
         next unless resolved_issue
 
         if IssueDependency.exists?(issue_id: dep.issue_id, depends_on_issue_id: resolved_issue.id)
           dep.destroy!
+          changed = true
           next
         end
 
@@ -467,6 +501,7 @@ module Activities
             depends_on_repo: nil,
             depends_on_number: nil
           )
+          changed = true
         rescue ActiveRecord::RecordNotUnique => e
           logger.warn(
             message: "github_sync.resolve_external_dependency_duplicate",
@@ -478,8 +513,11 @@ module Activities
             error: e.message
           )
           dep.destroy!
+          changed = true
         end
       end
+
+      changed
     rescue => e
       logger.warn(
         message: "github_sync.resolve_external_dependencies_failed",
@@ -487,6 +525,7 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+      false
     end
 
     # Returns trusted comment bodies, or nil if comments could not be fetched.
@@ -574,11 +613,6 @@ module Activities
       if count > 0
         stale_issues.update_all(github_state: "closed", updated_at: Time.current)
 
-        # update_all bypasses ActiveRecord callbacks, so manually broadcast
-        # the updated lists to remove closed items from connected browsers.
-        project.broadcast_issues_update
-        project.broadcast_pull_requests_update
-
         logger.info(
           message: "github_sync.closed_stale_issues",
           project_id: project.id,
@@ -591,11 +625,16 @@ module Activities
 
     def reconcile_open_pull_requests(project, client)
       open_pr_numbers, truncated = fetch_open_pull_request_numbers(client, project.full_name)
-      return 0 if truncated
+      return { changed: false, closed_count: 0 } if truncated
 
-      backfill_open_pull_requests(project, client, open_pr_numbers)
-      resolve_external_dependencies(project, open_pr_numbers) if open_pr_numbers.any?
-      close_stale_pull_requests(project, open_pr_numbers)
+      backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
+      dependency_changed = open_pr_numbers.any? && resolve_external_dependencies(project, open_pr_numbers)
+      closed_count = close_stale_pull_requests(project, open_pr_numbers)
+
+      {
+        changed: backfilled_count.positive? || dependency_changed || closed_count.positive?,
+        closed_count: closed_count
+      }
     end
 
     def fetch_open_pull_request_numbers(client, repo_full_name)
@@ -627,7 +666,7 @@ module Activities
     end
 
     def backfill_open_pull_requests(project, client, open_pr_numbers)
-      return if open_pr_numbers.empty?
+      return 0 if open_pr_numbers.empty?
 
       existing_open_numbers = project.issues
         .pull_requests_only
@@ -635,10 +674,14 @@ module Activities
         .pluck(:github_number)
         .to_set
 
-      (open_pr_numbers - existing_open_numbers.to_a).each do |number|
+      missing_numbers = open_pr_numbers - existing_open_numbers.to_a
+
+      missing_numbers.each do |number|
         github_issue = client.issue(project.full_name, number)
         sync_issue(project, github_issue)
       end
+
+      missing_numbers.size
     end
 
     def close_stale_pull_requests(project, open_pr_numbers)
@@ -651,8 +694,6 @@ module Activities
       return 0 if count.zero?
 
       stale_prs.update_all(github_state: "closed", updated_at: Time.current)
-      project.broadcast_issues_update
-      project.broadcast_pull_requests_update
 
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
@@ -668,7 +709,7 @@ module Activities
     # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API
     # cost, since issue counts can be much larger than PR counts.
     def reconcile_open_issues(project, client)
-      return 0 unless issue_reconciliation_due?(project)
+      return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
 
@@ -679,10 +720,10 @@ module Activities
           message: "github_sync.issue_reconciliation_skipped_truncated",
           project_id: project.id
         )
-        return 0
+        return { changed: false, closed_count: 0 }
       end
 
-      backfill_open_issues(project, client, open_numbers)
+      backfilled_count = backfill_open_issues(project, client, open_numbers)
 
       stale = project.issues
         .where(github_state: "open", is_pull_request: false, source: Issue::GITHUB_SOURCE)
@@ -691,7 +732,6 @@ module Activities
       count = stale.count
       if count > 0
         stale.update_all(github_state: "closed", updated_at: Time.current)
-        project.broadcast_issues_update
 
         logger.info(
           message: "github_sync.reconciled_stale_issues",
@@ -700,21 +740,28 @@ module Activities
         )
       end
 
-      count
+      {
+        changed: backfilled_count.positive? || count.positive?,
+        closed_count: count
+      }
     end
 
     def backfill_open_issues(project, client, open_issue_numbers)
-      return if open_issue_numbers.empty?
+      return 0 if open_issue_numbers.empty?
 
       existing_open_numbers = project.issues
         .where(github_state: "open", is_pull_request: false, github_number: open_issue_numbers)
         .pluck(:github_number)
         .to_set
 
-      (open_issue_numbers - existing_open_numbers.to_a).each do |number|
+      missing_numbers = open_issue_numbers - existing_open_numbers.to_a
+
+      missing_numbers.each do |number|
         github_issue = client.issue(project.full_name, number)
         sync_issue(project, github_issue)
       end
+
+      missing_numbers.size
     end
 
     def issue_reconciliation_due?(project)
