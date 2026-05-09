@@ -79,6 +79,30 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       expect(decision.metadata["prompt_source"]).to eq("fallback_prompt")
     end
 
+    it "persists decomposition strategy decisions with workflow context" do
+      decision = described_class.call(**payload.merge(
+        decision_key: "wf-123:decomposition_strategy:final",
+        decision_type: "decomposition_strategy",
+        outcome: "llm_fallback_after_policy_failure",
+        metadata: payload[:metadata].merge(
+          workflow_step: "decompose_feature",
+          policy_source: "experiment",
+          policy_error: { error_message: "scope failure" }
+        )
+      ))
+
+      expect(decision.decision_type).to eq("decomposition_strategy")
+      expect(decision.metadata).to include(
+        "workflow_step" => "decompose_feature",
+        "policy_source" => "experiment",
+        "policy_error" => include("error_message" => "scope failure")
+      )
+      expect(decision.hints).to include(
+        "task_count" => 3,
+        "dependency_edges" => 1
+      )
+    end
+
     it "mirrors the decomposition record into orchestration decisions" do
       described_class.call(**payload)
 

@@ -8,6 +8,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
   let(:issue) { create(:issue, project: project, title: "Add OAuth", body: "Implement OAuth 2.0 login") }
 
   describe "#execute" do
+    let(:logged_decision) { build_stubbed(:decomposition_decision, decision_type: "decomposition_strategy") }
     let(:llm_response) do
       instance_double(
         AgentHarness::Response,
@@ -33,27 +34,81 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
     before do
       allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      allow(Orchestration::DecompositionDecisions::Log).to receive(:call).and_return(logged_decision)
       allow(Prompt).to receive(:resolve).and_return(nil)
       # Default: preserve CLI transport so existing exact-match expectations
       # pass. Individual specs flip this on to prove text-mode routing.
       allow(Llm::TextMode).to receive(:options).and_return({})
     end
 
-    it "returns parsed tasks from LLM output" do
-      result = activity.execute(
+    def execute_with_workflow_context(workflow_name:, workflow_id:)
+      activity.execute(
         project_id: project.id,
         issue_id: issue.id,
-        knowledge_context: knowledge_context
+        knowledge_context: knowledge_context,
+        workflow_name: workflow_name,
+        workflow_id: workflow_id
       )
+    end
 
-      tasks = result[:tasks]
+    def expect_llm_strategy_decision_logged(workflow_name:, workflow_id:, outcome:, prompt_source:)
+      expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+        hash_including(
+          workflow_name: workflow_name,
+          workflow_id: workflow_id,
+          decision_type: "decomposition_strategy",
+          outcome: outcome,
+          metadata: hash_including(
+            workflow_step: "decompose_feature",
+            prompt_source: prompt_source,
+            activity_boundaries: [ "Activities::DecomposeFeatureActivity" ]
+          )
+        )
+      )
+    end
+
+    def expect_policy_decomposition_logged(workflow_name:, workflow_id:, outcome:)
+      expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+        hash_including(
+          workflow_name: workflow_name,
+          workflow_id: workflow_id,
+          outcome: outcome,
+          metadata: hash_including(
+            prompt_source: "policy_service",
+            policy_attempted: true
+          )
+        )
+      )
+    end
+
+    def expect_oauth_tasks(tasks)
       expect(tasks.size).to eq(3)
       expect(tasks[0][:title]).to eq("Add OAuth migration")
       expect(tasks[0][:dependencies]).to eq([])
       expect(tasks[0][:parallel_group]).to eq(0)
       expect(tasks[1][:dependencies]).to eq([ 0 ])
       expect(tasks[2][:dependencies]).to eq([ 1 ])
+    end
+
+    it "returns parsed tasks from LLM output" do
+      result = execute_with_workflow_context(
+        workflow_name: "Workflows::PlanningWorkflow",
+        workflow_id: "planning-wf-1"
+      )
+
+      expect_oauth_tasks(result[:tasks])
       expect(result[:prompt_source]).to eq("fallback_prompt")
+      expect_llm_strategy_decision_logged(
+        workflow_name: "Workflows::PlanningWorkflow",
+        workflow_id: "planning-wf-1",
+        outcome: "llm_generated_plan",
+        prompt_source: "fallback_prompt"
+      )
+      expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+        hash_including(
+          plan_data: hash_including(tasks: array_including(hash_including(title: "Add OAuth migration")))
+        )
+      )
     end
 
     context "when policy-based decomposition applies" do
@@ -67,15 +122,19 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
 
       it "uses Coordination::DecompositionService instead of the LLM path" do
-        result = activity.execute(
-          project_id: project.id,
-          issue_id: issue.id,
-          knowledge_context: knowledge_context
+        result = execute_with_workflow_context(
+          workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+          workflow_id: "orchestration-wf-1"
         )
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
         expect(AgentHarness).not_to have_received(:send_message)
+        expect_policy_decomposition_logged(
+          workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+          workflow_id: "orchestration-wf-1",
+          outcome: "policy_decomposed"
+        )
       end
     end
 
@@ -124,13 +183,21 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         result = activity.execute(
           project_id: project.id,
           issue_id: issue.id,
-          knowledge_context: knowledge_context
+          knowledge_context: knowledge_context,
+          workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+          workflow_id: "orchestration-wf-2"
         )
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks]).to eq([])
         expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
         expect(AgentHarness).not_to have_received(:send_message)
+        expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+          hash_including(
+            outcome: "policy_skipped",
+            plan_data: hash_including(tasks: [])
+          )
+        )
       end
     end
 
@@ -144,7 +211,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         result = activity.execute(
           project_id: project.id,
           issue_id: issue.id,
-          knowledge_context: knowledge_context
+          knowledge_context: knowledge_context,
+          workflow_name: "Workflows::PlanningWorkflow",
+          workflow_id: "planning-wf-2"
         )
 
         expect(result[:prompt_source]).to eq("fallback_prompt")
@@ -182,7 +251,13 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
     context "when policy decomposition raises" do
       let(:logger) { instance_spy(Logger) }
-      let(:scope_result) { double(sub_components: [ "api" ]) }
+      let(:scope_result) do
+        double(
+          should_decompose?: true,
+          confidence: 0.9,
+          sub_components: [ "api" ]
+        )
+      end
 
       before do
         allow(activity).to receive(:logger).and_return(logger)
@@ -192,10 +267,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
 
       it "logs and falls back to LLM decomposition" do
-        result = activity.execute(
-          project_id: project.id,
-          issue_id: issue.id,
-          knowledge_context: knowledge_context
+        result = execute_with_workflow_context(
+          workflow_name: "Workflows::PlanningWorkflow",
+          workflow_id: "planning-wf-3"
         )
 
         expect(result[:prompt_source]).to eq("fallback_prompt")
@@ -205,6 +279,12 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           message: "planning.policy_decomposition_failed",
           error_class: "StandardError",
           error: "decomposition failure"
+        )
+        expect_llm_strategy_decision_logged(
+          workflow_name: "Workflows::PlanningWorkflow",
+          workflow_id: "planning-wf-3",
+          outcome: "llm_fallback_after_policy_failure",
+          prompt_source: "fallback_prompt"
         )
       end
     end
@@ -320,9 +400,18 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           activity.execute(
             project_id: project.id,
             issue_id: issue.id,
-            knowledge_context: knowledge_context
+            knowledge_context: knowledge_context,
+            workflow_name: "Workflows::PlanningWorkflow",
+            workflow_id: "planning-wf-4"
           )
         }.to raise_error(Temporalio::Error::ApplicationError, /LLM decomposition failed/)
+        expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+          hash_including(
+            decision_key: "planning-wf-4:decomposition_strategy:failure",
+            outcome: "llm_decomposition_failed",
+            error_details: hash_including(error_message: "LLM decomposition failed: Rate limited")
+          )
+        )
       end
     end
 
@@ -334,9 +423,17 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           activity.execute(
             project_id: project.id,
             issue_id: issue.id,
-            knowledge_context: knowledge_context
+            knowledge_context: knowledge_context,
+            workflow_name: "Workflows::PlanningWorkflow",
+            workflow_id: "planning-wf-5"
           )
         }.to raise_error(Temporalio::Error::ApplicationError, /Failed to parse/)
+        expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+          hash_including(
+            outcome: "llm_decomposition_failed",
+            error_details: hash_including(error_message: a_string_including("Failed to parse"))
+          )
+        )
       end
     end
 
