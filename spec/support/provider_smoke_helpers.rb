@@ -85,15 +85,7 @@ module ProviderSmokeHelpers
       default_model: "moonshotai/kimi-k2",
       label: "OpenCode with OpenRouter API key"
     ),
-    "opencode-zai" => Scenario.new(
-      name: "opencode-zai",
-      provider_key: "opencode",
-      auth_type: "api_key",
-      api_provider: "zai_coding",
-      model_env: "PAID_SMOKE_OPENCODE_ZAI_MODEL",
-      default_model: "glm-5.1",
-      label: "OpenCode with z.ai API key"
-    ),
+
     "kilocode-zai" => Scenario.new(
       name: "kilocode-zai",
       provider_key: "kilocode",

@@ -6,6 +6,8 @@ module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
 
+    include Containers::QualityHooks
+
     # Returns true if the given provider key can be executed inside the
     # container. Replaces the former AGENT_COMMANDS.key? check. Container
     # executability is gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS
@@ -1969,25 +1971,8 @@ module Activities
     end
 
     def install_quality_hooks_for_fallback(git_ops, agent_run)
-      language = detect_project_language(agent_run.project)
-      lint_cmd = Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language]
-      test_cmd = Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language]
-      return unless lint_cmd || test_cmd
-
-      if Activities::CloneRepoActivity::DB_DEPENDENT_TEST_LANGUAGES.include?(language) &&
-          !agent_run.project.has_running_database_container?
-        test_cmd = nil
-      end
-
-      git_ops.install_git_hooks(
-        lint_command: lint_cmd || "true",
-        test_command: test_cmd || "true"
-      )
-    end
-
-    def detect_project_language(project)
-      language = project.detected_language if project.respond_to?(:detected_language)
-      language.presence || "ruby"
+      # Delegate to the shared concern method to avoid duplication
+      install_quality_hooks(git_ops, agent_run)
     end
 
     def container_exit_diagnostics(container_service)

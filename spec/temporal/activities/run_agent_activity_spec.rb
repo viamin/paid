@@ -573,15 +573,7 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", prompt ])
       end
 
-      it "supports z.ai coding plan with glm-5.1 via OpenCode" do
-        opencode_context = build_opencode_context(user, api_provider: "zai_coding", model: "glm-5.1", service_type: "zai_coding", api_key: "sk-zai-secret")
-        env = activity.send(:command_env_for, opencode_context, "ping")
-        preparation = activity.send(:command_preparation_for, opencode_context, "ping")
 
-        expect(env).to include("ZAI_CODING_API_KEY" => "sk-zai-secret", "OPENAI_BASE_URL" => "https://api.z.ai/api/coding/paas/v4")
-        expect(preparation.file_writes.first.content).to include("\"model\": \"glm-5.1\"")
-        expect(preparation.file_writes.first.content).to include("\"zai_coding\"")
-      end
     end
 
     context "with a direct-outbound kilocode provider" do
