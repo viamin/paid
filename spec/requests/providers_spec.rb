@@ -765,7 +765,7 @@ RSpec.describe "Providers" do
       delete provider_path(provider)
 
       expect(response).to redirect_to(providers_path)
-      expect(Provider.find_by(id: provider.id)).to be_nil
+      expect(Provider.kept_only.find_by(id: provider.id)).to be_nil
       expect(Provider.with_discarded.find(provider.id)).to be_discarded
     end
   end

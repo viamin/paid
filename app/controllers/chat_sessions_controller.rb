@@ -272,7 +272,7 @@ class ChatSessionsController < ApplicationController
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
     @new_chat_session = ChatSession.new(mode: "api")
-    @available_providers = current_user.providers.ordered
+    @available_providers = current_user.providers.kept_only.ordered
     @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)
   end

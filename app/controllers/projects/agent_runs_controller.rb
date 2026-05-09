@@ -854,8 +854,8 @@ module Projects
             end
           end
 
-          providers_by_id = owner.providers.where(id: routing_ids).index_by(&:id)
-          providers_by_key = owner.providers.where(provider_key: plain_keys).ordered
+          providers_by_id = owner.providers.kept_only.where(id: routing_ids).index_by(&:id)
+          providers_by_key = owner.providers.kept_only.where(provider_key: plain_keys).ordered
             .group_by(&:provider_key)
 
           identifiers.filter_map do |identifier|

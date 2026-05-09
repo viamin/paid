@@ -60,13 +60,12 @@ class Provider < ApplicationRecord
     "glm-4.5-air" => "low"
   }.freeze
 
-  default_scope -> { kept }
-
   belongs_to :user
   belongs_to :provider_api_key, optional: true
 
   has_many :chat_sessions, dependent: :nullify
 
+  scope :kept_only, -> { kept }
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
   scope :ordered, -> { order(:provider_key, :auth_type, :name, :id) }
@@ -395,16 +394,16 @@ class Provider < ApplicationRecord
     key = default_provider_key
     return unless key
 
-    user.providers.find_or_create_by!(provider_key: key, auth_type: "subscription")
+    user.providers.kept_only.find_or_create_by!(provider_key: key, auth_type: "subscription")
   rescue ActiveRecord::RecordNotUnique
-    user.providers.find_by!(provider_key: key, auth_type: "subscription")
+    user.providers.kept_only.find_by!(provider_key: key, auth_type: "subscription")
   end
 
   def self.first_enabled_for_owner(owner)
     return unless owner
 
     executable_keys = ProviderSupport.container_executable_provider_keys
-    owner.providers.for_agent_runs.where(provider_key: executable_keys).ordered.first
+    owner.providers.kept_only.for_agent_runs.where(provider_key: executable_keys).ordered.first
   end
 
   def self.display_name_for(provider_key)
@@ -476,14 +475,14 @@ class Provider < ApplicationRecord
     return nil if identifier.blank?
 
     if routing_key?(identifier)
-      relation = include_discarded ? with_discarded : all
+      relation = include_discarded ? with_discarded : kept_only
       relation.where(user: user).find_by(id: id_from_routing_key(identifier))
     else
       if include_discarded
-        preferred_identifier_match(all.where(user: user, provider_key: identifier).ordered) ||
+        preferred_identifier_match(kept_only.where(user: user, provider_key: identifier).ordered) ||
           preferred_identifier_match(with_discarded.where(user: user, provider_key: identifier).discarded.ordered)
       else
-        preferred_identifier_match(all.where(user: user, provider_key: identifier).ordered)
+        preferred_identifier_match(kept_only.where(user: user, provider_key: identifier).ordered)
       end
     end
   end
@@ -515,8 +514,8 @@ class Provider < ApplicationRecord
   # Updates the enabled_for_fallback flag on each of the user's providers
   # based on the given set of enabled provider identifiers.
   def self.update_fallback_flags(user, enabled_keys)
-    user.providers.transaction do
-      user.providers.find_each do |provider|
+    user.providers.kept_only.transaction do
+      user.providers.kept_only.find_each do |provider|
         new_value = enabled_keys.any? { |identifier| provider.matches_identifier?(identifier) }
         next if provider.enabled_for_fallback? == new_value
 
@@ -574,7 +573,7 @@ class Provider < ApplicationRecord
   def must_keep_at_least_one_agent_run_provider
     return unless user
     return unless will_save_change_to_enabled_for_agent_runs?(from: true, to: false)
-    return if user.providers.where.not(id: id).for_agent_runs.exists?
+    return if user.providers.kept_only.where.not(id: id).for_agent_runs.exists?
 
     errors.add(:enabled_for_agent_runs, "must keep at least one provider enabled for agent runs")
   end
@@ -582,7 +581,7 @@ class Provider < ApplicationRecord
   def prevent_destroying_last_agent_run_provider
     return if destroyed_by_association.present?
     return unless enabled_for_agent_runs?
-    return if user.providers.where.not(id: id).for_agent_runs.exists?
+    return if user.providers.kept_only.where.not(id: id).for_agent_runs.exists?
 
     errors.add(:base, "Cannot delete the last provider enabled for agent runs")
     throw(:abort)
@@ -708,7 +707,7 @@ class Provider < ApplicationRecord
     return unless user
 
     normalized_name = name.to_s
-    duplicate = user.providers.api_key.where(
+    duplicate = user.providers.kept_only.api_key.where(
       provider_key: provider_key,
       provider_api_key_id: provider_api_key_id
     ).where.not(id: id).where("COALESCE(name, '') = ?", normalized_name).exists?

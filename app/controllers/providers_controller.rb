@@ -204,7 +204,7 @@ class ProvidersController < ApplicationController
 
   def load_provider_options
     addable_keys = Provider.addable_provider_keys
-    existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
+    existing_subscription_keys = current_user.providers.kept_only.subscription.pluck(:provider_key)
 
     # Subscription providers: only show keys not yet added
     @subscription_provider_options = if @provider&.persisted?
@@ -316,7 +316,7 @@ class ProvidersController < ApplicationController
     default_key = Provider.default_provider_key
     return [] unless default_key
 
-    default = current_user.providers.find_or_initialize_by(provider_key: default_key, auth_type: "subscription")
+    default = current_user.providers.kept_only.find_or_initialize_by(provider_key: default_key, auth_type: "subscription")
     default.enabled_for_agent_runs = true
     default.enabled_for_fallback = true if default.new_record?
 
@@ -448,7 +448,7 @@ class ProvidersController < ApplicationController
     invalid = false
     Provider.transaction do
       weights.each do |provider_id, weight_value|
-        provider = current_user.providers.find_by(id: provider_id)
+        provider = current_user.providers.kept_only.find_by(id: provider_id)
         next unless provider
 
         coerced = Integer(weight_value, exception: false)
@@ -494,7 +494,7 @@ class ProvidersController < ApplicationController
 
   def enabled_agent_provider_identifiers
     executable_keys = ProviderSupport.container_executable_provider_keys
-    providers = current_user.providers.for_agent_runs
+    providers = current_user.providers.kept_only.for_agent_runs
       .where(provider_key: executable_keys)
       .ordered
     UserSetting.provider_identifiers_for(providers, identifiers: true)
@@ -507,13 +507,13 @@ class ProvidersController < ApplicationController
     return [] if identifiers.blank?
 
     ids = identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
-    providers_by_id = current_user.providers.where(id: ids).index_by(&:id)
+    providers_by_id = current_user.providers.kept_only.where(id: ids).index_by(&:id)
     ids.filter_map { |id| providers_by_id[id] }
   end
 
   def fallback_candidate_provider_identifiers
     executable_keys = ProviderSupport.container_executable_provider_keys
-    providers = current_user.providers.for_fallback
+    providers = current_user.providers.kept_only.for_fallback
       .where(provider_key: executable_keys)
       .ordered
     UserSetting.provider_identifiers_for(providers, identifiers: true)

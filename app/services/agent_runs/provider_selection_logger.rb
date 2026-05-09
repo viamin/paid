@@ -136,7 +136,7 @@ module AgentRuns
       owner = project.effective_owner
       return [] unless owner
 
-      owner.providers.ordered.select do |provider|
+      owner.providers.kept_only.ordered.select do |provider|
         provider.enabled_for_agent_runs? &&
           ProviderSupport.container_executable_provider_key?(provider.provider_key)
       end
