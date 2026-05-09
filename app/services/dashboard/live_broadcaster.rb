@@ -14,6 +14,11 @@ module Dashboard
     def call
       broadcast_live_stats
       broadcast_active_runs
+      # Paused runs are intentionally NOT broadcast here. The paused-runs
+      # partial calls policy(run).resume? per-run, which requires a request
+      # context (current_user) the broadcaster does not have. The section
+      # refreshes on full page load where the controller provides the
+      # correct policy check.
       broadcast_activity_stream
       broadcast_alert if alert_worthy?
     end
@@ -24,6 +29,8 @@ module Dashboard
 
     def broadcast_live_stats
       Rails.cache.delete("dashboard/live_stats/#{account.id}")
+      Rails.cache.delete_matched("dashboard/queue_preview/#{account.id}/*")
+      Rails.cache.delete_matched("dashboard/recent_activity/#{account.id}/*")
 
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,

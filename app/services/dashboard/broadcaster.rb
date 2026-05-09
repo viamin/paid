@@ -28,6 +28,8 @@ module Dashboard
     def invalidate_caches
       Rails.cache.delete("dashboard/live_stats/#{account.id}")
       Rails.cache.delete_matched("dashboard/stats/#{account.id}/*")
+      Rails.cache.delete_matched("dashboard/queue_preview/#{account.id}/*")
+      Rails.cache.delete_matched("dashboard/recent_activity/#{account.id}/*")
     end
 
     def broadcast_live_stats

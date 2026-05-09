@@ -871,6 +871,56 @@ RSpec.describe "Projects" do
         expect(response.body).to include(">Paused</span>")
       end
 
+      it "surfaces paused PR runs with an inline resume action" do
+        project = create(:project, account: account, github_token: github_token)
+        pr = create(:issue, :pull_request, project: project, github_number: 12, title: "Automated PR",
+          github_state: "open", labels: [ project.automation_label_name ])
+        run = create(:agent_run, :paused, project: project, issue: pr,
+          source_pull_request_number: pr.github_number, goal: "create_pr",
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { "details" => "Execution time limit of 3600s exceeded" })
+
+        get project_path(project)
+
+        expect(response.body).to include("Paused Work")
+        expect(response.body).to include("Paused by time limit")
+        expect(response.body).to include("Execution time limit of 3600s exceeded")
+        expect(response.body).to include(resume_project_agent_run_path(project, run))
+        expect(response.body).to include("Resume Run")
+      end
+
+      it "does not show a redundant generic paused badge when a paused PR run is present" do
+        project = create(:project, account: account, github_token: github_token)
+        pr = create(:issue, :pull_request, project: project, github_number: 14, title: "Guardrail-paused PR",
+          github_state: "open", labels: [ project.automation_label_name ], auto_continue_paused: true)
+        create(:agent_run, :paused, project: project, issue: pr,
+          source_pull_request_number: pr.github_number, goal: "create_pr",
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { "details" => "Execution time limit of 3600s exceeded" })
+
+        get project_path(project)
+
+        pr_row = Nokogiri::HTML(response.body).at_css(%(li[id="#{ActionView::RecordIdentifier.dom_id(pr)}"]))
+
+        expect(pr_row).to be_present
+        expect(pr_row.text).to include("Paused by time limit")
+        expect(pr_row.text).not_to include("PausedPaused")
+      end
+
+      it "surfaces paused issue runs with an inline resume action" do
+        project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: project, github_number: 25, title: "Fix sync bug")
+        run = create(:agent_run, :paused, project: project, issue: issue,
+          goal: "create_pr", guardrail_violation_type: "time_limit",
+          guardrail_context: { "details" => "Execution time limit of 3600s exceeded" })
+
+        get project_path(project)
+
+        expect(response.body).to include("Paused by time limit")
+        expect(response.body).to include(resume_project_agent_run_path(project, run))
+        expect(response.body).to include("Resume Run")
+      end
+
       it "hides Paused badge for paused PRs without automation label" do
         project = create(:project, account: account, github_token: github_token)
         create(:issue, :pull_request, project: project, github_number: 13, title: "Release PR",
