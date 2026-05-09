@@ -68,6 +68,34 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def create_synced_issue_from_github(project, github_issue, relationships_parsed_at: nil)
+    create(:issue,
+      project: project,
+      github_issue_id: github_issue.id,
+      github_number: github_issue.number,
+      title: github_issue.title,
+      body: github_issue.body,
+      github_creator_login: github_issue.user.login,
+      github_state: github_issue.state,
+      labels: [ "paid-build" ],
+      is_pull_request: false,
+      github_created_at: github_issue.created_at,
+      github_updated_at: github_issue.updated_at,
+      relationships_parsed_at: relationships_parsed_at)
+  end
+
+  def expect_single_project_list_broadcasts(project)
+    issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
+    pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
+
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+      .with(anything, :project_updates, hash_including(target: issues_target))
+      .once
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+      .with(anything, :project_updates, hash_including(target: pull_requests_target))
+      .once
+  end
+
   describe "#execute" do
     context "when issues are found" do
       let(:build_issue) do
@@ -1197,6 +1225,27 @@ RSpec.describe Activities::FetchIssuesActivity do
         parent = project.issues.find_by!(github_number: 60)
         child = project.issues.find_by!(github_number: 61)
         expect(child.parent_issue_id).to eq(parent.id)
+      end
+
+      it "treats comment-only parent changes as visible sync changes for the batched refresh" do
+        parent_issue.body = "Just a regular body"
+        child_issue.body = "Just a regular body"
+
+        create_synced_issue_from_github(project, parent_issue, relationships_parsed_at: parent_issue.updated_at)
+        create_synced_issue_from_github(project, child_issue)
+
+        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 61, pages: 2).and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
+        ])
+        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        child = project.issues.find_by!(github_number: 61)
+
+        expect(child.reload.parent_issue_id).to eq(parent.id)
+        expect_single_project_list_broadcasts(project)
       end
     end
 
