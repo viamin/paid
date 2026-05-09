@@ -21,7 +21,7 @@ class StrategyVersion < ApplicationRecord
 
   has_many :child_versions, class_name: "StrategyVersion", foreign_key: :parent_version_id, dependent: :nullify,
     inverse_of: :parent_version
-  has_many :orchestration_decisions, foreign_key: :strategy_version_id, inverse_of: :strategy_version, dependent: :nullify
+  has_many :orchestration_decisions, class_name: "OrchestrationDecision", foreign_key: :strategy_version_id, dependent: :nullify
 
   validates :version, presence: true,
     numericality: { only_integer: true, greater_than: 0 },

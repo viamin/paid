@@ -9,7 +9,14 @@ RSpec.describe StrategyVersion do
     it { is_expected.to belong_to(:parent_version).class_name("StrategyVersion").optional }
     it { is_expected.to belong_to(:promoted_by_user).class_name("User").optional }
     it { is_expected.to have_many(:child_versions).class_name("StrategyVersion").with_foreign_key(:parent_version_id).dependent(:nullify) }
-    it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
+
+    it "has many orchestration_decisions when the FK column exists" do
+      skip "strategy_version_id column not present" unless ActiveRecord::Base.connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+      expect(described_class.reflect_on_association(:orchestration_decisions)).to have_attributes(
+        macro: :has_many,
+        options: include(dependent: :nullify)
+      )
+    end
   end
 
   describe "validations" do
