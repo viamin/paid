@@ -69,7 +69,7 @@ module ScalingObservations
           rows = grouped.fetch(agent_count)
           previous = summaries.last
 
-          summaries << build_value_summary(agent_count:, observations: rows, previous:)
+          summaries << build_value_summary(agent_count:, rows:, previous:)
         end
 
         summaries
@@ -99,7 +99,9 @@ module ScalingObservations
     end
 
     def recommendation
-      @recommendation ||= begin
+      return @recommendation if defined?(@recommendation)
+
+      @recommendation = begin
         candidate = recommendable_values.max_by do |value|
           [
             value["success_rate"],
@@ -140,19 +142,19 @@ module ScalingObservations
       candidate.fetch("sample_count", 0) >= (min_samples * 2) ? "high" : "medium"
     end
 
-    def build_value_summary(agent_count:, observations:, previous:)
-      sample_count = observations.size
-      success_rate = rate(observations, &:success)
-      avg_duration_seconds = average(observations, &:duration_seconds)
-      avg_cost_cents = average(observations, &:total_cost_cents)
-      avg_parallelism_observed = average(observations, &:parallelism_observed)
+    def build_value_summary(agent_count:, rows:, previous:)
+      sample_count = rows.size
+      success_rate = rate(rows, &:success)
+      avg_duration_seconds = average(rows, &:duration_seconds)
+      avg_cost_cents = average(rows, &:total_cost_cents)
+      avg_parallelism_observed = average(rows, &:parallelism_observed)
       launch_rate = ratio(
-        observations.sum(&:agent_count_launched),
-        observations.sum(&:agent_count_planned)
+        rows.sum(&:agent_count_launched),
+        rows.sum(&:agent_count_planned)
       )
       blocked_rate = ratio(
-        observations.sum(&:agent_count_blocked),
-        observations.sum(&:agent_count_planned)
+        rows.sum(&:agent_count_blocked),
+        rows.sum(&:agent_count_planned)
       )
 
       marginal_duration_improvement_ratio = duration_improvement_ratio(previous, avg_duration_seconds)

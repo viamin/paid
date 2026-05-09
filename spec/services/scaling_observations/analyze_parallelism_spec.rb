@@ -30,6 +30,22 @@ RSpec.describe ScalingObservations::AnalyzeParallelism do
         )
       )
     end
+
+    it "memoizes an empty recommendation across repeated calls" do
+      seed_observations(project, 4,
+        durations: [ 205, 200 ],
+        costs: [ 340, 335 ],
+        launched: [ 3, 3 ],
+        blocked: [ 1, 1 ],
+        observed_parallelism: 3)
+
+      analyzer = described_class.new(observations: ScalingObservation.where(project: project), min_samples: 2)
+
+      expect(analyzer.send(:recommendation)).to be_nil
+      expect(analyzer.send(:recommendation)).to be_nil
+      expect(analyzer.call.status).to eq("collecting")
+      expect(analyzer.call.allocator_decision).to be_nil
+    end
   end
 
   def seed_recommendation_dataset(project)
