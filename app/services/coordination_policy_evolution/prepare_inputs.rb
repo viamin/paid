@@ -63,16 +63,6 @@ module CoordinationPolicyEvolution
         .where(created_at: lookback_days.days.ago..Time.current)
     end
 
-    def aggregates
-      @aggregates ||= scoped_decisions.pick(
-        Arel.sql("COUNT(*)"),
-        Arel.sql("COUNT(*) FILTER (WHERE outcome NOT IN ('#{noop_and_failure_outcomes_sql}'))"),
-        Arel.sql("COUNT(*) FILTER (WHERE outcome IN ('#{FAILURE_OUTCOMES.join("','")}'))"),
-        Arel.sql("COUNT(*) FILTER (WHERE outcome IN ('#{NOOP_OUTCOMES.join("','")}'))"),
-        Arel.sql("AVG(COALESCE((hints->>'task_count')::numeric, 0))")
-      )
-    end
-
     def successful_decisions
       @successful_decisions ||= scoped_decisions.where.not(outcome: NOOP_OUTCOMES + FAILURE_OUTCOMES)
     end
@@ -82,10 +72,10 @@ module CoordinationPolicyEvolution
     end
 
     def performance_summary
-      decision_count = aggregates[0]
-      success_count = aggregates[1]
-      failure_count = aggregates[2]
-      noop_count = aggregates[3]
+      decision_count = scoped_decisions.count
+      failure_count = count_outcomes(FAILURE_OUTCOMES)
+      noop_count = count_outcomes(NOOP_OUTCOMES)
+      success_count = decision_count - failure_count - noop_count
       classified_decision_count = success_count + failure_count
 
       {
@@ -97,8 +87,8 @@ module CoordinationPolicyEvolution
         noop_count: noop_count,
         success_rate: success_rate(classified_decision_count, success_count),
         lookback_days: lookback_days,
-        decision_type_counts: scoped_decisions.group(:decision_type).count,
-        outcome_counts: scoped_decisions.group(:outcome).count,
+        decision_type_counts: decision_type_counts,
+        outcome_counts: outcome_counts,
         policy_source_counts: policy_source_counts,
         average_task_count: average_task_count
       }
@@ -125,14 +115,22 @@ module CoordinationPolicyEvolution
     end
 
     def average_task_count
-      average = aggregates[4]
+      average = scoped_decisions.pick(Arel.sql("AVG(COALESCE((hints->>'task_count')::numeric, 0))"))
       return nil if average.nil?
 
       average.to_f.round(2)
     end
 
-    def noop_and_failure_outcomes_sql
-      (NOOP_OUTCOMES + FAILURE_OUTCOMES).join("','")
+    def decision_type_counts
+      @decision_type_counts ||= scoped_decisions.group(:decision_type).count
+    end
+
+    def outcome_counts
+      @outcome_counts ||= scoped_decisions.group(:outcome).count
+    end
+
+    def count_outcomes(outcomes)
+      outcome_counts.slice(*outcomes).values.sum
     end
 
     def serialize_decisions(rows)

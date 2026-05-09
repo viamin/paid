@@ -22,14 +22,16 @@ module Workflows
 
       performance = inputs_result.fetch(:performance, {})
       decision_count = performance.fetch(:decision_count, 0)
+      classified_decision_count = performance.fetch(:classified_decision_count, decision_count)
       min_decisions = performance.fetch(:min_decisions, CoordinationPolicyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS)
 
-      if decision_count < min_decisions
+      if classified_decision_count < min_decisions
         return {
           status: :insufficient_history,
           account_id: account_id,
           policy_type: policy_type,
           decision_count: decision_count,
+          classified_decision_count: classified_decision_count,
           min_decisions: min_decisions
         }
       end

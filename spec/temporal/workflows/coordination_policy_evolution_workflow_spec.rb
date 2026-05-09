@@ -27,7 +27,7 @@ RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow do
         configuration: OrchestrationStrategies::Defaults.feature_orchestration
       },
       prior_versions: [],
-      performance: { decision_count: 12, min_decisions: 10 },
+      performance: { decision_count: 12, classified_decision_count: 12, min_decisions: 10 },
       sample_successes: [],
       sample_failures: []
     }
@@ -38,11 +38,18 @@ RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow do
   end
 
   it "stops early when coordination history is insufficient" do
-    allow(workflow).to receive(:run_activity).and_return(prepared_inputs.deep_merge(performance: { decision_count: 4, min_decisions: 10 }))
+    allow(workflow).to receive(:run_activity).and_return(
+      prepared_inputs.deep_merge(performance: { decision_count: 12, classified_decision_count: 4, min_decisions: 10 })
+    )
 
     result = workflow.execute(input)
 
-    expect(result).to include(status: :insufficient_history, decision_count: 4, min_decisions: 10)
+    expect(result).to include(
+      status: :insufficient_history,
+      decision_count: 12,
+      classified_decision_count: 4,
+      min_decisions: 10
+    )
     expect(workflow).to have_received(:run_activity).once
   end
 
