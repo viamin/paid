@@ -65,7 +65,7 @@ module Workflows
 
       # Step 2: Launch child workflows with concurrency control
       max_concurrent = capacity[:available_slots]
-      results = launch_and_monitor_children(
+      results, execution_summary = launch_and_monitor_children(
         project_id: project_id,
         sub_tasks: sub_tasks,
         max_concurrent: max_concurrent,
@@ -121,7 +121,8 @@ module Workflows
         completed: completed,
         failed: failed,
         results: results,
-        conflicts: conflict_result
+        conflicts: conflict_result,
+        execution_summary: execution_summary
       }
       output[:aggregated_pr] = aggregated_pr if aggregated_pr
       output
@@ -222,6 +223,7 @@ module Workflows
       all_results = []
       batch_index = 0
       current_slots = max_concurrent
+      batch_sizes = []
 
       while remaining_tasks.any?
         ready_tasks, blocked_tasks = partition_ready_tasks(remaining_tasks, all_results)
@@ -297,6 +299,7 @@ module Workflows
         ].compact.min
         batch = ready_tasks.first(batch_size)
         remaining_tasks -= batch
+        batch_sizes << batch.size
 
         batch_results = execute_batch(
           project_id: project_id,
@@ -322,7 +325,14 @@ module Workflows
         batch_index += 1
       end
 
-      all_results
+      [
+        all_results,
+        {
+          batch_count: batch_sizes.size,
+          batch_sizes: batch_sizes,
+          max_parallelism_observed: batch_sizes.max.to_i
+        }
+      ]
     end
 
     def partition_ready_tasks(remaining_tasks, all_results)

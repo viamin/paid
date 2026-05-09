@@ -150,6 +150,11 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:success]).to be true
       expect(result[:total]).to eq(2)
       expect(result[:completed]).to eq(2)
+      expect(result[:execution_summary]).to eq(
+        batch_count: 1,
+        batch_sizes: [ 2 ],
+        max_parallelism_observed: 2
+      )
     end
 
     it "reports failures from child workflows" do
@@ -188,6 +193,11 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
       expect(capacity_call_count.call).to eq(3)
       expect(result[:total]).to eq(3)
+      expect(result[:execution_summary]).to eq(
+        batch_count: 3,
+        batch_sizes: [ 1, 1, 1 ],
+        max_parallelism_observed: 1
+      )
     end
 
     it "marks remaining tasks as no_capacity when capacity runs out" do
