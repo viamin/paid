@@ -252,8 +252,8 @@ RSpec.describe TenantContext, :tenant_isolation do
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
+      ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.up if orchestration_decisions_have_strategy_version_reference?
-      EnsureStrategyVersionIdOnOrchestrationDecisions.new.up unless orchestration_decisions_have_strategy_version_reference?
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
       EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
     end
@@ -358,6 +358,23 @@ RSpec.describe TenantContext, :tenant_isolation do
   def orchestration_decisions_have_strategy_version_reference?
     orchestration_decisions_table_exists? &&
       ActiveRecord::Base.connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+  end
+
+  def ensure_strategy_version_id_on_orchestration_decisions
+    connection = ActiveRecord::Base.connection
+    return if connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+
+    connection.execute("ALTER TABLE orchestration_decisions ADD COLUMN strategy_version_id bigint")
+    connection.execute("CREATE INDEX IF NOT EXISTS index_orchestration_decisions_on_strategy_version_id ON orchestration_decisions (strategy_version_id)")
+    if connection.table_exists?(:strategy_versions)
+      connection.execute(<<~SQL.squish)
+        ALTER TABLE orchestration_decisions
+        ADD CONSTRAINT fk_orchestration_decisions_strategy_version
+        FOREIGN KEY (strategy_version_id) REFERENCES strategy_versions(id) ON DELETE SET NULL
+      SQL
+    end
+  rescue ActiveRecord::StatementInvalid => e
+    Rails.logger.warn(message: "ensure_strategy_version_id_failed", error: e.message)
   end
 
   def strategy_experiment_tables_have_rls?

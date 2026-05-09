@@ -76,8 +76,8 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       failure_classifications_migration.up unless failure_classifications_table_exists?
       orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
       add_strategy_version_to_orchestration_decisions_migration.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
+      ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
       tighten_orchestration_decisions_strategy_version_tenant_check_migration.up if orchestration_decisions_have_strategy_version_reference?
-      ensure_strategy_version_id_migration.up unless orchestration_decisions_have_strategy_version_reference?
       strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
       strategy_rls_migration.up unless strategies_have_rls?
     end
@@ -353,8 +353,21 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new
   end
 
-  def ensure_strategy_version_id_migration
-    @ensure_strategy_version_id_migration ||= EnsureStrategyVersionIdOnOrchestrationDecisions.new
+  def ensure_strategy_version_id_on_orchestration_decisions
+    connection = ActiveRecord::Base.connection
+    return if connection.column_exists?(:orchestration_decisions, :strategy_version_id)
+
+    connection.execute("ALTER TABLE orchestration_decisions ADD COLUMN strategy_version_id bigint")
+    connection.execute("CREATE INDEX IF NOT EXISTS index_orchestration_decisions_on_strategy_version_id ON orchestration_decisions (strategy_version_id)")
+    if connection.table_exists?(:strategy_versions)
+      connection.execute(<<~SQL.squish)
+        ALTER TABLE orchestration_decisions
+        ADD CONSTRAINT fk_orchestration_decisions_strategy_version
+        FOREIGN KEY (strategy_version_id) REFERENCES strategy_versions(id) ON DELETE SET NULL
+      SQL
+    end
+  rescue ActiveRecord::StatementInvalid => e
+    Rails.logger.warn(message: "ensure_strategy_version_id_failed", error: e.message)
   end
 
   def strategy_experiments_rls_migration
