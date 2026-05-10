@@ -36,6 +36,7 @@ RSpec.describe StrategyEvolution::PrepareInputs do
       expect(result.dig(:performance, :decision_count)).to eq(2)
       expect(result.dig(:performance, :success_count)).to eq(1)
       expect(result.dig(:performance, :failure_count)).to eq(1)
+      expect(result.dig(:performance, :lookback_days)).to eq(60)
       expect(result.dig(:performance, :guardrail_violation_types)).to include("loop_detected" => 1)
       expect(result[:sample_successes].size).to eq(1)
       expect(result[:sample_failures].size).to eq(1)

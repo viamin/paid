@@ -5,7 +5,7 @@ module Activities
     activity_name "GenerateStrategyMutations"
 
     def execute(input)
-      mutations = StrategyEvolution::Mutate.call(
+      mutations = StrategyEvolution::GenerateCandidates.call(
         strategy: input.fetch(:strategy),
         analysis: input.slice(:performance, :sample_successes, :sample_failures, :prior_versions),
         options: {
