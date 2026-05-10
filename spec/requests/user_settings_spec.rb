@@ -45,7 +45,7 @@ RSpec.describe "UserSettings" do
 
       it "displays all setting sections" do
         get edit_user_settings_path
-        expect(response.body).to include("Polling & Timing")
+        expect(response.body).to include("Polling &amp; Timing")
         expect(response.body).to include("Agent Execution")
         expect(response.body).to include("Max Execution Time Override")
         expect(response.body).to include("Container Resources")

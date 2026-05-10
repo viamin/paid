@@ -35,7 +35,7 @@
 
       <%= form_with model: @provider_api_key, url: provider_api_keys_path, class: "mt-6",
           data: { controller: "form-submit", action: "submit->form-submit#submit" } do |form| %>
-        <%= render "form", form: form %>
+        <%= render "form", form: form, provider_api_key: @provider_api_key, api_service_type_options: @api_service_type_options %>
 
         <div class="mt-6 flex items-center justify-end gap-x-4">
           <%= link_to "Cancel", integrations_path, class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>

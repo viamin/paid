@@ -229,6 +229,13 @@ GEM
       bigdecimal
       rake (~> 13.3)
     hashdiff (1.2.1)
+    herb (0.10.1-aarch64-linux-gnu)
+    herb (0.10.1-aarch64-linux-musl)
+    herb (0.10.1-arm-linux-gnu)
+    herb (0.10.1-arm-linux-musl)
+    herb (0.10.1-arm64-darwin)
+    herb (0.10.1-x86_64-linux-gnu)
+    herb (0.10.1-x86_64-linux-musl)
     i18n (1.14.8)
       concurrent-ruby (~> 1.0)
     io-console (0.8.2)
@@ -596,6 +603,7 @@ DEPENDENCIES
   flipper-active_record
   fx
   good_job (~> 4.18)
+  herb
   jsbundling-rails
   kamal
   logidze
@@ -708,6 +716,13 @@ CHECKSUMS
   google-protobuf (4.34.1-x86_64-linux-gnu) sha256=87088c9fd8e47b5b40ca498fc1195add6149e941ff7e81c532a5b0b8876d4cc9
   google-protobuf (4.34.1-x86_64-linux-musl) sha256=8c0e91436fbe504ffc64f0bd621f2e69adbcce8ed2c58439d7a21117069cfdd7
   hashdiff (1.2.1) sha256=9c079dbc513dfc8833ab59c0c2d8f230fa28499cc5efb4b8dd276cf931457cd1
+  herb (0.10.1-aarch64-linux-gnu) sha256=fd9f4f8e0bcd9a421de55ff8810066550e9bcba8c8bf53737b32a04eb2fcbc49
+  herb (0.10.1-aarch64-linux-musl) sha256=bc6dac577c25bb7b35fe812987a9da7056aabd3a9394941c2aadf68bcca7c58e
+  herb (0.10.1-arm-linux-gnu) sha256=965fcb7bb59c7307c2dfdb8fa03ae06724184886bcb015088585e5163036a425
+  herb (0.10.1-arm-linux-musl) sha256=d1c18bf017bccaf32e27439e74e53b3f24bc8056d0ef70e79568ac7f7b2e2728
+  herb (0.10.1-arm64-darwin) sha256=08d0434ae94d23a7353d767085dc974cc5e63943a07cd48bc99afd7fea919c1b
+  herb (0.10.1-x86_64-linux-gnu) sha256=c7762d411a6d2e1a032cf403b0429155c01ab48b3b5be2a0aab1e921da6b8948
+  herb (0.10.1-x86_64-linux-musl) sha256=a5bb7c82bbc30a9eb80cb833fea749f543a0709d9f858f7db366a3c2616d969b
   i18n (1.14.8) sha256=285778639134865c5e0f6269e0b818256017e8cde89993fdfcbfb64d088824a5
   io-console (0.8.2) sha256=d6e3ae7a7cc7574f4b8893b4fca2162e57a825b223a177b7afa236c5ef9814cc
   irb (1.18.0) sha256=de9454a0703a54704b9811a5ef31a60c86949fbf4013fcf244fabc7c775248e3
