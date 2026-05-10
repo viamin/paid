@@ -1,6 +1,6 @@
 # Orchestration Scaling Experiment Plan
 
-Issue [#1776](https://github.com/viamin/paid/issues/1776) defines the controlled experiment design for measuring orchestration scaling behavior with fair cohort comparisons.
+Issue [#1812](https://github.com/viamin/paid/issues/1812) defines the controlled experiment design for measuring orchestration scaling behavior with fair cohort comparisons.
 
 ## Core Independent Variables
 
@@ -19,7 +19,7 @@ Each `ScalingExperiment` stores these variables in `independent_variables`. The 
 - `agent_launch_success_rate`: Reliability metric for child-run execution. Optimize upward.
 - `blocked_task_rate`: Guardrail metric for capacity or dependency starvation. Optimize downward.
 
-These are stored in `outcome_metrics` with `primary` and `objective` metadata so summaries and later analysis can distinguish optimization targets from guardrails.
+These are stored in `outcome_metrics` with `primary` and `objective` metadata so summaries and later analysis can distinguish optimization targets from guardrails. The model validation also rejects unsupported or duplicate metric keys.
 
 ## Controls And Guardrails
 
@@ -30,7 +30,7 @@ Fair comparisons require the following control conditions:
 - Preserve dependency order and existing project-capacity checks.
 - Exclude non-parallel runs from recorded experiment outcomes when the orchestration never actually exercised the scaling treatment.
 
-These rules are stored in `control_definition` so the plan travels with the experiment record instead of living only in prose.
+These rules are stored in `control_definition` so the plan travels with the experiment record instead of living only in prose. Each assignment also copies the normalized control arm label and comparison method into `execution_plan["control"]` so downstream analysis can compare a treatment cohort to its proper control bucket without reconstructing the plan.
 
 ## Cohorts
 
@@ -44,4 +44,4 @@ Cohorts are assigned continuously at workflow start with a balanced-underfilled 
   - `tasks-4-6`
   - `tasks-7-plus`
 
-The schedule and label template live in `cohort_settings`, and each assignment copies its resolved cohort label into `execution_plan["cohort_label"]`.
+The schedule and label template live in `cohort_settings`, and each assignment copies its resolved task bucket, cohort label, control cohort label, and fairness guardrails into `execution_plan`. This keeps runtime assignment, result recording, and later analysis aligned on the same normalized experiment-plan metadata.
