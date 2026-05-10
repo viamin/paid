@@ -63,8 +63,13 @@ module ScalingExperiments
 
     def build_execution_plan(value)
       plan = {
+        "plan_version" => 1,
+        "scaling_experiment_id" => scaling_experiment.id,
+        "workflow_id" => workflow_id,
         "dimension" => scaling_experiment.dimension,
         "dimension_value" => value,
+        "dimension_role" => dimension_role(value),
+        "control_value" => scaling_experiment.control_value,
         "task_count" => task_count,
         "cohort_label" => scaling_experiment.cohort_label(task_count:, assigned_value: value),
         "cohort_schedule" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "assignment_unit"),
@@ -72,15 +77,18 @@ module ScalingExperiments
         "safety_limits" => {
           "task_count_cap" => task_count,
           "project_capacity_checked_during_execution" => true,
-          "dependency_order_respected" => true
+          "dependency_order_respected" => true,
+          "eligible_value_count" => scaling_experiment.eligible_values(task_count:).size
         }
       }
 
       case scaling_experiment.dimension
       when "agent_count"
         plan.merge!(
+          "application_target" => "parallel_execution.max_batch_size",
           "requested_agent_count" => value,
-          "max_batch_size" => value
+          "max_batch_size" => value,
+          "parallel_execution_required" => true
         )
       when "iteration_count"
         plan.merge!(
@@ -95,6 +103,10 @@ module ScalingExperiments
       end
 
       plan
+    end
+
+    def dimension_role(value)
+      value.to_i == scaling_experiment.control_value.to_i ? "control" : "treatment"
     end
 
     def iteration_budget_prompt(value)

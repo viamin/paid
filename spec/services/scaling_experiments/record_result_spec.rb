@@ -18,10 +18,16 @@ RSpec.describe ScalingExperiments::RecordResult do
       project: project,
       issue: issue,
       workflow_id: workflow_id,
+      workflow_name: "FeatureOrchestrationWorkflow",
+      observation_type: "feature_orchestration",
+      task_count: assigned_value,
       success: success,
       status: success ? "completed" : "partial_failure",
       agent_count_planned: assigned_value,
       agent_count_launched: assigned_value,
+      agent_count_succeeded: success ? assigned_value : assigned_value - 1,
+      agent_count_failed: success ? 0 : 1,
+      agent_count_blocked: success ? 0 : 1,
       parallelism_observed: assigned_value,
       total_cost_cents: cost_cents,
       duration_seconds: duration_seconds)
@@ -114,19 +120,38 @@ RSpec.describe ScalingExperiments::RecordResult do
   def expect_recorded_assignment_summary(assignment)
     expect(assignment.outcome_status).to eq("recorded")
     expect(assignment.outcome_summary).to include(
+      "summary_version" => 1,
       "status" => "completed",
       "success" => true,
       "total_cost_cents" => 350,
+      "agent_launch_success_rate" => 1.0,
+      "blocked_task_rate" => 0.0,
       "quality_metric_sample_count" => 2,
       "avg_quality_score" => 0.8
+    )
+    expect(assignment.outcome_summary["metrics"]).to include(
+      "resource" => hash_including("duration_seconds" => 180, "total_cost_cents" => 350),
+      "quality" => hash_including("sample_count" => 2, "avg_score" => 0.8)
     )
   end
 
   def expect_cached_experiment_summary(experiment)
     expect(experiment.cached_summary).to include(
       "status" => "collecting",
+      "outcome_metric_keys" => array_including("success_rate", "agent_launch_success_rate", "blocked_task_rate"),
       "sample_count" => 1,
-      "values" => array_including(hash_including("assigned_value" => 2, "sample_count" => 1, "avg_quality_score" => 0.8))
+      "values" => array_including(
+        hash_including(
+          "assigned_value" => 2,
+          "sample_count" => 1,
+          "avg_quality_score" => 0.8,
+          "agent_launch_success_rate" => 1.0,
+          "blocked_task_rate" => 0.0
+        )
+      )
+    )
+    expect(experiment.cached_summary["initial_results"]).to include(
+      "leader" => hash_including("assigned_value" => 2)
     )
   end
 end

@@ -38,6 +38,24 @@ FactoryBot.define do
           "primary" => false,
           "objective" => "minimize",
           "source" => "scaling_observations.duration_seconds"
+        },
+        {
+          "key" => "total_cost_cents",
+          "primary" => false,
+          "objective" => "minimize",
+          "source" => "scaling_observations.total_cost_cents"
+        },
+        {
+          "key" => "agent_launch_success_rate",
+          "primary" => false,
+          "objective" => "maximize",
+          "source" => "scaling_observations.agent_count_succeeded / agent_count_launched"
+        },
+        {
+          "key" => "blocked_task_rate",
+          "primary" => false,
+          "objective" => "minimize",
+          "source" => "scaling_observations.agent_count_blocked / task_count"
         }
       ]
     end

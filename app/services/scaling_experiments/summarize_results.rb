@@ -21,13 +21,15 @@ module ScalingExperiments
         "dimension" => scaling_experiment.dimension,
         "control_value" => scaling_experiment.control_value,
         "primary_metric" => primary_metric,
+        "outcome_metric_keys" => scaling_experiment.outcome_metrics.map { |metric| metric["key"] },
         "cohort_strategy" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "label_template"),
         "sample_count" => summaries.sum { |summary| summary["sample_count"] },
         "values" => summaries,
         "parallelism_analysis" => analysis,
         "allocator_decision" => analysis["allocator_decision"],
         "leading_value" => leader&.fetch("assigned_value", nil),
-        "improvement_over_control" => improvement_over_control(control:, leader:)
+        "improvement_over_control" => improvement_over_control(control:, leader:),
+        "initial_results" => initial_results(control:, leader:)
       }.compact
     end
 
@@ -52,10 +54,13 @@ module ScalingExperiments
           "success_rate" => rate(observations, &:success),
           "avg_duration_seconds" => average(observations, &:duration_seconds),
           "avg_cost_cents" => average(observations, &:total_cost_cents),
+          "agent_launch_success_rate" => average(assignments) { |assignment| assignment.outcome_summary["agent_launch_success_rate"] },
+          "blocked_task_rate" => average(assignments) { |assignment| assignment.outcome_summary["blocked_task_rate"] },
           "avg_quality_score" => average_quality_score(assignments),
           "quality_metric_sample_count" => quality_metric_sample_count(assignments),
           "avg_parallelism_observed" => average(observations, &:parallelism_observed),
           "avg_agent_count_launched" => average(observations, &:agent_count_launched),
+          "cohort_labels" => assignments.map { |assignment| assignment.outcome_summary["cohort_label"] }.compact.uniq.sort,
           "status_tally" => observations.map(&:status).tally
         }
       end
@@ -83,8 +88,19 @@ module ScalingExperiments
         "quality_score_delta" => delta(leader["avg_quality_score"], control["avg_quality_score"]),
         "success_rate_delta" => delta(leader["success_rate"], control["success_rate"]),
         "duration_seconds_delta" => delta(leader["avg_duration_seconds"], control["avg_duration_seconds"]),
-        "cost_cents_delta" => delta(leader["avg_cost_cents"], control["avg_cost_cents"])
+        "cost_cents_delta" => delta(leader["avg_cost_cents"], control["avg_cost_cents"]),
+        "agent_launch_success_rate_delta" => delta(leader["agent_launch_success_rate"], control["agent_launch_success_rate"]),
+        "blocked_task_rate_delta" => delta(control["blocked_task_rate"], leader["blocked_task_rate"])
       }
+    end
+
+    def initial_results(control:, leader:)
+      {
+        "control" => control,
+        "leader" => leader,
+        "comparison" => improvement_over_control(control:, leader:),
+        "recorded_sample_counts" => scaling_experiment.samples_key
+      }.compact
     end
 
     def leader_sort_key(summary)
