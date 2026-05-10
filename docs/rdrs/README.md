@@ -66,6 +66,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Final | High |
+| [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Draft | High |
 
 ### Service Infrastructure
 
