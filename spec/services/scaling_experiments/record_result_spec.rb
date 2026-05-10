@@ -13,7 +13,8 @@ RSpec.describe ScalingExperiments::RecordResult do
       cached_summary: {})
   end
 
-  def create_observation!(workflow_id:, assigned_value:, success:, cost_cents:, duration_seconds:, quality_scores: [])
+  def create_observation!(workflow_id:, assigned_value:, success:, cost_cents:, duration_seconds:, quality_scores: [],
+    total_iterations: assigned_value, max_iterations: assigned_value, parallelism_planned: assigned_value, batch_count: 1)
     observation = create(:scaling_observation,
       project: project,
       issue: issue,
@@ -22,7 +23,11 @@ RSpec.describe ScalingExperiments::RecordResult do
       status: success ? "completed" : "partial_failure",
       agent_count_planned: assigned_value,
       agent_count_launched: assigned_value,
+      total_iterations: total_iterations,
+      max_iterations: max_iterations,
+      parallelism_planned: parallelism_planned,
       parallelism_observed: assigned_value,
+      batch_count: batch_count,
       total_cost_cents: cost_cents,
       duration_seconds: duration_seconds)
 
@@ -62,7 +67,11 @@ RSpec.describe ScalingExperiments::RecordResult do
       success: true,
       cost_cents: 350,
       duration_seconds: 180,
-      quality_scores: [ 0.7, 0.9 ]
+      quality_scores: [ 0.7, 0.9 ],
+      total_iterations: 5,
+      max_iterations: 3,
+      parallelism_planned: 2,
+      batch_count: 2
     )
 
     assignment = result.assignment.reload
@@ -116,6 +125,10 @@ RSpec.describe ScalingExperiments::RecordResult do
     expect(assignment.outcome_summary).to include(
       "status" => "completed",
       "success" => true,
+      "total_iterations" => 5,
+      "max_iterations" => 3,
+      "parallelism_planned" => 2,
+      "batch_count" => 2,
       "total_cost_cents" => 350,
       "quality_metric_sample_count" => 2,
       "avg_quality_score" => 0.8
