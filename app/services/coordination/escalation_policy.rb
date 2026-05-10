@@ -59,10 +59,9 @@ module Coordination
         .active
         .by_type(POLICY_TYPE)
         .where(account: project.account, policy_key: POLICY_KEY)
+        .where(project_id: [ nil, project.id ])
         .includes(:current_version)
-        .order(project_id: :desc, id: :desc)
-        .select { |candidate| candidate.project_id.nil? || candidate.project_id == project.id }
-        .sort_by { |candidate| candidate.project_id == project.id ? 0 : 1 }
+        .order(Arel.sql("CASE WHEN project_id IS NOT NULL THEN 0 ELSE 1 END"), id: :desc)
     end
 
     def fallback_policy(source)
