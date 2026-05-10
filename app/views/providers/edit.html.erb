@@ -6,7 +6,10 @@
     <p class="mt-1 text-sm text-gray-500">Update where this provider can be used.</p>
 
     <div class="mt-6">
-      <%= render "form", provider: @provider %>
+      <%= render "form", provider: @provider,
+            subscription_provider_options: @subscription_provider_options,
+            api_key_provider_options: @api_key_provider_options,
+            available_api_keys: @available_api_keys %>
     </div>
   </div>
 </div>

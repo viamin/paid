@@ -25,8 +25,8 @@
     </div>
   </div>
 
-  <% if @artifacts.any? %>
-    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <% if @artifacts.any? %>
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
@@ -61,28 +61,26 @@
           <% end %>
         </tbody>
       </table>
-    </div>
-
-    <% if @pagy.pages > 1 %>
-      <div class="mt-4 flex items-center justify-between">
-        <div class="text-sm text-gray-500">
-          Page <span class="font-medium"><%= @pagy.page %></span> of <span class="font-medium"><%= @pagy.pages %></span>
-        </div>
-        <div class="flex items-center gap-2">
-          <% if @pagy.previous %>
-            <%= link_to "Previous", project_knowledge_browse_path(@project, @artifact_type, page: @pagy.previous), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
-          <% end %>
-          <% if @pagy.next %>
-            <%= link_to "Next", project_knowledge_browse_path(@project, @artifact_type, page: @pagy.next), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
-          <% end %>
-        </div>
-      </div>
-    <% end %>
-  <% else %>
-    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <% else %>
       <div class="px-4 py-12 text-center">
         <h3 class="text-sm font-semibold text-gray-900">No <%= @artifact_type.titleize.downcase %> artifacts</h3>
         <p class="mt-1 text-sm text-gray-500">No active artifacts of this type were found for this project.</p>
+      </div>
+    <% end %>
+  </div>
+
+  <% if @artifacts.any? && @pagy.pages > 1 %>
+    <div class="mt-4 flex items-center justify-between">
+      <div class="text-sm text-gray-500">
+        Page <span class="font-medium"><%= @pagy.page %></span> of <span class="font-medium"><%= @pagy.pages %></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <% if @pagy.previous %>
+          <%= link_to "Previous", project_knowledge_browse_path(@project, @artifact_type, page: @pagy.previous), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+        <% end %>
+        <% if @pagy.next %>
+          <%= link_to "Next", project_knowledge_browse_path(@project, @artifact_type, page: @pagy.next), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+        <% end %>
       </div>
     </div>
   <% end %>

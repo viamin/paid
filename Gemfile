@@ -130,6 +130,9 @@ group :development do
 
   # Request-level performance metrics dashboard [https://github.com/igorkasyanchuk/rails_performance]
   gem "rails_performance"
+
+  # Developer tools for HTML+ERB templates [https://herb-tools.dev]
+  gem "herb", require: false
 end
 
 gem "good_job", "~> 4.18"

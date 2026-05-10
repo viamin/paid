@@ -7,10 +7,10 @@
     <p class="mt-2 text-sm text-gray-500">
       Start the guided questionnaire to capture business and product context that helps agents understand your project beyond the code.
     </p>
-    <% if policy(@project).update? %>
+    <% if policy(project).update? %>
       <div class="mt-6">
         <%= button_to "Start Business Context Questionnaire",
-              project_context_intake_path(@project),
+              project_context_intake_path(project),
               method: :post,
               class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
       </div>

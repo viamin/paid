@@ -40,19 +40,19 @@
           <p class="mt-1 text-sm text-gray-500" id="goal-description">What should the agent produce?</p>
           <div class="mt-4 flex items-center space-x-6" role="radiogroup" aria-describedby="goal-description">
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="create_pr" <%= "checked" if selected_goal == "create_pr" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <input type="radio" name="goal" value="create_pr" <% if selected_goal == "create_pr" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Create/Edit Pull Request</span>
             </label>
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="create_issue" <%= "checked" if selected_goal == "create_issue" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <input type="radio" name="goal" value="create_issue" <% if selected_goal == "create_issue" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Create Issue</span>
             </label>
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="review" <%= "checked" if selected_goal == "review" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <input type="radio" name="goal" value="review" <% if selected_goal == "review" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">PR Code Review</span>
             </label>
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="enhance_issue" <%= "checked" if selected_goal == "enhance_issue" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <input type="radio" name="goal" value="enhance_issue" <% if selected_goal == "enhance_issue" %>checked<% end %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Enhance Issue</span>
             </label>
           </div>
@@ -64,15 +64,15 @@
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
             <% if @issues.any? %>
               <%# Single-select dropdown for create_pr goal %>
-              <div data-goal-toggle-target="issueDropdown" <%= "hidden" if selected_goal == "enhance_issue" %>>
+              <div data-goal-toggle-target="issueDropdown" <% if selected_goal == "enhance_issue" %>hidden<% end %>>
                 <label for="issue_id" class="block text-sm font-medium text-gray-700">Choose from synced issues:</label>
-                <select name="issue_id" id="issue_id" <%= "disabled" if selected_goal == "enhance_issue" %> class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                <select name="issue_id" id="issue_id" <% if selected_goal == "enhance_issue" %>disabled<% end %> class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                   <option value="">-- Select an issue --</option>
                   <% @issues.each do |issue| %>
                     <% paid_pr = @paid_prs_by_issue_id[issue.id] %>
                     <option value="<%= issue.id %>"
-                            <%= "selected" if params[:issue_id].to_s == issue.id.to_s && paid_pr.nil? %>
-                            <%= "disabled" if paid_pr %>
+                            <% if params[:issue_id].to_s == issue.id.to_s && paid_pr.nil? %>selected<% end %>
+                            <% if paid_pr %>disabled<% end %>
                             title="<%= paid_pr ? "Paid already opened PR ##{paid_pr.github_number} for this issue. Quick run on the PR instead." : "" %>">
                       #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %><%= " (open paid PR ##{paid_pr.github_number} — quick run on the PR instead)" if paid_pr %>
                     </option>
@@ -87,7 +87,7 @@
           </div>
         </div>
 
-        <div data-goal-toggle-target="prSection" <%= "hidden" if selected_goal == "enhance_issue" %>>
+        <div data-goal-toggle-target="prSection" <% if selected_goal == "enhance_issue" %>hidden<% end %>>
           <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="prHeading">Or Work on an Existing PR</h2>
           <p class="mt-1 text-sm text-gray-500" data-goal-toggle-target="prDescription">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
@@ -99,7 +99,7 @@
                 <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                   <option value="">-- Select a pull request --</option>
                   <% @pull_requests.each do |pr| %>
-                    <option value="<%= pr.id %>" <%= "selected" if params[:pull_request_id].to_s == pr.id.to_s %>>
+                    <option value="<%= pr.id %>" <% if params[:pull_request_id].to_s == pr.id.to_s %>selected<% end %>>
                       #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
                     </option>
                   <% end %>

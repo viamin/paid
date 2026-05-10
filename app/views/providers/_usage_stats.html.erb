@@ -1,4 +1,4 @@
-<% if @usage_stats.present? %>
+<% if usage_stats.present? %>
   <div class="mt-8">
     <details class="rounded-lg border border-gray-200 bg-white shadow">
       <summary class="cursor-pointer list-none px-4 py-3">
@@ -8,8 +8,8 @@
         </div>
       </summary>
       <div class="border-t border-gray-200 divide-y divide-gray-100">
-        <% @providers.each do |provider| %>
-          <% stats = @provider_stats_by_id[provider.id] %>
+        <% providers.each do |provider| %>
+          <% stats = provider_stats_by_id[provider.id] %>
           <% next unless stats %>
           <div class="px-4 py-3">
             <h3 class="text-sm font-semibold text-gray-900"><%= provider.display_name %></h3>

@@ -117,10 +117,22 @@
     </table>
   </div>
 
-  <%= render "usage_stats" %>
+  <%= render "usage_stats", usage_stats: @usage_stats, providers: @providers, provider_stats_by_id: @provider_stats_by_id %>
 
   <div class="mt-8">
-    <%= render "settings" %>
+    <%= render "settings",
+          user_setting: @user_setting,
+          default_provider_identifier: @default_provider_identifier,
+          enabled_agent_providers: @enabled_agent_providers,
+          provider_labels: @provider_labels,
+          run_enabled_providers: @run_enabled_providers,
+          goal_provider_labels: @goal_provider_labels,
+          explicit_goal_default_providers: @explicit_goal_default_providers,
+          provider_states: @provider_states,
+          fallback_candidate_providers: @fallback_candidate_providers,
+          saved_fallback_provider_tokens: @saved_fallback_provider_tokens,
+          subscription_provider_identifiers: @subscription_provider_identifiers,
+          provider_state_aliases: @provider_state_aliases %>
   </div>
 
   <div class="mt-8 rounded-lg border border-sky-200 bg-sky-50 p-4">

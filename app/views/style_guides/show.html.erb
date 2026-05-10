@@ -45,16 +45,18 @@
     <div class="overflow-hidden bg-white shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
       <div class="px-4 py-5 sm:px-6">
         <h3 class="text-base font-semibold leading-6 text-gray-900">Compressed Content</h3>
-        <% if @style_guide.compressed? %>
-          <p class="mt-1 text-sm text-gray-500">
+        <p class="mt-1 text-sm text-gray-500">
+          <% if @style_guide.compressed? %>
+
             <%= number_with_delimiter(@style_guide.compressed_content.length) %> characters
             <% if @style_guide.compression_metadata["compression_ratio"] %>
               (<%= (@style_guide.compression_metadata["compression_ratio"].to_f * 100).round %>% of original)
             <% end %>
-          </p>
-        <% else %>
-          <p class="mt-1 text-sm text-gray-500">Not yet compressed. Click "Compress" to generate an LLM-friendly version.</p>
-        <% end %>
+
+          <% else %>
+            Not yet compressed. Click "Compress" to generate an LLM-friendly version.
+          <% end %>
+        </p>
       </div>
       <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
         <% if @style_guide.compressed? %>
@@ -79,20 +81,24 @@
                  rescue ArgumentError, TypeError
                    nil
                  end %>
-              <% if compressed_at %>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= local_time(compressed_at, format: :short) %></dd>
-              <% else %>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @style_guide.compression_metadata["compressed_at"] %></dd>
-              <% end %>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <% if compressed_at %>
+                  <%= local_time(compressed_at, format: :short) %>
+                <% else %>
+                  <%= @style_guide.compression_metadata["compressed_at"] %>
+                <% end %>
+              </dd>
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Compression ratio</dt>
               <% compression_ratio = @style_guide.compression_metadata["compression_ratio"] %>
-              <% if compression_ratio.present? %>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= (compression_ratio.to_f * 100).round %>%</dd>
-              <% else %>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">N/A</dd>
-              <% end %>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <% if compression_ratio.present? %>
+                  <%= (compression_ratio.to_f * 100).round %>%
+                <% else %>
+                  N/A
+                <% end %>
+              </dd>
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Raw length</dt>

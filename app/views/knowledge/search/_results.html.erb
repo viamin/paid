@@ -1,16 +1,16 @@
-<% if @error.present? %>
+<% if error.present? %>
   <div class="mt-4 rounded-md bg-yellow-50 p-4">
-    <div class="text-sm text-yellow-700"><%= @error %></div>
+    <div class="text-sm text-yellow-700"><%= error %></div>
   </div>
-<% elsif @results %>
+<% elsif results %>
   <div class="mt-4 text-sm text-gray-500">
-    <%= @meta[:total] %> results in <%= @meta[:took_ms] %>ms
-    (mode: <%= @meta[:mode] %>)
+    <%= meta[:total] %> results in <%= meta[:took_ms] %>ms
+    (mode: <%= meta[:mode] %>)
   </div>
 
-  <% if @results.any? %>
+  <% if results.any? %>
     <div class="mt-4 space-y-4">
-      <% @results.each do |result| %>
+      <% results.each do |result| %>
         <div class="overflow-hidden rounded-lg bg-white shadow">
           <div class="px-4 py-4 sm:px-6">
             <div class="flex items-center justify-between">
