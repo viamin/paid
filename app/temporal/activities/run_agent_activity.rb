@@ -6,6 +6,8 @@ module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
 
+    include Containers::QualityHooks
+
     # Returns true if the given provider key can be executed inside the
     # container. Replaces the former AGENT_COMMANDS.key? check. Container
     # executability is gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS
@@ -258,6 +260,20 @@ module Activities
               duration_seconds: attempt_duration
             )
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
+            if container_unavailable_for_fallback?(agent_run)
+              # Peek at rate-limit fallback candidates without consuming them so
+              # insert_rate_limit_fallbacks! can still insert after recovery.
+              remaining_after_rate_limit_insertion = providers[(index + 1)..].to_a +
+                peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                provider: provider,
+                error_type: "rate_limited",
+                error_message: e.message,
+                fallback_remaining: remaining_after_rate_limit_insertion
+              )
+            end
             insert_rate_limit_fallbacks!(
               providers: providers,
               index: index,
@@ -311,9 +327,24 @@ module Activities
               success: false,
               error_type: "timeout",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              diagnostics: e.diagnostics
             )
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+            if container_unavailable_for_fallback?(agent_run)
+              # Peek without consuming so future rate-limit fallback insertion
+              # is not affected by this timeout recovery check.
+              remaining_after_rate_limit_insertion = providers[(index + 1)..].to_a +
+                peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                provider: provider,
+                error_type: "timeout",
+                error_message: e.message,
+                fallback_remaining: remaining_after_rate_limit_insertion
+              )
+            end
             # Fall through to next provider instead of breaking — per-provider
             # timeout should not fail the entire run when fallback providers
             # are available. Only break when max_execution_seconds is exceeded
@@ -428,7 +459,15 @@ module Activities
     end
 
     class ProviderExecutionError < StandardError; end
-    class ProviderTimeoutError < StandardError; end
+    class ProviderTimeoutError < StandardError
+      attr_reader :timeout_type, :diagnostics
+
+      def initialize(message, timeout_type: nil, diagnostics: {})
+        @timeout_type = timeout_type
+        @diagnostics = diagnostics
+        super(message)
+      end
+    end
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
 
@@ -798,7 +837,18 @@ module Activities
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
       end
-      raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+      raise ProviderTimeoutError.new(
+        "#{timeout_type}_timeout: #{e.message}",
+        timeout_type: timeout_type,
+        diagnostics: timeout_attempt_diagnostics(
+          timeout_error: e,
+          timeout_type: timeout_type,
+          heartbeat: heartbeat,
+          effective_timeout: effective_timeout,
+          startup_timeout: startup_timeout,
+          effective_idle_timeout: effective_idle_timeout
+        )
+      )
     rescue Containers::Provision::OutputAbortError => e
       # The container was stopped early because stderr matched a fatal
       # provider quota pattern (e.g. KiloCode "Free tier limit reached").
@@ -1550,6 +1600,15 @@ module Activities
     end
 
     def rate_limit_fallback_candidates_for(provider_candidate, provider, providers)
+      candidates = peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+      @inserted_rate_limit_fallbacks.merge(candidates)
+      candidates
+    end
+
+    # Returns eligible rate-limit fallback candidates without marking them as
+    # inserted. Use this when you need to check whether fallbacks exist (e.g.,
+    # for container recovery decisions) without consuming them.
+    def peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
       @inserted_rate_limit_fallbacks ||= Set.new
 
       canonical_key = canonical_provider(provider)
@@ -1563,8 +1622,6 @@ module Activities
         candidate == current_provider ||
           @inserted_rate_limit_fallbacks.include?(candidate) ||
           already_scheduled.include?(candidate)
-      end.tap do |new_candidates|
-        @inserted_rate_limit_fallbacks.merge(new_candidates)
       end
     end
 
@@ -1844,6 +1901,39 @@ module Activities
       end
     end
 
+    def recover_container_for_fallback!(agent_run:, provider:, error_type:, error_message:, fallback_remaining:)
+      if Array(fallback_remaining).blank?
+        logger.error(
+          message: "agent_execution.container_unavailable_breaking_provider_loop",
+          agent_run_id: agent_run.id,
+          container_id: agent_run.container_id,
+          error: error_message,
+          error_type: error_type,
+          reason: "no_fallback_remaining"
+        )
+        return false
+      end
+
+      reprovision_container_for_fallback!(agent_run)
+      logger.info(
+        message: "agent_execution.container_reprovisioned_for_fallback",
+        agent_run_id: agent_run.id,
+        provider: provider,
+        next_providers: Array(fallback_remaining).take(3)
+      )
+      true
+    rescue StandardError => e
+      logger.error(
+        message: "agent_execution.container_unavailable_breaking_provider_loop",
+        agent_run_id: agent_run.id,
+        container_id: agent_run.container_id,
+        error: error_message,
+        error_type: error_type,
+        reprovision_error: e.message
+      )
+      false
+    end
+
     def container_dead_after_exec_error?(agent_run, error)
       return false unless error.message.match?(/container.*is not running/i)
       return false if agent_run.container_id.blank?
@@ -1852,6 +1942,53 @@ module Activities
       return false unless container_service
 
       !container_service.container_running?
+    end
+
+    def container_unavailable_for_fallback?(agent_run)
+      agent_run.reload
+      return true if agent_run.container_id.blank?
+
+      container_service = reconnect_container(agent_run)
+
+      !container_service.container_running?
+    rescue StandardError => e
+      return true if e.is_a?(ActiveRecord::RecordNotFound)
+      return true if e.is_a?(Temporalio::Error::ApplicationError) && e.type == "ContainerNotProvisioned"
+      return true if error_or_cause_matches?(e, Containers::Provision::ProvisionError) { |candidate|
+        candidate.message.match?(/\AContainer .* not found\z/)
+      }
+      return false if reconnect_failure?(e)
+
+      false
+    end
+
+    def reprovision_container_for_fallback!(agent_run)
+      agent_run.ensure_proxy_token!
+      agent_run.provision_container
+      return unless agent_run.repo_cloned?
+
+      container_service = reconnect_container(agent_run)
+      git_ops = Containers::GitOperations.new(container_service: container_service, agent_run: agent_run)
+      restore_repo_for_fallback!(git_ops, agent_run)
+      git_ops.install_artifact_excludes
+      install_quality_hooks_for_fallback(git_ops, agent_run)
+      git_ops.install_co_author_hook
+    end
+
+    def restore_repo_for_fallback!(git_ops, agent_run)
+      branch_name = agent_run.branch_name
+      raise ProviderExecutionError, "Cannot restore repo without branch name" if branch_name.blank?
+
+      git_ops.clone_and_restore_branch(
+        branch_name: branch_name,
+        base_commit_sha: agent_run.base_commit_sha,
+        pull_request_number: agent_run.source_pull_request_number
+      )
+    end
+
+    def install_quality_hooks_for_fallback(git_ops, agent_run)
+      # Delegate to the shared concern method to avoid duplication
+      install_quality_hooks(git_ops, agent_run)
     end
 
     def container_exit_diagnostics(container_service)
@@ -1874,6 +2011,22 @@ module Activities
       "Container state: #{reasons.join(', ').presence || 'unknown'}"
     rescue Docker::Error::DockerError => e
       "Could not inspect container: #{e.message}"
+    end
+
+    def timeout_attempt_diagnostics(timeout_error:, timeout_type:, heartbeat:, effective_timeout:, startup_timeout:, effective_idle_timeout:)
+      provider_idle_timeout = heartbeat&.idle_timeout_for(effective_idle_timeout)
+      diagnostics = timeout_error.diagnostics.dup
+      diagnostics["output_received"] = timeout_type != "startup" if !diagnostics.key?("output_received") && timeout_type.present?
+
+      diagnostics.merge(
+        "timeout_type" => timeout_type,
+        "effective_timeout_seconds" => effective_timeout,
+        "startup_timeout_seconds" => startup_timeout,
+        "configured_idle_timeout_seconds" => effective_idle_timeout,
+        "idle_timeout_seconds" => provider_idle_timeout || effective_idle_timeout,
+        "heartbeat_supported" => heartbeat&.available? || false,
+        "heartbeat_path_configured" => heartbeat&.heartbeat_path.present? || false
+      ).compact
     end
 
     def error_or_cause_matches?(error, klass, &)

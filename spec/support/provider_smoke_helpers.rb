@@ -85,6 +85,7 @@ module ProviderSmokeHelpers
       default_model: "moonshotai/kimi-k2",
       label: "OpenCode with OpenRouter API key"
     ),
+
     "kilocode-zai" => Scenario.new(
       name: "kilocode-zai",
       provider_key: "kilocode",
