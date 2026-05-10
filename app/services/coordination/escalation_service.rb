@@ -2,12 +2,7 @@
 
 module Coordination
   class EscalationService
-    STRATEGY_TYPE = "feature_orchestration"
-
-    DEFAULT_POLICY = OrchestrationStrategies::Defaults
-      .feature_orchestration
-      .fetch("escalation")
-      .freeze
+    DEFAULT_POLICY = Coordination::EscalationPolicy::DEFAULT_POLICY
 
     Result = Data.define(
       :action,
@@ -70,7 +65,8 @@ module Coordination
         )
       end
 
-      value = predict_human_value(policy)
+      signal_vector = prediction_signals
+      value = predict_human_value(policy, signal_vector)
       cost = interruption_cost(policy)
 
       if value - cost >= policy["human_value_threshold"]
@@ -121,25 +117,7 @@ module Coordination
     end
 
     def resolve_policy
-      strategy = OrchestrationStrategies::Resolve.call(
-        strategy_type: STRATEGY_TYPE,
-        account: project.account
-      )
-
-      config = strategy&.configuration
-      escalation = config.is_a?(Hash) ? config.fetch("escalation", {}) : {}
-      source = escalation.is_a?(Hash) && escalation.any? ? STRATEGY_TYPE : "defaults"
-
-      normalize_policy(DEFAULT_POLICY.merge(escalation).merge("source" => source))
-    rescue StandardError => e
-      Rails.logger.warn(
-        message: "coordination.escalation_policy_resolution_failed",
-        project_id: project.id,
-        issue_id: issue.id,
-        error_class: e.class.name,
-        error_message: e.message
-      )
-      normalize_policy(DEFAULT_POLICY.merge("source" => "fallback"))
+      normalize_policy(Coordination::EscalationPolicy.call(project: project))
     end
 
     def normalize_policy(policy)
@@ -151,10 +129,14 @@ module Coordination
         "interruption_cost" => DEFAULT_POLICY["interruption_cost"]
           .merge(policy["interruption_cost"] || {})
           .transform_values { |value| Float(value) },
-        "source" => policy["source"]
+        "source" => policy["source"],
+        "policy_key" => policy["policy_key"],
+        "coordination_policy_id" => policy["coordination_policy_id"],
+        "coordination_policy_version_id" => policy["coordination_policy_version_id"],
+        "coordination_policy_version" => policy["coordination_policy_version"]
       }
     rescue ArgumentError, TypeError
-      DEFAULT_POLICY.merge("source" => "fallback")
+      fallback_policy
     end
 
     def explicit_trigger(policy)
@@ -177,19 +159,31 @@ module Coordination
       "followup_limit_reached"
     end
 
-    def predict_human_value(policy)
+    def predict_human_value(policy, prediction_signals)
       weights = policy["weights"]
 
       value = 0.0
-      value += weights["operational_failure_breaker"] if signals["operational_failure_breaker"] == true
-      value += weights["review_goal_retry_pressure"] * normalized_retry_pressure
-      value += weights["draft_review_pressure"] * normalized_draft_pressure
-      value += weights["followup_pressure"] * normalized_followup_pressure
-      value += weights["blocking_triggers"] * normalized_blocking_trigger_pressure
-      value += weights["owner_reviewer_present"] if signals["owner_reviewer_login"].present?
-      value += weights["escalated_phase"] if signals["phase"] == "escalated"
+      value += weights["operational_failure_breaker"] if prediction_signals["operational_failure_breaker"]
+      value += weights["review_goal_retry_pressure"] * prediction_signals["review_goal_retry_pressure"]
+      value += weights["draft_review_pressure"] * prediction_signals["draft_review_pressure"]
+      value += weights["followup_pressure"] * prediction_signals["followup_pressure"]
+      value += weights["blocking_triggers"] * prediction_signals["blocking_trigger_pressure"]
+      value += weights["owner_reviewer_present"] if prediction_signals["owner_reviewer_present"]
+      value += weights["escalated_phase"] if prediction_signals["escalated_phase"]
 
       value.clamp(0.0, 1.0)
+    end
+
+    def prediction_signals
+      {
+        "operational_failure_breaker" => signals["operational_failure_breaker"] == true,
+        "review_goal_retry_pressure" => normalized_retry_pressure,
+        "draft_review_pressure" => normalized_draft_pressure,
+        "followup_pressure" => normalized_followup_pressure,
+        "blocking_trigger_pressure" => normalized_blocking_trigger_pressure,
+        "owner_reviewer_present" => signals["owner_reviewer_login"].present?,
+        "escalated_phase" => signals["phase"] == "escalated"
+      }
     end
 
     def interruption_cost(policy)
@@ -236,7 +230,24 @@ module Coordination
       hash.deep_stringify_keys
     end
 
+    def fallback_policy
+      {
+        "human_value_threshold" => DEFAULT_POLICY["human_value_threshold"],
+        "explicit_triggers" => Array(DEFAULT_POLICY["explicit_triggers"]).map(&:to_s),
+        "auto_resolve_trigger_types" => Array(DEFAULT_POLICY["auto_resolve_trigger_types"]).map(&:to_s),
+        "weights" => DEFAULT_POLICY["weights"].transform_values { |value| Float(value) },
+        "interruption_cost" => DEFAULT_POLICY["interruption_cost"].transform_values { |value| Float(value) },
+        "source" => "fallback",
+        "policy_key" => Coordination::EscalationPolicy::POLICY_KEY,
+        "coordination_policy_id" => nil,
+        "coordination_policy_version_id" => nil,
+        "coordination_policy_version" => nil
+      }
+    end
+
     def persist_decision(result, policy)
+      prediction_inputs = prediction_signals
+
       OrchestrationDecision.record(
         project: project,
         issue: issue,
@@ -244,8 +255,13 @@ module Coordination
         decision_point: "coordination_escalation_service",
         status: orchestration_status_for(result),
         signals: signals.merge(
+          "prediction_signals" => prediction_inputs,
           "trigger_types" => trigger_types,
-          "policy_source" => policy["source"]
+          "policy_source" => policy["source"],
+          "policy_key" => policy["policy_key"],
+          "coordination_policy_id" => policy["coordination_policy_id"],
+          "coordination_policy_version_id" => policy["coordination_policy_version_id"],
+          "coordination_policy_version" => policy["coordination_policy_version"]
         ),
         result: {
           "decision" => result.action,
@@ -254,7 +270,8 @@ module Coordination
           "interruption_cost" => result.interruption_cost,
           "net_value" => result.net_value,
           "threshold" => result.threshold,
-          "explicit_trigger" => result.explicit_trigger
+          "explicit_trigger" => result.explicit_trigger,
+          "policy_source" => result.policy_source
         }.compact
       )
     end
