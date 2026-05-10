@@ -134,6 +134,31 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       expect(orchestration_decision.strategy_version).to eq(baseline_strategy_version_for("planning_outcome"))
     end
 
+    it "backfills the strategy version on an existing orchestration decision" do
+      orchestration_decision = create(
+        :orchestration_decision,
+        :without_agent_run,
+        project: project,
+        decision_type: "planning_outcome",
+        actor: "Workflows::PlanningWorkflow",
+        context: {
+          decision_key: payload[:decision_key],
+          workflow_id: payload[:workflow_id],
+          workflow_name: payload[:workflow_name],
+          issue_id: issue.id,
+          decision_status: "applied"
+        },
+        inputs: {},
+        outputs: {},
+        outcome_references: [],
+        strategy_version: nil
+      )
+
+      described_class.call(**payload)
+
+      expect(orchestration_decision.reload.strategy_version).to eq(baseline_strategy_version_for("planning_outcome"))
+    end
+
     it "marks skipped decomposition outcomes as noop" do
       decision_key = "wf-123:planning_outcome:single-task"
       described_class.call(**payload.merge(

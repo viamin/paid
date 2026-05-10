@@ -25,15 +25,7 @@ module Strategies
     attr_reader :slug, :project, :account
 
     def resolve_strategy
-      scoped_candidates.find(&:present?)
-    end
-
-    def scoped_candidates
-      [
-        project_scope,
-        account_scope,
-        global_scope
-      ]
+      project_scope || account_scope || global_scope
     end
 
     def project_scope

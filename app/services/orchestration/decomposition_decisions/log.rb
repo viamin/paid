@@ -122,8 +122,7 @@ module Orchestration
         )
         return attach_strategy_version(existing) if existing
 
-        attach_strategy_version(
-          OrchestrationDecision.create!(
+        OrchestrationDecision.create!(
           project_id: project_id,
           decision_type: decision_type,
           actor: workflow_name,
@@ -144,7 +143,6 @@ module Orchestration
           },
           outcome_references: [],
           strategy_version: resolved_strategy_version
-        )
         )
       rescue StandardError => e
         Rails.logger.warn(
