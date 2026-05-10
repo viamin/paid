@@ -29,6 +29,38 @@ RSpec.describe ScalingExperiments::Assign do
     )
   end
 
+  def build_iteration_assignment
+    iteration_experiment = create(:scaling_experiment,
+      project: project,
+      dimension: "iteration_count",
+      values_tested: [ 1, 2, 4 ])
+
+    described_class.call(
+      scaling_experiment: iteration_experiment,
+      project: project,
+      issue: issue,
+      workflow_id: "wf-iterations",
+      task_count: 2
+    )
+  end
+
+  def expect_iteration_execution_plan(assignment)
+    expect(assignment.execution_plan).to include(
+      "dimension" => "iteration_count",
+      "dimension_value" => assignment.assigned_value,
+      "requested_iteration_count" => assignment.assigned_value,
+      "application_mode" => "task_prompt_budget"
+    )
+    expect(assignment.execution_plan["eligible_values"]).to eq([ 1, 2, 4 ])
+    expect(assignment.execution_plan["prompt_suffix"]).to include("Iteration budget")
+    expect(assignment.execution_plan["result_capture"]).to include(
+      "store_assignment_outcome_summary" => true,
+      "observation_scope" => "workflow"
+    )
+    expect(assignment.execution_plan["result_capture"]["child_run_metrics"])
+      .to include("quality_score", "iterations", "duration_seconds", "cost_cents")
+  end
+
   it "creates a workflow-scoped assignment with a safe execution plan" do
     assignment = described_class.call(
       scaling_experiment: experiment,
@@ -96,27 +128,7 @@ RSpec.describe ScalingExperiments::Assign do
   end
 
   it "builds an iteration-budget execution plan for iteration_count experiments" do
-    iteration_experiment = create(:scaling_experiment,
-      project: project,
-      dimension: "iteration_count",
-      values_tested: [ 1, 2, 4 ])
-
-    assignment = described_class.call(
-      scaling_experiment: iteration_experiment,
-      project: project,
-      issue: issue,
-      workflow_id: "wf-iterations",
-      task_count: 2
-    )
-
-    expect(assignment.execution_plan).to include(
-      "dimension" => "iteration_count",
-      "dimension_value" => assignment.assigned_value,
-      "requested_iteration_count" => assignment.assigned_value,
-      "application_mode" => "task_prompt_budget"
-    )
-    expect(assignment.execution_plan["eligible_values"]).to eq([ 1, 2, 4 ])
-    expect(assignment.execution_plan["prompt_suffix"]).to include("Iteration budget")
+    expect_iteration_execution_plan(build_iteration_assignment)
   end
 
   it "builds a dimension-specific execution plan for max_iterations experiments" do

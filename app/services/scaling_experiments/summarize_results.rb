@@ -50,6 +50,8 @@ module ScalingExperiments
           "assigned_value" => value,
           "sample_count" => observations.size,
           "success_rate" => rate(observations, &:success),
+          "avg_total_iterations" => average(observations, &:total_iterations),
+          "avg_max_iterations" => average(observations, &:max_iterations),
           "avg_duration_seconds" => average(observations, &:duration_seconds),
           "avg_cost_cents" => average(observations, &:total_cost_cents),
           "avg_quality_score" => average_quality_score(assignments),
