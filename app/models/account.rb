@@ -38,6 +38,7 @@ class Account < ApplicationRecord
   has_many :configuration_bundles, dependent: :destroy
   has_many :orchestration_strategies, dependent: :destroy
   has_many :strategy_experiments, dependent: :destroy
+  has_many :coordination_policies, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }

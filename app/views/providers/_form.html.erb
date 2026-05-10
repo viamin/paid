@@ -6,7 +6,7 @@
     } do |form| %>
   <% is_api_key = provider.api_key? %>
   <% is_new = !provider.persisted? %>
-  <% selectable_provider = provider.persisted? || @subscription_provider_options.any? || @api_key_provider_options.any? %>
+  <% selectable_provider = provider.persisted? || subscription_provider_options.any? || api_key_provider_options.any? %>
 
   <% if provider.errors.any? %>
     <div class="rounded-md bg-red-50 p-4">
@@ -30,7 +30,7 @@
               data: { action: "change->provider-form#toggleAuthType" } %>
           <span class="ml-2 text-sm text-gray-700">Subscription</span>
         </label>
-        <% if @api_key_provider_options.any? %>
+        <% if api_key_provider_options.any? %>
           <label class="flex items-center">
             <%= form.radio_button :auth_type, "api_key", class: "h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
                 data: { action: "change->provider-form#toggleAuthType" } %>
@@ -50,12 +50,12 @@
     <div class="mt-2">
       <% if provider.persisted? %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>
-        <input type="text" value="<%= provider.display_name %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
+        <input type="text" value="<%= provider.display_name %>" disabled autocomplete="off" class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
       <% else %>
-        <% if @subscription_provider_options.any? %>
-          <div data-provider-form-target="subscriptionFields" <%= "hidden" if is_api_key %>>
+        <% if subscription_provider_options.any? %>
+          <div data-provider-form-target="subscriptionFields" <% if is_api_key %>hidden<% end %>>
             <%= form.select :provider_key,
-                @subscription_provider_options.map { |key| [key.titleize, key] },
+                subscription_provider_options.map { |key| [key.titleize, key] },
                 {},
                 id: "provider_provider_key_subscription",
                 "aria-labelledby": "provider_key_label",
@@ -64,10 +64,10 @@
                 data: { provider_form_target: "providerSelect", action: "change->provider-form#refreshProviderSpecificFields" } %>
           </div>
         <% end %>
-        <% if @api_key_provider_options.any? %>
-          <div data-provider-form-target="apiKeyFields" <%= "hidden" unless is_api_key %>>
+        <% if api_key_provider_options.any? %>
+          <div data-provider-form-target="apiKeyFields" <% unless is_api_key %>hidden<% end %>>
             <%= form.select :provider_key,
-                @api_key_provider_options.map { |key| [key.titleize, key] },
+                api_key_provider_options.map { |key| [key.titleize, key] },
                 {},
                 id: "provider_provider_key_api_key",
                 "aria-labelledby": "provider_key_label",
@@ -76,7 +76,7 @@
                 data: { provider_form_target: "providerSelect", action: "change->provider-form#refreshProviderSpecificFields" } %>
           </div>
         <% end %>
-        <% unless @subscription_provider_options.any? || @api_key_provider_options.any? %>
+        <% unless subscription_provider_options.any? || api_key_provider_options.any? %>
           <%= form.text_field :provider_key, value: "No additional providers are installed in paid-agent yet", disabled: true, class: "block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-500 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6" %>
         <% end %>
       <% end %>
@@ -94,19 +94,19 @@
     <p class="mt-1 text-xs text-gray-500">A custom label to distinguish this provider entry.</p>
   </div>
 
-  <% if is_new && @available_api_keys.any? %>
-    <div data-provider-form-target="apiKeySelectContainer" <%= "hidden" unless is_api_key %>>
+  <% if is_new && available_api_keys.any? %>
+    <div data-provider-form-target="apiKeySelectContainer" <% unless is_api_key %>hidden<% end %>>
       <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>
       <div class="mt-2">
         <select name="provider[provider_api_key_id]"
                 id="provider_provider_api_key_id"
                 class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                <%= "disabled" unless is_api_key %>
+                <% unless is_api_key %>disabled<% end %>
                 data-provider-form-target="apiKeySelect">
           <option value="" data-provider-form-target="apiKeyOption">Select an API key</option>
-          <% @available_api_keys.each do |ak| %>
+          <% available_api_keys.each do |ak| %>
             <option value="<%= ak.id %>"
-                    <%= "selected" if provider.provider_api_key_id == ak.id %>
+                    <% if provider.provider_api_key_id == ak.id %>selected<% end %>
                     data-provider-form-target="apiKeyOption"
                     data-api-service-type="<%= ak.api_service_type %>">
               <%= ak.name %>
@@ -119,12 +119,12 @@
     <div>
       <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>
       <div class="mt-2">
-        <input type="text" value="<%= provider.provider_api_key&.name || 'None' %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
+        <input type="text" value="<%= provider.provider_api_key&.name || 'None' %>" disabled autocomplete="off" class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
       </div>
     </div>
   <% end %>
 
-  <div data-provider-form-target="fallbackRoleField" <%= "hidden" unless is_api_key %>>
+  <div data-provider-form-target="fallbackRoleField" <% unless is_api_key %>hidden<% end %>>
     <%= form.label :fallback_role, "Fallback Role", class: "block text-sm font-medium text-gray-900" %>
     <div class="mt-2">
       <%= form.select :fallback_role,
@@ -138,7 +138,7 @@
 
   <% opencode_settings_enabled = is_api_key && provider.provider_key == "opencode" %>
   <% opencode_api_provider = provider.opencode_api_provider || Provider::OPENCODE_DEFAULT_API_PROVIDER %>
-  <div data-provider-form-target="opencodeSettings" <%= "hidden" unless opencode_settings_enabled %>>
+  <div data-provider-form-target="opencodeSettings" <% unless opencode_settings_enabled %>hidden<% end %>>
     <div class="rounded-lg border border-gray-200 p-4">
       <h3 class="text-sm font-semibold text-gray-900">OpenCode Model Settings</h3>
       <p class="mt-1 text-xs text-gray-500">Configure the upstream API provider and model for this OpenCode entry.</p>
@@ -147,13 +147,13 @@
         <label for="provider_config_opencode_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
         <select id="provider_config_opencode_api_provider"
                 name="provider[config][opencode][api_provider]"
-                <%= "disabled" unless opencode_settings_enabled %>
+                <% unless opencode_settings_enabled %>disabled<% end %>
                 class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                 data-provider-form-target="directOutboundApiProviderSelect"
                 data-provider-key="opencode"
                 data-action="change->provider-form#refreshProviderSpecificFields">
           <% Provider::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
-            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <%= "selected" if opencode_api_provider == slug %>><%= cfg[:label] %></option>
+            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if opencode_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
           <% end %>
         </select>
       </div>
@@ -165,7 +165,8 @@
                type="text"
                value="<%= provider.opencode_model_id %>"
                placeholder="moonshotai/kimi-k2-0905"
-               <%= "disabled" unless opencode_settings_enabled %>
+               autocomplete="off"
+                <% unless opencode_settings_enabled %>disabled<% end %>
                class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
         <p class="mt-1 text-xs text-gray-500">Required. The model identifier for the selected API provider.</p>
       </div>
@@ -174,7 +175,7 @@
 
   <% kilocode_settings_enabled = is_api_key && provider.provider_key == "kilocode" %>
   <% kilocode_api_provider = provider.kilocode_api_provider || Provider::KILOCODE_DEFAULT_API_PROVIDER %>
-  <div data-provider-form-target="kilocodeSettings" <%= "hidden" unless kilocode_settings_enabled %>>
+  <div data-provider-form-target="kilocodeSettings" <% unless kilocode_settings_enabled %>hidden<% end %>>
     <div class="rounded-lg border border-gray-200 p-4">
       <h3 class="text-sm font-semibold text-gray-900">KiloCode Model Settings</h3>
       <p class="mt-1 text-xs text-gray-500">Configure the upstream API provider and model for this KiloCode entry.</p>
@@ -183,13 +184,13 @@
         <label for="provider_config_kilocode_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
         <select id="provider_config_kilocode_api_provider"
                 name="provider[config][kilocode][api_provider]"
-                <%= "disabled" unless kilocode_settings_enabled %>
+                <% unless kilocode_settings_enabled %>disabled<% end %>
                 class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                 data-provider-form-target="directOutboundApiProviderSelect"
                 data-provider-key="kilocode"
                 data-action="change->provider-form#refreshProviderSpecificFields">
           <% Provider::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
-            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <%= "selected" if kilocode_api_provider == slug %>><%= cfg[:label] %></option>
+            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if kilocode_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
           <% end %>
         </select>
       </div>
@@ -201,7 +202,8 @@
                type="text"
                value="<%= provider.kilocode_model_id %>"
                placeholder="mercury-2"
-               <%= "disabled" unless kilocode_settings_enabled %>
+               autocomplete="off"
+                <% unless kilocode_settings_enabled %>disabled<% end %>
                class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
         <p class="mt-1 text-xs text-gray-500">Required. The model identifier for the selected API provider.</p>
       </div>
@@ -227,7 +229,7 @@
                     class="mt-1 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
               <option value="">— None —</option>
               <% tier_models.each do |m| %>
-                <option value="<%= m.model_id %>" <%= "selected" if current_tier_ids[tier] == m.model_id %>>
+                <option value="<%= m.model_id %>" <% if current_tier_ids[tier] == m.model_id %>selected<% end %>>
                   <%= m.display_name %><%= " (#{m.tier})" if m.tier.present? %>
                 </option>
               <% end %>
@@ -246,13 +248,13 @@
       <div>
         <label for="provider_complexity_thresholds_low_max" class="block text-sm font-medium text-gray-900">Low tier max</label>
         <input type="number" name="provider[complexity_thresholds][low_max]" id="provider_complexity_thresholds_low_max"
-               value="<%= thresholds["low_max"] %>" min="1" max="10" step="1"
+               value="<%= thresholds["low_max"] %>" min="1" max="10" step="1" autocomplete="off"
                class="mt-1 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
       </div>
       <div>
         <label for="provider_complexity_thresholds_mid_max" class="block text-sm font-medium text-gray-900">Mid tier max</label>
         <input type="number" name="provider[complexity_thresholds][mid_max]" id="provider_complexity_thresholds_mid_max"
-               value="<%= thresholds["mid_max"] %>" min="1" max="10" step="1"
+               value="<%= thresholds["mid_max"] %>" min="1" max="10" step="1" autocomplete="off"
                class="mt-1 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
       </div>
     </div>

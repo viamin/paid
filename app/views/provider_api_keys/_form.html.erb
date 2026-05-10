@@ -1,4 +1,4 @@
-<% if @provider_api_key.errors.any? %>
+<% if provider_api_key.errors.any? %>
   <div class="mb-6 rounded-md bg-red-50 p-4">
     <div class="flex">
       <div class="flex-shrink-0">
@@ -8,11 +8,11 @@
       </div>
       <div class="ml-3">
         <h3 class="text-sm font-medium text-red-800">
-          <%= pluralize(@provider_api_key.errors.count, "error") %> prevented this API key from being saved:
+          <%= pluralize(provider_api_key.errors.count, "error") %> prevented this API key from being saved:
         </h3>
         <div class="mt-2 text-sm text-red-700">
           <ul class="list-disc space-y-1 pl-5">
-            <% @provider_api_key.errors.full_messages.each do |message| %>
+            <% provider_api_key.errors.full_messages.each do |message| %>
               <li><%= message %></li>
             <% end %>
           </ul>
@@ -34,13 +34,15 @@
   <div>
     <%= form.label :api_key, "API Key", class: "block text-sm font-medium leading-6 text-gray-900" %>
     <div class="mt-2">
-      <%= form.password_field :api_key, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: @provider_api_key.persisted? ? "Leave blank to keep current key" : "sk-...", autocomplete: "new-password", spellcheck: false, required: @provider_api_key.new_record? %>
+      <%= form.password_field :api_key, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: provider_api_key.persisted? ? "Leave blank to keep current key" : "sk-...", autocomplete: "new-password", spellcheck: false, required: provider_api_key.new_record? %>
     </div>
-    <% if @provider_api_key.persisted? %>
-      <p class="mt-1 text-xs text-gray-500">Leave blank to keep the current key. Current: <code class="rounded bg-gray-100 px-1 font-mono text-xs"><%= @provider_api_key.masked_api_key %></code></p>
-    <% else %>
-      <p class="mt-1 text-xs text-gray-500">Your API key is encrypted at rest and only shown in masked form after saving.</p>
-    <% end %>
+    <p class="mt-1 text-xs text-gray-500">
+      <% if provider_api_key.persisted? %>
+        Leave blank to keep the current key. Current: <code class="rounded bg-gray-100 px-1 font-mono text-xs"><%= provider_api_key.masked_api_key %></code>
+      <% else %>
+        Your API key is encrypted at rest and only shown in masked form after saving.
+      <% end %>
+    </p>
   </div>
 
   <div>
@@ -48,7 +50,7 @@
     <p class="mt-1 text-xs text-gray-500">Select the upstream API service this key authenticates against.</p>
     <div class="mt-2">
       <%= form.select :api_service_type,
-          @api_service_type_options,
+          api_service_type_options,
           { include_blank: "Select an API service" },
           class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
           required: true %>

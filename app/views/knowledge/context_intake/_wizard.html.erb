@@ -3,12 +3,12 @@
     <div class="px-4 py-4 sm:px-6">
       <div class="flex items-center justify-between">
         <p class="text-sm font-medium text-gray-700">
-          Progress: <%= @progress[:answered] %> / <%= @progress[:total] %> questions answered
+          Progress: <%= progress[:answered] %> / <%= progress[:total] %> questions answered
         </p>
-        <p class="text-sm text-gray-500"><%= @progress[:percentage] %>%</p>
+        <p class="text-sm text-gray-500"><%= progress[:percentage] %>%</p>
       </div>
       <div class="mt-2 w-full bg-gray-200 rounded-full h-2">
-        <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: <%= @progress[:percentage] %>%"></div>
+        <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: <%= progress[:percentage] %>%"></div>
       </div>
     </div>
   </div>
@@ -16,9 +16,9 @@
   <%# Section navigation %>
   <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
     <nav class="flex overflow-x-auto px-4 py-3 sm:px-6" aria-label="Sections">
-      <% @sections.each do |section| %>
-        <%= link_to project_context_intake_path(@project, section: section[:key]),
-              class: "mr-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors #{section[:key] == @active_section_key ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}" do %>
+      <% sections.each do |section| %>
+        <%= link_to project_context_intake_path(project, section: section[:key]),
+              class: "mr-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors #{section[:key] == active_section_key ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}" do %>
           <%= section[:title] %>
         <% end %>
       <% end %>
@@ -26,17 +26,17 @@
   </div>
 
   <%# Questions per section %>
-  <% @sections.each do |section| %>
+  <% sections.each do |section| %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
          data-section="<%= section[:key] %>"
-         style="<%= section[:key] == @active_section_key ? '' : 'display: none;' %>">
+         style="<%= section[:key] == active_section_key ? '' : 'display: none;' %>">
       <div class="px-4 py-5 sm:p-6">
         <h3 class="text-lg font-medium text-gray-900 mb-4"><%= section[:title] %></h3>
 
         <% section[:questions].each do |question| %>
-          <% response = @responses[question[:key]] %>
+          <% response = responses[question[:key]] %>
           <div class="mb-6 last:mb-0">
-            <%= form_with url: project_context_intake_path(@project),
+            <%= form_with url: project_context_intake_path(project),
                           method: :patch,
                           data: { turbo: false } do |f| %>
               <%= f.hidden_field :question_key, value: question[:key] %>
@@ -79,7 +79,7 @@
   <%# Complete button %>
   <div class="mt-6 flex justify-end">
     <%= button_to "Complete & Save Business Context",
-          complete_project_context_intake_path(@project),
+          complete_project_context_intake_path(project),
           method: :post,
           class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 cursor-pointer",
           data: { turbo_confirm: "Are you sure you want to complete the questionnaire? You can start a new one later to update." } %>

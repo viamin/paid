@@ -84,11 +84,16 @@
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
             <% if @prompt.requires_review? %>
               <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Required</span>
-              <span class="ml-2 text-xs text-gray-500">Evolved variants need human approval before promotion.</span>
             <% else %>
               <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Off</span>
-              <span class="ml-2 text-xs text-gray-500">Evolved variants are auto-promoted.</span>
             <% end %>
+            <span class="ml-2 text-xs text-gray-500">
+              <% if @prompt.requires_review? %>
+                Evolved variants need human approval before promotion.
+              <% else %>
+                Evolved variants are auto-promoted.
+              <% end %>
+            </span>
           </dd>
         </div>
 

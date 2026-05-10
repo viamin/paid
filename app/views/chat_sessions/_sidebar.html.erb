@@ -9,9 +9,10 @@
           <span class="sr-only">Search chat sessions</span>
           <input type="search"
                  placeholder="Search sessions"
+                 autocomplete="off"
                  class="w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
                  data-chat-session-list-target="searchInput"
-                 data-action="input->chat-session-list#filter" />
+                 data-action="input->chat-session-list#filter">
         </label>
         <% if can_create_chat_session %>
           <button type="button"

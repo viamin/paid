@@ -1,5 +1,6 @@
-<% if activity_items.any? %>
-  <div class="overflow-hidden rounded-lg bg-white shadow">
+<div class="overflow-hidden rounded-lg bg-white shadow">
+  <% if activity_items.any? %>
+
     <ul class="divide-y divide-gray-200">
       <% activity_items.each do |item| %>
         <% if item.is_a?(AgentRun) %>
@@ -54,11 +55,13 @@
                   <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Resumed</span>
                 <% end %>
                 <span class="text-sm font-medium text-gray-900"><%= item.project.full_name %></span>
-                <% if item.event_type == "paused" %>
-                  <span class="truncate text-sm text-gray-500">Automatic work paused by quality gate</span>
-                <% else %>
-                  <span class="truncate text-sm text-gray-500">Quality pause resumed</span>
-                <% end %>
+                <span class="truncate text-sm text-gray-500">
+                  <% if item.event_type == "paused" %>
+                    Automatic work paused by quality gate
+                  <% else %>
+                    Quality pause resumed
+                  <% end %>
+                </span>
               </div>
               <div class="flex items-center gap-4 text-sm text-gray-500">
                 <% if item.event_type == "paused" && item.composite_score.present? && item.threshold.present? %>
@@ -73,9 +76,10 @@
         <% end %>
       <% end %>
     </ul>
-  </div>
-<% else %>
-  <div class="overflow-hidden rounded-lg bg-white shadow">
+
+  <% else %>
+
     <div class="px-4 py-5 text-sm text-gray-500">No recent activity.</div>
-  </div>
-<% end %>
+
+  <% end %>
+</div>
