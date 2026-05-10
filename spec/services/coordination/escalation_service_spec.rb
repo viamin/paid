@@ -62,6 +62,60 @@ RSpec.describe Coordination::EscalationService do
       end
     end
 
+    def persisted_prediction_signals
+      {
+        "operational_failure_breaker" => true,
+        "review_goal_retry_pressure" => 0.0,
+        "draft_review_pressure" => 0.0,
+        "followup_pressure" => 0.0,
+        "blocking_trigger_pressure" => 0.0,
+        "owner_reviewer_present" => true,
+        "escalated_phase" => false
+      }
+    end
+
+    def create_escalation_policy!(scope: :account, rules: {}, parameters: {})
+      traits = [ :active ]
+      traits << :project_scoped if scope == :project
+
+      create(:coordination_policy, *traits,
+        account: project.account,
+        project: scope == :project ? project : nil,
+        policy_type: "escalation",
+        policy_key: Coordination::EscalationPolicy::POLICY_KEY).tap do |policy|
+        policy.current_version.update!(rules:, parameters:)
+      end
+    end
+
+    def explicit_trigger_decision_inputs
+      {
+        "operational_failure_breaker" => true,
+        "prediction_signals" => persisted_prediction_signals,
+        "trigger_types" => [],
+        "policy_source" => "defaults",
+        "policy_key" => "human_intervention"
+      }
+    end
+
+    def coordination_policy_version_inputs(policy)
+      {
+        "policy_source" => "coordination_policy",
+        "coordination_policy_id" => policy.id,
+        "coordination_policy_version_id" => policy.current_version.id,
+        "coordination_policy_version" => policy.current_version.version
+      }
+    end
+
+    def low_threshold_parameters
+      {
+        "human_value_threshold" => 0.15,
+        "weights" => {
+          "review_goal_retry_pressure" => 0.7,
+          "blocking_triggers" => 0.4
+        }
+      }
+    end
+
     it "escalates on an explicit trigger and records the prediction inputs and outcome" do
       result = call_service(
         operational_failure_breaker: true,
@@ -73,15 +127,12 @@ RSpec.describe Coordination::EscalationService do
       expect_logged_decision(
         OrchestrationDecision.last,
         status: "applied",
-        inputs: {
-          "operational_failure_breaker" => true,
-          "trigger_types" => [],
-          "policy_source" => "feature_orchestration"
-        },
+        inputs: explicit_trigger_decision_inputs,
         outputs: {
           "decision" => "escalate",
           "reason" => "Consecutive operational failures (3 runs)",
-          "explicit_trigger" => "operational_failure_breaker"
+          "explicit_trigger" => "operational_failure_breaker",
+          "policy_source" => "defaults"
         }
       )
     end
@@ -93,7 +144,8 @@ RSpec.describe Coordination::EscalationService do
       expect(result.reason).to eq("followup_limit_reached")
       expect(OrchestrationDecision.last.outputs).to include(
         "decision" => "defer",
-        "reason" => "followup_limit_reached"
+        "reason" => "followup_limit_reached",
+        "policy_source" => "defaults"
       )
     end
 
@@ -104,23 +156,15 @@ RSpec.describe Coordination::EscalationService do
       expect(result.reason).to eq("automation_already_resolved")
       expect(OrchestrationDecision.last.outputs).to include(
         "decision" => "auto_resolve",
-        "reason" => "automation_already_resolved"
+        "reason" => "automation_already_resolved",
+        "policy_source" => "defaults"
       )
     end
 
-    it "uses account policy overrides when present" do
-      create(:orchestration_strategy, :feature_orchestration, :with_account,
-        account: project.account,
-        configuration: OrchestrationStrategies::Defaults.feature_orchestration.merge(
-          "escalation" => {
-            "explicit_triggers" => [],
-            "human_value_threshold" => 0.15,
-            "weights" => {
-              "review_goal_retry_pressure" => 0.7,
-              "blocking_triggers" => 0.4
-            }
-          }
-        ))
+    it "uses the active coordination policy when present" do
+      policy = create_escalation_policy!(
+        rules: { "explicit_triggers" => [] },
+        parameters: low_threshold_parameters)
 
       result = call_service(
         review_goal_retry_count: 3,
@@ -128,8 +172,27 @@ RSpec.describe Coordination::EscalationService do
       )
 
       expect(result).to be_escalate
-      expect(result.policy_source).to eq("feature_orchestration")
+      expect(result.policy_source).to eq("coordination_policy")
       expect(result.explicit_trigger).to be_nil
+      expect(OrchestrationDecision.last.inputs).to include(coordination_policy_version_inputs(policy))
+    end
+
+    it "prefers a project-scoped coordination policy over an account-wide policy" do
+      create_escalation_policy!(
+        rules: { "explicit_triggers" => [] },
+        parameters: { "human_value_threshold" => 0.05 }
+      )
+      scoped_policy = create_escalation_policy!(scope: :project,
+        rules: { "explicit_triggers" => [] },
+        parameters: { "human_value_threshold" => 0.9 })
+
+      result = call_service(review_goal_retry_count: 3)
+
+      expect(result).to be_auto_resolve
+      expect(OrchestrationDecision.last.inputs).to include(
+        "coordination_policy_id" => scoped_policy.id,
+        "coordination_policy_version_id" => scoped_policy.current_version.id
+      )
     end
   end
 end
