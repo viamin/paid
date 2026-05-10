@@ -56,6 +56,25 @@ RSpec.describe StrategyVersion do
       expect(version).not_to be_valid
       expect(version.errors[:parent_version]).to include("must belong to the same strategy")
     end
+
+    it "allows only one active version per strategy" do
+      strategy = create(:strategy, :global)
+      create(:strategy_version, :active, strategy: strategy)
+
+      duplicate_active = build(:strategy_version, :active, strategy: strategy)
+
+      expect(duplicate_active).not_to be_valid
+      expect(duplicate_active.errors[:promotion_state]).to include("allows only one active version per strategy")
+    end
+
+    it "allows a new active version after the previous one is retired" do
+      strategy = create(:strategy, :global)
+      create(:strategy_version, :retired, strategy: strategy, version: 1)
+
+      replacement = build(:strategy_version, :active, strategy: strategy, version: 2)
+
+      expect(replacement).to be_valid
+    end
   end
 
   describe "immutability" do
