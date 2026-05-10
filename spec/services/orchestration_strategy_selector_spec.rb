@@ -138,9 +138,11 @@ RSpec.describe OrchestrationStrategySelector do
       strategy = specific_language_account_strategy
 
       result = selector_result(account: account, context: { language: "ruby" })
+      broad_result = selector_result(account: account, context: { language: "python" })
 
       expect(result.strategy).to eq(strategy)
       expect(result.matched_rule_count).to eq(1)
+      expect(broad_result.matched_rule_count).to eq(0)
     end
 
     it "ignores strategies whose current version is not active" do
