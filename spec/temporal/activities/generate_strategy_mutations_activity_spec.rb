@@ -26,7 +26,7 @@ RSpec.describe Activities::GenerateStrategyMutationsActivity do
   end
 
   it "serializes generated mutations" do
-    allow(StrategyEvolution::Mutate).to receive(:call).and_return([ mutation ])
+    allow(StrategyEvolution::GenerateCandidates).to receive(:call).and_return([ mutation ])
 
     result = activity.execute(
       strategy: strategy,

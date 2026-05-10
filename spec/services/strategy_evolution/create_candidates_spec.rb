@@ -34,9 +34,18 @@ RSpec.describe StrategyEvolution::CreateCandidates do
       expect(candidates.size).to eq(1)
       expect(candidates.first).not_to be_active
       expect(candidates.first.version).to eq(4)
+      expect(candidates.first.configuration.dig("_evolution", "approval")).to eq(
+        "required" => true,
+        "status" => "pending_review",
+        "auto_promote" => false
+      )
       expect(candidates.first.configuration.dig("_evolution", "mutation_strategy")).to eq("risk_reduction")
       expect(candidates.first.configuration.dig("_evolution", "diff")).to include(
         include("path" => "/methods/paid_agent/termination/timeout_minutes")
+      )
+      expect(candidates.first.configuration.dig("_evolution", "provenance", "decision_summary")).to include(
+        "decision_count" => 15,
+        "success_rate" => 0.4
       )
       expect(OrchestrationStrategy.active_for("review_settings", account: account)).to eq(strategy)
     end

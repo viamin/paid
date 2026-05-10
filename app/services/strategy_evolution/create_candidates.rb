@@ -2,6 +2,12 @@
 
 module StrategyEvolution
   class CreateCandidates
+    APPROVAL_STATE = {
+      "required" => true,
+      "status" => "pending_review",
+      "auto_promote" => false
+    }.freeze
+
     def self.call(...)
       new(...).call
     end
@@ -62,7 +68,8 @@ module StrategyEvolution
           "reasoning" => mutation.reasoning,
           "expected_improvement" => mutation.expected_improvement,
           "diff" => mutation.diff,
-          "provenance" => mutation.provenance
+          "provenance" => mutation.provenance,
+          "approval" => APPROVAL_STATE
         }
       )
     end
