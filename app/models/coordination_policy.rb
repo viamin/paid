@@ -10,6 +10,8 @@ class CoordinationPolicy < ApplicationRecord
 
   has_many :coordination_policy_versions, dependent: :destroy
 
+  before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
+
   validates :policy_type, presence: true, inclusion: { in: POLICY_TYPES }
   validates :policy_key, presence: true, length: { maximum: 100 }
   validates :policy_key, uniqueness: { scope: [ :account_id, :policy_type ], conditions: -> { where(project_id: nil) } }, if: :account_level?
@@ -34,20 +36,6 @@ class CoordinationPolicy < ApplicationRecord
     project_id.present?
   end
 
-  def self.resolve_for(account:, policy_type:, project: nil)
-    candidates = active.for_account(account).by_type(policy_type)
-    return candidates.where(project_id: nil).order(:id).first unless project
-
-    project_first_order_sql = ActiveRecord::Base.sanitize_sql_array(
-      [ "CASE WHEN project_id = ? THEN 0 ELSE 1 END", project.id ]
-    )
-
-    candidates
-      .where(project_id: [ project.id, nil ])
-      .order(Arel.sql(project_first_order_sql), :id)
-      .first
-  end
-
   def activate_version!(policy_version)
     raise ArgumentError, "policy_version must belong to this coordination policy" unless policy_version.coordination_policy_id == id
 
@@ -63,6 +51,10 @@ class CoordinationPolicy < ApplicationRecord
   end
 
   private
+
+  def set_account_from_project
+    self.account = project.account
+  end
 
   def current_version_belongs_to_policy
     return if current_version.nil?

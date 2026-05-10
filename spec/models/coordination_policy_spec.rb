@@ -67,18 +67,13 @@ RSpec.describe CoordinationPolicy do
       expect(coordination_policy).not_to be_valid
       expect(coordination_policy.errors[:status]).to include("must be active when current_version is active")
     end
-  end
 
-  describe ".resolve_for" do
-    let(:account) { create(:account) }
-    let(:project) { create(:project, account: account) }
+    it "derives the account from the project when omitted" do
+      project = create(:project)
+      coordination_policy = build(:coordination_policy, account: nil, project:)
 
-    it "prefers a project-scoped active policy over the account default" do
-      default_policy = create(:coordination_policy, :active, account: account, policy_type: "decomposition")
-      project_policy = create(:coordination_policy, :active, :project_scoped, account: account, project: project, policy_type: "decomposition")
-
-      expect(described_class.resolve_for(account:, project:, policy_type: "decomposition")).to eq(project_policy)
-      expect(described_class.resolve_for(account:, policy_type: "decomposition")).to eq(default_policy)
+      expect(coordination_policy).to be_valid
+      expect(coordination_policy.account).to eq(project.account)
     end
   end
 
