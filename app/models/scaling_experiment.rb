@@ -5,6 +5,11 @@ require "zlib"
 class ScalingExperiment < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
   DIMENSIONS = %w[agent_count iteration_count max_iterations parallelism].freeze
+  INDEPENDENT_VARIABLE_KEYS = (DIMENSIONS + %w[task_count dependency_edge_count]).freeze
+  CONTROL_COMPARISON_METHODS = %w[within_task_count_bucket].freeze
+  COHORT_ASSIGNMENT_STRATEGIES = %w[balanced_underfilled].freeze
+  COHORT_CADENCES = %w[continuous].freeze
+  COHORT_ASSIGNMENT_UNITS = %w[workflow_id].freeze
   OUTCOME_METRIC_KEYS = %w[
     success_rate
     duration_seconds
@@ -33,8 +38,12 @@ class ScalingExperiment < ApplicationRecord
   validate :control_definition_is_object
   validate :cohort_settings_is_object
   validate :primary_dimension_variable_matches_plan
+  validate :independent_variables_are_supported
   validate :outcome_metrics_are_supported
+  validate :outcome_metrics_are_unique
   validate :primary_outcome_metric_present
+  validate :control_definition_is_supported
+  validate :cohort_settings_are_supported
 
   scope :draft, -> { where(status: "draft") }
   scope :running, -> { where(status: "running") }
@@ -116,8 +125,31 @@ class ScalingExperiment < ApplicationRecord
       cohort_label_template,
       dimension: dimension,
       value: assigned_value,
-      task_bucket: cohort_task_bucket(task_count:)
+      task_bucket: cohort_task_bucket_label(task_count:)
     )
+  end
+
+  def control_cohort_label(task_count:)
+    cohort_label(task_count:, assigned_value: control_value)
+  end
+
+  def cohort_schedule
+    cohort_settings.slice("assignment_strategy", "cadence", "assignment_unit", "label_template")
+  end
+
+  def cohort_task_bucket_label(task_count:)
+    cohort_task_bucket(task_count:)&.fetch("label", nil) || "tasks-unspecified"
+  end
+
+  def cohort_task_bucket(task_count:)
+    bucket = Array(cohort_settings["task_count_buckets"]).find do |candidate|
+      minimum = candidate["min"].to_i
+      maximum = candidate["max"]
+
+      task_count.to_i >= minimum && (maximum.blank? || task_count.to_i <= maximum.to_i)
+    end
+
+    bucket
   end
 
   def sufficient_samples?
@@ -176,17 +208,6 @@ class ScalingExperiment < ApplicationRecord
 
   def cohort_label_template
     cohort_settings.fetch("label_template", "%<dimension>s-%<value>s__%<task_bucket>s")
-  end
-
-  def cohort_task_bucket(task_count:)
-    bucket = Array(cohort_settings["task_count_buckets"]).find do |candidate|
-      minimum = candidate["min"].to_i
-      maximum = candidate["max"]
-
-      task_count.to_i >= minimum && (maximum.blank? || task_count.to_i <= maximum.to_i)
-    end
-
-    bucket&.fetch("label", nil) || "tasks-unspecified"
   end
 
   def raise_invalid_status!(action)
@@ -283,10 +304,80 @@ class ScalingExperiment < ApplicationRecord
     errors.add(:outcome_metrics, "contains unsupported keys: #{invalid_keys.sort.join(', ')}")
   end
 
+  def independent_variables_are_supported
+    return unless independent_variables.is_a?(Array)
+
+    invalid_keys = independent_variables.filter_map do |variable|
+      next unless variable.is_a?(Hash)
+
+      key = variable["key"].to_s
+      key unless INDEPENDENT_VARIABLE_KEYS.include?(key)
+    end
+    return if invalid_keys.empty?
+
+    errors.add(:independent_variables, "contains unsupported keys: #{invalid_keys.sort.join(', ')}")
+  end
+
+  def outcome_metrics_are_unique
+    return unless outcome_metrics.is_a?(Array)
+
+    metric_keys = outcome_metrics.filter_map { |metric| metric.is_a?(Hash) ? metric["key"].to_s.presence : nil }
+    return if metric_keys.uniq.size == metric_keys.size
+
+    errors.add(:outcome_metrics, "must contain unique keys")
+  end
+
   def primary_outcome_metric_present
     return unless outcome_metrics.is_a?(Array)
     return if outcome_metrics.any? { |metric| metric.is_a?(Hash) && metric["primary"] == true }
 
     errors.add(:outcome_metrics, "must include one primary metric")
+  end
+
+  def control_definition_is_supported
+    return unless control_definition.is_a?(Hash)
+
+    comparison_method = control_definition["comparison_method"].to_s
+    if comparison_method.blank? || !CONTROL_COMPARISON_METHODS.include?(comparison_method)
+      errors.add(:control_definition, "must include a supported comparison_method")
+    end
+
+    %w[fairness_conditions guardrails].each do |key|
+      values = control_definition[key]
+      next if values.is_a?(Array) && values.any?
+
+      errors.add(:control_definition, "must include #{key} as a non-empty array")
+    end
+  end
+
+  def cohort_settings_are_supported
+    return unless cohort_settings.is_a?(Hash)
+
+    if !COHORT_ASSIGNMENT_STRATEGIES.include?(cohort_settings["assignment_strategy"].to_s)
+      errors.add(:cohort_settings, "must include a supported assignment_strategy")
+    end
+
+    if !COHORT_CADENCES.include?(cohort_settings["cadence"].to_s)
+      errors.add(:cohort_settings, "must include a supported cadence")
+    end
+
+    if !COHORT_ASSIGNMENT_UNITS.include?(cohort_settings["assignment_unit"].to_s)
+      errors.add(:cohort_settings, "must include a supported assignment_unit")
+    end
+
+    errors.add(:cohort_settings, "must include label_template") if cohort_settings["label_template"].blank?
+
+    task_count_buckets = Array(cohort_settings["task_count_buckets"])
+    if task_count_buckets.empty?
+      errors.add(:cohort_settings, "must include at least one task_count_bucket")
+      return
+    end
+
+    task_count_buckets.each do |bucket|
+      unless bucket.is_a?(Hash) && bucket["label"].present? && bucket["min"].to_i.positive?
+        errors.add(:cohort_settings, "task_count_buckets must include label and positive min")
+        break
+      end
+    end
   end
 end

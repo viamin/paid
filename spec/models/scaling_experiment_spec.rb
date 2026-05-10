@@ -32,6 +32,41 @@ RSpec.describe ScalingExperiment do
       expect(scaling_experiment.errors[:independent_variables])
         .to include("must match values_tested and control_value for the tested dimension")
     end
+
+    it "rejects unsupported independent variables" do
+      scaling_experiment.independent_variables = [
+        {
+          "key" => "repo_size",
+          "role" => "context",
+          "source" => "project.metadata"
+        },
+        {
+          "key" => "agent_count",
+          "role" => "primary",
+          "values" => [ 1, 2, 4 ],
+          "control_value" => 1
+        }
+      ]
+
+      expect(scaling_experiment).not_to be_valid
+      expect(scaling_experiment.errors[:independent_variables])
+        .to include("contains unsupported keys: repo_size")
+    end
+
+    it "requires supported control-definition fields and cohort settings" do
+      scaling_experiment.control_definition = { "comparison_method" => "cross_project" }
+      scaling_experiment.cohort_settings = { "assignment_strategy" => "random" }
+
+      expect(scaling_experiment).not_to be_valid
+      expect(scaling_experiment.errors[:control_definition])
+        .to include("must include a supported comparison_method")
+      expect(scaling_experiment.errors[:control_definition])
+        .to include("must include fairness_conditions as a non-empty array")
+      expect(scaling_experiment.errors[:cohort_settings])
+        .to include("must include a supported assignment_strategy")
+      expect(scaling_experiment.errors[:cohort_settings])
+        .to include("must include at least one task_count_bucket")
+    end
   end
 
   describe ".active_for" do
@@ -73,6 +108,14 @@ RSpec.describe ScalingExperiment do
       experiment = build(:scaling_experiment)
 
       expect(experiment.cohort_label(task_count: 5, assigned_value: 2)).to eq("agent_count-2__tasks-4-6")
+    end
+  end
+
+  describe "#control_cohort_label" do
+    it "formats the control arm label for the same task bucket" do
+      experiment = build(:scaling_experiment)
+
+      expect(experiment.control_cohort_label(task_count: 5)).to eq("agent_count-1__tasks-4-6")
     end
   end
 end
