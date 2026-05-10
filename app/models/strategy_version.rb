@@ -29,6 +29,7 @@ class StrategyVersion < ApplicationRecord
   validates :promotion_state, inclusion: { in: PROMOTION_STATES }
   validate :content_is_object
   validate :provenance_is_object
+  validate :single_active_version_per_strategy
   validate :immutable_content_after_creation, on: :update
   validate :parent_version_belongs_to_strategy
 
@@ -71,5 +72,19 @@ class StrategyVersion < ApplicationRecord
     return if parent_version.strategy_id == strategy_id
 
     errors.add(:parent_version, "must belong to the same strategy")
+  end
+
+  def single_active_version_per_strategy
+    return unless promotion_state == "active" && retired_at.nil?
+    return unless strategy_id
+
+    existing_active_versions = self.class
+      .where(promotion_state: "active", retired_at: nil)
+      .where(strategy_id: strategy_id)
+      .where.not(id: id)
+
+    return unless existing_active_versions.exists?
+
+    errors.add(:promotion_state, "allows only one active version per strategy")
   end
 end

@@ -13,6 +13,7 @@ RSpec.describe Account do
     it { is_expected.to have_many(:billing_invoices).dependent(:destroy) }
     it { is_expected.to have_many(:billing_periods).dependent(:destroy) }
     it { is_expected.to have_many(:billing_plans).dependent(:destroy) }
+    it { is_expected.to have_many(:strategy_experiments).dependent(:destroy) }
   end
 
   describe "validations" do
