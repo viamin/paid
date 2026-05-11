@@ -22,6 +22,10 @@ class Notification < ApplicationRecord
   scope :for_nav_section, ->(section) { where(nav_section: section) }
   scope :recent, -> { order(created_at: :desc) }
 
+  def active?
+    dismissed_at.nil? && resolved_at.nil?
+  end
+
   private
 
   def action_url_is_safe
