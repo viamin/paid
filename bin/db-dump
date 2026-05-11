@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${APP_ROOT}/bin/lib/db_helpers.sh"
 cd "$APP_ROOT" || exit
 
 BACKUPS_DIR="${APP_ROOT}/backups"
@@ -55,96 +56,6 @@ read_container_env() {
   docker exec "$container" printenv "$name" 2>/dev/null || true
 }
 
-run_sql() {
-  local db="$1"; shift
-  if [[ "$BACKEND" == "docker" ]]; then
-    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
-      psql -U "$COMPOSE_DB_USER" -d "$db" -q --no-align --tuples-only "$@"
-  else
-    local host_args=()
-    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
-    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q --no-align --tuples-only "$@"
-  fi
-}
-
-run_sql_exec() {
-  local db="$1"; shift
-  if [[ "$BACKEND" == "docker" ]]; then
-    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
-      psql -U "$COMPOSE_DB_USER" -d "$db" -q "$@"
-  else
-    local host_args=()
-    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
-    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q "$@"
-  fi
-}
-
-run_table_alter_best_effort() {
-  local db="$1"
-  local tables="$2"
-  local sql="$3"
-  local action="$4"
-  local required="${5:-0}"
-  local failures=0
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    if ! run_sql_exec "$db" -c "ALTER TABLE \"$table\" ${sql};" >/dev/null; then
-      echo "WARNING: failed to ${action} on ${table}" >&2
-      failures=$((failures + 1))
-    fi
-  done <<< "$tables"
-
-  if [[ "$failures" -gt 0 ]]; then
-    echo "WARNING: ${failures} table(s) failed while attempting to ${action}" >&2
-    if [[ "$required" == "1" ]]; then
-      return 1
-    fi
-  fi
-}
-
-disable_rls() {
-  local db="$1"
-  local required="${2:-0}"
-  RLS_TABLES="$(run_sql "$db" -c "
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public' AND rowsecurity = true
-    ORDER BY tablename
-  " 2>/dev/null)" || true
-
-  if [[ -z "$RLS_TABLES" ]]; then
-    return 0
-  fi
-
-  local count
-  count="$(echo "$RLS_TABLES" | wc -l)"
-  echo "Disabling RLS on $count tables..."
-  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS" "$required"
-}
-
-enable_rls() {
-  local db="$1"
-  local tables="${2:-${RLS_TABLES}}"
-  local required="${3:-0}"
-
-  if [[ -z "$tables" ]]; then
-    tables="$(run_sql "$db" -c "
-      SELECT DISTINCT c.relname
-      FROM pg_class c
-      JOIN pg_policy p ON p.polrelid = c.oid
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind = 'r'
-      ORDER BY c.relname
-    " 2>/dev/null)" || true
-    if [[ -z "$tables" ]]; then
-      return 0
-    fi
-  fi
-
-  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS" "$required"
-  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS" "$required"
-}
-
 pg_dump_args() {
   local user="$1"
 
@@ -192,16 +103,16 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
-  disable_rls "$DB_NAME" 1
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
 
   pg_dump_args "$COMPOSE_DB_USER"
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 
-  enable_rls "$DB_NAME" "$RLS_TABLES" 1
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES
 elif [[ -n "$DB_NAME" ]]; then
   BACKEND="local"
 
-  disable_rls "$DB_NAME" 1
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
 
   pg_dump_args "$DB_USER"
   PG_HOST_ARGS=()
@@ -210,7 +121,7 @@ elif [[ -n "$DB_NAME" ]]; then
   fi
   PGPASSWORD="$DB_PASSWORD" pg_dump "${PG_HOST_ARGS[@]}" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 
-  enable_rls "$DB_NAME" "$RLS_TABLES" 1
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES
 else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1

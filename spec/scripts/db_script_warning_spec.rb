@@ -76,10 +76,12 @@ RSpec.describe DbScriptWarning do
 
   def prepare_script_fixture(dir, script_name)
     FileUtils.mkdir_p(File.join(dir, "bin"))
+    FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "backups"))
 
     script_path = File.join(dir, "bin", script_name)
     FileUtils.cp(File.expand_path("../../bin/#{script_name}", __dir__), script_path)
+    FileUtils.cp(File.expand_path("../../bin/lib/db_helpers.sh", __dir__), File.join(dir, "bin", "lib", "db_helpers.sh"))
     FileUtils.chmod("+x", script_path)
     script_path
   end

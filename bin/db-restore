@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${APP_ROOT}/bin/lib/db_helpers.sh"
 cd "$APP_ROOT" || exit
 
 BACKUPS_DIR="${APP_ROOT}/backups"
@@ -59,128 +60,16 @@ DB_PASSWORD="${DB_PASSWORD-${RAILS_CONFIG[2]:-}}"
 DB_NAME="${DB_NAME-${RAILS_CONFIG[3]:-}}"
 RAILS_ENVIRONMENT="${RAILS_ENVIRONMENT-${RAILS_CONFIG[4]:-${RAILS_ENV:-${RACK_ENV:-development}}}}"
 
+get_data_tables() {
+  local db="$1"
+  DATA_TABLES="$(db_helpers_get_data_tables "$db")" || true
+}
+
 read_container_env() {
   local container="$1"
   local name="$2"
 
   docker exec "$container" printenv "$name" 2>/dev/null || true
-}
-
-run_sql() {
-  local db="$1"; shift
-  if [[ "$BACKEND" == "docker" ]]; then
-    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
-      psql -U "$COMPOSE_DB_USER" -d "$db" -q --no-align --tuples-only "$@"
-  else
-    local host_args=()
-    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
-    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q --no-align --tuples-only "$@"
-  fi
-}
-
-run_sql_exec() {
-  local db="$1"; shift
-  if [[ "$BACKEND" == "docker" ]]; then
-    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
-      psql -U "$COMPOSE_DB_USER" -d "$db" -q "$@"
-  else
-    local host_args=()
-    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
-    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q "$@"
-  fi
-}
-
-run_table_alter_best_effort() {
-  local db="$1"
-  local tables="$2"
-  local sql="$3"
-  local action="$4"
-  local required="${5:-0}"
-  local failures=0
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    if ! run_sql_exec "$db" -c "ALTER TABLE \"$table\" ${sql};" >/dev/null; then
-      echo "WARNING: failed to ${action} on ${table}" >&2
-      failures=$((failures + 1))
-    fi
-  done <<< "$tables"
-
-  if [[ "$failures" -gt 0 ]]; then
-    echo "WARNING: ${failures} table(s) failed while attempting to ${action}" >&2
-    if [[ "$required" == "1" ]]; then
-      return 1
-    fi
-  fi
-}
-
-get_data_tables() {
-  local db="$1"
-  DATA_TABLES="$(run_sql "$db" -c "
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public'
-      AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
-    ORDER BY tablename
-  " 2>/dev/null)" || true
-}
-
-disable_rls() {
-  local db="$1"
-  local required="${2:-0}"
-  RLS_TABLES="$(run_sql "$db" -c "
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public' AND rowsecurity = true
-    ORDER BY tablename
-  " 2>/dev/null)" || true
-
-  if [[ -z "$RLS_TABLES" ]]; then
-    return 0
-  fi
-
-  local count
-  count="$(echo "$RLS_TABLES" | wc -l)"
-  echo "Disabling RLS on $count tables..."
-  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS" "$required"
-}
-
-enable_rls() {
-  local db="$1"
-  local tables="${2:-${RLS_TABLES}}"
-  local required="${3:-0}"
-
-  if [[ -z "$tables" ]]; then
-    tables="$(run_sql "$db" -c "
-      SELECT DISTINCT c.relname
-      FROM pg_class c
-      JOIN pg_policy p ON p.polrelid = c.oid
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind = 'r'
-      ORDER BY c.relname
-    " 2>/dev/null)" || true
-    if [[ -z "$tables" ]]; then
-      return 0
-    fi
-  fi
-
-  local count
-  count="$(echo "$tables" | wc -l)"
-  echo "Re-enabling RLS on $count tables..."
-  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS" "$required"
-  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS" "$required"
-}
-
-disable_triggers() {
-  local db="$1"
-  local required="${2:-0}"
-  echo "Disabling triggers on data tables..."
-  run_table_alter_best_effort "$db" "$DATA_TABLES" "DISABLE TRIGGER ALL" "disable triggers" "$required"
-}
-
-enable_triggers() {
-  local db="$1"
-  local required="${2:-0}"
-  echo "Re-enabling triggers on data tables..."
-  run_table_alter_best_effort "$db" "$DATA_TABLES" "ENABLE TRIGGER ALL" "enable triggers" "$required"
 }
 
 local_db_host() {
@@ -245,10 +134,10 @@ cleanup() {
   if [[ -n "$BACKEND" ]]; then
     echo "Cleaning up after error..." >&2
     if [[ -n "$DATA_TABLES" ]]; then
-      enable_triggers "$DB_NAME"
+      enable_triggers "$DB_NAME" "$DATA_TABLES"
     fi
     if [[ -n "$RLS_TABLES" ]]; then
-      enable_rls "$DB_NAME" "$RLS_TABLES"
+      enable_rls "$DB_NAME" "$RLS_TABLES" 0 RLS_TABLES
     fi
   fi
   exit "$exit_code"
@@ -270,8 +159,8 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
   get_data_tables "$DB_NAME"
-  disable_rls "$DB_NAME" 1
-  disable_triggers "$DB_NAME" 1
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+  disable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Disabling triggers on data tables..."
 
   echo "Truncating existing data..."
   run_sql_exec "$DB_NAME" -c "
@@ -297,8 +186,8 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" \
     pg_restore --data-only --no-owner --no-privileges -U "$COMPOSE_DB_USER" -d "$DB_NAME" < "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
 
-  enable_triggers "$DB_NAME" 1
-  enable_rls "$DB_NAME" "$RLS_TABLES" 1
+  enable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Re-enabling triggers on data tables..."
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES "Re-enabling RLS on %d tables..."
   RESTORE_CLEANUP_DONE=1
 
   if [[ -n "$RESTORE_FAILED" ]]; then
@@ -313,8 +202,8 @@ elif [[ -n "$DB_NAME" ]]; then
   echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
 
   get_data_tables "$DB_NAME"
-  disable_rls "$DB_NAME" 1
-  disable_triggers "$DB_NAME" 1
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+  disable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Disabling triggers on data tables..."
 
   echo "Truncating existing data..."
   run_sql_exec "$DB_NAME" -c "
@@ -343,8 +232,8 @@ elif [[ -n "$DB_NAME" ]]; then
   RESTORE_FAILED=""
   PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" --data-only --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME" "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
 
-  enable_triggers "$DB_NAME" 1
-  enable_rls "$DB_NAME" "$RLS_TABLES" 1
+  enable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Re-enabling triggers on data tables..."
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES "Re-enabling RLS on %d tables..."
   RESTORE_CLEANUP_DONE=1
 
   if [[ -n "$RESTORE_FAILED" ]]; then
