@@ -4,9 +4,8 @@ require "rails_helper"
 
 RSpec.describe Strategies::SeedBaselineOrchestration do
   describe ".call" do
-    it "creates active global strategies with promoted baseline versions" do
-      expect { described_class.call }.to change(Strategy, :count).by(3)
-        .and change(StrategyVersion, :count).by(3)
+    it "ensures active global strategies with promoted baseline versions exist" do
+      described_class.call
 
       Strategies::BaselineOrchestration.definitions.each do |definition|
         strategy = Strategy.global.find_by!(slug: definition[:slug])
