@@ -16,6 +16,10 @@ module ConfigurationBundles
     def call
       return unless agent_run.configuration_bundle
 
+      tokens_input = agent_run.tokens_input.to_i
+      tokens_output = agent_run.tokens_output.to_i
+      queue_duration_seconds = duration_between(agent_run.created_at, agent_run.started_at)
+      total_duration_seconds = duration_between(agent_run.created_at, agent_run.completed_at)
       objective_result = ConfigurationBundles::ObjectiveScore.call(
         project: agent_run.project,
         quality_score: quality_metric.composite_score,
@@ -31,20 +35,37 @@ module ConfigurationBundles
         quality_score: quality_metric.composite_score,
         cost_cents: agent_run.cost_cents.to_i,
         duration_seconds: agent_run.duration_seconds,
-        tokens_used: agent_run.tokens_input.to_i + agent_run.tokens_output.to_i,
+        tokens_used: tokens_input + tokens_output,
         success: agent_run.status == "completed",
         metrics: {
           "component_scores" => quality_metric.scores || {},
           "completed_at" => agent_run.completed_at&.iso8601,
+          "created_at" => agent_run.created_at&.iso8601,
           "cost_score" => objective_result.cost_score,
+          "execution_duration_seconds" => agent_run.duration_seconds,
+          "outcome" => agent_run.status,
           "objective_score" => objective_result.objective_score,
           "quality_per_dollar" => objective_result.quality_per_dollar,
+          "queue_duration_seconds" => queue_duration_seconds,
           "speed_score" => objective_result.speed_score,
-          "status" => agent_run.status
-        }
+          "started_at" => agent_run.started_at&.iso8601,
+          "status" => agent_run.status,
+          "success" => agent_run.status == "completed",
+          "tokens_input" => tokens_input,
+          "tokens_output" => tokens_output,
+          "total_duration_seconds" => total_duration_seconds
+        }.compact
       )
       outcome.save!
       outcome
+    end
+
+    private
+
+    def duration_between(start_time, end_time)
+      return unless start_time && end_time
+
+      [ (end_time - start_time).round, 0 ].max
     end
   end
 end

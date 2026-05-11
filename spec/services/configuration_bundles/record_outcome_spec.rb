@@ -32,12 +32,8 @@ RSpec.describe ConfigurationBundles::RecordOutcome do
     expect(outcome.cost_cents).to eq(agent_run.cost_cents)
     expect(outcome.duration_seconds).to eq(agent_run.duration_seconds)
     expect(outcome.tokens_used).to eq(agent_run.tokens_input + agent_run.tokens_output)
-    expect(outcome.metrics).to include(
-      "component_scores" => { "pr_created" => 1.0 },
-      "objective_score" => be_within(0.001).of(0.684),
-      "quality_per_dollar" => be_within(0.001).of(0.56),
-      "status" => "completed"
-    )
+    expect_metric_summary(outcome)
+    expect_metric_timestamps(outcome)
   end
 
   it "updates an existing outcome on recollection" do
@@ -50,5 +46,27 @@ RSpec.describe ConfigurationBundles::RecordOutcome do
 
     expect(agent_run.reload.bundle_outcomes.sole.quality_score.to_f).to eq(0.65)
     expect(agent_run.bundle_outcomes.sole.metrics.fetch("component_scores")).to eq("pr_created" => 0.0)
+  end
+
+  def expect_metric_summary(outcome)
+    expect(outcome.metrics).to include(
+      "component_scores" => { "pr_created" => 1.0 },
+      "execution_duration_seconds" => agent_run.duration_seconds,
+      "objective_score" => be_within(0.001).of(0.684),
+      "outcome" => "completed",
+      "quality_per_dollar" => be_within(0.001).of(0.56),
+      "queue_duration_seconds" => be_a(Integer),
+      "status" => "completed",
+      "success" => true,
+      "tokens_input" => agent_run.tokens_input,
+      "tokens_output" => agent_run.tokens_output,
+      "total_duration_seconds" => be_a(Integer)
+    )
+  end
+
+  def expect_metric_timestamps(outcome)
+    expect(outcome.metrics.fetch("created_at")).to eq(agent_run.created_at.iso8601)
+    expect(outcome.metrics.fetch("started_at")).to eq(agent_run.started_at.iso8601)
+    expect(outcome.metrics.fetch("completed_at")).to eq(agent_run.completed_at.iso8601)
   end
 end
