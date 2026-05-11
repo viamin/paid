@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe "StrategyReviews" do
   let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
+  let(:user) { create(:user, :owner, account: account) }
   let(:strategy) { create(:strategy, :for_account, account: account, name: "Issue Execution") }
   let!(:active_version) do
     strategy.create_version!(
