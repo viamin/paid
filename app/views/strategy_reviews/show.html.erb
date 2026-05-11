@@ -88,18 +88,18 @@
       <div class="px-4 py-5 sm:p-6">
         <h3 class="text-base font-semibold leading-6 text-gray-900">Edit &amp; Resubmit</h3>
         <p class="mt-1 text-sm text-gray-500">Save a reviewer-edited replacement candidate. The current pending version will be superseded.</p>
-        <%= form_with url: strategy_review_path(@strategy, @strategy_version), method: :patch, local: true, class: "mt-4 space-y-4" do |form| %>
+        <%= form_with url: strategy_review_path(@strategy, @strategy_version), scope: :strategy_version, method: :patch, local: true, class: "mt-4 space-y-4" do |form| %>
           <div>
-            <%= form.label "strategy_version[change_notes]", "Change notes", class: "block text-sm font-medium text-gray-700" %>
-            <%= form.text_field "strategy_version[change_notes]", class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
+            <%= form.label :change_notes, "Change notes", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :change_notes, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
           </div>
           <div>
-            <%= form.label "strategy_version[reasoning]", "Reasoning", class: "block text-sm font-medium text-gray-700" %>
-            <%= form.text_area "strategy_version[reasoning]", rows: 4, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", value: @strategy_version.reasoning %>
+            <%= form.label :reasoning, "Reasoning", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area :reasoning, rows: 4, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", value: @strategy_version.reasoning %>
           </div>
           <div>
-            <%= form.label "strategy_version[content]", "Content", class: "block text-sm font-medium text-gray-700" %>
-            <%= form.text_area "strategy_version[content]", rows: 16, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", value: JSON.pretty_generate(@strategy_version.content) %>
+            <%= form.label :content, "Content", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area :content, rows: 16, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", value: JSON.pretty_generate(@strategy_version.content) %>
           </div>
           <div>
             <%= form.submit "Save edited variant", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
