@@ -45,7 +45,9 @@ module StrategyReviews
       raise ArgumentError, "reviewer is required" unless reviewer
       raise ArgumentError, "strategy version is not pending review" unless strategy_version.pending_review?
       content = attributes[:content]
-      raise ArgumentError, "content must be an object" unless content.is_a?(Hash)
+      return if content.nil? || content.is_a?(Hash)
+
+      raise ArgumentError, "content must be an object"
     end
   end
 end
