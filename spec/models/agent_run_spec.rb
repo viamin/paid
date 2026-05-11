@@ -216,6 +216,19 @@ RSpec.describe AgentRun do
           .to be < described_class.stale_running_timeout(goal: "create_pr")
       end
 
+      it "does not treat completed healthy-history runs as stale running" do
+        create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+          :completed,
+          :review_goal,
+          duration_seconds: 120,
+          completed_at: 1.day.ago)
+
+        stale_review = create(:agent_run, :running, :review_goal,
+          started_at: described_class.stale_running_cutoff(goal: "review") - 1.minute)
+
+        expect(described_class.stale_running).to contain_exactly(stale_review)
+      end
+
       it "falls back to the legacy cutoff for unexpected goal values" do
         stale_unknown_goal = create(:agent_run, :running,
           started_at: described_class.stale_running_cutoff - 1.minute)

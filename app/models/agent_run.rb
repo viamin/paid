@@ -584,7 +584,7 @@ class AgentRun < ApplicationRecord
       stale_running_cutoff(now: now)
     ])
 
-    (known_goal_clauses << fallback_clause).join(" OR ")
+    "(#{(known_goal_clauses << fallback_clause).join(' OR ')})"
   end
 
   def self.healthy_successful_runtime_stats_by_goal
