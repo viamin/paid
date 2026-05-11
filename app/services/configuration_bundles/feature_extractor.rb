@@ -2,12 +2,20 @@
 
 module ConfigurationBundles
   class FeatureExtractor
+    include Canonicalization
+
     FeatureVector = Struct.new(
       :goal,
       :agent_type,
+      :provider_id,
+      :prompt_version_id,
+      :custom_prompt_sha256,
+      :model_selection,
       :has_model_selection,
       :has_custom_prompt,
       :has_mcp_servers,
+      :service_container_ids,
+      :mcp_servers,
       :service_container_count,
       :mcp_server_count,
       :experiment_features,
@@ -22,9 +30,15 @@ module ConfigurationBundles
       FeatureVector.new(
         goal: definition["goal"],
         agent_type: definition["agent_type"],
+        provider_id: definition["provider_id"],
+        prompt_version_id: definition["prompt_version_id"],
+        custom_prompt_sha256: definition["custom_prompt_sha256"],
+        model_selection: canonicalize(definition["model_selection"]),
         has_model_selection: definition["model_selection"].present?,
         has_custom_prompt: definition["custom_prompt_sha256"].present?,
         has_mcp_servers: Array(definition["mcp_servers"]).any?,
+        service_container_ids: Array(definition["service_container_ids"]).sort,
+        mcp_servers: normalized_mcp_servers(definition),
         service_container_count: Array(definition["service_container_ids"]).size,
         mcp_server_count: Array(definition["mcp_servers"]).size,
         experiment_features: extract_experiment_features(definition)
@@ -75,6 +89,12 @@ module ConfigurationBundles
       else
         value
       end
+    end
+
+    def normalized_mcp_servers(definition)
+      Array(definition["mcp_servers"])
+        .map { |snapshot| canonicalize(snapshot) }
+        .sort_by { |snapshot| JSON.generate(snapshot) }
     end
   end
 end

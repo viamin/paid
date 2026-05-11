@@ -79,6 +79,8 @@ module ConfigurationBundles
 
     def find_matches(query_features)
       trained_state.rows.filter_map do |row|
+        next unless compatible_context?(query_features, row.features)
+
         similarity = compute_similarity(query_features, row.features)
         next if similarity <= 0
 
@@ -86,9 +88,17 @@ module ConfigurationBundles
       end
     end
 
-    def compute_similarity(query, historical)
-      return 0.0 unless query.goal == historical.goal
+    def compatible_context?(query, historical)
+      query.goal == historical.goal &&
+        query.provider_id == historical.provider_id &&
+        query.prompt_version_id == historical.prompt_version_id &&
+        query.custom_prompt_sha256 == historical.custom_prompt_sha256 &&
+        query.model_selection == historical.model_selection &&
+        query.service_container_ids == historical.service_container_ids &&
+        query.mcp_servers == historical.mcp_servers
+    end
 
+    def compute_similarity(query, historical)
       scores = [
         boolean_similarity(query.agent_type, historical.agent_type),
         boolean_similarity(query.has_model_selection, historical.has_model_selection),

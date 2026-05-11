@@ -8,13 +8,19 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
       definition = {
         "schema_version" => 1,
         "goal" => "create_pr",
-        "agent_type" => "claude_code"
+        "agent_type" => "claude_code",
+        "provider_id" => "openai",
+        "prompt_version_id" => "pv_123",
+        "custom_prompt_sha256" => "abc123"
       }
 
       features = described_class.call(definition)
 
       expect(features.goal).to eq("create_pr")
       expect(features.agent_type).to eq("claude_code")
+      expect(features.provider_id).to eq("openai")
+      expect(features.prompt_version_id).to eq("pv_123")
+      expect(features.custom_prompt_sha256).to eq("abc123")
     end
 
     it "detects the presence of a model selection" do
@@ -23,6 +29,26 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
 
       expect(described_class.call(with_model).has_model_selection).to be(true)
       expect(described_class.call(without_model).has_model_selection).to be(false)
+    end
+
+    it "preserves canonicalized model selection and exact sidecar definitions" do
+      definition = {
+        "model_selection" => { "provider" => "openai", "model" => "gpt-5" },
+        "service_container_ids" => [ 3, 1, 2 ],
+        "mcp_servers" => [
+          { "config" => { "path" => "/tmp/z", "mode" => "read" }, "name" => "zeta" },
+          { "name" => "alpha", "config" => { "mode" => "write", "path" => "/tmp/a" } }
+        ]
+      }
+
+      features = described_class.call(definition)
+
+      expect(features.model_selection).to eq({ "model" => "gpt-5", "provider" => "openai" })
+      expect(features.service_container_ids).to eq([ 1, 2, 3 ])
+      expect(features.mcp_servers).to eq([
+        { "config" => { "mode" => "read", "path" => "/tmp/z" }, "name" => "zeta" },
+        { "config" => { "mode" => "write", "path" => "/tmp/a" }, "name" => "alpha" }
+      ])
     end
 
     it "detects the presence of a custom prompt" do

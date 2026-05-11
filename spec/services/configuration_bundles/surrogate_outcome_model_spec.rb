@@ -4,15 +4,23 @@ require "rails_helper"
 
 RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
   def build_row(goal:, agent_type:, quality_score:, experiment_features: {}, success: true,
-                cost_cents: 40, duration_seconds: 120, weight: 1.0, objective_score: nil)
+                cost_cents: 40, duration_seconds: 120, weight: 1.0, objective_score: nil,
+                provider_id: nil, prompt_version_id: nil, custom_prompt_sha256: nil,
+                model_selection: nil, service_container_ids: [], mcp_servers: [])
     features = ConfigurationBundles::FeatureExtractor::FeatureVector.new(
       goal: goal,
       agent_type: agent_type,
-      has_model_selection: false,
-      has_custom_prompt: false,
-      has_mcp_servers: false,
-      service_container_count: 0,
-      mcp_server_count: 0,
+      provider_id: provider_id,
+      prompt_version_id: prompt_version_id,
+      custom_prompt_sha256: custom_prompt_sha256,
+      model_selection: model_selection,
+      has_model_selection: model_selection.present?,
+      has_custom_prompt: custom_prompt_sha256.present?,
+      has_mcp_servers: mcp_servers.any?,
+      service_container_ids: service_container_ids,
+      mcp_servers: mcp_servers,
+      service_container_count: service_container_ids.size,
+      mcp_server_count: mcp_servers.size,
       experiment_features: experiment_features
     )
     objective_score ||= quality_score * 0.9
@@ -36,17 +44,45 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
     )
   end
 
-  def bundle_definition(goal: "create_pr", agent_type: "claude_code", experiments: {})
+  def bundle_definition(goal: "create_pr", agent_type: "claude_code", experiments: {},
+                        provider_id: nil, prompt_version_id: nil, custom_prompt_sha256: nil,
+                        model_selection: nil, service_container_ids: [], mcp_servers: [])
     {
       "schema_version" => 1,
       "goal" => goal,
       "agent_type" => agent_type,
+      "provider_id" => provider_id,
+      "prompt_version_id" => prompt_version_id,
+      "custom_prompt_sha256" => custom_prompt_sha256,
+      "model_selection" => model_selection,
+      "service_container_ids" => service_container_ids,
+      "mcp_servers" => mcp_servers,
       "experiments" => experiments
     }
   end
 
   def section_order_experiment(*sections)
     { "knowledge.section_order" => { "value" => sections } }
+  end
+
+  def openai_bundle_identity
+    {
+      provider_id: "openai",
+      prompt_version_id: "prompt-v1",
+      model_selection: { "provider" => "openai", "model" => "gpt-5" },
+      service_container_ids: [ 1, 2 ],
+      mcp_servers: [ { "name" => "filesystem", "transport" => "stdio" } ]
+    }
+  end
+
+  def anthropic_bundle_identity
+    {
+      provider_id: "anthropic",
+      prompt_version_id: "prompt-v2",
+      model_selection: { "provider" => "anthropic", "model" => "claude-sonnet" },
+      service_container_ids: [ 9 ],
+      mcp_servers: [ { "name" => "github", "transport" => "http" } ]
+    }
   end
 
   describe ".train" do
@@ -263,6 +299,31 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
       )
 
       expect(claude_prediction.predicted_quality_score).to be > cursor_prediction.predicted_quality_score
+    end
+
+    it "does not mix histories across different providers or sidecar definitions" do
+      rows = [
+        build_row(
+          goal: "create_pr", agent_type: "claude_code", quality_score: 0.95, success: true,
+          **openai_bundle_identity
+        ),
+        build_row(
+          goal: "create_pr", agent_type: "claude_code", quality_score: 0.2, success: false,
+          **anthropic_bundle_identity
+        )
+      ]
+      model = described_class.train(dataset: build_dataset(rows))
+
+      openai_prediction = model.predict(
+        bundle_definition: bundle_definition(**openai_bundle_identity.merge(service_container_ids: [ 2, 1 ]))
+      )
+      anthropic_prediction = model.predict(
+        bundle_definition: bundle_definition(**anthropic_bundle_identity)
+      )
+
+      expect(openai_prediction.predicted_quality_score).to be > anthropic_prediction.predicted_quality_score
+      expect(openai_prediction.predicted_quality_score).to be > 0.7
+      expect(anthropic_prediction.predicted_quality_score).to be < 0.5
     end
 
     it "can be retrained with new data" do
