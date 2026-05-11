@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# frozen_string_literal: true
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -160,14 +159,15 @@ create_backup() {
 
 verify_backup_row_counts() {
   info "Verifying backup contains data..."
-  local listing
-  listing="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "^;" || true)"
-  if [[ "$listing" -lt 10 ]]; then
-    error "Backup appears to have too few table entries ($listing). Something may be wrong."
-    error "Aborting to prevent data loss."
+  local toc_entries data_entries
+  toc_entries="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "." || true)"
+  data_entries="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "TABLE DATA" || true)"
+  if [[ "$data_entries" -lt 20 ]]; then
+    error "Backup appears to have too few TABLE DATA entries ($data_entries). Something may be wrong."
+    error "Expected 50+ tables with data. Aborting to prevent data loss."
     exit 1
   fi
-  info "Backup contains $listing table entries - looks valid"
+  info "Backup contains $data_entries TABLE DATA entries ($toc_entries total TOC entries) - looks valid"
 }
 
 reset_sequences() {
@@ -242,6 +242,19 @@ restore_into() {
   "
   info "FK constraints dropped"
 
+  info "Disabling triggers on data tables..."
+  local data_tables
+  data_tables="$(run_sql "$db_name" -c "
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+    ORDER BY tablename
+  " 2>/dev/null)" || true
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db_name" -c "ALTER TABLE \"$table\" DISABLE TRIGGER ALL;" 2>/dev/null || true
+  done <<< "$data_tables"
+
   info "Truncating target tables..."
   run_sql_exec "$db_name" -c "
     DO \$\$
@@ -278,6 +291,12 @@ restore_into() {
     done
     error "Data may be incomplete. Check backup and target database."
   fi
+
+  info "Re-enabling triggers on data tables..."
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db_name" -c "ALTER TABLE \"$table\" ENABLE TRIGGER ALL;" 2>/dev/null || true
+  done <<< "$data_tables"
 
   info "Re-creating FK constraints..."
   local recreated=0

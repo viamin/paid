@@ -5,6 +5,9 @@ APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_ROOT" || exit
 
 BACKUPS_DIR="${APP_ROOT}/backups"
+BACKEND=""
+RLS_TABLES=""
+DATA_TABLES=""
 
 read_rails_db_config() {
   bin/rails runner "
@@ -23,6 +26,7 @@ usage() {
   echo "Restore database data from a custom-format archive."
   echo "Truncates all existing data before restoring."
   echo "Requires a freshly migrated database (schema must match the dump)."
+  echo "Automatically disables RLS and triggers during restore so all rows are written."
   echo ""
   echo "Defaults are read from the Rails database config."
   echo ""
@@ -62,24 +66,109 @@ read_container_env() {
   docker exec "$container" printenv "$name" 2>/dev/null || true
 }
 
-pg_restore_args() {
-  local user="$1"
-
-  PG_RESTORE_ARGS=(--data-only --disable-triggers --no-owner --no-privileges)
-  if [[ -n "$user" ]]; then
-    PG_RESTORE_ARGS+=(-U "$user")
+run_sql() {
+  local db="$1"; shift
+  if [[ "$BACKEND" == "docker" ]]; then
+    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
+      psql -U "$COMPOSE_DB_USER" -d "$db" -q --no-align --tuples-only "$@"
+  else
+    local host_args=()
+    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
+    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q --no-align --tuples-only "$@"
   fi
-  PG_RESTORE_ARGS+=(-d "$DB_NAME")
 }
 
-psql_args() {
-  local user="$1"
-
-  PSQL_ARGS=()
-  if [[ -n "$user" ]]; then
-    PSQL_ARGS+=(-U "$user")
+run_sql_exec() {
+  local db="$1"; shift
+  if [[ "$BACKEND" == "docker" ]]; then
+    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
+      psql -U "$COMPOSE_DB_USER" -d "$db" -q "$@"
+  else
+    local host_args=()
+    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
+    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q "$@"
   fi
-  PSQL_ARGS+=(-d "$DB_NAME")
+}
+
+get_data_tables() {
+  local db="$1"
+  DATA_TABLES="$(run_sql "$db" -c "
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+    ORDER BY tablename
+  " 2>/dev/null)" || true
+}
+
+disable_rls() {
+  local db="$1"
+  RLS_TABLES="$(run_sql "$db" -c "
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND rowsecurity = true
+    ORDER BY tablename
+  " 2>/dev/null)" || true
+
+  if [[ -z "$RLS_TABLES" ]]; then
+    return 0
+  fi
+
+  local count
+  count="$(echo "$RLS_TABLES" | wc -l)"
+  echo "Disabling RLS on $count tables..."
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE ROW LEVEL SECURITY;" 2>/dev/null || true
+  done <<< "$RLS_TABLES"
+}
+
+enable_rls() {
+  local db="$1"
+  local tables="${2:-${RLS_TABLES}}"
+
+  if [[ -z "$tables" ]]; then
+    tables="$(run_sql "$db" -c "
+      SELECT DISTINCT c.relname
+      FROM pg_class c
+      JOIN pg_policy p ON p.polrelid = c.oid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+      ORDER BY c.relname
+    " 2>/dev/null)" || true
+    if [[ -z "$tables" ]]; then
+      return 0
+    fi
+  fi
+
+  local count
+  count="$(echo "$tables" | wc -l)"
+  echo "Re-enabling RLS on $count tables..."
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null || true
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null || true
+  done <<< "$tables"
+}
+
+disable_triggers() {
+  local db="$1"
+  echo "Disabling triggers on data tables..."
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE TRIGGER ALL;" 2>/dev/null || true
+  done <<< "$DATA_TABLES"
+}
+
+enable_triggers() {
+  local db="$1"
+  echo "Re-enabling triggers on data tables..."
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE TRIGGER ALL;" 2>/dev/null || true
+  done <<< "$DATA_TABLES"
 }
 
 local_db_host() {
@@ -116,11 +205,6 @@ guard_destructive_restore() {
   fi
 }
 
-announce_restore() {
-  echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
-  echo "Truncating existing data..."
-}
-
 BACKUP_FILE="${1}"
 
 if [[ "$BACKUP_FILE" != /* ]]; then
@@ -139,56 +223,123 @@ if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
 fi
 
-TRUNCATE_SQL="
-SET session_replication_role = 'replica';
-DO \$\$
-DECLARE
-  r RECORD;
-BEGIN
-  FOR r IN (
-    SELECT tablename
-    FROM pg_tables
-    WHERE schemaname = 'public'
-      AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
-    ORDER BY tablename
-  ) LOOP
-    EXECUTE format('TRUNCATE TABLE %I CASCADE', r.tablename);
-  END LOOP;
-END;
-\$\$;
-SET session_replication_role = 'origin';
-"
+RESTORE_CLEANUP_DONE=""
+
+cleanup() {
+  local exit_code=$?
+  if [[ "$RESTORE_CLEANUP_DONE" == "1" ]]; then
+    exit "$exit_code"
+  fi
+  if [[ -n "$BACKEND" ]]; then
+    echo "Cleaning up after error..." >&2
+    if [[ -n "$DATA_TABLES" ]]; then
+      enable_triggers "$DB_NAME" 2>/dev/null || true
+    fi
+    if [[ -n "$RLS_TABLES" ]]; then
+      enable_rls "$DB_NAME" "$RLS_TABLES" 2>/dev/null || true
+    fi
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
 
 COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  BACKEND="docker"
   if [[ "$RAILS_ENVIRONMENT" == "production" ]]; then
     require_restore_confirmation "production"
   fi
 
-  announce_restore
+  echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
 
   COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
   COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
   COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
-  pg_restore_args "$COMPOSE_DB_USER"
-  psql_args "$COMPOSE_DB_USER"
-  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" psql "${PSQL_ARGS[@]}" -c "$TRUNCATE_SQL"
-  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" pg_restore "${PG_RESTORE_ARGS[@]}" < "$BACKUP_PATH"
+  get_data_tables "$DB_NAME"
+  disable_rls "$DB_NAME"
+  disable_triggers "$DB_NAME"
+
+  echo "Truncating existing data..."
+  run_sql_exec "$DB_NAME" -c "
+    DO \$\$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN (
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+        ORDER BY tablename
+      ) LOOP
+        EXECUTE format('TRUNCATE TABLE %I CASCADE', r.tablename);
+      END LOOP;
+    END;
+    \$\$;
+  "
+
+  echo "Restoring data..."
+  RESTORE_FAILED=""
+  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" \
+    pg_restore --data-only --no-owner --no-privileges -U "$COMPOSE_DB_USER" -d "$DB_NAME" < "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
+
+  enable_triggers "$DB_NAME"
+  enable_rls "$DB_NAME"
+  RESTORE_CLEANUP_DONE=1
+
+  if [[ -n "$RESTORE_FAILED" ]]; then
+    echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    exit 1
+  fi
+
 elif [[ -n "$DB_NAME" ]]; then
+  BACKEND="local"
   guard_destructive_restore
 
-  announce_restore
+  echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
 
-  pg_restore_args "$DB_USER"
-  psql_args "$DB_USER"
+  get_data_tables "$DB_NAME"
+  disable_rls "$DB_NAME"
+  disable_triggers "$DB_NAME"
+
+  echo "Truncating existing data..."
+  run_sql_exec "$DB_NAME" -c "
+    DO \$\$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN (
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+        ORDER BY tablename
+      ) LOOP
+        EXECUTE format('TRUNCATE TABLE %I CASCADE', r.tablename);
+      END LOOP;
+    END;
+    \$\$;
+  "
+
+  echo "Restoring data..."
   PG_HOST_ARGS=()
   if [[ -n "$DB_HOST" ]]; then
     PG_HOST_ARGS=(-h "$DB_HOST")
   fi
-  PGPASSWORD="$DB_PASSWORD" psql "${PG_HOST_ARGS[@]}" "${PSQL_ARGS[@]}" -c "$TRUNCATE_SQL"
-  PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" "${PG_RESTORE_ARGS[@]}" "$BACKUP_PATH"
+  RESTORE_FAILED=""
+  PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" --data-only --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME" "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
+
+  enable_triggers "$DB_NAME"
+  enable_rls "$DB_NAME"
+  RESTORE_CLEANUP_DONE=1
+
+  if [[ -n "$RESTORE_FAILED" ]]; then
+    echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    exit 1
+  fi
+
 else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1

@@ -5,6 +5,8 @@ APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_ROOT" || exit
 
 BACKUPS_DIR="${APP_ROOT}/backups"
+BACKEND=""
+RLS_TABLES=""
 
 read_rails_db_config() {
   bin/rails runner "
@@ -20,6 +22,7 @@ usage() {
   echo "Usage: bin/db-dump [BACKUP_FILENAME]"
   echo ""
   echo "Dump database data to a custom-format archive in backups/."
+  echo "Automatically disables RLS before dumping so all rows are captured."
   echo ""
   echo "Defaults are read from the Rails database config."
   echo ""
@@ -52,6 +55,77 @@ read_container_env() {
   docker exec "$container" printenv "$name" 2>/dev/null || true
 }
 
+run_sql() {
+  local db="$1"; shift
+  if [[ "$BACKEND" == "docker" ]]; then
+    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
+      psql -U "$COMPOSE_DB_USER" -d "$db" -q --no-align --tuples-only "$@"
+  else
+    local host_args=()
+    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
+    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q --no-align --tuples-only "$@"
+  fi
+}
+
+run_sql_exec() {
+  local db="$1"; shift
+  if [[ "$BACKEND" == "docker" ]]; then
+    docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" \
+      psql -U "$COMPOSE_DB_USER" -d "$db" -q "$@"
+  else
+    local host_args=()
+    [[ -n "$DB_HOST" ]] && host_args=(-h "$DB_HOST")
+    PGPASSWORD="$DB_PASSWORD" psql "${host_args[@]}" -U "$DB_USER" -d "$db" -q "$@"
+  fi
+}
+
+disable_rls() {
+  local db="$1"
+  RLS_TABLES="$(run_sql "$db" -c "
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND rowsecurity = true
+    ORDER BY tablename
+  " 2>/dev/null)" || true
+
+  if [[ -z "$RLS_TABLES" ]]; then
+    return 0
+  fi
+
+  local count
+  count="$(echo "$RLS_TABLES" | wc -l)"
+  echo "Disabling RLS on $count tables..."
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE ROW LEVEL SECURITY;" 2>/dev/null || true
+  done <<< "$RLS_TABLES"
+}
+
+enable_rls() {
+  local db="$1"
+  local tables="${2:-${RLS_TABLES}}"
+
+  if [[ -z "$tables" ]]; then
+    tables="$(run_sql "$db" -c "
+      SELECT DISTINCT c.relname
+      FROM pg_class c
+      JOIN pg_policy p ON p.polrelid = c.oid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+      ORDER BY c.relname
+    " 2>/dev/null)" || true
+    if [[ -z "$tables" ]]; then
+      return 0
+    fi
+  fi
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null || true
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null || true
+  done <<< "$tables"
+}
+
 pg_dump_args() {
   local user="$1"
 
@@ -81,22 +155,43 @@ if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
 fi
 
+cleanup() {
+  local exit_code=$?
+  if [[ "$exit_code" -ne 0 && -n "$RLS_TABLES" && -n "$BACKEND" ]]; then
+    echo "Re-enabling RLS after error..." >&2
+    enable_rls "$DB_NAME" "$RLS_TABLES" 2>/dev/null || true
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+
 COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  BACKEND="docker"
   COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
   COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
   COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
+  disable_rls "$DB_NAME"
+
   pg_dump_args "$COMPOSE_DB_USER"
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+
+  enable_rls "$DB_NAME"
 elif [[ -n "$DB_NAME" ]]; then
+  BACKEND="local"
+
+  disable_rls "$DB_NAME"
+
   pg_dump_args "$DB_USER"
   PG_HOST_ARGS=()
   if [[ -n "$DB_HOST" ]]; then
     PG_HOST_ARGS=(-h "$DB_HOST")
   fi
   PGPASSWORD="$DB_PASSWORD" pg_dump "${PG_HOST_ARGS[@]}" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+
+  enable_rls "$DB_NAME"
 else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1
