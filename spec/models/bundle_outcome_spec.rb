@@ -14,6 +14,13 @@ RSpec.describe BundleOutcome do
     it { is_expected.to validate_numericality_of(:cost_cents).only_integer.is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:tokens_used).only_integer.is_greater_than_or_equal_to(0).allow_nil }
 
+    it "requires metrics to be a JSON object" do
+      outcome = build(:bundle_outcome, metrics: [])
+
+      expect(outcome).not_to be_valid
+      expect(outcome.errors[:metrics]).to include("must be an object")
+    end
+
     it "enforces uniqueness of agent_run scoped to configuration_bundle" do
       outcome = create(:bundle_outcome)
       duplicate = build(:bundle_outcome,
