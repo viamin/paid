@@ -79,6 +79,25 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
       expect(features.has_mcp_servers).to be(false)
     end
 
+    it "drops non-hash MCP server snapshots while preserving canonical ordering" do
+      definition = {
+        "mcp_servers" => [
+          "invalid",
+          { "name" => "zeta", "config" => { "path" => "/tmp/z", "mode" => "read" } },
+          { "config" => { "mode" => "write", "path" => "/tmp/a" }, "name" => "alpha" }
+        ]
+      }
+
+      features = described_class.call(definition)
+
+      expect(features.mcp_servers).to eq([
+        { "config" => { "mode" => "read", "path" => "/tmp/z" }, "name" => "zeta" },
+        { "config" => { "mode" => "write", "path" => "/tmp/a" }, "name" => "alpha" }
+      ])
+      expect(features.has_mcp_servers).to be(true)
+      expect(features.mcp_server_count).to eq(2)
+    end
+
     it "extracts experiment features as numeric values" do
       definition = {
         "experiments" => {

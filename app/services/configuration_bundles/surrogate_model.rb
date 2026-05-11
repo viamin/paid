@@ -171,22 +171,8 @@ module ConfigurationBundles
       canonicalize(value)
     end
 
-    def normalized_mcp_servers(definition)
-      Array(definition["mcp_servers"])
-        .map { |snapshot| canonicalize(snapshot) }
-        .sort_by { |snapshot| JSON.generate(snapshot) }
-    end
-
     def outcome_objective_score(outcome)
-      objective_score = outcome.metrics&.fetch("objective_score", nil)
-      return objective_score.to_f if objective_score.present?
-
-      ConfigurationBundles::ObjectiveScore.call(
-        project: outcome.agent_run.project,
-        quality_score: outcome.quality_score,
-        cost_cents: outcome.cost_cents,
-        duration_seconds: outcome.duration_seconds
-      ).objective_score
+      ConfigurationBundles::ObjectiveScore.from_outcome(outcome)
     end
 
     def similarity(lhs, rhs)

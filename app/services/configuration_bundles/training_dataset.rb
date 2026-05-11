@@ -72,15 +72,7 @@ module ConfigurationBundles
     end
 
     def extract_objective_score(outcome)
-      stored = outcome.metrics&.fetch("objective_score", nil)
-      return stored.to_f if stored.present?
-
-      ConfigurationBundles::ObjectiveScore.call(
-        project: outcome.agent_run.project,
-        quality_score: outcome.quality_score,
-        cost_cents: outcome.cost_cents,
-        duration_seconds: outcome.duration_seconds
-      ).objective_score
+      ConfigurationBundles::ObjectiveScore.from_outcome(outcome)
     end
   end
 end
