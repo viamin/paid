@@ -12,7 +12,7 @@ class FailureRecoveryDecisionJob < ApplicationJob
 
     Coordination::FailureRecovery.call(
       agent_run: agent_run,
-      run_snapshot: run_snapshot.deep_symbolize_keys
+      run_snapshot: run_snapshot.symbolize_keys
     )
   end
 end

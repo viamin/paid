@@ -7,7 +7,10 @@ RSpec.describe FailureRecoveryDecisionJob, :no_db do
     let(:run_snapshot) do
       {
         "status" => "timeout",
-        "error_message" => "Agent execution timed out"
+        "error_message" => "Agent execution timed out",
+        "providers_attempted" => [
+          { "provider" => "anthropic", "success" => false }
+        ]
       }
     end
 
@@ -31,7 +34,13 @@ RSpec.describe FailureRecoveryDecisionJob, :no_db do
 
       expect(Coordination::FailureRecovery).to have_received(:call).with(
         agent_run: agent_run,
-        run_snapshot: { status: "timeout", error_message: "Agent execution timed out" }
+        run_snapshot: {
+          status: "timeout",
+          error_message: "Agent execution timed out",
+          providers_attempted: [
+            { "provider" => "anthropic", "success" => false }
+          ]
+        }
       )
     end
 

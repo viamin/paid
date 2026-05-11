@@ -128,6 +128,30 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result.failure_category).to eq("auth_failure")
         expect(result.chosen_action).to eq("pause_and_notify")
       end
+
+      it "logs the mapped action when failed decision persistence falls back" do
+        service = described_class.new(agent_run: agent_run)
+        allow(service).to receive(:build_decision_result).and_return([])
+
+        expect {
+          result = service.call
+
+          expect(result).not_to be_success
+          expect(result.error).to include("must be an object")
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("pause")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.inputs).to include(
+          "failure_category" => "auth_failure",
+          "chosen_action" => "pause_and_notify"
+        )
+        expect(decision.outputs).to include(
+          "chosen_action" => "pause_and_notify",
+          "error_class" => "ActiveRecord::RecordInvalid"
+        )
+      end
     end
 
     context "with a timed-out agent run" do
