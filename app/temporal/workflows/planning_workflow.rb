@@ -19,6 +19,38 @@ module Workflows
   class PlanningWorkflow < BaseWorkflow
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
+    class << self
+      def outcome_mappings
+        {
+          success: [
+            planning_outcome_for([]),
+            planning_outcome_for([ { title: "One task" } ]),
+            planning_outcome_for([ { title: "Task one" }, { title: "Task two" } ])
+          ].uniq,
+          failure: {
+            "decompose_feature" => planning_failure_outcome_for("decompose_feature"),
+            "create_sub_issues" => planning_failure_outcome_for("create_sub_issues"),
+            "update_planning_labels" => planning_failure_outcome_for("update_planning_labels")
+          }
+        }
+      end
+
+      def planning_outcome_for(tasks)
+        return "empty_plan" if tasks.empty?
+        return "single_task_plan" if tasks.one?
+
+        "sub_issues_created"
+      end
+
+      def planning_failure_outcome_for(step)
+        case step
+        when "decompose_feature" then "decomposition_failed"
+        when "create_sub_issues" then "sub_issue_creation_failed"
+        else "planning_failed"
+        end
+      end
+    end
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -165,18 +197,11 @@ module Workflows
     private
 
     def planning_outcome_for(tasks)
-      return "empty_plan" if tasks.empty?
-      return "single_task_plan" if tasks.one?
-
-      "sub_issues_created"
+      self.class.planning_outcome_for(tasks)
     end
 
     def planning_failure_outcome_for(step)
-      case step
-      when "decompose_feature" then "decomposition_failed"
-      when "create_sub_issues" then "sub_issue_creation_failed"
-      else "planning_failed"
-      end
+      self.class.planning_failure_outcome_for(step)
     end
 
     def safe_log_decomposition_decision(payload)

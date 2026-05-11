@@ -24,6 +24,45 @@ module Workflows
     DEFAULT_TIMEOUT_SECONDS = 7200
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
+    class << self
+      def planning_outcome_for(tasks)
+        PlanningWorkflow.planning_outcome_for(tasks)
+      end
+
+      def planning_failure_outcome_for(step)
+        PlanningWorkflow.planning_failure_outcome_for(step)
+      end
+
+      def parallelization_outcome_mappings
+        {
+          success: [
+            parallelization_outcome_for([]),
+            parallelization_outcome_for([ { title: "One task" } ]),
+            parallelization_outcome_for([ { title: "Task one" }, { title: "Task two" } ]),
+            "parallel_execution_planned"
+          ].uniq,
+          failure: {
+            "build_sub_tasks" => parallelization_failure_outcome_for("build_sub_tasks"),
+            "run_parallel_execution" => parallelization_failure_outcome_for("run_parallel_execution")
+          }
+        }
+      end
+
+      def parallelization_outcome_for(tasks)
+        return "parallel_execution_skipped_empty_plan" if tasks.empty?
+        return "parallel_execution_skipped_single_task" if tasks.one?
+
+        "parallel_execution_planned"
+      end
+
+      def parallelization_failure_outcome_for(step)
+        case step
+        when "build_sub_tasks" then "parallelization_planning_failed"
+        else "parallelization_failed"
+        end
+      end
+    end
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -447,32 +486,19 @@ module Workflows
     end
 
     def planning_outcome_for(tasks)
-      return "empty_plan" if tasks.empty?
-      return "single_task_plan" if tasks.one?
-
-      "sub_issues_created"
+      self.class.planning_outcome_for(tasks)
     end
 
     def planning_failure_outcome_for(step)
-      case step
-      when "decompose_feature" then "decomposition_failed"
-      when "create_sub_issues" then "sub_issue_creation_failed"
-      else "planning_failed"
-      end
+      self.class.planning_failure_outcome_for(step)
     end
 
     def parallelization_outcome_for(tasks)
-      return "parallel_execution_skipped_empty_plan" if tasks.empty?
-      return "parallel_execution_skipped_single_task" if tasks.one?
-
-      "parallel_execution_planned"
+      self.class.parallelization_outcome_for(tasks)
     end
 
     def parallelization_failure_outcome_for(step)
-      case step
-      when "build_sub_tasks" then "parallelization_planning_failed"
-      else "parallelization_failed"
-      end
+      self.class.parallelization_failure_outcome_for(step)
     end
 
     def safe_log_decomposition_decision(payload)
