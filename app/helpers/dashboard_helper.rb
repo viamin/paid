@@ -87,6 +87,12 @@ module DashboardHelper
     "failed" => "bg-rose-100 text-rose-700"
   }.freeze
 
+  DECISION_STATUS_BAR_CLASSES = {
+    "applied" => "bg-emerald-500",
+    "noop" => "bg-amber-500",
+    "failed" => "bg-rose-500"
+  }.freeze
+
   def time_range_label(range)
     TIME_RANGE_LABELS.fetch(range, range.to_s.titleize)
   end
@@ -99,6 +105,10 @@ module DashboardHelper
 
   def decision_status_badge_classes(status)
     DECISION_STATUS_BADGE_CLASSES.fetch(status.to_s, "bg-slate-100 text-slate-700")
+  end
+
+  def decision_status_bar_classes(status)
+    DECISION_STATUS_BAR_CLASSES.fetch(status.to_s, "bg-slate-400")
   end
 
   # Dark-mode colors for these badges are handled by the global unlayered
