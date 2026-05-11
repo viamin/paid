@@ -162,7 +162,7 @@ module Coordination
       )
     end
 
-    def persist_failed_decision(error, category:, action:)
+    def persist_failed_decision(error, category:, action: "retry")
       OrchestrationDecision.record(
         project: agent_run.project,
         issue: agent_run.issue,
