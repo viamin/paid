@@ -36,6 +36,8 @@ ADMIN_DB_HOST="${DB_ADMIN_HOST:-$APP_DB_HOST}"
 MAINTENANCE_DB="${DB_ADMIN_DATABASE:-postgres}"
 CREATOR_PASSWORD=""
 CREATOR_ARGS=()
+IDENTIFIER_FORMAT='^[A-Za-z0-9_]+$'
+MAX_IDENTIFIER_LENGTH=63
 
 psql_base_args() {
   local host="$1"
@@ -60,6 +62,17 @@ query_psql() {
   shift
 
   PGPASSWORD="$password" psql "$@" 2>/dev/null
+}
+
+validate_identifier() {
+  local kind="$1"
+  local value="$2"
+  local source="$3"
+
+  if [[ ! "$value" =~ $IDENTIFIER_FORMAT || "${#value}" -gt "$MAX_IDENTIFIER_LENGTH" ]]; then
+    echo "Invalid ${kind} ${value@Q} from ${source}. Only letters, numbers, and underscores up to ${MAX_IDENTIFIER_LENGTH} characters are allowed." >&2
+    exit 1
+  fi
 }
 
 app_can_create_databases() {
@@ -105,6 +118,11 @@ use_creator() {
   mapfile -d '' -t CREATOR_ARGS < <(psql_base_args "$host" "$user" "$MAINTENANCE_DB")
   CREATOR_PASSWORD="$password"
 }
+
+validate_identifier "database name" "$DEV_DB" "PAID_DEVELOPMENT_DATABASE / worktree derivation"
+validate_identifier "database name" "$CABLE_DB" "PAID_DEVELOPMENT_CABLE_DATABASE / worktree derivation"
+validate_identifier "database name" "$TEST_DB" "PAID_TEST_DATABASE / worktree derivation"
+validate_identifier "role name" "$APP_DB_USER" "DB_USERNAME / DB_USER"
 
 if app_can_create_databases; then
   use_creator "$APP_DB_HOST" "$APP_DB_USER" "$APP_DB_PASSWORD"

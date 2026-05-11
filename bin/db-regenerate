@@ -22,6 +22,8 @@ PRACTICE_DB="paid_practice"
 BACKUPS_DIR="${APP_ROOT}/backups"
 CACHED_RLS_TABLES=""
 CACHED_TRIGGER_TABLES=""
+IDENTIFIER_FORMAT='^[A-Za-z0-9_]+$'
+MAX_IDENTIFIER_LENGTH=63
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,6 +34,17 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
+validate_identifier() {
+  local kind="$1"
+  local value="$2"
+  local source="$3"
+
+  if [[ ! "$value" =~ $IDENTIFIER_FORMAT || "${#value}" -gt "$MAX_IDENTIFIER_LENGTH" ]]; then
+    error "Invalid ${kind} ${value@Q} from ${source}. Only letters, numbers, and underscores up to ${MAX_IDENTIFIER_LENGTH} characters are allowed."
+    exit 1
+  fi
+}
+
 run_sql() {
   local db="$1"; shift
   PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$db" -q --no-align --tuples-only "$@"
@@ -41,6 +54,11 @@ run_sql_exec() {
   local db="$1"; shift
   PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$db" -q "$@"
 }
+
+validate_identifier "role name" "$PG_USER" "DB_USER"
+validate_identifier "database name" "$PG_DB" "PAID_DEVELOPMENT_DATABASE / worktree derivation"
+validate_identifier "database name" "$PG_CABLE_DB" "PAID_DEVELOPMENT_CABLE_DATABASE / worktree derivation"
+validate_identifier "database name" "$PRACTICE_DB" "script constant"
 
 db_exists() {
   local db="$1"
@@ -72,6 +90,24 @@ get_data_tables() {
       AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
     ORDER BY tablename
   " 2>/dev/null
+}
+
+run_table_alter_required() {
+  local db="$1"
+  local tables="$2"
+  local sql="$3"
+  local action="$4"
+  local failures=0
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    if ! run_sql_exec "$db" -c "ALTER TABLE \"$table\" ${sql};" 2>/dev/null; then
+      warn "Failed to ${action} on ${table}"
+      failures=$((failures + 1))
+    fi
+  done <<< "$tables"
+
+  return "$failures"
 }
 
 disable_rls() {
@@ -110,11 +146,9 @@ enable_rls() {
       return 0
     fi
   fi
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null
-  done <<< "$tables"
+
+  run_table_alter_required "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
+  run_table_alter_required "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
 }
 
 disable_triggers() {
@@ -142,10 +176,8 @@ enable_triggers() {
     warn "No cached data table list available for trigger re-enable"
     return 0
   fi
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE TRIGGER ALL;" 2>/dev/null || true
-  done <<< "$tables"
+
+  run_table_alter_required "$db" "$tables" "ENABLE TRIGGER ALL" "enable triggers"
 }
 
 get_row_counts() {

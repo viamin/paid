@@ -68,9 +68,9 @@ RSpec.describe DbScriptWarning do
 
       expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(stdout).not_to include("PRACTICE RUN COMPLETE")
-      expect(stderr).to include("enable failed")
       expect(stdout).to include("Failed to enable RLS on widgets")
       expect(stdout).to include("Script exited with error")
+      expect(stdout).to include("Attempting to re-enable RLS on paid_development")
     end
   end
 
@@ -78,10 +78,12 @@ RSpec.describe DbScriptWarning do
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "backups"))
+    FileUtils.mkdir_p(File.join(dir, "config"))
 
     script_path = File.join(dir, "bin", script_name)
     FileUtils.cp(File.expand_path("../../bin/#{script_name}", __dir__), script_path)
     FileUtils.cp(File.expand_path("../../bin/lib/db_helpers.sh", __dir__), File.join(dir, "bin", "lib", "db_helpers.sh"))
+    FileUtils.cp(File.expand_path("../../config/worktree_database_names.rb", __dir__), File.join(dir, "config", "worktree_database_names.rb"))
     FileUtils.chmod("+x", script_path)
     script_path
   end

@@ -5,6 +5,9 @@ require "open3"
 
 module Paid
   module WorktreeDatabaseNames
+    EXPLICIT_NAME_FORMAT = /\A[a-zA-Z0-9_]+\z/
+    MAX_DATABASE_NAME_LENGTH = 63
+
     module_function
 
     def development_primary_name(app_root: default_app_root)
@@ -52,6 +55,7 @@ module Paid
       value = ENV[name]
       return if blank?(value)
 
+      validate_explicit_name!(name, value)
       value
     end
 
@@ -82,6 +86,12 @@ module Paid
 
     def sanitize(value)
       value.to_s.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
+    end
+
+    def validate_explicit_name!(env_name, value)
+      return if value.match?(EXPLICIT_NAME_FORMAT) && value.length <= MAX_DATABASE_NAME_LENGTH
+
+      raise ArgumentError, "Invalid database name #{value.inspect} in #{env_name}"
     end
   end
 end
