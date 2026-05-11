@@ -71,7 +71,7 @@ module Strategies
     end
 
     def planning_outcome
-      workflow = Workflows::PlanningWorkflow.allocate
+      outcomes = Workflows::PlanningWorkflow.outcome_mappings
 
       {
         "steps" => %w[
@@ -80,36 +80,20 @@ module Strategies
           create_sub_issues
           update_planning_labels
         ],
-        "success_outcomes" => [
-          workflow.send(:planning_outcome_for, []),
-          workflow.send(:planning_outcome_for, [ { title: "One task" } ]),
-          workflow.send(:planning_outcome_for, [ { title: "Task one" }, { title: "Task two" } ])
-        ].uniq,
-        "failure_outcomes" => {
-          "decompose_feature" => workflow.send(:planning_failure_outcome_for, "decompose_feature"),
-          "create_sub_issues" => workflow.send(:planning_failure_outcome_for, "create_sub_issues"),
-          "update_planning_labels" => workflow.send(:planning_failure_outcome_for, "update_planning_labels")
-        }
+        "success_outcomes" => outcomes[:success],
+        "failure_outcomes" => outcomes[:failure]
       }
     end
 
     def parallelization_outcome
-      workflow = Workflows::FeatureOrchestrationWorkflow.allocate
+      outcomes = Workflows::FeatureOrchestrationWorkflow.parallelization_outcome_mappings
 
       {
         "default_timeout_seconds" => Workflows::FeatureOrchestrationWorkflow::DEFAULT_TIMEOUT_SECONDS,
         "minimum_parallel_task_count" => 2,
         "child_workflow" => "Workflows::ParallelAgentExecutionWorkflow",
-        "success_outcomes" => [
-          workflow.send(:parallelization_outcome_for, []),
-          workflow.send(:parallelization_outcome_for, [ { title: "One task" } ]),
-          workflow.send(:parallelization_outcome_for, [ { title: "Task one" }, { title: "Task two" } ]),
-          "parallel_execution_planned"
-        ].uniq,
-        "failure_outcomes" => {
-          "build_sub_tasks" => workflow.send(:parallelization_failure_outcome_for, "build_sub_tasks"),
-          "run_parallel_execution" => workflow.send(:parallelization_failure_outcome_for, "run_parallel_execution")
-        }
+        "success_outcomes" => outcomes[:success],
+        "failure_outcomes" => outcomes[:failure]
       }
     end
   end

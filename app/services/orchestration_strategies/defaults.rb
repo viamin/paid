@@ -145,6 +145,9 @@ module OrchestrationStrategies
     # Extracted from Workflows::FeatureOrchestrationWorkflow (app/temporal/workflows/feature_orchestration_workflow.rb)
     # and Workflows::AgentExecutionWorkflow known failure types (lines 55-72)
     def feature_orchestration
+      planning_mappings = Workflows::PlanningWorkflow.outcome_mappings
+      parallelization_mappings = Workflows::FeatureOrchestrationWorkflow.parallelization_outcome_mappings
+
       {
         "default_timeout_seconds" => 7200,
         "escalation" => {
@@ -191,21 +194,8 @@ module OrchestrationStrategies
           create_sub_issues
           update_planning_labels
         ],
-        "planning_outcomes" => %w[
-          empty_plan
-          single_task_plan
-          sub_issues_created
-          decomposition_failed
-          sub_issue_creation_failed
-          planning_failed
-        ],
-        "parallelization_outcomes" => %w[
-          parallel_execution_skipped_empty_plan
-          parallel_execution_skipped_single_task
-          parallel_execution_planned
-          parallelization_planning_failed
-          parallelization_failed
-        ],
+        "planning_outcomes" => planning_mappings[:success] + planning_mappings[:failure].values,
+        "parallelization_outcomes" => parallelization_mappings[:success] + parallelization_mappings[:failure].values,
         "known_failure_types" => %w[
           AllProvidersExhausted
           AgentExecutionFailed

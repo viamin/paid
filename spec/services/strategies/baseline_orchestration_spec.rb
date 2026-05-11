@@ -33,8 +33,6 @@ RSpec.describe Strategies::BaselineOrchestration do
   describe ".planning_outcome" do
     subject(:content) { described_class.planning_outcome }
 
-    let(:workflow) { Workflows::PlanningWorkflow.allocate }
-
     it "preserves planning steps" do
       expect(content["steps"]).to eq(%w[
         fetch_planning_context
@@ -45,26 +43,20 @@ RSpec.describe Strategies::BaselineOrchestration do
     end
 
     it "preserves success outcome mappings" do
-      expect(content["success_outcomes"]).to match_array([
-        workflow.send(:planning_outcome_for, []),
-        workflow.send(:planning_outcome_for, [ { title: "One task" } ]),
-        workflow.send(:planning_outcome_for, [ { title: "Task one" }, { title: "Task two" } ])
-      ].uniq)
+      expect(content["success_outcomes"]).to match_array(
+        Workflows::PlanningWorkflow.outcome_mappings[:success]
+      )
     end
 
     it "preserves failure outcome mappings" do
       expect(content["failure_outcomes"]).to eq(
-        "decompose_feature" => workflow.send(:planning_failure_outcome_for, "decompose_feature"),
-        "create_sub_issues" => workflow.send(:planning_failure_outcome_for, "create_sub_issues"),
-        "update_planning_labels" => workflow.send(:planning_failure_outcome_for, "update_planning_labels")
+        Workflows::PlanningWorkflow.outcome_mappings[:failure]
       )
     end
   end
 
   describe ".parallelization_outcome" do
     subject(:content) { described_class.parallelization_outcome }
-
-    let(:workflow) { Workflows::FeatureOrchestrationWorkflow.allocate }
 
     it "preserves timeout and child workflow defaults" do
       expect(content["default_timeout_seconds"]).to eq(Workflows::FeatureOrchestrationWorkflow::DEFAULT_TIMEOUT_SECONDS)
@@ -73,18 +65,14 @@ RSpec.describe Strategies::BaselineOrchestration do
     end
 
     it "preserves success outcome mappings" do
-      expect(content["success_outcomes"]).to match_array([
-        workflow.send(:parallelization_outcome_for, []),
-        workflow.send(:parallelization_outcome_for, [ { title: "One task" } ]),
-        workflow.send(:parallelization_outcome_for, [ { title: "Task one" }, { title: "Task two" } ]),
-        "parallel_execution_planned"
-      ].uniq)
+      expect(content["success_outcomes"]).to match_array(
+        Workflows::FeatureOrchestrationWorkflow.parallelization_outcome_mappings[:success]
+      )
     end
 
     it "preserves failure outcome mappings" do
       expect(content["failure_outcomes"]).to eq(
-        "build_sub_tasks" => workflow.send(:parallelization_failure_outcome_for, "build_sub_tasks"),
-        "run_parallel_execution" => workflow.send(:parallelization_failure_outcome_for, "run_parallel_execution")
+        Workflows::FeatureOrchestrationWorkflow.parallelization_outcome_mappings[:failure]
       )
     end
   end
