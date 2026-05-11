@@ -20,12 +20,6 @@ module Strategies
       end
     end
 
-    FALLBACK_CONTENT = {
-      "decomposition_approach" => "single",
-      "max_parallel_agents" => 1,
-      "retry_policy" => { "type" => "exponential", "attempts" => 2 }
-    }.freeze
-
     def self.call(...)
       new(...).call
     end
@@ -59,7 +53,7 @@ module Strategies
 
     def enriched_context
       base = normalize_hash(context)
-      base["task_type"] = task_type.to_s if task_type.present?
+      base["task_type"] ||= task_type.to_s if task_type.present?
       base
     end
 
