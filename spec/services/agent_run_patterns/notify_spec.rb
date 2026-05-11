@@ -45,7 +45,7 @@ RSpec.describe AgentRunPatterns::Notify do
         )
         expect(notification).to be_present
         expect(notification.severity).to eq("error")
-        expect(notification.title).to include("enhance_issue")
+        expect(notification.title).to include("Enhance issue")
         expect(notification.title).to include("LLM Provider Error")
       end
 
