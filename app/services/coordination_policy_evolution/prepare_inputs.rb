@@ -5,7 +5,7 @@ module CoordinationPolicyEvolution
     DEFAULT_LOOKBACK_DAYS = 60
     DEFAULT_MIN_DECISIONS = 10
     DEFAULT_SAMPLE_LIMIT = 5
-    POLICY_TYPE = Coordination::DecompositionService::STRATEGY_TYPE
+    POLICY_TYPE = DecompositionService::STRATEGY_TYPE
     NOOP_OUTCOMES = Orchestration::DecompositionDecisions::Log::NOOP_OUTCOMES
     FAILURE_OUTCOMES = %w[
       decomposition_failed
