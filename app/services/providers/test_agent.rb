@@ -105,8 +105,11 @@ module Providers
       /validationLink:/i,
       /validationDescription:/i,
       /learnMoreUrl:/i,
-      /userHandled:/i
+      /userHandled:/i,
+      /"type"\s*:\s*"session\.(?:mcp_server_status_changed|shutdown)"/i
     ].freeze
+
+    MCP_SESSION_EVENT_PATTERN = /"type"\s*:\s*"session\./
 
     # Maps agent-harness error_category symbols to app-level error_type symbols.
     HARNESS_ERROR_CATEGORY_MAP = {
@@ -439,7 +442,16 @@ module Providers
         .reject { |line| line.match?(/\A[^\p{Alnum}]+\z/) }
         .reject { |line| noisy_error_line?(line) }
 
-      cleaned_lines.first || message.lines.first.to_s.strip
+      cleaned_lines.first || fallback_message_from(message)
+    end
+
+    def fallback_message_from(raw_message)
+      lines = raw_message.lines.map(&:strip).reject(&:empty?)
+      if lines.any? && lines.all? { |line| line.match?(MCP_SESSION_EVENT_PATTERN) }
+        "Agent started but did not produce a response. Verify the provider credentials and connectivity."
+      else
+        lines.first.to_s.strip
+      end
     end
 
     def matches_any_pattern?(message, patterns)

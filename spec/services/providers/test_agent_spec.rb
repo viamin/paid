@@ -549,6 +549,45 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when copilot outputs only MCP session events without a response" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "copilot", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      let(:mcp_event) do
+        '{"type":"session.mcp_server_status_changed","data":{"serverName":"github-mcp-server","status":"connected"},"id":"853d58f1-3fe9-4407-9c7d-1807e033877e","timestamp":"2026-05-10T19:15:23.221Z","parentId":"3ef4d1aa-ac74-4058-854a-ac70cfd40c09","ephemeral":true}'
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "github_copilot")
+        stub_container_smoke_test(
+          name: :github_copilot, status: "error",
+          message: mcp_event,
+          latency_ms: 2000, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "returns a user-friendly message instead of raw MCP JSON" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
+      end
+
+      it "handles multiple MCP session events" do
+        shutdown_event = '{"type":"session.shutdown","data":{},"id":"abc123"}'
+        multi_mcp = "#{mcp_event}\n#{shutdown_event}"
+        allow(AgentHarness).to receive(:check_provider).and_return(
+          { name: :github_copilot, status: "error", message: multi_mcp, latency_ms: 3000, error_category: nil, check: :smoke_test }
+        )
+
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
+      end
+    end
+
     context "when opencode smoke test succeeds via container" do
       let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
