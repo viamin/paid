@@ -47,7 +47,8 @@ module AgentRunPatterns
         account: account,
         source: NOTIFICATION_SOURCE
       ).active.each do |notification|
-        notification_goals = Array(notification.metadata&.dig("goals"))
+        notification_goals = tracked_goals(notification)
+        next if notification_goals.empty?
         next if notification_goals.any? { |g| active_goals.include?(g) }
 
         Notifications::Resolve.call(
@@ -115,8 +116,15 @@ module AgentRunPatterns
         pattern_types: patterns.map { |p| "#{p.goal}:#{p.type}" },
         goals: patterns.map(&:goal).uniq,
         worst_goal: worst_pattern.goal,
-        diagnosed_root_cause: diagnoses.values.map(&:root_cause).compact.first
+        diagnosed_root_cause: diagnoses.values.filter_map(&:root_cause).first
       }
+    end
+
+    def tracked_goals(notification)
+      goals = Array(notification.metadata&.dig("goals")).presence
+      return goals if goals
+
+      Array(notification.metadata&.dig("worst_goal")).presence || []
     end
   end
 end

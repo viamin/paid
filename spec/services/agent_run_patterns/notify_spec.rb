@@ -212,13 +212,6 @@ RSpec.describe AgentRunPatterns::Notify do
         details: { streak_length: 3, total_runs: 3, failure_rate: 1.0 }
       )
     end
-    let(:notification) do
-      Struct.new(:metadata, :subject, :user).new(
-        { "goals" => [ "enhance_issue", "create_pr" ] },
-        account,
-        nil
-      )
-    end
     let(:service) { described_class.new(account: account, patterns: [ active_pattern ], diagnoses: {}) }
 
     before do
@@ -231,15 +224,51 @@ RSpec.describe AgentRunPatterns::Notify do
           @where_result = value
         end
       end)
+      allow(Notifications::Resolve).to receive(:call)
+    end
+
+    it "keeps notifications active while any tracked goal remains active" do
+      notification = Struct.new(:metadata, :subject, :user).new(
+        { "goals" => [ "enhance_issue", "create_pr" ] },
+        account,
+        nil
+      )
       Notification.where_result = Struct.new(:notifications) do
         def active
           notifications
         end
       end.new([ notification ])
-      allow(Notifications::Resolve).to receive(:call)
+
+      service.send(:resolve_cleared_patterns)
+
+      expect(Notifications::Resolve).not_to have_received(:call)
     end
 
-    it "keeps notifications active while any tracked goal remains active" do
+    it "falls back to worst_goal metadata for legacy notifications" do
+      notification = Struct.new(:metadata, :subject, :user).new(
+        { "worst_goal" => "enhance_issue" },
+        account,
+        nil
+      )
+      Notification.where_result = Struct.new(:notifications) do
+        def active
+          notifications
+        end
+      end.new([ notification ])
+
+      service.send(:resolve_cleared_patterns)
+
+      expect(Notifications::Resolve).not_to have_received(:call)
+    end
+
+    it "skips resolving notifications without tracked-goal metadata" do
+      notification = Struct.new(:metadata, :subject, :user).new({}, account, nil)
+      Notification.where_result = Struct.new(:notifications) do
+        def active
+          notifications
+        end
+      end.new([ notification ])
+
       service.send(:resolve_cleared_patterns)
 
       expect(Notifications::Resolve).not_to have_received(:call)
