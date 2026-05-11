@@ -90,6 +90,26 @@ run_sql_exec() {
   fi
 }
 
+run_table_alter_best_effort() {
+  local db="$1"
+  local tables="$2"
+  local sql="$3"
+  local action="$4"
+  local failures=0
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    if ! run_sql_exec "$db" -c "ALTER TABLE \"$table\" ${sql};" >/dev/null; then
+      echo "WARNING: failed to ${action} on ${table}" >&2
+      failures=$((failures + 1))
+    fi
+  done <<< "$tables"
+
+  if [[ "$failures" -gt 0 ]]; then
+    echo "WARNING: ${failures} table(s) failed while attempting to ${action}" >&2
+  fi
+}
+
 get_data_tables() {
   local db="$1"
   DATA_TABLES="$(run_sql "$db" -c "
@@ -115,11 +135,7 @@ disable_rls() {
   local count
   count="$(echo "$RLS_TABLES" | wc -l)"
   echo "Disabling RLS on $count tables..."
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE ROW LEVEL SECURITY;" 2>/dev/null || true
-  done <<< "$RLS_TABLES"
+  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS"
 }
 
 enable_rls() {
@@ -143,32 +159,20 @@ enable_rls() {
   local count
   count="$(echo "$tables" | wc -l)"
   echo "Re-enabling RLS on $count tables..."
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null || true
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null || true
-  done <<< "$tables"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
+  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
 }
 
 disable_triggers() {
   local db="$1"
   echo "Disabling triggers on data tables..."
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE TRIGGER ALL;" 2>/dev/null || true
-  done <<< "$DATA_TABLES"
+  run_table_alter_best_effort "$db" "$DATA_TABLES" "DISABLE TRIGGER ALL" "disable triggers"
 }
 
 enable_triggers() {
   local db="$1"
   echo "Re-enabling triggers on data tables..."
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE TRIGGER ALL;" 2>/dev/null || true
-  done <<< "$DATA_TABLES"
+  run_table_alter_best_effort "$db" "$DATA_TABLES" "ENABLE TRIGGER ALL" "enable triggers"
 }
 
 local_db_host() {
@@ -233,10 +237,10 @@ cleanup() {
   if [[ -n "$BACKEND" ]]; then
     echo "Cleaning up after error..." >&2
     if [[ -n "$DATA_TABLES" ]]; then
-      enable_triggers "$DB_NAME" 2>/dev/null || true
+      enable_triggers "$DB_NAME"
     fi
     if [[ -n "$RLS_TABLES" ]]; then
-      enable_rls "$DB_NAME" "$RLS_TABLES" 2>/dev/null || true
+      enable_rls "$DB_NAME" "$RLS_TABLES"
     fi
   fi
   exit "$exit_code"

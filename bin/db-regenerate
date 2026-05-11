@@ -32,6 +32,26 @@ run_sql_exec() {
   PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$db" -q "$@"
 }
 
+run_table_alter_best_effort() {
+  local db="$1"
+  local tables="$2"
+  local sql="$3"
+  local action="$4"
+  local failures=0
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    if ! run_sql_exec "$db" -c "ALTER TABLE \"$table\" ${sql};" >/dev/null; then
+      warn "Failed to ${action} on ${table}"
+      failures=$((failures + 1))
+    fi
+  done <<< "$tables"
+
+  if [[ "$failures" -gt 0 ]]; then
+    warn "${failures} table(s) failed while attempting to ${action}"
+  fi
+}
+
 db_exists() {
   local db="$1"
   run_sql postgres -c "SELECT 1 FROM pg_database WHERE datname = '$db'" 2>/dev/null | grep -q 1
@@ -64,10 +84,7 @@ disable_rls() {
     return 0
   fi
   CACHED_RLS_TABLES="$tables"
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE ROW LEVEL SECURITY;" 2>/dev/null || true
-  done <<< "$tables"
+  run_table_alter_best_effort "$db" "$tables" "DISABLE ROW LEVEL SECURITY" "disable RLS"
 }
 
 enable_rls() {
@@ -89,11 +106,8 @@ enable_rls() {
       return 0
     fi
   fi
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null
-  done <<< "$tables"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
+  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
 }
 
 get_row_counts() {
@@ -250,10 +264,7 @@ restore_into() {
       AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
     ORDER BY tablename
   " 2>/dev/null)" || true
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db_name" -c "ALTER TABLE \"$table\" DISABLE TRIGGER ALL;" 2>/dev/null || true
-  done <<< "$data_tables"
+  run_table_alter_best_effort "$db_name" "$data_tables" "DISABLE TRIGGER ALL" "disable triggers"
 
   info "Truncating target tables..."
   run_sql_exec "$db_name" -c "
@@ -293,16 +304,13 @@ restore_into() {
   fi
 
   info "Re-enabling triggers on data tables..."
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db_name" -c "ALTER TABLE \"$table\" ENABLE TRIGGER ALL;" 2>/dev/null || true
-  done <<< "$data_tables"
+  run_table_alter_best_effort "$db_name" "$data_tables" "ENABLE TRIGGER ALL" "enable triggers"
 
   info "Re-creating FK constraints..."
   local recreated=0
   while IFS='|' read -r conname tbl def; do
     [[ -z "$conname" ]] && continue
-    run_sql_exec "$db_name" -c "ALTER TABLE ${tbl} ADD CONSTRAINT ${conname} ${def};" 2>/dev/null || {
+    run_sql_exec "$db_name" -c "ALTER TABLE ${tbl} ADD CONSTRAINT ${conname} ${def};" >/dev/null || {
       warn "  Could not recreate constraint ${conname} on ${tbl}"
     }
     recreated=$((recreated + 1))
@@ -351,7 +359,7 @@ cleanup() {
     warn "Script exited with error (code $exit_code)."
     warn "Attempting to re-enable RLS on $PG_DB..."
     if [[ -n "$CACHED_RLS_TABLES" ]]; then
-      enable_rls "$PG_DB" "$CACHED_RLS_TABLES" 2>/dev/null || true
+      enable_rls "$PG_DB" "$CACHED_RLS_TABLES"
     else
       warn "No cached RLS table list. Restoring RLS from pg_policy..."
       local policy_tables
@@ -364,7 +372,7 @@ cleanup() {
         ORDER BY c.relname
       " 2>/dev/null)" || true
       if [[ -n "$policy_tables" ]]; then
-        enable_rls "$PG_DB" "$policy_tables" 2>/dev/null || true
+        enable_rls "$PG_DB" "$policy_tables"
       fi
     fi
     if [[ "${PRACTICE_MODE:-}" == "1" ]] && db_exists "$PRACTICE_DB"; then

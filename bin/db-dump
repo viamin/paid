@@ -79,6 +79,26 @@ run_sql_exec() {
   fi
 }
 
+run_table_alter_best_effort() {
+  local db="$1"
+  local tables="$2"
+  local sql="$3"
+  local action="$4"
+  local failures=0
+
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    if ! run_sql_exec "$db" -c "ALTER TABLE \"$table\" ${sql};" >/dev/null; then
+      echo "WARNING: failed to ${action} on ${table}" >&2
+      failures=$((failures + 1))
+    fi
+  done <<< "$tables"
+
+  if [[ "$failures" -gt 0 ]]; then
+    echo "WARNING: ${failures} table(s) failed while attempting to ${action}" >&2
+  fi
+}
+
 disable_rls() {
   local db="$1"
   RLS_TABLES="$(run_sql "$db" -c "
@@ -94,11 +114,7 @@ disable_rls() {
   local count
   count="$(echo "$RLS_TABLES" | wc -l)"
   echo "Disabling RLS on $count tables..."
-
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE ROW LEVEL SECURITY;" 2>/dev/null || true
-  done <<< "$RLS_TABLES"
+  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS"
 }
 
 enable_rls() {
@@ -119,11 +135,8 @@ enable_rls() {
     fi
   fi
 
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null || true
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null || true
-  done <<< "$tables"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
+  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
 }
 
 pg_dump_args() {
@@ -159,7 +172,7 @@ cleanup() {
   local exit_code=$?
   if [[ "$exit_code" -ne 0 && -n "$RLS_TABLES" && -n "$BACKEND" ]]; then
     echo "Re-enabling RLS after error..." >&2
-    enable_rls "$DB_NAME" "$RLS_TABLES" 2>/dev/null || true
+    enable_rls "$DB_NAME" "$RLS_TABLES"
   fi
   exit "$exit_code"
 }
