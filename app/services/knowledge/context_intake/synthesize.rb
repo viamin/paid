@@ -29,6 +29,7 @@ module Knowledge
           artifacts = create_artifacts!(project, collector_run)
 
           collector_run.mark_completed!(count: artifacts.size)
+          KnowledgeArtifact.burst_artifact_counts_cache(project.id)
 
           { collector_run: collector_run, artifacts_count: artifacts.size }
         end
