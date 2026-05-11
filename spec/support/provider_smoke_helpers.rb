@@ -12,6 +12,9 @@ module ProviderSmokeHelpers
     :model_env,
     :default_model,
     :label,
+    :diagnostic_prompt,
+    :diagnostic_timeout,
+    :diagnostic_success_pattern,
     keyword_init: true
   ) do
     def subscription?
@@ -20,6 +23,10 @@ module ProviderSmokeHelpers
 
     def api_key?
       auth_type == "api_key"
+    end
+
+    def diagnostic?
+      !diagnostic_prompt.nil?
     end
   end
 
@@ -109,11 +116,61 @@ module ProviderSmokeHelpers
       provider_key: "copilot",
       auth_type: "subscription",
       label: "Copilot subscription"
+    ),
+
+    # Claude diagnostic scenarios — investigate why claude_code's real agent
+    # runs sometimes hang for 5+ minutes with zero output. The default smoke
+    # contract only sends "Reply OK" which always passes; these exercise the
+    # heavier subsystems (tool use, longer reasoning) so when one diverges
+    # from the baseline, the failure layer is isolated.
+    #
+    # Each runs inside the agent container, same path real runs take. Note
+    # that the smoke `build_test_run` flow does NOT provision MCP servers,
+    # so a true MCP-handshake scenario is out of scope here — it would need
+    # to layer MCP server configuration onto the test container, which is
+    # a deeper change than these scenarios are scoped for.
+    "claude-diag-baseline" => Scenario.new(
+      name: "claude-diag-baseline",
+      provider_key: "claude",
+      auth_type: "subscription",
+      label: "Claude diagnostic: bare prompt",
+      diagnostic_prompt: "Reply with exactly OK.",
+      diagnostic_timeout: 60,
+      diagnostic_success_pattern: /\AOK[.!]?\z/i
+    ),
+    "claude-diag-tool-required" => Scenario.new(
+      name: "claude-diag-tool-required",
+      provider_key: "claude",
+      auth_type: "subscription",
+      label: "Claude diagnostic: forces a tool call",
+      # Forces at least one tool use before responding. The PostToolUse
+      # heartbeat hook fires after this tool call — if this scenario hangs
+      # but baseline passes, tool/permission initialization is the suspect.
+      #
+      # The success pattern keys on the literal sentinel "SMOKE_FS_CHECK"
+      # which appears in the prompt. A model that hallucinates without
+      # reading the filesystem might still produce that sentinel, but a
+      # model whose tool path is broken cannot complete the instruction
+      # (which requires concatenating with a real `uname` value) — so
+      # failure-to-hang here is the diagnostic signal we care about.
+      diagnostic_prompt: <<~PROMPT,
+        Run `uname -s` using your shell tool, then reply with a single line
+        in the format "SMOKE_FS_CHECK <uname_output>". Do not include any
+        other text. If you cannot run a shell tool, reply exactly
+        "SMOKE_FS_CHECK no-tools".
+      PROMPT
+      diagnostic_timeout: 120,
+      diagnostic_success_pattern: /\ASMOKE_FS_CHECK \S+/
     )
   }.freeze
+  CLAUDE_DIAGNOSTIC_SCENARIO_NAMES = %w[
+    claude-diag-baseline
+    claude-diag-tool-required
+  ].freeze
   PRESETS = {
     "current-enabled" => DEFAULT_SCENARIO_NAMES,
-    "all-scenarios" => SCENARIOS.keys
+    "all-scenarios" => SCENARIOS.keys,
+    "claude-diagnostics" => CLAUDE_DIAGNOSTIC_SCENARIO_NAMES
   }.freeze
 
   module_function

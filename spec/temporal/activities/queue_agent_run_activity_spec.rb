@@ -305,7 +305,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(result[:duplicate]).to be_nil
       end
 
-      it "detects duplicate review-goal runs separately from create_pr runs" do
+      it "detects duplicate review-goal runs against the same PR" do
         existing = create(:agent_run, :queued, project: project,
           source_pull_request_number: 42, goal: "review")
 
@@ -319,8 +319,8 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(result[:duplicate]).to be true
       end
 
-      it "allows queueing a review run when a create_pr run is active for the same PR" do
-        create(:agent_run, :running, project: project,
+      it "skips queueing a review run when a create_pr run is active for the same PR" do
+        existing = create(:agent_run, :running, project: project,
           source_pull_request_number: 42, goal: "create_pr")
 
         result = activity.execute(
@@ -329,8 +329,34 @@ RSpec.describe Activities::QueueAgentRunActivity do
           goal: "review"
         )
 
-        expect(result[:queued]).to be true
-        expect(result[:duplicate]).to be_nil
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+      end
+
+      it "skips queueing a create_pr run when a review run is active for the same issue" do
+        existing = create(:agent_run, :running, project: project, issue: issue,
+          source_pull_request_number: 42, goal: "review")
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id, goal: "create_pr")
+
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+      end
+
+      it "does not merge draft review tracking onto an existing run with a different goal" do
+        existing = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          goal: "review",
+          count_toward_draft_review_round: true,
+          expected_draft_review_count: 5
+        )
+
+        expect(result[:duplicate]).to be true
+        expect(existing.reload.count_toward_draft_review_round).to be(false)
+        expect(existing.expected_draft_review_count).to be_nil
       end
     end
 
@@ -377,8 +403,8 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(agent_run.source_pull_request_number).to eq(42)
       end
 
-      it "deduplicates review-goal PR runs without colliding with create_pr runs for the same PR" do
-        create(:agent_run, :running, project: project,
+      it "deduplicates review-goal PR runs against any in-flight run for the same PR" do
+        existing = create(:agent_run, :running, project: project,
           source_pull_request_number: 42, goal: "create_pr")
 
         result = activity.execute(
@@ -387,10 +413,10 @@ RSpec.describe Activities::QueueAgentRunActivity do
           goal: "review"
         )
 
-        agent_run = AgentRun.find(result[:agent_run_id])
-        expect(agent_run.goal).to eq("review")
-        expect(result[:queued]).to be true
-        expect(result[:duplicate]).to be_nil
+        # Two runs against the same PR share a branch/worktree, so the second
+        # is deduplicated regardless of goal — the poller re-evaluates next cycle.
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
       end
     end
   end

@@ -171,6 +171,11 @@
   background-color: rgb(113 63 18 / 0.45);
 }
 
+.dark .bg-yellow-200 {
+  background-color: rgba(113, 63, 18, 0.6);
+}
+
+.dark .text-yellow-950,
 .dark .text-yellow-900,
 .dark .text-yellow-800 {
   color: #fde047; /* yellow-300 */
@@ -481,6 +486,10 @@
   border-color: rgba(113, 63, 18, 0.6);
 }
 
+.dark .divide-yellow-200 > :not(:last-child) {
+  border-color: rgba(113, 63, 18, 0.6);
+}
+
 .dark .border-orange-200 {
   border-color: rgba(124, 45, 18, 0.6);
 }
@@ -501,6 +510,10 @@
 /* Ring colors */
 .dark .ring-yellow-200 {
   --tw-ring-color: rgba(113, 63, 18, 0.6);
+}
+
+.dark .ring-yellow-300 {
+  --tw-ring-color: rgba(113, 63, 18, 0.8);
 }
 
 .dark .ring-red-200 {
@@ -571,6 +584,18 @@
   color: #fef08a;
 }
 
+.dark .hover\:text-yellow-700:hover {
+  color: #fef08a; /* yellow-200 */
+}
+
+.dark .hover\:bg-yellow-400:hover {
+  background-color: rgb(113 63 18 / 0.8);
+}
+
+.dark .hover\:bg-yellow-100:hover {
+  background-color: rgb(113 63 18 / 0.6);
+}
+
 /* Tables */
 .dark .hover\:bg-gray-50:hover {
   background-color: #1f2937;
@@ -578,10 +603,6 @@
 
 .dark .hover\:bg-gray-100:hover {
   background-color: #374151;
-}
-
-.dark .hover\:bg-yellow-400:hover {
-  background-color: rgb(113 63 18 / 0.8);
 }
 
 .dark tr.bg-indigo-50 {

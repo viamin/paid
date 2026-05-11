@@ -38,6 +38,10 @@ RSpec.describe ScalingExperiments::Create do
         "assignment_strategy" => "balanced_underfilled",
         "label_template" => "%<dimension>s-%<value>s__%<task_bucket>s"
       )
+      expect(experiment.outcome_metrics.map { |metric| metric["key"] }).to include(
+        "agent_launch_success_rate",
+        "blocked_task_rate"
+      )
     end
   end
 end

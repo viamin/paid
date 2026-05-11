@@ -1652,6 +1652,19 @@ expect(container_service).to receive(:execute).with(
         expect(result[:final_provider]).to eq("claude_code")
         expect(agent_run.reload.final_provider).to eq("claude_code")
       end
+
+      it "heartbeats during post-run bookkeeping after provider execution" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        allow(activity).to receive(:with_periodic_heartbeat).and_call_original
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(activity).to have_received(:with_periodic_heartbeat)
+          .with("post_run_bookkeeping", "claude_code")
+        expect(activity).not_to have_received(:with_periodic_heartbeat)
+          .with("post_run_bookkeeping", "claude_code", agent_run: agent_run)
+      end
     end
 
     context "when agent fails in container" do
@@ -2911,6 +2924,65 @@ expect(container_service).to receive(:execute).with(
 
       it "does not misclassify substantial agent output as a quota error when pattern appears in test descriptions" do
         long_stdout = (1..40).map { |i| "includes test case number #{i} for the billing and rate limit patterns" }.join("\n")
+        long_output_success = Containers::Provision::Result.success(
+          stdout: long_stdout, stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(long_output_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+      end
+
+      it "detects ProviderModelNotFoundError returned with exit code 0" do
+        model_not_found_stderr = <<~ERR
+          Error: Model not found: glm-5.1/.
+          ProviderModelNotFoundError
+           data: {
+            providerID: "glm-5.1",
+            modelID: "",
+            suggestions: [],
+          }
+        ERR
+        model_not_found_success = Containers::Provision::Result.success(
+          stdout: "", stderr: model_not_found_stderr, exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(model_not_found_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("error")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("model not found error")
+      end
+
+      it "detects ProviderModelNotFoundError even when stderr includes a long stack trace" do
+        stack_trace = Array.new(60) { |i| "    at resolveModel (file:///app/.opencode/vendor/index.js:#{200 + i}:17)" }.join("\n")
+        model_not_found_stderr = <<~ERR
+          Error: Model not found: glm-5.1/.
+          ProviderModelNotFoundError
+          #{stack_trace}
+        ERR
+        model_not_found_success = Containers::Provision::Result.success(
+          stdout: "", stderr: model_not_found_stderr, exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(model_not_found_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("error")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("model not found error")
+      end
+
+      it "does not misclassify substantial agent output as model not found when ProviderModelNotFoundError appears in structured output" do
+        long_stdout = (1..40).map { |i| "line #{i}: processing test for ProviderModelNotFoundError handling" }.join("\n")
         long_output_success = Containers::Provision::Result.success(
           stdout: long_stdout, stderr: "", exit_code: 0
         )

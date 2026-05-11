@@ -154,7 +154,7 @@ RSpec.describe Ci::FailureContext do
       allow(github_client).to receive(:actions_run).with(repo, "111").and_return(run_response)
       allow(github_client).to receive_messages(check_run_log: "", file_content: "name: CI\non: push")
 
-      context = described_class.call(repo: repo, checks: [ check1, check2 ], github_client: github_client)
+      _context = described_class.call(repo: repo, checks: [ check1, check2 ], github_client: github_client)
 
       expect(github_client).to have_received(:actions_run).once
       expect(github_client).to have_received(:file_content).once
