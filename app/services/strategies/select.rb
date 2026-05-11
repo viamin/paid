@@ -1,6 +1,16 @@
 # frozen_string_literal: true
 
 module Strategies
+  # Public API for context-aware strategy selection from database-backed
+  # OrchestrationStrategy records. Wraps OrchestrationStrategySelector with
+  # enriched context (task_type injection) and a structured Result that
+  # includes fallback semantics.
+  #
+  # Not yet wired into orchestration flows — Automation::Strategies::Select
+  # (registry-based class selection) remains the active path. A follow-up
+  # PR will integrate this service into the orchestration decision points
+  # (issue execution, auto-continue, auto-merge) so that database-backed
+  # strategy configuration takes effect at runtime.
   class Select
     Result = Data.define(:strategy, :strategy_version, :scope, :fallback, :matched_rule_count) do
       def content
