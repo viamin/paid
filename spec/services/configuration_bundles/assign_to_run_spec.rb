@@ -61,19 +61,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
     expect(agent_run.configuration_bundle_selection_mode).to eq("exploitative")
     expect(agent_run.configuration_bundle_selection_context).to eq("task")
-    expect(bundle.definition).to include(
-      "schema_version" => 1,
-      "goal" => agent_run.goal,
-      "agent_type" => agent_run.agent_type
-    )
-    expect(bundle.definition["model_selection"]).to eq(expected_model_selection)
-    expect(bundle.definition["service_container_ids"]).to eq([ first_service.id, second_service.id ].sort)
-    expect(bundle.definition["mcp_servers"]).to eq([ filesystem_mcp_snapshot ])
-    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to eq(
-      "configuration_experiment_id" => experiment.id,
-      "configuration_experiment_variant_id" => variant.id,
-      "value" => 8000
-    )
+    expect_bundle_definition(bundle)
+    expect_bundle_identity(bundle)
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
   end
 
@@ -176,5 +165,31 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       "env" => { "WORKDIR" => "/workspace" },
       "name" => "filesystem"
     }
+  end
+
+  def expect_bundle_definition(bundle)
+    expect(bundle.definition).to include(
+      "schema_version" => 1,
+      "goal" => agent_run.goal,
+      "agent_type" => agent_run.agent_type
+    )
+    expect(bundle.definition["model_selection"]).to eq(expected_model_selection)
+    expect(bundle.definition["service_container_ids"]).to eq([ first_service.id, second_service.id ].sort)
+    expect(bundle.definition["mcp_servers"]).to eq([ filesystem_mcp_snapshot ])
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to eq(
+      "configuration_experiment_id" => experiment.id,
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
+  def expect_bundle_identity(bundle)
+    expect(bundle.context).to include(
+      "identity" => hash_including(
+        "fingerprint" => bundle.fingerprint,
+        "fingerprint_algorithm" => "sha256",
+        "schema_version" => 1
+      )
+    )
   end
 end

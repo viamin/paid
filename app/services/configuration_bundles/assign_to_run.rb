@@ -22,7 +22,7 @@ module ConfigurationBundles
     def call
       selection = optimizer_selection
       definition = bundle_definition(selection&.variant_by_experiment_id)
-      fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
+      fingerprint = selection&.fingerprint || bundle_fingerprint(definition)
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(
@@ -57,7 +57,7 @@ module ConfigurationBundles
         status: "active",
         strategy: "runtime_snapshot",
         strategy_params: {},
-        context: {},
+        context: { "identity" => bundle_identity_metadata(definition) },
         fingerprint: fingerprint,
         definition: definition
       )

@@ -228,6 +228,8 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def start_claimed_run(agent_run)
+    ConfigurationBundles::AssignToRun.call(agent_run: agent_run) if agent_run.configuration_bundle.blank?
+
     budget_result = CostBudgets::Check.call(agent_run.project)
     unless budget_result[:allowed]
       agent_run.fail!(error: "Budget enforcement: #{budget_result[:reason]}")
