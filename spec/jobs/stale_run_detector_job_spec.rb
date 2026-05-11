@@ -9,8 +9,8 @@ RSpec.describe StaleRunDetectorJob do
     Rails.cache.clear
   end
 
-  # Running runs: adaptive timeout with legacy fallback
-  let(:running_threshold) { AgentRun.stale_running_timeout(goal: "create_pr").to_i }
+  # Running runs: legacy fallback used by the generic timeout examples
+  let(:running_threshold) { AgentRun.default_stale_running_timeout.to_i }
   # Claimed queued runs: shorter dedicated threshold
   let(:claimed_threshold) { described_class::CLAIMED_TIMEOUT.to_i }
   # Paused runs: guardrail pauses should not block auto-pick indefinitely
