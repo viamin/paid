@@ -219,9 +219,9 @@ RSpec.describe AgentRunPatterns::Detect do
 
   describe ".call", :no_db do
     let(:account) { Struct.new(:id).new(1) }
+    let(:run_class) { Struct.new(:id, :goal, :status, :error_message, :completed_at) }
 
     it "clusters failures that differ only by mixed alphanumeric identifiers" do
-      run_class = Struct.new(:id, :goal, :status, :error_message, :completed_at)
       runs = [
         run_class.new(1, "enhance_issue", "failed", "Timeout after 120s for run abc12345", 3.minutes.ago),
         run_class.new(2, "enhance_issue", "failed", "Timeout after 300s for run def67890", 2.minutes.ago),
@@ -243,7 +243,6 @@ RSpec.describe AgentRunPatterns::Detect do
     end
 
     it "breaks a streak deterministically when equal timestamps include a newer success" do
-      run_class = Struct.new(:id, :goal, :status, :error_message, :completed_at)
       completed_at = Time.current
       runs = [
         run_class.new(3, "enhance_issue", "failed", "Error", completed_at),
@@ -260,6 +259,36 @@ RSpec.describe AgentRunPatterns::Detect do
       result = detector.call
 
       expect(result.find { |pattern| pattern.type == :failure_streak }).to be_nil
+    end
+
+    it "returns patterns in a deterministic order for equal-severity matches" do
+      detector = described_class.new(account: account)
+      allow(detector).to receive_messages(
+        fetch_recent_finished_runs: deterministic_runs,
+        load_baseline_rate: nil
+      )
+
+      result = detector.call
+
+      expect(result.map { |pattern| [ pattern.goal, pattern.type ] }).to eq(
+        [
+          [ "create_pr", :error_cluster ],
+          [ "create_pr", :failure_streak ],
+          [ "enhance_issue", :error_cluster ],
+          [ "enhance_issue", :failure_streak ]
+        ]
+      )
+    end
+
+    def deterministic_runs
+      [
+        run_class.new(1, "enhance_issue", "failed", "No LLM provider produced an issue enhancement", 30.seconds.ago),
+        run_class.new(2, "enhance_issue", "failed", "No LLM provider produced an issue enhancement", 20.seconds.ago),
+        run_class.new(3, "enhance_issue", "failed", "No LLM provider produced an issue enhancement", 10.seconds.ago),
+        run_class.new(4, "create_pr", "failed", "GitHub API error: 403 Forbidden", 3.minutes.ago),
+        run_class.new(5, "create_pr", "failed", "GitHub API error: 403 Forbidden", 2.minutes.ago),
+        run_class.new(6, "create_pr", "failed", "GitHub API error: 403 Forbidden", 1.minute.ago)
+      ]
     end
   end
 end

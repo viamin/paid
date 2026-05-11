@@ -34,7 +34,7 @@ module AgentRunPatterns
         patterns.concat(detect_error_clusters(goal, goal_runs))
       end
 
-      deduplicate_patterns(patterns)
+      sort_patterns(deduplicate_patterns(patterns))
     end
 
     private
@@ -172,6 +172,21 @@ module AgentRunPatterns
         seen.add(key)
         true
       end
+    end
+
+    def sort_patterns(patterns)
+      patterns.sort_by do |pattern|
+        [
+          -severity_rank(pattern),
+          pattern.goal.to_s,
+          pattern.type.to_s,
+          deduplication_suffix(pattern).to_s
+        ]
+      end
+    end
+
+    def severity_rank(pattern)
+      pattern.severity == :error ? 1 : 0
     end
 
     def deduplication_suffix(pattern)

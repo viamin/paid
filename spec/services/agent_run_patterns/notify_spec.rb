@@ -291,4 +291,36 @@ RSpec.describe AgentRunPatterns::Notify do
       expect(Notifications::Resolve).not_to have_received(:call)
     end
   end
+
+  describe "#build_metadata", :no_db do
+    let(:account) { Struct.new(:id).new(1) }
+    let(:patterns) do
+      [
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :failure_streak,
+          goal: "enhance_issue",
+          severity: :error,
+          details: { streak_length: 3, total_runs: 3, failure_rate: 1.0 }
+        ),
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :error_cluster,
+          goal: "create_pr",
+          severity: :error,
+          details: { error_pattern: "GitHub API error: <N> Forbidden", occurrence_count: 3 }
+        )
+      ]
+    end
+    let(:service) { described_class.new(account: account, patterns: patterns, diagnoses: {}) }
+
+    it "orders metadata deterministically when multiple patterns are active" do
+      metadata = service.send(:build_metadata)
+
+      expect(metadata[:goals]).to eq([ "create_pr", "enhance_issue" ])
+      expect(metadata[:pattern_types]).to eq([
+        "create_pr:error_cluster",
+        "enhance_issue:failure_streak"
+      ])
+      expect(metadata[:worst_goal]).to eq("create_pr")
+    end
+  end
 end

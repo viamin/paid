@@ -23,6 +23,17 @@ module AgentRunPatterns
 
     attr_reader :account, :patterns, :diagnoses
 
+    def ordered_patterns
+      @ordered_patterns ||= patterns.sort_by do |pattern|
+        [
+          -severity_rank(pattern),
+          pattern.goal.to_s,
+          pattern.type.to_s,
+          pattern.details[:error_pattern].to_s
+        ]
+      end
+    end
+
     def publish_in_app_notification
       worst = worst_pattern
       diagnosis = diagnoses[worst.goal]
@@ -61,7 +72,7 @@ module AgentRunPatterns
     end
 
     def worst_pattern
-      patterns.max_by { |p| p.severity == :error ? 1 : 0 }
+      ordered_patterns.first
     end
 
     def notification_severity(pattern)
@@ -78,10 +89,10 @@ module AgentRunPatterns
 
     def notification_description(worst, diagnosis)
       parts = []
-      parts << "Detected failure patterns across #{patterns.size} goal type(s):"
+      parts << "Detected failure patterns across #{ordered_patterns.size} goal type(s):"
       parts << ""
 
-      patterns.each do |pattern|
+      ordered_patterns.each do |pattern|
         parts << pattern_summary(pattern)
       end
 
@@ -112,12 +123,16 @@ module AgentRunPatterns
 
     def build_metadata
       {
-        pattern_count: patterns.size,
-        pattern_types: patterns.map { |p| "#{p.goal}:#{p.type}" },
-        goals: patterns.map(&:goal).uniq,
+        pattern_count: ordered_patterns.size,
+        pattern_types: ordered_patterns.map { |p| "#{p.goal}:#{p.type}" },
+        goals: ordered_patterns.map(&:goal).uniq,
         worst_goal: worst_pattern.goal,
         diagnosed_root_cause: diagnoses.values.filter_map(&:root_cause).first
       }
+    end
+
+    def severity_rank(pattern)
+      pattern.severity == :error ? 1 : 0
     end
 
     def tracked_goals(notification)
