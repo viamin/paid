@@ -1652,6 +1652,19 @@ expect(container_service).to receive(:execute).with(
         expect(result[:final_provider]).to eq("claude_code")
         expect(agent_run.reload.final_provider).to eq("claude_code")
       end
+
+      it "heartbeats during post-run bookkeeping after provider execution" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        allow(activity).to receive(:with_periodic_heartbeat).and_call_original
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(activity).to have_received(:with_periodic_heartbeat)
+          .with("post_run_bookkeeping", "claude_code")
+        expect(activity).not_to have_received(:with_periodic_heartbeat)
+          .with("post_run_bookkeeping", "claude_code", agent_run: agent_run)
+      end
     end
 
     context "when agent fails in container" do
