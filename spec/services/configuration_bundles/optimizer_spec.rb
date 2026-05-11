@@ -231,6 +231,26 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(ranked.first.score_inputs.acquisition_score).to be <= ranked.first.score_inputs.uncertainty + ranked.first.score_inputs.predicted_objective_score
     end
 
+    it "keeps the incumbent from older outcomes outside the surrogate training window" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.4 ],
+        objective_scores: [ 1.25 ],
+        created_at: 2.years.ago
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: Array.new(ConfigurationBundles::SurrogateModel::MAX_OUTCOME_ROWS, 0.7),
+        objective_scores: Array.new(ConfigurationBundles::SurrogateModel::MAX_OUTCOME_ROWS, 0.7)
+      )
+
+      ranked = described_class.ranked_candidates(agent_run: agent_run)
+
+      expect(ranked).to all(have_attributes(score_inputs: have_attributes(best_observed_objective_score: 1.25)))
+    end
+
     it "loads experiment variants in a single query" do
       create_bundle_history(
         experiment: experiment,
@@ -347,7 +367,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
   end
 
-  def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40)
+  def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40, objective_scores: nil, created_at: Time.current)
     definition = {
       "schema_version" => 1,
       "goal" => agent_run.goal,
@@ -364,18 +384,21 @@ RSpec.describe ConfigurationBundles::Optimizer do
     }
     bundle = create(:configuration_bundle, account: project.account, definition: definition)
 
-    quality_scores.each do |quality_score|
+    quality_scores.each_with_index do |quality_score, index|
       run = create(:agent_run,
         :completed,
         configuration_bundle: bundle,
         project: project,
         issue: create(:issue, project: project),
-        cost_cents: cost_cents)
+        cost_cents: cost_cents,
+        created_at: created_at)
       create(:bundle_outcome,
         configuration_bundle: bundle,
         agent_run: run,
         quality_score: quality_score,
-        cost_cents: cost_cents)
+        cost_cents: cost_cents,
+        metrics: objective_scores ? { "objective_score" => objective_scores.fetch(index) } : {},
+        created_at: created_at)
     end
   end
 end

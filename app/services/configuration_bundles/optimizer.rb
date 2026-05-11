@@ -308,16 +308,13 @@ module ConfigurationBundles
 
     def prior_objective_score_for_goal
       @prior_objective_score_for_goal ||= begin
-        objective_scores = BundleOutcome
+        BundleOutcome
           .eager_load(agent_run: :project)
           .where(agent_runs: { project_id: agent_run.project_id, goal: agent_run.goal })
           .where.not(id: agent_run.bundle_outcomes.select(:id))
           .where.not(quality_score: nil)
-          .order(created_at: :desc)
-          .limit(SurrogateModel::MAX_OUTCOME_ROWS)
           .filter_map { |outcome| outcome_objective_score(outcome) }
-
-        objective_scores.max
+          .max
       end
     end
 
