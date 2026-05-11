@@ -8,6 +8,7 @@ module AgentRunPatterns
     ERROR_CLUSTER_MIN_SIZE = 3
     DEFAULT_WINDOW_HOURS = 6
     BASELINE_WINDOW_DAYS = 30
+    DETECTION_FINISHED_STATUSES = (AgentRun::FINISHED_STATUSES - [ "retried" ]).freeze
 
     Pattern = Data.define(:type, :goal, :severity, :details)
 
@@ -43,7 +44,7 @@ module AgentRunPatterns
     def fetch_recent_finished_runs
       AgentRun.joins(:project)
         .where(projects: { account_id: account.id })
-        .where(status: AgentRun::FINISHED_STATUSES)
+        .where(status: DETECTION_FINISHED_STATUSES)
         .where(completed_at: window_hours.hours.ago..)
         .order(completed_at: :desc)
     end
@@ -141,7 +142,7 @@ module AgentRunPatterns
 
       counts = AgentRun.joins(:project)
         .where(projects: { account_id: account.id })
-        .where(goal: goal, status: AgentRun::FINISHED_STATUSES)
+        .where(goal: goal, status: DETECTION_FINISHED_STATUSES)
         .where(completed_at: window_start...recent_start)
         .group(:status)
         .count
@@ -165,12 +166,18 @@ module AgentRunPatterns
     def deduplicate_patterns(patterns)
       seen = Set.new
       patterns.select do |pattern|
-        key = [ pattern.type, pattern.goal ]
+        key = [ pattern.type, pattern.goal, deduplication_suffix(pattern) ]
         next false if seen.include?(key)
 
         seen.add(key)
         true
       end
+    end
+
+    def deduplication_suffix(pattern)
+      return pattern.details[:error_pattern] if pattern.type == :error_cluster
+
+      nil
     end
   end
 end
