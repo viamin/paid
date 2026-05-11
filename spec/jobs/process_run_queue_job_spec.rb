@@ -366,7 +366,7 @@ RSpec.describe ProcessRunQueueJob do
         expect(project.agent_runs.unclaimed.count).to eq(0)
       end
 
-      it "caps seeded auto-pick runs at the owner's max_concurrent_runs" do
+      it "seeds every eligible auto-pick issue regardless of capacity" do
         project = create(:project, auto_pick_enabled: true)
         user = project.created_by
         user.settings.update!(max_concurrent_runs: 2)
@@ -375,10 +375,11 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(project.agent_runs.where(auto_pick: true).count).to eq(2)
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(10)
+        expect(project.agent_runs.where(auto_pick: true).claimed.count).to eq(2)
       end
 
-      it "counts already-running auto-pick runs against the seed budget" do
+      it "seeds new auto-pick runs even when in-flight auto-pick work already exists" do
         project = create(:project, auto_pick_enabled: true)
         user = project.created_by
         user.settings.update!(max_concurrent_runs: 2)
@@ -388,10 +389,10 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(project.agent_runs.where(auto_pick: true).count).to eq(2)
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(6)
       end
 
-      it "shares the seed budget across projects owned by the same user" do
+      it "seeds all eligible issues across multiple projects owned by the same user" do
         account = create(:account)
         user = create(:user, account: account)
         user.settings.update!(max_concurrent_runs: 2)
@@ -405,10 +406,23 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         total_seeded = AgentRun.where(project: [ first_project, second_project ], auto_pick: true).count
-        expect(total_seeded).to eq(2)
+        expect(total_seeded).to eq(6)
       end
 
-      it "still starts a manual run with one slot reserved from auto-pick" do
+      it "caps seeding at MAX_SEEDS_PER_PERFORM to bound DB load" do
+        stub_const("#{described_class}::MAX_SEEDS_PER_PERFORM", 5)
+        project = create(:project, auto_pick_enabled: true)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 1)
+
+        (described_class::MAX_SEEDS_PER_PERFORM + 3).times { create(:issue, project: project) }
+
+        described_class.new.perform
+
+        expect(project.agent_runs.where(auto_pick: true).count).to eq(described_class::MAX_SEEDS_PER_PERFORM)
+      end
+
+      it "starts a queued manual run alongside running auto-pick work" do
         project = create(:project)
         user = project.created_by
         user.settings.update!(max_concurrent_runs: 4)

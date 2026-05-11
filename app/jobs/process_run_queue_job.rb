@@ -31,6 +31,13 @@ class ProcessRunQueueJob < ApplicationJob
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
 
+  # Sanity ceiling on auto-pick rows seeded per perform invocation.
+  # Capacity is enforced at execution, not at queueing — but a project
+  # with thousands of eligible issues could otherwise tie up this job
+  # with unbounded INSERTs in a single pass. The next perform will pick
+  # up where this one left off.
+  MAX_SEEDS_PER_PERFORM = 200
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -50,7 +57,6 @@ class ProcessRunQueueJob < ApplicationJob
       iterations = 0
       skipped_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
-      @auto_pick_seed_budget = {}  # { user_id => { active: unfinished auto-pick count, max: concurrency } }
 
       seed_auto_pick_queue
 
@@ -138,50 +144,34 @@ class ProcessRunQueueJob < ApplicationJob
     cap[:active] += 1 if cap
   end
 
-  # Seeds the queue with auto-pickable issues up to each owner's
-  # max_concurrent_runs budget. Priorities still determine what starts next;
-  # capping seeding at user capacity keeps low-priority work out of the queue
-  # unless higher-priority work is exhausted, and avoids flooding the queue
-  # with runs that cannot start for a long time.
+  # Seeds the queue with every eligible auto-pickable issue across projects.
+  # Capacity is enforced at start-time, not at queueing — so a project with
+  # many P3/auto-pick issues will queue them all up rather than starving on
+  # higher-priority work elsewhere. MAX_SEEDS_PER_PERFORM bounds DB load if a
+  # project has thousands of eligible issues; subsequent performs catch up.
+  #
+  # The project list is sorted once and reused across passes. Each pass seeds
+  # at most one issue per project, so projects round-robin naturally; the
+  # cross-project fair-share at start-time (QUEUE_ORDER PROJECT_ACTIVE_COUNT)
+  # handles the actual interleaving, not the seed order.
   def seed_auto_pick_queue
+    seeded = 0
     loop do
       created_in_pass = false
 
       ordered_auto_pick_projects.each do |project|
-        owner = project.effective_owner
-        next unless owner
-        next unless owner_has_seed_budget?(owner)
+        break if seeded >= MAX_SEEDS_PER_PERFORM
+        next unless project.effective_owner
 
         run = Issues::AutoPick.new(project).call
         next unless run
 
-        record_seeded_auto_pick_run(owner)
+        seeded += 1
         created_in_pass = true
-        @ordered_auto_pick_projects = nil
       end
 
-      break unless created_in_pass
+      break if !created_in_pass || seeded >= MAX_SEEDS_PER_PERFORM
     end
-  end
-
-  # Checks whether the owner has remaining auto-pick seed budget. Uses an
-  # in-memory cache (mirrors #user_has_capacity?) to avoid repeated COUNTs
-  # as the same owner is visited across projects and passes.
-  def owner_has_seed_budget?(owner)
-    budget = seed_budget_for(owner)
-    budget[:active] < budget[:max]
-  end
-
-  def seed_budget_for(owner)
-    @auto_pick_seed_budget[owner.id] ||= {
-      active: AgentRun.unfinished_auto_pick_count_for_user(owner),
-      max: owner.account.tenant_max_concurrent_runs(owner.settings.max_concurrent_runs)
-    }
-  end
-
-  def record_seeded_auto_pick_run(owner)
-    budget = @auto_pick_seed_budget[owner.id]
-    budget[:active] += 1 if budget
   end
 
   # Memoized within a single perform so repeated auto-pick passes
