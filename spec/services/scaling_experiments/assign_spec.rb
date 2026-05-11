@@ -29,17 +29,27 @@ RSpec.describe ScalingExperiments::Assign do
     )
   end
 
-  def expect_safe_agent_count_plan(assignment)
+  def expect_agent_count_assignment_plan(assignment)
     expect(assignment.execution_plan).to include(
       "plan_version" => 1,
       "dimension" => "agent_count",
       "dimension_value" => assignment.assigned_value,
       "dimension_role" => assignment.assigned_value == 1 ? "control" : "treatment",
       "task_count" => 4,
+      "task_bucket" => "tasks-4-6",
       "application_target" => "parallel_execution.max_batch_size",
       "parallel_execution_required" => true
     )
     expect(assignment.execution_plan["cohort_label"]).to eq("agent_count-#{assignment.assigned_value}__tasks-4-6")
+    expect(assignment.execution_plan["control"]).to include(
+      "dimension_value" => 1,
+      "cohort_label" => "agent_count-1__tasks-4-6",
+      "comparison_method" => "within_task_count_bucket"
+    )
+    expect(assignment.execution_plan["fairness_guardrails"]).to include(
+      "fairness_conditions" => array_including("same_project"),
+      "guardrails" => array_including("respect_dependency_order")
+    )
     expect(assignment.execution_plan["safety_limits"]).to include(
       "task_count_cap" => 4,
       "eligible_value_count" => 3
@@ -58,7 +68,7 @@ RSpec.describe ScalingExperiments::Assign do
     expect(assignment.project).to eq(project)
     expect(assignment.issue).to eq(issue)
     expect(assignment.workflow_id).to eq("wf-123")
-    expect_safe_agent_count_plan(assignment)
+    expect_agent_count_assignment_plan(assignment)
   end
 
   it "reuses the existing assignment for the same workflow" do

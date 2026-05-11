@@ -54,8 +54,8 @@ module ScalingExperiments
           "success_rate" => rate(observations, &:success),
           "avg_duration_seconds" => average(observations, &:duration_seconds),
           "avg_cost_cents" => average(observations, &:total_cost_cents),
-          "agent_launch_success_rate" => average(assignments) { |assignment| assignment.outcome_summary["agent_launch_success_rate"] },
-          "blocked_task_rate" => average(assignments) { |assignment| assignment.outcome_summary["blocked_task_rate"] },
+          "agent_launch_success_rate" => average_from_summaries(assignments, "agent_launch_success_rate"),
+          "blocked_task_rate" => average_from_summaries(assignments, "blocked_task_rate"),
           "avg_quality_score" => average_quality_score(assignments),
           "quality_metric_sample_count" => quality_metric_sample_count(assignments),
           "avg_parallelism_observed" => average(observations, &:parallelism_observed),
@@ -119,6 +119,13 @@ module ScalingExperiments
       return nil if quality_scores.empty?
 
       (quality_scores.sum / quality_scores.size).round(4)
+    end
+
+    def average_from_summaries(assignments, key)
+      values = assignments.filter_map { |assignment| assignment.outcome_summary[key]&.to_f }
+      return nil if values.empty?
+
+      (values.sum / values.size).round(4)
     end
 
     def quality_metric_sample_count(assignments)
