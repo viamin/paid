@@ -562,12 +562,10 @@ class AgentRun < ApplicationRecord
   end
 
   def self.stale_running_timeouts_by_goal
-    Rails.cache.fetch(STALE_RUNNING_TIMEOUT_CACHE_KEY, expires_in: STALE_RUNNING_TIMEOUT_CACHE_TTL) do
-      healthy_runtime_stats = healthy_successful_runtime_stats_by_goal
+    return build_stale_running_timeouts_by_goal if Rails.env.test?
 
-      GOALS.index_with do |goal|
-        adaptive_stale_running_timeout(goal, healthy_runtime_stats[goal])
-      end
+    Rails.cache.fetch(STALE_RUNNING_TIMEOUT_CACHE_KEY, expires_in: STALE_RUNNING_TIMEOUT_CACHE_TTL) do
+      build_stale_running_timeouts_by_goal
     end
   end
 
@@ -606,7 +604,15 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def self.adaptive_stale_running_timeout(goal, stats)
+  def self.build_stale_running_timeouts_by_goal
+    healthy_runtime_stats = healthy_successful_runtime_stats_by_goal
+
+    GOALS.index_with do |goal|
+      adaptive_stale_running_timeout(healthy_runtime_stats[goal])
+    end
+  end
+
+  def self.adaptive_stale_running_timeout(stats)
     return default_stale_running_timeout unless healthy_runtime_stats?(stats)
 
     adaptive_active_time = [
