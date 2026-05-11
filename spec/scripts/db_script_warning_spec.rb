@@ -12,7 +12,7 @@ end
 RSpec.describe DbScriptWarning do
   include ExecTmpdir
 
-  it "warns when db-dump cannot toggle RLS on a table" do
+  it "fails when db-dump cannot re-enable RLS after dumping" do
     Dir.mktmpdir("db-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, "db-dump")
       write_stub(dir, "docker", docker_stub)
@@ -22,19 +22,15 @@ RSpec.describe DbScriptWarning do
       env = base_env(dir)
       stdout, stderr, status = Open3.capture3(env, script_path, "sample.dump", chdir: dir)
 
-      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(stdout).to include("Dumped paid_test data")
-      expect(stderr).to include("disable failed")
-      expect(stderr).to include("WARNING: failed to disable RLS on widgets")
-      expect(stderr).to include("WARNING: 1 table(s) failed while attempting to disable RLS")
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).not_to include("Dumped paid_test data")
       expect(stderr).to include("enable failed")
       expect(stderr).to include("WARNING: failed to enable RLS on widgets")
-      expect(stderr).to include("force failed")
-      expect(stderr).to include("WARNING: failed to force RLS on widgets")
+      expect(stderr).to include("Re-enabling RLS after error")
     end
   end
 
-  it "warns when db-restore cannot re-enable protections on a table" do
+  it "fails when db-restore cannot re-enable protections after restore" do
     Dir.mktmpdir("db-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, "db-restore")
       write_stub(dir, "docker", docker_stub)
@@ -47,14 +43,34 @@ RSpec.describe DbScriptWarning do
       env = base_env(dir)
       stdout, stderr, status = Open3.capture3(env, script_path, "sample.dump", chdir: dir)
 
-      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(stdout).to include("Restore complete")
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).not_to include("Restore complete")
       expect(stderr).to include("enable trigger failed")
       expect(stderr).to include("WARNING: failed to enable triggers on widgets")
       expect(stderr).to include("enable failed")
       expect(stderr).to include("WARNING: failed to enable RLS on widgets")
-      expect(stderr).to include("force failed")
-      expect(stderr).to include("WARNING: failed to force RLS on widgets")
+      expect(stderr).to include("Cleaning up after error")
+    end
+  end
+
+  it "fails when db-regenerate cannot re-enable RLS before completion" do
+    Dir.mktmpdir("db-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, "db-regenerate")
+      write_stub(dir, "psql", db_regenerate_psql_stub)
+      write_stub(dir, "pg_dump", "#!/bin/sh\necho 'fake dump'\n")
+      write_stub(dir, "pg_restore", db_regenerate_pg_restore_stub)
+      write_stub(dir, "overmind", "#!/bin/sh\nexit 1\n")
+      write_bin_stub(dir, "dev", "#!/bin/sh\nexit 0\n")
+      write_bin_stub(dir, "rails", "#!/bin/sh\nexit 0\n")
+
+      env = base_env(dir)
+      stdout, stderr, status = Open3.capture3(env, script_path, "--practice", chdir: dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).not_to include("PRACTICE RUN COMPLETE")
+      expect(stderr).to include("enable failed")
+      expect(stdout).to include("Failed to enable RLS on widgets")
+      expect(stdout).to include("Script exited with error")
     end
   end
 
@@ -70,6 +86,13 @@ RSpec.describe DbScriptWarning do
 
   def write_stub(dir, name, contents)
     path = File.join(dir, "stubbin", name)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, contents)
+    FileUtils.chmod("+x", path)
+  end
+
+  def write_bin_stub(dir, name, contents)
+    path = File.join(dir, "bin", name)
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, contents)
     FileUtils.chmod("+x", path)
@@ -101,10 +124,6 @@ RSpec.describe DbScriptWarning do
         *"rowsecurity = true"*)
           echo "widgets"
           ;;
-        *"DISABLE ROW LEVEL SECURITY"*)
-          echo "disable failed" >&2
-          exit 1
-          ;;
         *"ENABLE ROW LEVEL SECURITY"*)
           echo "enable failed" >&2
           exit 1
@@ -129,17 +148,61 @@ RSpec.describe DbScriptWarning do
         *"rowsecurity = true"*)
           echo "widgets"
           ;;
-        *"DISABLE ROW LEVEL SECURITY"*)
-          echo "disable failed" >&2
-          exit 1
-          ;;
-        *"DISABLE TRIGGER ALL"*)
-          echo "disable trigger failed" >&2
-          exit 1
-          ;;
         *"ENABLE TRIGGER ALL"*)
           echo "enable trigger failed" >&2
           exit 1
+          ;;
+        *"ENABLE ROW LEVEL SECURITY"*)
+          echo "enable failed" >&2
+          exit 1
+          ;;
+        *"FORCE ROW LEVEL SECURITY"*)
+          echo "force failed" >&2
+          exit 1
+          ;;
+      esac
+    SH
+  end
+
+  def db_regenerate_pg_restore_stub
+    <<~SH
+      #!/bin/sh
+      if [ "$1" = "--list" ]; then
+        i=1
+        while [ "$i" -le 25 ]; do
+          echo "1234; 0 0 TABLE DATA public widgets_${i} paid"
+          i=$((i + 1))
+        done
+        exit 0
+      fi
+
+      exit 0
+    SH
+  end
+
+  def db_regenerate_psql_stub
+    <<~SH
+      #!/bin/sh
+      args="$*"
+
+      case "$args" in
+        *"SELECT 1 FROM pg_database WHERE datname = 'paid_practice'"*)
+          exit 0
+          ;;
+        *"SELECT 1 FROM pg_database WHERE datname = 'paid_practice_cable'"*)
+          exit 0
+          ;;
+        *"rowsecurity = true"*)
+          echo "widgets"
+          ;;
+        *"JOIN pg_policy"*)
+          echo "widgets"
+          ;;
+        *"tablename NOT IN ('ar_internal_metadata', 'schema_migrations')"*)
+          echo "widgets"
+          ;;
+        *"query_to_xml"*)
+          echo "widgets=1"
           ;;
         *"ENABLE ROW LEVEL SECURITY"*)
           echo "enable failed" >&2

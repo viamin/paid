@@ -37,6 +37,7 @@ run_table_alter_best_effort() {
   local tables="$2"
   local sql="$3"
   local action="$4"
+  local required="${5:-0}"
   local failures=0
 
   while IFS= read -r table; do
@@ -49,6 +50,9 @@ run_table_alter_best_effort() {
 
   if [[ "$failures" -gt 0 ]]; then
     warn "${failures} table(s) failed while attempting to ${action}"
+    if [[ "$required" == "1" ]]; then
+      return 1
+    fi
   fi
 }
 
@@ -75,6 +79,7 @@ get_rls_tables() {
 
 disable_rls() {
   local db="$1"
+  local required="${2:-0}"
   info "Disabling RLS on all tables in $db..."
   local tables
   tables="$(get_rls_tables "$db")"
@@ -84,12 +89,13 @@ disable_rls() {
     return 0
   fi
   CACHED_RLS_TABLES="$tables"
-  run_table_alter_best_effort "$db" "$tables" "DISABLE ROW LEVEL SECURITY" "disable RLS"
+  run_table_alter_best_effort "$db" "$tables" "DISABLE ROW LEVEL SECURITY" "disable RLS" "$required"
 }
 
 enable_rls() {
   local db="$1"
   local tables="${2:-${CACHED_RLS_TABLES}}"
+  local required="${3:-0}"
   info "Re-enabling RLS on all tables in $db..."
   if [[ -z "$tables" ]]; then
     warn "No cached RLS table list. Querying pg_policy for tables with policies..."
@@ -106,8 +112,8 @@ enable_rls() {
       return 0
     fi
   fi
-  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
-  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS" "$required"
+  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS" "$required"
 }
 
 get_row_counts() {
@@ -264,7 +270,7 @@ restore_into() {
       AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
     ORDER BY tablename
   " 2>/dev/null)" || true
-  run_table_alter_best_effort "$db_name" "$data_tables" "DISABLE TRIGGER ALL" "disable triggers"
+  run_table_alter_best_effort "$db_name" "$data_tables" "DISABLE TRIGGER ALL" "disable triggers" 1
 
   info "Truncating target tables..."
   run_sql_exec "$db_name" -c "
@@ -287,11 +293,14 @@ restore_into() {
 
   info "Restoring data..."
   local restore_output
-  restore_output="$(PGPASSWORD="$PG_PASSWORD" pg_restore \
+  local restore_failed=0
+  if ! restore_output="$(PGPASSWORD="$PG_PASSWORD" pg_restore \
     -h "$PG_HOST" -U "$PG_USER" \
     --data-only --no-owner --no-privileges \
     -d "$db_name" \
-    "$backup_path" 2>&1)" || true
+    "$backup_path" 2>&1)"; then
+    restore_failed=1
+  fi
 
   local errors
   errors="$(echo "$restore_output" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
@@ -301,21 +310,33 @@ restore_into() {
       error "  $line"
     done
     error "Data may be incomplete. Check backup and target database."
+    restore_failed=1
   fi
 
   info "Re-enabling triggers on data tables..."
-  run_table_alter_best_effort "$db_name" "$data_tables" "ENABLE TRIGGER ALL" "enable triggers"
+  run_table_alter_best_effort "$db_name" "$data_tables" "ENABLE TRIGGER ALL" "enable triggers" 1
 
   info "Re-creating FK constraints..."
   local recreated=0
+  local fk_failures=0
   while IFS='|' read -r conname tbl def; do
     [[ -z "$conname" ]] && continue
     run_sql_exec "$db_name" -c "ALTER TABLE ${tbl} ADD CONSTRAINT ${conname} ${def};" >/dev/null || {
       warn "  Could not recreate constraint ${conname} on ${tbl}"
+      fk_failures=$((fk_failures + 1))
     }
     recreated=$((recreated + 1))
   done <<< "$fk_defs"
   info "Recreated $recreated/$fk_count FK constraints"
+
+  if [[ "$fk_failures" -gt 0 ]]; then
+    error "Failed to recreate ${fk_failures} foreign key constraint(s)"
+    return 1
+  fi
+
+  if [[ "$restore_failed" -ne 0 ]]; then
+    return 1
+  fi
 
   info "Restore into $db_name complete"
 }
@@ -449,14 +470,14 @@ stop_app
 
 # Step 2: Disable RLS so pg_dump can see all data
 info "Current row counts (with RLS disabled after this step):"
-disable_rls "$PG_DB"
+disable_rls "$PG_DB" 1
 
 # Step 3: Backup
 create_backup "full"
 verify_backup_row_counts
 
 # Step 4: Re-enable RLS on source DB (we have the backup now)
-enable_rls "$PG_DB"
+enable_rls "$PG_DB" "$CACHED_RLS_TABLES" 1
 
 # Step 5: Create target databases
 if [[ "$PRACTICE_MODE" == "1" ]]; then
@@ -510,7 +531,7 @@ else
 fi
 
 # Step 7: Disable RLS on target for data restoration
-disable_rls "$TARGET_DB"
+disable_rls "$TARGET_DB" 1
 
 # Step 8: Restore data
 restore_into "$TARGET_DB" "$BACKUP_PATH"
@@ -526,7 +547,7 @@ if [[ "$PRACTICE_MODE" == "1" ]]; then
 
   SOURCE_RLS_TABLES="$CACHED_RLS_TABLES"
   info "Disabling RLS on source DB for comparison..."
-  disable_rls "$PG_DB"
+  disable_rls "$PG_DB" 1
 
   info "Source DB row counts (RLS disabled):"
   get_row_counts "$PG_DB" | while IFS= read -r line; do
@@ -536,11 +557,11 @@ if [[ "$PRACTICE_MODE" == "1" ]]; then
   compare_row_counts "$PG_DB" "$TARGET_DB" || true
 
   info "Re-enabling RLS on source DB..."
-  enable_rls "$PG_DB" "$SOURCE_RLS_TABLES"
+  enable_rls "$PG_DB" "$SOURCE_RLS_TABLES" 1
 fi
 
 # Step 10: Re-enable RLS on target
-enable_rls "$TARGET_DB"
+enable_rls "$TARGET_DB" "$CACHED_RLS_TABLES" 1
 
 # Step 11: Post-RLS steps
 if [[ "$PRACTICE_MODE" == "1" ]]; then

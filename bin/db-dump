@@ -84,6 +84,7 @@ run_table_alter_best_effort() {
   local tables="$2"
   local sql="$3"
   local action="$4"
+  local required="${5:-0}"
   local failures=0
 
   while IFS= read -r table; do
@@ -96,11 +97,15 @@ run_table_alter_best_effort() {
 
   if [[ "$failures" -gt 0 ]]; then
     echo "WARNING: ${failures} table(s) failed while attempting to ${action}" >&2
+    if [[ "$required" == "1" ]]; then
+      return 1
+    fi
   fi
 }
 
 disable_rls() {
   local db="$1"
+  local required="${2:-0}"
   RLS_TABLES="$(run_sql "$db" -c "
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public' AND rowsecurity = true
@@ -114,12 +119,13 @@ disable_rls() {
   local count
   count="$(echo "$RLS_TABLES" | wc -l)"
   echo "Disabling RLS on $count tables..."
-  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS"
+  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS" "$required"
 }
 
 enable_rls() {
   local db="$1"
   local tables="${2:-${RLS_TABLES}}"
+  local required="${3:-0}"
 
   if [[ -z "$tables" ]]; then
     tables="$(run_sql "$db" -c "
@@ -135,8 +141,8 @@ enable_rls() {
     fi
   fi
 
-  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
-  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS" "$required"
+  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS" "$required"
 }
 
 pg_dump_args() {
@@ -186,16 +192,16 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
-  disable_rls "$DB_NAME"
+  disable_rls "$DB_NAME" 1
 
   pg_dump_args "$COMPOSE_DB_USER"
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 
-  enable_rls "$DB_NAME"
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1
 elif [[ -n "$DB_NAME" ]]; then
   BACKEND="local"
 
-  disable_rls "$DB_NAME"
+  disable_rls "$DB_NAME" 1
 
   pg_dump_args "$DB_USER"
   PG_HOST_ARGS=()
@@ -204,7 +210,7 @@ elif [[ -n "$DB_NAME" ]]; then
   fi
   PGPASSWORD="$DB_PASSWORD" pg_dump "${PG_HOST_ARGS[@]}" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
 
-  enable_rls "$DB_NAME"
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1
 else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1

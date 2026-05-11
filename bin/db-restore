@@ -95,6 +95,7 @@ run_table_alter_best_effort() {
   local tables="$2"
   local sql="$3"
   local action="$4"
+  local required="${5:-0}"
   local failures=0
 
   while IFS= read -r table; do
@@ -107,6 +108,9 @@ run_table_alter_best_effort() {
 
   if [[ "$failures" -gt 0 ]]; then
     echo "WARNING: ${failures} table(s) failed while attempting to ${action}" >&2
+    if [[ "$required" == "1" ]]; then
+      return 1
+    fi
   fi
 }
 
@@ -122,6 +126,7 @@ get_data_tables() {
 
 disable_rls() {
   local db="$1"
+  local required="${2:-0}"
   RLS_TABLES="$(run_sql "$db" -c "
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public' AND rowsecurity = true
@@ -135,12 +140,13 @@ disable_rls() {
   local count
   count="$(echo "$RLS_TABLES" | wc -l)"
   echo "Disabling RLS on $count tables..."
-  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS"
+  run_table_alter_best_effort "$db" "$RLS_TABLES" "DISABLE ROW LEVEL SECURITY" "disable RLS" "$required"
 }
 
 enable_rls() {
   local db="$1"
   local tables="${2:-${RLS_TABLES}}"
+  local required="${3:-0}"
 
   if [[ -z "$tables" ]]; then
     tables="$(run_sql "$db" -c "
@@ -159,20 +165,22 @@ enable_rls() {
   local count
   count="$(echo "$tables" | wc -l)"
   echo "Re-enabling RLS on $count tables..."
-  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS"
-  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE ROW LEVEL SECURITY" "enable RLS" "$required"
+  run_table_alter_best_effort "$db" "$tables" "FORCE ROW LEVEL SECURITY" "force RLS" "$required"
 }
 
 disable_triggers() {
   local db="$1"
+  local required="${2:-0}"
   echo "Disabling triggers on data tables..."
-  run_table_alter_best_effort "$db" "$DATA_TABLES" "DISABLE TRIGGER ALL" "disable triggers"
+  run_table_alter_best_effort "$db" "$DATA_TABLES" "DISABLE TRIGGER ALL" "disable triggers" "$required"
 }
 
 enable_triggers() {
   local db="$1"
+  local required="${2:-0}"
   echo "Re-enabling triggers on data tables..."
-  run_table_alter_best_effort "$db" "$DATA_TABLES" "ENABLE TRIGGER ALL" "enable triggers"
+  run_table_alter_best_effort "$db" "$DATA_TABLES" "ENABLE TRIGGER ALL" "enable triggers" "$required"
 }
 
 local_db_host() {
@@ -262,8 +270,8 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
   get_data_tables "$DB_NAME"
-  disable_rls "$DB_NAME"
-  disable_triggers "$DB_NAME"
+  disable_rls "$DB_NAME" 1
+  disable_triggers "$DB_NAME" 1
 
   echo "Truncating existing data..."
   run_sql_exec "$DB_NAME" -c "
@@ -289,8 +297,8 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" \
     pg_restore --data-only --no-owner --no-privileges -U "$COMPOSE_DB_USER" -d "$DB_NAME" < "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
 
-  enable_triggers "$DB_NAME"
-  enable_rls "$DB_NAME"
+  enable_triggers "$DB_NAME" 1
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1
   RESTORE_CLEANUP_DONE=1
 
   if [[ -n "$RESTORE_FAILED" ]]; then
@@ -305,8 +313,8 @@ elif [[ -n "$DB_NAME" ]]; then
   echo "Restoring ${BACKUP_PATH} into ${DB_NAME}..."
 
   get_data_tables "$DB_NAME"
-  disable_rls "$DB_NAME"
-  disable_triggers "$DB_NAME"
+  disable_rls "$DB_NAME" 1
+  disable_triggers "$DB_NAME" 1
 
   echo "Truncating existing data..."
   run_sql_exec "$DB_NAME" -c "
@@ -335,8 +343,8 @@ elif [[ -n "$DB_NAME" ]]; then
   RESTORE_FAILED=""
   PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" --data-only --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME" "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
 
-  enable_triggers "$DB_NAME"
-  enable_rls "$DB_NAME"
+  enable_triggers "$DB_NAME" 1
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1
   RESTORE_CLEANUP_DONE=1
 
   if [[ -n "$RESTORE_FAILED" ]]; then
