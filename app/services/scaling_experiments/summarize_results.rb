@@ -90,7 +90,7 @@ module ScalingExperiments
         "duration_seconds_delta" => delta(leader["avg_duration_seconds"], control["avg_duration_seconds"]),
         "cost_cents_delta" => delta(leader["avg_cost_cents"], control["avg_cost_cents"]),
         "agent_launch_success_rate_delta" => delta(leader["agent_launch_success_rate"], control["agent_launch_success_rate"]),
-        "blocked_task_rate_delta" => delta(control["blocked_task_rate"], leader["blocked_task_rate"])
+        "blocked_task_rate_delta" => delta(leader["blocked_task_rate"], control["blocked_task_rate"])
       }
     end
 

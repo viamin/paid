@@ -103,18 +103,22 @@ module ScalingExperiments
     def agent_launch_success_rate
       @agent_launch_success_rate ||= begin
         launched = scaling_observation.agent_count_launched.to_i
-        return 0.0 if launched.zero?
-
-        (scaling_observation.agent_count_succeeded.to_f / launched).round(4)
+        if launched.zero?
+          0.0
+        else
+          (scaling_observation.agent_count_succeeded.to_f / launched).round(4)
+        end
       end
     end
 
     def blocked_task_rate
       @blocked_task_rate ||= begin
         task_count = scaling_observation.task_count.to_i
-        return 0.0 if task_count.zero?
-
-        (scaling_observation.agent_count_blocked.to_f / task_count).round(4)
+        if task_count.zero?
+          0.0
+        else
+          (scaling_observation.agent_count_blocked.to_f / task_count).round(4)
+        end
       end
     end
 
