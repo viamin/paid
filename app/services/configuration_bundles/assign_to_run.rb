@@ -21,8 +21,7 @@ module ConfigurationBundles
 
     def call
       selection = optimizer_selection
-      definition = bundle_definition(selection&.variant_by_experiment_id)
-      fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
+      definition, fingerprint = selected_bundle_payload(selection)
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(
@@ -128,6 +127,35 @@ module ConfigurationBundles
       )
 
       INVALID_EXPERIMENT_VALUE
+    end
+
+    def selected_bundle_payload(selection)
+      definition = selection&.definition
+      fingerprint = selection&.fingerprint
+
+      if optimizer_payload_usable?(definition, fingerprint)
+        return [ definition, fingerprint ]
+      end
+
+      fallback_definition = bundle_definition(selection&.variant_by_experiment_id)
+      [ fallback_definition, Digest::SHA256.hexdigest(JSON.generate(fallback_definition)) ]
+    end
+
+    def optimizer_payload_usable?(definition, fingerprint)
+      return false unless definition.is_a?(Hash)
+
+      computed_fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
+      return true if fingerprint.blank?
+
+      return true if fingerprint == computed_fingerprint
+
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_payload_fingerprint_mismatch",
+        agent_run_id: agent_run.id,
+        optimizer_fingerprint: fingerprint,
+        computed_fingerprint: computed_fingerprint
+      )
+      false
     end
 
     def optimizer_selection

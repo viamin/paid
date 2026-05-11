@@ -169,6 +169,37 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.configuration_bundle_selection_context).to eq("task")
   end
 
+  it "uses the optimizer-provided bundle definition when available" do
+    optimized_definition = optimizer_definition_with_value(12_000)
+    selection = optimizer_selection(definition: optimized_definition)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.definition).to eq(optimized_definition)
+    expect(bundle.fingerprint).to eq(selection.fingerprint)
+  end
+
+  it "falls back to rebuilding the bundle definition when the optimizer payload fingerprint is inconsistent" do
+    selection = ConfigurationBundles::Optimizer::Selection.new(
+      definition: {
+        "schema_version" => 1,
+        "goal" => agent_run.goal,
+        "agent_type" => agent_run.agent_type,
+        "experiments" => {}
+      },
+      fingerprint: "incorrect",
+      variant_by_experiment_id: { experiment.id => variant },
+      selection_mode: "exploitative",
+      selection_context: "task"
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget", "value")).to eq(8000)
+  end
+
   def filesystem_mcp_snapshot
     {
       "args" => [ "-y", "@modelcontextprotocol/server-filesystem", "/workspace" ],
@@ -176,5 +207,32 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       "env" => { "WORKDIR" => "/workspace" },
       "name" => "filesystem"
     }
+  end
+
+  def optimizer_definition_with_value(value)
+    {
+      "schema_version" => 1,
+      "goal" => agent_run.goal,
+      "agent_type" => agent_run.agent_type,
+      "provider_id" => agent_run.provider_id,
+      "prompt_version_id" => agent_run.prompt_version_id,
+      "experiments" => {
+        "knowledge.token_budget" => {
+          "configuration_experiment_id" => experiment.id,
+          "configuration_experiment_variant_id" => variant.id,
+          "value" => value
+        }
+      }
+    }
+  end
+
+  def optimizer_selection(definition:, fingerprint: Digest::SHA256.hexdigest(JSON.generate(definition)))
+    ConfigurationBundles::Optimizer::Selection.new(
+      definition: definition,
+      fingerprint: fingerprint,
+      variant_by_experiment_id: {},
+      selection_mode: "exploitative",
+      selection_context: "task"
+    )
   end
 end

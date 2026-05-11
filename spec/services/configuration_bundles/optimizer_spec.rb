@@ -44,8 +44,9 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(selection.score_inputs.predicted_objective_score).to be > 0
       expect(selection.score_inputs.predicted_quality_score).to be > 0
       expect(selection.score_inputs.uncertainty).to be > 0
-      expect(selection.score_inputs.acquisition_score).to be >
-        selection.score_inputs.predicted_objective_score
+      expect(selection.score_inputs.acquisition_function).to eq("expected_improvement")
+      expect(selection.score_inputs.best_observed_objective_score).to be > 0
+      expect(selection.score_inputs.acquisition_score).to be > 0
     end
 
     it "routes no-issue runs through the project exploration budget" do
@@ -209,6 +210,25 @@ RSpec.describe ConfigurationBundles::Optimizer do
         ranked.map(&:score_inputs).map(&:acquisition_score).sort.reverse
       )
       expect(ranked.first.variant_by_experiment_id).to eq(experiment.id => challenger)
+    end
+
+    it "scores candidates against the best observed objective for the goal" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.95 ]
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.7, 0.72, 0.74 ]
+      )
+
+      ranked = described_class.ranked_candidates(agent_run: agent_run)
+
+      expect(ranked).to all(have_attributes(score_inputs: have_attributes(acquisition_function: "expected_improvement")))
+      expect(ranked.first.score_inputs.best_observed_objective_score).to be > 0
+      expect(ranked.first.score_inputs.acquisition_score).to be <= ranked.first.score_inputs.uncertainty + ranked.first.score_inputs.predicted_objective_score
     end
 
     it "loads experiment variants in a single query" do
