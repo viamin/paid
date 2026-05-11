@@ -247,6 +247,26 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       expect(queries.grep(/FROM "configuration_experiment_variants"/).size).to eq(1)
     end
+
+    it "does not issue per-outcome agent_run or project queries when objective scores are computed" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.65, 0.66, 0.67 ]
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.9, 0.91 ]
+      )
+      BundleOutcome.update_all(metrics: {})
+
+      queries = capture_queries { described_class.ranked_candidates(agent_run: agent_run) }
+
+      expect(queries.grep(/FROM "bundle_outcomes"/).size).to eq(1)
+      expect(queries.grep(/FROM "agent_runs"/).size).to eq(0)
+      expect(queries.grep(/FROM "projects"/).size).to eq(0)
+    end
   end
 
   def create_prior_history

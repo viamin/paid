@@ -309,7 +309,7 @@ module ConfigurationBundles
     def prior_objective_score_for_goal
       @prior_objective_score_for_goal ||= begin
         objective_scores = BundleOutcome
-          .joins(:agent_run)
+          .eager_load(agent_run: :project)
           .where(agent_runs: { project_id: agent_run.project_id, goal: agent_run.goal })
           .where.not(id: agent_run.bundle_outcomes.select(:id))
           .where.not(quality_score: nil)

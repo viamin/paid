@@ -180,6 +180,17 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(bundle.fingerprint).to eq(selection.fingerprint)
   end
 
+  it "recomputes the fingerprint when the optimizer payload omits it" do
+    optimized_definition = optimizer_definition_with_value(12_000)
+    selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.definition).to eq(optimized_definition)
+    expect(bundle.fingerprint).to eq(Digest::SHA256.hexdigest(JSON.generate(optimized_definition)))
+  end
+
   it "falls back to rebuilding the bundle definition when the optimizer payload fingerprint is inconsistent" do
     selection = ConfigurationBundles::Optimizer::Selection.new(
       definition: {

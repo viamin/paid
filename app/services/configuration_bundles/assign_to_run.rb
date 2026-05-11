@@ -132,19 +132,18 @@ module ConfigurationBundles
     def selected_bundle_payload(selection)
       definition = selection&.definition
       fingerprint = selection&.fingerprint
+      computed_fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition)) if definition.is_a?(Hash)
 
-      if optimizer_payload_usable?(definition, fingerprint)
-        return [ definition, fingerprint ]
+      if optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
+        return [ definition, computed_fingerprint ]
       end
 
       fallback_definition = bundle_definition(selection&.variant_by_experiment_id)
       [ fallback_definition, Digest::SHA256.hexdigest(JSON.generate(fallback_definition)) ]
     end
 
-    def optimizer_payload_usable?(definition, fingerprint)
+    def optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
       return false unless definition.is_a?(Hash)
-
-      computed_fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
       return true if fingerprint.blank?
 
       return true if fingerprint == computed_fingerprint
