@@ -87,11 +87,16 @@ class ProjectsController < ApplicationController
       else
         CollectorRun.none
       end
-    @artifact_counts = KnowledgeArtifact.active
-      .for_project(@project)
-      .group(:artifact_type)
-      .count
-      .sort_by { |_, count| -count }
+    @artifact_counts = Rails.cache.fetch(
+      KnowledgeArtifact.artifact_counts_cache_key(@project.id),
+      expires_in: 10.minutes
+    ) do
+      KnowledgeArtifact.active
+        .for_project(@project)
+        .group(:artifact_type)
+        .count
+        .sort_by { |_, count| -count }
+    end
   end
 
   def new

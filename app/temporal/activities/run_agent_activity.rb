@@ -212,28 +212,44 @@ module Activities
 
             # Skip git post-processing for goals that don't clone a repo.
             # These runs only interact via the GitHub API proxy — no git repo exists.
+            #
+            # Keep heartbeats flowing during post-run bookkeeping too. By the
+            # time we reach this block the provider may already have posted a PR
+            # review/comment, so a long-running git operation here can otherwise
+            # leave the AgentRun stuck in "running" until stale-run cleanup.
+            #
+            # Do not run infinite-loop detection here: the agent is no longer
+            # producing output, so re-scanning the same stdout snapshots during
+            # git bookkeeping can falsely classify a successful run as looping.
+            bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", provider) do
+              # Evaluate pre-commit requirements against the working directory
+              # before committing, so blocking failures prevent commits.
+              if agent_run.repo_cloned?
+                pre_commit_result = evaluate_pre_commit_requirements(agent_run)
+                if pre_commit_result[:blocking]
+                  agent_run.log!("system", "Blocked by failing pre-commit requirements",
+                    metadata: { pre_commit_results: pre_commit_result[:results] })
+                  next {
+                    early_return: {
+                      agent_run_id: agent_run_id,
+                      success: false,
+                      has_changes: check_for_changes(agent_run, pre_agent_sha),
+                      output_present: provider_result.fetch(:output_present),
+                      final_provider: attempt_label,
+                      error: "pre_commit_requirements_failed"
+                    }
+                  }
+                end
 
-            # Evaluate pre-commit requirements against the working directory
-            # before committing, so blocking failures prevent commits.
-            if agent_run.repo_cloned?
-              pre_commit_result = evaluate_pre_commit_requirements(agent_run)
-              if pre_commit_result[:blocking]
-                agent_run.log!("system", "Blocked by failing pre-commit requirements",
-                  metadata: { pre_commit_results: pre_commit_result[:results] })
-                return {
-                  agent_run_id: agent_run_id,
-                  success: false,
-                  has_changes: check_for_changes(agent_run, pre_agent_sha),
-                  output_present: provider_result.fetch(:output_present),
-                  final_provider: attempt_label,
-                  error: "pre_commit_requirements_failed"
-                }
+                commit_uncommitted_changes(agent_run)
               end
 
-              commit_uncommitted_changes(agent_run)
+              { has_changes: agent_run.repo_cloned? ? check_for_changes(agent_run, pre_agent_sha) : false }
             end
 
-            has_changes = agent_run.repo_cloned? ? check_for_changes(agent_run, pre_agent_sha) : false
+            return bookkeeping_result[:early_return] if bookkeeping_result[:early_return]
+
+            has_changes = bookkeeping_result.fetch(:has_changes)
 
             if !has_changes && !provider_result.fetch(:output_present)
               agent_run.log!("system", "Provider completed with no output and no changes")
@@ -797,6 +813,11 @@ module Activities
             "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
         end
 
+        if provider_model_not_found_error?(sanitized_output)
+          raise ProviderExecutionError,
+            "Provider model not found error from #{provider}: #{sanitized_output.truncate(500)}"
+        end
+
         output_present = stdout.present? || stderr.present?
         track_harness_tokens(agent_run, provider_candidate, provider, user_settings.user, result, execution_started_at)
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
@@ -915,6 +936,14 @@ module Activities
           )
         end
 
+        if provider_model_not_found_error?(sanitized_output)
+          raise_preflight_failure!(
+            agent_run: agent_run,
+            provider: provider,
+            reason: "Provider model not found error: #{sanitized_output.truncate(500)}"
+          )
+        end
+
         return
       end
 
@@ -1021,6 +1050,40 @@ module Activities
 
       ProviderSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000
+
+    MODEL_NOT_FOUND_PATTERNS = [
+      /ProviderModelNotFoundError/i,
+      /Error:\s*Model not found:/i
+    ].freeze
+
+    MODEL_NOT_FOUND_NOISE_LINE_PATTERNS = [
+      %r{\A\s*at\s+.+\z},
+      %r{\A\s*file://.+\z},
+      %r{\A\s*/.+:\d+:\d+\)?\z},
+      /\A\s*\^+\s*\z/
+    ].freeze
+
+    def provider_model_not_found_error?(output)
+      return false if output.blank?
+
+      signal = strip_model_not_found_noise(output)
+      return false if signal.length > MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH
+
+      MODEL_NOT_FOUND_PATTERNS.any? { |pattern| signal.match?(pattern) }
+    end
+
+    def strip_model_not_found_noise(output)
+      output.each_line.reject { |line| model_not_found_noise_line?(line) }.join
+    end
+
+    def model_not_found_noise_line?(line)
+      normalized_line = line.to_s.strip
+      return false if normalized_line.blank?
+
+      MODEL_NOT_FOUND_NOISE_LINE_PATTERNS.any? { |pattern| normalized_line.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)

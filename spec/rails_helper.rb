@@ -11,6 +11,8 @@ require "fixture_kit/rspec"
 require "rspec/rails"
 require "test_prof/recipes/rspec/factory_default"
 
+ActiveRecord.verify_foreign_keys_for_fixtures = false
+
 # Add additional requires below this line. Rails is not loaded until this point!
 
 # Requires supporting ruby files with custom matchers and macros, etc,

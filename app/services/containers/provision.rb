@@ -1504,12 +1504,12 @@ module Containers
     end
 
     # Sets up the workspace for the container.
-    # When worktree_path is provided, validates it exists (bind mount from host).
-    # When nil, creates a Docker named volume for in-container git clone.
+    # When a host-side worktree_path is provided, validates it exists for bind-mount.
+    # When nil (or container-internal), creates a Docker named volume for in-container git clone.
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
     def prepare_workspace!
-      if worktree_path.present?
-        raise ProvisionError, "Worktree path does not exist: #{worktree_path}" unless File.directory?(worktree_path)
+      if host_worktree_path.present?
+        raise ProvisionError, "Worktree path does not exist: #{host_worktree_path}" unless File.directory?(host_worktree_path)
       else
         @workspace_volume ||= pooled_container? ? "paid-pool-workspace-#{pool_entry.id}" : "paid-workspace-#{agent_run.id}"
         begin
@@ -1518,6 +1518,13 @@ module Containers
           Docker::Volume.create(@workspace_volume, volume_options)
         end
       end
+    end
+
+    def host_worktree_path
+      return nil if worktree_path.blank?
+      return nil if worktree_path == options[:workspace_mount]
+
+      worktree_path
     end
 
     def write_container_file(path, content)
@@ -1575,7 +1582,7 @@ module Containers
 
     def cleanup_workspace_volume
       volume_name = @workspace_volume
-      volume_name ||= "paid-workspace-#{agent_run.id}" if worktree_path.blank? && agent_run.present? && !pooled_container?
+      volume_name ||= "paid-workspace-#{agent_run.id}" if host_worktree_path.blank? && agent_run.present? && !pooled_container?
       return unless volume_name
 
       Docker::Volume.get(volume_name).remove
@@ -1677,8 +1684,8 @@ module Containers
       binds = []
       if @workspace_volume
         binds << "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
-      elsif worktree_path.present?
-        binds << "#{worktree_path}:#{options[:workspace_mount]}:rw"
+      elsif host_worktree_path.present?
+        binds << "#{host_worktree_path}:#{options[:workspace_mount]}:rw"
       end
 
       binds << "#{heartbeat_dir_host}:#{HEARTBEAT_MOUNT_POINT}:rw" if heartbeat_dir_host

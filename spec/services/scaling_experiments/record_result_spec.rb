@@ -19,10 +19,16 @@ RSpec.describe ScalingExperiments::RecordResult do
       project: project,
       issue: issue,
       workflow_id: workflow_id,
+      workflow_name: "FeatureOrchestrationWorkflow",
+      observation_type: "feature_orchestration",
+      task_count: assigned_value,
       success: success,
       status: success ? "completed" : "partial_failure",
       agent_count_planned: assigned_value,
       agent_count_launched: assigned_value,
+      agent_count_succeeded: success ? assigned_value : assigned_value - 1,
+      agent_count_failed: success ? 0 : 1,
+      agent_count_blocked: success ? 0 : 1,
       total_iterations: total_iterations,
       max_iterations: max_iterations,
       parallelism_planned: parallelism_planned,
@@ -126,6 +132,7 @@ RSpec.describe ScalingExperiments::RecordResult do
     expect(assignment.outcome_summary).to include(
       "dimension" => "agent_count",
       "assigned_value" => 2,
+      "summary_version" => 1,
       "status" => "completed",
       "success" => true,
       "total_iterations" => 5,
@@ -134,6 +141,8 @@ RSpec.describe ScalingExperiments::RecordResult do
       "batch_count" => 2,
       "total_cost_cents" => 350,
       "child_run_count" => 2,
+      "agent_launch_success_rate" => 1.0,
+      "blocked_task_rate" => 0.0,
       "quality_metric_sample_count" => 2,
       "avg_quality_score" => 0.8
     )
@@ -151,19 +160,31 @@ RSpec.describe ScalingExperiments::RecordResult do
         "quality_score" => 0.9
       )
     )
+    expect(assignment.outcome_summary["metrics"]).to include(
+      "resource" => hash_including("duration_seconds" => 180, "total_cost_cents" => 350),
+      "quality" => hash_including("sample_count" => 2, "avg_score" => 0.8)
+    )
   end
 
   def expect_cached_experiment_summary(experiment)
     expect(experiment.cached_summary).to include(
       "status" => "collecting",
+      "outcome_metric_keys" => array_including("success_rate", "agent_launch_success_rate", "blocked_task_rate"),
       "sample_count" => 1,
-      "values" => array_including(hash_including(
-        "assigned_value" => 2,
-        "sample_count" => 1,
-        "avg_quality_score" => 0.8,
-        "avg_total_iterations" => 4.0,
-        "avg_max_iterations" => 2.0
-      ))
+      "values" => array_including(
+        hash_including(
+          "assigned_value" => 2,
+          "sample_count" => 1,
+          "avg_quality_score" => 0.8,
+          "avg_total_iterations" => 5.0,
+          "avg_max_iterations" => 3.0,
+          "agent_launch_success_rate" => 1.0,
+          "blocked_task_rate" => 0.0
+        )
+      )
+    )
+    expect(experiment.cached_summary["initial_results"]).to include(
+      "leader" => hash_including("assigned_value" => 2)
     )
   end
 
