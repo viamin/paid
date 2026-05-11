@@ -9,9 +9,16 @@ class BundleOutcome < ApplicationRecord
   validates :duration_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :cost_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_used, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validate :metrics_is_object
   validate :agent_run_matches_bundle_scope, if: -> { configuration_bundle.present? && agent_run.present? }
 
   private
+
+  def metrics_is_object
+    return if metrics.is_a?(Hash)
+
+    errors.add(:metrics, "must be an object")
+  end
 
   def agent_run_matches_bundle_scope
     return if agent_run.project.account_id == configuration_bundle.account_id &&

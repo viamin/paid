@@ -61,19 +61,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
     expect(agent_run.configuration_bundle_selection_mode).to eq("exploitative")
     expect(agent_run.configuration_bundle_selection_context).to eq("task")
-    expect(bundle.definition).to include(
-      "schema_version" => 1,
-      "goal" => agent_run.goal,
-      "agent_type" => agent_run.agent_type
-    )
-    expect(bundle.definition["model_selection"]).to eq(expected_model_selection)
-    expect(bundle.definition["service_container_ids"]).to eq([ first_service.id, second_service.id ].sort)
-    expect(bundle.definition["mcp_servers"]).to eq([ filesystem_mcp_snapshot ])
-    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to eq(
-      "configuration_experiment_id" => experiment.id,
-      "configuration_experiment_variant_id" => variant.id,
-      "value" => 8000
-    )
+    expect_bundle_definition(bundle)
+    expect_bundle_identity(bundle)
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
   end
 
@@ -169,6 +158,32 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.configuration_bundle_selection_context).to eq("task")
   end
 
+  it "persists the fingerprint for the resolved assignment when a run already has an experiment assignment" do
+    challenger = create(:configuration_experiment_variant,
+      configuration_experiment: experiment,
+      config_value: JSON.generate(12_000))
+    create(:configuration_experiment_assignment,
+      configuration_experiment: experiment,
+      configuration_experiment_variant: variant,
+      agent_run: agent_run)
+
+    service = described_class.new(agent_run: agent_run)
+    selection = ConfigurationBundles::Optimizer::Selection.new(
+      fingerprint: Digest::SHA256.hexdigest("stale optimizer fingerprint"),
+      variant_by_experiment_id: { experiment.id => challenger }
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.fingerprint).to eq(service.send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.fingerprint).not_to eq(selection.fingerprint)
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
   def filesystem_mcp_snapshot
     {
       "args" => [ "-y", "@modelcontextprotocol/server-filesystem", "/workspace" ],
@@ -176,5 +191,31 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       "env" => { "WORKDIR" => "/workspace" },
       "name" => "filesystem"
     }
+  end
+
+  def expect_bundle_definition(bundle)
+    expect(bundle.definition).to include(
+      "schema_version" => 1,
+      "goal" => agent_run.goal,
+      "agent_type" => agent_run.agent_type
+    )
+    expect(bundle.definition["model_selection"]).to eq(expected_model_selection)
+    expect(bundle.definition["service_container_ids"]).to eq([ first_service.id, second_service.id ].sort)
+    expect(bundle.definition["mcp_servers"]).to eq([ filesystem_mcp_snapshot ])
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to eq(
+      "configuration_experiment_id" => experiment.id,
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
+  def expect_bundle_identity(bundle)
+    expect(bundle.context).to include(
+      "identity" => hash_including(
+        "fingerprint" => bundle.fingerprint,
+        "fingerprint_algorithm" => "sha256",
+        "schema_version" => 1
+      )
+    )
   end
 end

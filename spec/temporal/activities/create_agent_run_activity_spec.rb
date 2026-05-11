@@ -205,9 +205,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "preserves the existing configuration bundle on resume when provider selection is unchanged" do
-      existing_bundle = create(:configuration_bundle,
-        account: project.account,
-        definition: existing_create_pr_bundle_definition)
+      existing_bundle = create_runtime_bundle(existing_create_pr_bundle_definition)
       queued_run = create(:agent_run,
         :queued,
         project: project,
@@ -240,6 +238,28 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "recomputes the configuration bundle on resume when model selection metadata becomes available" do
+      existing_bundle = create(:configuration_bundle,
+        account: project.account,
+        definition: existing_create_pr_bundle_definition)
+      queued_run = create(:agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        provider: claude_provider,
+        agent_type: "claude_code",
+        configuration_bundle: existing_bundle)
+      llm_model = create(:llm_model, provider: "openai", model_id: "gpt-5.4")
+
+      stub_model_selection(llm_model: llm_model)
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      queued_run.reload
+      expect(queued_run.configuration_bundle).not_to eq(existing_bundle)
+      expect_model_selection_bundle(queued_run.configuration_bundle)
+    end
+
     def existing_review_bundle_definition
       {
         "schema_version" => 1,
@@ -270,6 +290,47 @@ RSpec.describe Activities::CreateAgentRunActivity do
         provider: claude_provider,
         agent_type: "claude_code",
         configuration_bundle: bundle)
+    end
+
+    def create_runtime_bundle(definition)
+      assigner = ConfigurationBundles::AssignToRun.new(agent_run: build(:agent_run, project: project, issue: issue))
+      fingerprint = assigner.send(:bundle_fingerprint, definition)
+
+      create(:configuration_bundle,
+        account: project.account,
+        definition: definition,
+        fingerprint: fingerprint,
+        context: {
+          "identity" => {
+            "fingerprint" => fingerprint,
+            "fingerprint_algorithm" => "sha256",
+            "schema_version" => 1
+          }
+        },
+        name: "Runtime Bundle #{fingerprint.first(12)}",
+        status: "active",
+        strategy: "runtime_snapshot")
+    end
+
+    def stub_model_selection(llm_model:)
+      allow(Models::Select).to receive(:call) do |agent_run:|
+        create(:model_selection,
+          agent_run: agent_run,
+          llm_model: llm_model,
+          selector_type: "override",
+          tier: "high")
+      end
+    end
+
+    def expect_model_selection_bundle(bundle)
+      expect(bundle.definition).to include(
+        "model_selection" => hash_including(
+          "llm_model_id" => "gpt-5.4",
+          "llm_provider" => "openai",
+          "selector_type" => "override",
+          "tier" => "high"
+        )
+      )
     end
 
     it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do

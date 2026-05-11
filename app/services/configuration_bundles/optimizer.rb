@@ -76,7 +76,7 @@ module ConfigurationBundles
 
     def score_candidate(variant_by_experiment_id)
       definition = bundle_definition(variant_by_experiment_id)
-      fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition))
+      fingerprint = bundle_fingerprint(definition)
       prediction = surrogate_model.predict(bundle_definition: definition, fingerprint: fingerprint)
       acquisition_score = prediction.mean_objective_score + (EXPLORATION_WEIGHT * prediction.uncertainty)
 

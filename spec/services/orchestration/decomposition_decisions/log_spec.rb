@@ -38,6 +38,8 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       }
     end
 
+    before { Strategies::SeedBaselineOrchestration.call }
+
     def orchestration_decision_for(decision_key, decision_type: "planning_outcome")
       OrchestrationDecision.find_by!(
         [
@@ -52,6 +54,13 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
           "Workflows::PlanningWorkflow",
           decision_key
         ]
+      )
+    end
+
+    def baseline_strategy_version_for(decision_type)
+      Strategies::ResolveVersion.call(
+        slug: Strategies::BaselineOrchestration.slug_for_decision_type(decision_type),
+        project: project
       )
     end
 
@@ -106,11 +115,7 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
     it "mirrors the decomposition record into orchestration decisions" do
       described_class.call(**payload)
 
-      orchestration_decision = OrchestrationDecision.find_by(
-        project: project,
-        decision_type: "planning_outcome",
-        actor: "Workflows::PlanningWorkflow"
-      )
+      orchestration_decision = orchestration_decision_for(payload[:decision_key])
 
       expect(orchestration_decision).to be_present
       expect(orchestration_decision.context).to include(
@@ -126,6 +131,32 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
         "outcome" => "sub_issues_created",
         "hints" => include("task_count" => 3)
       )
+      expect(orchestration_decision.strategy_version).to eq(baseline_strategy_version_for("planning_outcome"))
+    end
+
+    it "backfills the strategy version on an existing orchestration decision" do
+      orchestration_decision = create(
+        :orchestration_decision,
+        :without_agent_run,
+        project: project,
+        decision_type: "planning_outcome",
+        actor: "Workflows::PlanningWorkflow",
+        context: {
+          decision_key: payload[:decision_key],
+          workflow_id: payload[:workflow_id],
+          workflow_name: payload[:workflow_name],
+          issue_id: issue.id,
+          decision_status: "applied"
+        },
+        inputs: {},
+        outputs: {},
+        outcome_references: [],
+        strategy_version: nil
+      )
+
+      described_class.call(**payload)
+
+      expect(orchestration_decision.reload.strategy_version).to eq(baseline_strategy_version_for("planning_outcome"))
     end
 
     it "marks skipped decomposition outcomes as noop" do
