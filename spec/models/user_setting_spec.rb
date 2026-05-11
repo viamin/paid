@@ -52,15 +52,6 @@ RSpec.describe UserSetting do
     it { is_expected.to validate_numericality_of(:max_parallel_agents_per_project).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(20) }
     it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
 
-    it "validates fair_queue_across_projects as a required boolean" do
-      setting = build(:user_setting, fair_queue_across_projects: false)
-      expect(setting).to be_valid
-
-      setting.fair_queue_across_projects = nil
-      expect(setting).not_to be_valid
-      expect(setting.errors[:fair_queue_across_projects]).to include("is not included in the list")
-    end
-
     # Project Defaults
     it { is_expected.to validate_presence_of(:default_branch) }
 

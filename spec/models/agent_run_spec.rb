@@ -1581,6 +1581,15 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(auto_continue)
     end
 
+    it "prioritizes PR-continuation work within the same priority tier" do
+      project = create(:project)
+      _fresh = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      pr_followup = create(:agent_run, :queued, trigger_type: "manual", project: project,
+        source_pull_request_number: 7, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(pr_followup)
+    end
+
     it "prioritizes create_issue over create_pr within the same priority tier" do
       create(:agent_run, :queued, trigger_type: "manual", goal: "create_pr", created_at: 2.minutes.ago)
       issue_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_issue", created_at: 1.minute.ago)
@@ -1595,14 +1604,14 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(older_manual)
     end
 
-    it "prioritizes P1-labeled issues above manual runs" do
+    it "prioritizes manual runs above P1-labeled issues within the same project" do
       project = create(:project)
       p1_issue = create(:issue, project: project, labels: [ "P1" ])
-      _manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
-      p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+      manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
+      _p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: p1_issue, created_at: 1.minute.ago)
 
-      expect(described_class.next_queued_run).to eq(p1_run)
+      expect(described_class.next_queued_run).to eq(manual_run)
     end
 
     it "prioritizes P2-labeled issues above auto-continue runs" do
@@ -1631,22 +1640,20 @@ RSpec.describe AgentRun do
     it "respects custom priority label names from project settings" do
       project = create(:project, priority_labels: { "P1" => "critical", "P2" => "important" })
       critical_issue = create(:issue, project: project, labels: [ "critical" ])
-      _manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
       critical_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-        issue: critical_issue, created_at: 1.minute.ago)
+        issue: critical_issue)
 
-      expect(described_class.next_queued_run).to eq(critical_run)
+      expect(critical_run.queue_priority_tier).to eq(:label_p1)
     end
 
     it "resolves labels from PR issue via source_pull_request_number" do
       project = create(:project)
       _pr_issue = create(:issue, project: project, labels: [ "P1" ],
         is_pull_request: true, github_number: 99)
-      _plain_run = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
       pr_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-        issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 99, created_at: 1.minute.ago)
+        issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 99)
 
-      expect(described_class.next_queued_run).to eq(pr_run)
+      expect(pr_run.queue_priority_tier).to eq(:label_p1)
     end
 
     context "with all 6 priority tiers" do
@@ -1671,7 +1678,7 @@ RSpec.describe AgentRun do
           issue: p1_issue, created_at: 1.minute.ago)
 
         ordered_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
-        expect(ordered_ids).to eq([ p1_run, manual_run, p2_run, auto_continue, p3_run, auto_pick ].map(&:id))
+        expect(ordered_ids).to eq([ manual_run, p1_run, p2_run, auto_continue, p3_run, auto_pick ].map(&:id))
       end
     end
   end
@@ -1708,10 +1715,9 @@ RSpec.describe AgentRun do
       expect(peeked).to eq(auto)
     end
 
-    it "round robins same-tier runs across projects when fair queueing is enabled" do
+    it "round robins same-tier runs across projects (cross-project fair-share)" do
       account = create(:account)
       user = create(:user, account: account)
-      user.settings.update!(fair_queue_across_projects: true)
       first_project = create(:project, account: account, created_by: user)
       second_project = create(:project, account: account, created_by: user)
       first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 4.minutes.ago)
@@ -1724,37 +1730,21 @@ RSpec.describe AgentRun do
       expect(peeked_ids).to eq([ first_run.id, third_run.id, second_run.id, fourth_run.id ])
     end
 
-    it "dequeues user with fewer active runs first (cross-user fair queueing)" do
+    it "dequeues user with fewer active runs first (cross-user fair-share)" do
       first_account = create(:account)
       first_user = create(:user, account: first_account)
-      first_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
+      first_user.settings.update!(max_concurrent_runs: 2)
       active_project = create(:project, account: first_account, created_by: first_user)
       create(:agent_run, :running, project: active_project)
       create(:agent_run, :queued, :manual, project: active_project, created_at: 2.minutes.ago)
 
       second_account = create(:account)
       second_user = create(:user, account: second_account)
-      second_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 2)
+      second_user.settings.update!(max_concurrent_runs: 2)
       idle_project = create(:project, account: second_account, created_by: second_user)
       idle_run = create(:agent_run, :queued, :manual, project: idle_project, created_at: 1.minute.ago)
 
       expect(described_class.peek_next_queued_run).to eq(idle_run)
-    end
-
-    it "preserves FIFO within tier when fair queueing is disabled" do
-      account = create(:account)
-      user = create(:user, account: account)
-      user.settings.update!(fair_queue_across_projects: false)
-      first_project = create(:project, account: account, created_by: user)
-      second_project = create(:project, account: account, created_by: user)
-      first_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 4.minutes.ago)
-      second_run = create(:agent_run, :queued, :manual, project: first_project, created_at: 3.minutes.ago)
-      third_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 2.minutes.ago)
-      fourth_run = create(:agent_run, :queued, :manual, project: second_project, created_at: 1.minute.ago)
-
-      peeked_ids = 4.times.map { claim_peeked_run.id }
-
-      expect(peeked_ids).to eq([ first_run.id, second_run.id, third_run.id, fourth_run.id ])
     end
 
     it "lets a single active project keep FIFO order while using capacity" do
@@ -1841,13 +1831,13 @@ RSpec.describe AgentRun do
     it "combines cross-user and per-project stride for fair interleaving at both levels" do
       first_account = create(:account)
       first_user = create(:user, account: first_account)
-      first_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 5)
+      first_user.settings.update!(max_concurrent_runs: 5)
       proj_a1 = create(:project, account: first_account, created_by: first_user)
       proj_a2 = create(:project, account: first_account, created_by: first_user)
 
       second_account = create(:account)
       second_user = create(:user, account: second_account)
-      second_user.settings.update!(fair_queue_across_projects: true, max_concurrent_runs: 5)
+      second_user.settings.update!(max_concurrent_runs: 5)
       proj_b1 = create(:project, account: second_account, created_by: second_user)
 
       run_a1 = create(:agent_run, :queued, :manual, project: proj_a1, created_at: 5.minutes.ago)
@@ -1858,6 +1848,47 @@ RSpec.describe AgentRun do
       peeked_ids = 4.times.map { claim_peeked_run.id }
 
       expect(peeked_ids).to eq([ run_a1.id, run_b1.id, run_a2.id, run_a3.id ])
+    end
+
+    it "lets a low-priority run from an idle project pre-empt a high-priority flood elsewhere" do
+      account = create(:account)
+      user = create(:user, account: account)
+      user.settings.update!(max_concurrent_runs: 10)
+      flooded = create(:project, account: account, created_by: user)
+      idle = create(:project, account: account, created_by: user)
+
+      # `flooded` has 2 P1 runs already in flight, plus a third P1 queued behind.
+      flooded_p1_a = create(:issue, project: flooded, labels: [ "P1" ])
+      flooded_p1_b = create(:issue, project: flooded, labels: [ "P1" ])
+      flooded_p1_c = create(:issue, project: flooded, labels: [ "P1" ])
+      create(:agent_run, :running, project: flooded, trigger_type: "automatic", issue: flooded_p1_a)
+      create(:agent_run, :running, project: flooded, trigger_type: "automatic", issue: flooded_p1_b)
+      create(:agent_run, :queued, trigger_type: "automatic", project: flooded,
+        issue: flooded_p1_c, created_at: 5.minutes.ago)
+
+      # `idle` only has a P2 queued — but its project is idle, so it gets a turn.
+      idle_p2 = create(:issue, project: idle, labels: [ "P2" ])
+      idle_p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: idle,
+        issue: idle_p2, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run).to eq(idle_p2_run)
+    end
+
+    it "preserves strict priority order within a single project" do
+      project = create(:project)
+      p1_issue = create(:issue, project: project, labels: [ "P1" ])
+      p2_issue = create(:issue, project: project, labels: [ "P2" ])
+      p3_issue = create(:issue, project: project, labels: [ "P3" ])
+      p3_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: p3_issue, created_at: 3.minutes.ago)
+      p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: p2_issue, created_at: 2.minutes.ago)
+      p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+        issue: p1_issue, created_at: 1.minute.ago)
+
+      peeked_ids = 3.times.map { claim_peeked_run.id }
+
+      expect(peeked_ids).to eq([ p1_run.id, p2_run.id, p3_run.id ])
     end
 
     it "excludes paused runs from the user active count" do
@@ -1956,10 +1987,10 @@ RSpec.describe AgentRun do
   end
 
   describe "#queue_priority_label" do
-    it "returns '2 - Manual' for manual runs" do
+    it "returns '1 - Manual' for manual runs" do
       run = create(:agent_run, trigger_type: "manual")
 
-      expect(run.queue_priority_label).to eq("2 - Manual")
+      expect(run.queue_priority_label).to eq("1 - Manual")
     end
 
     it "returns '4 - Auto-continue' for automatic runs with a source PR" do
@@ -1989,12 +2020,12 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_tier).to eq(:label_p1)
     end
 
-    it "ranks P1 above manual" do
-      manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
+    it "ranks manual above P1 within the same project" do
       p1 = queued_run_with_issue_labels([ "critical" ], trigger_type: "automatic", created_at: 2.minutes.ago)
+      manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
 
-      expect(described_class.next_queued_run).to eq(p1)
-      _ = manual
+      expect(described_class.next_queued_run).to eq(manual)
+      _ = p1
     end
 
     it "ranks P2 above auto-continue but below manual" do
@@ -2035,13 +2066,10 @@ RSpec.describe AgentRun do
     it "considers labels from both issue and source PR (split-label scenario)" do
       issue = create(:issue, project: project, labels: [ "low" ])
       create(:issue, project: project, github_number: 777, is_pull_request: true, labels: [ "critical" ])
-      manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
       split_run = create(:agent_run, :queued, project: project, trigger_type: "automatic",
-        issue: issue, source_pull_request_number: 777, created_at: 1.minute.ago)
+        issue: issue, source_pull_request_number: 777)
 
       expect(split_run.queue_priority_tier).to eq(:label_p1)
-      expect(described_class.next_queued_run).to eq(split_run)
-      _ = manual
     end
 
     describe ".preload_source_pull_requests" do
@@ -2077,12 +2105,12 @@ RSpec.describe AgentRun do
       end
     end
 
-    it "returns '1 - P1' for P1-labeled issues" do
+    it "returns '2 - P1' for P1-labeled issues" do
       project = create(:project)
       issue = create(:issue, project: project, labels: [ "P1" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_label).to eq("1 - P1")
+      expect(run.queue_priority_label).to eq("2 - P1")
     end
   end
 
