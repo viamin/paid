@@ -20,7 +20,9 @@ module StrategyReviews
       new_version = nil
       strategy = strategy_version.strategy
 
-      ActiveRecord::Base.transaction do
+      strategy.with_lock do
+        raise ArgumentError, "strategy version is no longer pending review" unless strategy_version.reload.pending_review?
+
         new_version = strategy.create_pending_version!(
           content: attributes.fetch(:content, strategy_version.content),
           provenance: strategy_version.provenance,

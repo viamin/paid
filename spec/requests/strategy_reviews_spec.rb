@@ -59,6 +59,19 @@ RSpec.describe "StrategyReviews" do
 
         expect(response.body).not_to include(other_strategy.name)
       end
+
+      it "excludes global strategies that cannot be reviewed through this flow" do
+        global_strategy = create(:strategy, :global, name: "Global Strategy")
+        global_strategy.create_pending_version!(
+          content: { "mode" => "global" },
+          provenance: { "source" => "evolution" },
+          created_by: "evolution"
+        )
+
+        get strategy_reviews_queue_path
+
+        expect(response.body).not_to include(global_strategy.name)
+      end
     end
   end
 

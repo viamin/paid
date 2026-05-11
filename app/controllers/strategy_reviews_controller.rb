@@ -6,7 +6,7 @@ class StrategyReviewsController < ApplicationController
   skip_after_action :verify_authorized, only: [ :index, :queue ]
 
   def queue
-    account_strategy_ids = policy_scope(Strategy).pluck(:id)
+    account_strategy_ids = policy_scope(Strategy).where.not(account_id: nil).pluck(:id)
     @strategy_versions = StrategyVersion.pending_review
       .where(strategy_id: account_strategy_ids)
       .includes(:strategy, :created_by_user, :parent_version)
