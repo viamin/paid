@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# frozen_string_literal: true
+# Regenerate development databases from scratch (drop, migrate, restore).
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,6 +21,7 @@ PG_CABLE_DB="${WORKTREE_DBS[1]}"
 PRACTICE_DB="paid_practice"
 BACKUPS_DIR="${APP_ROOT}/backups"
 CACHED_RLS_TABLES=""
+CACHED_TRIGGER_TABLES=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -60,6 +61,17 @@ terminate_connections() {
 get_rls_tables() {
   local db="$1"
   run_sql "$db" -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true ORDER BY tablename" 2>/dev/null
+}
+
+get_data_tables() {
+  local db="$1"
+  run_sql "$db" -c "
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT IN ('ar_internal_metadata', 'schema_migrations')
+    ORDER BY tablename
+  " 2>/dev/null
 }
 
 disable_rls() {
@@ -102,6 +114,37 @@ enable_rls() {
     [[ -z "$table" ]] && continue
     run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null
     run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null
+  done <<< "$tables"
+}
+
+disable_triggers() {
+  local db="$1"
+  info "Disabling triggers on data tables in $db..."
+  local tables
+  tables="$(get_data_tables "$db")"
+  if [[ -z "$tables" ]]; then
+    info "No data tables found in $db"
+    CACHED_TRIGGER_TABLES=""
+    return 0
+  fi
+  CACHED_TRIGGER_TABLES="$tables"
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE TRIGGER ALL;" 2>/dev/null || true
+  done <<< "$tables"
+}
+
+enable_triggers() {
+  local db="$1"
+  local tables="${2:-${CACHED_TRIGGER_TABLES}}"
+  info "Re-enabling triggers on data tables in $db..."
+  if [[ -z "$tables" ]]; then
+    warn "No cached data table list available for trigger re-enable"
+    return 0
+  fi
+  while IFS= read -r table; do
+    [[ -z "$table" ]] && continue
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE TRIGGER ALL;" 2>/dev/null || true
   done <<< "$tables"
 }
 
@@ -251,6 +294,8 @@ restore_into() {
   "
   info "FK constraints dropped"
 
+  disable_triggers "$db_name"
+
   info "Truncating target tables..."
   run_sql_exec "$db_name" -c "
     DO \$\$
@@ -291,6 +336,8 @@ restore_into() {
     error "Data may be incomplete. Check backup and target database."
     restore_failed=1
   fi
+
+  enable_triggers "$db_name"
 
   info "Re-creating FK constraints..."
   local recreated=0
@@ -372,6 +419,10 @@ cleanup() {
         enable_rls "$PG_DB" "$policy_tables" 2>/dev/null || true
       fi
     fi
+    if [[ -n "$CACHED_TRIGGER_TABLES" ]]; then
+      warn "Attempting to re-enable triggers on cached target tables..."
+      enable_triggers "$TARGET_DB" "$CACHED_TRIGGER_TABLES" 2>/dev/null || true
+    fi
     if [[ "${PRACTICE_MODE:-}" == "1" ]] && db_exists "$PRACTICE_DB"; then
       warn "Cleaning up practice database..."
       run_sql postgres -c "DROP DATABASE IF EXISTS \"$PRACTICE_DB\"" 2>/dev/null || true
@@ -396,9 +447,9 @@ usage() {
   echo "  4. Re-enable RLS"
   echo "  5. Drop + recreate databases"
   echo "  6. Run migrations from scratch"
-  echo "  7. Disable RLS on fresh tables"
+  echo "  7. Disable RLS and data-table triggers on fresh tables"
   echo "  8. Restore data"
-  echo "  9. Re-enable RLS"
+  echo "  9. Re-enable data-table triggers and RLS"
   echo " 10. Reset sequences"
   echo " 11. Start application"
 }
