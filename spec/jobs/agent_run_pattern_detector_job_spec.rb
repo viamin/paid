@@ -2,15 +2,19 @@
 
 require "rails_helper"
 
-RSpec.describe AgentRunPatternDetectorJob do
+RSpec.describe AgentRunPatternDetectorJob, :no_db do
   describe "#perform" do
-    let!(:account) { create(:account) }
+    let(:account) { Struct.new(:id).new(1) }
 
     before do
+      stub_const("Account", Class.new do
+        def self.find_each; end
+      end)
       allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
       allow(AgentRunPatterns::Diagnose).to receive(:call)
       allow(AgentRunPatterns::Notify).to receive(:call)
       allow(TenantContext).to receive(:with_system_access).and_yield
+      allow(Account).to receive(:find_each).and_yield(account)
     end
 
     it "is enqueued on the maintenance queue" do
@@ -20,7 +24,7 @@ RSpec.describe AgentRunPatternDetectorJob do
     it "detects patterns for each account" do
       described_class.perform_now
 
-      expect(TenantContext).to have_received(:with_system_access)
+      expect(TenantContext).to have_received(:with_system_access).at_least(:once)
       expect(AgentRunPatterns::Detect).to have_received(:call).with(account: account)
     end
 
@@ -69,9 +73,10 @@ RSpec.describe AgentRunPatternDetectorJob do
     end
 
     context "when detection raises for one account" do
-      let!(:other_account) { create(:account) }
+      let(:other_account) { Struct.new(:id).new(2) }
 
       before do
+        allow(Account).to receive(:find_each).and_yield(account).and_yield(other_account)
         allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_raise(StandardError, "boom")
         allow(AgentRunPatterns::Detect).to receive(:call).with(account: other_account).and_return([])
       end

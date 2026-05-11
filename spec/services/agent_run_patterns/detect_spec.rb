@@ -216,4 +216,30 @@ RSpec.describe AgentRunPatterns::Detect do
       end
     end
   end
+
+  describe ".call", :no_db do
+    let(:account) { Struct.new(:id).new(1) }
+
+    it "clusters failures that differ only by mixed alphanumeric identifiers" do
+      run_class = Struct.new(:id, :goal, :status, :error_message, :completed_at)
+      runs = [
+        run_class.new(1, "enhance_issue", "failed", "Timeout after 120s for run abc12345", 3.minutes.ago),
+        run_class.new(2, "enhance_issue", "failed", "Timeout after 300s for run def67890", 2.minutes.ago),
+        run_class.new(3, "enhance_issue", "failed", "Timeout after 60s for run ghi11111", 1.minute.ago)
+      ]
+
+      detector = described_class.new(account: account)
+      allow(detector).to receive_messages(
+        fetch_recent_finished_runs: runs,
+        load_baseline_rate: nil
+      )
+
+      result = detector.call
+
+      cluster = result.find { |pattern| pattern.type == :error_cluster }
+      expect(cluster).to be_present
+      expect(cluster.details[:occurrence_count]).to eq(3)
+      expect(cluster.details[:error_pattern]).to include("run <ID>")
+    end
+  end
 end

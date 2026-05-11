@@ -129,10 +129,10 @@ module AgentRunPatterns
 
     def normalize_error(message)
       message
-        .gsub(/\b[0-9a-f]{8,}\b/, "<HEX>")
-        .gsub(/\b\d+\b/, "<N>")
         .gsub(%r{https?://\S+}, "<URL>")
         .gsub(/\/[\w\/]+/, "<PATH>")
+        .gsub(/\b(?:[0-9a-f]{8,}|(?=[A-Za-z0-9_-]{8,}\b)(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+)\b/i, "<ID>")
+        .gsub(/\b\d+(?:\.\d+)?[a-z]*\b/i, "<N>")
         .truncate(200)
     end
 

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AgentRunPatterns::Diagnose do
+RSpec.describe AgentRunPatterns::Diagnose, :no_db do
   describe ".call" do
     let(:pattern) do
       AgentRunPatterns::Detect::Pattern.new(
