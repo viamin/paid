@@ -1,5 +1,5 @@
 <%
-require_relative "./worktree_database_names"
+require File.expand_path("config/worktree_database_names", Dir.pwd)
 
 app_root = File.expand_path("..", __dir__)
 development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name(app_root:)
