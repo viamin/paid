@@ -113,6 +113,8 @@ module Screenshots
     end
 
     def create_orphan_branch(git_dir)
+      git(git_dir, "checkout", "--orphan", BRANCH_NAME)
+
       readme_path = File.join(git_dir, "README.md")
       File.write(readme_path, <<~MD)
         # Screenshots Branch

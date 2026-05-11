@@ -4,9 +4,17 @@ require "rails_helper"
 require "rake"
 
 # rubocop:disable RSpec/DescribeClass
-RSpec.describe "screenshots:capture" do
+RSpec.describe "screenshots:capture", :no_db do
   let(:task) { Rake::Task[task_name] }
   let(:task_name) { "screenshots:capture" }
+
+  around do |example|
+    original_project_id = ENV["PROJECT_ID"]
+    ENV.delete("PROJECT_ID")
+    example.run
+  ensure
+    original_project_id.nil? ? ENV.delete("PROJECT_ID") : ENV["PROJECT_ID"] = original_project_id
+  end
 
   before do
     Rails.application.load_tasks unless Rake::Task.task_defined?(task_name)
@@ -110,9 +118,7 @@ RSpec.describe "screenshots:capture" do
       ENV["CHANGED_FILES"] = "frontend/app.js"
       original_project_id = ENV["PROJECT_ID"]
       ENV["PROJECT_ID"] = "123"
-      project = instance_double(Project)
-
-      allow(Project).to receive(:find_by).with(id: "123").and_return(project)
+      project = stub_project_lookup(id: "123")
       allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(project:, repo_path: Dir.pwd).and_return(
         framework: :nextjs
       )
@@ -441,3 +447,13 @@ RSpec.describe "screenshots:capture" do
   end
 end
 # rubocop:enable RSpec/DescribeClass
+
+def stub_project_lookup(id:)
+  project_class = stub_const("Project", Class.new do
+    def self.find_by(*)
+    end
+  end)
+  project = project_class.new
+  allow(project_class).to receive(:find_by).with(id: id).and_return(project)
+  project
+end

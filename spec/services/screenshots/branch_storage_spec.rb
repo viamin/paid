@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Screenshots::BranchStorage do
+RSpec.describe Screenshots::BranchStorage, :no_db do
   let(:repo) { "acme/web" }
   let(:token) { "ghp_test123" }
   let(:storage) { described_class.new(repo: repo, github_token: token) }
@@ -116,6 +116,31 @@ RSpec.describe Screenshots::BranchStorage do
 
         expect(storage).to have_received(:create_orphan_branch).once
       end
+    end
+
+    it "bootstraps the screenshots branch before the first push" do
+      bare_repo_dir = Dir.mktmpdir("screenshots-remote")
+      system("git", "init", "--bare", bare_repo_dir, exception: true)
+      allow(storage).to receive(:setup_repo).and_call_original
+      allow(storage).to receive(:branch_exists?).and_call_original
+      allow(storage).to receive(:nothing_staged?).and_call_original
+      allow(storage).to receive(:git).and_call_original
+      allow(storage).to receive(:remote_url).and_return(bare_repo_dir)
+
+      result = storage.upload_all(
+        screenshot_paths: screenshot_paths,
+        pr_number: 42,
+        commit_sha: "abc1234def5678"
+      )
+
+      ref_output, = Open3.capture2(
+        "git", "ls-remote", "--heads", bare_repo_dir, Screenshots::BranchStorage::BRANCH_NAME
+      )
+
+      expect(result.map { |entry| entry[:route_name] }).to contain_exactly("dashboard", "homepage")
+      expect(ref_output).to include("refs/heads/screenshots")
+    ensure
+      FileUtils.rm_rf(bare_repo_dir)
     end
   end
 
