@@ -1832,7 +1832,7 @@ RSpec.describe AgentRun do
       other_user.settings.update!(max_concurrent_runs: 5)
       other_project = create(:project, account: other_account, created_by: other_user)
 
-      owned_run = create(:agent_run, :queued, :manual, project: owned_project, created_at: 2.minutes.ago)
+      _owned_run = create(:agent_run, :queued, :manual, project: owned_project, created_at: 2.minutes.ago)
       other_run = create(:agent_run, :queued, :manual, project: other_project, created_at: 1.minute.ago)
 
       expect(described_class.peek_next_queued_run).to eq(other_run)
