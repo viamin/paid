@@ -193,7 +193,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
-      it "passes only bundle configuration to bin/rails routes" do
+      it "passes bundle configuration and DATABASE_URL to bin/rails routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
@@ -204,13 +204,14 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           "sh", "-c", /bin\/rails routes --expanded/,
           timeout: 120,
           env: {
+            "DATABASE_URL" => "sqlite3::memory:",
             "BUNDLE_PATH" => "/tmp/bundle",
             "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
           }
         )
       end
 
-      it "does not inject DATABASE_URL into the scanned app" do
+      it "injects DATABASE_URL to allow routes collection without a running database" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)
@@ -220,7 +221,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector).to have_received(:run_command).with(
           "sh", "-c", /bin\/rails routes --expanded/,
           timeout: 120,
-          env: satisfy { |env| !env.key?("DATABASE_URL") }
+          env: satisfy { |env| env["DATABASE_URL"] == "sqlite3::memory:" }
         )
       end
 
@@ -337,13 +338,55 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_raise(
             Knowledge::ContainerizedRunner::ContainerError,
-            "Command failed (exit 1): SQLite3::SQLException: no such table: widgets"
+            "Command failed (exit 1): SQLite3::SQLException: near \"FROM\": syntax error"
           )
 
         expect { command_collector.collect }.to raise_error(
           Knowledge::ContainerizedRunner::ContainerError,
-          /no such table/
+          /syntax error/
         )
+      end
+
+      it "skips on sqlite no-such-table errors from the in-memory database" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): SQLite3::SQLException: no such table: settings"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips when the sqlite3 gem is not in the target app" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            'Command failed (exit 1): ActiveRecord::AdapterNotFound: database configuration specifies nonexistent adapter'
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips on database adapter not loaded message" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): Specified 'sqlite3' for database adapter, but the gem is not loaded"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
       end
 
       it "cleans up credentials and disconnects network before running routes" do
