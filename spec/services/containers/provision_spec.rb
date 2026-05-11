@@ -462,6 +462,23 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "creates a Docker volume instead of bind-mounting when worktree_path is the container mount point" do
+        container_internal_service = described_class.new(
+          agent_run: agent_run,
+          worktree_path: "/workspace"
+        )
+
+        expect(Docker::Volume).to receive(:create).with("paid-workspace-#{agent_run.id}", anything).and_return(mock_volume)
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).not_to include("/workspace:/workspace:rw")
+          expect(binds).to include("paid-workspace-#{agent_run.id}:/workspace:rw")
+          mock_container
+        end
+
+        container_internal_service.provision
+      end
+
       it "configures environment variables for proxy access" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
