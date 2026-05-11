@@ -2921,6 +2921,43 @@ expect(container_service).to receive(:execute).with(
         expect(result[:success]).to be true
       end
 
+      it "detects ProviderModelNotFoundError returned with exit code 0" do
+        model_not_found_stderr = <<~ERR
+          Error: Model not found: glm-5.1/.
+          ProviderModelNotFoundError
+           data: {
+            providerID: "glm-5.1",
+            modelID: "",
+            suggestions: [],
+          }
+        ERR
+        model_not_found_success = Containers::Provision::Result.success(
+          stdout: "", stderr: model_not_found_stderr, exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(model_not_found_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("error")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("model not found error")
+      end
+
+      it "does not misclassify substantial agent output as model not found when ProviderModelNotFoundError appears in structured output" do
+        long_stdout = (1..40).map { |i| "line #{i}: processing test for ProviderModelNotFoundError handling" }.join("\n")
+        long_output_success = Containers::Provision::Result.success(
+          stdout: long_stdout, stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(long_output_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+      end
+
       it "preserves timeout handling when the timeout happens before provider execution starts" do
         allow(activity).to receive(:augment_prompt_for_goal)
           .and_raise(Containers::Provision::TimeoutError, "took too long before exec")
