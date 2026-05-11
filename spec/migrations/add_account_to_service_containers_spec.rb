@@ -18,6 +18,7 @@ require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
 require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisions_strategy_version_tenant_check")
 require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
+require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
 
 RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   self.use_transactional_tests = false
@@ -80,6 +81,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       tighten_orchestration_decisions_strategy_version_tenant_check_migration.up if orchestration_decisions_have_strategy_version_reference?
       strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
       strategy_rls_migration.up unless strategies_have_rls?
+      FixStrategiesRlsInfiniteRecursion.new.up
     end
     OrchestrationDecision.reset_column_information
     ServiceContainer.reset_column_information
