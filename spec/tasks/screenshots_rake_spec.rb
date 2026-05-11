@@ -180,21 +180,21 @@ RSpec.describe "screenshots:capture", :no_db do
     end
   end
 
-   describe "screenshots:publish" do
-     let(:task_name) { "screenshots:publish" }
-     let(:output_dir) { Dir.mktmpdir }
-     let(:github_client) { instance_double(GithubClient) }
+  describe "screenshots:publish" do
+    let(:task_name) { "screenshots:publish" }
+    let(:output_dir) { Dir.mktmpdir }
+    let(:github_client) { instance_double(GithubClient) }
 
-     def stub_branch_storage
-       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
-       allow(Screenshots::Storage).to receive(:configured?).and_return(false)
-       allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
-       branch_storage = instance_double(Screenshots::BranchStorage)
-       allow(Screenshots::BranchStorage).to receive(:new)
-         .with(repo: "acme/web", github_token: "ghp_test")
-         .and_return(branch_storage)
-       branch_storage
-     end
+    def stub_branch_storage
+      allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
+      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
+      branch_storage = instance_double(Screenshots::BranchStorage)
+      allow(Screenshots::BranchStorage).to receive(:new)
+        .with(repo: "acme/web", github_token: "ghp_test")
+        .and_return(branch_storage)
+      branch_storage
+    end
 
     around do |example|
       original_env = ENV.to_h.slice(

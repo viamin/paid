@@ -2,6 +2,7 @@
 
 require "tmpdir"
 require "open3"
+require "fileutils"
 
 module Screenshots
   class BranchStorage
@@ -165,7 +166,7 @@ module Screenshots
       with_dates.max_by { |_, date| date }&.first || sha_dirs.last
     end
 
-    def push_with_retry(git_dir, &reapply)
+    def push_with_retry(git_dir)
       MAX_PUSH_ATTEMPTS.times do |attempt|
         begin
           git(git_dir, "push", "origin", BRANCH_NAME)
@@ -175,7 +176,7 @@ module Screenshots
 
           system("git", "fetch", "--depth=1", "origin", BRANCH_NAME, chdir: git_dir, out: File::NULL, err: File::NULL)
           git(git_dir, "reset", "--hard", "origin/#{BRANCH_NAME}")
-          reapply.call
+          yield
         end
       end
     end
