@@ -86,10 +86,13 @@ class DecompositionService
   def resolve_coordination_policy
     return unless coordination_policy&.current_version
 
+    rules = extract_decomposition_config_from_hash(coordination_policy.current_version.rules)
+    parameters = extract_decomposition_config_from_hash(coordination_policy.current_version.parameters)
+
     normalize_policy(
       DEFAULT_POLICY
-        .deep_merge(normalize_json_object(coordination_policy.current_version.rules))
-        .deep_merge(normalize_json_object(coordination_policy.current_version.parameters))
+        .merge(rules)
+        .merge(parameters)
         .merge(
           "source" => "coordination_policy",
           "policy_key" => coordination_policy.policy_key,
@@ -106,7 +109,7 @@ class DecompositionService
       account:
     )
 
-    decomposition_config = extract_decomposition_config(strategy)
+    decomposition_config = extract_decomposition_config(strategy, ignore_default_nested_values: true)
     source = decomposition_config.any? ? STRATEGY_TYPE : "defaults"
 
     normalize_policy(
@@ -133,22 +136,45 @@ class DecompositionService
     [ nil, project.id ]
   end
 
-  def extract_decomposition_config(strategy)
+  def extract_decomposition_config(strategy, ignore_default_nested_values: false)
     return {} unless strategy
 
-    extract_decomposition_config_from_hash(strategy.configuration)
+    extract_decomposition_config_from_hash(
+      strategy.configuration,
+      ignore_default_nested_values:
+    )
   end
 
-  def extract_decomposition_config_from_hash(config)
+  def extract_decomposition_config_from_hash(config, ignore_default_nested_values: false)
     return {} unless config.is_a?(Hash)
 
     {}.tap do |result|
       decomposition = config.fetch("decomposition", {})
       if decomposition.is_a?(Hash)
-        result["max_tasks"] = decomposition["max_tasks"] if decomposition.key?("max_tasks")
-        result["min_components_to_decompose"] = decomposition["min_components_to_decompose"] if decomposition.key?("min_components_to_decompose")
-        result["enabled"] = decomposition["enabled"] if decomposition.key?("enabled")
-        result["layer_order"] = decomposition["layer_order"] if decomposition.key?("layer_order")
+        result["max_tasks"] = decomposition["max_tasks"] if include_nested_override?(
+          decomposition,
+          key: "max_tasks",
+          default: DEFAULT_POLICY["max_tasks"],
+          ignore_default_nested_values:
+        )
+        result["min_components_to_decompose"] = decomposition["min_components_to_decompose"] if include_nested_override?(
+          decomposition,
+          key: "min_components_to_decompose",
+          default: DEFAULT_POLICY["min_components_to_decompose"],
+          ignore_default_nested_values:
+        )
+        result["enabled"] = decomposition["enabled"] if include_nested_override?(
+          decomposition,
+          key: "enabled",
+          default: DEFAULT_POLICY["enabled"],
+          ignore_default_nested_values:
+        )
+        result["layer_order"] = decomposition["layer_order"] if include_nested_override?(
+          decomposition,
+          key: "layer_order",
+          default: DEFAULT_POLICY["layer_order"],
+          ignore_default_nested_values:
+        )
       end
 
       result["max_tasks"] = config["max_tasks"] if config.key?("max_tasks")
@@ -156,6 +182,13 @@ class DecompositionService
       result["enabled"] = config["decomposition_enabled"] if config.key?("decomposition_enabled")
       result["layer_order"] = config["layer_order"] if config.key?("layer_order")
     end.compact
+  end
+
+  def include_nested_override?(config, key:, default:, ignore_default_nested_values:)
+    return false unless config.key?(key)
+    return true unless ignore_default_nested_values
+
+    config[key] != default
   end
 
   def policy_enabled?(policy)
