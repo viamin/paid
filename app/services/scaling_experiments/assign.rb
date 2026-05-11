@@ -86,6 +86,7 @@ module ScalingExperiments
         "cohort_schedule" => scaling_experiment.cohort_schedule,
         "fairness_guardrails" => scaling_experiment.control_definition.slice("fairness_conditions", "guardrails"),
         "eligible_values" => eligible_values,
+        "result_capture" => result_capture_plan,
         "safety_limits" => {
           "task_count_cap" => task_count,
           "project_capacity_checked_during_execution" => true,
@@ -126,6 +127,30 @@ module ScalingExperiments
         Iteration budget: aim to complete this task within #{value} agent iterations.
         If you cannot finish safely within that budget, stop and report the blocker instead of continuing indefinitely.
       PROMPT
+    end
+
+    def result_capture_plan
+      {
+        "store_assignment_outcome_summary" => true,
+        "observation_scope" => "workflow",
+        "child_run_metrics" => %w[
+          quality_score
+          iterations
+          duration_seconds
+          cost_cents
+          tokens_input
+          tokens_output
+        ],
+        "aggregates" => %w[
+          avg_quality_score
+          total_iterations
+          max_iterations
+          duration_seconds
+          total_cost_cents
+          total_input_tokens
+          total_output_tokens
+        ]
+      }
     end
   end
 end

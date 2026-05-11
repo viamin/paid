@@ -46,13 +46,15 @@ module ScalingExperiments
       {
         "summary_version" => 1,
         "scaling_experiment_id" => scaling_experiment.id,
-        "dimension" => scaling_experiment.dimension,
-        "assigned_value" => assignment.assigned_value,
         "control_value" => scaling_experiment.control_value,
         "assignment_id" => assignment.id,
         "workflow_id" => assignment.workflow_id,
         "observation_id" => scaling_observation.id,
         "cohort_label" => assignment.execution_plan["cohort_label"],
+        "dimension" => assignment.execution_plan["dimension"] || scaling_experiment.dimension,
+        "assigned_value" => assignment.assigned_value,
+        "requested_iteration_count" => assignment.execution_plan["requested_iteration_count"],
+        "application_mode" => assignment.execution_plan["application_mode"],
         "status" => scaling_observation.status,
         "success" => scaling_observation.success,
         "parallel_execution" => scaling_observation.parallel_execution,
@@ -70,6 +72,8 @@ module ScalingExperiments
         "total_cost_cents" => scaling_observation.total_cost_cents,
         "total_input_tokens" => scaling_observation.total_input_tokens,
         "total_output_tokens" => scaling_observation.total_output_tokens,
+        "child_run_count" => child_runs.size,
+        "child_run_metrics" => child_run_metrics,
         "agent_launch_success_rate" => agent_launch_success_rate,
         "blocked_task_rate" => blocked_task_rate,
         "quality_metric_sample_count" => quality_scores.size,
@@ -87,17 +91,35 @@ module ScalingExperiments
     end
 
     def quality_scores
-      @quality_scores ||= child_runs.filter_map do |run|
-        run.quality_metrics.find do |metric|
-          metric.metric_type == "automated" && metric.composite_score.present?
-        end&.composite_score&.to_f
-      end
+      @quality_scores ||= child_runs.filter_map { |run| automated_quality_score_for(run) }
     end
 
     def average_quality_score
       return nil if quality_scores.empty?
 
       (quality_scores.sum / quality_scores.size).round(4)
+    end
+
+    def child_run_metrics
+      child_runs.map do |run|
+        {
+          "agent_run_id" => run.id,
+          "issue_id" => run.issue_id,
+          "status" => run.status,
+          "iterations" => run.iterations.to_i,
+          "duration_seconds" => run.duration_seconds.to_f,
+          "cost_cents" => run.cost_cents.to_i,
+          "tokens_input" => run.tokens_input.to_i,
+          "tokens_output" => run.tokens_output.to_i,
+          "quality_score" => automated_quality_score_for(run)
+        }.compact
+      end
+    end
+
+    def automated_quality_score_for(run)
+      run.quality_metrics.find do |metric|
+        metric.metric_type == "automated" && metric.composite_score.present?
+      end&.composite_score&.to_f
     end
 
     def agent_launch_success_rate
