@@ -28,6 +28,23 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
       expect(AgentRunPatterns::Detect).to have_received(:call).with(account: account)
     end
 
+    it "iterates accounts within system access" do
+      in_system_access = false
+
+      allow(TenantContext).to receive(:with_system_access) do |&block|
+        in_system_access = true
+        block.call
+      ensure
+        in_system_access = false
+      end
+      allow(Account).to receive(:find_each) do |&block|
+        expect(in_system_access).to be(true)
+        block.call(account)
+      end
+
+      described_class.perform_now
+    end
+
     context "when patterns are detected" do
       let(:pattern) do
         AgentRunPatterns::Detect::Pattern.new(

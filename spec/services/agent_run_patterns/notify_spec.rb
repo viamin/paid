@@ -185,4 +185,64 @@ RSpec.describe AgentRunPatterns::Notify do
       end
     end
   end
+
+  describe "#pattern_summary", :no_db do
+    let(:account) { Struct.new(:id).new(1) }
+    let(:service) { described_class.new(account: account, patterns: [], diagnoses: {}) }
+
+    it "renders failure streak rates as percentages before rounding" do
+      pattern = AgentRunPatterns::Detect::Pattern.new(
+        type: :failure_streak,
+        goal: "enhance_issue",
+        severity: :error,
+        details: { streak_length: 4, total_runs: 5, failure_rate: 0.8 }
+      )
+
+      expect(service.send(:pattern_summary, pattern)).to include("80% of 5 runs")
+    end
+  end
+
+  describe "#resolve_cleared_patterns", :no_db do
+    let(:account) { Struct.new(:id).new(1) }
+    let(:active_pattern) do
+      AgentRunPatterns::Detect::Pattern.new(
+        type: :failure_streak,
+        goal: "enhance_issue",
+        severity: :error,
+        details: { streak_length: 3, total_runs: 3, failure_rate: 1.0 }
+      )
+    end
+    let(:notification) do
+      Struct.new(:metadata, :subject, :user).new(
+        { "goals" => [ "enhance_issue", "create_pr" ] },
+        account,
+        nil
+      )
+    end
+    let(:service) { described_class.new(account: account, patterns: [ active_pattern ], diagnoses: {}) }
+
+    before do
+      stub_const("Notification", Class.new do
+        def self.where(...)
+          @where_result
+        end
+
+        def self.where_result=(value)
+          @where_result = value
+        end
+      end)
+      Notification.where_result = Struct.new(:notifications) do
+        def active
+          notifications
+        end
+      end.new([ notification ])
+      allow(Notifications::Resolve).to receive(:call)
+    end
+
+    it "keeps notifications active while any tracked goal remains active" do
+      service.send(:resolve_cleared_patterns)
+
+      expect(Notifications::Resolve).not_to have_received(:call)
+    end
+  end
 end
