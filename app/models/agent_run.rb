@@ -2083,11 +2083,23 @@ class AgentRun < ApplicationRecord
   end
 
   def enqueue_failure_recovery_decision
-    FailureRecoveryDecisionJob.perform_later(id)
+    FailureRecoveryDecisionJob.perform_later(id, failure_recovery_snapshot)
   end
 
   def enqueue_issue_goal_timeout_retry
     RetryTimedOutIssueGoalJob.perform_later(id)
+  end
+
+  def failure_recovery_snapshot
+    {
+      "status" => status,
+      "error_message" => error_message,
+      "guardrail_violation_type" => guardrail_violation_type,
+      "final_provider" => final_provider,
+      "providers_attempted" => providers_attempted,
+      "provider_switches" => provider_switches,
+      "parent_workflow_id" => parent_workflow_id
+    }
   end
 
   def enqueue_container_metrics_collection

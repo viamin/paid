@@ -158,6 +158,31 @@ RSpec.describe Coordination::FailureRecovery do
 
         expect(result.classification.action_params["provider"]).to eq("codex")
       end
+
+      it "classifies from the enqueued snapshot even if the row was later retried" do
+        agent_run.update!(status: "retried")
+
+        result = described_class.call(
+          agent_run: agent_run,
+          run_snapshot: {
+            status: "timeout",
+            error_message: "Agent execution timed out",
+            providers_attempted: [ anthropic_attempt ]
+          }
+        )
+
+        expect(result).to be_success
+        expect(result.failure_category).to eq("timeout")
+        expect(result.chosen_action).to eq("retry_same_provider")
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.inputs).to include(
+          "failure_category" => "timeout",
+          "agent_run_status" => "timeout"
+        )
+      end
     end
 
     context "with a provider exhaustion failure" do

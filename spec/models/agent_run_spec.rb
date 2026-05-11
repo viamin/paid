@@ -3325,7 +3325,13 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.fail!(error: "RateLimit: exceeded quota")
-      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(agent_run.id)
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "failed",
+          "error_message" => "RateLimit: exceeded quota"
+        )
+      )
     end
 
     it "enqueues failure recovery when transitioning to completed" do
@@ -3333,7 +3339,24 @@ RSpec.describe AgentRun do
 
       expect {
         agent_run.complete!
-      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(agent_run.id)
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including("status" => "completed")
+      )
+    end
+
+    it "captures the timeout status in the enqueued snapshot" do
+      agent_run = create(:agent_run, :running, goal: "create_issue")
+
+      expect {
+        agent_run.update!(status: "timeout", error_message: "Agent execution timed out")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "timeout",
+          "error_message" => "Agent execution timed out"
+        )
+      )
     end
 
     it "does not enqueue failure recovery for retried transitions" do
