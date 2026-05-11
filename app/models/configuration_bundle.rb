@@ -21,6 +21,9 @@ class ConfigurationBundle < ApplicationRecord
   validates :strategy, length: { maximum: 100 }, allow_nil: true
   validates :fingerprint, length: { maximum: 64 }, uniqueness: { scope: :account_id }, allow_nil: true
   validates :definition, presence: true
+  validate :definition_is_object
+  validate :context_is_object
+  validate :strategy_params_is_object
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
   validate :prompt_version_matches_scope, if: -> { prompt_version.present? }
 
@@ -103,5 +106,23 @@ class ConfigurationBundle < ApplicationRecord
     return if prompt.project_level? && prompt.account_id == account_id && prompt.project_id == project_id
 
     errors.add(:prompt_version, "must match the bundle account/project scope")
+  end
+
+  def definition_is_object
+    validate_json_object(:definition)
+  end
+
+  def context_is_object
+    validate_json_object(:context)
+  end
+
+  def strategy_params_is_object
+    validate_json_object(:strategy_params)
+  end
+
+  def validate_json_object(attribute)
+    return if public_send(attribute).is_a?(Hash)
+
+    errors.add(attribute, "must be an object")
   end
 end

@@ -8,6 +8,7 @@ RSpec.describe ConfigurationBundle do
     it { is_expected.to belong_to(:project).optional }
     it { is_expected.to belong_to(:prompt_version).optional }
     it { is_expected.to belong_to(:llm_model).optional }
+    it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
     it { is_expected.to have_many(:bundle_outcomes).dependent(:destroy) }
   end
 
@@ -21,6 +22,27 @@ RSpec.describe ConfigurationBundle do
     it { is_expected.to validate_presence_of(:version) }
     it { is_expected.to validate_numericality_of(:version).only_integer.is_greater_than(0) }
     it { is_expected.to validate_length_of(:strategy).is_at_most(100) }
+
+    it "requires definition to be a JSON object" do
+      bundle = build(:configuration_bundle, definition: [])
+
+      expect(bundle).not_to be_valid
+      expect(bundle.errors[:definition]).to include("must be an object")
+    end
+
+    it "requires context to be a JSON object" do
+      bundle = build(:configuration_bundle, context: [])
+
+      expect(bundle).not_to be_valid
+      expect(bundle.errors[:context]).to include("must be an object")
+    end
+
+    it "requires strategy_params to be a JSON object" do
+      bundle = build(:configuration_bundle, strategy_params: [])
+
+      expect(bundle).not_to be_valid
+      expect(bundle.errors[:strategy_params]).to include("must be an object")
+    end
 
     it "validates fingerprint uniqueness within an account" do
       bundle = create(:configuration_bundle, fingerprint: "shared-fingerprint")
