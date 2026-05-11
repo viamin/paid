@@ -2,9 +2,12 @@
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${APP_ROOT}/bin/lib/db_helpers.sh"
 cd "$APP_ROOT" || exit
 
 BACKUPS_DIR="${APP_ROOT}/backups"
+BACKEND=""
+RLS_TABLES=""
 
 read_rails_db_config() {
   bin/rails runner "
@@ -20,6 +23,7 @@ usage() {
   echo "Usage: bin/db-dump [BACKUP_FILENAME]"
   echo ""
   echo "Dump database data to a custom-format archive in backups/."
+  echo "Automatically disables RLS before dumping so all rows are captured."
   echo ""
   echo "Defaults are read from the Rails database config."
   echo ""
@@ -81,22 +85,43 @@ if [[ -n "${COMPOSE_FILE:-}" ]]; then
   COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
 fi
 
+cleanup() {
+  local exit_code=$?
+  if [[ "$exit_code" -ne 0 && -n "$RLS_TABLES" && -n "$BACKEND" ]]; then
+    echo "Re-enabling RLS after error..." >&2
+    enable_rls "$DB_NAME" "$RLS_TABLES"
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+
 COMPOSE_CONTAINER="$(docker "${COMPOSE_ARGS[@]}" ps -q postgres 2>/dev/null | head -1 || true)"
 if [[ -n "$COMPOSE_CONTAINER" ]]; then
+  BACKEND="docker"
   COMPOSE_DB_USER="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_USER)"
   COMPOSE_DB_PASSWORD="$(read_container_env "$COMPOSE_CONTAINER" POSTGRES_PASSWORD)"
   COMPOSE_DB_USER="${COMPOSE_DB_USER:-paid}"
   COMPOSE_DB_PASSWORD="${COMPOSE_DB_PASSWORD:-paid}"
 
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+
   pg_dump_args "$COMPOSE_DB_USER"
   docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" "$COMPOSE_CONTAINER" pg_dump "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES
 elif [[ -n "$DB_NAME" ]]; then
+  BACKEND="local"
+
+  disable_rls "$DB_NAME" 1 RLS_TABLES "Disabling RLS on %d tables..."
+
   pg_dump_args "$DB_USER"
   PG_HOST_ARGS=()
   if [[ -n "$DB_HOST" ]]; then
     PG_HOST_ARGS=(-h "$DB_HOST")
   fi
   PGPASSWORD="$DB_PASSWORD" pg_dump "${PG_HOST_ARGS[@]}" "${PG_DUMP_ARGS[@]}" > "$BACKUP_PATH"
+
+  enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES
 else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1
