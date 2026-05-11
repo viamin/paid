@@ -797,6 +797,11 @@ module Activities
             "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
         end
 
+        if provider_model_not_found_error?(sanitized_output)
+          raise ProviderExecutionError,
+            "Provider model not found error from #{provider}: #{sanitized_output.truncate(500)}"
+        end
+
         output_present = stdout.present? || stderr.present?
         track_harness_tokens(agent_run, provider_candidate, provider, user_settings.user, result, execution_started_at)
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
@@ -915,6 +920,14 @@ module Activities
           )
         end
 
+        if provider_model_not_found_error?(sanitized_output)
+          raise_preflight_failure!(
+            agent_run: agent_run,
+            provider: provider,
+            reason: "Provider model not found error: #{sanitized_output.truncate(500)}"
+          )
+        end
+
         return
       end
 
@@ -1021,6 +1034,40 @@ module Activities
 
       ProviderSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000
+
+    MODEL_NOT_FOUND_PATTERNS = [
+      /ProviderModelNotFoundError/i,
+      /Error:\s*Model not found:/i
+    ].freeze
+
+    MODEL_NOT_FOUND_NOISE_LINE_PATTERNS = [
+      %r{\A\s*at\s+.+\z},
+      %r{\A\s*file://.+\z},
+      %r{\A\s*/.+:\d+:\d+\)?\z},
+      /\A\s*\^+\s*\z/
+    ].freeze
+
+    def provider_model_not_found_error?(output)
+      return false if output.blank?
+
+      signal = strip_model_not_found_noise(output)
+      return false if signal.length > MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH
+
+      MODEL_NOT_FOUND_PATTERNS.any? { |pattern| signal.match?(pattern) }
+    end
+
+    def strip_model_not_found_noise(output)
+      output.each_line.reject { |line| model_not_found_noise_line?(line) }.join
+    end
+
+    def model_not_found_noise_line?(line)
+      normalized_line = line.to_s.strip
+      return false if normalized_line.blank?
+
+      MODEL_NOT_FOUND_NOISE_LINE_PATTERNS.any? { |pattern| normalized_line.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
