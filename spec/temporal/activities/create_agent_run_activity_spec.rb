@@ -205,9 +205,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "preserves the existing configuration bundle on resume when provider selection is unchanged" do
-      existing_bundle = create(:configuration_bundle,
-        account: project.account,
-        definition: existing_create_pr_bundle_definition)
+      existing_bundle = create_runtime_bundle(existing_create_pr_bundle_definition)
       queued_run = create(:agent_run,
         :queued,
         project: project,
@@ -292,6 +290,26 @@ RSpec.describe Activities::CreateAgentRunActivity do
         provider: claude_provider,
         agent_type: "claude_code",
         configuration_bundle: bundle)
+    end
+
+    def create_runtime_bundle(definition)
+      assigner = ConfigurationBundles::AssignToRun.new(agent_run: build(:agent_run, project: project, issue: issue))
+      fingerprint = assigner.send(:bundle_fingerprint, definition)
+
+      create(:configuration_bundle,
+        account: project.account,
+        definition: definition,
+        fingerprint: fingerprint,
+        context: {
+          "identity" => {
+            "fingerprint" => fingerprint,
+            "fingerprint_algorithm" => "sha256",
+            "schema_version" => 1
+          }
+        },
+        name: "Runtime Bundle #{fingerprint.first(12)}",
+        status: "active",
+        strategy: "runtime_snapshot")
     end
 
     def stub_model_selection(llm_model:)

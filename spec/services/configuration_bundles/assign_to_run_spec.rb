@@ -169,7 +169,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     service = described_class.new(agent_run: agent_run)
     selection = ConfigurationBundles::Optimizer::Selection.new(
-      fingerprint: service.send(:bundle_fingerprint, service.send(:bundle_definition, experiment.id => challenger)),
+      fingerprint: Digest::SHA256.hexdigest("stale optimizer fingerprint"),
       variant_by_experiment_id: { experiment.id => challenger }
     )
     allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
