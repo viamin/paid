@@ -212,6 +212,26 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
+  it "falls back to rebuilding the bundle definition when the optimizer definition disagrees with the selected variants" do
+    challenger = create(:configuration_experiment_variant,
+      configuration_experiment: experiment,
+      config_value: JSON.generate(12_000))
+    mismatched_definition = optimizer_definition_for_variant(variant:, value: 8000)
+    selection = optimizer_selection(
+      definition: mismatched_definition,
+      variant_by_experiment_id: { experiment.id => challenger }
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.fingerprint).to eq(described_class.new(agent_run: agent_run).send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_variant_id" => challenger.id,
+      "value" => 12_000
+    )
+  end
+
   it "persists the existing assignment when a run already has an experiment assignment" do
     challenger = create(:configuration_experiment_variant,
       configuration_experiment: experiment,
@@ -248,6 +268,10 @@ RSpec.describe ConfigurationBundles::AssignToRun do
   end
 
   def optimizer_definition_with_value(value)
+    optimizer_definition_for_variant(variant:, value:)
+  end
+
+  def optimizer_definition_for_variant(variant:, value:)
     {
       "schema_version" => 1,
       "goal" => agent_run.goal,

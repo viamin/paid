@@ -135,7 +135,7 @@ module ConfigurationBundles
       fingerprint = selection&.fingerprint
       computed_fingerprint = bundle_fingerprint(definition) if definition.is_a?(Hash)
 
-      if optimizer_payload_usable?(definition, fingerprint, computed_fingerprint) &&
+      if optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint) &&
           persist_optimizer_assignments(selection)
         return [ definition, computed_fingerprint ]
       end
@@ -174,9 +174,10 @@ module ConfigurationBundles
       ConfigurationExperiment.find(experiment_id)
     end
 
-    def optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
+    def optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint)
       return false unless definition.is_a?(Hash)
       return false unless optimizer_definition_matches_run?(definition)
+      return false unless optimizer_experiments_match_variants?(definition, selection&.variant_by_experiment_id)
       return true if fingerprint.blank?
 
       return true if fingerprint == computed_fingerprint
@@ -190,6 +191,30 @@ module ConfigurationBundles
       false
     end
 
+    def optimizer_experiments_match_variants?(definition, variant_by_experiment_id)
+      return true if variant_by_experiment_id.blank?
+
+      expected_experiments = variant_by_experiment_id.each_with_object({}) do |(experiment_id, variant), definitions|
+        experiment = optimizer_experiment_for(variant, experiment_id)
+        parsed_value = parsed_optimizer_variant_value(variant, experiment:)
+        return false if parsed_value.equal?(INVALID_EXPERIMENT_VALUE)
+
+        definitions[experiment.config_key] = {
+          "configuration_experiment_id" => experiment.id,
+          "configuration_experiment_variant_id" => variant.id,
+          "value" => parsed_value
+        }
+      end
+
+      return true if definition.fetch("experiments", {}) == expected_experiments
+
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_payload_experiments_mismatch",
+        agent_run_id: agent_run.id
+      )
+      false
+    end
+
     def optimizer_definition_matches_run?(definition)
       return true if definition.except("experiments") == expected_optimizer_definition_attributes
 
@@ -198,6 +223,21 @@ module ConfigurationBundles
         agent_run_id: agent_run.id
       )
       false
+    end
+
+    def parsed_optimizer_variant_value(variant, experiment:)
+      variant.parsed_value
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.invalid_optimizer_variant_skipped",
+        agent_run_id: agent_run.id,
+        configuration_experiment_id: experiment.id,
+        configuration_experiment_variant_id: variant.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+
+      INVALID_EXPERIMENT_VALUE
     end
 
     def expected_optimizer_definition_attributes

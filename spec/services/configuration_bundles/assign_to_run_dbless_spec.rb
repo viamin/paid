@@ -39,6 +39,10 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
   end
   let(:service) { described_class.new(agent_run: agent_run) }
   let(:bundle) { Struct.new(:definition, :fingerprint).new({}, "bundle") }
+  let(:experiment) { Struct.new(:id, :config_key).new(42, "knowledge.token_budget") }
+  let(:selected_variant) do
+    Struct.new(:id, :parsed_value, :configuration_experiment).new(7, 12_000, experiment)
+  end
 
   describe "#call" do
     it "uses the optimizer-provided definition and fingerprint when they are consistent" do
@@ -114,6 +118,25 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
       service.call
     end
+
+    it "falls back to rebuilding the bundle payload when the optimizer definition disagrees with the selected variants" do
+      fallback_definition = experiment_definition_for(selected_variant.parsed_value)
+      mismatched_definition = experiment_definition_for(8000)
+      selection = optimizer_selection(
+        definition: mismatched_definition,
+        fingerprint: bundle_fingerprint(mismatched_definition),
+        variant_by_experiment_id: { experiment.id => selected_variant }
+      )
+
+      allow(service).to receive(:optimizer_selection).and_return(selection)
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
   end
 
   def selection_definition
@@ -127,6 +150,18 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       "mcp_servers" => [],
       "experiments" => {}
     }
+  end
+
+  def experiment_definition_for(value)
+    selection_definition.merge(
+      "experiments" => {
+        "knowledge.token_budget" => {
+          "configuration_experiment_id" => experiment.id,
+          "configuration_experiment_variant_id" => selected_variant.id,
+          "value" => value
+        }
+      }
+    )
   end
 
   def optimizer_selection(definition:, fingerprint: bundle_fingerprint(definition), variant_by_experiment_id: {})
