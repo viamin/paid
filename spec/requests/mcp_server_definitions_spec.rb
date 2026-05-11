@@ -29,7 +29,7 @@ RSpec.describe "McpServerDefinitions" do
       end
 
       it "shows existing definitions" do
-        mcp = create(:mcp_server_definition, account: account, name: "test-mcp")
+        _mcp = create(:mcp_server_definition, account: account, name: "test-mcp")
         get mcp_server_definitions_path
         expect(response.body).to include("test-mcp")
       end
