@@ -71,12 +71,27 @@ module Workflows
         }
       end
 
+      experiment_result = run_activity(
+        Activities::CreateEvolutionStrategyExperimentActivity,
+        {
+          account_id: account_id,
+          strategy: inputs_result.fetch(:strategy),
+          candidate_ids: candidate_ids,
+          min_samples_per_variant: input.fetch(:min_samples_per_variant, 30),
+          confidence_threshold: input.fetch(:confidence_threshold, 0.95),
+          traffic_percentage: input.fetch(:traffic_percentage, 100)
+        },
+        timeout: 30
+      )
+
       {
         status: :candidates_created,
         account_id: account_id,
         strategy_type: strategy_type,
         candidate_ids: candidate_ids,
-        candidate_count: persist_result.fetch(:candidate_count, candidate_ids.size)
+        candidate_count: persist_result.fetch(:candidate_count, candidate_ids.size),
+        strategy_experiment_id: experiment_result[:strategy_experiment_id],
+        experiment_status: experiment_result[:status]
       }
     end
   end

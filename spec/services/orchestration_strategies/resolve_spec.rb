@@ -56,5 +56,40 @@ RSpec.describe OrchestrationStrategies::Resolve do
         expect(result).to eq(system_strategy)
       end
     end
+
+    context "when a run is assigned to an active strategy experiment" do
+      let(:account) { create(:account) }
+      let(:agent_run) { create(:agent_run, project: create(:project, account: account)) }
+      let!(:control_strategy) { create(:orchestration_strategy, :review_settings, account: account, version: 2) }
+      let!(:candidate_strategy) { create(:orchestration_strategy, :review_settings, account: account, version: 3, active: false) }
+      let!(:experiment) do
+        StrategyExperiments::CreateForCandidates.call(
+          account: account,
+          strategy_type: "review_settings",
+          control_strategy: control_strategy,
+          candidate_strategies: [ candidate_strategy ],
+          traffic_percentage: 100
+        ).tap(&:start!)
+      end
+
+      before do
+        allow(StrategyExperiments::Assign).to receive(:call).and_call_original
+      end
+
+      it "resolves the experiment-assigned strategy snapshot" do
+        result = described_class.call(
+          strategy_type: "review_settings",
+          account: account,
+          agent_run: agent_run
+        )
+
+        expect(StrategyExperiments::Assign).to have_received(:call).with(
+          strategy_experiment: experiment,
+          agent_run: agent_run
+        )
+        expect(result.strategy_type).to eq("review_settings")
+        expect([ control_strategy.id, candidate_strategy.id ]).to include(result.id)
+      end
+    end
   end
 end
