@@ -62,7 +62,6 @@ module Paid
     def git_context(app_root:)
       {
         branch: git_output(app_root, "rev-parse", "--abbrev-ref", "HEAD"),
-        git_dir: git_output(app_root, "rev-parse", "--absolute-git-dir"),
         identity: git_output(app_root, "rev-parse", "--absolute-git-dir") || File.realpath(app_root)
       }
     end
