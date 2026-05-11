@@ -457,6 +457,24 @@ RSpec.describe "Dashboard" do
         created_at: created_at)
     end
 
+    def create_external_decision_metric(created_at:)
+      create(:orchestration_decision, :without_agent_run,
+        project: create(:project, name: "Ignored", owner: "ignored", repo: "ignored"),
+        decision_type: "retry",
+        actor: "timeout_auto_retry",
+        context: { decision_status: "applied" },
+        created_at: created_at)
+    end
+
+    def create_out_of_window_decision_metric(project:, created_at:)
+      create_decision_metric(
+        project: project,
+        created_at: created_at,
+        decision_type: "planning_outcome",
+        actor: "Workflows::PlanningWorkflow"
+      )
+    end
+
     it "returns the orchestration decision metrics partial within a turbo frame" do
       create_decision_metric(project: project, created_at: Time.current)
 
@@ -466,6 +484,8 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("dashboard-decision-metrics")
       expect(response.body).to include("Orchestration Decision Metrics")
       expect(response.body).to include("Decision Types by Context")
+      expect(response.body).to include("Outcomes by Decision Type")
+      expect(response.body).to include("Decision Actors")
     end
 
     it "shows an empty state when no orchestration decisions exist" do
@@ -488,24 +508,21 @@ RSpec.describe "Dashboard" do
     it "scopes decision metrics to the current account and time window" do
       create_decision_metric(project: project, created_at: 2.days.ago)
       create_decision_metric(project: project, created_at: 1.day.ago, decision_status: "failed", agent_run_traits: [ :failed ])
-      create(:orchestration_decision, :without_agent_run,
-        project: create(:project, name: "Ignored", owner: "ignored", repo: "ignored"),
-        decision_type: "retry",
-        actor: "timeout_auto_retry",
-        context: { decision_status: "applied" },
-        created_at: 1.day.ago)
-      create_decision_metric(
-        project: project,
-        created_at: 45.days.ago,
-        decision_type: "planning_outcome",
-        actor: "Workflows::PlanningWorkflow"
-      )
+      create_external_decision_metric(created_at: 1.day.ago)
+      create_out_of_window_decision_metric(project: project, created_at: 45.days.ago)
 
       get dashboard_decision_metrics_path(time_range: "7d")
+
+      document = Nokogiri::HTML(response.body)
+      actor_headers = document.css("table thead th").map { |header| header.text.squish }
 
       expect(response.body).to include("Total Decisions")
       expect(response.body).to include("Retry")
       expect(response.body).to include("Alpha")
+      expect(response.body).to include("timeout_auto_retry")
+      expect(actor_headers).to include("Actor")
+      expect(actor_headers).to include("Applied")
+      expect(actor_headers).to include("Failed")
       expect(response.body).not_to include("Ignored")
       expect(response.body).not_to include("Planning Outcome")
     end
