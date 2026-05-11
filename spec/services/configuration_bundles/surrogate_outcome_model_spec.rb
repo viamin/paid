@@ -254,7 +254,7 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
       expect(prediction.predicted_duration_seconds).to be_within(1).of(400)
     end
 
-    it "returns nil cost and duration when no matches have positive values" do
+    it "preserves zero-valued cost and duration estimates" do
       rows = [
         build_row(goal: "create_pr", agent_type: "claude_code", quality_score: 0.8,
                   cost_cents: 0, duration_seconds: 0)
@@ -264,8 +264,8 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
 
       prediction = model.predict(bundle_definition: bundle_definition)
 
-      expect(prediction.predicted_cost_cents).to be_nil
-      expect(prediction.predicted_duration_seconds).to be_nil
+      expect(prediction.predicted_cost_cents).to eq(0)
+      expect(prediction.predicted_duration_seconds).to eq(0)
     end
 
     it "predicts success probability from historical outcomes" do

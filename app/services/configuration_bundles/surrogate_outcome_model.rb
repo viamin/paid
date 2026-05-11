@@ -169,7 +169,12 @@ module ConfigurationBundles
     end
 
     def weighted_average(matches)
-      pairs = matches.filter_map { |m| yield(m).then { |v| [ v, m[:similarity] * m[:row].weight ] if v.to_i.positive? } }
+      pairs = matches.filter_map do |match|
+        value = yield(match)
+        next if value.nil?
+
+        [ value, match[:similarity] * match[:row].weight ]
+      end
       return nil if pairs.empty?
 
       pairs.sum { |v, w| v * w } / pairs.sum { |_v, w| w }
