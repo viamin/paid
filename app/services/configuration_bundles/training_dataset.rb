@@ -52,9 +52,9 @@ module ConfigurationBundles
           quality_score: outcome.quality_score.to_f,
           objective_score: objective_score,
           success: outcome.success,
-          cost_cents: outcome.cost_cents.to_i,
-          duration_seconds: outcome.duration_seconds.to_i,
-          tokens_used: outcome.tokens_used.to_i,
+          cost_cents: outcome.cost_cents,
+          duration_seconds: outcome.duration_seconds,
+          tokens_used: outcome.tokens_used,
           weight: recency_weight(outcome)
         )
       end
