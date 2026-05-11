@@ -17,6 +17,7 @@ require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
 require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisions_strategy_version_tenant_check")
 require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
+require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -256,6 +257,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.up if orchestration_decisions_have_strategy_version_reference?
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
       EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
+      FixStrategiesRlsInfiniteRecursion.new.up
     end
     OrchestrationDecision.reset_column_information
     ActiveRecord::Base.connection.execute("RESET ROLE")
