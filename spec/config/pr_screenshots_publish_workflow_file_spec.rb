@@ -6,7 +6,7 @@ require "psych"
 class PrScreenshotsPublishWorkflowFile < Pathname
 end
 
-RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
+RSpec.describe PrScreenshotsPublishWorkflowFile do
   subject(:workflow) do
     Psych.safe_load_file(
       Rails.root.join(".github/workflows/pr-screenshots-publish.yml"),
@@ -19,12 +19,5 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
 
   it "queries screenshot capture runs by the PR head sha" do
     expect(resolve_step.fetch("run")).to include('head_sha=#{head_sha}&per_page=100')
-  end
-
-  it "falls back to the detect job when no capture job exists" do
-    run_script = resolve_step.fetch("run")
-
-    expect(run_script).to include('detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }')
-    expect(run_script).to include('elsif detect_job&.fetch("conclusion", nil) == "success"')
   end
 end

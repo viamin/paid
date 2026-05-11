@@ -28,8 +28,8 @@ module ScalingExperiments
         "parallelism_analysis" => analysis,
         "allocator_decision" => analysis["allocator_decision"],
         "leading_value" => leader&.fetch("assigned_value", nil),
-        "improvement_over_control" => improvement_over_control(control:, leader:),
-        "initial_results" => initial_results(control:, leader:)
+        "improvement_over_control" => (comparison = improvement_over_control(control:, leader:)),
+        "initial_results" => initial_results(control:, leader:, comparison:)
       }.compact
     end
 
@@ -94,11 +94,11 @@ module ScalingExperiments
       }
     end
 
-    def initial_results(control:, leader:)
+    def initial_results(control:, leader:, comparison:)
       {
         "control" => control,
         "leader" => leader,
-        "comparison" => improvement_over_control(control:, leader:),
+        "comparison" => comparison,
         "recorded_sample_counts" => scaling_experiment.samples_key
       }.compact
     end

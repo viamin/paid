@@ -48,16 +48,19 @@ module ScalingExperiments
 
     attr_reader :scaling_experiment, :workflow_id, :task_count, :project, :issue
 
+    def eligible_values
+      @eligible_values ||= scaling_experiment.eligible_values(task_count:)
+    end
+
     def select_value
-      values = scaling_experiment.eligible_values(task_count:)
-      return if values.empty?
+      return if eligible_values.empty?
 
       counts = ScalingExperimentAssignment
-        .where(scaling_experiment:, assigned_value: values)
+        .where(scaling_experiment:, assigned_value: eligible_values)
         .group(:assigned_value)
         .count
-      min_count = values.map { |value| counts.fetch(value, 0) }.min
-      candidates = values.select { |value| counts.fetch(value, 0) == min_count }
+      min_count = eligible_values.map { |value| counts.fetch(value, 0) }.min
+      candidates = eligible_values.select { |value| counts.fetch(value, 0) == min_count }
       candidates[Zlib.crc32("#{scaling_experiment.id}:#{workflow_id}") % candidates.size]
     end
 
@@ -82,12 +85,12 @@ module ScalingExperiments
         },
         "cohort_schedule" => scaling_experiment.cohort_schedule,
         "fairness_guardrails" => scaling_experiment.control_definition.slice("fairness_conditions", "guardrails"),
-        "eligible_values" => scaling_experiment.eligible_values(task_count:),
+        "eligible_values" => eligible_values,
         "safety_limits" => {
           "task_count_cap" => task_count,
           "project_capacity_checked_during_execution" => true,
           "dependency_order_respected" => true,
-          "eligible_value_count" => scaling_experiment.eligible_values(task_count:).size
+          "eligible_value_count" => eligible_values.size
         }
       }
 
