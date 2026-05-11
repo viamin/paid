@@ -50,8 +50,11 @@ module ConfigurationBundles
     private
 
     def extract_experiment_features(definition)
-      definition.fetch("experiments", {}).each_with_object({}) do |(key, value), features|
-        features[key] = experiment_feature_value(value)
+      experiments = definition.fetch("experiments", {})
+      return {} unless experiments.is_a?(Hash)
+
+      experiments.each_with_object({}) do |(key, value), features|
+        features[key.to_s] = experiment_feature_value(value)
       end
     end
 

@@ -165,5 +165,17 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
 
       expect(features.experiment_features).to eq({})
     end
+
+    it "ignores malformed experiment payloads" do
+      features = described_class.call({ "experiments" => [ "not", "a", "hash" ] })
+
+      expect(features.experiment_features).to eq({})
+    end
+
+    it "stringifies experiment keys for stable matching" do
+      features = described_class.call({ "experiments" => { numeric_key: 4000 } })
+
+      expect(features.experiment_features).to eq("numeric_key" => 4000.0)
+    end
   end
 end
