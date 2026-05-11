@@ -225,6 +225,23 @@ RSpec.describe Coordination::FailureRecovery do
           "chosen_action" => "escalate_model"
         )
       end
+
+      it "preserves the selected action when decision persistence fails" do
+        invalid_record = FailureClassification.new
+        allow(FailureClassification).to receive(:create!).and_raise(ActiveRecord::RecordInvalid.new(invalid_record))
+
+        result = described_class.call(
+          agent_run: agent_run,
+          policy_overrides: { "timeout" => "escalate_model" }
+        )
+
+        expect(result).not_to be_success
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("escalate")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.outputs["error_class"]).to eq("ActiveRecord::RecordInvalid")
+      end
     end
 
     context "with a guardrail violation" do

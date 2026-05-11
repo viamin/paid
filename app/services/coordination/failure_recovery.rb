@@ -67,7 +67,7 @@ module Coordination
       Result.new(success: true, classification: classification,
         failure_category: category, chosen_action: action)
     rescue ActiveRecord::RecordInvalid => e
-      persist_failed_decision(e)
+      persist_failed_decision(e, action: action)
       Result.new(success: false, error: e.message)
     end
 
@@ -157,13 +157,13 @@ module Coordination
       )
     end
 
-    def persist_failed_decision(error)
+    def persist_failed_decision(error, action: "retry")
       OrchestrationDecision.record(
         project: agent_run.project,
         issue: agent_run.issue,
         agent_run: agent_run,
         decision_point: "coordination_failure_recovery",
-        action: "retry",
+        action: orchestration_action_for(action),
         status: "failed",
         signals: {
           agent_run_status: agent_run.status
