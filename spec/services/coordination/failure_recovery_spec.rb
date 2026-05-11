@@ -35,6 +35,25 @@ RSpec.describe Coordination::FailureRecovery do
         expect(classification.project).to eq(project)
         expect(classification.agent_run).to eq(agent_run)
       end
+
+      it "logs a retry orchestration decision" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.actor).to eq("coordination_failure_recovery")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.inputs).to include(
+          "failure_category" => "rate_limit",
+          "chosen_action" => "retry_alternate_provider"
+        )
+        expect(decision.outputs).to include(
+          "chosen_action" => "retry_alternate_provider",
+          "action_status" => "pending"
+        )
+      end
     end
 
     context "with a non-failure agent run" do
@@ -47,6 +66,17 @@ RSpec.describe Coordination::FailureRecovery do
           expect(result).not_to be_success
           expect(result.error).to eq("agent run status must be a failure status")
         }.not_to change(FailureClassification, :count)
+      end
+
+      it "logs a noop orchestration decision" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.context["decision_status"]).to eq("noop")
+        expect(decision.outputs).to include("reason" => "non_failure_status")
       end
     end
 
@@ -179,6 +209,21 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result).to be_success
         expect(result.failure_category).to eq("timeout")
         expect(result.chosen_action).to eq("escalate_model")
+      end
+
+      it "logs escalation decisions when the override escalates the model" do
+        described_class.call(
+          agent_run: agent_run,
+          policy_overrides: { "timeout" => "escalate_model" }
+        )
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("escalate")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.inputs).to include(
+          "failure_category" => "timeout",
+          "chosen_action" => "escalate_model"
+        )
       end
     end
 

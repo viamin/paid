@@ -45,12 +45,16 @@ module Coordination
     end
 
     def call
-      return non_failure_result unless failed_run?
+      unless failed_run?
+        persist_non_failure_decision
+        return non_failure_result
+      end
 
       category = classify_failure
       action = select_action(category)
 
       classification = persist_classification(category, action)
+      persist_decision(classification, category, action)
 
       Rails.logger.info(
         message: "coordination.failure_classified",
@@ -63,6 +67,7 @@ module Coordination
       Result.new(success: true, classification: classification,
         failure_category: category, chosen_action: action)
     rescue ActiveRecord::RecordInvalid => e
+      persist_failed_decision(e)
       Result.new(success: false, error: e.message)
     end
 
@@ -121,6 +126,55 @@ module Coordination
       )
     end
 
+    def persist_decision(classification, category, action)
+      OrchestrationDecision.record(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        agent_run: agent_run,
+        decision_point: "coordination_failure_recovery",
+        action: orchestration_action_for(action),
+        status: "applied",
+        signals: build_decision_signals(category, action),
+        result: build_decision_result(classification, action)
+      )
+    end
+
+    def persist_non_failure_decision
+      OrchestrationDecision.record(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        agent_run: agent_run,
+        decision_point: "coordination_failure_recovery",
+        action: "retry",
+        status: "noop",
+        signals: {
+          agent_run_status: agent_run.status,
+          expected_failure_statuses: AgentRun::FAILURE_STATUSES
+        },
+        result: {
+          reason: "non_failure_status"
+        }
+      )
+    end
+
+    def persist_failed_decision(error)
+      OrchestrationDecision.record(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        agent_run: agent_run,
+        decision_point: "coordination_failure_recovery",
+        action: "retry",
+        status: "failed",
+        signals: {
+          agent_run_status: agent_run.status
+        },
+        result: {
+          error_class: error.class.name,
+          error_message: error.message
+        }
+      )
+    end
+
     def extract_subcategory
       return agent_run.guardrail_violation_type if agent_run.guardrail_violation_type.present?
 
@@ -163,6 +217,43 @@ module Coordination
 
     def preferred_provider_identifier
       attempted_provider_identifiers.last || agent_run.effective_provider
+    end
+
+    def orchestration_action_for(action)
+      case action
+      when "retry_same_provider", "retry_alternate_provider", "reconfigure_and_retry"
+        "retry"
+      when "pause_and_notify"
+        "pause"
+      when "escalate_model"
+        "escalate"
+      when "cancel_workflow"
+        "cancel"
+      when "skip_and_continue"
+        "continue"
+      else
+        "retry"
+      end
+    end
+
+    def build_decision_signals(category, action)
+      {
+        failure_category: category,
+        failure_subcategory: extract_subcategory,
+        agent_run_status: agent_run.status,
+        parent_workflow_id: agent_run.parent_workflow_id,
+        chosen_action: action
+      }.merge(build_failure_context)
+        .compact
+    end
+
+    def build_decision_result(classification, action)
+      {
+        failure_classification_id: classification.id,
+        chosen_action: action,
+        action_params: classification.action_params,
+        action_status: classification.action_status
+      }.compact
     end
 
     class Result
