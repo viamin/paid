@@ -261,11 +261,11 @@ module ConfigurationBundles
     end
 
     def prediction_objective_score(prediction)
-      prediction.respond_to?(:predicted_objective_score) ? prediction.predicted_objective_score : prediction.mean_objective_score
+      prediction.predicted_objective_score
     end
 
     def prediction_quality_score(prediction)
-      prediction.respond_to?(:predicted_quality_score) ? prediction.predicted_quality_score : prediction.mean_quality_score
+      prediction.predicted_quality_score
     end
 
     def bundle_definition(variant_by_experiment_id)
