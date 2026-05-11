@@ -2946,6 +2946,28 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.providers_attempted.first["error_message"]).to include("model not found error")
       end
 
+      it "detects ProviderModelNotFoundError even when stderr includes a long stack trace" do
+        stack_trace = Array.new(60) { |i| "    at resolveModel (file:///app/.opencode/vendor/index.js:#{200 + i}:17)" }.join("\n")
+        model_not_found_stderr = <<~ERR
+          Error: Model not found: glm-5.1/.
+          ProviderModelNotFoundError
+          #{stack_trace}
+        ERR
+        model_not_found_success = Containers::Provision::Result.success(
+          stdout: "", stderr: model_not_found_stderr, exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(model_not_found_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("error")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("model not found error")
+      end
+
       it "does not misclassify substantial agent output as model not found when ProviderModelNotFoundError appears in structured output" do
         long_stdout = (1..40).map { |i| "line #{i}: processing test for ProviderModelNotFoundError handling" }.join("\n")
         long_output_success = Containers::Provision::Result.success(

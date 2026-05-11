@@ -1043,11 +1043,31 @@ module Activities
       /Error:\s*Model not found:/i
     ].freeze
 
+    MODEL_NOT_FOUND_NOISE_LINE_PATTERNS = [
+      %r{\A\s*at\s+.+\z},
+      %r{\A\s*file://.+\z},
+      %r{\A\s*/.+:\d+:\d+\)?\z},
+      /\A\s*\^+\s*\z/
+    ].freeze
+
     def provider_model_not_found_error?(output)
       return false if output.blank?
-      return false if output.length > MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH
 
-      MODEL_NOT_FOUND_PATTERNS.any? { |pattern| output.match?(pattern) }
+      signal = strip_model_not_found_noise(output)
+      return false if signal.length > MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH
+
+      MODEL_NOT_FOUND_PATTERNS.any? { |pattern| signal.match?(pattern) }
+    end
+
+    def strip_model_not_found_noise(output)
+      output.each_line.reject { |line| model_not_found_noise_line?(line) }.join
+    end
+
+    def model_not_found_noise_line?(line)
+      normalized_line = line.to_s.strip
+      return false if normalized_line.blank?
+
+      MODEL_NOT_FOUND_NOISE_LINE_PATTERNS.any? { |pattern| normalized_line.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
