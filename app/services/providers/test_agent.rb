@@ -105,10 +105,16 @@ module Providers
       /validationLink:/i,
       /validationDescription:/i,
       /learnMoreUrl:/i,
-      /userHandled:/i,
-      /"type"\s*:\s*"session\.(?:mcp_server_status_changed|shutdown)"/i
+      /userHandled:/i
     ].freeze
 
+    # Matches any GitHub Copilot session lifecycle event (e.g. session.shutdown,
+    # session.mcp_server_status_changed, session.mcp_servers_loaded). Used both
+    # to filter these events out of cleaned smoke-test output AND to detect the
+    # "only lifecycle events, no response" case so the fallback message can fire.
+    # Keeping a single broad pattern avoids missing new event variants the
+    # Copilot CLI adds (the original strict alternation missed
+    # session.mcp_servers_loaded).
     MCP_SESSION_EVENT_PATTERN = /"type"\s*:\s*"session\./
 
     # Maps agent-harness error_category symbols to app-level error_type symbols.
@@ -128,8 +134,11 @@ module Providers
 
     attr_reader :provider
 
-    def initialize(provider:)
+    def initialize(provider:, diagnostic_prompt: nil, diagnostic_timeout: nil, diagnostic_success_pattern: nil)
       @provider = provider
+      @diagnostic_prompt = diagnostic_prompt
+      @diagnostic_timeout = diagnostic_timeout
+      @diagnostic_success_pattern = diagnostic_success_pattern
     end
 
     def self.call(...)
@@ -138,13 +147,20 @@ module Providers
 
     def call
       validate!
-      result = if harness_health_check_supported?
-        process_harness_result(execute_harness_health_check)
-      else
-        execute_container_smoke_test
-      end
+      result =
+        if @diagnostic_prompt
+          # Diagnostic path bypasses the harness smoke contract so callers can
+          # exercise specific subsystems (tool use, MCP) with a custom prompt.
+          # Always container-backed (host path skipped) so timing and heartbeat
+          # behaviour match real agent runs.
+          execute_container_diagnostic
+        elsif harness_health_check_supported?
+          process_harness_result(execute_harness_health_check)
+        else
+          execute_container_smoke_test
+        end
 
-      update_provider_state!(result)
+      update_provider_state!(result) unless @diagnostic_prompt
       result
     rescue NotContainerExecutableError
       Result.new(success: false, error_type: :installation,
@@ -180,9 +196,63 @@ module Providers
           "Provider #{provider.provider_key} is not installed in the agent container"
       end
 
-      return if harness_health_check_supported?
+      return if harness_health_check_supported? && !@diagnostic_prompt
 
       raise MissingProjectContextError, "Add a project before testing providers in the agent container" unless test_project
+    end
+
+    # Runs a custom prompt against the provider's agent inside a provisioned
+    # container, then evaluates the response against an optional success
+    # pattern. Used by diagnostic smoke scenarios that need to exercise
+    # specific subsystems (tool use, MCP, longer prompts) instead of the
+    # fixed "Reply OK" smoke contract. Returns a Result with timing info in
+    # the message so the smoke runner can compare scenarios side-by-side.
+    def execute_container_diagnostic
+      test_run = build_test_run
+      timeout = @diagnostic_timeout || TIMEOUT
+
+      begin
+        test_run.with_container do |run|
+          executor = Containers::HarnessExecutor.new(run)
+          prepare_kilocode_config!(run) if kilocode_direct_outbound?
+
+          started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          response = AgentHarness.send_message(
+            @diagnostic_prompt,
+            provider: harness_provider_name,
+            executor: executor,
+            provider_runtime: container_provider_runtime,
+            timeout: timeout
+          )
+          elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+
+          process_diagnostic_response(response, elapsed_ms: elapsed_ms)
+        end
+      ensure
+        test_run.destroy! if test_run&.persisted?
+      end
+    end
+
+    def process_diagnostic_response(response, elapsed_ms:)
+      # AgentHarness::Response exposes #output, #error, #success?, #failed?,
+      # #exit_code, #total_tokens. Read those directly — earlier versions of
+      # this method probed for #content via respond_to?, which silently
+      # fell through to #to_s and matched no success pattern.
+      output = normalize_output_text(response.output).to_s.strip
+      tokens = response.total_tokens
+      summary = "elapsed=#{elapsed_ms}ms tokens=#{tokens || "n/a"} output=#{output[0, 200].inspect}"
+
+      if response.failed?
+        message = normalize_output_text(response.error).presence || "diagnostic failed (exit #{response.exit_code})"
+        return Result.new(success: false, error_type: :unexpected, message: "#{message} (#{summary})")
+      end
+
+      if @diagnostic_success_pattern && !@diagnostic_success_pattern.match?(output)
+        return Result.new(success: false, error_type: :unexpected,
+          message: "diagnostic output did not match #{@diagnostic_success_pattern.inspect} (#{summary})")
+      end
+
+      Result.new(success: true, error_type: nil, message: "Diagnostic passed (#{summary})")
     end
 
     def execute_harness_health_check
@@ -460,6 +530,8 @@ module Providers
     end
 
     def noisy_error_line?(line)
+      return true if line.match?(MCP_SESSION_EVENT_PATTERN)
+
       matches_any_pattern?(line, noisy_error_line_patterns)
     end
 
