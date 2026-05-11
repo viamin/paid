@@ -261,6 +261,23 @@ RSpec.describe AgentRunPatterns::Notify do
       expect(Notifications::Resolve).not_to have_received(:call)
     end
 
+    it "supports symbol-key metadata" do
+      notification = Struct.new(:metadata, :subject, :user).new(
+        { goals: [ "enhance_issue", "create_pr" ] },
+        account,
+        nil
+      )
+      Notification.where_result = Struct.new(:notifications) do
+        def active
+          notifications
+        end
+      end.new([ notification ])
+
+      service.send(:resolve_cleared_patterns)
+
+      expect(Notifications::Resolve).not_to have_received(:call)
+    end
+
     it "skips resolving notifications without tracked-goal metadata" do
       notification = Struct.new(:metadata, :subject, :user).new({}, account, nil)
       Notification.where_result = Struct.new(:notifications) do

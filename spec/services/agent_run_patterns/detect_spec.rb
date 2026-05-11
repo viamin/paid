@@ -241,5 +241,25 @@ RSpec.describe AgentRunPatterns::Detect do
       expect(cluster.details[:occurrence_count]).to eq(3)
       expect(cluster.details[:error_pattern]).to include("run <ID>")
     end
+
+    it "breaks a streak deterministically when equal timestamps include a newer success" do
+      run_class = Struct.new(:id, :goal, :status, :error_message, :completed_at)
+      completed_at = Time.current
+      runs = [
+        run_class.new(3, "enhance_issue", "failed", "Error", completed_at),
+        run_class.new(2, "enhance_issue", "completed", nil, completed_at),
+        run_class.new(1, "enhance_issue", "failed", "Error", completed_at)
+      ]
+
+      detector = described_class.new(account: account)
+      allow(detector).to receive_messages(
+        fetch_recent_finished_runs: runs,
+        load_baseline_rate: nil
+      )
+
+      result = detector.call
+
+      expect(result.find { |pattern| pattern.type == :failure_streak }).to be_nil
+    end
   end
 end

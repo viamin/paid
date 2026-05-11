@@ -50,7 +50,7 @@ module AgentRunPatterns
     end
 
     def detect_failure_streak(goal, runs)
-      ordered = runs.sort_by { |r| -r.completed_at.to_i }
+      ordered = runs.sort_by { |r| [ -r.completed_at.to_f, -r.id.to_i ] }
       streak = ordered.take_while { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }
 
       return [] unless streak.size >= FAILURE_STREAK_THRESHOLD

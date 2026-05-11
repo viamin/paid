@@ -54,6 +54,30 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           details: { streak_length: 3, total_runs: 3, failure_rate: 1.0, error_messages: [ "Error" ] }
         )
       end
+      let(:follow_up_pattern) do
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :error_cluster,
+          goal: "enhance_issue",
+          severity: :error,
+          details: { sample_messages: [ "GitHub API error: 403 Forbidden" ] }
+        )
+      end
+      let(:unknown_diagnosis) do
+        AgentRunPatterns::Diagnose::Diagnosis.new(
+          root_cause: "Unknown",
+          category: "unknown",
+          confidence: 0.0,
+          remediation: "Investigate manually."
+        )
+      end
+      let(:github_diagnosis) do
+        AgentRunPatterns::Diagnose::Diagnosis.new(
+          root_cause: "GitHub API Error",
+          category: "github_api",
+          confidence: 1.0,
+          remediation: "Check GitHub token health."
+        )
+      end
 
       before do
         allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_return([ pattern ])
@@ -72,6 +96,20 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           account: account,
           patterns: [ pattern ],
           diagnoses: hash_including("enhance_issue")
+        )
+      end
+
+      it "prefers the strongest diagnosis for each goal" do
+        allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_return([ pattern, follow_up_pattern ])
+        allow(AgentRunPatterns::Diagnose).to receive(:call).with(pattern).and_return(unknown_diagnosis)
+        allow(AgentRunPatterns::Diagnose).to receive(:call).with(follow_up_pattern).and_return(github_diagnosis)
+
+        described_class.perform_now
+
+        expect(AgentRunPatterns::Notify).to have_received(:call).with(
+          account: account,
+          patterns: [ pattern, follow_up_pattern ],
+          diagnoses: hash_including("enhance_issue" => github_diagnosis)
         )
       end
     end

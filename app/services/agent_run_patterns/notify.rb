@@ -121,10 +121,15 @@ module AgentRunPatterns
     end
 
     def tracked_goals(notification)
-      goals = Array(notification.metadata&.dig("goals")).presence
+      goals = metadata_value(notification, :goals)
       return goals if goals
 
-      Array(notification.metadata&.dig("worst_goal")).presence || []
+      metadata_value(notification, :worst_goal) || []
+    end
+
+    def metadata_value(notification, key)
+      metadata = notification.metadata
+      Array(metadata&.dig(key.to_s) || metadata&.dig(key)).presence
     end
   end
 end

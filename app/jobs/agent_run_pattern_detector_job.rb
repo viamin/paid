@@ -53,7 +53,21 @@ class AgentRunPatternDetectorJob < ApplicationJob
 
   def build_diagnoses(patterns)
     patterns.each_with_object({}) do |pattern, hash|
-      hash[pattern.goal] ||= AgentRunPatterns::Diagnose.call(pattern)
+      diagnosis = AgentRunPatterns::Diagnose.call(pattern)
+      existing = hash[pattern.goal]
+
+      hash[pattern.goal] = if existing.nil? || better_diagnosis?(diagnosis, existing)
+        diagnosis
+      else
+        existing
+      end
     end
+  end
+
+  def better_diagnosis?(candidate, existing)
+    return true if existing.category == "unknown" && candidate.category != "unknown"
+    return false if candidate.category == "unknown" && existing.category != "unknown"
+
+    candidate.confidence > existing.confidence
   end
 end
