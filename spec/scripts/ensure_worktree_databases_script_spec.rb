@@ -31,7 +31,7 @@ RSpec.describe EnsureWorktreeDatabasesScript do
   it "rejects invalid role names before creating databases" do
     Dir.mktmpdir("ensure-worktree-databases-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
-      env = base_env(dir).merge("DB_USER" => "paid\" SUPERUSER --")
+      env = base_env(dir).merge("DB_USERNAME" => "paid\" SUPERUSER --")
 
       stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
 
