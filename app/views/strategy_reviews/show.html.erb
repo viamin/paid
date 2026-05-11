@@ -1,0 +1,110 @@
+<% content_for :title do %>Review v<%= @strategy_version.version %> - <%= @strategy.name %> - Paid<% end %>
+
+<% parent = @strategy_version.parent_version || @strategy.current_version %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(strategy_reviews_path(@strategy)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Pending Reviews
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-semibold text-gray-900">Review v<%= @strategy_version.version %> of <%= @strategy.name %></h1>
+        <p class="mt-1 text-sm text-gray-500"><%= @strategy_version.change_notes.presence || "Evolved strategy candidate awaiting approval." %></p>
+      </div>
+      <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
+        <%= @strategy_version.pending_review? ? "Pending Review" : @strategy_version.promotion_state.titleize %>
+      </span>
+    </div>
+
+    <div class="border-t border-gray-200">
+      <dl class="divide-y divide-gray-200">
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Decision Type</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @strategy.decision_type %></dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Source</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @strategy_version.created_by_user&.email || @strategy_version.created_by || "-" %></dd>
+        </div>
+        <% if parent %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Parent version</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">v<%= parent.version %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+  </div>
+
+  <div class="mt-8 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h2 class="text-lg font-medium text-gray-900"><%= parent ? "Promotion Diff" : "Strategy Content" %></h2>
+      <% if parent %>
+        <p class="mt-1 text-sm text-gray-500">Current v<%= parent.version %> (left) vs. proposed v<%= @strategy_version.version %> (right).</p>
+      <% end %>
+    </div>
+    <% if parent %>
+      <div class="grid grid-cols-1 gap-4 border-t border-gray-200 p-4 lg:grid-cols-2">
+        <pre class="overflow-x-auto rounded-lg bg-red-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= JSON.pretty_generate(parent.content) %></pre>
+        <pre class="overflow-x-auto rounded-lg bg-green-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= JSON.pretty_generate(@strategy_version.content) %></pre>
+      </div>
+    <% else %>
+      <div class="border-t border-gray-200 p-4">
+        <pre class="overflow-x-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= JSON.pretty_generate(@strategy_version.content) %></pre>
+      </div>
+    <% end %>
+  </div>
+
+  <% if @strategy_version.pending_review? && policy(@strategy).update? %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Approve</h3>
+        <p class="mt-1 text-sm text-gray-500">Approving promotes this candidate into active use and retires the current version.</p>
+        <div class="mt-4">
+          <%= button_to "Approve and Promote", approve_strategy_review_path(@strategy, @strategy_version), method: :post, class: "rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500" %>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Reject</h3>
+        <p class="mt-1 text-sm text-gray-500">Rejecting keeps the current version active and removes this candidate from promotion.</p>
+        <div class="mt-4">
+          <%= button_to "Reject", reject_strategy_review_path(@strategy, @strategy_version), method: :post, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Edit &amp; Resubmit</h3>
+        <p class="mt-1 text-sm text-gray-500">Save a reviewer-edited replacement candidate. The current pending version will be superseded.</p>
+        <%= form_with url: strategy_review_path(@strategy, @strategy_version), method: :patch, local: true, class: "mt-4 space-y-4" do |form| %>
+          <div>
+            <%= form.label "strategy_version[change_notes]", "Change notes", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field "strategy_version[change_notes]", class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
+          </div>
+          <div>
+            <%= form.label "strategy_version[reasoning]", "Reasoning", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area "strategy_version[reasoning]", rows: 4, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", value: @strategy_version.reasoning %>
+          </div>
+          <div>
+            <%= form.label "strategy_version[content]", "Content", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area "strategy_version[content]", rows: 16, class: "mt-1 block w-full rounded-md border-0 px-3 py-2 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm", value: JSON.pretty_generate(@strategy_version.content) %>
+          </div>
+          <div>
+            <%= form.submit "Save edited variant", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

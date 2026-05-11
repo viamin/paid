@@ -186,5 +186,27 @@ RSpec.describe Strategy do
         expect(version.version).to eq(1)
       end
     end
+
+    describe "#create_pending_version!" do
+      it "creates a candidate version without promoting it" do
+        strategy = create(:strategy, :global)
+
+        version = strategy.create_pending_version!(content: { "mode" => "single" })
+
+        expect(version.version).to eq(1)
+        expect(version.promotion_state).to eq("candidate")
+        expect(strategy.reload.current_version).to be_nil
+      end
+    end
+
+    describe "#pending_reviews" do
+      it "returns candidate versions awaiting review" do
+        strategy = create(:strategy, :global)
+        candidate = create(:strategy_version, :candidate, strategy: strategy)
+        create(:strategy_version, :rejected, strategy: strategy)
+
+        expect(strategy.pending_reviews).to contain_exactly(candidate)
+      end
+    end
   end
 end

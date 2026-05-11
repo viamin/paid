@@ -53,6 +53,20 @@ class Strategy < ApplicationRecord
     end
   end
 
+  def create_pending_version!(attributes = {})
+    with_lock do
+      next_version = (strategy_versions.maximum(:version) || 0) + 1
+      safe_attributes = attributes.except(:version, "version")
+      safe_attributes[:promotion_state] ||= "candidate"
+
+      strategy_versions.create!(safe_attributes.merge(version: next_version))
+    end
+  end
+
+  def pending_reviews
+    strategy_versions.pending_review
+  end
+
   private
 
   def set_account_from_project
