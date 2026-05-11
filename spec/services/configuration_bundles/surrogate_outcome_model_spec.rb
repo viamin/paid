@@ -402,5 +402,24 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
       expect(prediction.predicted_quality_score).to be > 0.0
       expect(prediction.trained_at).to be_present
     end
+
+    it "predicts from a JSON-round-tripped trained state payload" do
+      rows = [
+        build_row(
+          goal: "create_pr", agent_type: "claude_code", quality_score: 0.92, success: true,
+          experiment_features: { "knowledge.token_budget" => 8000.0 }
+        )
+      ]
+      model = described_class.train(dataset: build_dataset(rows))
+      payload = JSON.parse(JSON.generate(described_class.serialize_trained_state(model.trained_state)))
+
+      prediction = described_class.call(
+        bundle_definition: bundle_definition(experiments: { "knowledge.token_budget" => { "value" => 8000 } }),
+        trained_state: payload
+      )
+
+      expect(prediction.predicted_quality_score).to be > described_class::PRIOR_MEAN
+      expect(prediction.trained_at).to eq(model.trained_state.trained_at)
+    end
   end
 end

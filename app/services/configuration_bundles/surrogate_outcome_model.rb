@@ -30,7 +30,7 @@ module ConfigurationBundles
     attr_reader :trained_state
 
     def initialize(trained_state: nil)
-      @trained_state = trained_state
+      @trained_state = self.class.deserialize_trained_state(trained_state)
     end
 
     def self.train(dataset:)
@@ -39,6 +39,50 @@ module ConfigurationBundles
 
     def self.call(bundle_definition:, trained_state:)
       new(trained_state:).predict(bundle_definition:)
+    end
+
+    def self.serialize_trained_state(trained_state)
+      state = deserialize_trained_state(trained_state)
+      return if state.nil?
+
+      {
+        rows: state.rows.map do |row|
+          {
+            features: serialize_features(row.features),
+            quality_score: row.quality_score,
+            objective_score: row.objective_score,
+            success: row.success,
+            cost_cents: row.cost_cents,
+            duration_seconds: row.duration_seconds,
+            tokens_used: row.tokens_used,
+            weight: row.weight
+          }
+        end,
+        training_size: state.training_size,
+        trained_at: state.trained_at&.iso8601(9),
+        global_mean_objective: state.global_mean_objective,
+        global_mean_quality: state.global_mean_quality,
+        global_success_rate: state.global_success_rate
+      }
+    end
+
+    def self.deserialize_trained_state(trained_state)
+      case trained_state
+      when nil, TrainedState
+        trained_state
+      when Hash
+        state_hash = trained_state.deep_stringify_keys
+        TrainedState.new(
+          rows: Array(state_hash["rows"]).map { |row| deserialize_row(row) },
+          training_size: state_hash["training_size"],
+          trained_at: deserialize_time(state_hash["trained_at"]),
+          global_mean_objective: state_hash["global_mean_objective"],
+          global_mean_quality: state_hash["global_mean_quality"],
+          global_success_rate: state_hash["global_success_rate"]
+        )
+      else
+        raise ArgumentError, "unsupported trained_state payload: #{trained_state.class.name}"
+      end
     end
 
     def train(dataset:)
@@ -76,6 +120,68 @@ module ConfigurationBundles
     end
 
     private
+
+    def self.serialize_features(features)
+      {
+        goal: features.goal,
+        agent_type: features.agent_type,
+        provider_id: features.provider_id,
+        prompt_version_id: features.prompt_version_id,
+        custom_prompt_sha256: features.custom_prompt_sha256,
+        model_selection: features.model_selection,
+        has_model_selection: features.has_model_selection,
+        has_custom_prompt: features.has_custom_prompt,
+        has_mcp_servers: features.has_mcp_servers,
+        service_container_ids: features.service_container_ids,
+        mcp_servers: features.mcp_servers,
+        service_container_count: features.service_container_count,
+        mcp_server_count: features.mcp_server_count,
+        experiment_features: features.experiment_features
+      }
+    end
+
+    def self.deserialize_row(row)
+      row_hash = row.deep_stringify_keys
+
+      TrainingDataset::Row.new(
+        features: deserialize_features(row_hash["features"]),
+        quality_score: row_hash["quality_score"],
+        objective_score: row_hash["objective_score"],
+        success: row_hash["success"],
+        cost_cents: row_hash["cost_cents"],
+        duration_seconds: row_hash["duration_seconds"],
+        tokens_used: row_hash["tokens_used"],
+        weight: row_hash["weight"]
+      )
+    end
+
+    def self.deserialize_features(features)
+      feature_hash = features.deep_stringify_keys
+
+      FeatureExtractor::FeatureVector.new(
+        goal: feature_hash["goal"],
+        agent_type: feature_hash["agent_type"],
+        provider_id: feature_hash["provider_id"],
+        prompt_version_id: feature_hash["prompt_version_id"],
+        custom_prompt_sha256: feature_hash["custom_prompt_sha256"],
+        model_selection: feature_hash["model_selection"],
+        has_model_selection: feature_hash["has_model_selection"],
+        has_custom_prompt: feature_hash["has_custom_prompt"],
+        has_mcp_servers: feature_hash["has_mcp_servers"],
+        service_container_ids: feature_hash["service_container_ids"],
+        mcp_servers: feature_hash["mcp_servers"],
+        service_container_count: feature_hash["service_container_count"],
+        mcp_server_count: feature_hash["mcp_server_count"],
+        experiment_features: feature_hash["experiment_features"] || {}
+      )
+    end
+
+    def self.deserialize_time(value)
+      return value if value.is_a?(Time)
+      return if value.blank?
+
+      Time.iso8601(value)
+    end
 
     def find_matches(query_features)
       trained_state.rows.filter_map do |row|
