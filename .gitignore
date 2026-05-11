@@ -45,6 +45,7 @@
 
 # Ignore key files for decrypting credentials and more.
 /config/*.key
+/config/credentials/*.key
 
 
 /app/assets/builds/*
@@ -199,5 +200,7 @@ __pycache__/
 # Database backups
 /backups/
 
-# Dev Container feature lockfile (machine-generated, not reproducible across machines)
+ # Dev Container feature lockfile (machine-generated, not reproducible across machines)
 .devcontainer/devcontainer-lock.json
+
+
