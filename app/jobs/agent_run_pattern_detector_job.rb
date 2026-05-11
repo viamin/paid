@@ -30,6 +30,13 @@ class AgentRunPatternDetectorJob < ApplicationJob
         pattern_count: patterns.size,
         goals: patterns.map(&:goal).uniq
       )
+    rescue => e
+      Rails.logger.warn(
+        message: "agent_run_patterns.detection_failed_for_account",
+        account_id: account.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round

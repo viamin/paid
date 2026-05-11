@@ -108,6 +108,32 @@ RSpec.describe AgentRunPatterns::Notify do
       end
     end
 
+    context "with failure_streak and sub-1.0 failure rate" do
+      let(:streak_pattern) do
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :failure_streak,
+          goal: "enhance_issue",
+          severity: :error,
+          details: {
+            streak_length: 4,
+            total_runs: 5,
+            failure_rate: 0.8,
+            error_messages: [ "Error" ]
+          }
+        )
+      end
+
+      it "displays the failure rate as a correct percentage" do
+        described_class.call(account: account, patterns: [ streak_pattern ], diagnoses: diagnoses)
+
+        notification = Notification.find_by(
+          account: account,
+          source: "agent_run_pattern_detector"
+        )
+        expect(notification.description).to include("80%")
+      end
+    end
+
     context "when patterns clear" do
       it "resolves notifications for goals no longer failing" do
         described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
@@ -118,6 +144,28 @@ RSpec.describe AgentRunPatterns::Notify do
 
         remaining = Notification.where(account: account, source: "agent_run_pattern_detector").active
         expect(remaining.count).to eq(0)
+      end
+
+      it "does not resolve notifications when only some goals have cleared" do
+        second_pattern = AgentRunPatterns::Detect::Pattern.new(
+          type: :failure_streak,
+          goal: "create_pr",
+          severity: :error,
+          details: { streak_length: 3, total_runs: 3, failure_rate: 1.0, error_messages: [ "Error" ] }
+        )
+        described_class.call(
+          account: account,
+          patterns: [ pattern, second_pattern ],
+          diagnoses: diagnoses
+        )
+
+        expect(Notification.where(account: account, source: "agent_run_pattern_detector").active.count).to eq(1)
+
+        # Only enhance_issue still failing; create_pr cleared
+        described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
+
+        remaining = Notification.where(account: account, source: "agent_run_pattern_detector").active
+        expect(remaining.count).to eq(1)
       end
     end
   end

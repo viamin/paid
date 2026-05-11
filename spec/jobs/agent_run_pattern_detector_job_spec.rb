@@ -61,5 +61,34 @@ RSpec.describe AgentRunPatternDetectorJob do
         expect(AgentRunPatterns::Notify).not_to have_received(:call)
       end
     end
+
+    context "when detection raises for one account" do
+      let!(:other_account) { create(:account) }
+
+      before do
+        allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_raise(StandardError, "boom")
+        allow(AgentRunPatterns::Detect).to receive(:call).with(account: other_account).and_return([])
+      end
+
+      it "continues processing remaining accounts" do
+        expect { described_class.perform_now }.not_to raise_error
+
+        expect(AgentRunPatterns::Detect).to have_received(:call).with(account: other_account)
+      end
+
+      it "logs a warning for the failed account" do
+        allow(Rails.logger).to receive(:warn)
+
+        described_class.perform_now
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "agent_run_patterns.detection_failed_for_account",
+            account_id: account.id,
+            error_class: "StandardError"
+          )
+        )
+      end
+    end
   end
 end

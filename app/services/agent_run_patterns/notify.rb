@@ -49,8 +49,8 @@ module AgentRunPatterns
         account: account,
         source: NOTIFICATION_SOURCE
       ).active.each do |notification|
-        notification_goal = notification.metadata&.dig("goals", 0)
-        next if active_goals.include?(notification_goal)
+        notification_goals = Array(notification.metadata&.dig("goals"))
+        next if notification_goals.any? { |g| active_goals.include?(g) }
 
         Notifications::Resolve.call(
           account: account,
@@ -100,7 +100,7 @@ module AgentRunPatterns
 
       case pattern.type
       when :failure_streak
-        "#{goal}: #{details[:streak_length]} consecutive failures (#{details[:failure_rate].to_i * 100}% of #{details[:total_runs]} runs)"
+        "#{goal}: #{details[:streak_length]} consecutive failures (#{(details[:failure_rate] * 100).round}% of #{details[:total_runs]} runs)"
       when :high_failure_rate
         "#{goal}: #{details[:failure_count]}/#{details[:total_count]} failures (#{(details[:failure_rate] * 100).round(0)}% rate)"
       when :error_cluster
