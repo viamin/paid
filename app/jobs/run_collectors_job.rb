@@ -40,7 +40,7 @@ class RunCollectorsJob < ApplicationJob
   rescue StandardError => e
     begin
       project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
-      KnowledgeArtifact.burst_artifact_counts_cache(project.id) if project
+      KnowledgeArtifact.bust_artifact_counts_cache(project.id) if project
     rescue StandardError => update_error
       Rails.logger.error(
         message: "knowledge.job_status_update_failed",
@@ -75,7 +75,7 @@ class RunCollectorsJob < ApplicationJob
         statuses: statuses
       )
     end
-    KnowledgeArtifact.burst_artifact_counts_cache(project.id) if terminal
+    KnowledgeArtifact.bust_artifact_counts_cache(project.id) if terminal
   rescue StandardError => e
     Rails.logger.error(message: "knowledge.status_update_failed", project_id: project.id, error: e.message)
     raise

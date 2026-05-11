@@ -32,7 +32,7 @@ class KnowledgeArtifact < ApplicationRecord
     "project_artifact_counts/#{project_id}"
   end
 
-  def self.burst_artifact_counts_cache(project_id)
+  def self.bust_artifact_counts_cache(project_id)
     Rails.cache.delete(artifact_counts_cache_key(project_id))
   end
 
