@@ -3398,6 +3398,63 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "failure recovery callback" do
+    it "enqueues failure recovery when transitioning to a failure status" do
+      agent_run = create(:agent_run, :running, error_message: nil)
+
+      expect {
+        agent_run.fail!(error: "RateLimit: exceeded quota")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "failed",
+          "error_message" => "RateLimit: exceeded quota"
+        )
+      )
+    end
+
+    it "enqueues failure recovery when transitioning to completed" do
+      agent_run = create(:agent_run, :running, started_at: 1.minute.ago)
+
+      expect {
+        agent_run.complete!
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including("status" => "completed")
+      )
+    end
+
+    it "captures the timeout status in the enqueued snapshot" do
+      agent_run = create(:agent_run, :running, goal: "create_issue")
+
+      expect {
+        agent_run.update!(status: "timeout", error_message: "Agent execution timed out")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "timeout",
+          "error_message" => "Agent execution timed out"
+        )
+      )
+    end
+
+    it "does not enqueue failure recovery for retried transitions" do
+      agent_run = create(:agent_run, :failed)
+
+      expect {
+        agent_run.retry!
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
+    end
+
+    it "does not enqueue failure recovery when status does not change" do
+      agent_run = create(:agent_run, :running)
+
+      expect {
+        agent_run.update!(branch_name: "feature/test")
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
+    end
+  end
+
   describe "#pause!" do
     it "transitions a running run to paused with violation context" do
       agent_run = create(:agent_run, :running)

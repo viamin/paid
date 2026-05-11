@@ -36,6 +36,8 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       event = OrchestrationDecision.last
       expect(event.actor).to eq("timeout_auto_retry")
       expect(event.context["decision_status"]).to eq("applied")
+      expect(event.inputs["retry_attempt"]).to eq(1)
+      expect(event.outputs["retry_attempt"]).to eq(1)
     end
 
     it "enqueues ProcessRunQueueJob" do
@@ -59,7 +61,9 @@ RSpec.describe RetryTimedOutIssueGoalJob do
 
       expect(agent_run.reload.error_message)
         .to eq("Auto-retry limit reached (#{described_class::MAX_RETRIES} retries)")
-      expect(OrchestrationDecision.last.context["decision_status"]).to eq("noop")
+      event = OrchestrationDecision.last
+      expect(event.context["decision_status"]).to eq("noop")
+      expect(event.inputs["retry_attempt"]).to eq(described_class::MAX_RETRIES + 1)
     end
 
     it "does not retry a non-issue-goal run" do
@@ -148,6 +152,7 @@ RSpec.describe RetryTimedOutIssueGoalJob do
 
       expect(AgentRun.count).to eq(2) # original + existing active, no new retry
       expect(agent_run.reload.status).to eq("retried")
+      expect(OrchestrationDecision.last.outputs["retry_attempt"]).to eq(1)
     end
   end
 end
