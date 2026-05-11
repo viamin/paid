@@ -56,6 +56,7 @@ class ProcessRunQueueJob < ApplicationJob
       starts_count = 0
       iterations = 0
       skipped_ids = Set.new
+      blocked_user_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
       seed_auto_pick_queue
@@ -67,7 +68,10 @@ class ProcessRunQueueJob < ApplicationJob
         # per-user capacity before claiming. This avoids an unnecessary claim +
         # unclaim cycle (and its associated broadcasts/metrics) for runs that
         # can't start yet.
-        next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
+        next_run = AgentRun.peek_next_queued_run(
+          exclude_ids: skipped_ids.to_a,
+          exclude_user_ids: blocked_user_ids.to_a
+        )
 
         break unless next_run
 
@@ -84,7 +88,10 @@ class ProcessRunQueueJob < ApplicationJob
         end
 
         unless user_has_capacity?(user)
-          skipped_ids.add(next_run.id)
+          # Exclude the whole owner for the rest of this pass so a deep
+          # backlog for a saturated user cannot consume the iteration budget
+          # one queued row at a time.
+          blocked_user_ids.add(user.id)
           next
         end
 

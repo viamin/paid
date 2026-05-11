@@ -246,6 +246,31 @@ RSpec.describe ProcessRunQueueJob do
       expect(eligible_run.reload.status).to eq("queued")
     end
 
+    it "bulk-skips a blocked owner's backlog so later runnable owners are still reached" do
+      stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(max_concurrent_runs: 1)
+      create(:agent_run, :running, project: blocked_project)
+      10.times do |i|
+        create(:agent_run, :queued, project: blocked_project, created_at: (20 - i).minutes.ago)
+      end
+
+      eligible_project = create(:project)
+      eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ eligible_run.id ])
+    end
+
     it "does not start queued runs when user is at capacity" do
       project = create(:project, auto_pick_enabled: true)
       user = project.created_by
