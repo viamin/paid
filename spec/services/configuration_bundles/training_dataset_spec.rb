@@ -5,6 +5,27 @@ require "rails_helper"
 RSpec.describe ConfigurationBundles::TrainingDataset do
   let(:project) { create(:project) }
 
+  describe "#build query shape", :no_db do
+    it "orders by the bundle outcome timestamp using a qualified column" do
+      scope = instance_double(ActiveRecord::Relation)
+      preloaded_scope = instance_double(ActiveRecord::Relation)
+      limited_scope = instance_double(ActiveRecord::Relation)
+
+      allow(scope).to receive(:preload).with(:configuration_bundle, agent_run: :project).and_return(preloaded_scope)
+      allow(preloaded_scope).to receive(:order)
+        .with(BundleOutcome.arel_table[:created_at].desc)
+        .and_return(preloaded_scope)
+      allow(preloaded_scope).to receive(:limit).with(described_class::MAX_ROWS).and_return(limited_scope)
+      allow(limited_scope).to receive(:each)
+
+      described_class.call(scope: scope)
+
+      expect(scope).to have_received(:preload).with(:configuration_bundle, agent_run: :project)
+      expect(preloaded_scope).to have_received(:order).with(BundleOutcome.arel_table[:created_at].desc)
+      expect(preloaded_scope).to have_received(:limit).with(described_class::MAX_ROWS)
+    end
+  end
+
   def build_outcome_row(overrides = {})
     quality_score = overrides.fetch(:quality_score, 0.8)
     cost_cents = overrides.fetch(:cost_cents, 40)

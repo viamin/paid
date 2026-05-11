@@ -38,7 +38,11 @@ module ConfigurationBundles
       rows = []
       feature_names = Set.new
 
-      scope.includes(:configuration_bundle, agent_run: :project).order(created_at: :desc).limit(MAX_ROWS).each do |outcome|
+      scope
+        .preload(:configuration_bundle, agent_run: :project)
+        .order(BundleOutcome.arel_table[:created_at].desc)
+        .limit(MAX_ROWS)
+        .each do |outcome|
         definition = outcome.configuration_bundle&.definition
         next unless definition.is_a?(Hash)
 
@@ -57,7 +61,7 @@ module ConfigurationBundles
           tokens_used: outcome.tokens_used,
           weight: recency_weight(outcome)
         )
-      end
+        end
 
       Dataset.new(rows: rows, feature_names: feature_names.to_a.sort, size: rows.size)
     end
