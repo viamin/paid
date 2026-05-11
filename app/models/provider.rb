@@ -27,17 +27,22 @@ class Provider < ApplicationRecord
     "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter",
                       opencode_model_provider: "openrouter" },
     "anthropic" => { label: "Anthropic", base_url: "https://api.anthropic.com", service_type: "anthropic",
-                     opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic" },
+                     opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
+                     opencode_model_provider: "anthropic" },
     "openai" => { label: "OpenAI", base_url: "https://api.openai.com/v1", service_type: "openai",
-                  kilocode_provider_id: "openai" },
+                  kilocode_provider_id: "openai", opencode_model_provider: "openai" },
     "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception",
-                     kilocode_provider_id: "inception" },
-    "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek" },
-    "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral" },
-    "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai" },
-    "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai" },
+                     kilocode_provider_id: "inception", opencode_model_provider: "inception" },
+    "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek",
+                    opencode_model_provider: "deepseek" },
+    "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
+                   opencode_model_provider: "mistral" },
+    "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
+               opencode_model_provider: "xai" },
+    "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
+               opencode_model_provider: "zai" },
     "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding",
-                      kilocode_provider_id: "zai-coding-plan" }
+                      kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai_coding" }
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
