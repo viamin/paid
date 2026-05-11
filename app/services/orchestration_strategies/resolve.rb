@@ -41,6 +41,10 @@ module OrchestrationStrategies
         account: account,
         fallback_strategy_type: strategy_type
       )
+    rescue ArgumentError
+      # Experiment may have been completed/cancelled between lookup and assignment;
+      # fall through to persisted_or_fallback_strategy.
+      nil
     end
 
     def active_experiment

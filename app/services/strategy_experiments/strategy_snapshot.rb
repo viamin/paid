@@ -20,27 +20,20 @@ module StrategyExperiments
 
     def deserialize(snapshot, account: nil, fallback_strategy_type: nil)
       data = snapshot.deep_stringify_keys
-      strategy = persisted_strategy_for(data)
-      return strategy if strategy
 
+      # Always reconstruct from snapshot data to preserve point-in-time configuration.
+      # Returning the live DB record would defeat A/B testing if the strategy was
+      # modified after the experiment started.
       OrchestrationStrategy.new(
         id: data["id"],
         strategy_type: data["strategy_type"] || fallback_strategy_type,
         name: data["name"] || fallback_strategy_type.to_s.titleize,
         version: data["version"] || 1,
-        configuration: data.fetch("configuration"),
+        configuration: data.fetch("configuration") { raise ArgumentError, "snapshot missing 'configuration' for strategy #{data['strategy_type']}" },
         active: data.fetch("active", true),
         account: resolved_account(account, data["account_id"])
       )
     end
-
-    def persisted_strategy_for(data)
-      strategy_id = data["id"]
-      return unless strategy_id.present?
-
-      OrchestrationStrategy.find_by(id: strategy_id)
-    end
-    private_class_method :persisted_strategy_for
 
     def resolved_account(account, account_id)
       return account if account && account.id.to_s == account_id.to_s
