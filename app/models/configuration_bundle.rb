@@ -109,6 +109,8 @@ class ConfigurationBundle < ApplicationRecord
   end
 
   def definition_is_object
+    return if definition.nil?
+
     validate_json_object(:definition)
   end
 

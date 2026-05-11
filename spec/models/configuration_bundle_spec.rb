@@ -30,6 +30,13 @@ RSpec.describe ConfigurationBundle do
       expect(bundle.errors[:definition]).to include("must be an object")
     end
 
+    it "does not add a duplicate object error when definition is missing" do
+      bundle = build(:configuration_bundle, definition: nil)
+
+      expect(bundle).not_to be_valid
+      expect(bundle.errors[:definition]).to eq([ "can't be blank" ])
+    end
+
     it "requires context to be a JSON object" do
       bundle = build(:configuration_bundle, context: [])
 
