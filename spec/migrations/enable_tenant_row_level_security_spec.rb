@@ -10,6 +10,7 @@ require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recom
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experiment_tables")
 require Rails.root.join("db/migrate/20260507211918_enable_rls_on_strategies_and_strategy_versions")
+require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
 require Rails.root.join("db/migrate/20260508014445_create_configuration_bundles")
 require Rails.root.join("db/migrate/20260508020000_add_runtime_fields_to_configuration_bundles")
 
@@ -94,6 +95,7 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
     issue_merge_subscriptions_migration.up unless issue_merge_subscriptions_have_rls?
     strategy_experiment_tables_migration.up unless strategy_experiment_tables_have_rls?
     strategy_rls_migration.up unless strategies_have_rls?
+    FixStrategiesRlsInfiniteRecursion.new.up
   end
 
   def issue_merge_subscriptions_have_rls?
