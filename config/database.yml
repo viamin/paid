@@ -1,3 +1,11 @@
+<%
+require File.expand_path("config/worktree_database_names", Dir.pwd)
+
+development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name
+development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name
+test_database = Paid::WorktreeDatabaseNames.test_name
+%>
+
 # PostgreSQL. Versions 9.3 and up are supported.
 #
 # Install the pg driver:
@@ -28,10 +36,10 @@ default: &default
 development:
   primary: &primary_development
     <<: *default
-    database: paid_development
+    database: <%= development_primary_database %>
   cable:
     <<: *primary_development
-    database: paid_development_cable
+    database: <%= development_cable_database %>
     migrations_paths: db/cable_migrate
 
   # The specified database role being used to connect to PostgreSQL.
@@ -66,7 +74,7 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: paid_test
+  database: <%= test_database %>
   # Disable prepared statements in tests to avoid cached-plan failures when
   # order-dependent examples recreate or change schema objects mid-suite.
   prepared_statements: false

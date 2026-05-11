@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../config/worktree_database_names"
+
+puts "development: #{Paid::WorktreeDatabaseNames.development_primary_name}"
+puts "cable: #{Paid::WorktreeDatabaseNames.development_cable_name}"
+puts "test: #{Paid::WorktreeDatabaseNames.test_name}"
+puts "suffix: #{Paid::WorktreeDatabaseNames.suffix || '(none)'}"
