@@ -57,6 +57,14 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(log_truncator_source, File.join(dir, "lib", "paid", "log_truncator.rb"))
 
     write_executable(
+      File.join(dir, "bin", "ensure-worktree-databases"),
+      <<~BASH
+        #!/usr/bin/env bash
+        exit 0
+      BASH
+    )
+
+    write_executable(
       File.join(dir, "bin", "dev"),
       <<~BASH
         #!/usr/bin/env bash

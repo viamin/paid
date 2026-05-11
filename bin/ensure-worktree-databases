@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT" || exit
+
+# When DATABASE_URL is set the user has pinned their checkout to a specific
+# database.  Probing DB_HOST / DB_USERNAME would target the wrong server, so
+# skip automatic database creation entirely — Rails will use DATABASE_URL.
+if [[ -n "${DATABASE_URL:-}" ]]; then
+  echo "DATABASE_URL is set — skipping automatic worktree database creation."
+  exit 0
+fi
+
+db_names() {
+  ruby <<'RUBY'
+require File.expand_path("config/worktree_database_names", Dir.pwd)
+
+puts Paid::WorktreeDatabaseNames.development_primary_name
+puts Paid::WorktreeDatabaseNames.development_cable_name
+puts Paid::WorktreeDatabaseNames.test_name
+RUBY
+}
+
+mapfile -t DB_NAMES < <(db_names)
+DEV_DB="${DB_NAMES[0]}"
+CABLE_DB="${DB_NAMES[1]}"
+TEST_DB="${DB_NAMES[2]}"
+
+APP_DB_USER="${DB_USERNAME:-${DB_USER:-paid}}"
+APP_DB_PASSWORD="${DB_PASSWORD:-paid}"
+APP_DB_HOST="${DB_HOST:-}"
+ADMIN_DB_USER="${DB_ADMIN_USERNAME:-${POSTGRES_USER:-$APP_DB_USER}}"
+ADMIN_DB_PASSWORD="${DB_ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-$APP_DB_PASSWORD}}"
+ADMIN_DB_HOST="${DB_ADMIN_HOST:-$APP_DB_HOST}"
+MAINTENANCE_DB="${DB_ADMIN_DATABASE:-postgres}"
+CREATOR_PASSWORD=""
+CREATOR_ARGS=()
+IDENTIFIER_FORMAT='^[A-Za-z0-9_]+$'
+MAX_IDENTIFIER_LENGTH=63
+
+psql_base_args() {
+  local host="$1"
+  local user="$2"
+  local db="$3"
+  local -a args=(-U "$user" -d "$db" -v ON_ERROR_STOP=1 -q --no-align --tuples-only)
+  if [[ -n "$host" ]]; then
+    args=(-h "$host" "${args[@]}")
+  fi
+  printf '%s\0' "${args[@]}"
+}
+
+run_psql() {
+  local password="$1"
+  shift
+
+  PGPASSWORD="$password" psql "$@"
+}
+
+query_psql() {
+  local password="$1"
+  shift
+
+  PGPASSWORD="$password" psql "$@" 2>/dev/null
+}
+
+validate_identifier() {
+  local kind="$1"
+  local value="$2"
+  local source="$3"
+
+  if [[ ! "$value" =~ $IDENTIFIER_FORMAT || "${#value}" -gt "$MAX_IDENTIFIER_LENGTH" ]]; then
+    echo "Invalid ${kind} ${value@Q} from ${source}. Only letters, numbers, and underscores up to ${MAX_IDENTIFIER_LENGTH} characters are allowed." >&2
+    exit 1
+  fi
+}
+
+app_can_create_databases() {
+  can_create_databases "$APP_DB_HOST" "$APP_DB_USER" "$APP_DB_PASSWORD"
+}
+
+can_create_databases() {
+  local host="$1"
+  local user="$2"
+  local password="$3"
+  local -a args
+  mapfile -d '' -t args < <(psql_base_args "$host" "$user" "$MAINTENANCE_DB")
+
+  local createdb_flag
+  createdb_flag="$(query_psql "$password" "${args[@]}" -c "SELECT rolcreatedb FROM pg_roles WHERE rolname = current_user")"
+  [[ "$createdb_flag" == "t" ]]
+}
+
+database_exists() {
+  local db_name="$1"
+  local creator_password="$2"
+  shift 2
+  local -a args=("$@")
+
+  [[ "$(query_psql "$creator_password" "${args[@]}" -c "SELECT 1 FROM pg_database WHERE datname = '$db_name'")" == "1" ]]
+}
+
+create_database() {
+  local db_name="$1"
+  local creator_password="$2"
+  shift 2
+  local -a args=("$@")
+
+  echo "Creating database ${db_name}..."
+  run_psql "$creator_password" "${args[@]}" -c "CREATE DATABASE \"$db_name\" OWNER \"$APP_DB_USER\""
+}
+
+use_creator() {
+  local host="$1"
+  local user="$2"
+  local password="$3"
+
+  mapfile -d '' -t CREATOR_ARGS < <(psql_base_args "$host" "$user" "$MAINTENANCE_DB")
+  CREATOR_PASSWORD="$password"
+}
+
+validate_identifier "database name" "$DEV_DB" "PAID_DEVELOPMENT_DATABASE / worktree derivation"
+validate_identifier "database name" "$CABLE_DB" "PAID_DEVELOPMENT_CABLE_DATABASE / worktree derivation"
+validate_identifier "database name" "$TEST_DB" "PAID_TEST_DATABASE / worktree derivation"
+validate_identifier "role name" "$APP_DB_USER" "DB_USERNAME / DB_USER"
+
+if app_can_create_databases; then
+  use_creator "$APP_DB_HOST" "$APP_DB_USER" "$APP_DB_PASSWORD"
+elif can_create_databases "$ADMIN_DB_HOST" "$ADMIN_DB_USER" "$ADMIN_DB_PASSWORD"; then
+  use_creator "$ADMIN_DB_HOST" "$ADMIN_DB_USER" "$ADMIN_DB_PASSWORD"
+elif [[ "$APP_DB_HOST" == "postgres" ]] && can_create_databases "$APP_DB_HOST" "postgres" "postgres"; then
+  use_creator "$APP_DB_HOST" "postgres" "postgres"
+elif [[ "$APP_DB_HOST" == "postgres" ]] && can_create_databases "$APP_DB_HOST" "paid_admin" "paid_admin"; then
+  use_creator "$APP_DB_HOST" "paid_admin" "paid_admin"
+else
+  echo "Unable to ensure worktree databases: application role ${APP_DB_USER} lacks CREATEDB and no admin credentials are configured." >&2
+  echo "Set DB_ADMIN_USERNAME / DB_ADMIN_PASSWORD so setup can create branch-specific databases." >&2
+  exit 1
+fi
+
+for db_name in "$DEV_DB" "$CABLE_DB" "$TEST_DB"; do
+  if database_exists "$db_name" "$CREATOR_PASSWORD" "${CREATOR_ARGS[@]}"; then
+    continue
+  fi
+
+  create_database "$db_name" "$CREATOR_PASSWORD" "${CREATOR_ARGS[@]}"
+done
