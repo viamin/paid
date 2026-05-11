@@ -97,7 +97,7 @@ module ScalingExperiments
           "issue_id" => run.issue_id,
           "status" => run.status,
           "iterations" => run.iterations.to_i,
-          "duration_seconds" => run.duration_seconds,
+          "duration_seconds" => run.duration_seconds.to_f,
           "cost_cents" => run.cost_cents.to_i,
           "tokens_input" => run.tokens_input.to_i,
           "tokens_output" => run.tokens_output.to_i,

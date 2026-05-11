@@ -1765,7 +1765,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_10_023311) do
     t.index ["project_id", "created_at"], name: "idx_scaling_experiment_assignments_project_recent"
     t.index ["project_id", "outcome_status", "created_at"], name: "idx_scaling_experiment_assignments_project_status"
     t.index ["scaling_experiment_id", "workflow_id"], name: "idx_scaling_experiment_assignments_unique", unique: true
-    t.index ["scaling_observation_id"], name: "idx_scaling_experiment_assignments_observation"
+    t.index ["scaling_observation_id"], name: "idx_scaling_experiment_assignments_observation", where: "(scaling_observation_id IS NOT NULL)"
   end
 
   create_table "scaling_experiments", comment: "Controlled orchestration experiments for measuring how feature outcomes change as the agent count changes.", force: :cascade do |t|
