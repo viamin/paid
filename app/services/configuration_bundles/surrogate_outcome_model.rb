@@ -53,7 +53,7 @@ module ConfigurationBundles
           trained_at: Time.current,
           global_mean_objective: weighted_mean(rows.map(&:objective_score), rows.map(&:weight), total_weight),
           global_mean_quality: weighted_mean(rows.map(&:quality_score), rows.map(&:weight), total_weight),
-          global_success_rate: rows.count(&:success).to_f / rows.size
+          global_success_rate: weighted_mean(rows.map { |r| r.success ? 1.0 : 0.0 }, rows.map(&:weight), total_weight)
         )
       end
 
@@ -169,14 +169,10 @@ module ConfigurationBundles
     end
 
     def weighted_average(matches)
-      total_weight = matches.sum { |m| m[:similarity] * m[:row].weight }
-      return nil if total_weight.zero?
+      pairs = matches.filter_map { |m| yield(m).then { |v| [ v, m[:similarity] * m[:row].weight ] if v.to_i.positive? } }
+      return nil if pairs.empty?
 
-      values = matches.filter_map { |m| yield(m).then { |v| v if v.to_i.positive? } }
-      weights = matches.filter_map { |m| yield(m).then { |v| m[:similarity] * m[:row].weight if v.to_i.positive? } }
-      return nil if weights.sum.zero?
-
-      values.zip(weights).sum { |v, w| v * w } / weights.sum
+      pairs.sum { |v, w| v * w } / pairs.sum { |_v, w| w }
     end
 
     def prior_prediction
