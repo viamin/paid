@@ -1,0 +1,124 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe AgentRunPatterns::Notify do
+  describe ".call" do
+    let(:account) { create(:account) }
+
+    let(:pattern) do
+      AgentRunPatterns::Detect::Pattern.new(
+        type: :failure_streak,
+        goal: "enhance_issue",
+        severity: :error,
+        details: {
+          streak_length: 5,
+          total_runs: 5,
+          failure_rate: 1.0,
+          error_messages: [ "No LLM provider produced an issue enhancement" ]
+        }
+      )
+    end
+
+    let(:diagnosis) do
+      AgentRunPatterns::Diagnose::Diagnosis.new(
+        root_cause: "LLM Provider Error",
+        category: "llm_provider",
+        confidence: 1.0,
+        remediation: "Check provider health and credentials."
+      )
+    end
+
+    let(:diagnoses) { { "enhance_issue" => diagnosis } }
+
+    before do
+      allow(Notifications::Broadcasting).to receive(:broadcast_notification_updates)
+    end
+
+    context "with detected patterns" do
+      it "publishes an in-app notification" do
+        described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
+
+        notification = Notification.find_by(
+          account: account,
+          source: "agent_run_pattern_detector"
+        )
+        expect(notification).to be_present
+        expect(notification.severity).to eq("error")
+        expect(notification.title).to include("enhance_issue")
+        expect(notification.title).to include("LLM Provider Error")
+      end
+
+      it "includes pattern metadata" do
+        described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
+
+        notification = Notification.find_by(
+          account: account,
+          source: "agent_run_pattern_detector"
+        )
+        expect(notification.metadata).to include(
+          "pattern_count" => 1,
+          "goals" => [ "enhance_issue" ],
+          "worst_goal" => "enhance_issue"
+        )
+      end
+
+      it "includes root cause in description" do
+        described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
+
+        notification = Notification.find_by(
+          account: account,
+          source: "agent_run_pattern_detector"
+        )
+        expect(notification.description).to include("LLM Provider Error")
+        expect(notification.description).to include("Check provider health")
+      end
+    end
+
+    context "with no patterns" do
+      it "does not publish a notification" do
+        described_class.call(account: account, patterns: [], diagnoses: {})
+
+        expect(Notification.where(account: account, source: "agent_run_pattern_detector")).not_to exist
+      end
+    end
+
+    context "with warning severity" do
+      let(:warning_pattern) do
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :high_failure_rate,
+          goal: "create_pr",
+          severity: :warning,
+          details: {
+            failure_count: 4,
+            total_count: 5,
+            failure_rate: 0.8
+          }
+        )
+      end
+
+      it "publishes a warning notification" do
+        described_class.call(account: account, patterns: [ warning_pattern ], diagnoses: {})
+
+        notification = Notification.find_by(
+          account: account,
+          source: "agent_run_pattern_detector"
+        )
+        expect(notification.severity).to eq("warning")
+      end
+    end
+
+    context "when patterns clear" do
+      it "resolves notifications for goals no longer failing" do
+        described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
+
+        expect(Notification.where(account: account, source: "agent_run_pattern_detector").active.count).to eq(1)
+
+        described_class.call(account: account, patterns: [], diagnoses: {})
+
+        remaining = Notification.where(account: account, source: "agent_run_pattern_detector").active
+        expect(remaining.count).to eq(0)
+      end
+    end
+  end
+end

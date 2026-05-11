@@ -1,0 +1,65 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe AgentRunPatternDetectorJob do
+  describe "#perform" do
+    let!(:account) { create(:account) }
+
+    before do
+      allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
+      allow(AgentRunPatterns::Diagnose).to receive(:call)
+      allow(AgentRunPatterns::Notify).to receive(:call)
+    end
+
+    it "is enqueued on the maintenance queue" do
+      expect(described_class.new.queue_name).to eq("maintenance")
+    end
+
+    it "detects patterns for each account" do
+      described_class.perform_now
+
+      expect(AgentRunPatterns::Detect).to have_received(:call).with(account: account)
+    end
+
+    context "when patterns are detected" do
+      let(:pattern) do
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :failure_streak,
+          goal: "enhance_issue",
+          severity: :error,
+          details: { streak_length: 3, total_runs: 3, failure_rate: 1.0, error_messages: [ "Error" ] }
+        )
+      end
+
+      before do
+        allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_return([ pattern ])
+      end
+
+      it "diagnoses each detected pattern" do
+        described_class.perform_now
+
+        expect(AgentRunPatterns::Diagnose).to have_received(:call).with(pattern)
+      end
+
+      it "notifies for the account" do
+        described_class.perform_now
+
+        expect(AgentRunPatterns::Notify).to have_received(:call).with(
+          account: account,
+          patterns: [ pattern ],
+          diagnoses: hash_including("enhance_issue")
+        )
+      end
+    end
+
+    context "when no patterns are detected" do
+      it "does not call diagnose or notify" do
+        described_class.perform_now
+
+        expect(AgentRunPatterns::Diagnose).not_to have_received(:call)
+        expect(AgentRunPatterns::Notify).not_to have_received(:call)
+      end
+    end
+  end
+end
