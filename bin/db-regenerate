@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# frozen_string_literal: true
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${APP_ROOT}/bin/lib/db_helpers.sh"
 cd "$APP_ROOT" || exit
 
 PG_HOST="${DB_HOST:-postgres}"
 PG_USER="${DB_USER:-paid}"
 PG_PASSWORD="${DB_PASSWORD:-paid}"
+DB_HOST="$PG_HOST"
+DB_USER="$PG_USER"
+DB_PASSWORD="$PG_PASSWORD"
+BACKEND="local"
 PG_DB="paid_development"
 PG_CABLE_DB="paid_development_cable"
 PRACTICE_DB="paid_practice"
@@ -22,16 +26,6 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-
-run_sql() {
-  local db="$1"; shift
-  PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$db" -q --no-align --tuples-only "$@"
-}
-
-run_sql_exec() {
-  local db="$1"; shift
-  PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USER" -d "$db" -q "$@"
-}
 
 db_exists() {
   local db="$1"
@@ -51,50 +45,7 @@ terminate_connections() {
 
 get_rls_tables() {
   local db="$1"
-  run_sql "$db" -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true ORDER BY tablename" 2>/dev/null
-}
-
-disable_rls() {
-  local db="$1"
-  info "Disabling RLS on all tables in $db..."
-  local tables
-  tables="$(get_rls_tables "$db")"
-  if [[ -z "$tables" ]]; then
-    info "No RLS tables found in $db"
-    CACHED_RLS_TABLES=""
-    return 0
-  fi
-  CACHED_RLS_TABLES="$tables"
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE ROW LEVEL SECURITY;" 2>/dev/null || true
-  done <<< "$tables"
-}
-
-enable_rls() {
-  local db="$1"
-  local tables="${2:-${CACHED_RLS_TABLES}}"
-  info "Re-enabling RLS on all tables in $db..."
-  if [[ -z "$tables" ]]; then
-    warn "No cached RLS table list. Querying pg_policy for tables with policies..."
-    tables="$(run_sql "$db" -c "
-      SELECT DISTINCT c.relname
-      FROM pg_class c
-      JOIN pg_policy p ON p.polrelid = c.oid
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind = 'r'
-      ORDER BY c.relname
-    " 2>/dev/null)"
-    if [[ -z "$tables" ]]; then
-      info "No tables need RLS in $db"
-      return 0
-    fi
-  fi
-  while IFS= read -r table; do
-    [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" ENABLE ROW LEVEL SECURITY;" 2>/dev/null
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" FORCE ROW LEVEL SECURITY;" 2>/dev/null
-  done <<< "$tables"
+  db_helpers_get_rls_tables "$db"
 }
 
 get_row_counts() {
@@ -160,14 +111,15 @@ create_backup() {
 
 verify_backup_row_counts() {
   info "Verifying backup contains data..."
-  local listing
-  listing="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "^;" || true)"
-  if [[ "$listing" -lt 10 ]]; then
-    error "Backup appears to have too few table entries ($listing). Something may be wrong."
-    error "Aborting to prevent data loss."
+  local toc_entries data_entries
+  toc_entries="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "." || true)"
+  data_entries="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "TABLE DATA" || true)"
+  if [[ "$data_entries" -lt 20 ]]; then
+    error "Backup appears to have too few TABLE DATA entries ($data_entries). Something may be wrong."
+    error "Expected 50+ tables with data. Aborting to prevent data loss."
     exit 1
   fi
-  info "Backup contains $listing table entries - looks valid"
+  info "Backup contains $data_entries TABLE DATA entries ($toc_entries total TOC entries) - looks valid"
 }
 
 reset_sequences() {
@@ -242,6 +194,10 @@ restore_into() {
   "
   info "FK constraints dropped"
 
+  local data_tables
+  data_tables="$(db_helpers_get_data_tables "$db_name")" || true
+  disable_triggers "$db_name" "$data_tables" 1 "Disabling triggers on data tables..."
+
   info "Truncating target tables..."
   run_sql_exec "$db_name" -c "
     DO \$\$
@@ -263,11 +219,14 @@ restore_into() {
 
   info "Restoring data..."
   local restore_output
-  restore_output="$(PGPASSWORD="$PG_PASSWORD" pg_restore \
+  local restore_failed=0
+  if ! restore_output="$(PGPASSWORD="$PG_PASSWORD" pg_restore \
     -h "$PG_HOST" -U "$PG_USER" \
     --data-only --no-owner --no-privileges \
     -d "$db_name" \
-    "$backup_path" 2>&1)" || true
+    "$backup_path" 2>&1)"; then
+    restore_failed=1
+  fi
 
   local errors
   errors="$(echo "$restore_output" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
@@ -277,18 +236,32 @@ restore_into() {
       error "  $line"
     done
     error "Data may be incomplete. Check backup and target database."
+    restore_failed=1
   fi
+
+  enable_triggers "$db_name" "$data_tables" 1 "Re-enabling triggers on data tables..."
 
   info "Re-creating FK constraints..."
   local recreated=0
+  local fk_failures=0
   while IFS='|' read -r conname tbl def; do
     [[ -z "$conname" ]] && continue
-    run_sql_exec "$db_name" -c "ALTER TABLE ${tbl} ADD CONSTRAINT ${conname} ${def};" 2>/dev/null || {
+    run_sql_exec "$db_name" -c "ALTER TABLE ${tbl} ADD CONSTRAINT ${conname} ${def};" >/dev/null || {
       warn "  Could not recreate constraint ${conname} on ${tbl}"
+      fk_failures=$((fk_failures + 1))
     }
     recreated=$((recreated + 1))
   done <<< "$fk_defs"
   info "Recreated $recreated/$fk_count FK constraints"
+
+  if [[ "$fk_failures" -gt 0 ]]; then
+    error "Failed to recreate ${fk_failures} foreign key constraint(s)"
+    return 1
+  fi
+
+  if [[ "$restore_failed" -ne 0 ]]; then
+    return 1
+  fi
 
   info "Restore into $db_name complete"
 }
@@ -332,20 +305,13 @@ cleanup() {
     warn "Script exited with error (code $exit_code)."
     warn "Attempting to re-enable RLS on $PG_DB..."
     if [[ -n "$CACHED_RLS_TABLES" ]]; then
-      enable_rls "$PG_DB" "$CACHED_RLS_TABLES" 2>/dev/null || true
+      enable_rls "$PG_DB" "$CACHED_RLS_TABLES" 0 CACHED_RLS_TABLES
     else
       warn "No cached RLS table list. Restoring RLS from pg_policy..."
       local policy_tables
-      policy_tables="$(run_sql "$PG_DB" -c "
-        SELECT DISTINCT c.relname
-        FROM pg_class c
-        JOIN pg_policy p ON p.polrelid = c.oid
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind = 'r'
-        ORDER BY c.relname
-      " 2>/dev/null)" || true
+      policy_tables="$(db_helpers_get_policy_tables "$PG_DB")" || true
       if [[ -n "$policy_tables" ]]; then
-        enable_rls "$PG_DB" "$policy_tables" 2>/dev/null || true
+        enable_rls "$PG_DB" "$policy_tables" 0 CACHED_RLS_TABLES
       fi
     fi
     if [[ "${PRACTICE_MODE:-}" == "1" ]] && db_exists "$PRACTICE_DB"; then
@@ -422,14 +388,17 @@ stop_app
 
 # Step 2: Disable RLS so pg_dump can see all data
 info "Current row counts (with RLS disabled after this step):"
-disable_rls "$PG_DB"
+disable_rls "$PG_DB" 1 CACHED_RLS_TABLES "Disabling RLS on all tables in ${PG_DB}..."
+if [[ -z "$CACHED_RLS_TABLES" ]]; then
+  info "No RLS tables found in $PG_DB"
+fi
 
 # Step 3: Backup
 create_backup "full"
 verify_backup_row_counts
 
 # Step 4: Re-enable RLS on source DB (we have the backup now)
-enable_rls "$PG_DB"
+enable_rls "$PG_DB" "$CACHED_RLS_TABLES" 1 CACHED_RLS_TABLES "Re-enabling RLS on all tables in ${PG_DB}..."
 
 # Step 5: Create target databases
 if [[ "$PRACTICE_MODE" == "1" ]]; then
@@ -483,7 +452,10 @@ else
 fi
 
 # Step 7: Disable RLS on target for data restoration
-disable_rls "$TARGET_DB"
+disable_rls "$TARGET_DB" 1 CACHED_RLS_TABLES "Disabling RLS on all tables in ${TARGET_DB}..."
+if [[ -z "$CACHED_RLS_TABLES" ]]; then
+  info "No RLS tables found in $TARGET_DB"
+fi
 
 # Step 8: Restore data
 restore_into "$TARGET_DB" "$BACKUP_PATH"
@@ -499,7 +471,10 @@ if [[ "$PRACTICE_MODE" == "1" ]]; then
 
   SOURCE_RLS_TABLES="$CACHED_RLS_TABLES"
   info "Disabling RLS on source DB for comparison..."
-  disable_rls "$PG_DB"
+  disable_rls "$PG_DB" 1 CACHED_RLS_TABLES "Disabling RLS on all tables in ${PG_DB}..."
+  if [[ -z "$CACHED_RLS_TABLES" ]]; then
+    info "No RLS tables found in $PG_DB"
+  fi
 
   info "Source DB row counts (RLS disabled):"
   get_row_counts "$PG_DB" | while IFS= read -r line; do
@@ -509,11 +484,11 @@ if [[ "$PRACTICE_MODE" == "1" ]]; then
   compare_row_counts "$PG_DB" "$TARGET_DB" || true
 
   info "Re-enabling RLS on source DB..."
-  enable_rls "$PG_DB" "$SOURCE_RLS_TABLES"
+  enable_rls "$PG_DB" "$SOURCE_RLS_TABLES" 1 CACHED_RLS_TABLES "Re-enabling RLS on all tables in ${PG_DB}..."
 fi
 
 # Step 10: Re-enable RLS on target
-enable_rls "$TARGET_DB"
+enable_rls "$TARGET_DB" "$CACHED_RLS_TABLES" 1 CACHED_RLS_TABLES "Re-enabling RLS on all tables in ${TARGET_DB}..."
 
 # Step 11: Post-RLS steps
 if [[ "$PRACTICE_MODE" == "1" ]]; then

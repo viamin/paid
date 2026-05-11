@@ -31,8 +31,9 @@
 !/tmp/pids/
 !/tmp/pids/.keep
 
-# Ignore auto-generated cable structure (uses schema.rb via fx gem)
+# Ignore auto-generated cable schema (managed by fx gem via cable_schema.rb)
 /db/cable_structure.sql
+/db/structure.sql
 
 # Ignore storage (uploaded files in development and any SQLite databases).
 /storage/*
