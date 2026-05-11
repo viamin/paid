@@ -5,23 +5,24 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
-      # Exception class names that indicate database connectivity issues.
-      # Checked against both error.class.name (local execution) and
-      # error.message (containerized execution, where ContainerError wraps
-      # the original class name in its message string).
+      # Exception class names that indicate database issues preventing
+      # `bin/rails routes` from booting. Checked against both
+      # error.class.name (local execution) and error.message (containerized
+      # execution, where ContainerError wraps the original class name).
       DATABASE_ERROR_CLASS_NAMES = [
         "ActiveRecord::ConnectionNotEstablished",
         "ActiveRecord::DatabaseConnectionError",
         "ActiveRecord::NoDatabaseError",
+        "ActiveRecord::AdapterNotFound",
         "Mysql2::Error::ConnectionError",
         "SQLite3::CantOpenException",
         "Sequel::DatabaseConnectionError",
         "PG::ConnectionBad"
       ].freeze
 
-      # Message patterns that unmistakably indicate database connection issues.
-      # Intentionally narrow to avoid false-positives from non-DB services
-      # that use similar "could not connect" wording.
+      # Message patterns that indicate database issues preventing
+      # `bin/rails routes` from booting. Intentionally narrow to avoid
+      # false-positives from non-DB services that use similar wording.
       DATABASE_ERROR_MESSAGE_PATTERNS = [
         /connection to server .+(?:PGSQL|PostgreSQL|5432).* failed/i,
         /could not connect to server:.*(?:PostgreSQL|5432|pg_hba)/i,
@@ -29,7 +30,9 @@ module Knowledge
         /unknown database/i,
         /unable to open database file/i,
         /no such database/i,
-        /database .* does not exist/i
+        /database .* does not exist/i,
+        /database adapter.*(?:not found|not loaded)/i,
+        /no such table/i
       ].freeze
 
       def collect
@@ -112,7 +115,7 @@ module Knowledge
 
         run_routes_command
       rescue StandardError => error
-        raise unless database_connection_error?(error)
+        raise unless routes_boot_error?(error)
 
         # Always preserve prior route artifacts on DB skip. We cannot
         # reliably detect whether config/routes.rb changed: containerized
@@ -138,6 +141,7 @@ module Knowledge
 
       def routes_command_env
         {
+          "DATABASE_URL" => "sqlite3::memory:",
           "BUNDLE_PATH" => "/tmp/bundle",
           "BUNDLE_APP_CONFIG" => "/tmp/bundle-config"
         }
@@ -207,7 +211,7 @@ module Knowledge
         raise teardown_error if original_error.nil? && teardown_error
       end
 
-      def database_connection_error?(error)
+      def routes_boot_error?(error)
         each_error_in_chain(error).any? do |current_error|
           matches_database_error_class?(current_error) ||
             matches_database_error_message?(current_error)

@@ -20,8 +20,11 @@ module Knowledge
       end
 
       def call
+        project = session.project
+        cache_invalidation_needed = false
+        result = nil
+
         ActiveRecord::Base.transaction do
-          project = session.project
           project_version = find_or_create_project_version!(project)
           collector_run = find_or_create_collector_run!(project_version)
 
@@ -29,10 +32,17 @@ module Knowledge
           artifacts = create_artifacts!(project, collector_run)
 
           collector_run.mark_completed!(count: artifacts.size)
-          KnowledgeArtifact.bust_artifact_counts_cache(project.id)
+          cache_invalidation_needed = true
 
-          { collector_run: collector_run, artifacts_count: artifacts.size }
+          result = { collector_run: collector_run, artifacts_count: artifacts.size }
         end
+        return result unless cache_invalidation_needed
+
+        ActiveRecord.after_all_transactions_commit do
+          KnowledgeArtifact.bust_artifact_counts_cache(project.id) if project&.id
+        end
+
+        result
       end
 
       private
