@@ -36,11 +36,11 @@ module ConfigurationBundles
 
     EXPLORATION_WEIGHT = 0.4
 
-    attr_reader :agent_run, :surrogate_model
+    attr_reader :agent_run
 
     def initialize(agent_run:, surrogate_model: nil)
       @agent_run = agent_run
-      @surrogate_model = surrogate_model || trained_surrogate_model
+      @surrogate_model = surrogate_model
     end
 
     def self.call(...)
@@ -73,6 +73,10 @@ module ConfigurationBundles
     end
 
     private
+
+    def surrogate_model
+      @surrogate_model ||= trained_surrogate_model
+    end
 
     def score_candidate(variant_by_experiment_id)
       definition = bundle_definition(variant_by_experiment_id)
