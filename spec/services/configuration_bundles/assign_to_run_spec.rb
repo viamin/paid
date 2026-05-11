@@ -254,6 +254,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       "agent_type" => agent_run.agent_type,
       "provider_id" => agent_run.provider_id,
       "prompt_version_id" => agent_run.prompt_version_id,
+      "service_container_ids" => [],
+      "mcp_servers" => [ filesystem_mcp_snapshot ],
       "experiments" => {
         "knowledge.token_budget" => {
           "configuration_experiment_id" => experiment.id,
@@ -280,6 +282,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
         "schema_version" => 1,
         "goal" => agent_run.goal,
         "agent_type" => agent_run.agent_type,
+        "provider_id" => agent_run.provider_id,
+        "prompt_version_id" => agent_run.prompt_version_id,
         "experiments" => {}
       },
       fingerprint: "incorrect",

@@ -176,6 +176,7 @@ module ConfigurationBundles
 
     def optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
       return false unless definition.is_a?(Hash)
+      return false unless optimizer_definition_matches_run?(definition)
       return true if fingerprint.blank?
 
       return true if fingerprint == computed_fingerprint
@@ -187,6 +188,32 @@ module ConfigurationBundles
         computed_fingerprint: computed_fingerprint
       )
       false
+    end
+
+    def optimizer_definition_matches_run?(definition)
+      return true if definition.except("experiments") == expected_optimizer_definition_attributes
+
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_payload_definition_mismatch",
+        agent_run_id: agent_run.id
+      )
+      false
+    end
+
+    def expected_optimizer_definition_attributes
+      canonicalize(
+        {
+          schema_version: 1,
+          goal: agent_run.goal,
+          agent_type: agent_run.agent_type,
+          provider_id: agent_run.provider_id,
+          prompt_version_id: agent_run.prompt_version_id,
+          custom_prompt_sha256: custom_prompt_sha256,
+          model_selection: model_selection_definition,
+          service_container_ids: normalized_service_container_ids,
+          mcp_servers: normalized_mcp_servers
+        }.compact
+      )
     end
 
     def optimizer_selection

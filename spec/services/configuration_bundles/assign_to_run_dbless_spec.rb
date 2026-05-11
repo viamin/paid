@@ -45,7 +45,10 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       optimized_definition = selection_definition
       selection = optimizer_selection(definition: optimized_definition)
 
-      allow(service).to receive(:optimizer_selection).and_return(selection)
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        expected_optimizer_definition_attributes: optimized_definition.except("experiments")
+      )
       expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
       expect(agent_run).to receive(:update!).with(expected_update_arguments)
 
@@ -57,7 +60,10 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)
       computed_fingerprint = bundle_fingerprint(optimized_definition)
 
-      allow(service).to receive(:optimizer_selection).and_return(selection)
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        expected_optimizer_definition_attributes: optimized_definition.except("experiments")
+      )
       expect_bundle_lookup(definition: optimized_definition, fingerprint: computed_fingerprint)
       expect(agent_run).to receive(:update!).with(expected_update_arguments)
 
@@ -85,6 +91,29 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
       service.call
     end
+
+    it "falls back to rebuilding the bundle payload when the optimizer definition omits required run attributes" do
+      fallback_definition = selection_definition.merge(
+        "experiments" => {
+          "knowledge.token_budget" => { "value" => 8000 }
+        }
+      )
+      incomplete_definition = selection_definition.except("provider_id")
+      selection = optimizer_selection(
+        definition: incomplete_definition,
+        fingerprint: bundle_fingerprint(incomplete_definition),
+        variant_by_experiment_id: { 42 => Object.new }
+      )
+
+      allow(service).to receive(:optimizer_selection).and_return(selection)
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
   end
 
   def selection_definition
@@ -92,6 +121,10 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       "schema_version" => 1,
       "goal" => "create_pr",
       "agent_type" => "claude_code",
+      "provider_id" => 12,
+      "prompt_version_id" => 34,
+      "service_container_ids" => [],
+      "mcp_servers" => [],
       "experiments" => {}
     }
   end
