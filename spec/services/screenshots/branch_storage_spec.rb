@@ -265,6 +265,7 @@ RSpec.describe Screenshots::BranchStorage, :no_db do
         nothing_staged?: false,
         git: nil
       )
+      allow(File).to receive(:directory?).and_return(true)
     end
 
     it "removes the PR directory from the screenshots branch" do
@@ -274,7 +275,59 @@ RSpec.describe Screenshots::BranchStorage, :no_db do
     it "does nothing when the branch does not exist" do
       allow(storage).to receive(:branch_exists?).and_return(false)
 
+      storage.delete_pr_screenshots(pr_number: 42)
+
+      expect(storage).not_to have_received(:git)
+    end
+
+    it "returns early when PR directory does not exist on branch" do
+      allow(File).to receive(:directory?).and_return(false)
+
+      storage.delete_pr_screenshots(pr_number: 42)
+
+      expect(storage).not_to have_received(:git).with(anything, "add", anything)
+    end
+
+    it "returns early when nothing is staged after removal" do
+      allow(storage).to receive(:nothing_staged?).and_return(true)
+
+      storage.delete_pr_screenshots(pr_number: 42)
+
+      expect(storage).not_to have_received(:git).with(anything, "commit", anything, anything)
+    end
+
+    it "retries on push failure by reapplying the deletion" do
+      push_count = 0
+      allow(storage).to receive(:git) do |dir, *args|
+        if args == [ "push", "origin", "screenshots" ]
+          push_count += 1
+          raise Screenshots::BranchStorage::PushError, "push failed" if push_count == 1
+        end
+      end
+      allow(storage).to receive_messages(nothing_staged?: false, system: true)
+
       expect { storage.delete_pr_screenshots(pr_number: 42) }.not_to raise_error
+      expect(push_count).to eq(2)
+    end
+
+    it "skips commit on retry when concurrent cleanup already removed files" do
+      push_attempts = 0
+      allow(storage).to receive(:git) do |dir, *args|
+        if args == [ "push", "origin", "screenshots" ]
+          push_attempts += 1
+          raise Screenshots::BranchStorage::PushError, "push failed" if push_attempts == 1
+        end
+      end
+      allow(storage).to receive(:system).and_return(true)
+      nothing_staged_calls = 0
+      allow(storage).to receive(:nothing_staged?) do
+        nothing_staged_calls += 1
+        nothing_staged_calls > 1
+      end
+
+      storage.delete_pr_screenshots(pr_number: 42)
+
+      expect(storage).to have_received(:git).with(anything, "commit", "-m", /cleanup/).once
     end
   end
 

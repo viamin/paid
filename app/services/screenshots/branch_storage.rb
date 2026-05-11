@@ -47,7 +47,14 @@ module Screenshots
         end
 
         git(git_dir, "commit", "-m", "screenshots: PR ##{pr_number} @ #{short_sha}")
-        push_with_retry(git_dir, branch_dir, screenshot_paths, pr_number, short_sha)
+        push_with_retry(git_dir) do
+          FileUtils.mkdir_p(File.join(git_dir, branch_dir))
+          screenshot_paths.each { |path| FileUtils.cp(path, File.join(git_dir, branch_dir)) }
+          git(git_dir, "add", branch_dir)
+          git(git_dir, "commit", "-m", "screenshots: PR ##{pr_number} @ #{short_sha}") unless nothing_staged?(git_dir)
+        end
+
+        build_urls(branch_dir, screenshot_paths)
       end
     end
 
@@ -88,7 +95,11 @@ module Screenshots
         return if nothing_staged?(git_dir)
 
         git(git_dir, "commit", "-m", "cleanup: remove screenshots for PR ##{pr_number}")
-        git(git_dir, "push", "origin", BRANCH_NAME)
+        push_with_retry(git_dir) do
+          FileUtils.rm_rf(pr_dir)
+          git(git_dir, "add", "screenshots")
+          git(git_dir, "commit", "-m", "cleanup: remove screenshots for PR ##{pr_number}") unless nothing_staged?(git_dir)
+        end
       end
     end
 
@@ -154,21 +165,17 @@ module Screenshots
       with_dates.max_by { |_, date| date }&.first || sha_dirs.last
     end
 
-    def push_with_retry(git_dir, branch_dir, screenshot_paths, pr_number, short_sha)
+    def push_with_retry(git_dir, &reapply)
       MAX_PUSH_ATTEMPTS.times do |attempt|
         begin
           git(git_dir, "push", "origin", BRANCH_NAME)
-          return build_urls(branch_dir, screenshot_paths)
+          return
         rescue PushError
           raise if attempt >= MAX_PUSH_ATTEMPTS - 1
 
           system("git", "fetch", "--depth=1", "origin", BRANCH_NAME, chdir: git_dir, out: File::NULL, err: File::NULL)
           git(git_dir, "reset", "--hard", "origin/#{BRANCH_NAME}")
-
-          FileUtils.mkdir_p(File.join(git_dir, branch_dir))
-          screenshot_paths.each { |path| FileUtils.cp(path, File.join(git_dir, branch_dir)) }
-          git(git_dir, "add", branch_dir)
-          git(git_dir, "commit", "-m", "screenshots: PR ##{pr_number} @ #{short_sha}") unless nothing_staged?(git_dir)
+          reapply.call
         end
       end
     end
