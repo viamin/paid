@@ -3319,6 +3319,50 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "failure recovery callback" do
+    it "invokes failure recovery when transitioning to a failure status" do
+      agent_run = create(:agent_run, :running, error_message: nil)
+
+      expect {
+        agent_run.fail!(error: "RateLimit: exceeded quota")
+      }.to change(FailureClassification, :count).by(1)
+        .and change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }.by(1)
+
+      decision = OrchestrationDecision.where(actor: "coordination_failure_recovery").last
+      expect(decision.decision_type).to eq("retry")
+      expect(decision.context["decision_status"]).to eq("applied")
+    end
+
+    it "invokes failure recovery when transitioning to completed" do
+      agent_run = create(:agent_run, :running, started_at: 1.minute.ago)
+
+      expect {
+        agent_run.complete!
+      }.to change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }.by(1)
+
+      decision = OrchestrationDecision.where(actor: "coordination_failure_recovery").last
+      expect(decision.decision_type).to eq("noop")
+      expect(decision.context["decision_status"]).to eq("noop")
+      expect(decision.outputs).to include("reason" => "non_failure_status")
+    end
+
+    it "does not invoke failure recovery for retried transitions" do
+      agent_run = create(:agent_run, :failed)
+
+      expect {
+        agent_run.retry!
+      }.not_to change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }
+    end
+
+    it "does not invoke failure recovery when status does not change" do
+      agent_run = create(:agent_run, :running)
+
+      expect {
+        agent_run.update!(branch_name: "feature/test")
+      }.not_to change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }
+    end
+  end
+
   describe "#pause!" do
     it "transitions a running run to paused with violation context" do
       agent_run = create(:agent_run, :running)

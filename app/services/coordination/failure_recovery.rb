@@ -45,7 +45,11 @@ module Coordination
     end
 
     def call
+      category = nil
+      action = nil
+
       unless failed_run?
+        action = "noop"
         persist_non_failure_decision
         return non_failure_result
       end
@@ -127,7 +131,7 @@ module Coordination
     end
 
     def persist_decision(classification, category, action)
-      OrchestrationDecision.record(
+      OrchestrationDecision.record!(
         project: agent_run.project,
         issue: agent_run.issue,
         agent_run: agent_run,
@@ -140,7 +144,7 @@ module Coordination
     end
 
     def persist_non_failure_decision
-      OrchestrationDecision.record(
+      OrchestrationDecision.record!(
         project: agent_run.project,
         issue: agent_run.issue,
         agent_run: agent_run,
@@ -220,6 +224,8 @@ module Coordination
 
     def orchestration_action_for(action)
       case action
+      when "noop"
+        "noop"
       when "retry_same_provider", "retry_alternate_provider", "reconfigure_and_retry"
         "retry"
       when "pause_and_notify"

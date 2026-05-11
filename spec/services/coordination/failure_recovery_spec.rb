@@ -54,6 +54,30 @@ RSpec.describe Coordination::FailureRecovery do
           "action_status" => "pending"
         )
       end
+
+      it "returns a failed result when applied decision persistence fails" do
+        service = described_class.new(agent_run: agent_run)
+        allow(service).to receive(:build_decision_result).and_return([])
+
+        expect {
+          result = service.call
+
+          expect(result).not_to be_success
+          expect(result.error).to include("must be an object")
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.inputs).to include(
+          "failure_category" => "rate_limit",
+          "chosen_action" => "retry_alternate_provider"
+        )
+        expect(decision.outputs).to include(
+          "chosen_action" => "retry_alternate_provider",
+          "error_class" => "ActiveRecord::RecordInvalid"
+        )
+      end
     end
 
     context "with a non-failure agent run" do
@@ -77,6 +101,17 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.decision_type).to eq("noop")
         expect(decision.context["decision_status"]).to eq("noop")
         expect(decision.outputs).to include("reason" => "non_failure_status")
+      end
+
+      it "returns a failed result when noop decision persistence fails" do
+        allow(OrchestrationDecision).to receive(:record!).and_raise(
+          ActiveRecord::RecordInvalid.new(OrchestrationDecision.new)
+        )
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result).not_to be_success
+        expect(result.error).to include("Validation failed")
       end
     end
 
