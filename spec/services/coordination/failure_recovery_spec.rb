@@ -74,7 +74,7 @@ RSpec.describe Coordination::FailureRecovery do
         }.to change(OrchestrationDecision, :count).by(1)
 
         decision = OrchestrationDecision.last
-        expect(decision.decision_type).to eq("retry")
+        expect(decision.decision_type).to eq("noop")
         expect(decision.context["decision_status"]).to eq("noop")
         expect(decision.outputs).to include("reason" => "non_failure_status")
       end
@@ -240,6 +240,11 @@ RSpec.describe Coordination::FailureRecovery do
         decision = OrchestrationDecision.last
         expect(decision.decision_type).to eq("escalate")
         expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.inputs).to include(
+          "failure_category" => "timeout",
+          "chosen_action" => "escalate_model"
+        )
+        expect(decision.outputs["chosen_action"]).to eq("escalate_model")
         expect(decision.outputs["error_class"]).to eq("ActiveRecord::RecordInvalid")
       end
     end
