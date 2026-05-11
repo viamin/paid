@@ -12,7 +12,17 @@ RSpec.describe Providers::TestAgent, :provider_smoke do
       ProviderSmokeHelpers.create_smoke_project!(user: user)
       provider = ProviderSmokeHelpers.build_provider!(user: user, scenario: scenario)
 
-      result = described_class.call(provider: provider)
+      result =
+        if scenario.diagnostic?
+          described_class.call(
+            provider: provider,
+            diagnostic_prompt: scenario.diagnostic_prompt,
+            diagnostic_timeout: scenario.diagnostic_timeout,
+            diagnostic_success_pattern: scenario.diagnostic_success_pattern
+          )
+        else
+          described_class.call(provider: provider)
+        end
 
       expect(result).to be_success, "#{scenario.name} smoke test failed: #{result.error_type} - #{result.message}"
     rescue ProviderSmokeHelpers::ScenarioUnavailableError => e
