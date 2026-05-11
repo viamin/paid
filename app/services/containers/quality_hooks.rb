@@ -4,9 +4,7 @@ module Containers
   module QualityHooks
     extend ActiveSupport::Concern
 
-    included do
-      DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
-    end
+    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
 
     def install_quality_hooks(git_ops, agent_run)
       language = detect_language(agent_run.project)

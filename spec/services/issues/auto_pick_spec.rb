@@ -39,7 +39,7 @@ RSpec.describe Issues::AutoPick do
     end
 
     it "creates a create_pr run when auto_enhance_enabled is false" do
-      issue = create(:issue, project: project, github_state: "open")
+      _issue = create(:issue, project: project, github_state: "open")
 
       result = described_class.new(project).call
 
