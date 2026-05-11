@@ -34,6 +34,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_ACTION: ${{ github.event.action }}
         run: |
           ruby <<'RUBY'
@@ -44,6 +45,7 @@ jobs:
           repo = ENV.fetch("GITHUB_REPOSITORY")
           pr_number = Integer(ENV.fetch("PR_NUMBER"))
           head_sha = ENV.fetch("HEAD_SHA")
+          head_ref = ENV.fetch("HEAD_REF")
           pr_action = ENV.fetch("PR_ACTION")
           token = ENV.fetch("GITHUB_TOKEN")
           output_path = ENV.fetch("GITHUB_OUTPUT")
@@ -73,7 +75,9 @@ jobs:
             ).fetch("workflow_runs")
 
             run = runs.find do |candidate|
-              candidate["head_sha"] == head_sha &&
+              next false unless candidate["head_sha"] == head_sha
+
+              candidate["head_branch"] == head_ref ||
                 candidate.fetch("pull_requests", []).any? { |pr| pr["number"] == pr_number }
             end
 
