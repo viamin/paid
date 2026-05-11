@@ -90,8 +90,6 @@ RSpec.describe OrchestrationStrategies::Defaults do
   describe ".feature_orchestration" do
     subject(:config) { described_class.feature_orchestration }
 
-    let(:workflow) { Workflows::FeatureOrchestrationWorkflow.allocate }
-
     it "preserves known failure types" do
       expect(config["known_failure_types"]).to eq(
         Workflows::AgentExecutionWorkflow::KNOWN_FAILURE_TYPES
@@ -118,26 +116,15 @@ RSpec.describe OrchestrationStrategies::Defaults do
     end
 
     it "preserves all planning outcomes returned by the workflow" do
-      outcomes = [
-        workflow.send(:planning_outcome_for, []),
-        workflow.send(:planning_outcome_for, [ { title: "One task" } ]),
-        workflow.send(:planning_outcome_for, [ { title: "Task one" }, { title: "Task two" } ]),
-        workflow.send(:planning_failure_outcome_for, "decompose_feature"),
-        workflow.send(:planning_failure_outcome_for, "create_sub_issues"),
-        workflow.send(:planning_failure_outcome_for, "update_planning_labels")
-      ]
+      mappings = Workflows::PlanningWorkflow.outcome_mappings
+      outcomes = mappings[:success] + mappings[:failure].values
 
       expect(config["planning_outcomes"]).to match_array(outcomes.uniq)
     end
 
     it "preserves all parallelization outcomes returned by the workflow" do
-      outcomes = [
-        workflow.send(:parallelization_outcome_for, []),
-        workflow.send(:parallelization_outcome_for, [ { title: "One task" } ]),
-        workflow.send(:parallelization_outcome_for, [ { title: "Task one" }, { title: "Task two" } ]),
-        workflow.send(:parallelization_failure_outcome_for, "build_sub_tasks"),
-        workflow.send(:parallelization_failure_outcome_for, "run_parallel_execution")
-      ]
+      mappings = Workflows::FeatureOrchestrationWorkflow.parallelization_outcome_mappings
+      outcomes = mappings[:success] + mappings[:failure].values
 
       expect(config["parallelization_outcomes"]).to match_array(outcomes.uniq)
     end

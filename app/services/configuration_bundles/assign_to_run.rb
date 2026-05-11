@@ -22,6 +22,7 @@ module ConfigurationBundles
     def call
       selection = optimizer_selection
       definition, fingerprint = selected_bundle_payload(selection)
+      log_selection_fingerprint_mismatch(selection:, fingerprint:) if selection
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(
@@ -56,7 +57,7 @@ module ConfigurationBundles
         status: "active",
         strategy: "runtime_snapshot",
         strategy_params: {},
-        context: {},
+        context: { "identity" => bundle_identity_metadata(definition) },
         fingerprint: fingerprint,
         definition: definition
       )
@@ -132,14 +133,14 @@ module ConfigurationBundles
     def selected_bundle_payload(selection)
       definition = selection&.definition
       fingerprint = selection&.fingerprint
-      computed_fingerprint = Digest::SHA256.hexdigest(JSON.generate(definition)) if definition.is_a?(Hash)
+      computed_fingerprint = bundle_fingerprint(definition) if definition.is_a?(Hash)
 
       if optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
         return [ definition, computed_fingerprint ]
       end
 
       fallback_definition = bundle_definition(selection&.variant_by_experiment_id)
-      [ fallback_definition, Digest::SHA256.hexdigest(JSON.generate(fallback_definition)) ]
+      [ fallback_definition, bundle_fingerprint(fallback_definition) ]
     end
 
     def optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
@@ -167,6 +168,17 @@ module ConfigurationBundles
         error: e.message
       )
       nil
+    end
+
+    def log_selection_fingerprint_mismatch(selection:, fingerprint:)
+      return if selection.fingerprint.blank? || selection.fingerprint == fingerprint
+
+      Rails.logger.warn(
+        message: "configuration_bundles.selection_fingerprint_mismatch",
+        agent_run_id: agent_run.id,
+        optimizer_fingerprint: selection.fingerprint,
+        resolved_fingerprint: fingerprint
+      )
     end
   end
 end

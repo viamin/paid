@@ -1766,7 +1766,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.index ["project_id", "created_at"], name: "idx_scaling_experiment_assignments_project_recent"
     t.index ["project_id", "outcome_status", "created_at"], name: "idx_scaling_experiment_assignments_project_status"
     t.index ["scaling_experiment_id", "workflow_id"], name: "idx_scaling_experiment_assignments_unique", unique: true
-    t.index ["scaling_observation_id"], name: "idx_scaling_experiment_assignments_observation_unique", unique: true, where: "(scaling_observation_id IS NOT NULL)"
+    t.index ["scaling_observation_id"], name: "idx_scaling_experiment_assignments_observation", where: "(scaling_observation_id IS NOT NULL)"
   end
 
   create_table "scaling_experiments", comment: "Controlled orchestration experiments for measuring how feature outcomes change as the agent count changes.", force: :cascade do |t|
@@ -3162,6 +3162,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
       CREATE TRIGGER knowledge_chunks_tsvector_update BEFORE INSERT OR UPDATE OF content ON public.knowledge_chunks FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('content_tsvector', 'pg_catalog.english', 'content')
   SQL
 
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
   create_trigger :logidze_on_projects, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_projects BEFORE INSERT OR UPDATE ON public.projects FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_polled_at,last_agent_run_at,last_github_activity_at,last_issue_sync_at,total_cost_cents,total_tokens_used}')
   SQL
@@ -3172,9 +3176,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
 
   create_trigger :logidze_on_user_settings, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_user_settings BEFORE INSERT OR UPDATE ON public.user_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

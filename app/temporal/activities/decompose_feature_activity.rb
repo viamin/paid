@@ -99,10 +99,11 @@ module Activities
         confidence: scope_result.confidence,
         sub_components: scope_result.sub_components
       }
-      decomposition_result = Coordination::DecompositionService.call(
+      decomposition_result = DecompositionService.call(
         title: issue.title,
         description: issue.body,
         sub_components: scope_result.sub_components,
+        project: project,
         account: project.account,
         policy_override: coordination_policy
       )
@@ -365,7 +366,7 @@ module Activities
     end
 
     def policy_source_present?(policy_source)
-      %w[experiment feature_orchestration].include?(policy_source)
+      policy_source.present? && !%w[defaults fallback].include?(policy_source)
     end
 
     def llm_strategy_outcome_for(policy_context)

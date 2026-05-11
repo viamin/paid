@@ -127,7 +127,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         )
       end
 
-      it "uses Coordination::DecompositionService instead of the LLM path" do
+      it "uses DecompositionService instead of the LLM path" do
         result = execute_with_workflow_context(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
           workflow_id: "orchestration-wf-1"
@@ -211,6 +211,52 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
     end
 
+    context "when an active coordination policy drives decomposition" do
+      let(:project) { create(:project, account: account) }
+      let(:account) { create(:account) }
+      let(:issue) do
+        create(
+          :issue,
+          project: project,
+          title: "Add notifications",
+          body: "Add database tables, service layer, API endpoints, and views for notifications."
+        )
+      end
+
+      before do
+        create(:coordination_policy, :active,
+          account: account,
+          project: nil,
+          policy_type: DecompositionService::POLICY_TYPE,
+          policy_key: DecompositionService::POLICY_KEY).tap do |policy|
+          policy.current_version.update!(
+            rules: { "enabled" => true, "min_components_to_decompose" => 2 },
+            parameters: { "max_tasks" => 2 }
+          )
+        end
+      end
+
+      it "marks coordination_policy_present and skips the LLM fallback" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          knowledge_context: knowledge_context,
+          workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+          workflow_id: "orchestration-wf-3"
+        )
+
+        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+        expect(result[:tasks].size).to eq(2)
+        expect(AgentHarness).not_to have_received(:send_message)
+        expect_policy_decomposition_logged(
+          workflow_name: "Workflows::FeatureOrchestrationWorkflow",
+          workflow_id: "orchestration-wf-3",
+          outcome: "policy_decomposed",
+          coordination_policy_present: true
+        )
+      end
+    end
+
     context "when strategy resolution raises and issue is below threshold" do
       before do
         allow(OrchestrationStrategies::Resolve).to receive(:call)
@@ -272,7 +318,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       before do
         allow(activity).to receive(:logger).and_return(logger)
         allow(ScopeAnalysis::Analyze).to receive(:call).and_return(scope_result)
-        allow(Coordination::DecompositionService).to receive(:call)
+        allow(DecompositionService).to receive(:call)
           .and_raise(StandardError, "decomposition failure")
       end
 

@@ -55,7 +55,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
     it "recomputes the fingerprint when the optimizer omits it" do
       optimized_definition = selection_definition
       selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)
-      computed_fingerprint = Digest::SHA256.hexdigest(JSON.generate(optimized_definition))
+      computed_fingerprint = bundle_fingerprint(optimized_definition)
 
       allow(service).to receive(:optimizer_selection).and_return(selection)
       expect_bundle_lookup(definition: optimized_definition, fingerprint: computed_fingerprint)
@@ -80,7 +80,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
       expect_bundle_lookup(
         definition: fallback_definition,
-        fingerprint: Digest::SHA256.hexdigest(JSON.generate(fallback_definition))
+        fingerprint: bundle_fingerprint(fallback_definition)
       )
 
       service.call
@@ -96,7 +96,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
     }
   end
 
-  def optimizer_selection(definition:, fingerprint: Digest::SHA256.hexdigest(JSON.generate(definition)), variant_by_experiment_id: {})
+  def optimizer_selection(definition:, fingerprint: bundle_fingerprint(definition), variant_by_experiment_id: {})
     ConfigurationBundles::Optimizer::Selection.new(
       definition: definition,
       fingerprint: fingerprint,
@@ -119,5 +119,9 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       fingerprint: fingerprint,
       definition: definition
     ).and_return(bundle)
+  end
+
+  def bundle_fingerprint(definition)
+    service.send(:bundle_fingerprint, definition)
   end
 end

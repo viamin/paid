@@ -199,7 +199,7 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -219,6 +219,7 @@ jobs:
           SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
           SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
           SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: bin/rails screenshots:cleanup_pr

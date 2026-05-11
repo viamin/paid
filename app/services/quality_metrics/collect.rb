@@ -240,6 +240,15 @@ module QualityMetrics
           update_existing: true
         )
       end
+
+      agent_run.strategy_experiment_assignments.find_each do |assignment|
+        StrategyExperiments::RecordResult.call(
+          strategy_experiment: assignment.strategy_experiment,
+          agent_run: agent_run,
+          quality_score: metric.composite_score,
+          update_existing: true
+        )
+      end
     end
 
     # Adds a new score to variant aggregates. Assumes caller holds the lock.

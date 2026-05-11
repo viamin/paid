@@ -10,6 +10,42 @@ RSpec.describe QualityMetrics::Collect do
       allow(QualityPause::Check).to receive(:call)
     end
 
+    def create_linked_scaling_assignments!(parent_workflow_id:)
+      agent_run.update!(parent_workflow_id: parent_workflow_id)
+      observation = create(:scaling_observation, project: agent_run.project, issue: agent_run.issue, workflow_id: parent_workflow_id)
+      experiment = create(:scaling_experiment, project: agent_run.project)
+      assignment = create(:scaling_experiment_assignment,
+        scaling_experiment: experiment,
+        project: agent_run.project,
+        issue: agent_run.issue,
+        scaling_observation: observation)
+      iteration_experiment = create(:scaling_experiment,
+        project: agent_run.project,
+        dimension: "iteration_count",
+        values_tested: [ 1, 3 ],
+        control_value: 1)
+      iteration_assignment = create(:scaling_experiment_assignment,
+        scaling_experiment: iteration_experiment,
+        project: agent_run.project,
+        issue: agent_run.issue,
+        scaling_observation: observation,
+        execution_plan: {
+          "dimension" => "iteration_count",
+          "requested_iteration_count" => 3
+        })
+
+      [ observation, assignment, iteration_assignment ]
+    end
+
+    def expect_scaling_result_refresh_for(*assignments, observation:)
+      assignments.each do |assignment|
+        expect(ScalingExperiments::RecordResult).to have_received(:call).with(
+          assignment: assignment,
+          scaling_observation: observation
+        )
+      end
+    end
+
     it "creates a quality metric for the agent run" do
       expect { described_class.call(agent_run: agent_run) }.to change(QualityMetric, :count).by(1)
     end
@@ -39,24 +75,15 @@ RSpec.describe QualityMetrics::Collect do
     end
 
     it "refreshes linked scaling experiment results for orchestration child runs" do
-      parent_workflow_id = "feature-wf-123"
-      agent_run.update!(parent_workflow_id: parent_workflow_id)
-      observation = create(:scaling_observation, project: agent_run.project, issue: agent_run.issue, workflow_id: parent_workflow_id)
-      experiment = create(:scaling_experiment, project: agent_run.project)
-      assignment = create(:scaling_experiment_assignment,
-        scaling_experiment: experiment,
-        project: agent_run.project,
-        issue: agent_run.issue,
-        scaling_observation: observation)
+      observation, assignment, iteration_assignment = create_linked_scaling_assignments!(
+        parent_workflow_id: "feature-wf-123"
+      )
 
       allow(ScalingExperiments::RecordResult).to receive(:call)
 
       described_class.call(agent_run: agent_run)
 
-      expect(ScalingExperiments::RecordResult).to have_received(:call).with(
-        assignment: assignment,
-        scaling_observation: observation
-      )
+      expect_scaling_result_refresh_for(assignment, iteration_assignment, observation:)
     end
 
     context "with create_pr goal" do
@@ -107,6 +134,24 @@ RSpec.describe QualityMetrics::Collect do
         metric = described_class.call(agent_run: agent_run)
 
         expect(metric.scores["agent_rerun_count"]).to eq(0.85)
+      end
+
+      it "records quality scores for linked strategy experiment assignments" do
+        experiment = create(:strategy_experiment,
+          account: agent_run.project.account,
+          strategy_name: "review_settings",
+          status: "running",
+          started_at: Time.current)
+        variant = create(:strategy_experiment_variant, strategy_experiment: experiment)
+        assignment = create(:strategy_experiment_assignment,
+          strategy_experiment: experiment,
+          strategy_experiment_variant: variant,
+          agent_run: agent_run)
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(assignment.reload.quality_score.to_f).to eq(metric.composite_score.to_f)
+        expect(variant.reload.sample_count).to eq(1)
       end
     end
 

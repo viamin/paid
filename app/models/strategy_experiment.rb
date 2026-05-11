@@ -4,7 +4,19 @@ require "zlib"
 
 class StrategyExperiment < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
-  STRATEGY_NAMES = %w[auto_pick auto_continue auto_review auto_merge].freeze
+  STRATEGY_NAMES = %w[
+    auto_pick
+    auto_continue
+    auto_review
+    auto_merge
+    review_settings
+    quality_gate
+    execution_timeouts
+    retry_policies
+    agent_settings
+    feature_orchestration
+    provider_resolution
+  ].freeze
   MAX_VARIANTS = 3
   ANALYSIS_INTERVAL = AbTest::ANALYSIS_INTERVAL
 

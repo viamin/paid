@@ -6,7 +6,22 @@ module ConfigurationBundles
   module BundleFingerprinting
     include Canonicalization
 
+    BUNDLE_IDENTITY_SCHEMA_VERSION = 1
+    BUNDLE_FINGERPRINT_ALGORITHM = "sha256"
+
     private
+
+    def bundle_fingerprint(definition)
+      Digest::SHA256.hexdigest(JSON.generate(canonicalize(definition)))
+    end
+
+    def bundle_identity_metadata(definition)
+      {
+        "fingerprint" => bundle_fingerprint(definition),
+        "fingerprint_algorithm" => BUNDLE_FINGERPRINT_ALGORITHM,
+        "schema_version" => BUNDLE_IDENTITY_SCHEMA_VERSION
+      }
+    end
 
     def custom_prompt_sha256
       return if agent_run.custom_prompt.blank?
