@@ -4,9 +4,17 @@ require "rails_helper"
 require "rake"
 
 # rubocop:disable RSpec/DescribeClass
-RSpec.describe "screenshots:capture" do
+RSpec.describe "screenshots:capture", :no_db do
   let(:task) { Rake::Task[task_name] }
   let(:task_name) { "screenshots:capture" }
+
+  around do |example|
+    original_project_id = ENV["PROJECT_ID"]
+    ENV.delete("PROJECT_ID")
+    example.run
+  ensure
+    original_project_id.nil? ? ENV.delete("PROJECT_ID") : ENV["PROJECT_ID"] = original_project_id
+  end
 
   before do
     Rails.application.load_tasks unless Rake::Task.task_defined?(task_name)
@@ -110,9 +118,7 @@ RSpec.describe "screenshots:capture" do
       ENV["CHANGED_FILES"] = "frontend/app.js"
       original_project_id = ENV["PROJECT_ID"]
       ENV["PROJECT_ID"] = "123"
-      project = instance_double(Project)
-
-      allow(Project).to receive(:find_by).with(id: "123").and_return(project)
+      project = stub_project_lookup(id: "123")
       allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).with(project:, repo_path: Dir.pwd).and_return(
         framework: :nextjs
       )
@@ -179,6 +185,17 @@ RSpec.describe "screenshots:capture" do
     let(:output_dir) { Dir.mktmpdir }
     let(:github_client) { instance_double(GithubClient) }
 
+    def stub_branch_storage
+      allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
+      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
+      branch_storage = instance_double(Screenshots::BranchStorage)
+      allow(Screenshots::BranchStorage).to receive(:new)
+        .with(repo: "acme/web", github_token: "ghp_test")
+        .and_return(branch_storage)
+      branch_storage
+    end
+
     around do |example|
       original_env = ENV.to_h.slice(
         "GITHUB_REPOSITORY",
@@ -224,23 +241,69 @@ RSpec.describe "screenshots:capture" do
     it "updates the PR comment even when no screenshots were captured" do
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
       allow(Screenshots::Storage).to receive(:configured?).and_return(false)
-      allow(Screenshots::Publish).to receive(:call)
+      allow(Screenshots::BranchStorage).to receive(:configured?).and_return(false)
+      allow(Screenshots::PrComment).to receive(:call)
 
       task.invoke
 
-      expect(Screenshots::Publish).to have_received(:call).with(
+      expect(Screenshots::PrComment).to have_received(:call).with(
         github_client: github_client,
         repo: "acme/web",
         pr_number: 42,
         commit_sha: "abc1234def5678",
-        screenshot_paths: []
+        screenshots: []
       )
     end
 
-    it "posts artifact fallback instructions when screenshots exist but storage is not configured" do
+    it "posts artifact fallback instructions when screenshots exist but no storage is configured" do
       File.write(File.join(output_dir, "dashboard.png"), "png")
       allow(GithubClient).to receive(:new).with(token: "ghp_test").and_return(github_client)
       allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(Screenshots::BranchStorage).to receive(:configured?).and_return(false)
+      allow(Screenshots::PrComment).to receive(:call)
+
+      expect { task.invoke }
+        .to output(/Posted artifact-only screenshot instructions for PR #42\./).to_stdout
+
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        github_client: github_client,
+        repo: "acme/web",
+        pr_number: 42,
+        commit_sha: "abc1234def5678",
+        screenshots: [],
+        artifact_name: "pr-screenshots"
+      )
+    end
+
+    it "publishes screenshots via branch storage when S3 is not configured" do
+      File.write(File.join(output_dir, "dashboard.png"), "png")
+      url = "https://raw.githubusercontent.com/acme/web/refs/heads/screenshots/screenshots/42/abc123/dashboard.png"
+      branch_storage = stub_branch_storage
+      allow(branch_storage).to receive_messages(
+        upload_all: [ { route_name: "dashboard", url: url } ],
+        previous_screenshots: {}
+      )
+      allow(Screenshots::PrComment).to receive(:call)
+
+      expect { task.invoke }
+        .to output(/Published 1 screenshot\(s\) to branch for PR #42\./).to_stdout
+
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        github_client: github_client,
+        repo: "acme/web",
+        pr_number: 42,
+        commit_sha: "abc1234def5678",
+        screenshots: [ { route_name: "dashboard", url: url } ],
+        previous_screenshots: {}
+      )
+    end
+
+    it "falls back to artifact instructions when branch storage push fails" do
+      File.write(File.join(output_dir, "dashboard.png"), "png")
+      branch_storage = stub_branch_storage
+      allow(branch_storage).to receive(:upload_all)
+        .and_raise(Screenshots::BranchStorage::PushError, "git push failed")
+      allow(Rails.logger).to receive(:warn)
       allow(Screenshots::PrComment).to receive(:call)
 
       expect { task.invoke }
@@ -328,19 +391,39 @@ RSpec.describe "screenshots:capture" do
       end
     end
 
-    it "deletes screenshots for the PR" do
+    it "deletes screenshots for the PR from S3 and branch" do
+      branch_storage = instance_double(Screenshots::BranchStorage)
       allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
       allow(storage).to receive(:delete_pr_screenshots)
+      allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
+      allow(Screenshots::BranchStorage).to receive(:new)
+        .with(repo: "acme/web", github_token: "ghp_test")
+        .and_return(branch_storage)
+      allow(branch_storage).to receive(:delete_pr_screenshots)
 
       expect { task.invoke }.to output(/Deleted screenshots for PR #42\./).to_stdout
       expect(storage).to have_received(:delete_pr_screenshots).with(org: "acme", repo: "web", pr_number: 42)
+      expect(branch_storage).to have_received(:delete_pr_screenshots).with(pr_number: 42)
     end
 
-    it "skips cleanup when storage is not configured" do
+    it "skips S3 cleanup when not configured but still cleans branch" do
+      branch_storage = instance_double(Screenshots::BranchStorage)
       allow(Screenshots::Storage).to receive(:configured?).and_return(false)
-      expect(Screenshots::Storage).not_to receive(:new)
+      allow(Screenshots::BranchStorage).to receive_messages(configured?: true, token: "ghp_test")
+      allow(Screenshots::BranchStorage).to receive(:new)
+        .with(repo: "acme/web", github_token: "ghp_test")
+        .and_return(branch_storage)
+      allow(branch_storage).to receive(:delete_pr_screenshots)
 
-      expect { task.invoke }.to output(/Skipping PR cleanup/).to_stdout
+      expect { task.invoke }.to output(/Deleted screenshots for PR #42\./).to_stdout
+      expect(branch_storage).to have_received(:delete_pr_screenshots).with(pr_number: 42)
+    end
+
+    it "skips cleanup when no storage is configured" do
+      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(Screenshots::BranchStorage).to receive(:configured?).and_return(false)
+
+      expect { task.invoke }.to output(/No screenshot storage configured/).to_stdout
     end
   end
 
@@ -364,3 +447,13 @@ RSpec.describe "screenshots:capture" do
   end
 end
 # rubocop:enable RSpec/DescribeClass
+
+def stub_project_lookup(id:)
+  project_class = stub_const("Project", Class.new do
+    def self.find_by(*)
+    end
+  end)
+  project = project_class.new
+  allow(project_class).to receive(:find_by).with(id: id).and_return(project)
+  project
+end

@@ -69,7 +69,62 @@ namespace :screenshots do
       next
     end
 
-    if screenshot_paths.any? && !Screenshots::Storage.configured?
+    if Screenshots::Storage.configured?
+      begin
+        Screenshots::Publish.call(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshot_paths: screenshot_paths
+        )
+
+        puts "Published #{screenshot_paths.size} screenshot(s) for PR ##{pr_number}."
+        next
+      rescue StandardError
+        post_status_comment.call("capture_failed", "Updated screenshot comment with capture failure for PR ##{pr_number}.")
+        raise
+      end
+    end
+
+    if Screenshots::BranchStorage.configured? && screenshot_paths.any?
+      begin
+        branch_storage = Screenshots::BranchStorage.new(
+          repo: repo,
+          github_token: Screenshots::BranchStorage.token
+        )
+        screenshots = branch_storage.upload_all(
+          screenshot_paths: screenshot_paths,
+          pr_number: pr_number,
+          commit_sha: commit_sha
+        )
+        previous = branch_storage.previous_screenshots(
+          pr_number: pr_number,
+          exclude_sha: commit_sha,
+          github_client: github_client
+        )
+
+        Screenshots::PrComment.call(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: screenshots,
+          previous_screenshots: previous
+        )
+
+        puts "Published #{screenshot_paths.size} screenshot(s) to branch for PR ##{pr_number}."
+        next
+      rescue Screenshots::BranchStorage::PushError => e
+        Rails.logger.warn(
+          message: "screenshots.branch_push_failed",
+          pr_number: pr_number,
+          error: e.message
+        )
+      end
+    end
+
+    if screenshot_paths.any?
       Screenshots::PrComment.call(
         github_client: github_client,
         repo: repo,
@@ -83,20 +138,13 @@ namespace :screenshots do
       next
     end
 
-    begin
-      Screenshots::Publish.call(
-        github_client: github_client,
-        repo: repo,
-        pr_number: pr_number,
-        commit_sha: commit_sha,
-        screenshot_paths: screenshot_paths
-      )
-    rescue StandardError
-      post_status_comment.call("capture_failed", "Updated screenshot comment with capture failure for PR ##{pr_number}.")
-      raise
-    end
-
-    puts "Published #{screenshot_paths.size} screenshot(s) for PR ##{pr_number}."
+    Screenshots::PrComment.call(
+      github_client: github_client,
+      repo: repo,
+      pr_number: pr_number,
+      commit_sha: commit_sha,
+      screenshots: []
+    )
   end
 
   desc "Delete uploaded screenshots for a closed or merged PR"
@@ -109,13 +157,24 @@ namespace :screenshots do
       raise ArgumentError, "GITHUB_REPOSITORY must be in owner/name format"
     end
 
-    unless Screenshots::Storage.configured?
-      puts "Screenshot storage is not configured. Skipping PR cleanup."
-      next
+    cleaned = false
+
+    if Screenshots::Storage.configured?
+      Screenshots::Storage.new.delete_pr_screenshots(org: owner, repo: name, pr_number: pr_number)
+      cleaned = true
     end
 
-    Screenshots::Storage.new.delete_pr_screenshots(org: owner, repo: name, pr_number: pr_number)
-    puts "Deleted screenshots for PR ##{pr_number}."
+    if Screenshots::BranchStorage.configured?
+      Screenshots::BranchStorage.new(repo: repo, github_token: Screenshots::BranchStorage.token)
+        .delete_pr_screenshots(pr_number: pr_number)
+      cleaned = true
+    end
+
+    if cleaned
+      puts "Deleted screenshots for PR ##{pr_number}."
+    else
+      puts "No screenshot storage configured. Skipping PR cleanup."
+    end
   end
 
   desc "Delete old uploaded screenshots using the configured retention policy"
