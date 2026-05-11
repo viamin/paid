@@ -170,6 +170,20 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect_bundle_identity(bundle)
   end
 
+  it "persists optimizer-selected experiment assignments when reusing the optimizer definition" do
+    optimized_definition = optimizer_definition_with_value(12_000)
+    selection = optimizer_selection(
+      definition: optimized_definition,
+      variant_by_experiment_id: { experiment.id => variant }
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    described_class.call(agent_run: agent_run)
+
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run))
+      .to have_attributes(configuration_experiment_variant_id: variant.id)
+  end
+
   it "recomputes the fingerprint when the optimizer payload omits it" do
     optimized_definition = optimizer_definition_with_value(12_000)
     selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)
@@ -250,11 +264,11 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     }
   end
 
-  def optimizer_selection(definition:, fingerprint: described_class.new(agent_run: agent_run).send(:bundle_fingerprint, definition))
+  def optimizer_selection(definition:, fingerprint: described_class.new(agent_run: agent_run).send(:bundle_fingerprint, definition), variant_by_experiment_id: {})
     ConfigurationBundles::Optimizer::Selection.new(
       definition: definition,
       fingerprint: fingerprint,
-      variant_by_experiment_id: {},
+      variant_by_experiment_id: variant_by_experiment_id,
       selection_mode: "exploitative",
       selection_context: "task"
     )

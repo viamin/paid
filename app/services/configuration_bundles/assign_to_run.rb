@@ -135,12 +135,43 @@ module ConfigurationBundles
       fingerprint = selection&.fingerprint
       computed_fingerprint = bundle_fingerprint(definition) if definition.is_a?(Hash)
 
-      if optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
+      if optimizer_payload_usable?(definition, fingerprint, computed_fingerprint) &&
+          persist_optimizer_assignments(selection)
         return [ definition, computed_fingerprint ]
       end
 
       fallback_definition = bundle_definition(selection&.variant_by_experiment_id)
       [ fallback_definition, bundle_fingerprint(fallback_definition) ]
+    end
+
+    def persist_optimizer_assignments(selection)
+      variant_by_experiment_id = selection&.variant_by_experiment_id
+      return true if variant_by_experiment_id.blank?
+
+      variant_by_experiment_id.each do |experiment_id, variant|
+        ConfigurationExperiments::Assign.call(
+          configuration_experiment: optimizer_experiment_for(variant, experiment_id),
+          agent_run: agent_run,
+          variant: variant
+        )
+      end
+
+      true
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_assignment_persistence_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def optimizer_experiment_for(variant, experiment_id)
+      experiment = variant.respond_to?(:configuration_experiment) ? variant.configuration_experiment : nil
+      return experiment if experiment&.id == experiment_id
+
+      ConfigurationExperiment.find(experiment_id)
     end
 
     def optimizer_payload_usable?(definition, fingerprint, computed_fingerprint)
