@@ -81,7 +81,7 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
       expect(features.experiment_features).to eq("knowledge.token_budget" => 99.0)
     end
 
-    it "returns 0.0 for non-numeric experiment values" do
+    it "preserves non-numeric scalar experiment values" do
       definition = {
         "experiments" => {
           "bad_key" => { "value" => "not-a-number" }
@@ -90,7 +90,7 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
 
       features = described_class.call(definition)
 
-      expect(features.experiment_features).to eq("bad_key" => 0.0)
+      expect(features.experiment_features).to eq("bad_key" => "not-a-number")
     end
 
     it "handles raw numeric experiment values" do
@@ -99,6 +99,20 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
       features = described_class.call(definition)
 
       expect(features.experiment_features).to eq("numeric_key" => 4000.0)
+    end
+
+    it "stably encodes structured experiment values" do
+      definition = {
+        "experiments" => {
+          "knowledge.section_order" => { "value" => [ "summary", "tests", "implementation" ] }
+        }
+      }
+
+      features = described_class.call(definition)
+
+      expect(features.experiment_features).to eq(
+        "knowledge.section_order" => "[\"summary\",\"tests\",\"implementation\"]"
+      )
     end
 
     it "returns an empty experiments hash when none are defined" do

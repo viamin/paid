@@ -119,17 +119,23 @@ module ConfigurationBundles
         next if q_val.nil? && h_val.nil?
 
         comparable += 1
-        similarity_sum += if q_val.nil? || h_val.nil?
-          0.0
-        else
-          diff = (q_val - h_val).abs
-          range = [ q_val.abs, h_val.abs, 1.0 ].max
-          Math.exp(-diff / range)
-        end
+        similarity_sum += experiment_value_similarity(q_val, h_val)
       end
 
       return nil if comparable.zero?
       similarity_sum / comparable
+    end
+
+    def experiment_value_similarity(query_value, historical_value)
+      return 0.0 if query_value.nil? || historical_value.nil?
+
+      if query_value.is_a?(Numeric) && historical_value.is_a?(Numeric)
+        diff = (query_value - historical_value).abs
+        range = [ query_value.abs, historical_value.abs, 1.0 ].max
+        return Math.exp(-diff / range)
+      end
+
+      query_value == historical_value ? 1.0 : 0.0
     end
 
     def weighted_prediction(_query_features, matches)

@@ -2,8 +2,6 @@
 
 module ConfigurationBundles
   class FeatureExtractor
-    include Canonicalization
-
     FeatureVector = Struct.new(
       :goal,
       :agent_type,
@@ -37,19 +35,45 @@ module ConfigurationBundles
 
     def extract_experiment_features(definition)
       definition.fetch("experiments", {}).each_with_object({}) do |(key, value), features|
-        features[key] = numeric_experiment_value(value)
+        features[key] = experiment_feature_value(value)
       end
     end
 
-    def numeric_experiment_value(value)
+    def experiment_feature_value(value)
+      raw = if value.is_a?(Hash)
+        value.key?("value") ? value["value"] : value["configuration_experiment_variant_id"]
+      else
+        value
+      end
+
+      normalize_experiment_value(raw)
+    end
+
+    def normalize_experiment_value(value)
       case value
-      when Hash
-        raw = value.key?("value") ? value["value"] : value["configuration_experiment_variant_id"]
-        Float(raw, exception: false) || 0.0
       when Numeric
         value.to_f
+      when String
+        Float(value, exception: false) || value
+      when TrueClass, FalseClass, NilClass
+        value
+      when Array, Hash
+        JSON.generate(sort_nested_structure(value))
       else
-        Float(value, exception: false) || 0.0
+        Float(value, exception: false) || value.to_s
+      end
+    end
+
+    def sort_nested_structure(value)
+      case value
+      when Hash
+        value.keys.sort.each_with_object({}) do |key, normalized|
+          normalized[key] = sort_nested_structure(value[key])
+        end
+      when Array
+        value.map { |item| sort_nested_structure(item) }
+      else
+        value
       end
     end
   end

@@ -45,6 +45,10 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
     }
   end
 
+  def section_order_experiment(*sections)
+    { "knowledge.section_order" => { "value" => sections } }
+  end
+
   describe ".train" do
     it "stores global statistics from the training dataset" do
       rows = [
@@ -134,6 +138,30 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
       )
 
       expect(high_budget_prediction.predicted_quality_score).to be > low_budget_prediction.predicted_quality_score
+    end
+
+    it "distinguishes structured experiment variants with different values" do
+      rows = [
+        build_row(
+          goal: "create_pr", agent_type: "claude_code", quality_score: 0.95, success: true,
+          experiment_features: { "knowledge.section_order" => "[\"summary\",\"tests\",\"implementation\"]" }
+        ),
+        build_row(
+          goal: "create_pr", agent_type: "claude_code", quality_score: 0.55, success: false,
+          experiment_features: { "knowledge.section_order" => "[\"implementation\",\"summary\",\"tests\"]" }
+        )
+      ]
+      dataset = build_dataset(rows)
+      model = described_class.train(dataset: dataset)
+
+      preferred_prediction = model.predict(
+        bundle_definition: bundle_definition(experiments: section_order_experiment("summary", "tests", "implementation"))
+      )
+      alternate_prediction = model.predict(
+        bundle_definition: bundle_definition(experiments: section_order_experiment("implementation", "summary", "tests"))
+      )
+
+      expect(preferred_prediction.predicted_quality_score).to be > alternate_prediction.predicted_quality_score
     end
 
     it "applies Bayesian prior smoothing to predictions" do

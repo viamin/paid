@@ -38,7 +38,7 @@ module ConfigurationBundles
       rows = []
       feature_names = Set.new
 
-      scope.order(created_at: :desc).limit(MAX_ROWS).each do |outcome|
+      scope.includes(:configuration_bundle, agent_run: :project).order(created_at: :desc).limit(MAX_ROWS).each do |outcome|
         definition = outcome.configuration_bundle&.definition
         next unless definition.is_a?(Hash)
 
