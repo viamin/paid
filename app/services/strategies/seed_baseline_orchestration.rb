@@ -7,8 +7,10 @@ module Strategies
     end
 
     def call
-      Strategies::BaselineOrchestration.definitions.map do |definition|
-        seed_definition(definition)
+      TenantContext.with_system_access do
+        Strategies::BaselineOrchestration.definitions.map do |definition|
+          seed_definition(definition)
+        end
       end
     end
 
