@@ -168,14 +168,15 @@ create_backup() {
 
 verify_backup_row_counts() {
   info "Verifying backup contains data..."
-  local listing
-  listing="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "^;" || true)"
-  if [[ "$listing" -lt 10 ]]; then
-    error "Backup appears to have too few table entries ($listing). Something may be wrong."
-    error "Aborting to prevent data loss."
+  local toc_entries data_entries
+  toc_entries="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "." || true)"
+  data_entries="$(pg_restore --list "$BACKUP_PATH" 2>/dev/null | grep -c "TABLE DATA" || true)"
+  if [[ "$data_entries" -lt 20 ]]; then
+    error "Backup appears to have too few TABLE DATA entries ($data_entries). Something may be wrong."
+    error "Expected 50+ tables with data. Aborting to prevent data loss."
     exit 1
   fi
-  info "Backup contains $listing table entries - looks valid"
+  info "Backup contains $data_entries TABLE DATA entries ($toc_entries total TOC entries) - looks valid"
 }
 
 reset_sequences() {
@@ -271,11 +272,14 @@ restore_into() {
 
   info "Restoring data..."
   local restore_output
-  restore_output="$(PGPASSWORD="$PG_PASSWORD" pg_restore \
+  local restore_failed=0
+  if ! restore_output="$(PGPASSWORD="$PG_PASSWORD" pg_restore \
     -h "$PG_HOST" -U "$PG_USER" \
     --data-only --no-owner --no-privileges \
     -d "$db_name" \
-    "$backup_path" 2>&1)" || true
+    "$backup_path" 2>&1)"; then
+    restore_failed=1
+  fi
 
   local errors
   errors="$(echo "$restore_output" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
@@ -285,18 +289,30 @@ restore_into() {
       error "  $line"
     done
     error "Data may be incomplete. Check backup and target database."
+    restore_failed=1
   fi
 
   info "Re-creating FK constraints..."
   local recreated=0
+  local fk_failures=0
   while IFS='|' read -r conname tbl def; do
     [[ -z "$conname" ]] && continue
     run_sql_exec "$db_name" -c "ALTER TABLE ${tbl} ADD CONSTRAINT ${conname} ${def};" 2>/dev/null || {
       warn "  Could not recreate constraint ${conname} on ${tbl}"
+      fk_failures=$((fk_failures + 1))
     }
     recreated=$((recreated + 1))
   done <<< "$fk_defs"
   info "Recreated $recreated/$fk_count FK constraints"
+
+  if [[ "$fk_failures" -gt 0 ]]; then
+    error "Failed to recreate ${fk_failures} foreign key constraint(s)"
+    return 1
+  fi
+
+  if [[ "$restore_failed" -ne 0 ]]; then
+    return 1
+  fi
 
   info "Restore into $db_name complete"
 }

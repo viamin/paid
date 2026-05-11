@@ -4,6 +4,14 @@ set -euo pipefail
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_ROOT" || exit
 
+# When DATABASE_URL is set the user has pinned their checkout to a specific
+# database.  Probing DB_HOST / DB_USERNAME would target the wrong server, so
+# skip automatic database creation entirely — Rails will use DATABASE_URL.
+if [[ -n "${DATABASE_URL:-}" ]]; then
+  echo "DATABASE_URL is set — skipping automatic worktree database creation."
+  exit 0
+fi
+
 db_names() {
   ruby <<'RUBY'
 require File.expand_path("config/worktree_database_names", Dir.pwd)
