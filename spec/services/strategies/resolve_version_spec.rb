@@ -40,6 +40,27 @@ RSpec.describe Strategies::ResolveVersion do
       expect(described_class.call(slug: slug, project: project)).to eq(global_version)
     end
 
+    it "skips scoped strategies whose current version is missing or inactive" do
+      project = create(:project)
+      global = create(:strategy, :global, slug: slug, decision_type: "planning_outcome")
+      global_version = create(:strategy_version, :active, strategy: global, content: { "scope" => "global" })
+      global.update!(current_version: global_version)
+
+      account_strategy = create(:strategy, account: project.account, project: nil, slug: slug, decision_type: "planning_outcome")
+      inactive_account_version = create(
+        :strategy_version,
+        strategy: account_strategy,
+        promotion_state: "draft",
+        content: { "scope" => "account" }
+      )
+      account_strategy.update_column(:current_version_id, inactive_account_version.id)
+
+      project_strategy = create(:strategy, project: project, account: project.account, slug: slug, decision_type: "planning_outcome")
+      project_strategy.update_column(:current_version_id, nil)
+
+      expect(described_class.call(slug: slug, project: project)).to eq(global_version)
+    end
+
     it "returns nil when the current version is not active" do
       strategy = create(:strategy, :global, slug: slug, decision_type: "planning_outcome")
       draft_version = create(:strategy_version, strategy: strategy, promotion_state: "draft")

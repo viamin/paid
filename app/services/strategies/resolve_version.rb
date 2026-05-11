@@ -13,44 +13,49 @@ module Strategies
     end
 
     def call
-      strategy = resolve_strategy
-      version = strategy&.current_version
-      return unless version&.active?
-
-      version
+      project_scope || account_scope || global_scope
     end
 
     private
 
     attr_reader :slug, :project, :account
 
-    def resolve_strategy
-      project_scope || account_scope || global_scope
-    end
-
     def project_scope
       return unless project
 
-      Strategy.active
+      resolve_active_version(
+        Strategy.active
         .for_project(project)
         .includes(:current_version)
         .find_by(slug: slug)
+      )
     end
 
     def account_scope
       return unless account
 
-      Strategy.active
+      resolve_active_version(
+        Strategy.active
         .for_account(account)
         .includes(:current_version)
         .find_by(slug: slug)
+      )
     end
 
     def global_scope
-      Strategy.active
+      resolve_active_version(
+        Strategy.active
         .global
         .includes(:current_version)
         .find_by(slug: slug)
+      )
+    end
+
+    def resolve_active_version(strategy)
+      version = strategy&.current_version
+      return unless version&.active?
+
+      version
     end
   end
 end
