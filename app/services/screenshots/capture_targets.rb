@@ -17,9 +17,6 @@ module Screenshots
       project_show
       agent_runs
       prompts
-      strategy_reviews_queue
-      strategy_reviews
-      strategy_review_show
       providers
       integrations
       notifications

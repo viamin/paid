@@ -52,6 +52,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
     end
 
+    it "does not add strategy review pages to the generic shared capture set" do
+      targets = described_class.call(changed_files: [ "app/components/sidebar_component.rb" ])
+
+      expect(targets.map(&:slug)).not_to include("strategy_reviews_queue", "strategy_reviews", "strategy_review_show")
+    end
+
     it "maps knowledge artifact views to the artifact show route" do
       targets = described_class.call(changed_files: [ "app/views/knowledge/artifacts/show.html.erb" ])
 
