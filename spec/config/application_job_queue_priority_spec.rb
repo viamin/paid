@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationJob do
+RSpec.describe ApplicationJob, :no_db do
   let(:expected_queue_assignments) do
     {
       default: %w[
@@ -11,6 +11,7 @@ RSpec.describe ApplicationJob do
         AutoReleaseEvaluationJob
         DependabotAutoMergeJob
         DiagnoseErrorJob
+        FailureRecoveryDecisionJob
         GithubTokenValidationJob
         HandleExceptionJob
         HumanFeedbackCollectionJob
