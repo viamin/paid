@@ -158,6 +158,32 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.configuration_bundle_selection_context).to eq("task")
   end
 
+  it "persists the fingerprint for the resolved assignment when a run already has an experiment assignment" do
+    challenger = create(:configuration_experiment_variant,
+      configuration_experiment: experiment,
+      config_value: JSON.generate(12_000))
+    create(:configuration_experiment_assignment,
+      configuration_experiment: experiment,
+      configuration_experiment_variant: variant,
+      agent_run: agent_run)
+
+    service = described_class.new(agent_run: agent_run)
+    selection = ConfigurationBundles::Optimizer::Selection.new(
+      fingerprint: service.send(:bundle_fingerprint, service.send(:bundle_definition, experiment.id => challenger)),
+      variant_by_experiment_id: { experiment.id => challenger }
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.fingerprint).to eq(service.send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.fingerprint).not_to eq(selection.fingerprint)
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
   def filesystem_mcp_snapshot
     {
       "args" => [ "-y", "@modelcontextprotocol/server-filesystem", "/workspace" ],

@@ -22,7 +22,9 @@ module ConfigurationBundles
     def call
       selection = optimizer_selection
       definition = bundle_definition(selection&.variant_by_experiment_id)
-      fingerprint = selection&.fingerprint || bundle_fingerprint(definition)
+      fingerprint = bundle_fingerprint(definition)
+
+      log_selection_fingerprint_mismatch(selection:, fingerprint:) if selection
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
       agent_run.update!(
@@ -140,6 +142,17 @@ module ConfigurationBundles
         error: e.message
       )
       nil
+    end
+
+    def log_selection_fingerprint_mismatch(selection:, fingerprint:)
+      return if selection.fingerprint.blank? || selection.fingerprint == fingerprint
+
+      Rails.logger.warn(
+        message: "configuration_bundles.selection_fingerprint_mismatch",
+        agent_run_id: agent_run.id,
+        optimizer_fingerprint: selection.fingerprint,
+        resolved_fingerprint: fingerprint
+      )
     end
   end
 end
