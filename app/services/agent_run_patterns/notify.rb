@@ -53,7 +53,8 @@ module AgentRunPatterns
         Notifications::Resolve.call(
           account: account,
           source: NOTIFICATION_SOURCE,
-          subject: account
+          subject: notification.subject,
+          user: notification.user
         )
       end
     end

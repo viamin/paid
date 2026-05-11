@@ -32,7 +32,7 @@ RSpec.describe AgentRunPatterns::Notify do
     let(:diagnoses) { { "enhance_issue" => diagnosis } }
 
     before do
-      allow(Notifications::Broadcasting).to receive(:broadcast_notification_updates)
+      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
     end
 
     context "with detected patterns" do
