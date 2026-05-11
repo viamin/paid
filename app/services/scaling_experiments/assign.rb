@@ -62,12 +62,21 @@ module ScalingExperiments
     end
 
     def build_execution_plan(value)
+      task_bucket = scaling_experiment.cohort_task_bucket_label(task_count:)
+
       plan = {
         "dimension" => scaling_experiment.dimension,
         "dimension_value" => value,
         "task_count" => task_count,
+        "task_bucket" => task_bucket,
         "cohort_label" => scaling_experiment.cohort_label(task_count:, assigned_value: value),
-        "cohort_schedule" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "assignment_unit"),
+        "control" => {
+          "dimension_value" => scaling_experiment.control_value,
+          "cohort_label" => scaling_experiment.control_cohort_label(task_count:),
+          "comparison_method" => scaling_experiment.control_definition["comparison_method"]
+        },
+        "cohort_schedule" => scaling_experiment.cohort_schedule,
+        "fairness_guardrails" => scaling_experiment.control_definition.slice("fairness_conditions", "guardrails"),
         "eligible_values" => scaling_experiment.eligible_values(task_count:),
         "result_capture" => result_capture_plan,
         "safety_limits" => {

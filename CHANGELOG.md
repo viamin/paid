@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.45.0](https://github.com/viamin/paid/compare/v0.44.0...v0.45.0) (2026-05-10)
+
+
+### Features
+
+* **analytics:** expand orchestration decision analysis queries ([#1886](https://github.com/viamin/paid/issues/1886)) ([eb40bde](https://github.com/viamin/paid/commit/eb40bde9102e88ab2f6277ed2ac3afefa80a4c86))
+* **coordination:** create coordination policy data model ([#1877](https://github.com/viamin/paid/issues/1877)) ([9e972fe](https://github.com/viamin/paid/commit/9e972fe7749371d49258398d6c14eefd1b049397))
+* **coordination:** implement escalation service with human-value prediction ([#1891](https://github.com/viamin/paid/issues/1891)) ([b79fb97](https://github.com/viamin/paid/commit/b79fb973c4a2a5b1ff7144887024e1163b87079d))
+* **dashboard:** add provider health section above queue health in live dashboard ([#1884](https://github.com/viamin/paid/issues/1884)) ([958b457](https://github.com/viamin/paid/commit/958b4570e1fd16e519ff29a97617ca87d50394ff))
+* **lint:** integrate herb linter and fix all ERB template offenses ([#1882](https://github.com/viamin/paid/issues/1882)) ([33309d3](https://github.com/viamin/paid/commit/33309d3603b0cbf0c04b2bc4516cfd150d5da2aa))
+* **scaling:** formalize orchestration experiment plans ([#1894](https://github.com/viamin/paid/issues/1894)) ([48b4eab](https://github.com/viamin/paid/commit/48b4eabadb90f8211a150e0ecba902d5ed13d23f))
+* **scaling:** implement scaling-based resource allocator ([#1871](https://github.com/viamin/paid/issues/1871)) ([9be5dc6](https://github.com/viamin/paid/commit/9be5dc6da9843ea80b835b9a9f5bb914736c07e1))
+* **scaling:** persist iteration metrics in experiment results ([#1892](https://github.com/viamin/paid/issues/1892)) ([f53cb93](https://github.com/viamin/paid/commit/f53cb9345d314b6c00db2e072427ae58f287eb0b))
+* **strategy:** create strategy and strategy version schema ([#1829](https://github.com/viamin/paid/issues/1829)) ([84ef855](https://github.com/viamin/paid/commit/84ef855bbcaea4968d96e1033ce239a8012b2d4a))
+* **strategy:** harden strategy version schema coverage ([#1890](https://github.com/viamin/paid/issues/1890)) ([dbde307](https://github.com/viamin/paid/commit/dbde30755ee25b115cfc4310e8cf37bd4458817d))
+* **strategy:** Phase 4.2 — Learned Orchestration Strategies ([#1885](https://github.com/viamin/paid/issues/1885)) ([3eb8294](https://github.com/viamin/paid/commit/3eb8294da88d99da043daa53bb52737e63a830d5))
+* **strategy:** preserve reviewable evolution candidates ([#1888](https://github.com/viamin/paid/issues/1888)) ([d90a5e1](https://github.com/viamin/paid/commit/d90a5e13e8532a4975eb66e81c4968b1357ccb63))
+* **ui:** surface paused work and enable quick resume ([#1879](https://github.com/viamin/paid/issues/1879)) ([b5ca2b5](https://github.com/viamin/paid/commit/b5ca2b581a084f2152acebc3a77f8f699f67a826))
+
+
+### Bug Fixes
+
+* 1842: Fix provider filter names in agent runs index and add soft-delete for filter-backed records ([#1874](https://github.com/viamin/paid/issues/1874)) ([3d4a340](https://github.com/viamin/paid/commit/3d4a340deb6c6cf135e893d0700d1c9a92770260))
+* **agent-runs:** preserve timeout when fallback container is gone ([#1870](https://github.com/viamin/paid/issues/1870)) ([8f0c288](https://github.com/viamin/paid/commit/8f0c2885d2d626a3449bee310bda228824d44634))
+
 ## [0.44.0](https://github.com/viamin/paid/compare/v0.43.0...v0.44.0) (2026-05-09)
 
 
