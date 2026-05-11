@@ -1,10 +1,9 @@
 <%
 require File.expand_path("config/worktree_database_names", Dir.pwd)
 
-app_root = File.expand_path("..", __dir__)
-development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name(app_root:)
-development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name(app_root:)
-test_database = Paid::WorktreeDatabaseNames.test_name(app_root:)
+development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name
+development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name
+test_database = Paid::WorktreeDatabaseNames.test_name
 %>
 
 # PostgreSQL. Versions 9.3 and up are supported.
