@@ -98,6 +98,26 @@ RSpec.describe "StrategyReviews" do
       expect(response.body).to include("Promotion Diff")
       expect(response.body).to include("\"parallel\"")
     end
+
+    it "keeps the promotion diff baseline anchored to the active version after reviewer edits" do
+      patch strategy_review_path(strategy, pending_version), params: {
+        strategy_version: {
+          content: JSON.pretty_generate({ "mode" => "hybrid" }),
+          change_notes: "Reviewer edit",
+          reasoning: "Tighten rollout guardrails"
+        }
+      }
+
+      edited_version = strategy.reload.strategy_versions.order(:version).last
+
+      get strategy_review_path(strategy, edited_version)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Current v#{active_version.version} (left) vs. proposed v#{edited_version.version} (right).")
+      expect(response.body).to include("Parent version")
+      expect(response.body).to include("v#{pending_version.version}")
+      expect(response.body).not_to include("Current v#{pending_version.version} (left)")
+    end
   end
 
   describe "POST /strategies/:strategy_id/reviews/:id/approve" do

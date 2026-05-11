@@ -1,6 +1,7 @@
 <% content_for :title do %>Review v<%= @strategy_version.version %> - <%= @strategy.name %> - Paid<% end %>
 
-<% parent = @strategy_version.parent_version || @strategy.current_version %>
+<% parent = @strategy_version.parent_version %>
+<% current_version = @strategy.current_version %>
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="mb-6">
@@ -45,14 +46,14 @@
 
   <div class="mt-8 bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:px-6">
-      <h2 class="text-lg font-medium text-gray-900"><%= parent ? "Promotion Diff" : "Strategy Content" %></h2>
-      <% if parent %>
-        <p class="mt-1 text-sm text-gray-500">Current v<%= parent.version %> (left) vs. proposed v<%= @strategy_version.version %> (right).</p>
+      <h2 class="text-lg font-medium text-gray-900"><%= current_version ? "Promotion Diff" : "Strategy Content" %></h2>
+      <% if current_version %>
+        <p class="mt-1 text-sm text-gray-500">Current v<%= current_version.version %> (left) vs. proposed v<%= @strategy_version.version %> (right).</p>
       <% end %>
     </div>
-    <% if parent %>
+    <% if current_version %>
       <div class="grid grid-cols-1 gap-4 border-t border-gray-200 p-4 lg:grid-cols-2">
-        <pre class="overflow-x-auto rounded-lg bg-red-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= JSON.pretty_generate(parent.content) %></pre>
+        <pre class="overflow-x-auto rounded-lg bg-red-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= JSON.pretty_generate(current_version.content) %></pre>
         <pre class="overflow-x-auto rounded-lg bg-green-50 p-4 text-sm text-gray-800 font-mono whitespace-pre-wrap"><%= JSON.pretty_generate(@strategy_version.content) %></pre>
       </div>
     <% else %>
