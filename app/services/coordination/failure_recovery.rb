@@ -237,7 +237,12 @@ module Coordination
       when "skip_and_continue"
         "continue"
       else
-        "retry"
+        Rails.logger.warn(
+          message: "coordination.unknown_orchestration_action",
+          action: action,
+          agent_run_id: agent_run.id
+        )
+        action
       end
     end
 

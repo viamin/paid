@@ -3320,46 +3320,36 @@ RSpec.describe AgentRun do
   end
 
   describe "failure recovery callback" do
-    it "invokes failure recovery when transitioning to a failure status" do
+    it "enqueues failure recovery when transitioning to a failure status" do
       agent_run = create(:agent_run, :running, error_message: nil)
 
       expect {
         agent_run.fail!(error: "RateLimit: exceeded quota")
-      }.to change(FailureClassification, :count).by(1)
-        .and change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }.by(1)
-
-      decision = OrchestrationDecision.where(actor: "coordination_failure_recovery").last
-      expect(decision.decision_type).to eq("retry")
-      expect(decision.context["decision_status"]).to eq("applied")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(agent_run.id)
     end
 
-    it "invokes failure recovery when transitioning to completed" do
+    it "enqueues failure recovery when transitioning to completed" do
       agent_run = create(:agent_run, :running, started_at: 1.minute.ago)
 
       expect {
         agent_run.complete!
-      }.to change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }.by(1)
-
-      decision = OrchestrationDecision.where(actor: "coordination_failure_recovery").last
-      expect(decision.decision_type).to eq("noop")
-      expect(decision.context["decision_status"]).to eq("noop")
-      expect(decision.outputs).to include("reason" => "non_failure_status")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(agent_run.id)
     end
 
-    it "does not invoke failure recovery for retried transitions" do
+    it "does not enqueue failure recovery for retried transitions" do
       agent_run = create(:agent_run, :failed)
 
       expect {
         agent_run.retry!
-      }.not_to change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
     end
 
-    it "does not invoke failure recovery when status does not change" do
+    it "does not enqueue failure recovery when status does not change" do
       agent_run = create(:agent_run, :running)
 
       expect {
         agent_run.update!(branch_name: "feature/test")
-      }.not_to change { OrchestrationDecision.where(actor: "coordination_failure_recovery").count }
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
     end
   end
 

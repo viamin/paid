@@ -138,7 +138,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
-  after_commit :record_failure_recovery_decision, on: :update, if: :recovery_decision_required?
+  after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -2082,8 +2082,8 @@ class AgentRun < ApplicationRecord
     AgentRun::FAILURE_STATUSES + %w[completed no_output cancelled]
   end
 
-  def record_failure_recovery_decision
-    Coordination::FailureRecovery.call(agent_run: self)
+  def enqueue_failure_recovery_decision
+    FailureRecoveryDecisionJob.perform_later(id)
   end
 
   def enqueue_issue_goal_timeout_retry
