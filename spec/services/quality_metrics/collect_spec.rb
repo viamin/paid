@@ -108,6 +108,24 @@ RSpec.describe QualityMetrics::Collect do
 
         expect(metric.scores["agent_rerun_count"]).to eq(0.85)
       end
+
+      it "records quality scores for linked strategy experiment assignments" do
+        experiment = create(:strategy_experiment,
+          account: agent_run.project.account,
+          strategy_name: "review_settings",
+          status: "running",
+          started_at: Time.current)
+        variant = create(:strategy_experiment_variant, strategy_experiment: experiment)
+        assignment = create(:strategy_experiment_assignment,
+          strategy_experiment: experiment,
+          strategy_experiment_variant: variant,
+          agent_run: agent_run)
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(assignment.reload.quality_score.to_f).to eq(metric.composite_score.to_f)
+        expect(variant.reload.sample_count).to eq(1)
+      end
     end
 
     context "with create_issue goal" do

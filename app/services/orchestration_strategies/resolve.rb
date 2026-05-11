@@ -13,19 +13,46 @@ module OrchestrationStrategies
       new(...).call
     end
 
-    def initialize(strategy_type:, account: nil)
+    def initialize(strategy_type:, account: nil, agent_run: nil)
       @strategy_type = strategy_type.to_s
       @account = account
+      @agent_run = agent_run
     end
 
     def call
-      OrchestrationStrategy.active_for(strategy_type, account: account) ||
-        build_fallback
+      experiment_strategy || persisted_or_fallback_strategy
     end
 
     private
 
-    attr_reader :strategy_type, :account
+    attr_reader :strategy_type, :account, :agent_run
+
+    def experiment_strategy
+      experiment = active_experiment
+      return unless experiment
+
+      assignment = StrategyExperiments::Assign.call(
+        strategy_experiment: experiment,
+        agent_run: agent_run
+      )
+
+      StrategyExperiments::StrategySnapshot.deserialize(
+        assignment.strategy_experiment_variant.parsed_config,
+        account: account,
+        fallback_strategy_type: strategy_type
+      )
+    end
+
+    def active_experiment
+      return unless account && agent_run
+
+      StrategyExperiment.active_for(strategy_type, account: account, agent_run: agent_run)
+    end
+
+    def persisted_or_fallback_strategy
+      OrchestrationStrategy.active_for(strategy_type, account: account) ||
+        build_fallback
+    end
 
     def build_fallback
       config = Defaults.configuration_for(strategy_type)
