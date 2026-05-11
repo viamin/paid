@@ -145,12 +145,9 @@ module ConfigurationBundles
     end
 
     def persist_optimizer_assignments(selection)
-      variant_by_experiment_id = selection&.variant_by_experiment_id
-      return true if variant_by_experiment_id.blank?
-
-      variant_by_experiment_id.each do |experiment_id, variant|
+      optimizer_assignment_inputs(selection).each do |experiment, variant|
         ConfigurationExperiments::Assign.call(
-          configuration_experiment: optimizer_experiment_for(variant, experiment_id),
+          configuration_experiment: experiment,
           agent_run: agent_run,
           variant: variant
         )
@@ -165,6 +162,27 @@ module ConfigurationBundles
         error: e.message
       )
       false
+    end
+
+    def optimizer_assignment_inputs(selection)
+      variant_by_experiment_id = selection&.variant_by_experiment_id
+      return variant_by_experiment_id.map { |experiment_id, variant| [ optimizer_experiment_for(variant, experiment_id), variant ] } if variant_by_experiment_id.present?
+
+      optimizer_assignment_inputs_from_definition(selection&.definition)
+    end
+
+    def optimizer_assignment_inputs_from_definition(definition)
+      definition.fetch("experiments", {}).values.filter_map do |experiment_definition|
+        experiment_id = experiment_definition["configuration_experiment_id"]
+        variant_id = experiment_definition["configuration_experiment_variant_id"]
+        next if experiment_id.blank? || variant_id.blank?
+
+        experiment = ConfigurationExperiment.find(experiment_id)
+        variant = ConfigurationExperimentVariant.find(variant_id)
+        raise ArgumentError, "configuration experiment variant must belong to the same experiment" if variant.configuration_experiment_id != experiment.id
+
+        [ experiment, variant ]
+      end
     end
 
     def optimizer_experiment_for(variant, experiment_id)

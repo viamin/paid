@@ -74,6 +74,27 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "persists assignments from the optimizer definition when the variant map is missing" do
+      optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+      selection = optimizer_selection(definition: optimized_definition)
+      variant_record = Struct.new(:id, :configuration_experiment_id).new(selected_variant.id, experiment.id)
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        expected_optimizer_definition_attributes: selection_definition.except("experiments"),
+        optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ]
+      )
+      expect(ConfigurationExperiments::Assign).to receive(:call).with(
+        configuration_experiment: experiment,
+        agent_run: agent_run,
+        variant: variant_record
+      )
+      expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+      expect(agent_run).to receive(:update!).with(expected_update_arguments)
+
+      expect(service.call).to eq(bundle)
+    end
+
     it "falls back to rebuilding the bundle payload when the optimizer fingerprint is inconsistent" do
       fallback_definition = selection_definition.merge(
         "experiments" => {
