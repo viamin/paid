@@ -26,8 +26,6 @@ class FixStrategiesRlsInfiniteRecursion < ActiveRecord::Migration[8.1]
     tenant_isolation_delete
   ].freeze
 
-  TABLES = %w[strategies strategy_versions].freeze
-
   def drop_table_policies(table)
     POLICY_NAMES.each do |policy|
       execute "DROP POLICY IF EXISTS #{policy} ON #{quote_table_name(table)}"
