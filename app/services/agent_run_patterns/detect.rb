@@ -139,19 +139,18 @@ module AgentRunPatterns
       window_start = BASELINE_WINDOW_DAYS.days.ago
       recent_start = window_hours.hours.ago
 
-      total = AgentRun.joins(:project)
+      counts = AgentRun.joins(:project)
         .where(projects: { account_id: account.id })
         .where(goal: goal, status: AgentRun::FINISHED_STATUSES)
         .where(completed_at: window_start...recent_start)
+        .group(:status)
         .count
+
+      total = counts.values.sum
 
       return nil if total < HIGH_FAILURE_MIN_SAMPLE
 
-      failed = AgentRun.joins(:project)
-        .where(projects: { account_id: account.id })
-        .where(goal: goal, status: AgentRun::FAILURE_STATUSES)
-        .where(completed_at: window_start...recent_start)
-        .count
+      failed = counts.slice(*AgentRun::FAILURE_STATUSES).values.sum
 
       failed.to_f / total
     end

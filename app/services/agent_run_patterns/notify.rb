@@ -15,9 +15,7 @@ module AgentRunPatterns
     end
 
     def call
-      return if patterns.empty?
-
-      publish_in_app_notification
+      publish_in_app_notification unless patterns.empty?
       resolve_cleared_patterns
     end
 
@@ -102,7 +100,7 @@ module AgentRunPatterns
       when :failure_streak
         "#{goal}: #{details[:streak_length]} consecutive failures (#{(details[:failure_rate] * 100).round}% of #{details[:total_runs]} runs)"
       when :high_failure_rate
-        "#{goal}: #{details[:failure_count]}/#{details[:total_count]} failures (#{(details[:failure_rate] * 100).round(0)}% rate)"
+        "#{goal}: #{details[:failure_count]}/#{details[:total_count]} failures (#{(details[:failure_rate] * 100).round}% rate)"
       when :error_cluster
         "#{goal}: #{details[:occurrence_count]} failures share similar error: \"#{details[:error_pattern].truncate(80)}\""
       else

@@ -105,6 +105,7 @@ RSpec.describe AgentRunPatterns::Notify do
           source: "agent_run_pattern_detector"
         )
         expect(notification.severity).to eq("warning")
+        expect(notification.description).to include("80% rate")
       end
     end
 
@@ -166,6 +167,21 @@ RSpec.describe AgentRunPatterns::Notify do
 
         remaining = Notification.where(account: account, source: "agent_run_pattern_detector").active
         expect(remaining.count).to eq(1)
+      end
+
+      it "does not resolve a notification while any tracked goal remains active" do
+        notification = Notification.create!(
+          account: account,
+          source: "agent_run_pattern_detector",
+          subject: account,
+          severity: :error,
+          title: "Agent run failures detected",
+          metadata: { goals: [ "enhance_issue", "create_pr" ] }
+        )
+
+        described_class.call(account: account, patterns: [ pattern ], diagnoses: diagnoses)
+
+        expect(notification.reload).to be_active
       end
     end
   end

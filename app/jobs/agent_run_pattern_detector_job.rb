@@ -15,28 +15,30 @@ class AgentRunPatternDetectorJob < ApplicationJob
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     total_patterns = 0
 
-    Account.find_each do |account|
-      patterns = AgentRunPatterns::Detect.call(account: account)
-      next if patterns.empty?
+    TenantContext.with_system_access do
+      Account.find_each do |account|
+        patterns = AgentRunPatterns::Detect.call(account: account)
+        total_patterns += patterns.size
 
-      total_patterns += patterns.size
+        diagnoses = build_diagnoses(patterns)
+        AgentRunPatterns::Notify.call(account: account, patterns: patterns, diagnoses: diagnoses)
 
-      diagnoses = build_diagnoses(patterns)
-      AgentRunPatterns::Notify.call(account: account, patterns: patterns, diagnoses: diagnoses)
+        next if patterns.empty?
 
-      Rails.logger.info(
-        message: "agent_run_patterns.patterns_detected",
-        account_id: account.id,
-        pattern_count: patterns.size,
-        goals: patterns.map(&:goal).uniq
-      )
-    rescue => e
-      Rails.logger.warn(
-        message: "agent_run_patterns.detection_failed_for_account",
-        account_id: account.id,
-        error_class: e.class.name,
-        error: e.message
-      )
+        Rails.logger.info(
+          message: "agent_run_patterns.patterns_detected",
+          account_id: account.id,
+          pattern_count: patterns.size,
+          goals: patterns.map(&:goal).uniq
+        )
+      rescue => e
+        Rails.logger.warn(
+          message: "agent_run_patterns.detection_failed_for_account",
+          account_id: account.id,
+          error_class: e.class.name,
+          error: e.message
+        )
+      end
     end
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round

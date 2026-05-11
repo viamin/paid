@@ -10,6 +10,7 @@ RSpec.describe AgentRunPatternDetectorJob do
       allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
       allow(AgentRunPatterns::Diagnose).to receive(:call)
       allow(AgentRunPatterns::Notify).to receive(:call)
+      allow(TenantContext).to receive(:with_system_access).and_yield
     end
 
     it "is enqueued on the maintenance queue" do
@@ -19,6 +20,7 @@ RSpec.describe AgentRunPatternDetectorJob do
     it "detects patterns for each account" do
       described_class.perform_now
 
+      expect(TenantContext).to have_received(:with_system_access)
       expect(AgentRunPatterns::Detect).to have_received(:call).with(account: account)
     end
 
@@ -54,11 +56,15 @@ RSpec.describe AgentRunPatternDetectorJob do
     end
 
     context "when no patterns are detected" do
-      it "does not call diagnose or notify" do
+      it "skips diagnosis and still runs notification resolution" do
         described_class.perform_now
 
         expect(AgentRunPatterns::Diagnose).not_to have_received(:call)
-        expect(AgentRunPatterns::Notify).not_to have_received(:call)
+        expect(AgentRunPatterns::Notify).to have_received(:call).with(
+          account: account,
+          patterns: [],
+          diagnoses: {}
+        )
       end
     end
 
