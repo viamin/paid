@@ -197,10 +197,9 @@ module Activities
 
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
-      provider_changed = false
 
       if agent_run.queued?
-        provider_changed = validate_and_sync_resumed_provider!(agent_run)
+        validate_and_sync_resumed_provider!(agent_run)
       else
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
@@ -212,7 +211,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      assign_configuration_bundle(agent_run) if provider_changed || agent_run.configuration_bundle.blank?
+      assign_configuration_bundle(agent_run)
 
       logger.info(
         message: "agent_execution.queued_run_resumed",
