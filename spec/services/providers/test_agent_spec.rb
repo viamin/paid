@@ -586,6 +586,21 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
       end
+
+      it "handles the session.mcp_servers_loaded variant" do
+        # Regression coverage: the noisy-line filter originally listed
+        # mcp_server_status_changed and shutdown by name, missing the
+        # session.mcp_servers_loaded event that the Copilot CLI also emits.
+        loaded_event = '{"type":"session.mcp_servers_loaded","data":{"servers":[{"name":"github-mcp-server","status":"connected","source":"builtin"}]},"id":"d4176d87-aafc-4d86-a9e9-d1db197b412a","timestamp":"2026-05-11T14:19:47.044Z","parentId":"c9377b33-23f7-4c06-9aad-f2708d7d15b2","ephemeral":true}'
+        allow(AgentHarness).to receive(:check_provider).and_return(
+          { name: :github_copilot, status: "error", message: loaded_event, latency_ms: 3000, error_category: nil, check: :smoke_test }
+        )
+
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
+      end
     end
 
     context "when opencode smoke test succeeds via container" do

@@ -8,10 +8,10 @@ RSpec.describe Github::ReviewBotInstallationToken do
   let(:private_key) { OpenSSL::PKey::RSA.generate(2048).to_pem }
 
   describe ".configured?" do
-    it "returns true when app id and private key are present" do
+    it "returns true when app id and private key are present and parseable" do
       allow(described_class).to receive_messages(
         app_id: "3340381",
-        private_key: "key"
+        private_key: private_key
       )
 
       expect(described_class.configured?).to be true
@@ -24,6 +24,26 @@ RSpec.describe Github::ReviewBotInstallationToken do
       )
 
       expect(described_class.configured?).to be false
+    end
+
+    it "returns false when the private key is present but not a valid RSA PEM" do
+      # e.g. an OpenSSH-format key — passes a presence check but fails at runtime
+      openssh_key = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----\n"
+      allow(described_class).to receive_messages(
+        app_id: "3340381",
+        private_key: openssh_key
+      )
+
+      expect(described_class.configured?).to be false
+    end
+
+    it "re-validates after the key value changes (no process restart needed)" do
+      allow(described_class).to receive(:app_id).and_return("3340381")
+      allow(described_class).to receive(:private_key).and_return("not a key")
+      expect(described_class.configured?).to be false
+
+      allow(described_class).to receive(:private_key).and_return(private_key)
+      expect(described_class.configured?).to be true
     end
   end
 

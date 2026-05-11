@@ -25,7 +25,28 @@ module Github
     end
 
     def self.configured?
-      app_id.present? && private_key.present?
+      app_id.present? && private_key.present? && private_key_parseable?
+    end
+
+    # Verifies the configured value actually parses as an RSA key. Catches the
+    # common misconfiguration where the credential is set to a non-PEM value
+    # (e.g. an OpenSSH private key) — in which case the credential passes a
+    # presence check but every JWT mint fails at runtime with a 503 from the
+    # proxy. Memoized per key string so a rotated credential is re-validated
+    # without a process restart.
+    def self.private_key_parseable?
+      key = private_key.to_s
+      return false if key.empty?
+      return @private_key_parseable if defined?(@private_key_parse_cache_key) &&
+                                      @private_key_parse_cache_key == key
+
+      @private_key_parse_cache_key = key
+      @private_key_parseable = begin
+        OpenSSL::PKey::RSA.new(key.gsub('\n', "\n"))
+        true
+      rescue OpenSSL::PKey::RSAError
+        false
+      end
     end
 
     def self.bot_logins

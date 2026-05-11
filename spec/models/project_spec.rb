@@ -1171,7 +1171,7 @@ RSpec.describe Project do
       end
 
       it "rejects paid_agent when the review bot credentials are not configured" do
-        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
+        allow(Github::ReviewBotInstallationToken).to receive_messages(configured?: false, private_key: nil)
 
         project = build(:project, review_settings: {
           "enabled" => true,
@@ -1183,7 +1183,28 @@ RSpec.describe Project do
         })
 
         expect(project).not_to be_valid
-        expect(project.errors[:review_settings].join).to include("paid-code-reviewer GitHub App credentials")
+        expect(project.errors[:review_settings].join).to include("paid-code-reviewer GitHub App credentials are not configured")
+      end
+
+      it "rejects paid_agent with a distinct message when the private key is set but malformed" do
+        # Surfaces the actual root cause (e.g. wrong key format) so a user
+        # who just configured the credential isn't sent in circles trying
+        # to re-add a key that's already there.
+        allow(Github::ReviewBotInstallationToken).to receive_messages(
+          configured?: false,
+          private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\nfoo\n-----END OPENSSH PRIVATE KEY-----\n"
+        )
+
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true }
+          }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join)
+          .to include("private key is present but cannot be parsed as RSA")
       end
 
       it "rejects enabled reviews with no methods enabled" do

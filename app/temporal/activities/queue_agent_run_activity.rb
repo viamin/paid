@@ -33,11 +33,13 @@ module Activities
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
       agent_run, duplicate = AgentRun.transaction do
-        existing = find_existing_run(project, issue, source_pull_request_number, goal: goal)
+        existing = find_existing_run(project, issue, source_pull_request_number)
         if existing
-          merge_draft_review_round_tracking!(existing,
-            count_toward_draft_review_round: count_toward_draft_review_round,
-            expected_draft_review_count: expected_draft_review_count)
+          if existing.goal == goal
+            merge_draft_review_round_tracking!(existing,
+              count_toward_draft_review_round: count_toward_draft_review_round,
+              expected_draft_review_count: expected_draft_review_count)
+          end
           [ existing, true ]
         else
           run = AgentRun.create!(
@@ -55,7 +57,7 @@ module Activities
           [ run, false ]
         end
       rescue ActiveRecord::RecordNotUnique
-        existing = find_existing_run(project, issue, source_pull_request_number, goal: goal)
+        existing = find_existing_run(project, issue, source_pull_request_number)
         raise unless existing
 
         # Runs outside the rolled-back transaction without a row lock. If two
@@ -63,9 +65,11 @@ module Activities
         # merge_draft_review_round_tracking! prevents double-writes. Both callers
         # originate from the same poll cycle so they pass identical values; the
         # last writer wins harmlessly.
-        merge_draft_review_round_tracking!(existing,
-          count_toward_draft_review_round: count_toward_draft_review_round,
-          expected_draft_review_count: expected_draft_review_count)
+        if existing.goal == goal
+          merge_draft_review_round_tracking!(existing,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count)
+        end
 
         [ existing, true ]
       end
@@ -75,9 +79,13 @@ module Activities
           message: "concurrency.duplicate_run_skipped",
           agent_run_id: agent_run.id,
           project_id: project_id,
-          issue_id: issue_id
+          issue_id: issue_id,
+          requested_goal: goal,
+          existing_goal: agent_run.goal,
+          cross_goal: agent_run.goal != goal
         )
-        return { agent_run_id: agent_run.id, queued: false, duplicate: true }
+        return { agent_run_id: agent_run.id, queued: false, duplicate: true,
+                 cross_goal: agent_run.goal != goal }
       end
 
       AgentRuns::ProviderSelectionLogger.call(
@@ -119,10 +127,15 @@ module Activities
 
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
     # custom prompts are unique by definition and cannot be meaningfully deduplicated.
-    # The goal parameter ensures review-goal runs are deduplicated separately
-    # from create_pr runs targeting the same PR.
-    def find_existing_run(project, issue, source_pull_request_number, goal: "create_pr")
-      scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES, goal: goal).lock("FOR UPDATE")
+    #
+    # Deduplication is goal-agnostic: any unfinished run for the same issue or
+    # source PR blocks queueing another. Two runs against the same PR share a
+    # branch and worktree (e.g. a review and a create_pr both cloned to
+    # /workspace), so allowing them to run concurrently caused WorktreeConflict
+    # failures whenever the poll cycle fired both at once. The poller will
+    # re-evaluate next cycle once the in-flight run finishes.
+    def find_existing_run(project, issue, source_pull_request_number)
+      scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).lock("FOR UPDATE")
       if issue
         scope.where(issue: issue).first
       elsif source_pull_request_number

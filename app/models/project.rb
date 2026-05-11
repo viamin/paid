@@ -1027,7 +1027,18 @@ class Project < ApplicationRecord
       end
 
       if method_name == "paid_agent" && !Github::ReviewBotInstallationToken.configured?
-        errors.add(:review_settings, "paid_agent requires the paid-code-reviewer GitHub App credentials")
+        # Distinguish "no credential set" from "credential set but malformed"
+        # so a user who just configured the key isn't sent in circles. The
+        # most common cause of the second case is pasting an OpenSSH-format
+        # key when the GitHub App needs PKCS#1/PKCS#8 PEM.
+        reason =
+          if Github::ReviewBotInstallationToken.private_key.present?
+            "paid-code-reviewer GitHub App private key is present but cannot be parsed as RSA " \
+              "(must be a PEM-encoded PKCS#1 or PKCS#8 key, not OpenSSH format)"
+          else
+            "paid-code-reviewer GitHub App credentials are not configured"
+          end
+        errors.add(:review_settings, "paid_agent requires the #{reason}")
       end
 
       termination = config["termination"]

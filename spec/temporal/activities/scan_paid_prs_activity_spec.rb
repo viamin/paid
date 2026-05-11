@@ -1748,12 +1748,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           ])
       end
 
-      it "treats the review as unaddressed because HEAD has not advanced (#1152)" do
+      it "treats the review as unaddressed and emits only the paid_agent_review_pending gate (#1152)" do
         result = activity.execute(project_id: project.id)
 
+        # Gate: a pending paid_agent review suppresses every other trigger so
+        # the scanner enqueues exactly one run (the review) per cycle. Bot
+        # comments and bot-review-pending are real signals but would route to
+        # a create_pr follow-up that collides with the review on /workspace.
+        # They will be re-detected on the next scan after the review posts.
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+        expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
     end
 
@@ -1845,12 +1850,73 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([])
       end
 
-      it "keeps the review actionable and queues a paid_agent review run" do
+      it "queues only the paid_agent review run; bot comments are re-detected next cycle" do
+        result = activity.execute(project_id: project.id)
+
+        # See the gate rationale in the #1152 test above.
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to eq([ "paid_agent_review_pending" ])
+      end
+    end
+
+    describe "paid_agent_review_pending hard gate" do
+      # Regression coverage for the scheduler bug where each scan cycle emitted
+      # both a review run and a create_pr follow-up for the same PR, causing
+      # WorktreeConflict failures on /workspace. The gate ensures exactly one
+      # actionable trigger per PR per cycle when a paid_agent review is pending.
+
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "create_pr",
+          trigger_type: "automatic",
+          completed_at: 30.minutes.ago)
+      end
+
+      it "suppresses ci_failure when a paid_agent review is pending in ready phase" do
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "failure" } ],
+          reviews: []
+        )
+
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending", "paid_agent_review_pending")
+        expect(trigger_types).to eq([ "paid_agent_review_pending" ])
+      end
+
+      it "does not gate when there is no paid_agent review pending (review already complete)" do
+        # A subsequent completed review with no new code changes clears the
+        # pending trigger, so ci_failure should pass through unimpeded.
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          goal: "review",
+          trigger_type: "automatic",
+          completed_at: 10.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "failure" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                     body: "Generated no new comments. <!-- paid-review-clean -->",
+                     submitted_at: 5.minutes.ago, commit_id: "abc123" } ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("ci_failure")
+        expect(trigger_types).not_to include("paid_agent_review_pending")
       end
     end
 
@@ -1942,12 +2008,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([ "app/services/other_service.rb", "db/schema.rb" ])
       end
 
-      it "queues a paid_agent review run alongside the bot triggers" do
+      it "queues only the paid_agent review run; bot comments are re-detected next cycle" do
         result = activity.execute(project_id: project.id)
 
+        # See the gate rationale in the #1152 test above.
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
-        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending", "paid_agent_review_pending")
+        expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
     end
 
@@ -5586,8 +5653,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger[:phase]).to eq("restarted")
-        expect(trigger_types).to include("ci_failure")
-        expect(trigger_types).not_to include("escalate_to_owner")
+        # paid_agent_review_pending gates the ci_failure trigger in this cycle —
+        # the review must run before any create_pr follow-up addresses CI.
+        # ci_failure will be re-emitted on the next scan after the review posts.
+        expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
 
       it "can emit paid_agent_review_pending again after draft conversion restarts the cycle" do
@@ -6891,7 +6960,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
-      it "continues scanning other signals alongside review_goal_retry" do
+      it "continues scanning other signals alongside review_goal_retry but the review-pending gate suppresses ci_failure" do
         stub_github_for_pr(
           draft: true,
           reviews: [],
@@ -6908,7 +6977,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_goal_retry")
-        expect(trigger_types).to include("ci_failure")
+        # paid_agent_review_pending is the gate: ci_failure will be re-emitted
+        # on the next scan after the review run completes.
+        expect(trigger_types).not_to include("ci_failure")
       end
 
       it "does not emit review_goal_retry when the failed run already posted a review" do

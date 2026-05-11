@@ -469,13 +469,46 @@ module Activities
         return :skipped
       end
 
-      # Re-add pending triggers so the workflow can request the review.
-      all_triggers.concat(pending_triggers)
-      all_triggers.concat(sidecar_triggers)
+      # Hard gate: when a paid_agent review is pending for this PR, suppress
+      # every other actionable trigger in this cycle. The review run locks
+      # /workspace, so emitting blocking triggers alongside causes the
+      # workflow to enqueue a create_pr follow-up that collides on the same
+      # branch (WorktreeConflict). Other triggers (CI, comments, threads)
+      # will be re-detected on the next scan after the review posts, when
+      # the appropriate follow-up — informed by the new feedback — can run.
+      review_pending = pending_review_trigger(pending_triggers + sidecar_triggers)
+      triggers =
+        if review_pending
+          log_review_pending_gate(project, issue, suppressed: all_triggers)
+          pending_triggers + sidecar_triggers
+        else
+          all_triggers + pending_triggers + sidecar_triggers
+        end
 
-      triggers = all_triggers
       log_triggers(project, issue, triggers)
       draft_trigger_payload(issue, triggers)
+    end
+
+    # Returns the paid_agent_review_pending trigger when present, or nil.
+    # Used as a hard gate to suppress create_pr-eligible triggers in the
+    # same cycle, since both runs would share /workspace.
+    def pending_review_trigger(triggers)
+      Array(triggers).find { |t| t[:type] == "paid_agent_review_pending" }
+    end
+
+    # Emit a structured log when the gate suppresses other actionable
+    # triggers so operators can see why a CI failure or thread comment
+    # didn't translate into a create_pr follow-up this cycle.
+    def log_review_pending_gate(project, issue, suppressed:)
+      return if suppressed.empty?
+
+      logger.info(
+        message: "pr_scanner.review_pending_gate",
+        project_id: project.id,
+        issue_id: issue&.id,
+        pr_number: issue&.github_number,
+        suppressed_trigger_types: Array(suppressed).map { |t| t[:type] }.uniq
+      )
     end
 
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
@@ -714,6 +747,14 @@ module Activities
       # were unavailable, return nil to prevent stamping last_pr_scan_at
       # on a potentially incomplete "all clear".
       return nil if triggers.empty? && partial_failure
+
+      # Hard gate: a pending paid_agent review takes precedence over any
+      # other actionable trigger for the PR — see scan_draft_pr for rationale.
+      review_pending = pending_review_trigger(triggers)
+      if review_pending
+        log_review_pending_gate(project, issue, suppressed: triggers - [ review_pending ])
+        return [ review_pending ]
+      end
 
       triggers
     end
