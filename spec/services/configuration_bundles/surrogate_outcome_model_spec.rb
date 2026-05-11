@@ -85,6 +85,37 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
     }
   end
 
+  def unseen_bundle_identity
+    {
+      provider_id: "unseen-provider",
+      prompt_version_id: "unseen-prompt",
+      model_selection: { "provider" => "unseen-provider", "model" => "new-model" },
+      service_container_ids: [ 42 ],
+      mcp_servers: [ { "name" => "new-server", "transport" => "http" } ]
+    }
+  end
+
+  def goal_scoped_baseline_rows
+    [
+      build_row(
+        goal: "create_pr", agent_type: "claude_code", quality_score: 0.8, success: true,
+        **openai_bundle_identity
+      ),
+      build_row(
+        goal: "create_pr", agent_type: "claude_code", quality_score: 0.4, success: false,
+        **openai_bundle_identity
+      ),
+      build_row(
+        goal: "review", agent_type: "claude_code", quality_score: 0.95, success: true,
+        **anthropic_bundle_identity
+      )
+    ]
+  end
+
+  def unseen_bundle_definition(goal: "create_pr", agent_type: "claude_code")
+    bundle_definition(goal:, agent_type:, **unseen_bundle_identity)
+  end
+
   describe ".train" do
     it "stores global statistics from the training dataset" do
       rows = [
@@ -138,7 +169,7 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
       expect(prediction.trained_at).to be_nil
     end
 
-    it "returns global baseline when no historical rows match the query goal" do
+    it "returns the prior when there is no history for the query goal" do
       rows = [
         build_row(goal: "review", agent_type: "claude_code", quality_score: 0.9, success: true)
       ]
@@ -147,8 +178,18 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
 
       prediction = model.predict(bundle_definition: bundle_definition(goal: "create_pr"))
 
-      expect(prediction.predicted_quality_score).to be_within(0.001).of(0.9)
-      expect(prediction.predicted_success_probability).to eq(1.0)
+      expect(prediction.predicted_quality_score).to eq(described_class::PRIOR_MEAN)
+      expect(prediction.predicted_success_probability).to eq(described_class::PRIOR_MEAN)
+      expect(prediction.sample_count).to eq(0.0)
+      expect(prediction.trained_at).to be_present
+    end
+
+    it "returns a goal-scoped baseline when the goal matches but other context filters exclude rows" do
+      model = described_class.train(dataset: build_dataset(goal_scoped_baseline_rows))
+      prediction = model.predict(bundle_definition: unseen_bundle_definition)
+
+      expect(prediction.predicted_quality_score).to be_within(0.001).of(0.6)
+      expect(prediction.predicted_success_probability).to be_within(0.001).of(0.5)
       expect(prediction.sample_count).to eq(0.0)
     end
 

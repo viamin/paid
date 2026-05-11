@@ -66,7 +66,7 @@ module ConfigurationBundles
       query_features = FeatureExtractor.call(bundle_definition)
       matches = find_matches(query_features)
 
-      return global_baseline_prediction if matches.empty?
+      return goal_baseline_prediction(query_features.goal) if matches.empty?
 
       weighted_prediction(query_features, matches)
     end
@@ -193,17 +193,28 @@ module ConfigurationBundles
       )
     end
 
-    def global_baseline_prediction
+    def goal_baseline_prediction(goal)
+      goal_rows = trained_state.rows.select { |row| row.features.goal == goal }
+      return prior_prediction_for_trained_state if goal_rows.empty?
+
+      total_weight = goal_rows.sum(&:weight)
+
       Prediction.new(
-        predicted_objective_score: trained_state.global_mean_objective,
-        predicted_quality_score: trained_state.global_mean_quality,
-        predicted_success_probability: trained_state.global_success_rate,
+        predicted_objective_score: weighted_mean(goal_rows.map(&:objective_score), goal_rows.map(&:weight), total_weight),
+        predicted_quality_score: weighted_mean(goal_rows.map(&:quality_score), goal_rows.map(&:weight), total_weight),
+        predicted_success_probability: weighted_mean(goal_rows.map { |row| row.success ? 1.0 : 0.0 }, goal_rows.map(&:weight), total_weight),
         predicted_cost_cents: nil,
         predicted_duration_seconds: nil,
         uncertainty: 1.0,
         sample_count: 0.0,
         trained_at: trained_state.trained_at
       )
+    end
+
+    def prior_prediction_for_trained_state
+      prior_prediction.dup.tap do |prediction|
+        prediction.trained_at = trained_state.trained_at
+      end
     end
 
     def empty_trained_state
