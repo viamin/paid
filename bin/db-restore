@@ -183,15 +183,21 @@ if [[ -n "$COMPOSE_CONTAINER" ]]; then
 
   echo "Restoring data..."
   RESTORE_FAILED=""
-  docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" \
-    pg_restore --data-only --no-owner --no-privileges -U "$COMPOSE_DB_USER" -d "$DB_NAME" < "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
+  RESTORE_OUTPUT="$(docker exec -e PGPASSWORD="$COMPOSE_DB_PASSWORD" -i "$COMPOSE_CONTAINER" \
+    pg_restore --data-only --no-owner --no-privileges -U "$COMPOSE_DB_USER" -d "$DB_NAME" < "$BACKUP_PATH" 2>&1)" || RESTORE_FAILED=1
 
   enable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Re-enabling triggers on data tables..."
   enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES "Re-enabling RLS on %d tables..."
   RESTORE_CLEANUP_DONE=1
 
   if [[ -n "$RESTORE_FAILED" ]]; then
-    echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    RESTORE_ERRORS="$(echo "$RESTORE_OUTPUT" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
+    if [[ -n "$RESTORE_ERRORS" ]]; then
+      echo "Error: pg_restore reported errors:" >&2
+      echo "$RESTORE_ERRORS" | head -20 >&2
+    else
+      echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    fi
     exit 1
   fi
 
@@ -230,14 +236,20 @@ elif [[ -n "$DB_NAME" ]]; then
     PG_HOST_ARGS=(-h "$DB_HOST")
   fi
   RESTORE_FAILED=""
-  PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" --data-only --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME" "$BACKUP_PATH" 2>&1 || RESTORE_FAILED=1
+  RESTORE_OUTPUT="$(PGPASSWORD="$DB_PASSWORD" pg_restore "${PG_HOST_ARGS[@]}" --data-only --no-owner --no-privileges -U "$DB_USER" -d "$DB_NAME" "$BACKUP_PATH" 2>&1)" || RESTORE_FAILED=1
 
   enable_triggers "$DB_NAME" "$DATA_TABLES" 1 "Re-enabling triggers on data tables..."
   enable_rls "$DB_NAME" "$RLS_TABLES" 1 RLS_TABLES "Re-enabling RLS on %d tables..."
   RESTORE_CLEANUP_DONE=1
 
   if [[ -n "$RESTORE_FAILED" ]]; then
-    echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    RESTORE_ERRORS="$(echo "$RESTORE_OUTPUT" | grep -iE "error|failed" | grep -vi "errors ignored on restore" || true)"
+    if [[ -n "$RESTORE_ERRORS" ]]; then
+      echo "Error: pg_restore reported errors:" >&2
+      echo "$RESTORE_ERRORS" | head -20 >&2
+    else
+      echo "Error: pg_restore reported errors. Data may be incomplete." >&2
+    fi
     exit 1
   fi
 
