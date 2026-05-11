@@ -28,6 +28,14 @@ class KnowledgeArtifact < ApplicationRecord
       .order(Arel.sql("similarity(identifier, #{connection.quote(query)}) DESC"), :id)
   }
 
+  def self.artifact_counts_cache_key(project_id)
+    "project_artifact_counts/#{project_id}"
+  end
+
+  def self.bust_artifact_counts_cache(project_id)
+    Rails.cache.delete(artifact_counts_cache_key(project_id))
+  end
+
   private
 
   def project_matches_collector_run
