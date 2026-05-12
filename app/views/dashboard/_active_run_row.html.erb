@@ -2,6 +2,9 @@
   <td class="whitespace-nowrap px-4 py-3 text-sm">
     <%= agent_run_status_badge(run.status) %>
   </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <%= agent_run_priority_badge(run) %>
+  </td>
   <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
     <%= link_to run.project.full_name, project_path(run.project), class: "hover:text-indigo-600" %>
   </td>

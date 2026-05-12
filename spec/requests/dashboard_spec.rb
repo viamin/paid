@@ -215,6 +215,24 @@ RSpec.describe "Dashboard" do
         expect(row.text).to include(provider.display_name)
       end
 
+      it "shows the priority column in the active runs table" do
+        issue = create(:issue, project: project, labels: [ "P1" ])
+        run = create(:agent_run, :running, project: project, issue: issue)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        table = document.at_css("#active-runs table")
+
+        expect(table).to be_present
+        expect(table.css("thead th").map { |header| header.text.squish }).to include("Priority")
+
+        row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+
+        expect(row).to be_present
+        expect(row.text).to include("2 - P1")
+      end
+
       it "shows the final provider label for legacy fallback runs in the active runs table" do
         initial_provider = create(:provider, user: user, provider_key: "codex")
         run = create(:agent_run, :running, project: project, provider: initial_provider, final_provider: "cursor")
