@@ -47,11 +47,14 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("applied")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
-          "chosen_action" => "retry_alternate_provider"
+          "chosen_action" => "retry_alternate_provider",
+          "policy_source" => "defaults",
+          "policy_key" => "failure_recovery"
         )
         expect(decision.outputs).to include(
           "chosen_action" => "retry_alternate_provider",
-          "action_status" => "pending"
+          "action_status" => "pending",
+          "policy_source" => "defaults"
         )
       end
 
@@ -71,7 +74,8 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("failed")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
-          "chosen_action" => "retry_alternate_provider"
+          "chosen_action" => "retry_alternate_provider",
+          "policy_source" => "defaults"
         )
         expect(decision.outputs).to include(
           "chosen_action" => "retry_alternate_provider",
@@ -306,7 +310,8 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("applied")
         expect(decision.inputs).to include(
           "failure_category" => "timeout",
-          "chosen_action" => "escalate_model"
+          "chosen_action" => "escalate_model",
+          "policy_source" => "override"
         )
       end
 
@@ -326,7 +331,8 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("failed")
         expect(decision.inputs).to include(
           "failure_category" => "timeout",
-          "chosen_action" => "escalate_model"
+          "chosen_action" => "escalate_model",
+          "policy_source" => "override"
         )
         expect(decision.outputs["chosen_action"]).to eq("escalate_model")
         expect(decision.outputs["error_class"]).to eq("ActiveRecord::RecordInvalid")
@@ -378,6 +384,7 @@ RSpec.describe Coordination::FailureRecovery do
         expect(ctx["final_provider"]).to eq("anthropic")
         expect(ctx["providers_attempted"]).to eq([ anthropic_attempt, openai_attempt ])
         expect(ctx["provider_switches"]).to eq(1)
+        expect(ctx["policy_source"]).to eq("defaults")
       end
     end
   end
