@@ -192,6 +192,10 @@ class Issue < ApplicationRecord
     end
   end
 
+  def needs_input?
+    paid_state == "needs_input"
+  end
+
   def draft_phase?
     pr_review_phase.in?(%w[draft restarted])
   end

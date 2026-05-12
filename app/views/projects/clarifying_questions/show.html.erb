@@ -1,0 +1,109 @@
+<% content_for(:title) { "Answer Questions - #{@issue.title} - Paid" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8"
+     data-controller="clarifying-questions"
+     data-clarifying-questions-total-value="<%= @questions.size %>">
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Clarifying Questions</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        Answer questions for <strong><%= link_to "##{@issue.github_number} #{@issue.title}",
+              @issue.github_url, target: "_blank", rel: "noopener noreferrer",
+              class: "text-indigo-600 hover:text-indigo-500" %></strong>
+        in <strong><%= @project.name %></strong>.
+      </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-4">
+      <%= link_to back_link_path(project_path(@project)), class: "text-sm text-indigo-600 hover:text-indigo-500" do %>
+        &larr; Back to project
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-6">
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-4 sm:px-6">
+        <div class="flex items-center justify-between">
+          <p class="text-sm font-medium text-gray-700">
+            Progress: <span data-clarifying-questions-target="progressAnswered">0</span> / <%= @questions.size %> questions answered
+          </p>
+          <p class="text-sm text-gray-500">
+            <span data-clarifying-questions-target="progressPercent">0</span>%
+          </p>
+        </div>
+        <div class="mt-2 w-full bg-gray-200 rounded-full h-2">
+          <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+               data-clarifying-questions-target="progressBar"
+               style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <%= form_with url: project_issue_clarifying_questions_path(@project, @issue),
+                  method: :post,
+                  data: { clarifying_questions_target: "form" } do |f| %>
+
+      <% @questions.each_with_index do |question, index| %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
+             data-clarifying-questions-target="step"
+             data-step-index="<%= index %>"
+             style="<%= index == 0 ? '' : 'display: none;' %>">
+          <div class="px-4 py-5 sm:p-6">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-xs font-medium text-gray-500">
+                Question <%= index + 1 %> of <%= @questions.size %>
+              </span>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 mb-4"><%= question %></h3>
+
+            <%= f.hidden_field "questions[]", value: question, id: "question_#{index}" %>
+
+            <label for="answer_<%= index %>" class="block text-sm font-medium text-gray-700 mb-1">
+              Your answer <span class="text-red-500">*</span>
+            </label>
+            <%= text_area_tag "answers[]", nil,
+                  id: "answer_#{index}",
+                  rows: 4,
+                  required: true,
+                  placeholder: "Enter your answer...",
+                  class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
+                  data: {
+                    clarifying_questions_target: "answer",
+                    step_index: index,
+                    action: "input->clarifying-questions#updateProgress"
+                  } %>
+
+            <div class="mt-4 flex items-center justify-between">
+              <div>
+                <% if index > 0 %>
+                  <button type="button"
+                          class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer"
+                          data-action="click->clarifying-questions#previous">
+                    &larr; Previous
+                  </button>
+                <% end %>
+              </div>
+              <div class="flex items-center gap-3">
+                <% if index < @questions.size - 1 %>
+                  <button type="button"
+                          class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer"
+                          data-action="click->clarifying-questions#next">
+                    Next &rarr;
+                  </button>
+                <% else %>
+                  <%= f.submit "Submit All Answers",
+                        class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 cursor-pointer",
+                        data: {
+                          clarifying_questions_target: "submitButton",
+                          turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub issue."
+                        } %>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+</div>
