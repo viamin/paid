@@ -22,7 +22,7 @@
     "chartkick": "5.0.1",
     "highlight.js": "11.11.1",
     "marked": "18.0.3",
-    "playwright": "1.59.1",
+    "playwright": "1.60.0",
     "sortablejs": "1.15.7",
     "tailwindcss": "4.3.0"
   },
