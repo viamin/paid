@@ -99,6 +99,19 @@ RSpec.describe "StrategyReviews" do
       expect(response.body).to include("\"parallel\"")
     end
 
+    it "does not allow direct review access for global strategies" do
+      global_strategy = create(:strategy, :global, name: "Global Strategy")
+      global_pending_version = global_strategy.create_pending_version!(
+        content: { "mode" => "global" },
+        provenance: { "source" => "evolution" },
+        created_by: "evolution"
+      )
+
+      get strategy_review_path(global_strategy, global_pending_version)
+
+      expect(response).to have_http_status(:not_found)
+    end
+
     it "keeps the promotion diff baseline anchored to the active version after reviewer edits" do
       patch strategy_review_path(strategy, pending_version), params: {
         strategy_version: {
