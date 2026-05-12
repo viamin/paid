@@ -676,10 +676,9 @@ RSpec.describe "Projects" do
         get project_path(project)
 
         document = Nokogiri::HTML(response.body)
-        row = document.at_css(%(tr#agent_run_#{agent_run.id}))
 
-        expect(document.css("table thead th").map { |header| header.text.squish }).to include("Goal")
-        expect(row.css("td")[2].text.squish).to include("Create PR")
+        expect(project_agent_run_column_index(document, project, "Goal")).not_to be_nil
+        expect(project_agent_run_cell(document, project, agent_run, "Goal").text.squish).to include("Create PR")
       end
 
       it "shows the Goal column with Create Issue label for create_issue runs" do
@@ -689,10 +688,9 @@ RSpec.describe "Projects" do
         get project_path(project)
 
         document = Nokogiri::HTML(response.body)
-        row = document.at_css(%(tr#agent_run_#{agent_run.id}))
 
-        expect(document.css("table thead th").map { |header| header.text.squish }).to include("Goal")
-        expect(row.css("td")[2].text.squish).to include("Create Issue")
+        expect(project_agent_run_column_index(document, project, "Goal")).not_to be_nil
+        expect(project_agent_run_cell(document, project, agent_run, "Goal").text.squish).to include("Create Issue")
       end
 
       it "shows issue link when created_issue_url is present" do
@@ -2176,5 +2174,36 @@ RSpec.describe "Projects" do
         end
       end
     end
+  end
+
+  def project_agent_runs_section(document, project)
+    section = document.at_css(%(div[id="#{ActionView::RecordIdentifier.dom_id(project, :agent_runs)}"]))
+
+    expect(section).to be_present
+    section
+  end
+
+  def project_agent_run_row(document, project, run)
+    section = project_agent_runs_section(document, project)
+    run_path = project_agent_run_path(project, run)
+    row = section.at_css(%(a[href="#{run_path}"]))&.ancestors("tr")&.first
+
+    expect(row).to be_present
+    row
+  end
+
+  def project_agent_run_column_index(document, project, header_text)
+    project_agent_runs_section(document, project).css("thead th").find_index { |header| header.text.squish == header_text }
+  end
+
+  def project_agent_run_cell(document, project, run, header_text)
+    index = project_agent_run_column_index(document, project, header_text)
+
+    expect(index).not_to be_nil, "Expected a '#{header_text}' header column in the project agent runs table but none was found"
+
+    cell = project_agent_run_row(document, project, run).css("td")[index]
+
+    expect(cell).to be_present
+    cell
   end
 end
