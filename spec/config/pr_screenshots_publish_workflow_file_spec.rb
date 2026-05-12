@@ -27,8 +27,8 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('candidate["head_branch"] == head_ref')
   end
 
-  it "treats missing capture jobs as skipped when the detect job completed" do
-    expect(resolve_step.fetch("run")).to include('elsif jobs.any? { |job| job["name"] == "Detect" || job["name"] == "detect" }')
-    expect(resolve_step.fetch("run")).to include('"Could not find capture or detect job')
+  it "treats missing capture jobs as skipped only when detect completed cleanly" do
+    expect(resolve_step.fetch("run")).to include('elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])')
+    expect(resolve_step.fetch("run")).to include('"Could not find a successful capture job, and detect did not complete cleanly')
   end
 end

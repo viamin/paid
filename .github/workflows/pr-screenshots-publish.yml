@@ -91,13 +91,14 @@ jobs:
 
           jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
           capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
+          detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
           capture_conclusion =
             if capture_job
               capture_job["conclusion"]
-            elsif jobs.any? { |job| job["name"] == "Detect" || job["name"] == "detect" }
+            elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
               "skipped"
             else
-              raise "Could not find capture or detect job for workflow run #{run.fetch("id")}"
+              raise "Could not find a successful capture job, and detect did not complete cleanly, for workflow run #{run.fetch("id")}"
             end
 
           artifacts = get_json(
