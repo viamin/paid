@@ -99,7 +99,8 @@ class StrategyVersion < ApplicationRecord
   end
 
   def activation_requires_promotion_metadata
-    return unless promotion_state_change_to_be_saved == [ "candidate", "active" ]
+    return unless persisted?
+    return unless promotion_state_change_to_be_saved&.last == "active"
     return unless retired_at.nil?
     return if promoted_at.present? && promoted_by_user.present?
 

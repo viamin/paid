@@ -102,6 +102,15 @@ RSpec.describe StrategyVersion do
       expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
     end
 
+    it "requires promotion metadata when activating an existing draft" do
+      version = create(:strategy_version)
+
+      version.promotion_state = "active"
+
+      expect(version).not_to be_valid
+      expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
+    end
+
     it "allows creating an active seed version without review metadata" do
       version = build(:strategy_version, promotion_state: "active", promoted_at: nil, promoted_by_user: nil)
 
