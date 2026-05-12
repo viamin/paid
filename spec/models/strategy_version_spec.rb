@@ -126,6 +126,23 @@ RSpec.describe StrategyVersion do
       expect(version).not_to be_valid
       expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
     end
+
+    it "allows a later seeded global activation without reviewer metadata" do
+      strategy = create(:strategy, :global)
+      create(:strategy_version, :active, strategy: strategy, version: 1)
+
+      version = build(
+        :strategy_version,
+        strategy: strategy,
+        version: 2,
+        promotion_state: "active",
+        created_by: "seed",
+        promoted_at: Time.current,
+        promoted_by_user: nil
+      )
+
+      expect(version).to be_valid
+    end
   end
 
   describe "promotion state" do
