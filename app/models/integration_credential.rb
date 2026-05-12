@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class IntegrationCredential < ApplicationRecord
+  has_logidze
   AUTH_KINDS = %w[api_key oauth_token signing_token].freeze
 
   belongs_to :account

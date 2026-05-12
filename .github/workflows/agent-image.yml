@@ -132,6 +132,17 @@ jobs:
           fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Pi package from agent-harness
+        id: pi-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb pi)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Pi package from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
       - name: Extract Kilocode CLI install contract from agent-harness
         id: kilocode-contract
         run: |
@@ -202,6 +213,7 @@ jobs:
             CURSOR_GLOBAL_PATH=${{ steps.cursor-contract.outputs.global_path }}
             CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
             OPENCODE_PACKAGE=${{ steps.opencode-contract.outputs.package }}
+            PI_PACKAGE=${{ steps.pi-contract.outputs.package }}
             KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
             AIDER_INSTALL_COMMAND=${{ steps.aider-contract.outputs.install_command }}
