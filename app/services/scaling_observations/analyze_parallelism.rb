@@ -6,6 +6,7 @@ module ScalingObservations
       :status,
       :sample_count,
       :recommended_agent_count,
+      :recommended_parallelism,
       :recommended_max_batch_size,
       :diminishing_returns_at,
       :threshold_signal_at,
@@ -18,6 +19,7 @@ module ScalingObservations
           "status" => status,
           "sample_count" => sample_count,
           "recommended_agent_count" => recommended_agent_count,
+          "recommended_parallelism" => recommended_parallelism,
           "recommended_max_batch_size" => recommended_max_batch_size,
           "diminishing_returns_at" => diminishing_returns_at,
           "threshold_signal_at" => threshold_signal_at,
@@ -48,6 +50,7 @@ module ScalingObservations
         status: analysis_status,
         sample_count: grouped_values.sum { |value| value["sample_count"] },
         recommended_agent_count: recommendation&.fetch("requested_agent_count", nil),
+        recommended_parallelism: recommendation&.fetch("parallelism", nil),
         recommended_max_batch_size: recommendation&.fetch("max_batch_size", nil),
         diminishing_returns_at: diminishing_returns_at,
         threshold_signal_at: threshold_signal_at,
@@ -62,14 +65,14 @@ module ScalingObservations
 
     def grouped_values
       @grouped_values ||= begin
-        grouped = observations.group_by { |observation| observation.agent_count_planned.to_i }
+        grouped = observations.group_by { |observation| observation.parallelism_planned.to_i }
         summaries = []
 
-        grouped.keys.sort.each do |agent_count|
-          rows = grouped.fetch(agent_count)
+        grouped.keys.sort.each do |parallelism|
+          rows = grouped.fetch(parallelism)
           previous = summaries.last
 
-          summaries << build_value_summary(agent_count:, rows:, previous:)
+          summaries << build_value_summary(parallelism:, rows:, previous:)
         end
 
         summaries
@@ -89,13 +92,13 @@ module ScalingObservations
 
     def diminishing_returns_at
       grouped_values.find { |value| value["signals"].include?("diminishing_returns") }
-        &.fetch("agent_count", nil)
+        &.fetch("parallelism", nil)
     end
 
     def threshold_signal_at
       grouped_values.find do |value|
         value["signals"].any? { |signal| signal != "diminishing_returns" }
-      end&.fetch("agent_count", nil)
+      end&.fetch("parallelism", nil)
     end
 
     def recommendation
@@ -108,13 +111,15 @@ module ScalingObservations
             -value["avg_duration_seconds"],
             -value["avg_cost_cents"],
             -value["avg_parallelism_observed"],
-            -value["agent_count"]
+            -value["parallelism"]
           ]
         end
         if candidate
           {
-            "requested_agent_count" => candidate["agent_count"],
-            "max_batch_size" => candidate["agent_count"],
+            "requested_agent_count" => candidate["recommended_agent_count"],
+            "parallelism" => candidate["parallelism"],
+            "max_batch_size" => candidate["parallelism"],
+            "sample_count" => candidate["sample_count"],
             "reason" => recommendation_reason(candidate),
             "confidence" => confidence_for(candidate)
           }
@@ -142,12 +147,14 @@ module ScalingObservations
       candidate.fetch("sample_count", 0) >= (min_samples * 2) ? "high" : "medium"
     end
 
-    def build_value_summary(agent_count:, rows:, previous:)
+    def build_value_summary(parallelism:, rows:, previous:)
       sample_count = rows.size
       success_rate = rate(rows, &:success)
       avg_duration_seconds = average(rows, &:duration_seconds)
       avg_cost_cents = average(rows, &:total_cost_cents)
       avg_parallelism_observed = average(rows, &:parallelism_observed)
+      avg_agent_count_planned = average(rows, &:agent_count_planned)
+      avg_agent_count_launched = average(rows, &:agent_count_launched)
       launch_rate = ratio(
         rows.sum(&:agent_count_launched),
         rows.sum(&:agent_count_planned)
@@ -167,12 +174,15 @@ module ScalingObservations
       )
 
       {
-        "agent_count" => agent_count,
+        "parallelism" => parallelism,
         "sample_count" => sample_count,
         "success_rate" => success_rate,
         "avg_duration_seconds" => avg_duration_seconds,
         "avg_cost_cents" => avg_cost_cents,
         "avg_parallelism_observed" => avg_parallelism_observed,
+        "avg_agent_count_planned" => avg_agent_count_planned,
+        "avg_agent_count_launched" => avg_agent_count_launched,
+        "recommended_agent_count" => recommended_agent_count_for(rows, avg_agent_count_planned),
         "launch_rate" => launch_rate,
         "blocked_rate" => blocked_rate,
         "marginal_duration_improvement_ratio" => marginal_duration_improvement_ratio,
@@ -216,6 +226,12 @@ module ScalingObservations
       return 0.0 if denominator.to_i <= 0
 
       (numerator.to_f / denominator).round(4)
+    end
+
+    def recommended_agent_count_for(rows, avg_agent_count_planned)
+      return rows.map(&:agent_count_planned).max.to_i if avg_agent_count_planned.zero?
+
+      avg_agent_count_planned.round
     end
   end
 end
