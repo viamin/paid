@@ -253,6 +253,20 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
+      it "accepts sqlite3 declared with parenthesized Gemfile syntax" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(false)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)
+          source "https://rubygems.org"
+
+          gem("sqlite3", "~> 2.2")
+        GEMFILE
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        expect(command_collector.collect.length).to eq(11)
+      end
+
       it "does not treat commented Gemfile mentions as sqlite3 support" do
         allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(false)
         allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)

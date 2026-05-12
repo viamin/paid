@@ -5,7 +5,7 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
-      SQLITE3_GEMFILE_PATTERN = /^\s*gem\s+["']sqlite3["']/.freeze
+      SQLITE3_GEMFILE_PATTERN = /^\s*gem(?:\s+|\s*\()\s*["']sqlite3["']/.freeze
       SQLITE3_LOCKFILE_PATTERN = /^\s{2,4}sqlite3(?:\s|\(|$)/.freeze
       # Exception class names that indicate database issues preventing
       # `bin/rails routes` from booting. Checked against both
