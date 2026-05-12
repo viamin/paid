@@ -11,4 +11,8 @@ class CoordinationExperimentVariant < ApplicationRecord
   def parsed_policy
     policy_config.deep_dup
   end
+
+  def effective_policy(control_policy:)
+    control_policy.deep_dup.deep_merge(parsed_policy)
+  end
 end
