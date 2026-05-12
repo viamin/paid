@@ -149,6 +149,25 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       service.call
     end
 
+    it "falls back to rebuilding the bundle payload when the optimizer definition references a stale experiment id" do
+      fallback_definition = experiment_definition_for(8000)
+      stale_definition = experiment_definition_for(selected_variant.parsed_value).deep_dup
+      stale_definition.dig("experiments", "knowledge.token_budget")["configuration_experiment_id"] = 999
+      selection = optimizer_selection(definition: stale_definition)
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        active_experiments: [ experiment ]
+      )
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
+
     it "falls back to rebuilding the bundle payload when the optimizer definition omits required run attributes" do
       fallback_definition = selection_definition.merge(
         "experiments" => {

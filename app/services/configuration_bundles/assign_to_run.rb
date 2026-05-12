@@ -203,13 +203,21 @@ module ConfigurationBundles
         variant_id = experiment_definition["configuration_experiment_variant_id"]
         next if experiment_id.blank? || variant_id.blank?
 
-        experiment = ConfigurationExperiment.find(experiment_id)
-        variant = ConfigurationExperimentVariant.find(variant_id)
-        raise ArgumentError, "configuration experiment variant must belong to the same experiment" if variant.configuration_experiment_id != experiment.id
+        experiment = active_experiments_by_id[experiment_id]
+        raise ActiveRecord::RecordNotFound, "configuration experiment is no longer active" unless experiment
+
+        variant = optimizer_definition_variant_for(experiment, variant_id)
         raise ArgumentError, "configuration experiment variant value must match the optimizer definition" unless optimizer_definition_variant_matches?(experiment_definition, variant, experiment:)
 
         [ experiment, variant ]
       end
+    end
+
+    def optimizer_definition_variant_for(experiment, variant_id)
+      variant = ConfigurationExperimentVariant.find_by(id: variant_id, configuration_experiment_id: experiment.id)
+      return variant if variant
+
+      raise ActiveRecord::RecordNotFound, "configuration experiment variant is no longer active"
     end
 
     def optimizer_experiment_for(variant, experiment_id)
@@ -296,6 +304,10 @@ module ConfigurationBundles
       @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
         ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
       end
+    end
+
+    def active_experiments_by_id
+      @active_experiments_by_id ||= active_experiments.index_by(&:id)
     end
 
     def parsed_optimizer_variant_value(variant, experiment:)
