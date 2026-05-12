@@ -356,6 +356,18 @@ RSpec.describe ApplicationHelper, :no_db do
       expect(helper.agent_run_goal_label("review")).to eq("Code Review")
     end
 
+    it "provides labels for every configured goal" do
+      labels_by_goal = AgentRun::GOALS.index_with { |goal| helper.agent_run_goal_label(goal) }
+
+      expect(labels_by_goal).to eq(
+        "create_pr" => "Create PR",
+        "create_issue" => "Create Issue",
+        "review" => "Code Review",
+        "enhance_issue" => "Enhance Issue",
+        "analyze_issue" => "Analyze Issue"
+      )
+    end
+
     it "returns nil for blank goals" do
       expect(helper.agent_run_goal_label(nil)).to be_nil
       expect(helper.agent_run_goal_label("")).to be_nil
