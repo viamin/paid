@@ -76,6 +76,16 @@ RSpec.describe ConfigurationBundles::Optimizer, :no_db do
     end
   end
 
+  describe "#best_observed_objective_score_for" do
+    it "memoizes the zero fallback when there is no prior objective history" do
+      allow(optimizer).to receive(:prior_objective_score_for_goal).and_return(nil)
+
+      2.times { expect(optimizer.send(:best_observed_objective_score_for)).to eq(0.0) }
+
+      expect(optimizer).to have_received(:prior_objective_score_for_goal).once
+    end
+  end
+
   def prediction_for(bundle_definition)
     variant_id = bundle_definition.dig("experiments", experiment.config_key, "configuration_experiment_variant_id")
     return control_prediction if variant_id == control.id

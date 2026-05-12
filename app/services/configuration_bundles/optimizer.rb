@@ -332,7 +332,7 @@ module ConfigurationBundles
     end
 
     def best_observed_objective_score_for
-      prior_objective_score_for_goal || 0.0
+      @best_observed_objective_score_for ||= prior_objective_score_for_goal || 0.0
     end
 
     def prior_objective_score_for_goal
