@@ -99,8 +99,8 @@ class StrategyVersion < ApplicationRecord
   end
 
   def activation_requires_promotion_metadata
-    return unless will_save_change_to_promotion_state?
-    return unless promotion_state == "active" && retired_at.nil?
+    return unless promotion_state_change_to_be_saved == [ "candidate", "active" ]
+    return unless retired_at.nil?
     return if promoted_at.present? && promoted_by_user.present?
 
     errors.add(:promotion_state, "requires explicit review metadata before activation")
