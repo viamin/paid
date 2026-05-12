@@ -611,6 +611,24 @@ RSpec.describe "Projects" do
         expect(response.body).to include("#{project.github_url}/pull/#{run.source_pull_request_number}")
       end
 
+      it "shows issue context details in recent agent runs instead of repeating them in the goal column" do
+        project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
+        run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
+          custom_prompt: "Rendered task instructions that should not appear")
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+
+        expect(project_agent_run_cell(document, project, run, "Goal").text.squish).to include("Create PR")
+
+        context_cell = project_agent_run_cell(document, project, run, "Context")
+
+        expect(context_cell.text).to include(issue.title)
+        expect(context_cell.at_css("a")["title"]).to eq(issue.title)
+      end
+
       it "shows review link in actions column when review_url is present on project page" do
         project = create(:project, account: account, github_token: github_token)
         create(:agent_run, :with_review, project: project)

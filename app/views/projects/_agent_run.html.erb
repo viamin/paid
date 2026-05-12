@@ -9,17 +9,7 @@
     <%= agent_run_goal_display(agent_run) %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <% context = agent_run_context(agent_run) %>
-    <% case context[:type] %>
-    <% when :link %>
-      <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
-    <% when :text %>
-      <span class="<%= context[:classes] %>"><%= context[:label] %></span>
-    <% when :in_progress %>
-      <span class="italic text-gray-500">Creating issue&hellip;</span>
-    <% else %>
-      <span class="text-gray-400">-</span>
-    <% end %>
+    <%= agent_run_context_display(agent_run) %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
     <%= agent_run_provider_display(agent_run, provider_displays) %>
