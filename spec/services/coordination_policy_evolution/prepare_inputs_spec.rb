@@ -196,17 +196,20 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
         )
       end
 
-      it "classifies only applied escalation decisions as successes" do
+      it "classifies applied, deferred, and resolved escalation decisions as successes" do
         expect(escalation_result.dig(:performance, :decision_type_counts)).to include("escalate" => 3)
         expect(escalation_result.dig(:performance, :outcome_counts)).to include(
           "applied" => 1,
           "deferred" => 1,
           "resolved" => 1
         )
-        expect(escalation_result.dig(:performance, :success_count)).to eq(1)
-        expect(escalation_result.dig(:performance, :classified_decision_count)).to eq(1)
+        expect(escalation_result.dig(:performance, :success_count)).to eq(3)
+        expect(escalation_result.dig(:performance, :classified_decision_count)).to eq(3)
+        expect(escalation_result.dig(:performance, :failure_count)).to eq(0)
         expect(escalation_result.dig(:performance, :success_rate)).to eq(1.0)
-        expect(escalation_result[:sample_successes].map { |row| row[:decision_status] }).to eq([ "applied" ])
+        expect(escalation_result[:sample_successes].map { |row| row[:decision_status] }).to match_array(
+          %w[applied deferred resolved]
+        )
       end
     end
   end

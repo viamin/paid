@@ -28,13 +28,13 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
       )
     end
 
-    it "counts only applied decisions as successes" do
+    it "classifies applied, deferred, and resolved escalation decisions as successes" do
       summary = service.send(:orchestration_performance_summary)
 
       expect(summary).to include(
         decision_count: 3,
-        classified_decision_count: 1,
-        success_count: 1,
+        classified_decision_count: 3,
+        success_count: 3,
         failure_count: 0,
         noop_count: 0,
         success_rate: 1.0
@@ -51,14 +51,14 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
       )
     end
 
-    it "samples only applied orchestration decisions as successes" do
+    it "samples all escalation success statuses as successes" do
       scoped = instance_double(ActiveRecord::Relation)
       successful = instance_double(ActiveRecord::Relation)
       sampled = [ Object.new ]
 
       allow(service).to receive(:scoped_decisions).and_return(scoped)
       allow(scoped).to receive(:where)
-        .with(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('applied')"))
+        .with(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('applied', 'deferred', 'resolved')"))
         .and_return(successful)
       allow(successful).to receive(:order).with(created_at: :desc, id: :desc).and_return(successful)
       allow(successful).to receive(:limit).with(5).and_return(sampled)

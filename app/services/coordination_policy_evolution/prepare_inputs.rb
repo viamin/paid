@@ -31,6 +31,7 @@ module CoordinationPolicyEvolution
       parallelization_failed
     ].freeze
     ORCHESTRATION_SUCCESS_STATUSES = %w[applied].freeze
+    ESCALATION_SUCCESS_STATUSES = %w[applied deferred resolved].freeze
     ORCHESTRATION_FAILURE_STATUSES = %w[failed].freeze
     ORCHESTRATION_NOOP_STATUSES = %w[noop].freeze
 
@@ -108,8 +109,10 @@ module CoordinationPolicyEvolution
     end
 
     def successful_orchestration_decisions
+      statuses = orchestration_success_statuses
+      placeholders = statuses.map { |s| "'#{s}'" }.join(", ")
       @successful_orchestration_decisions ||= scoped_decisions
-        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('applied')"))
+        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN (#{placeholders})"))
     end
 
     def failed_orchestration_decisions
@@ -144,7 +147,7 @@ module CoordinationPolicyEvolution
 
     def orchestration_performance_summary
       decision_count = scoped_decisions.count
-      success_count = count_orchestration_statuses(ORCHESTRATION_SUCCESS_STATUSES)
+      success_count = count_orchestration_statuses(orchestration_success_statuses)
       failure_count = count_orchestration_statuses(ORCHESTRATION_FAILURE_STATUSES)
       noop_count = count_orchestration_statuses(ORCHESTRATION_NOOP_STATUSES)
       classified_decision_count = success_count + failure_count
@@ -444,6 +447,10 @@ module CoordinationPolicyEvolution
 
     def orchestration_policy_type?
       %w[recovery escalation].include?(policy_type)
+    end
+
+    def orchestration_success_statuses
+      policy_type == "escalation" ? ESCALATION_SUCCESS_STATUSES : ORCHESTRATION_SUCCESS_STATUSES
     end
 
     def orchestration_decision_actor
