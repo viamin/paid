@@ -19,10 +19,7 @@ class RunnersController < ApplicationController
   end
 
   def new
-    # CodeQL false positive: auth_type is not sensitive data — it's a UI routing
-    # hint ("subscription" or "api_key") that selects which form variant to show.
-    # The raw param is discarded immediately; only the allowlisted value is used.
-    auth_type = sanitize_auth_type(params[:auth_type])
+    auth_type = sanitize_auth_type(params[:form_variant])
 
     # Only honor API key auth_type if the user has compatible API keys;
     # otherwise default to subscription to avoid a form with no radio selected.

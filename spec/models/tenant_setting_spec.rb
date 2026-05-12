@@ -51,13 +51,13 @@ RSpec.describe TenantSetting do
       expect(setting.max_users).to eq(25)
       expect(setting.max_tokens_per_run).to eq(10_000_000)
       expect(setting.max_monthly_cost_cents).to be_nil
-      expect(setting.allowed_provider_keys).to eq([])
+      expect(setting.allowed_runner_keys).to eq([])
       expect(setting.features).to eq({})
     end
 
     it "has empty configuration namespace defaults" do
       setting = described_class.new(account: create(:account))
-      expect(setting.provider_preferences).to eq({})
+      expect(setting.runner_preferences).to eq({})
       expect(setting.default_budgets).to eq({})
       expect(setting.guardrails).to eq({})
       expect(setting.quality_thresholds).to eq({})
@@ -70,11 +70,11 @@ RSpec.describe TenantSetting do
   describe "#configuration" do
     it "returns effective tenant configuration namespaces" do
       setting = build(:tenant_setting,
-        provider_preferences: { "model_preferences" => { "claude" => "sonnet" } },
+        runner_preferences: { "model_preferences" => { "claude" => "sonnet" } },
         guardrails: { "max_concurrent_runs" => 5 },
         features: { "explicit_pr_automation_decisions" => true })
 
-      expect(setting.configuration["provider_preferences"]["model_preferences"]["claude"]).to eq("sonnet")
+      expect(setting.configuration["runner_preferences"]["model_preferences"]["claude"]).to eq("sonnet")
       expect(setting.configuration["guardrails"]["max_concurrent_runs"]).to eq(5)
       expect(setting.configuration["features"]["explicit_pr_automation_decisions"]).to be(true)
     end
@@ -125,7 +125,7 @@ RSpec.describe TenantSetting do
       user = create(:user, account: account)
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       setting = create(:tenant_setting, account: account,
-        provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id } })
+        runner_preferences: { "api_key_ids" => { "anthropic" => api_key.id } })
 
       expect(setting.provider_api_key_for("anthropic")).to eq(api_key)
     end

@@ -25,15 +25,15 @@ RSpec.describe "TenantConfigurations" do
   end
 
   describe "PATCH /tenant_configuration" do
-    it "updates provider, budget, guardrail, quality, agent, and feature settings" do
+    it "updates runner, budget, guardrail, quality, agent, and feature settings" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 
       patch tenant_configuration_path, params: tenant_configuration_params(api_key)
 
       expect(response).to redirect_to(edit_tenant_configuration_path)
       setting = account.tenant_setting.reload
-      expect(setting.effective_provider_preferences.dig("api_key_ids", "anthropic")).to eq(api_key.id.to_s)
-      expect(setting.effective_provider_preferences.dig("model_preferences", "claude")).to eq("claude-sonnet-4-5")
+      expect(setting.effective_runner_preferences.dig("api_key_ids", "anthropic")).to eq(api_key.id.to_s)
+      expect(setting.effective_runner_preferences.dig("model_preferences", "claude")).to eq("claude-sonnet-4-5")
       expect(setting.effective_default_budgets.dig("monthly", "limit_cents")).to eq(2500)
       expect(setting.effective_default_budgets.dig("monthly", "enforcement_mode")).to eq("hard_stop")
       expect(setting.effective_guardrails["max_concurrent_runs"]).to eq(4)
@@ -174,7 +174,7 @@ RSpec.describe "TenantConfigurations" do
   def tenant_configuration_params(api_key)
     {
       tenant_setting: {
-        provider_preferences: provider_preferences(api_key),
+        runner_preferences: runner_preferences(api_key),
         default_budgets: default_budgets,
         guardrails: guardrails,
         quality_thresholds: quality_thresholds,
@@ -196,7 +196,7 @@ RSpec.describe "TenantConfigurations" do
     }
   end
 
-  def provider_preferences(api_key)
+  def runner_preferences(api_key)
     {
       api_key_ids: { anthropic: api_key.id },
       model_preferences: { claude: "claude-sonnet-4-5" }

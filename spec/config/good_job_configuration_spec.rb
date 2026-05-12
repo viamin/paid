@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe GoodJob do
+RSpec.describe GoodJob, :no_db do
   around do |example|
     original_env = ENV.to_h.slice(
       "GOOD_JOB_EXECUTION_MODE",
@@ -85,6 +85,7 @@ RSpec.describe GoodJob do
         docker_orphan_cleanup recover_missing_pull_request_labels models_sync
         ab_test_analysis process_run_queue service_container_reconciliation screenshot_cleanup
         knowledge_audit_retention delayed_human_feedback notifications_check_provider_quotas
+        agent_run_pattern_detector
       ]
 
       expected_jobs.each do |job_key|

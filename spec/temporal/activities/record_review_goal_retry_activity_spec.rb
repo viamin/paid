@@ -16,7 +16,10 @@ RSpec.describe Activities::RecordReviewGoalRetryActivity do
       }.to change(OrchestrationDecision, :count).by(1)
 
       expect(issue.reload.review_goal_retry_count).to eq(1)
-      expect(OrchestrationDecision.last.context["decision_status"]).to eq("applied")
+      event = OrchestrationDecision.last
+      expect(event.context["decision_status"]).to eq("applied")
+      expect(event.inputs["retry_attempt"]).to eq(1)
+      expect(event.outputs["retry_attempt"]).to eq(1)
     end
 
     it "increments from an existing count" do

@@ -99,6 +99,7 @@ class ApplicationJob < ActiveJob::Base
       AnomalyDetectionJob,
       ContainerMetricsCollectionJob,
       DiagnoseErrorJob,
+      FailureRecoveryDecisionJob,
       HumanFeedbackCollectionJob,
       QualityMetricsCollectionJob,
       RetryTimedOutIssueGoalJob

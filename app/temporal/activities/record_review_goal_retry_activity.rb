@@ -18,10 +18,12 @@ module Activities
       expected_count = input[:expected_review_goal_retry_count]
       incremented = false
       before_count = issue.review_goal_retry_count
+      attempted_retry_count = expected_count ? expected_count + 1 : before_count + 1
       if expected_count
         issue.with_lock do
           issue.reload
           before_count = issue.review_goal_retry_count
+          attempted_retry_count = expected_count + 1
           if issue.review_goal_retry_count == expected_count
             issue.increment!(:review_goal_retry_count)
             incremented = true
@@ -41,10 +43,12 @@ module Activities
         signals: {
           trigger: "review_goal_retry",
           expected_review_goal_retry_count: expected_count,
-          current_review_goal_retry_count: before_count
+          current_review_goal_retry_count: before_count,
+          retry_attempt: attempted_retry_count
         },
         result: {
-          review_goal_retry_count: issue.review_goal_retry_count
+          review_goal_retry_count: issue.review_goal_retry_count,
+          retry_attempt: attempted_retry_count
         }
       )
 
