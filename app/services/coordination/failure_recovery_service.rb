@@ -32,8 +32,8 @@ module Coordination
         failure_category: category,
         failure_subcategory: extract_subcategory,
         chosen_action: action,
-        failure_context: build_failure_context.merge(policy_metadata(policy)),
-        action_params: build_action_params(category, action).merge(policy_metadata(policy)),
+        failure_context: build_failure_context.merge(policy_metadata(policy)).deep_stringify_keys,
+        action_params: build_action_params(category, action).merge(policy_metadata(policy)).deep_stringify_keys,
         policy: policy
       )
     end
