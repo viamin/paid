@@ -64,5 +64,26 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates do
       expect(candidates.first.parameters).to include("max_tasks" => 12)
       expect(policy.reload.current_version).not_to eq(candidates.first)
     end
+
+    it "creates non-activatable candidates until review approval is recorded" do
+      candidate = described_class.call(policy_snapshot: policy_snapshot, account: account, mutations: [ mutation ]).first
+
+      expect(candidate).not_to be_activatable
+      expect {
+        policy.activate_version!(candidate)
+      }.to raise_error(CoordinationPolicyVersion::InvalidTransitionError, "cannot activate version pending review approval")
+
+      candidate.update!(metadata: candidate.metadata.deep_merge(
+        "evolution" => {
+          "approval" => {
+            "required" => true,
+            "status" => "approved",
+            "auto_promote" => false
+          }
+        }
+      ))
+
+      expect(candidate.reload).to be_activatable
+    end
   end
 end
