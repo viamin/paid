@@ -2505,7 +2505,7 @@ module Activities
     def resolve_and_persist_goal_prompt(agent_run:, slug:, variables:, fallback_template:)
       prompt_version = Prompts::Resolve.call(slug: slug, project: agent_run.project)
 
-      if prompt_version
+      rendered = if prompt_version
         agent_run.update!(prompt_version: prompt_version) unless agent_run.prompt_version_id
         prompt_version.render(variables)
       else
@@ -2517,6 +2517,8 @@ module Activities
         )
         Prompts::Render.interpolate(fallback_template, variables)
       end
+
+      append_missing_issue_goal_runtime_instructions(rendered, slug, variables)
     end
 
     def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)
@@ -2531,14 +2533,15 @@ module Activities
       append_missing_issue_goal_runtime_instructions(rendered_variant, slug, vars)
     end
 
-    # Older running A/B variants may predate runtime-only additions such as
-    # decomposition instructions. Keep those runs aligned with the current
-    # issue-goal contract by appending required guidance when the stored
-    # variant template cannot render it itself.
+    # Older stored issue-goal prompts may predate runtime-only additions such as
+    # decomposition instructions or the non-interactive drafting guidance. Keep
+    # those runs aligned with the current issue-goal contract by appending the
+    # required guidance when the stored template cannot render it itself.
     def append_missing_issue_goal_runtime_instructions(rendered, slug, vars)
       return rendered unless slug == ISSUE_GOAL_PROMPT_SLUG
 
-      append_prompt_section(rendered, vars[:decomposition_instructions])
+      prompt = append_prompt_section(rendered, Prompts::GoalCreateGithubIssue::DRAFTING_GUIDANCE)
+      append_prompt_section(prompt, vars[:decomposition_instructions])
     end
 
     def append_prompt_section(rendered, addition)

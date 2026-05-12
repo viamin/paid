@@ -21,12 +21,7 @@ module Prompts
       }
     ].freeze
 
-    TEMPLATE = <<~'TEMPLATE'
-      {{base_prompt}}
-
-      ---
-      IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
-
+    DRAFTING_GUIDANCE = <<~'GUIDANCE'
       Treat the request and repository context already provided above as the full source
       material for the GitHub issue you need to file. Synthesize the issue title, body,
       and any appropriate labels from that context yourself.
@@ -35,6 +30,15 @@ module Prompts
       labels, or other issue-drafting fields. If a field is not explicitly specified in
       the provided context, make a reasonable choice and continue. When no labels are
       clearly requested, omit them.
+    GUIDANCE
+
+    TEMPLATE = <<~TEMPLATE
+      {{base_prompt}}
+
+      ---
+      IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
+
+      #{DRAFTING_GUIDANCE}
 
       You have access to the GitHub API via a proxy. Use curl to create the issue.
 

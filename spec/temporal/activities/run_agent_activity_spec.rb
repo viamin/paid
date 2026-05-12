@@ -702,9 +702,11 @@ RSpec.describe Activities::RunAgentActivity do
       version = prompt.create_version!(template: "issue {{base_prompt}} {{repo}}")
       run = create(:agent_run, :create_issue_goal, project: project)
 
-      activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
+      rendered = activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
 
       expect(run.reload.prompt_version).to eq(version)
+      expect(rendered).to include("issue Create the issue #{project.full_name}")
+      expect(rendered).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
     end
 
     it "persists prompt_version_id for enhance-issue-goal runs" do
@@ -850,6 +852,22 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "A/B test goal prompt assignment" do
+    let(:large_decomposition_body) do
+      <<~TEXT
+        ## Feature: User Notification System
+
+        Redesign the notification system to support multiple channels.
+
+        ### Requirements
+        1. Create database migrations for notification preferences
+        2. Build service layer for dispatching notifications
+        3. Add API endpoints for managing preferences
+        4. Build dashboard UI for notification history
+        5. Add background jobs for async delivery
+        6. Implement caching for notification templates
+      TEXT
+    end
+
     it "assigns a running test before rendering the issue-goal prompt" do
       run = create(:agent_run, :create_issue_goal, project: project)
       ab_test = create_running_ab_test(slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
@@ -859,7 +877,8 @@ RSpec.describe Activities::RunAgentActivity do
       assignment = AbTestAssignment.find_by!(ab_test: ab_test, agent_run: run)
       assigned_version = assignment.ab_test_variant.prompt_version
 
-      expect(prompt).to eq(assigned_version.render(base_prompt: "Create a roadmap issue", repo: project.full_name))
+      expect(prompt).to include(assigned_version.render(base_prompt: "Create a roadmap issue", repo: project.full_name))
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(run.reload.prompt_version).to eq(assigned_version)
     end
 
@@ -873,25 +892,13 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
 
-      expect(prompt).to eq("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(run.reload.prompt_version).to eq(variant_version)
     end
 
-    it "appends decomposition instructions for assigned issue-goal variants that predate the placeholder" do
-      large_body = <<~TEXT
-        ## Feature: User Notification System
-
-        Redesign the notification system to support multiple channels.
-
-        ### Requirements
-        1. Create database migrations for notification preferences
-        2. Build service layer for dispatching notifications
-        3. Add API endpoints for managing preferences
-        4. Build dashboard UI for notification history
-        5. Add background jobs for async delivery
-        6. Implement caching for notification templates
-      TEXT
-      decompose_issue = create(:issue, project: project, body: large_body)
+    it "appends drafting and decomposition instructions for assigned issue-goal variants that predate them" do
+      decompose_issue = create(:issue, project: project, body: large_decomposition_body)
       run = create(:agent_run, :create_issue_goal, project: project, issue: decompose_issue)
       create_ab_test_assignment(
         slug: described_class::ISSUE_GOAL_PROMPT_SLUG,
@@ -902,6 +909,7 @@ RSpec.describe Activities::RunAgentActivity do
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
 
       expect(prompt).to include("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(prompt).to include("Feature Decomposition")
       expect(prompt).to include("do NOT create any GitHub issue directly")
     end
