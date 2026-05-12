@@ -374,12 +374,7 @@ module CoordinationPolicyEvolution
     end
 
     def default_configuration
-      @default_configuration ||= OrchestrationStrategies::Defaults.feature_orchestration.tap do |configuration|
-        configuration["recovery"] ||= {
-          "actions" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTIONS.deep_dup,
-          "default_action" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTION
-        }
-      end
+      @default_configuration ||= OrchestrationStrategies::Defaults.feature_orchestration.deep_dup
     end
 
     def extract_decomposition_config(payload)

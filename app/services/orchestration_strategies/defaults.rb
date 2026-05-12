@@ -178,6 +178,10 @@ module OrchestrationStrategies
             "escalated_phase_discount" => 0.1
           }
         },
+        "recovery" => {
+          "actions" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTIONS.deep_dup,
+          "default_action" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTION
+        },
         "decomposition" => {
           "enabled" => true,
           "max_tasks" => 20,
