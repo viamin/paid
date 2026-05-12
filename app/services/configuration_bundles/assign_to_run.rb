@@ -43,14 +43,21 @@ module ConfigurationBundles
 
     def find_or_create_bundle(fingerprint:, definition:)
       existing_bundle = bundle_scope.find_by(fingerprint: fingerprint)
-      return existing_bundle if existing_bundle&.definition == definition
-      raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}" if existing_bundle
+      return existing_bundle if matching_bundle_definition?(existing_bundle, definition)
+      raise_fingerprint_mismatch! if existing_bundle
 
       account.with_lock do
-        bundle_scope.find_by(fingerprint: fingerprint) || create_runtime_bundle(fingerprint:, definition:)
+        locked_bundle = bundle_scope.find_by(fingerprint: fingerprint)
+        return locked_bundle if matching_bundle_definition?(locked_bundle, definition)
+        raise_fingerprint_mismatch! if locked_bundle
+
+        create_runtime_bundle(fingerprint:, definition:)
       end
     rescue ActiveRecord::RecordNotUnique
-      bundle_scope.find_by!(fingerprint: fingerprint)
+      retried_bundle = bundle_scope.find_by!(fingerprint: fingerprint)
+      return retried_bundle if matching_bundle_definition?(retried_bundle, definition)
+
+      raise_fingerprint_mismatch!
     end
 
     def create_runtime_bundle(fingerprint:, definition:)
@@ -79,6 +86,14 @@ module ConfigurationBundles
 
     def account
       agent_run.project.account
+    end
+
+    def matching_bundle_definition?(bundle, definition)
+      bundle&.definition == definition
+    end
+
+    def raise_fingerprint_mismatch!
+      raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}"
     end
 
     def bundle_definition(selected_variants = nil)

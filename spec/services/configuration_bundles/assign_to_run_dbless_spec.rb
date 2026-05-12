@@ -4,7 +4,13 @@ require "rails_helper"
 
 RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
   let(:project) { Struct.new(:account, :service_container_ids).new(account, []) }
-  let(:account) { Object.new }
+  let(:account) do
+    Struct.new(:id) do
+      def with_lock
+        yield
+      end
+    end.new(99)
+  end
   let(:agent_run) do
     Struct.new(
       :id,
@@ -183,6 +189,42 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       )
 
       service.call
+    end
+  end
+
+  describe "#find_or_create_bundle" do
+    let(:definition) { { "schema_version" => 1 } }
+    let(:fingerprint) { "fingerprint" }
+    let(:bundle_scope) { instance_double(ActiveRecord::Relation) }
+
+    before do
+      allow(service).to receive(:bundle_scope).and_return(bundle_scope)
+    end
+
+    it "raises when a conflicting bundle appears after the initial lookup" do
+      allow(bundle_scope).to receive(:find_by).with(fingerprint: fingerprint).and_return(nil, bundle)
+
+      expect do
+        service.send(:find_or_create_bundle, fingerprint:, definition:)
+      end.to raise_error(
+        ConfigurationBundles::AssignToRun::FingerprintMismatchError,
+        "Configuration bundle fingerprint collision for account 99"
+      )
+    end
+
+    it "raises when the retry lookup after a uniqueness race finds a conflicting bundle" do
+      allow(bundle_scope).to receive(:find_by).with(fingerprint: fingerprint).and_return(nil, nil)
+      allow(service).to receive(:create_runtime_bundle)
+        .with(fingerprint:, definition:)
+        .and_raise(ActiveRecord::RecordNotUnique)
+      allow(bundle_scope).to receive(:find_by!).with(fingerprint: fingerprint).and_return(bundle)
+
+      expect do
+        service.send(:find_or_create_bundle, fingerprint:, definition:)
+      end.to raise_error(
+        ConfigurationBundles::AssignToRun::FingerprintMismatchError,
+        "Configuration bundle fingerprint collision for account 99"
+      )
     end
   end
 
