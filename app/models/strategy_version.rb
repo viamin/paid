@@ -99,11 +99,17 @@ class StrategyVersion < ApplicationRecord
   end
 
   def activation_requires_promotion_metadata
-    return unless persisted?
-    return unless promotion_state_change_to_be_saved&.last == "active"
+    return unless promotion_state == "active"
     return unless retired_at.nil?
+    return if new_record? && initial_seed_activation?
     return if promoted_at.present? && promoted_by_user.present?
 
     errors.add(:promotion_state, "requires explicit review metadata before activation")
+  end
+
+  def initial_seed_activation?
+    return false unless strategy&.persisted?
+
+    strategy.strategy_versions.where.not(id: id).none?
   end
 end
