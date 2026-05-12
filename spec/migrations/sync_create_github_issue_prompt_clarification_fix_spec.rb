@@ -53,4 +53,24 @@ RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures 
   it "is a no-op when the global prompt does not exist" do
     expect { migration.up }.not_to raise_error
   end
+
+  it "creates the synced current version when the prompt exists without one" do
+    prompt = create(
+      :prompt,
+      :global,
+      :planning,
+      slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG,
+      name: "Goal: Create GitHub Issue"
+    )
+
+    expect(prompt.current_version).to be_nil
+
+    expect {
+      migration.up
+    }.to change { prompt.reload.prompt_versions.count }.by(1)
+
+    expect(prompt.reload.current_version.template).to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
+    expect(prompt.current_version.variables).to eq(Prompts::GoalCreateGithubIssue::VARIABLES)
+    expect(prompt.current_version.created_by).to eq("migration")
+  end
 end

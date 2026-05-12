@@ -5,7 +5,7 @@ class SyncCreateGithubIssuePromptClarificationFix < ActiveRecord::Migration[8.1]
 
   def up
     prompt = Prompt.global.find_by(slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG)
-    return unless prompt&.current_version
+    return unless prompt
     return if synced?(prompt.current_version)
 
     prompt.create_version!(
@@ -26,6 +26,8 @@ class SyncCreateGithubIssuePromptClarificationFix < ActiveRecord::Migration[8.1]
   end
 
   def synced?(version)
+    return false unless version
+
     normalize(version.template) == normalize(Prompts::GoalCreateGithubIssue::TEMPLATE) &&
       version.variables == Prompts::GoalCreateGithubIssue::VARIABLES
   end
