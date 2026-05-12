@@ -344,11 +344,15 @@ module ApplicationHelper
     "analyze_issue" => "Analyze Issue"
   }.freeze
 
-  def agent_run_goal_text(run)
-    goal = run.goal.to_s
+  def agent_run_goal_label(goal)
+    goal = goal.to_s
     return if goal.blank?
 
     GOAL_LABELS.fetch(goal, goal.humanize)
+  end
+
+  def agent_run_goal_text(run)
+    agent_run_goal_label(run.goal)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then
