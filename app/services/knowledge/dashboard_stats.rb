@@ -149,12 +149,12 @@ module Knowledge
 
       embedding_providers = configured_providers_for(:embedding)
       chat_providers = configured_providers_for(:chat)
-      provider_states = owner.provider_states
-        .where(provider_name: (embedding_providers + chat_providers).uniq)
-        .index_by(&:provider_name)
+      runner_states = owner.runner_states
+        .where(runner_name: (embedding_providers + chat_providers).uniq)
+        .index_by(&:runner_name)
 
-      embedding = embedding_providers.map { |provider| provider_status(provider, provider_states) }
-      chat = chat_providers.map { |provider| provider_status(provider, provider_states) }
+      embedding = embedding_providers.map { |provider| provider_status(provider, runner_states) }
+      chat = chat_providers.map { |provider| provider_status(provider, runner_states) }
 
       {
         embedding: embedding,
