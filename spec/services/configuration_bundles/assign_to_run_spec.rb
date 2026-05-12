@@ -250,6 +250,21 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(bundle.fingerprint).to eq(described_class.new(agent_run: agent_run).send(:bundle_fingerprint, optimized_definition))
   end
 
+  it "falls back to rebuilding the bundle definition when the optimizer definition omits an active experiment" do
+    selection = optimizer_selection(definition: optimizer_definition_without_experiments)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.fingerprint).to eq(described_class.new(agent_run: agent_run).send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.fingerprint).not_to eq(selection.fingerprint)
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_id" => experiment.id,
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
   it "falls back to rebuilding the bundle definition when the optimizer payload fingerprint is inconsistent" do
     challenger = create(:configuration_experiment_variant,
       configuration_experiment: experiment,
@@ -358,18 +373,22 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
+  def optimizer_definition_without_experiments
+    {
+      "schema_version" => 1,
+      "goal" => agent_run.goal,
+      "agent_type" => agent_run.agent_type,
+      "provider_id" => agent_run.provider_id,
+      "prompt_version_id" => agent_run.prompt_version_id,
+      "service_container_ids" => [],
+      "mcp_servers" => [ filesystem_mcp_snapshot ],
+      "experiments" => {}
+    }
+  end
+
   def inconsistent_optimizer_selection(variant_by_experiment_id:)
     ConfigurationBundles::Optimizer::Selection.new(
-      definition: {
-        "schema_version" => 1,
-        "goal" => agent_run.goal,
-        "agent_type" => agent_run.agent_type,
-        "provider_id" => agent_run.provider_id,
-        "prompt_version_id" => agent_run.prompt_version_id,
-        "service_container_ids" => [],
-        "mcp_servers" => [ filesystem_mcp_snapshot ],
-        "experiments" => {}
-      },
+      definition: optimizer_definition_without_experiments,
       fingerprint: "incorrect",
       variant_by_experiment_id: variant_by_experiment_id,
       selection_mode: "exploitative",

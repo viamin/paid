@@ -45,6 +45,10 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
   end
 
   describe "#call" do
+    before do
+      allow(service).to receive(:active_experiments).and_return([])
+    end
+
     it "uses the optimizer-provided definition and fingerprint when they are consistent" do
       optimized_definition = selection_definition
       selection = optimizer_selection(definition: optimized_definition)
@@ -113,6 +117,23 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       )
 
       allow(service).to receive(:optimizer_selection).and_return(selection)
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
+
+    it "falls back to rebuilding the bundle payload when the optimizer definition omits an active experiment" do
+      fallback_definition = experiment_definition_for(8000)
+      selection = optimizer_selection(definition: selection_definition)
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        active_experiments: [ experiment ]
+      )
       allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
       expect_bundle_lookup(
         definition: fallback_definition,
@@ -229,6 +250,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
     allow(service).to receive_messages(
       optimizer_selection: selection,
+      active_experiments: [ experiment ],
       optimizer_assignment_inputs_from_definition: [ [ experiment, optimizer_variant ] ]
     )
     expect(ConfigurationExperiments::Assign).to receive(:call).with(
@@ -252,6 +274,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
     allow(service).to receive_messages(
       optimizer_selection: selection,
+      active_experiments: [ experiment ],
       optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ]
     )
     expect(ConfigurationExperiments::Assign).to receive(:call).with(

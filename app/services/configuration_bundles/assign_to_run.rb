@@ -207,6 +207,7 @@ module ConfigurationBundles
     def optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint)
       return false unless definition.is_a?(Hash)
       return false unless optimizer_definition_matches_run?(definition)
+      return false unless optimizer_definition_experiments_complete?(definition)
       return false unless optimizer_experiments_match_variants?(definition, selection&.variant_by_experiment_id)
       return true if fingerprint.blank?
 
@@ -219,6 +220,27 @@ module ConfigurationBundles
         computed_fingerprint: computed_fingerprint
       )
       false
+    end
+
+    def optimizer_definition_experiments_complete?(definition)
+      experiment_definitions = definition.fetch("experiments", {})
+      expected_experiments = active_experiments.index_by(&:config_key)
+      return true if experiment_definitions.keys.sort == expected_experiments.keys.sort &&
+        experiment_definitions.all? { |config_key, experiment_definition| optimizer_experiment_definition_complete?(config_key, experiment_definition, expected_experiments) }
+
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_payload_incomplete_experiments",
+        agent_run_id: agent_run.id
+      )
+      false
+    end
+
+    def optimizer_experiment_definition_complete?(config_key, experiment_definition, expected_experiments)
+      experiment = expected_experiments[config_key]
+      return false unless experiment_definition.is_a?(Hash)
+
+      experiment_definition["configuration_experiment_id"] == experiment.id &&
+        experiment_definition["configuration_experiment_variant_id"].present?
     end
 
     def optimizer_experiments_match_variants?(definition, variant_by_experiment_id)
@@ -253,6 +275,12 @@ module ConfigurationBundles
         agent_run_id: agent_run.id
       )
       false
+    end
+
+    def active_experiments
+      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+        ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
+      end
     end
 
     def parsed_optimizer_variant_value(variant, experiment:)
