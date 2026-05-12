@@ -185,7 +185,7 @@ RSpec.describe Prompt, type: :model do
 
   describe "goal.create_github_issue drafting guidance" do
     let(:seed_template) do
-      described_class.global.find_by(slug: "goal.create_github_issue").current_version.template
+      described_class.global.find_by(slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG).current_version.template
     end
 
     it "seeded template tells the agent to synthesize the issue from existing context" do
@@ -207,6 +207,15 @@ RSpec.describe Prompt, type: :model do
       )
       expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT)
         .to include("When no labels are clearly requested, omit them.")
+    end
+
+    it "seeded template matches the shared template source exactly" do
+      expect(seed_template).to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
+    end
+
+    it "FALLBACK_ISSUE_GOAL_PROMPT matches the shared template source exactly" do
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT)
+        .to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
     end
   end
 
