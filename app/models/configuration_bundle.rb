@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class ConfigurationBundle < ApplicationRecord
+  has_logidze
   STATUSES = %w[draft active retired].freeze
 
   belongs_to :account
