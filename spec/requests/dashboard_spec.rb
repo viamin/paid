@@ -218,8 +218,12 @@ RSpec.describe "Dashboard" do
       it "shows the priority column in the active runs table" do
         issue = create(:issue, project: project, labels: [ "P1" ])
         run = create(:agent_run, :running, project: project, issue: issue)
+        preloaded_runs = []
 
-        expect(AgentRun).to receive(:preload_source_pull_requests).and_call_original
+        allow(AgentRun).to receive(:preload_source_pull_requests).and_wrap_original do |original, runs|
+          preloaded_runs << runs.to_a
+          original.call(runs)
+        end
 
         get dashboard_path
 
@@ -228,6 +232,7 @@ RSpec.describe "Dashboard" do
 
         expect(table).to be_present
         expect(table.css("thead th").map { |header| header.text.squish }).to include("Priority")
+        expect(preloaded_runs).to include(include(have_attributes(id: run.id)))
 
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
 
