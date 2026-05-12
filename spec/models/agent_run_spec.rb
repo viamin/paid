@@ -731,6 +731,14 @@ RSpec.describe AgentRun do
         expect(agent_run.infra_failure?).to be false
       end
 
+      it "returns true for case-insensitive match on infra keyword" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "validation failed: review settings paid_agent requires credentials",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be true
+      end
+
       it "returns false for failed run without infra keyword" do
         agent_run = build(:agent_run, :failed,
           error_message: "Agent exited with code 1",

@@ -1058,7 +1058,7 @@ class AgentRun < ApplicationRecord
     return false if tokens_input.to_i > 0
 
     msg = error_message.to_s
-    INFRA_FAILURE_KEYWORDS.any? { |keyword| msg.include?(keyword) }
+    INFRA_FAILURE_KEYWORDS.any? { |keyword| msg.downcase.include?(keyword.downcase) }
   end
 
   def total_tokens
