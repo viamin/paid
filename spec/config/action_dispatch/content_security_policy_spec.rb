@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe ActionDispatch::ContentSecurityPolicy, :no_db do
-  it "builds a script nonce into the configured policy and exposes the helper in the layout" do
+  it "builds a script nonce into the configured policy, allows cable websockets, and exposes the helper in the layout" do
     policy = Rails.application.config.content_security_policy
     request = ActionDispatch::Request.empty
 
@@ -17,6 +17,7 @@ RSpec.describe ActionDispatch::ContentSecurityPolicy, :no_db do
 
     expect(nonce).to be_present
     expect(request.content_security_policy_nonce).to eq(nonce)
+    expect(header).to include("connect-src 'self' ws: wss:")
     expect(header).to include("script-src 'self' 'nonce-#{nonce}'")
     expect(header).to include("object-src 'none'")
     expect(header).to include("style-src 'self' https: 'unsafe-inline'")
