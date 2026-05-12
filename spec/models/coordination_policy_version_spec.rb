@@ -11,6 +11,7 @@ RSpec.describe CoordinationPolicyVersion do
 
   describe "validations" do
     it { is_expected.to validate_presence_of(:version) }
+    it { is_expected.to validate_numericality_of(:version).only_integer.is_greater_than(0) }
     it { is_expected.to validate_uniqueness_of(:version).scoped_to(:coordination_policy_id) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
 
@@ -19,6 +20,20 @@ RSpec.describe CoordinationPolicyVersion do
 
       expect(coordination_policy_version).not_to be_valid
       expect(coordination_policy_version.errors[:rules]).to include("must be a JSON object")
+    end
+
+    it "requires parameters to be a hash" do
+      coordination_policy_version.parameters = []
+
+      expect(coordination_policy_version).not_to be_valid
+      expect(coordination_policy_version.errors[:parameters]).to include("must be a JSON object")
+    end
+
+    it "requires metadata to be a hash" do
+      coordination_policy_version.metadata = []
+
+      expect(coordination_policy_version).not_to be_valid
+      expect(coordination_policy_version.errors[:metadata]).to include("must be a JSON object")
     end
   end
 

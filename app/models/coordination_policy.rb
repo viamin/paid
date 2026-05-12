@@ -36,6 +36,15 @@ class CoordinationPolicy < ApplicationRecord
     project_id.present?
   end
 
+  def create_version!(attributes = {})
+    with_lock do
+      next_version = (coordination_policy_versions.maximum(:version) || 0) + 1
+      safe_attributes = attributes.except(:version, "version")
+
+      coordination_policy_versions.create!(safe_attributes.merge(version: next_version))
+    end
+  end
+
   def activate_version!(policy_version)
     raise ArgumentError, "policy_version must belong to this coordination policy" unless policy_version.coordination_policy_id == id
 
