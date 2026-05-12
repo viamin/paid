@@ -183,6 +183,33 @@ RSpec.describe Prompt, type: :model do
     end
   end
 
+  describe "goal.create_github_issue drafting guidance" do
+    let(:seed_template) do
+      described_class.global.find_by(slug: "goal.create_github_issue").current_version.template
+    end
+
+    it "seeded template tells the agent to synthesize the issue from existing context" do
+      expect(seed_template).to include(
+        "Treat the request and repository context already provided above as the full source"
+      )
+      expect(seed_template).to include(
+        "Do NOT reply by asking the user to provide the issue type, title, description,"
+      )
+      expect(seed_template).to include("When no labels are clearly requested, omit them.")
+    end
+
+    it "FALLBACK_ISSUE_GOAL_PROMPT matches the seeded drafting guidance" do
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT).to include(
+        "Treat the request and repository context already provided above as the full source"
+      )
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT).to include(
+        "Do NOT reply by asking the user to provide the issue type, title, description,"
+      )
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT)
+        .to include("When no labels are clearly requested, omit them.")
+    end
+  end
+
   describe "coding.pr_review_rebase already-addressed marker" do
     it "seeded template includes the no-change review resolution variable slot" do
       template = described_class.global.find_by(slug: "coding.pr_review_rebase").current_version.template

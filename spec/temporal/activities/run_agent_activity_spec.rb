@@ -766,6 +766,16 @@ RSpec.describe Activities::RunAgentActivity do
 
       activity.send(:augment_prompt_for_issue_goal, run, "BuildForIssue-generated prompt with knowledge")
     end
+
+    it "tells the agent to synthesize the issue instead of asking for drafting fields" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
+
+      expect(prompt).to include("Synthesize the issue title, body, and any appropriate labels")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
+      expect(prompt).to include("When no labels are clearly requested, omit them.")
+    end
   end
 
   describe "#decomposition_instructions_for" do

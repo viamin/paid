@@ -575,6 +575,15 @@ upsert_global_prompt.call(
     ---
     IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
 
+    Treat the request and repository context already provided above as the full source
+    material for the GitHub issue you need to file. Synthesize the issue title, body,
+    and any appropriate labels from that context yourself.
+
+    Do NOT reply by asking the user to provide the issue type, title, description,
+    labels, or other issue-drafting fields. If a field is not explicitly specified in
+    the provided context, make a reasonable choice and continue. When no labels are
+    clearly requested, omit them.
+
     You have access to the GitHub API via a proxy. Use curl to create the issue.
 
     IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
