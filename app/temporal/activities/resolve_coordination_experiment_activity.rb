@@ -23,7 +23,7 @@ module Activities
         assignment_id: assignment.id,
         experiment_id: experiment.id,
         variant_id: assignment.coordination_experiment_variant_id,
-        coordination_policy: assignment.coordination_experiment_variant.parsed_policy
+        coordination_policy: experiment.effective_policy_for(assignment.coordination_experiment_variant)
       }
     end
   end
