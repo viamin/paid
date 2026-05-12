@@ -46,6 +46,14 @@ class AgentRun < ApplicationRecord
     "No container provisioned",
     "commit_uncommitted_changes failed"
   ].freeze
+  INFRA_FAILURE_KEYWORDS = [
+    "Validation failed:",
+    "ProviderAuthExpiredError",
+    "Provision::TimeoutError",
+    "Provision::StartupTimeoutError",
+    "Provision::IdleTimeoutError"
+  ].freeze
+  PRE_MODEL_FAILURE_STATUSES = %w[failed no_output].freeze
 
   def self.quality_scoreable_sql
     excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
@@ -61,8 +69,23 @@ class AgentRun < ApplicationRecord
       )
     }.reduce(:or)
 
+    tokens_input = Arel::Nodes::NamedFunction.new(
+      "COALESCE",
+      [ arel_table[:tokens_input], Arel::Nodes.build_quoted(0) ]
+    )
+    pre_model_status = arel_table[:status].in(PRE_MODEL_FAILURE_STATUSES)
+    infra_keyword_match = INFRA_FAILURE_KEYWORDS.map { |keyword|
+      error_message.matches("%#{keyword}%")
+    }.reduce(:or)
+
+    pre_model_infra = pre_model_status
+      .and(tokens_input.eq(0))
+      .and(infra_keyword_match)
+
     arel_table.grouping(
-      excluded_status.and(Arel::Nodes::Not.new(failed_operational))
+      excluded_status
+        .and(Arel::Nodes::Not.new(failed_operational))
+        .and(Arel::Nodes::Not.new(pre_model_infra))
     )
   end
   UNFINISHED_STATUSES = %w[queued running paused].freeze
@@ -1025,6 +1048,15 @@ class AgentRun < ApplicationRecord
     return true if status.in?(%w[timeout auth_expired rate_limited])
 
     OPERATIONAL_FAILURE_KEYWORDS.any? do |keyword|
+      error_message.to_s.downcase.include?(keyword.downcase)
+    end
+  end
+
+  def infra_failure?
+    return false unless PRE_MODEL_FAILURE_STATUSES.include?(status)
+    return false if tokens_input.to_i > 0
+
+    INFRA_FAILURE_KEYWORDS.any? do |keyword|
       error_message.to_s.downcase.include?(keyword.downcase)
     end
   end
