@@ -109,6 +109,13 @@ module Screenshots
       projects: Target.new(slug: "projects", path_builder: "/projects", requires_auth: true),
       project_new: Target.new(slug: "project_new", path_builder: "/projects/new", requires_auth: true),
       project_show: Target.new(slug: "project_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}" }, requires_auth: true),
+      project_issue_clarifying_questions: Target.new(
+        slug: "project_issue_clarifying_questions",
+        path_builder: ->(seed_data) {
+          "/projects/#{seed_data.fetch(:project).id}/issues/#{seed_data.fetch(:clarifying_issue).id}/clarifying_questions"
+        },
+        requires_auth: true
+      ),
       project_edit: Target.new(slug: "project_edit", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/edit" }, requires_auth: true),
       project_agent_runs: Target.new(slug: "project_agent_runs", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs" }, requires_auth: true),
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
@@ -203,6 +210,7 @@ module Screenshots
       "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
       "knowledge/context_intake_controller.rb" => [ :project_context_intake ],
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
+      "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
       "projects/issue_merge_subscriptions_controller.rb" => [ :project_show ],
       "projects/pr_templates_controller.rb" => [ :project_edit ],
       "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
@@ -378,6 +386,7 @@ module Screenshots
       when "new.html.erb" then [ :project_new ]
       when "show.html.erb" then [ :project_show ]
       when "edit.html.erb" then [ :project_edit ]
+      when "clarifying_questions/show.html.erb" then [ :project_issue_clarifying_questions ]
       when /\A_/
         base = File.basename(leaf, ".html.erb")
         if PROJECT_SHOW_PARTIALS.include?(base)

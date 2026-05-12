@@ -13,4 +13,16 @@ RSpec.describe Screenshots::SeedData::Paid do
       "name" => "Screenshot Style Guide"
     )
   end
+
+  it "returns the seeded clarifying issue metadata" do
+    result = described_class.call
+
+    issue = Issue.find(result.dig("clarifying_issue", "id"))
+
+    expect(result.fetch("clarifying_issue")).to eq(
+      "id" => issue.id,
+      "github_number" => 1964
+    )
+    expect(issue).to be_needs_input
+  end
 end

@@ -46,6 +46,27 @@ module Screenshots
             record.allowed_github_usernames = [ user.email ]
           end
 
+          clarifying_issue = project.issues.find_or_create_by!(github_issue_id: 9_999_991) do |record|
+            record.github_number = 1964
+            record.title = "Answer issue clarifying questions via Paid UI wizard"
+            record.body = <<~MARKDOWN
+              <!-- paid:enhance-issue -->
+
+              ## Clarifying questions
+              1. What is the desired end-to-end behavior after the user submits answers?
+              2. Should the wizard allow editing previous answers before submission?
+
+              ## Current context
+              - Waiting for a trusted collaborator to answer in the Paid UI.
+            MARKDOWN
+            record.github_creator_login = user.email
+            record.github_state = "open"
+            record.github_created_at = 1.day.ago
+            record.github_updated_at = Time.current
+            record.paid_state = "needs_input"
+            record.labels = [ project.enhance_issue_needs_input_label_name ]
+          end
+
           provider = user.providers.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
@@ -200,6 +221,7 @@ module Screenshots
           {
             "user" => { "id" => user.id, "email" => user.email, "password" => password },
             "project" => { "id" => project.id, "name" => project.name, "slug" => project.repo },
+            "clarifying_issue" => { "id" => clarifying_issue.id, "github_number" => clarifying_issue.github_number },
             "provider" => { "id" => provider.id, "name" => provider.name },
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },

@@ -51,6 +51,9 @@ module Projects
     end
 
     def fetch_questions
+      questions = ClarifyingQuestions::Parse.call(comment_body: @issue.body)
+      return questions if questions.any?
+
       client = @project.github_token.client
       comments = client.issue_comments(@project.full_name, @issue.github_number)
       enhancement_comment = comments.reverse.find do |comment|
