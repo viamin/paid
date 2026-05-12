@@ -34,7 +34,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
 
       it "renders the wizard view" do
-        get project_issue_clarifying_questions_path(project, issue)
+        get project_issue_clarifying_question_path(project, issue)
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Clarifying Questions")
@@ -49,7 +49,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
 
       it "redirects to project page with alert" do
-        get project_issue_clarifying_questions_path(project, issue)
+        get project_issue_clarifying_question_path(project, issue)
 
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
@@ -65,7 +65,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
     context "when all answers are provided" do
       it "posts answers as a GitHub comment and redirects" do
-        post project_issue_clarifying_questions_path(project, issue), params: {
+        post project_issue_clarifying_question_path(project, issue), params: {
           questions: [ "What is X?", "Should this be enabled?" ],
           answers: [ "X is a feature", "Yes, by default" ]
         }
@@ -83,12 +83,12 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
     context "when some answers are blank" do
       it "redirects back with an alert" do
-        post project_issue_clarifying_questions_path(project, issue), params: {
+        post project_issue_clarifying_question_path(project, issue), params: {
           questions: [ "What is X?", "Should this be enabled?" ],
           answers: [ "X is a feature", "" ]
         }
 
-        expect(response).to redirect_to(project_issue_clarifying_questions_path(project, issue))
+        expect(response).to redirect_to(project_issue_clarifying_question_path(project, issue))
       end
     end
   end
