@@ -40,9 +40,9 @@ module Knowledge
     def configured_runner_values_for(operation)
       case operation.to_sym
       when :embedding
-        [ user_setting.kb_embedding_provider, *Array(user_setting.kb_embedding_fallback_providers) ]
+        [ user_setting.kb_embedding_runner, *Array(user_setting.kb_embedding_fallback_runners) ]
       when :chat
-        [ user_setting.kb_chat_provider, *Array(user_setting.kb_chat_fallback_providers) ]
+        [ user_setting.kb_chat_runner, *Array(user_setting.kb_chat_fallback_runners) ]
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
       end
@@ -59,9 +59,9 @@ module Knowledge
     def supported_runners_for(operation)
       case operation.to_sym
       when :embedding
-        UserSetting::KB_EMBEDDING_PROVIDERS
+        UserSetting::KB_EMBEDDING_RUNNERS
       when :chat
-        UserSetting::KB_CHAT_PROVIDERS
+        UserSetting::KB_CHAT_RUNNERS
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
       end

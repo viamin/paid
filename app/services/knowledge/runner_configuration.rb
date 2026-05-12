@@ -32,7 +32,7 @@ module Knowledge
 
     def for_embedding_candidate_runners
       configured_embedding_runners.filter_map do |runner|
-        next log_unsupported_runner(runner) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(runner)
+        next log_unsupported_runner(runner) unless UserSetting::KB_EMBEDDING_RUNNERS.include?(runner)
         config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
         next log_unsupported_runner(runner) unless config
         next unless embedding_credentials_available?(runner, config)
@@ -54,13 +54,13 @@ module Knowledge
     end
 
     def configured_embedding_runners
-      return [ UserSetting::KB_EMBEDDING_PROVIDER_DEFAULT ] unless user_setting
+      return [ UserSetting::KB_EMBEDDING_RUNNER_DEFAULT ] unless user_setting
 
       Knowledge::RunnerSelector.for_embedding(user_setting: user_setting)
     end
 
     def build_embedding_config(runner)
-      return log_unsupported_runner(runner) unless UserSetting::KB_EMBEDDING_PROVIDERS.include?(runner)
+      return log_unsupported_runner(runner) unless UserSetting::KB_EMBEDDING_RUNNERS.include?(runner)
 
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
       return log_unsupported_runner(runner) unless config

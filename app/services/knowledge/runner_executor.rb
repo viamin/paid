@@ -135,9 +135,9 @@ module Knowledge
     def available_runners_for_logging
       case @operation.to_sym
       when :embedding
-        configured_runners(:kb_embedding_provider, :kb_embedding_fallback_providers)
+        configured_runners(:kb_embedding_runner, :kb_embedding_fallback_runners)
       when :chat
-        configured_runners(:kb_chat_provider, :kb_chat_fallback_providers)
+        configured_runners(:kb_chat_runner, :kb_chat_fallback_runners)
       else
         []
       end
