@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class RunnerState < ApplicationRecord
-  self.table_name = "provider_states"
   CIRCUIT_STATES = %w[closed open half_open].freeze
 
   belongs_to :user
