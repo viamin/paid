@@ -324,6 +324,10 @@ RSpec.describe ApplicationHelper do
       run = goal_text_run(goal: "some_new_goal")
       expect(helper.agent_run_goal_text(run)).to eq("Some New Goal")
     end
+
+    it "covers every goal in AgentRun::GOALS" do
+      expect(ApplicationHelper::AGENT_RUN_GOAL_LABELS.keys).to match_array(AgentRun::GOALS)
+    end
   end
 
   describe "#agent_run_goal_display" do
