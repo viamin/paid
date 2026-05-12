@@ -411,7 +411,7 @@ RSpec.describe Provider do
 
   describe ".supported_provider_keys" do
     it "returns app provider keys backed by the agent harness registry" do
-      expect(described_class.supported_provider_keys).to include("claude", "cursor", "gemini", "codex", "kilocode", "copilot")
+      expect(described_class.supported_provider_keys).to include("claude", "cursor", "gemini", "codex", "kilocode", "copilot", "pi")
       expect(described_class.supported_provider_keys).not_to include("github_copilot")
     end
   end

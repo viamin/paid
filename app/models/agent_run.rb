@@ -11,7 +11,7 @@ class AgentRun < ApplicationRecord
     [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
-  AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
+  AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode pi api].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze

@@ -2194,7 +2194,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid AGENT_TYPES" do
-      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode api])
+      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode pi api])
     end
 
     it "defines valid GOALS" do

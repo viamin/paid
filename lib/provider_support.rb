@@ -11,13 +11,13 @@ module ProviderSupport
   #
   # NOTE: Inclusion here does NOT mean the provider's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_PROVIDER_KEYS.
-  APP_PROVIDER_KEYS = %w[claude cursor codex copilot aider gemini opencode kilocode].freeze
+  APP_PROVIDER_KEYS = %w[claude cursor codex copilot aider gemini opencode kilocode pi].freeze
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
   # included via its --autopilot mode which enables fully autonomous,
   # non-interactive agent execution.
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode]).freeze
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode pi]).freeze
 
   module_function
 

@@ -9,7 +9,7 @@
 # Usage (called by test-agent-provider-contracts.sh):
 #   docker run --rm \
 #     -v ./scripts/test-agent-provider-contracts-inner.sh:/tmp/contract-test.sh:ro \
-#     -e CONTAINER_EXECUTABLE_KEYS="aider claude codex cursor gemini kilocode opencode" \
+#     -e CONTAINER_EXECUTABLE_KEYS="aider claude codex cursor gemini kilocode opencode pi" \
 #     -e CODEX_NOTIFY_LINE='notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]' \
 #     -e CODEX_CONFIG_TOML_BODY='[chatgpt]...' \
 #     paid-agent:latest bash /tmp/contract-test.sh
@@ -41,6 +41,7 @@ PROVIDER_CLI_BINARY=(
     [gemini]=gemini
     [kilocode]=kilo
     [opencode]=opencode
+    [pi]=pi
 )
 
 echo "=== Provider-contract smoke test ==="
