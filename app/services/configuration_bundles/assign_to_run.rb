@@ -273,6 +273,7 @@ module ConfigurationBundles
         }.compact
       )
     end
+
     def optimizer_selection
       ConfigurationBundles::Optimizer.call(agent_run: agent_run)
     rescue StandardError => e

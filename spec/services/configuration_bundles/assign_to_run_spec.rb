@@ -327,6 +327,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       selection_context: "task"
     )
   end
+
   def expect_bundle_definition(bundle)
     expect(bundle.definition).to include(
       "schema_version" => 1,
