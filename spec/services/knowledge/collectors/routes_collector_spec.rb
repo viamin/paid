@@ -253,6 +253,25 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
+      it "does not treat commented Gemfile mentions as sqlite3 support" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(false)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)
+          source "https://rubygems.org"
+
+          # gem "sqlite3"
+          gem "pg" # gem "sqlite3"
+        GEMFILE
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.reason).to match(/sqlite3 support/)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+      end
+
       it "passes bundle configuration and DATABASE_URL to bin/rails routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
