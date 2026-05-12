@@ -17,6 +17,7 @@ module ScalingExperiments
       leader = summaries.max_by { |summary| leader_sort_key(summary) }
 
       {
+        "generated_at" => Time.current.iso8601,
         "status" => scaling_experiment.sufficient_samples? ? "ready_for_analysis" : "collecting",
         "dimension" => scaling_experiment.dimension,
         "control_value" => scaling_experiment.control_value,
