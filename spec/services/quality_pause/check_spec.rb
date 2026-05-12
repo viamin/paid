@@ -57,6 +57,47 @@ RSpec.describe QualityPause::Check do
       expect(project.reload.quality_paused?).to be false
     end
 
+    it "excludes infra failures that never reached the model from scoring" do
+      good_run = create(:agent_run, :completed, project: project)
+      create(:quality_metric, agent_run: good_run, composite_score: 0.9)
+
+      validation_run = create(:agent_run, status: "failed", project: project, goal: agent_run.goal,
+        error_message: "Validation failed: Review settings paid_agent requires the paid-code-reviewer GitHub App credentials",
+        tokens_input: 0)
+      create(:quality_metric, agent_run: validation_run, composite_score: 0.0)
+
+      auth_run = create(:agent_run, status: "failed", project: project, goal: agent_run.goal,
+        error_message: "ProviderAuthExpiredError: token expired for provider",
+        tokens_input: 0)
+      create(:quality_metric, agent_run: auth_run, composite_score: 0.0)
+
+      provision_run = create(:agent_run, status: "no_output", project: project, goal: agent_run.goal,
+        error_message: "Containers::Provision::TimeoutError: container startup timed out",
+        tokens_input: 0)
+      create(:quality_metric, agent_run: provision_run, composite_score: 0.0)
+
+      low_run = create(:agent_run, :completed, project: project)
+      create(:quality_metric, agent_run: low_run, composite_score: 0.2)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.quality_paused?).to be false
+    end
+
+    it "includes failed runs with infra keywords but non-zero tokens_input in scoring" do
+      run_with_tokens = create(:agent_run, status: "failed", project: project, goal: agent_run.goal,
+        error_message: "Validation failed: something after model ran",
+        tokens_input: 5000)
+      create(:quality_metric, agent_run: run_with_tokens, composite_score: 0.0)
+
+      create_quality_metrics(project, scores: [ 0.0, 0.1, 0.2 ], prompt_version: prompt_version)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(project.reload.quality_paused?).to be false
+      expect(project.quality_recovery_actions.last.action_type).to eq("prompt_evolution")
+    end
+
     it "includes failed runs with agent-level errors in scoring" do
       agent_error_run = create(:agent_run, status: "failed", project: project, goal: agent_run.goal,
         error_message: "Agent exited with code 1")
