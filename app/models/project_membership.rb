@@ -20,6 +20,7 @@
 # @see AccountMembership for account-level roles
 # @see User#has_role? for checking roles
 class ProjectMembership < ApplicationRecord
+  has_logidze
   belongs_to :user
   belongs_to :project
 

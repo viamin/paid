@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module Coordination
-  # Classifies a failed agent run into a failure category and selects a
-  # recovery action from coordination policies. Persists the classification
-  # and chosen action for later learning.
+  # Persists the learned failure recovery decision for a failed agent run.
+  # Classification and policy-aware action selection live in
+  # Coordination::FailureRecoveryService.
   #
   # @example
   #   result = Coordination::FailureRecovery.call(agent_run: failed_run)
@@ -12,29 +12,6 @@ module Coordination
   #   result.failure_category    # => "provider_error"
   #   result.chosen_action       # => "retry_alternate_provider"
   class FailureRecovery
-    CATEGORY_PATTERNS = {
-      "rate_limit" => [ /RateLimit/i, /rate.?limit/i, /\b429\b/ ],
-      "auth_failure" => [ /AuthenticationError/i, /auth.?expir/i, /unauthorized/i, /\b403\b/ ],
-      "timeout" => [ /timeout/i, /timed?\s*out/i ],
-      "provider_error" => [ /AllProvidersExhausted/i, /ProxyUnavailable/i, /\bprovider.?(error|fail)/i ],
-      "container_error" => [ /ContainerNotProvisioned/i, /\bcontainer.?(error|fail)/i, /\bdocker.?(error|fail)/i ],
-      "prompt_error" => [ /MissingPrompt/i, /\bprompt.?(error|fail|missing)/i ],
-      "dependency_failure" => [ /dependency.?fail/i, /\bblocked.?by\b/i ],
-      "configuration_error" => [ /McpProvisioningFailed/i, /\bconfig\w*.?(error|fail|invalid)/i, /MissingUser/i ]
-    }.freeze
-
-    DEFAULT_POLICY = {
-      "rate_limit" => "retry_alternate_provider",
-      "auth_failure" => "pause_and_notify",
-      "timeout" => "retry_same_provider",
-      "provider_error" => "retry_alternate_provider",
-      "container_error" => "reconfigure_and_retry",
-      "prompt_error" => "pause_and_notify",
-      "dependency_failure" => "cancel_workflow",
-      "configuration_error" => "reconfigure_and_retry",
-      "unknown" => "pause_and_notify"
-    }.freeze
-
     def self.call(...)
       new(...).call
     end
@@ -46,33 +23,43 @@ module Coordination
     end
 
     def call
-      category = nil
-      action = nil
+      service_result = nil
 
       unless failed_run?
-        action = "noop"
         persist_non_failure_decision
         return non_failure_result
       end
 
-      category = classify_failure
-      action = select_action(category)
+      service_result = FailureRecoveryService.call(
+        agent_run: agent_run,
+        policy_overrides: policy_overrides,
+        run_snapshot: run_snapshot
+      )
 
-      classification = persist_classification(category, action)
-      persist_decision(classification, category, action)
+      classification = persist_classification(service_result)
+      persist_decision(classification, service_result)
 
       Rails.logger.info(
         message: "coordination.failure_classified",
         agent_run_id: agent_run.id,
-        failure_category: category,
-        chosen_action: action,
+        failure_category: service_result.failure_category,
+        chosen_action: service_result.chosen_action,
+        policy_source: service_result.policy["source"],
         parent_workflow_id: current_parent_workflow_id
       )
 
       Result.new(success: true, classification: classification,
-        failure_category: category, chosen_action: action)
+        failure_category: service_result.failure_category,
+        chosen_action: service_result.chosen_action)
     rescue ActiveRecord::RecordInvalid => e
-      persist_failed_decision(e, category: category, action: action)
+      persist_failed_decision(
+        e,
+        category: service_result&.failure_category,
+        subcategory: service_result&.failure_subcategory,
+        action: service_result&.chosen_action || "retry",
+        policy: service_result&.policy || {},
+        failure_context: service_result&.failure_context || {}
+      )
       Result.new(success: false, error: e.message)
     end
 
@@ -88,59 +75,29 @@ module Coordination
       Result.new(success: false, error: "agent run status must be a failure status")
     end
 
-    def classify_failure
-      error_text = build_error_text
-
-      CATEGORY_PATTERNS.each do |category, patterns|
-        return category if patterns.any? { |p| p.match?(error_text) }
-      end
-
-      classify_by_status || "unknown"
-    end
-
-    def build_error_text
-      [
-        current_error_message,
-        current_status,
-        current_guardrail_violation_type
-      ].compact.join(" ")
-    end
-
-    def classify_by_status
-      case current_status
-      when "timeout" then "timeout"
-      when "rate_limited" then "rate_limit"
-      when "auth_expired" then "auth_failure"
-      end
-    end
-
-    def select_action(category)
-      policy_overrides.fetch(category) { DEFAULT_POLICY.fetch(category, "pause_and_notify") }
-    end
-
-    def persist_classification(category, action)
+    def persist_classification(service_result)
       FailureClassification.create!(
         project: agent_run.project,
         agent_run: agent_run,
-        failure_category: category,
-        failure_subcategory: extract_subcategory,
-        chosen_action: action,
-        failure_context: build_failure_context,
-        action_params: build_action_params(category, action),
+        failure_category: service_result.failure_category,
+        failure_subcategory: service_result.failure_subcategory,
+        chosen_action: service_result.chosen_action,
+        failure_context: service_result.failure_context,
+        action_params: service_result.action_params,
         parent_workflow_id: current_parent_workflow_id
       )
     end
 
-    def persist_decision(classification, category, action)
+    def persist_decision(classification, service_result)
       OrchestrationDecision.record!(
         project: agent_run.project,
         issue: agent_run.issue,
         agent_run: agent_run,
         decision_point: "coordination_failure_recovery",
-        action: orchestration_action_for(action),
+        action: orchestration_action_for(service_result.chosen_action),
         status: "applied",
-        signals: build_decision_signals(category, action),
-        result: build_decision_result(classification, action)
+        signals: build_decision_signals(service_result),
+        result: build_decision_result(classification, service_result)
       )
     end
 
@@ -162,7 +119,7 @@ module Coordination
       )
     end
 
-    def persist_failed_decision(error, category:, action: "retry")
+    def persist_failed_decision(error, category:, subcategory: nil, action: "retry", policy: {}, failure_context: {})
       OrchestrationDecision.record(
         project: agent_run.project,
         issue: agent_run.issue,
@@ -170,7 +127,13 @@ module Coordination
         decision_point: "coordination_failure_recovery",
         action: orchestration_action_for(action),
         status: "failed",
-        signals: build_decision_signals(category, action),
+        signals: build_decision_signals_from_values(
+          category: category,
+          subcategory: subcategory,
+          action: action,
+          policy: policy,
+          failure_context: failure_context
+        ),
         result: {
           chosen_action: action,
           error_class: error.class.name,
@@ -291,24 +254,55 @@ module Coordination
       end
     end
 
-    def build_decision_signals(category, action)
-      {
-        failure_category: category,
-        failure_subcategory: extract_subcategory,
-        agent_run_status: current_status,
-        parent_workflow_id: current_parent_workflow_id,
-        chosen_action: action
-      }.merge(build_failure_context)
-        .compact
+    def build_decision_signals(service_result)
+      build_decision_signals_from_values(
+        category: service_result.failure_category,
+        subcategory: service_result.failure_subcategory,
+        action: service_result.chosen_action,
+        policy: service_result.policy,
+        failure_context: service_result.failure_context
+      )
     end
 
-    def build_decision_result(classification, action)
+    def build_decision_signals_from_values(category:, subcategory:, action:, policy:, failure_context:)
+      {
+        failure_category: category,
+        failure_subcategory: subcategory,
+        agent_run_status: current_status,
+        parent_workflow_id: current_parent_workflow_id,
+        chosen_action: action,
+        **decision_policy_metadata(policy, failure_context)
+      }.merge(failure_context.except(*policy_metadata_keys)).compact
+    end
+
+    def build_decision_result(classification, service_result)
       {
         failure_classification_id: classification.id,
-        chosen_action: action,
+        chosen_action: service_result.chosen_action,
         action_params: classification.action_params,
-        action_status: classification.action_status
+        action_status: classification.action_status,
+        policy_source: service_result.policy["source"]
       }.compact
+    end
+
+    def decision_policy_metadata(policy, failure_context)
+      failure_context.slice(*policy_metadata_keys).symbolize_keys.presence || {
+        policy_source: policy["source"],
+        policy_key: policy["policy_key"],
+        coordination_policy_id: policy["coordination_policy_id"],
+        coordination_policy_version_id: policy["coordination_policy_version_id"],
+        coordination_policy_version: policy["coordination_policy_version"]
+      }.compact
+    end
+
+    def policy_metadata_keys
+      %w[
+        policy_source
+        policy_key
+        coordination_policy_id
+        coordination_policy_version_id
+        coordination_policy_version
+      ]
     end
 
     class Result

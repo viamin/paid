@@ -2,12 +2,11 @@
 
 require "rails_helper"
 
-RSpec.describe Scaling::ResourceAllocator do
+RSpec.describe Scaling::ResourceAllocator, :no_db do
   let(:default_inputs) { Scaling::AllocationInputs.new(task_count: 4, max_agent_count: 8) }
 
   def build_observation(agent_count:, success:, created_at: Time.current, **overrides)
-    ScalingObservation.new(
-      project: build(:project),
+    observation_class.new(
       workflow_id: SecureRandom.uuid,
       workflow_name: "TestWorkflow",
       observation_type: "feature_orchestration",
@@ -29,10 +28,38 @@ RSpec.describe Scaling::ResourceAllocator do
       total_cost_cents: overrides.fetch(:total_cost_cents, 100 * agent_count),
       total_input_tokens: 500,
       total_output_tokens: 200,
-      metadata: {}
-    ) do |obs|
-      obs.created_at = created_at
-    end
+      metadata: {},
+      created_at: created_at
+    )
+  end
+
+  def observation_class
+    Struct.new(
+      :workflow_id,
+      :workflow_name,
+      :observation_type,
+      :status,
+      :success,
+      :parallel_execution,
+      :task_count,
+      :agent_count_planned,
+      :agent_count_launched,
+      :agent_count_succeeded,
+      :agent_count_failed,
+      :agent_count_blocked,
+      :total_iterations,
+      :max_iterations,
+      :parallelism_planned,
+      :parallelism_observed,
+      :batch_count,
+      :duration_seconds,
+      :total_cost_cents,
+      :total_input_tokens,
+      :total_output_tokens,
+      :metadata,
+      :created_at,
+      keyword_init: true
+    )
   end
 
   describe ".call" do
@@ -250,6 +277,94 @@ RSpec.describe Scaling::ResourceAllocator do
 
         expect(result.source).to eq(:experiment)
         expect(result.agent_count).to eq(2)
+      end
+
+      it "uses allocator decisions from parallelism experiment summaries" do
+        summaries = [ parallelism_experiment_summary ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(4)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("parallelism allocator decision")
+      end
+
+      it "ignores allocator decisions whose winning candidate is under-supported even when the summary total is sufficient" do
+        summaries = [
+          parallelism_experiment_summary.deep_merge(
+            "sample_count" => 12,
+            "allocator_decision" => {
+              "requested_agent_count" => 4,
+              "parallelism" => 4,
+              "max_batch_size" => 4,
+              "sample_count" => 2,
+              "confidence" => "high"
+            },
+            "values" => [
+              { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 10, "avg_cost_cents" => 100.0 }
+            ]
+          )
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("experiment leading value=2")
+      end
+
+      it "ignores allocator decisions from non-parallelism dimensions" do
+        summaries = [
+          {
+            "status" => "ready_for_analysis",
+            "dimension" => "iteration_count",
+            "sample_count" => 12,
+            "allocator_decision" => {
+              "requested_agent_count" => 8,
+              "max_batch_size" => 8,
+              "confidence" => "high"
+            },
+            "values" => [
+              { "assigned_value" => 3, "success_rate" => 0.9, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 100.0 },
+              { "assigned_value" => 5, "success_rate" => 0.8, "avg_duration_seconds" => 250, "sample_count" => 6, "avg_cost_cents" => 110.0 }
+            ]
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).not_to eq(8)
+        expect(result.reason).not_to include("allocator decision")
+      end
+
+      it "ignores allocator decisions from summaries that are not ready_for_analysis" do
+        summaries = [
+          parallelism_experiment_summary.merge("status" => "collecting"),
+          experiment_summary(value: 2, success_rate: 0.8, avg_duration_seconds: 150, sample_count: 10, avg_cost_cents: 100.0)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).not_to include("allocator decision")
+      end
+
+      it "ignores allocator decisions that do not meet the minimum sample threshold" do
+        summaries = [
+          low_confidence_parallelism_summary,
+          experiment_summary(value: 2, success_rate: 0.8, avg_duration_seconds: 150, sample_count: 10, avg_cost_cents: 100.0)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("experiment leading value=2")
       end
     end
 
@@ -538,5 +653,46 @@ RSpec.describe Scaling::ResourceAllocator do
         expect(result.agent_count).to eq(2)
       end
     end
+  end
+
+  def parallelism_experiment_summary
+    {
+      "status" => "ready_for_analysis",
+      "dimension" => "parallelism",
+      "sample_count" => 12,
+      "allocator_decision" => {
+        "requested_agent_count" => 4,
+        "parallelism" => 2,
+        "max_batch_size" => 2,
+        "sample_count" => 6,
+        "confidence" => "high"
+      },
+      "values" => [
+        { "assigned_value" => 1, "success_rate" => 1.0, "avg_duration_seconds" => 300, "sample_count" => 6, "avg_cost_cents" => 120.0 },
+        { "assigned_value" => 2, "success_rate" => 1.0, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 125.0 }
+      ]
+    }
+  end
+
+  def low_confidence_parallelism_summary
+    parallelism_experiment_summary.merge(
+      "sample_count" => 2,
+      "allocator_decision" => parallelism_experiment_summary.fetch("allocator_decision").merge(
+        "requested_agent_count" => 4,
+        "parallelism" => 4,
+        "max_batch_size" => 4,
+        "sample_count" => 2
+      )
+    )
+  end
+
+  def experiment_summary(value:, **attributes)
+    {
+      "status" => "ready_for_analysis",
+      "dimension" => "agent_count",
+      "values" => [
+        { "assigned_value" => value }.merge(attributes.transform_keys(&:to_s))
+      ]
+    }
   end
 end
