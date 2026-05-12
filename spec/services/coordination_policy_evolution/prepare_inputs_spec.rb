@@ -166,6 +166,20 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
           context: { "decision_status" => "applied" },
           inputs: { "policy_source" => "defaults" },
           outputs: { "human_value_score" => 0.9 })
+        create(:orchestration_decision,
+          project: project,
+          decision_type: "escalate",
+          actor: "coordination_escalation_service",
+          context: { "decision_status" => "deferred" },
+          inputs: { "policy_source" => "defaults" },
+          outputs: { "human_value_score" => 0.2 })
+        create(:orchestration_decision,
+          project: project,
+          decision_type: "escalate",
+          actor: "coordination_escalation_service",
+          context: { "decision_status" => "resolved" },
+          inputs: { "policy_source" => "coordination_policy" },
+          outputs: { "human_value_score" => 0.1 })
       end
 
       it "supports escalation bootstrap policies without a persisted coordination policy" do
@@ -180,7 +194,19 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
           "weights",
           "interruption_cost"
         )
-        expect(escalation_result.dig(:performance, :decision_type_counts)).to include("escalate" => 1)
+      end
+
+      it "classifies only applied escalation decisions as successes" do
+        expect(escalation_result.dig(:performance, :decision_type_counts)).to include("escalate" => 3)
+        expect(escalation_result.dig(:performance, :outcome_counts)).to include(
+          "applied" => 1,
+          "deferred" => 1,
+          "resolved" => 1
+        )
+        expect(escalation_result.dig(:performance, :success_count)).to eq(1)
+        expect(escalation_result.dig(:performance, :classified_decision_count)).to eq(1)
+        expect(escalation_result.dig(:performance, :success_rate)).to eq(1.0)
+        expect(escalation_result[:sample_successes].map { |row| row[:decision_status] }).to eq([ "applied" ])
       end
     end
   end

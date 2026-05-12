@@ -30,6 +30,9 @@ module CoordinationPolicyEvolution
       parallelization_planning_failed
       parallelization_failed
     ].freeze
+    ORCHESTRATION_SUCCESS_STATUSES = %w[applied].freeze
+    ORCHESTRATION_FAILURE_STATUSES = %w[failed].freeze
+    ORCHESTRATION_NOOP_STATUSES = %w[noop].freeze
 
     def self.call(...)
       new(...).call
@@ -106,12 +109,12 @@ module CoordinationPolicyEvolution
 
     def successful_orchestration_decisions
       @successful_orchestration_decisions ||= scoped_decisions
-        .where.not(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('failed', 'noop')"))
+        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('applied')"))
     end
 
     def failed_orchestration_decisions
       @failed_orchestration_decisions ||= scoped_decisions
-        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') = 'failed'"))
+        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('failed')"))
     end
 
     def performance_summary
@@ -141,9 +144,9 @@ module CoordinationPolicyEvolution
 
     def orchestration_performance_summary
       decision_count = scoped_decisions.count
-      failure_count = orchestration_status_counts.fetch("failed", 0)
-      noop_count = orchestration_status_counts.fetch("noop", 0)
-      success_count = decision_count - failure_count - noop_count
+      success_count = count_orchestration_statuses(ORCHESTRATION_SUCCESS_STATUSES)
+      failure_count = count_orchestration_statuses(ORCHESTRATION_FAILURE_STATUSES)
+      noop_count = count_orchestration_statuses(ORCHESTRATION_NOOP_STATUSES)
       classified_decision_count = success_count + failure_count
 
       {
@@ -209,6 +212,10 @@ module CoordinationPolicyEvolution
       @orchestration_status_counts ||= scoped_decisions
         .group(Arel.sql("COALESCE(context->>'decision_status', 'unknown')"))
         .count
+    end
+
+    def count_orchestration_statuses(statuses)
+      orchestration_status_counts.slice(*statuses).values.sum
     end
 
     def count_outcomes(outcomes)
