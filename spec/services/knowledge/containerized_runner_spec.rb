@@ -296,11 +296,11 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
-    it "guards stub write behind file-existence check for non-Rails repos" do
+    it "guards stub write behind file-existence and symlink checks" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(mock_container).to have_received(:exec).with(
-        [ "sh", "-c", a_string_including("if [ -f '/workspace/config/database.yml' ]") ],
+        [ "sh", "-c", a_string_including("if [ -f '/workspace/config/database.yml' ] && [ ! -L '/workspace/config/database.yml' ]") ],
         user: "root"
       )
     end

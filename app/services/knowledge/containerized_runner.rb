@@ -331,7 +331,7 @@ module Knowledge
       exec_setup!(
         [
           "sh", "-c",
-          "if [ -f '#{workspace}/config/database.yml' ]; then " \
+          "if [ -f '#{workspace}/config/database.yml' ] && [ ! -L '#{workspace}/config/database.yml' ]; then " \
           "cat > '#{workspace}/config/database.yml' <<'STUB'\n#{stub_content}\nSTUB\nfi"
         ],
         "write database.yml stub"
