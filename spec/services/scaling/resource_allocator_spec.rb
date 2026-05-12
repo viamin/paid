@@ -290,6 +290,31 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.reason).to include("parallelism allocator decision")
       end
 
+      it "ignores allocator decisions whose winning candidate is under-supported even when the summary total is sufficient" do
+        summaries = [
+          parallelism_experiment_summary.deep_merge(
+            "sample_count" => 12,
+            "allocator_decision" => {
+              "requested_agent_count" => 4,
+              "parallelism" => 4,
+              "max_batch_size" => 4,
+              "sample_count" => 2,
+              "confidence" => "high"
+            },
+            "values" => [
+              { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 10, "avg_cost_cents" => 100.0 }
+            ]
+          )
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("experiment leading value=2")
+      end
+
       it "ignores allocator decisions from non-parallelism dimensions" do
         summaries = [
           {
@@ -626,6 +651,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         "requested_agent_count" => 4,
         "parallelism" => 2,
         "max_batch_size" => 2,
+        "sample_count" => 6,
         "confidence" => "high"
       },
       "values" => [
@@ -641,7 +667,8 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       "allocator_decision" => parallelism_experiment_summary.fetch("allocator_decision").merge(
         "requested_agent_count" => 4,
         "parallelism" => 4,
-        "max_batch_size" => 4
+        "max_batch_size" => 4,
+        "sample_count" => 2
       )
     )
   end

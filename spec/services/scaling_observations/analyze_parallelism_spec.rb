@@ -89,6 +89,7 @@ RSpec.describe ScalingObservations::AnalyzeParallelism, :no_db do
     expect(result.allocator_decision).to include(
       "requested_agent_count" => 2,
       "max_batch_size" => 2,
+      "sample_count" => 3,
       "reason" => "best_success_rate_before_threshold"
     )
     expect(result.values).to include(
@@ -124,7 +125,8 @@ RSpec.describe ScalingObservations::AnalyzeParallelism, :no_db do
     expect(result.allocator_decision).to include(
       "requested_agent_count" => 4,
       "parallelism" => 2,
-      "max_batch_size" => 2
+      "max_batch_size" => 2,
+      "sample_count" => 3
     )
   end
 

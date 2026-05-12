@@ -280,7 +280,7 @@ module Scaling
       @selected_experiment_allocator_decision ||= experiment_allocator_decisions.max_by do |entry|
         [
           confidence_rank(summary_value(entry[:decision], :confidence)),
-          entry[:sample_count]
+          entry[:decision_sample_count]
         ]
       end
     end
@@ -297,14 +297,15 @@ module Scaling
         next unless decision.is_a?(Hash)
         dimension = summary_value(summary, :dimension).to_s
         next unless ALLOCATOR_DECISION_DIMENSIONS.include?(dimension)
-        sample_count = summary_value(summary, :sample_count, default: 0)
-        next unless sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
+        decision_sample_count = summary_value(decision, :sample_count, default: 0)
+        next unless decision_sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
 
         {
           summary: summary,
           decision: decision,
           dimension: summary_value(summary, :dimension),
-          sample_count: sample_count
+          sample_count: summary_value(summary, :sample_count, default: 0),
+          decision_sample_count: decision_sample_count
         }
       end
     end
@@ -339,6 +340,7 @@ module Scaling
       "#{decision_summary[:dimension]} allocator decision " \
         "agents=#{summary_value(decision, :requested_agent_count, default: conservative_agent_count)} " \
         "parallelism=#{summary_value(decision, :max_batch_size, default: nil)} " \
+        "n=#{decision_summary[:decision_sample_count]} " \
         "confidence=#{summary_value(decision, :confidence, default: "unknown")}"
     end
 

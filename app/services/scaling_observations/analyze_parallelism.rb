@@ -119,6 +119,7 @@ module ScalingObservations
             "requested_agent_count" => candidate["recommended_agent_count"],
             "parallelism" => candidate["parallelism"],
             "max_batch_size" => candidate["parallelism"],
+            "sample_count" => candidate["sample_count"],
             "reason" => recommendation_reason(candidate),
             "confidence" => confidence_for(candidate)
           }
