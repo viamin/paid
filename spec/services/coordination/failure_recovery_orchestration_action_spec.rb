@@ -11,10 +11,10 @@ RSpec.describe Coordination::FailureRecovery, :no_db do
       decision_point: "coordination_failure_recovery",
       action: orchestration_action,
       status: "failed",
-      signals: {
+      signals: hash_including(
         failure_category: "timeout",
         chosen_action: "escalate_model"
-      },
+      ),
       result: hash_including(
         chosen_action: "escalate_model",
         error_class: error_class_name
@@ -49,7 +49,13 @@ RSpec.describe Coordination::FailureRecovery, :no_db do
         end
       end)
       allow(OrchestrationDecision).to receive(:record)
-      allow(service).to receive(:build_decision_signals).with("timeout", "escalate_model").and_return(
+      allow(service).to receive(:build_decision_signals_from_values).with(
+        category: "timeout",
+        subcategory: nil,
+        action: "escalate_model",
+        policy: {},
+        failure_context: {}
+      ).and_return(
         failure_category: "timeout",
         chosen_action: "escalate_model"
       )
