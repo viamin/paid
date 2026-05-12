@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class GithubToken < ApplicationRecord
+  has_logidze
   # GitHub token format patterns
   # Classic PAT: ghp_xxxx (40 chars after prefix)
   # Fine-grained PAT: github_pat_xxxx
