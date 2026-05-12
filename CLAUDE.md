@@ -207,6 +207,16 @@ The [logidze gem](https://github.com/palkan/logidze) tracks ActiveRecord changes
 **Tables with logidze enabled** (`has_logidze` in model):
 
 - `projects`, `accounts`, `account_memberships` — configuration and access control
+- `project_memberships`, `users` — access control and identity
+- `mcp_server_definitions`, `pre_commit_requirements` — agent tooling config
+- `pr_templates`, `style_guides`, `prompts` — templates and prompt config
+- `tracker_configurations` — external integrations
+- `service_containers` — service container config
+- `exception_incidents` — incident management
+- `providers`, `provider_api_keys` — model provider config and credentials
+- `orchestration_strategies`, `configuration_bundles` — orchestration config
+- `quality_gate_thresholds`, `quality_thresholds` — evaluation thresholds
+- `llm_models`, `integration_credentials`, `github_tokens` — model catalog and integration credentials
 - `user_settings`, `tenant_settings` — user/tenant configuration
 - `cost_budgets`, `billing_plans`, `billing_invoices` — financial controls and audit trail
 

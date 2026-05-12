@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class TrackerConfiguration < ApplicationRecord
+  has_logidze
   TRACKER_TYPES = %w[github_issues jira linear azure_devops mcp generic_webhook].freeze
   CONFIGURABLE_TYPES = %w[Account User Project].freeze
 

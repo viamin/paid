@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class StyleGuide < ApplicationRecord
+  has_logidze
   LANGUAGES = %w[ruby javascript typescript python go rust].freeze
 
   belongs_to :account, optional: true

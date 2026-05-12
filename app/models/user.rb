@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class User < ApplicationRecord
+  has_logidze
   belongs_to :account
   has_many :account_memberships, dependent: :destroy
   has_many :member_accounts, through: :account_memberships, source: :account
