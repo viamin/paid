@@ -59,9 +59,9 @@ module Knowledge
     def supported_runners_for(operation)
       case operation.to_sym
       when :embedding
-        UserSetting::KB_EMBEDDING_PROVIDERS
+        UserSetting::KB_EMBEDDING_RUNNERS
       when :chat
-        UserSetting::KB_CHAT_PROVIDERS
+        UserSetting::KB_CHAT_RUNNERS
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
       end
