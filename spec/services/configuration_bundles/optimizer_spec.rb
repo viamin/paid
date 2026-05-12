@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe ConfigurationBundles::Optimizer do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }
-  let(:surrogate_model) { instance_double(ConfigurationBundles::SurrogateModel) }
+  let(:surrogate_model) { instance_double(ConfigurationBundles::SurrogateOutcomeModel) }
   let(:experiment) do
     create(:configuration_experiment,
       account: project.account,
@@ -340,20 +340,26 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
   def prediction_for(mode)
     if mode == :exploitative
-      ConfigurationBundles::SurrogateModel::Prediction.new(
-        mean_objective_score: 0.82,
-        mean_quality_score: 0.82,
+      ConfigurationBundles::SurrogateOutcomeModel::Prediction.new(
+        predicted_objective_score: 0.82,
+        predicted_quality_score: 0.82,
+        predicted_success_probability: 0.9,
+        predicted_cost_cents: 50,
+        predicted_duration_seconds: 120,
         uncertainty: 0.01,
         sample_count: 4,
-        matched_outcomes: 4
+        trained_at: Time.current
       )
     else
-      ConfigurationBundles::SurrogateModel::Prediction.new(
-        mean_objective_score: 0.72,
-        mean_quality_score: 0.72,
+      ConfigurationBundles::SurrogateOutcomeModel::Prediction.new(
+        predicted_objective_score: 0.72,
+        predicted_quality_score: 0.72,
+        predicted_success_probability: 0.6,
+        predicted_cost_cents: 80,
+        predicted_duration_seconds: 180,
         uncertainty: 0.35,
         sample_count: 1,
-        matched_outcomes: 1
+        trained_at: Time.current
       )
     end
   end

@@ -38,11 +38,11 @@ module ConfigurationBundles
 
     ACQUISITION_FUNCTION = "expected_improvement"
 
-    attr_reader :agent_run, :surrogate_model
+    attr_reader :agent_run
 
     def initialize(agent_run:, surrogate_model: nil)
       @agent_run = agent_run
-      @surrogate_model = surrogate_model || SurrogateModel.new(project: agent_run.project)
+      @surrogate_model = surrogate_model
     end
 
     def self.call(...)
@@ -76,13 +76,17 @@ module ConfigurationBundles
 
     private
 
+    def surrogate_model
+      @surrogate_model ||= trained_surrogate_model
+    end
+
     def score_candidate(variant_by_experiment_id)
       definition = bundle_definition(variant_by_experiment_id)
       fingerprint = bundle_fingerprint(definition)
-      prediction = surrogate_model.predict(bundle_definition: definition, fingerprint: fingerprint)
+      prediction = surrogate_model.predict(bundle_definition: definition)
       best_observed_objective_score = best_observed_objective_score_for
       acquisition_score = acquisition_score_for(
-        mean: prediction.mean_objective_score,
+        mean: prediction_objective_score(prediction),
         uncertainty: prediction.uncertainty,
         best_observed_objective_score: best_observed_objective_score
       )
@@ -92,8 +96,8 @@ module ConfigurationBundles
         fingerprint: fingerprint,
         variant_by_experiment_id: variant_by_experiment_id,
         score_inputs: ScoreInputs.new(
-          predicted_objective_score: prediction.mean_objective_score,
-          predicted_quality_score: prediction.mean_quality_score,
+          predicted_objective_score: prediction_objective_score(prediction),
+          predicted_quality_score: prediction_quality_score(prediction),
           uncertainty: prediction.uncertainty,
           sample_count: prediction.sample_count,
           best_observed_objective_score: best_observed_objective_score,
@@ -254,6 +258,31 @@ module ConfigurationBundles
 
     def active_experiments_by_id
       @active_experiments_by_id ||= active_experiments.index_by(&:id)
+    end
+
+    def trained_surrogate_model
+      dataset = TrainingDataset.call(scope: surrogate_training_scope)
+      SurrogateOutcomeModel.train(dataset: dataset)
+    end
+
+    def surrogate_training_scope
+      BundleOutcome
+        .includes(:configuration_bundle, agent_run: :project)
+        .joins(agent_run: :project)
+        .where(agent_runs: { project_id: agent_run.project_id })
+        .where.not(quality_score: nil)
+    end
+
+    def prediction_objective_score(prediction)
+      return prediction.predicted_objective_score if prediction.respond_to?(:predicted_objective_score)
+
+      prediction.mean_objective_score
+    end
+
+    def prediction_quality_score(prediction)
+      return prediction.predicted_quality_score if prediction.respond_to?(:predicted_quality_score)
+
+      prediction.mean_quality_score
     end
 
     def bundle_definition(variant_by_experiment_id)
