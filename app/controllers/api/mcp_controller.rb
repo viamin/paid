@@ -76,10 +76,8 @@ module Api
     end
 
     def extract_session_token
-      # Check header first, then query param
       request.headers["X-Session-Token"].presence ||
-        request.headers["Authorization"]&.delete_prefix("Bearer ")&.presence ||
-        params[:session_token]
+        request.headers["Authorization"]&.delete_prefix("Bearer ")&.presence
     end
 
     def parse_request_body
