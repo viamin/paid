@@ -611,7 +611,7 @@ module Activities
         checks = fetch_check_runs(client, project, pr_data)
 
         if bot_user?(issue.github_creator_login)
-          if auto_merge_eligible_bot?(project, issue,
+          if auto_merge_eligible_bot?(project, client, issue,
                checks: checks, mergeable: pr_data[:mergeable])
             return owner_approved_trigger(issue)
           end
@@ -2404,7 +2404,8 @@ module Activities
         blocking_reviews_complete: all_blocking_review_methods_complete?(
           project, reviews, checks, pr_data: pr_data
         ),
-        reviews_fresh: !review_stale_for_head?(client, project, issue, pr_data, reviews)
+        reviews_fresh: !review_stale_for_head?(client, project, issue, pr_data, reviews),
+        dependencies_resolved: dependencies_resolved?(client, project, issue)
       )
 
       evaluate_auto_merge(project, signals)
@@ -2412,17 +2413,56 @@ module Activities
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
     # strategy. Bot PRs skip owner-approval and review-feedback gates.
-    def auto_merge_eligible_bot?(project, issue, checks:, mergeable:)
+    def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
         bot_authored: true,
         dependabot_eligible: project.auto_merge_dependabot?,
         checks_green: !checks.nil? && checks.any? && all_checks_green?(checks),
-        mergeable: mergeable == true
+        mergeable: mergeable == true,
+        dependencies_resolved: dependencies_resolved?(client, project, issue)
       )
 
       evaluate_auto_merge(project, signals)
+    end
+
+    def dependencies_resolved?(client, project, issue)
+      local_deps, cross_deps = Issues::ParseDependencies.extract(
+        body: issue.body,
+        comments: dependency_comment_bodies(client, project, issue)
+      )
+
+      return true if local_deps.empty? && cross_deps.empty?
+
+      same_repo = [ project.owner.downcase, project.repo.downcase ]
+      same_repo_numbers = cross_deps.each_with_object(Set.new) do |(owner, repo, number), numbers|
+        return false if [ owner, repo ] != same_repo
+
+        numbers << number
+      end
+
+      (local_deps.keys.to_set | same_repo_numbers).all? do |pr_number|
+        dependency_pull_request_merged?(client, project, pr_number)
+      end
+    rescue GithubClient::Error => e
+      log_signal_error("dependencies_resolved", project, issue, e)
+      false
+    end
+
+    def dependency_comment_bodies(client, project, issue)
+      client.issue_comments(project.full_name, issue.github_number).map(&:body)
+    end
+
+    def dependency_pull_request_merged?(client, project, pr_number)
+      pr_data = client.pull_request(project.full_name, pr_number)
+      pull_request_merged?(pr_data)
+    rescue GithubClient::NotFoundError
+      false
+    end
+
+    def pull_request_merged?(pr_data)
+      pr_data&.merged == true || pr_data&.merged_at.present?
     end
 
     def evaluate_auto_merge(project, signals)
