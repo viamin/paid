@@ -26,6 +26,18 @@ module ConfigurationBundles
       new(...).call
     end
 
+    def self.from_outcome(outcome)
+      objective_score = outcome.metrics&.fetch("objective_score", nil)
+      return objective_score.to_f if objective_score.present?
+
+      call(
+        project: outcome.agent_run.project,
+        quality_score: outcome.quality_score,
+        cost_cents: outcome.cost_cents,
+        duration_seconds: outcome.duration_seconds
+      ).objective_score
+    end
+
     def call
       fitness = PromptEvolution::FitnessFunction.call(
         samples: [ sample ],
