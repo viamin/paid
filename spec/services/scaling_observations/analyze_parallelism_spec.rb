@@ -22,7 +22,7 @@ RSpec.describe ScalingObservations::AnalyzeParallelism, :no_db do
       expect(result.allocator_decision).to be_nil
       expect(result.values).to contain_exactly(
         hash_including(
-          "agent_count" => 2,
+          "parallelism" => 2,
           "sample_count" => 1,
           "success_rate" => 1.0
         )
@@ -94,11 +94,11 @@ RSpec.describe ScalingObservations::AnalyzeParallelism, :no_db do
     )
     expect(result.values).to include(
       hash_including(
-        "agent_count" => 3,
+        "parallelism" => 3,
         "signals" => include("diminishing_returns")
       ),
       hash_including(
-        "agent_count" => 4,
+        "parallelism" => 4,
         "signals" => include("success_rate_regression", "blocked_capacity", "launch_shortfall")
       )
     )

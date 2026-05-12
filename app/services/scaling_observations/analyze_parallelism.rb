@@ -92,13 +92,13 @@ module ScalingObservations
 
     def diminishing_returns_at
       grouped_values.find { |value| value["signals"].include?("diminishing_returns") }
-        &.fetch("agent_count", nil)
+        &.fetch("parallelism", nil)
     end
 
     def threshold_signal_at
       grouped_values.find do |value|
         value["signals"].any? { |signal| signal != "diminishing_returns" }
-      end&.fetch("agent_count", nil)
+      end&.fetch("parallelism", nil)
     end
 
     def recommendation
@@ -174,7 +174,6 @@ module ScalingObservations
       )
 
       {
-        "agent_count" => parallelism,
         "parallelism" => parallelism,
         "sample_count" => sample_count,
         "success_rate" => success_rate,
