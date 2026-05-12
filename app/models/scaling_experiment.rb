@@ -168,8 +168,12 @@ class ScalingExperiment < ApplicationRecord
   def cached_or_compute_summary(persist: true)
     current_key = samples_key
     if cached_summary.present?
-      return cached_summary if summary_samples_key == current_key
-      return cached_summary unless persist
+      normalized_cached_summary = cached_summary_with_generated_at
+      if summary_samples_key == current_key
+        persist_cached_summary_generated_at!(normalized_cached_summary) if persist
+        return normalized_cached_summary
+      end
+      return normalized_cached_summary unless persist
     end
 
     summary = ScalingExperiments::SummarizeResults.call(scaling_experiment: self)
@@ -193,6 +197,38 @@ class ScalingExperiment < ApplicationRecord
       .group(:assigned_value)
       .count
       .transform_keys(&:to_i)
+  end
+
+  def cached_summary_with_generated_at
+    return cached_summary unless generated_summary_timestamp_missing?
+
+    generated_at = cached_summary_fallback_timestamp
+    return cached_summary unless generated_at
+
+    cached_summary.merge("generated_at" => generated_at.iso8601)
+  end
+
+  def persist_cached_summary_generated_at!(normalized_cached_summary)
+    return if normalized_cached_summary == cached_summary
+
+    update_columns(cached_summary: normalized_cached_summary)
+  end
+
+  def generated_summary_timestamp_missing?
+    cached_summary.is_a?(Hash) &&
+      cached_summary["generated_at"].blank? &&
+      generated_summary_payload?(cached_summary)
+  end
+
+  def generated_summary_payload?(summary)
+    summary["values"].is_a?(Array) ||
+      summary.key?("allocator_decision") ||
+      summary.key?("dimension") ||
+      summary.key?("status")
+  end
+
+  def cached_summary_fallback_timestamp
+    updated_at || created_at
   end
 
   def min_task_count

@@ -118,4 +118,61 @@ RSpec.describe ScalingExperiment do
       expect(experiment.control_cohort_label(task_count: 5)).to eq("agent_count-1__tasks-4-6")
     end
   end
+
+  describe "#cached_or_compute_summary", :no_db do
+    let(:generated_at) { Time.zone.parse("2026-05-12 12:00:00 UTC") }
+    let(:legacy_cached_summary) do
+      {
+        "status" => "ready_for_analysis",
+        "dimension" => "parallelism",
+        "values" => [
+          {
+            "assigned_value" => 2,
+            "sample_count" => 6,
+            "success_rate" => 0.8,
+            "avg_duration_seconds" => 120.0
+          }
+        ]
+      }
+    end
+
+    it "hydrates legacy cached summaries with a generated_at timestamp from the record" do
+      experiment, persisted_summary = build_legacy_cached_summary_proxy
+
+      summary = experiment.cached_or_compute_summary
+
+      expect(summary["generated_at"]).to eq(generated_at.iso8601)
+      expect(persisted_summary.call).to include("generated_at" => generated_at.iso8601)
+    end
+
+    def build_legacy_cached_summary_proxy
+      klass = described_class
+      persisted_summary = nil
+      summary_payload = legacy_cached_summary
+      timestamp = generated_at
+      experiment = klass.allocate
+      bind_cached_summary_methods(experiment, klass)
+      experiment.define_singleton_method(:cached_summary) { summary_payload }
+      experiment.define_singleton_method(:summary_samples_key) { "1:0,2:0" }
+      experiment.define_singleton_method(:updated_at) { timestamp }
+      experiment.define_singleton_method(:samples_key) { "1:0,2:0" }
+      experiment.define_singleton_method(:update_columns) { |attrs| persisted_summary = attrs[:cached_summary] }
+      [ experiment, -> { persisted_summary } ]
+    end
+
+    def bind_cached_summary_methods(experiment, klass)
+      %i[
+        cached_or_compute_summary
+        cached_summary_with_generated_at
+        persist_cached_summary_generated_at!
+        generated_summary_timestamp_missing?
+        generated_summary_payload?
+        cached_summary_fallback_timestamp
+      ].each do |method_name|
+        experiment.define_singleton_method(method_name) do |*args, **kwargs, &block|
+          klass.instance_method(method_name).bind_call(self, *args, **kwargs, &block)
+        end
+      end
+    end
+  end
 end
