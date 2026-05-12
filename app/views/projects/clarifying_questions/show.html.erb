@@ -42,7 +42,10 @@
 
     <%= form_with url: project_issue_clarifying_question_path(@project, @issue),
                   method: :post,
-                  data: { clarifying_questions_target: "form" } do |f| %>
+                  data: {
+                    clarifying_questions_target: "form",
+                    action: "submit->clarifying-questions#submit"
+                  } do |f| %>
 
       <% @questions.each_with_index do |question, index| %>
         <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
@@ -93,7 +96,8 @@
                   </button>
                 <% else %>
                   <%= f.submit "Submit All Answers",
-                        class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 cursor-pointer",
+                        class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 disabled:cursor-not-allowed disabled:bg-green-300 disabled:hover:bg-green-300",
+                        disabled: true,
                         data: {
                           clarifying_questions_target: "submitButton",
                           turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub issue."

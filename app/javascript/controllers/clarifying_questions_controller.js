@@ -24,6 +24,13 @@ export default class extends Controller {
     }
   }
 
+  submit(event) {
+    if (this.allAnswersPresent()) return
+
+    event.preventDefault()
+    this.focusFirstBlankAnswer()
+  }
+
   showStep(index) {
     this.stepTargets.forEach((step, i) => {
       step.style.display = i === index ? "" : "none"
@@ -49,8 +56,13 @@ export default class extends Controller {
 
   updateProgress() {
     const total = this.totalValue
-    const answered = this.answerTargets.filter(a => a.value.trim().length > 0).length
+    const answered = this.answerTargets.filter((answer) => {
+      const present = answer.value.trim().length > 0
+      if (present) answer.classList.remove("border-red-500")
+      return present
+    }).length
     const percent = total > 0 ? Math.round((answered / total) * 100) : 0
+    const allAnswered = total > 0 && answered === total
 
     if (this.hasProgressBarTarget) {
       this.progressBarTarget.style.width = `${percent}%`
@@ -61,5 +73,24 @@ export default class extends Controller {
     if (this.hasProgressPercentTarget) {
       this.progressPercentTarget.textContent = percent
     }
+    if (this.hasSubmitButtonTarget) {
+      this.submitButtonTarget.disabled = !allAnswered
+      this.submitButtonTarget.setAttribute("aria-disabled", (!allAnswered).toString())
+    }
+  }
+
+  allAnswersPresent() {
+    return this.answerTargets.every(answer => answer.value.trim().length > 0)
+  }
+
+  focusFirstBlankAnswer() {
+    const blankAnswer = this.answerTargets.find(answer => answer.value.trim().length === 0)
+    if (!blankAnswer) return
+
+    const stepIndex = Number(blankAnswer.dataset.stepIndex)
+    this.currentIndex = stepIndex
+    this.showStep(stepIndex)
+    blankAnswer.classList.add("border-red-500")
+    blankAnswer.focus()
   }
 }

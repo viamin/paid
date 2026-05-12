@@ -40,6 +40,8 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response.body).to include("Clarifying Questions")
         expect(response.body).to include("What is the expected behavior?")
         expect(response.body).to include("Should this be behind a flag?")
+        expect(response.body).to include('submit-&gt;clarifying-questions#submit')
+        expect(response.body).to include('disabled="disabled"')
       end
     end
 
