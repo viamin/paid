@@ -195,6 +195,27 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       .to have_attributes(configuration_experiment_variant_id: variant.id)
   end
 
+  it "falls back to rebuilding the bundle definition when persisted assignments disagree with the optimizer definition" do
+    challenger = create(:configuration_experiment_variant,
+      configuration_experiment: experiment,
+      config_value: JSON.generate(12_000))
+    selection = optimizer_selection(definition: optimizer_definition_for_variant(variant: challenger, value: 12_000))
+    create(:configuration_experiment_assignment,
+      configuration_experiment: experiment,
+      configuration_experiment_variant: variant,
+      agent_run: agent_run)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.fingerprint).to eq(described_class.new(agent_run: agent_run).send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.fingerprint).not_to eq(selection.fingerprint)
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
   it "recomputes the fingerprint when the optimizer payload omits it" do
     optimized_definition = optimizer_definition_with_value(12_000)
     selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)

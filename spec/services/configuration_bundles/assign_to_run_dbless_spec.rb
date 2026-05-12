@@ -75,22 +75,13 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
     end
 
     it "persists assignments from the optimizer definition when the variant map is missing" do
-      optimized_definition = experiment_definition_for(selected_variant.parsed_value)
-      selection = optimizer_selection(definition: optimized_definition)
-      variant_record = Struct.new(:id, :configuration_experiment_id).new(selected_variant.id, experiment.id)
+      setup_definition_only_optimizer_selection
 
-      allow(service).to receive_messages(
-        optimizer_selection: selection,
-        expected_optimizer_definition_attributes: selection_definition.except("experiments"),
-        optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ]
-      )
-      expect(ConfigurationExperiments::Assign).to receive(:call).with(
-        configuration_experiment: experiment,
-        agent_run: agent_run,
-        variant: variant_record
-      )
-      expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
-      expect(agent_run).to receive(:update!).with(expected_update_arguments)
+      expect(service.call).to eq(bundle)
+    end
+
+    it "falls back to rebuilding the bundle payload when persisted assignments disagree with the optimizer definition" do
+      setup_assignment_mismatch_fallback
 
       expect(service.call).to eq(bundle)
     end
@@ -212,5 +203,72 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
   def bundle_fingerprint(definition)
     service.send(:bundle_fingerprint, definition)
+  end
+
+  def setup_assignment_mismatch_fallback
+    optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+    selection = optimizer_selection(definition: optimized_definition)
+    optimizer_variant = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+    persisted_variant = Struct.new(:id, :parsed_value, :configuration_experiment).new(8, 8000, experiment)
+    assignment = Struct.new(:configuration_experiment_variant).new(persisted_variant)
+    fallback_definition = optimizer_definition_for_variant(persisted_variant)
+
+    allow(service).to receive_messages(
+      optimizer_selection: selection,
+      expected_optimizer_definition_attributes: selection_definition.except("experiments"),
+      optimizer_assignment_inputs_from_definition: [ [ experiment, optimizer_variant ] ]
+    )
+    expect(ConfigurationExperiments::Assign).to receive(:call).with(
+      configuration_experiment: experiment,
+      agent_run: agent_run,
+      variant: optimizer_variant
+    ).and_return(assignment)
+    expect(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+    expect_bundle_lookup(
+      definition: fallback_definition,
+      fingerprint: bundle_fingerprint(fallback_definition)
+    )
+    expect(agent_run).to receive(:update!).with(expected_update_arguments)
+  end
+
+  def setup_definition_only_optimizer_selection
+    optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+    selection = optimizer_selection(definition: optimized_definition)
+    variant_record = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+    assignment = Struct.new(:configuration_experiment_variant).new(variant_record)
+
+    allow(service).to receive_messages(
+      optimizer_selection: selection,
+      expected_optimizer_definition_attributes: selection_definition.except("experiments"),
+      optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ]
+    )
+    expect(ConfigurationExperiments::Assign).to receive(:call).with(
+      configuration_experiment: experiment,
+      agent_run: agent_run,
+      variant: variant_record
+    ).and_return(assignment)
+    expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+    expect(agent_run).to receive(:update!).with(expected_update_arguments)
+  end
+
+  def build_assignment_variant(id, parsed_value)
+    Struct.new(:id, :parsed_value, :configuration_experiment_id, :configuration_experiment).new(
+      id,
+      parsed_value,
+      experiment.id,
+      experiment
+    )
+  end
+
+  def optimizer_definition_for_variant(variant)
+    experiment_definition_for(variant.parsed_value).merge(
+      "experiments" => {
+        "knowledge.token_budget" => {
+          "configuration_experiment_id" => experiment.id,
+          "configuration_experiment_variant_id" => variant.id,
+          "value" => variant.parsed_value
+        }
+      }
+    )
   end
 end

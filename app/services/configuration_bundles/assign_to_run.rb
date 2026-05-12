@@ -136,7 +136,7 @@ module ConfigurationBundles
       computed_fingerprint = bundle_fingerprint(definition) if definition.is_a?(Hash)
 
       if optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint) &&
-          persist_optimizer_assignments(selection)
+          optimizer_payload_matches_resolved_assignments?(definition, persist_optimizer_assignments(selection))
         return [ definition, computed_fingerprint ]
       end
 
@@ -145,15 +145,14 @@ module ConfigurationBundles
     end
 
     def persist_optimizer_assignments(selection)
-      optimizer_assignment_inputs(selection).each do |experiment, variant|
-        ConfigurationExperiments::Assign.call(
+      optimizer_assignment_inputs(selection).each_with_object({}) do |(experiment, variant), resolved_variants|
+        assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
           agent_run: agent_run,
           variant: variant
         )
+        resolved_variants[experiment.id] = assignment.configuration_experiment_variant
       end
-
-      true
     rescue StandardError => e
       Rails.logger.warn(
         message: "configuration_bundles.optimizer_assignment_persistence_failed",
@@ -162,6 +161,12 @@ module ConfigurationBundles
         error: e.message
       )
       false
+    end
+
+    def optimizer_payload_matches_resolved_assignments?(definition, resolved_variants)
+      return false if resolved_variants == false
+
+      optimizer_experiments_match_variants?(definition, resolved_variants)
     end
 
     def optimizer_assignment_inputs(selection)
