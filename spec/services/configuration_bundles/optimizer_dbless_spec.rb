@@ -66,6 +66,16 @@ RSpec.describe ConfigurationBundles::Optimizer, :no_db do
     end
   end
 
+  describe "#outcome_objective_score" do
+    it "reuses the canonical objective score extractor" do
+      outcome = instance_double(Object)
+
+      expect(ConfigurationBundles::ObjectiveScore).to receive(:from_outcome).with(outcome).and_return(0.84)
+
+      expect(optimizer.send(:outcome_objective_score, outcome)).to eq(0.84)
+    end
+  end
+
   def prediction_for(bundle_definition)
     variant_id = bundle_definition.dig("experiments", experiment.config_key, "configuration_experiment_variant_id")
     return control_prediction if variant_id == control.id

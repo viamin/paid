@@ -348,15 +348,7 @@ module ConfigurationBundles
     end
 
     def outcome_objective_score(outcome)
-      objective_score = outcome.metrics&.fetch("objective_score", nil)
-      return objective_score.to_f if objective_score.present?
-
-      ConfigurationBundles::ObjectiveScore.call(
-        project: outcome.agent_run.project,
-        quality_score: outcome.quality_score,
-        cost_cents: outcome.cost_cents,
-        duration_seconds: outcome.duration_seconds
-      ).objective_score
+      ConfigurationBundles::ObjectiveScore.from_outcome(outcome)
     end
 
     def acquisition_score_for(mean:, uncertainty:, best_observed_objective_score:)
