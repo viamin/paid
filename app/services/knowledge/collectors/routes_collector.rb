@@ -33,7 +33,7 @@ module Knowledge
         /database .* does not exist/i,
         /database adapter.*(?:not found|not loaded)/i,
         /Error loading the .+ Active Record adapter/,
-        /is not part of the bundle\. Add it to your Gemfile/,
+        /(?:Active Record adapter|database adapter).*is not part of the bundle/m,
         /no such table/i
       ].freeze
 
