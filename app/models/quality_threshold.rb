@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class QualityThreshold < ApplicationRecord
+  has_logidze
   DEFAULT_WINDOW_SIZE = 10
   DEFAULT_MIN_SAMPLE_SIZE = 3
   METRIC_TYPES = %w[composite_score pr_created ci_passed pr_merged iterations lint_clean

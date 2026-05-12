@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -434,6 +434,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.text "description"
     t.string "fingerprint", limit: 64, comment: "Content-addressable hash for deduplication"
     t.bigint "llm_model_id", comment: "The LLM model included in this bundle"
+    t.jsonb "log_data"
     t.string "name", limit: 255, null: false
     t.bigint "project_id", comment: "Optional project scope; NULL means account-wide bundle"
     t.bigint "prompt_version_id", comment: "The prompt template version included in this bundle"
@@ -830,6 +831,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.bigint "created_by_id"
     t.datetime "expires_at"
     t.datetime "last_used_at"
+    t.jsonb "log_data"
     t.string "name", null: false
     t.integer "projects_count", default: 0, null: false
     t.datetime "repositories_synced_at"
@@ -945,6 +947,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.bigint "created_by_id"
     t.datetime "expires_at"
     t.datetime "last_used_at"
+    t.jsonb "log_data"
     t.jsonb "metadata", default: {}, null: false
     t.string "name", null: false
     t.datetime "revoked_at"
@@ -1186,6 +1189,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.string "display_name", null: false
     t.string "family", limit: 100
     t.decimal "input_cost_per_million", precision: 10, scale: 4
+    t.jsonb "log_data"
     t.integer "max_output_tokens"
     t.jsonb "metadata", default: {}, null: false
     t.string "model_id", null: false
@@ -1348,6 +1352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.boolean "active", default: true, null: false, comment: "Whether this strategy is currently in effect"
     t.jsonb "configuration", default: {}, null: false, comment: "Strategy-specific configuration data"
     t.datetime "created_at", null: false
+    t.jsonb "log_data"
     t.string "name", null: false, comment: "Human-readable name for this strategy"
     t.string "strategy_type", null: false, comment: "Category: review_settings, quality_gate, execution_timeouts, retry_policies, agent_settings, feature_orchestration, provider_resolution"
     t.datetime "updated_at", null: false
@@ -1600,6 +1605,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.text "api_key", null: false
     t.string "api_service_type", limit: 50, null: false
     t.datetime "created_at", null: false
+    t.jsonb "log_data"
     t.string "name", limit: 100, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
@@ -1630,6 +1636,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
     t.string "fallback_role", limit: 30, default: "standard", null: false
+    t.jsonb "log_data"
     t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50, null: false
@@ -1668,6 +1675,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
   create_table "quality_gate_thresholds", comment: "Defines per-project quality gate rules that trigger pauses or recovery when metrics breach expected bounds.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.boolean "enabled", default: true, null: false, comment: "Whether this threshold currently participates in quality gate evaluation."
+    t.jsonb "log_data"
     t.decimal "max_threshold", precision: 5, scale: 4, comment: "Upper bound whose breach triggers the gate for metrics where too high is bad."
     t.string "metric_key", limit: 50, null: false, comment: "Quality metric evaluated by the gate, such as composite_score, lint_clean, or review_score."
     t.decimal "min_threshold", precision: 5, scale: 4, comment: "Lower bound whose breach triggers the gate for metrics where too low is bad."
@@ -1741,6 +1749,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.datetime "created_at", null: false
     t.boolean "enabled", default: true, null: false
     t.string "goal_type", limit: 50, null: false
+    t.jsonb "log_data"
     t.string "metric_type", limit: 50, null: false
     t.decimal "min_value", precision: 5, scale: 4, null: false
     t.bigint "project_id"
@@ -3154,8 +3163,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
       CREATE TRIGGER logidze_on_billing_plans BEFORE INSERT OR UPDATE ON public.billing_plans FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_configuration_bundles, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_configuration_bundles BEFORE INSERT OR UPDATE ON public.configuration_bundles FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
   create_trigger :logidze_on_cost_budgets, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_cost_budgets BEFORE INSERT OR UPDATE ON public.cost_budgets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
+  SQL
+
+  create_trigger :logidze_on_integration_credentials, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_integration_credentials BEFORE INSERT OR UPDATE ON public.integration_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{secret}')
+  SQL
+
+  create_trigger :logidze_on_llm_models, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_llm_models BEFORE INSERT OR UPDATE ON public.llm_models FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :knowledge_chunks_tsvector_update, sql_definition: <<-SQL
@@ -3168,6 +3197,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
 
   create_trigger :logidze_on_projects, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_projects BEFORE INSERT OR UPDATE ON public.projects FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_polled_at,last_agent_run_at,last_github_activity_at,last_issue_sync_at,total_cost_cents,total_tokens_used}')
+  SQL
+
+  create_trigger :logidze_on_provider_api_keys, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_provider_api_keys BEFORE INSERT OR UPDATE ON public.provider_api_keys FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{api_key}')
+  SQL
+
+  create_trigger :logidze_on_providers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.providers FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_quality_gate_thresholds, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_quality_gate_thresholds BEFORE INSERT OR UPDATE ON public.quality_gate_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL

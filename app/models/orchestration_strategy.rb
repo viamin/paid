@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class OrchestrationStrategy < ApplicationRecord
+  has_logidze
   STRATEGY_TYPES = %w[
     review_settings
     quality_gate
