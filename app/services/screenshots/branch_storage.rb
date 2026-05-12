@@ -122,6 +122,7 @@ module Screenshots
       git(git_dir, "remote", "add", "origin", remote_url)
       git(git_dir, "config", "user.name", "github-actions[bot]")
       git(git_dir, "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+      git(git_dir, "config", "commit.gpgSign", "false")
     end
 
     def create_orphan_branch(git_dir)
