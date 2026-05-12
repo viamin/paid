@@ -39,7 +39,10 @@ module Knowledge
       end
     rescue ArgumentError, ActiveRecord::RecordInvalid => e
       @wizard_error = e.message
-      load_wizard_state(active_question_key: error_question_key)
+      load_wizard_state(
+        active_question_key: error_question_key,
+        submitted_answer_text: params[:answer_text]
+      )
       render_wizard_response(status: :unprocessable_entity)
     end
 
@@ -77,7 +80,7 @@ module Knowledge
       @project.context_intake_sessions.latest_first.first
     end
 
-    def load_wizard_state(active_question_key: nil)
+    def load_wizard_state(active_question_key: nil, submitted_answer_text: nil)
       @responses = @session.context_intake_responses.ordered.index_by(&:question_key)
       @progress = @session.progress
       @wizard_state = ContextIntake::WizardState.new(
@@ -87,11 +90,14 @@ module Knowledge
       @current_question_index = @wizard_state.current_question_index
       @current_question = @wizard_state.current_question
       @current_response = @responses[@current_question[:key]]
+      @current_answer_text = submitted_answer_text.nil? ? @current_response&.answer_text : submitted_answer_text
       @previous_question = @wizard_state.previous_question
       @next_question = @wizard_state.next_question
     end
 
     def save_current_response!
+      validate_required_answer!
+
       ContextIntake::SaveResponse.call(
         session: @session,
         question_key: params[:question_key],
@@ -121,6 +127,7 @@ module Knowledge
         project: @project,
         current_question: @current_question,
         current_question_index: @current_question_index,
+        current_answer_text: @current_answer_text,
         current_response: @current_response,
         previous_question: @previous_question,
         next_question: @next_question,
@@ -150,6 +157,26 @@ module Knowledge
         current_question_key: params[:question_key],
         direction: normalized_navigation_action
       )
+    end
+
+    def validate_required_answer!
+      return unless answer_required_for_navigation?
+      return if params[:answer_text].present?
+
+      raise ActiveRecord::RecordInvalid.new(@session),
+        "Please answer this required question before continuing."
+    end
+
+    def answer_required_for_navigation?
+      current_question_required? && !skip_navigation? && !previous_navigation?
+    end
+
+    def current_question_required?
+      ContextIntake::QuestionnaireSchema.find_question(params[:question_key])&.dig(:question, :required)
+    end
+
+    def previous_navigation?
+      normalized_navigation_action == "previous"
     end
 
     def error_question_key

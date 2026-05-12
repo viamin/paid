@@ -44,7 +44,7 @@
         <% end %>
 
         <%= f.text_area :answer_text,
-              value: current_response&.answer_text,
+              value: current_answer_text,
               rows: 5,
               placeholder: "Enter your answer...",
               class: "mt-4 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>

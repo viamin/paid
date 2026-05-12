@@ -12,6 +12,8 @@ RSpec.describe "Knowledge::ContextIntake" do
       section[:questions].map { |question| question.merge(section_key: section[:key]) }
     end
   end
+  let(:first_question) { questions.first }
+  let(:second_question) { questions.second }
   let(:last_question) { questions.last }
 
   before do
@@ -44,6 +46,24 @@ RSpec.describe "Knowledge::ContextIntake" do
   end
 
   describe "PATCH /projects/:project_id/context_intake" do
+    it "keeps required questions in place when navigating forward without an answer" do
+      session.context_intake_responses.find_by!(question_key: first_question.fetch(:key))
+             .update!(answer_text: nil)
+
+      patch project_context_intake_path(project),
+        params: {
+          question_key: first_question.fetch(:key),
+          answer_text: "",
+          navigation_action: "next"
+        },
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include("Please answer this required question before continuing.")
+      expect(response.body).to include(first_question.fetch(:text))
+      expect(response.body).not_to include(second_question.fetch(:text))
+    end
+
     it "redirects turbo-frame finish submissions to the full page with a success notice" do
       patch project_context_intake_path(project),
         params: {
