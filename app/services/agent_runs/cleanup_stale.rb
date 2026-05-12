@@ -66,9 +66,7 @@ module AgentRuns
     end
 
     def stale_running?(agent_run)
-      agent_run.status == "running" &&
-        agent_run.started_at &&
-        agent_run.started_at < AgentRun.stale_running_cutoff
+      AgentRun.stale_running?(agent_run)
     end
 
     def stale_claimed?(agent_run)
