@@ -2,5 +2,10 @@ CREATE TRIGGER "logidze_on_service_containers"
 BEFORE INSERT OR UPDATE ON "service_containers"
 FOR EACH ROW
 WHEN (coalesce(current_setting('logidze.disabled', true), '') <> 'on')
--- Exclude env column to prevent passwords/secrets persisting in log_data
-EXECUTE PROCEDURE logidze_logger(null, 'updated_at', '{env}');
+-- Exclude secrets and high-churn metric summaries so log_data only captures
+-- audit-relevant configuration changes.
+EXECUTE PROCEDURE logidze_logger(
+  null,
+  'updated_at',
+  '{env,peak_cpu_percent,peak_memory_bytes,avg_cpu_percent,avg_memory_bytes,container_metrics_count}'
+);
