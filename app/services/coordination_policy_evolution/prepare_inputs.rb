@@ -374,7 +374,7 @@ module CoordinationPolicyEvolution
     end
 
     def default_configuration
-      OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.tap do |configuration|
+      @default_configuration ||= OrchestrationStrategies::Defaults.feature_orchestration.tap do |configuration|
         configuration["recovery"] ||= {
           "actions" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTIONS.deep_dup,
           "default_action" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTION
