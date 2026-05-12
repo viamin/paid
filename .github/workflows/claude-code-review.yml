@@ -6,6 +6,10 @@ on:
   repository_dispatch:
     types: [claude-review]
 
+concurrency:
+  group: claude-review-${{ github.event.client_payload.pr_number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     name: Claude Code Review
