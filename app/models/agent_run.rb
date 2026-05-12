@@ -1056,9 +1056,8 @@ class AgentRun < ApplicationRecord
     return false unless PRE_MODEL_FAILURE_STATUSES.include?(status)
     return false if tokens_input.to_i > 0
 
-    INFRA_FAILURE_KEYWORDS.any? do |keyword|
-      error_message.to_s.downcase.include?(keyword.downcase)
-    end
+    msg = error_message.to_s
+    INFRA_FAILURE_KEYWORDS.any? { |keyword| msg.downcase.include?(keyword.downcase) }
   end
 
   def total_tokens
