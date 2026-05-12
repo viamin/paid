@@ -18,7 +18,9 @@ RSpec.describe CoordinationPolicy do
     it { is_expected.to validate_presence_of(:policy_type) }
     it { is_expected.to validate_inclusion_of(:policy_type).in_array(described_class::POLICY_TYPES) }
     it { is_expected.to validate_presence_of(:policy_key) }
+    it { is_expected.to validate_length_of(:policy_key).is_at_most(100) }
     it { is_expected.to validate_presence_of(:name) }
+    it { is_expected.to validate_length_of(:name).is_at_most(255) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
 
     it "rejects duplicate account-wide policy keys within a policy type" do
@@ -74,6 +76,40 @@ RSpec.describe CoordinationPolicy do
 
       expect(coordination_policy).to be_valid
       expect(coordination_policy.account).to eq(project.account)
+    end
+
+    it "requires context_selector to be a hash" do
+      coordination_policy.context_selector = []
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:context_selector]).to include("must be a JSON object")
+    end
+
+    it "requires metadata to be a hash" do
+      coordination_policy.metadata = []
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:metadata]).to include("must be a JSON object")
+    end
+  end
+
+  describe "#create_version!" do
+    it "creates policy versions with auto-incremented version numbers" do
+      policy = create(:coordination_policy)
+
+      version1 = policy.create_version!(rules: { "mode" => "linear" })
+      version2 = policy.create_version!(rules: { "mode" => "parallel" })
+
+      expect(version1.version).to eq(1)
+      expect(version2.version).to eq(2)
+    end
+
+    it "ignores caller-supplied version values" do
+      policy = create(:coordination_policy)
+
+      version = policy.create_version!(rules: { "mode" => "parallel" }, version: 99)
+
+      expect(version.version).to eq(1)
     end
   end
 
