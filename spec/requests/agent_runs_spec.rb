@@ -168,7 +168,7 @@ RSpec.describe "AgentRuns" do
 
         expect(goal_cell.text).to include("Create PR")
         expect(context_cell.text).to include(goal_text)
-        expect(context_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(context_cell.at_css("span[title]")["title"]).to eq(goal_text)
       end
 
       it "shows a placeholder when a run has no goal type to display" do
@@ -191,7 +191,7 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         context_cell = cell_for_run(parsed_html, run, "Context")
-        truncated_span = context_cell.at_css("span.block.truncate")
+        truncated_span = context_cell.at_css("span[title]")
 
         expect(truncated_span.text).to include("[REDACTED:github_token]")
         expect(truncated_span.text).not_to include(token)
