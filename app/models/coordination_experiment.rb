@@ -38,6 +38,17 @@ class CoordinationExperiment < ApplicationRecord
     coordination_experiment_variants.find_by(is_control: true)
   end
 
+  def baseline_policy
+    control_policy.deep_dup
+  end
+
+  def effective_policy_for(variant)
+    return baseline_policy if variant.nil?
+    return baseline_policy if variant.is_control?
+
+    variant.effective_policy(control_policy: baseline_policy)
+  end
+
   def includes_traffic?(workflow_id:)
     return false if traffic_percentage.zero?
     return true if traffic_percentage == 100
