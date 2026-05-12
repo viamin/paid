@@ -84,6 +84,12 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "accepts optimizer definitions that omit optional empty identity keys" do
+      setup_optional_identity_keys_omitted_selection
+
+      expect(service.call).to eq(bundle)
+    end
+
     it "falls back to rebuilding the bundle payload when persisted assignments disagree with the optimizer definition" do
       setup_assignment_mismatch_fallback
 
@@ -347,6 +353,31 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
   def setup_definition_only_optimizer_selection
     optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+    selection = optimizer_selection(definition: optimized_definition)
+    variant_record = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+    assignment = Struct.new(:configuration_experiment_variant).new(variant_record)
+
+    allow(service).to receive_messages(
+      optimizer_selection: selection,
+      active_experiments: [ experiment ],
+      optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ]
+    )
+    expect(ConfigurationExperiments::Assign).to receive(:call).with(
+      configuration_experiment: experiment,
+      agent_run: agent_run,
+      variant: variant_record
+    ).and_return(assignment)
+    expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+    expect(agent_run).to receive(:update!).with(expected_update_arguments)
+  end
+
+  def setup_optional_identity_keys_omitted_selection
+    optimized_definition = experiment_definition_for(selected_variant.parsed_value).except(
+      "custom_prompt_sha256",
+      "model_selection",
+      "mcp_servers",
+      "service_container_ids"
+    )
     selection = optimizer_selection(definition: optimized_definition)
     variant_record = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
     assignment = Struct.new(:configuration_experiment_variant).new(variant_record)

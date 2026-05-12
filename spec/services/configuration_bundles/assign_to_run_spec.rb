@@ -203,6 +203,28 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       .to have_attributes(configuration_experiment_variant_id: optimized_variant_id)
   end
 
+  it "accepts optimizer definitions that omit optional empty identity keys" do
+    optimized_definition = optimizer_definition_with_value(12_000).except(
+      "custom_prompt_sha256",
+      "model_selection",
+      "mcp_servers",
+      "service_container_ids"
+    )
+    selection = optimizer_selection(definition: optimized_definition)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.definition).to eq(optimized_definition)
+    expect(bundle.fingerprint).to eq(selection.fingerprint)
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run))
+      .to have_attributes(configuration_experiment_variant_id: optimized_definition.dig(
+        "experiments",
+        "knowledge.token_budget",
+        "configuration_experiment_variant_id"
+      ))
+  end
+
   it "falls back to rebuilding the bundle definition when persisted assignments disagree with the optimizer definition" do
     challenger = create(:configuration_experiment_variant,
       configuration_experiment: experiment,

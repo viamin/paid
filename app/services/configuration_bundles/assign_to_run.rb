@@ -355,7 +355,7 @@ module ConfigurationBundles
     end
 
     def expected_optimizer_definition_attributes
-      canonicalize(
+      normalize_optimizer_definition_attributes(
         {
           schema_version: 1,
           goal: agent_run.goal,
@@ -371,7 +371,11 @@ module ConfigurationBundles
     end
 
     def normalized_optimizer_definition_attributes(definition)
-      canonicalize(definition.except("experiments")).tap do |attributes|
+      normalize_optimizer_definition_attributes(definition.except("experiments"))
+    end
+
+    def normalize_optimizer_definition_attributes(definition)
+      canonicalize(definition).tap do |attributes|
         OPTIONAL_EMPTY_DEFINITION_KEYS.each do |key|
           attributes.delete(key) if attributes[key].blank?
         end
