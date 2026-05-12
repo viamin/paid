@@ -348,9 +348,20 @@ module Scaling
 
     def summary_fresh?(summary)
       timestamp = summary_timestamp(summary)
+      return false if timestamp.nil? && generated_summary_payload?(summary)
       return true unless timestamp
 
       timestamp > STALE_THRESHOLD.ago
+    end
+
+    def generated_summary_payload?(summary)
+      summary_value(summary, :values).is_a?(Array) ||
+        summary.key?(:allocator_decision) ||
+        summary.key?("allocator_decision") ||
+        summary.key?(:dimension) ||
+        summary.key?("dimension") ||
+        summary.key?(:status) ||
+        summary.key?("status")
     end
 
     def summary_timestamp(summary)

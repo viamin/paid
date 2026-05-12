@@ -309,6 +309,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       it "extracts per-value data from the values array" do
         summaries = [
           {
+            "generated_at" => Time.current.iso8601,
             "status" => "ready_for_analysis",
             "dimension" => "agent_count",
             "sample_count" => 20,
@@ -362,22 +363,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       end
 
       it "ignores allocator decisions from non-parallelism dimensions" do
-        summaries = [
-          {
-            "status" => "ready_for_analysis",
-            "dimension" => "iteration_count",
-            "sample_count" => 12,
-            "allocator_decision" => {
-              "requested_agent_count" => 8,
-              "max_batch_size" => 8,
-              "confidence" => "high"
-            },
-            "values" => [
-              { "assigned_value" => 3, "success_rate" => 0.9, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 100.0 },
-              { "assigned_value" => 5, "success_rate" => 0.8, "avg_duration_seconds" => 250, "sample_count" => 6, "avg_cost_cents" => 110.0 }
-            ]
-          }
-        ]
+        summaries = [ non_parallelism_experiment_summary ]
 
         result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
 
@@ -416,6 +402,17 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       it "falls back when experiment summaries are stale" do
         summaries = [
           parallelism_experiment_summary.merge("generated_at" => 10.days.ago.iso8601)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+        expect(result.reason).to include("stale experiment data")
+      end
+
+      it "treats timestamp-less cached summaries as stale" do
+        summaries = [
+          parallelism_experiment_summary.except("generated_at")
         ]
 
         result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
@@ -742,6 +739,24 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         "sample_count" => 2
       )
     )
+  end
+
+  def non_parallelism_experiment_summary
+    {
+      "generated_at" => Time.current.iso8601,
+      "status" => "ready_for_analysis",
+      "dimension" => "iteration_count",
+      "sample_count" => 12,
+      "allocator_decision" => {
+        "requested_agent_count" => 8,
+        "max_batch_size" => 8,
+        "confidence" => "high"
+      },
+      "values" => [
+        { "assigned_value" => 3, "success_rate" => 0.9, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 100.0 },
+        { "assigned_value" => 5, "success_rate" => 0.8, "avg_duration_seconds" => 250, "sample_count" => 6, "avg_cost_cents" => 110.0 }
+      ]
+    }
   end
 
   def experiment_summary(value:, **attributes)
