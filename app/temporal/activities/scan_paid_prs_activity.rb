@@ -2436,7 +2436,7 @@ module Activities
       return true if local_deps.empty? && cross_deps.empty?
 
       same_repo = [ project.owner.downcase, project.repo.downcase ]
-      same_repo_numbers = cross_deps.each_with_object(Set.new) do |(owner, repo, number), numbers|
+      same_repo_numbers = cross_deps.each_with_object(Set.new) do |((owner, repo, number), _), numbers|
         return false if [ owner, repo ] != same_repo
 
         numbers << number

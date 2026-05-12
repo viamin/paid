@@ -113,7 +113,7 @@ module Issues
       @issue = issue
       @adjacency = adjacency
       @comments = comments || []
-      @body = body
+      @body = body || issue&.body
     end
 
     def self.call(...)

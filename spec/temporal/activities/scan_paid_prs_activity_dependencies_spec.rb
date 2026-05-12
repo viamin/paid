@@ -58,6 +58,19 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
       expect(activity.send(:dependencies_resolved?, client, project, cross_repo_issue)).to be(false)
     end
 
+    it "treats same-repo fully-qualified dependencies as local merge checks" do
+      same_repo_issue = Data.define(:body, :github_number).new(
+        body: "Depends on acme/widgets#41",
+        github_number: 42
+      )
+
+      allow(client).to receive(:pull_request)
+        .with(project.full_name, 41)
+        .and_return(OpenStruct.new(number: 41, merged: true, merged_at: Time.current))
+
+      expect(activity.send(:dependencies_resolved?, client, project, same_repo_issue)).to be(true)
+    end
+
     it "returns true when all same-repo dependency PRs are merged" do
       allow(client).to receive(:pull_request)
         .with(project.full_name, 41)
