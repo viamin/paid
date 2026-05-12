@@ -85,21 +85,63 @@ module CoordinationPolicyEvolution
     end
 
     def candidate_rules(mutation)
-      decomposition = mutation.configuration.deep_stringify_keys.fetch("decomposition", {})
+      configuration = mutation.configuration.deep_stringify_keys
 
-      {
-        "enabled" => decomposition["enabled"],
-        "min_components_to_decompose" => decomposition["min_components_to_decompose"]
-      }.compact
+      case policy_type
+      when "decomposition"
+        decomposition = configuration.fetch("decomposition", {})
+
+        {
+          "enabled" => decomposition["enabled"],
+          "min_components_to_decompose" => decomposition["min_components_to_decompose"]
+        }.compact
+      when "recovery"
+        recovery = configuration.fetch("recovery", {})
+        actions = recovery["actions"] || recovery["failure_actions"]
+
+        {
+          "failure_actions" => actions
+        }.compact
+      when "escalation"
+        escalation = configuration.fetch("escalation", {})
+
+        {
+          "explicit_triggers" => escalation["explicit_triggers"],
+          "auto_resolve_trigger_types" => escalation["auto_resolve_trigger_types"]
+        }.compact
+      else
+        {}
+      end
     end
 
     def candidate_parameters(mutation)
-      decomposition = mutation.configuration.deep_stringify_keys.fetch("decomposition", {})
+      configuration = mutation.configuration.deep_stringify_keys
 
-      {
-        "max_tasks" => decomposition["max_tasks"],
-        "layer_order" => decomposition["layer_order"]
-      }.compact
+      case policy_type
+      when "decomposition"
+        decomposition = configuration.fetch("decomposition", {})
+
+        {
+          "max_tasks" => decomposition["max_tasks"],
+          "layer_order" => decomposition["layer_order"]
+        }.compact
+      when "recovery"
+        recovery = configuration.fetch("recovery", {})
+
+        {
+          "default_action" => recovery["default_action"]
+        }.compact
+      when "escalation"
+        escalation = configuration.fetch("escalation", {})
+
+        {
+          "human_value_threshold" => escalation["human_value_threshold"],
+          "weights" => escalation["weights"],
+          "interruption_cost" => escalation["interruption_cost"]
+        }.compact
+      else
+        {}
+      end
     end
 
     def candidate_metadata(mutation)

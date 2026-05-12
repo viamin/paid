@@ -105,5 +105,83 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
         "max_tasks" => 12
       )
     end
+
+    context "with recovery policy evolution inputs" do
+      let!(:recovery_policy) do
+        create(:coordination_policy, :active,
+          account: account,
+          policy_type: "recovery",
+          policy_key: Coordination::FailureRecoveryPolicy::POLICY_KEY,
+          name: "Failure Recovery").tap do |record|
+            record.current_version.update!(
+              version: 2,
+              rules: { "failure_actions" => { "timeout" => "retry_same_provider" } },
+              parameters: { "default_action" => "pause_and_notify" }
+            )
+          end
+      end
+      let(:recovery_result) { described_class.call(account: account, policy_type: "recovery", min_decisions: 2) }
+
+      before do
+        create(:orchestration_decision,
+          project: project,
+          decision_type: "retry",
+          actor: "coordination_failure_recovery",
+          context: { "decision_status" => "applied" },
+          inputs: { "policy_source" => "coordination_policy" },
+          outputs: { "chosen_action" => "retry_same_provider" })
+        create(:orchestration_decision,
+          project: project,
+          decision_type: "pause",
+          actor: "coordination_failure_recovery",
+          context: { "decision_status" => "failed" },
+          inputs: { "policy_source" => "defaults" },
+          outputs: { "chosen_action" => "pause_and_notify" })
+      end
+
+      it "supports recovery policy snapshots and orchestration decision metrics" do
+        expect(recovery_result[:policy]).to include(id: recovery_policy.id, policy_type: "recovery")
+        expect(recovery_result.dig(:policy, :configuration, "recovery")).to include(
+          "actions" => include("timeout" => "retry_same_provider"),
+          "default_action" => "pause_and_notify"
+        )
+        expect(recovery_result.dig(:performance, :decision_count)).to eq(2)
+        expect(recovery_result.dig(:performance, :classified_decision_count)).to eq(2)
+        expect(recovery_result.dig(:performance, :failure_count)).to eq(1)
+        expect(recovery_result.dig(:performance, :policy_source_counts)).to include(
+          "coordination_policy" => 1,
+          "defaults" => 1
+        )
+      end
+    end
+
+    context "with escalation policy evolution inputs" do
+      let(:escalation_result) { described_class.call(account: account, policy_type: "escalation", min_decisions: 1) }
+
+      before do
+        create(:orchestration_decision,
+          project: project,
+          decision_type: "escalate",
+          actor: "coordination_escalation_service",
+          context: { "decision_status" => "applied" },
+          inputs: { "policy_source" => "defaults" },
+          outputs: { "human_value_score" => 0.9 })
+      end
+
+      it "supports escalation bootstrap policies without a persisted coordination policy" do
+        expect(escalation_result[:policy]).to include(
+          policy_type: "escalation",
+          policy_key: Coordination::EscalationPolicy::POLICY_KEY,
+          source: "defaults"
+        )
+        expect(escalation_result.dig(:policy, :configuration, "escalation")).to include(
+          "human_value_threshold",
+          "explicit_triggers",
+          "weights",
+          "interruption_cost"
+        )
+        expect(escalation_result.dig(:performance, :decision_type_counts)).to include("escalate" => 1)
+      end
+    end
   end
 end

@@ -7,6 +7,21 @@ module CoordinationPolicyEvolution
     DEFAULT_SAMPLE_LIMIT = 5
     POLICY_TYPE = DecompositionService::POLICY_TYPE
     POLICY_KEY = DecompositionService::POLICY_KEY
+    POLICY_KEYS = {
+      "decomposition" => DecompositionService::POLICY_KEY,
+      "recovery" => Coordination::FailureRecoveryPolicy::POLICY_KEY,
+      "escalation" => Coordination::EscalationPolicy::POLICY_KEY
+    }.freeze
+    POLICY_NAMES = {
+      "decomposition" => "Feature Decomposition",
+      "recovery" => "Failure Recovery",
+      "escalation" => "Human Intervention"
+    }.freeze
+    POLICY_DESCRIPTIONS = {
+      "decomposition" => "Account-level coordination policy for feature decomposition.",
+      "recovery" => "Account-level coordination policy for failed agent run recovery.",
+      "escalation" => "Account-level coordination policy for human escalation decisions."
+    }.freeze
     NOOP_OUTCOMES = Orchestration::DecompositionDecisions::Log::NOOP_OUTCOMES
     FAILURE_OUTCOMES = %w[
       decomposition_failed
@@ -60,6 +75,8 @@ module CoordinationPolicyEvolution
     end
 
     def scoped_decisions
+      return scoped_orchestration_decisions if orchestration_policy_type?
+
       @scoped_decisions ||= DecompositionDecision
         .joins(:project)
         .where(projects: { account_id: account.id })
@@ -67,15 +84,39 @@ module CoordinationPolicyEvolution
         .where(created_at: lookback_days.days.ago..Time.current)
     end
 
+    def scoped_orchestration_decisions
+      @scoped_orchestration_decisions ||= OrchestrationDecision
+        .joins(:project)
+        .where(projects: { account_id: account.id })
+        .where(actor: orchestration_decision_actor)
+        .where(created_at: lookback_days.days.ago..Time.current)
+    end
+
     def successful_decisions
+      return successful_orchestration_decisions if orchestration_policy_type?
+
       @successful_decisions ||= scoped_decisions.where.not(outcome: NOOP_OUTCOMES + FAILURE_OUTCOMES)
     end
 
     def failed_decisions
+      return failed_orchestration_decisions if orchestration_policy_type?
+
       @failed_decisions ||= scoped_decisions.where(outcome: FAILURE_OUTCOMES)
     end
 
+    def successful_orchestration_decisions
+      @successful_orchestration_decisions ||= scoped_decisions
+        .where.not(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('failed', 'noop')"))
+    end
+
+    def failed_orchestration_decisions
+      @failed_orchestration_decisions ||= scoped_decisions
+        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') = 'failed'"))
+    end
+
     def performance_summary
+      return orchestration_performance_summary if orchestration_policy_type?
+
       decision_count = outcome_counts.values.sum
       failure_count = count_outcomes(FAILURE_OUTCOMES)
       noop_count = count_outcomes(NOOP_OUTCOMES)
@@ -98,6 +139,29 @@ module CoordinationPolicyEvolution
       }
     end
 
+    def orchestration_performance_summary
+      decision_count = scoped_decisions.count
+      failure_count = orchestration_status_counts.fetch("failed", 0)
+      noop_count = orchestration_status_counts.fetch("noop", 0)
+      success_count = decision_count - failure_count - noop_count
+      classified_decision_count = success_count + failure_count
+
+      {
+        decision_count: decision_count,
+        classified_decision_count: classified_decision_count,
+        min_decisions: min_decisions,
+        success_count: success_count,
+        failure_count: failure_count,
+        noop_count: noop_count,
+        success_rate: success_rate(classified_decision_count, success_count),
+        lookback_days: lookback_days,
+        decision_type_counts: decision_type_counts,
+        outcome_counts: orchestration_status_counts,
+        policy_source_counts: policy_source_counts,
+        average_task_count: nil
+      }
+    end
+
     def sample_successes
       @sample_successes ||= successful_decisions.order(created_at: :desc, id: :desc).limit(sample_limit)
     end
@@ -113,8 +177,16 @@ module CoordinationPolicyEvolution
     end
 
     def policy_source_counts
+      return orchestration_policy_source_counts if orchestration_policy_type?
+
       scoped_decisions
         .group(Arel.sql("COALESCE(metadata->>'policy_source', 'unknown')"))
+        .count
+    end
+
+    def orchestration_policy_source_counts
+      scoped_decisions
+        .group(Arel.sql("COALESCE(inputs->>'policy_source', 'unknown')"))
         .count
     end
 
@@ -133,12 +205,20 @@ module CoordinationPolicyEvolution
       @outcome_counts ||= scoped_decisions.group(:outcome).count
     end
 
+    def orchestration_status_counts
+      @orchestration_status_counts ||= scoped_decisions
+        .group(Arel.sql("COALESCE(context->>'decision_status', 'unknown')"))
+        .count
+    end
+
     def count_outcomes(outcomes)
       outcome_counts.slice(*outcomes).values.sum
     end
 
     def serialize_decisions(rows)
       rows.map do |decision|
+        next serialize_orchestration_decision(decision) if orchestration_policy_type?
+
         {
           id: decision.id,
           decision_key: decision.decision_key,
@@ -155,15 +235,30 @@ module CoordinationPolicyEvolution
       end
     end
 
+    def serialize_orchestration_decision(decision)
+      {
+        id: decision.id,
+        decision_type: decision.decision_type,
+        created_at: decision.created_at.iso8601,
+        actor: decision.actor,
+        decision_status: decision.context["decision_status"],
+        context: decision.context,
+        inputs: decision.inputs,
+        outputs: decision.outputs
+      }
+    end
+
     def coordination_policy
       @coordination_policy ||= CoordinationPolicy
-        .where(account:, policy_type:, policy_key: POLICY_KEY, project_id: nil)
+        .where(account:, policy_type:, policy_key: policy_key, project_id: nil)
         .includes(:current_version, :coordination_policy_versions)
         .order(Arel.sql("CASE status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END"), id: :desc)
         .first
     end
 
     def current_strategy
+      return unless decomposition_policy_type?
+
       @current_strategy ||= OrchestrationStrategies::Resolve.call(
         strategy_type: DecompositionService::STRATEGY_TYPE,
         account: account
@@ -200,9 +295,9 @@ module CoordinationPolicyEvolution
       {
         id: coordination_policy&.id,
         policy_type: policy_type,
-        policy_key: POLICY_KEY,
-        name: "Feature Decomposition",
-        description: "Account-level coordination policy for feature decomposition.",
+        policy_key: policy_key,
+        name: policy_name,
+        description: policy_description,
         status: coordination_policy&.status || "draft",
         account_id: account.id,
         project_id: nil,
@@ -221,13 +316,15 @@ module CoordinationPolicyEvolution
     end
 
     def bootstrap_source
-      current_strategy.present? ? DecompositionService::STRATEGY_TYPE : "defaults"
+      return DecompositionService::STRATEGY_TYPE if decomposition_policy_type? && current_strategy.present?
+
+      "defaults"
     end
 
     def bootstrap_configuration
-      return current_strategy.configuration if current_strategy.present?
+      return current_strategy.configuration if decomposition_policy_type? && current_strategy.present?
 
-      OrchestrationStrategies::Defaults.feature_orchestration
+      default_configuration
     end
 
     def serialize_policy_version(version)
@@ -247,11 +344,33 @@ module CoordinationPolicyEvolution
     end
 
     def effective_configuration(rules, parameters)
+      default_configuration.deep_dup.tap do |configuration|
+        case policy_type
+        when "decomposition"
+          configuration["decomposition"] = configuration.fetch("decomposition", {}).merge(
+            extract_decomposition_config(rules),
+            extract_decomposition_config(parameters)
+          )
+        when "recovery"
+          configuration["recovery"] = configuration.fetch("recovery", {}).merge(
+            extract_recovery_config(rules),
+            extract_recovery_config(parameters)
+          )
+        when "escalation"
+          configuration["escalation"] = configuration.fetch("escalation", {}).merge(
+            extract_escalation_config(rules),
+            extract_escalation_config(parameters)
+          )
+        end
+      end
+    end
+
+    def default_configuration
       OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.tap do |configuration|
-        configuration["decomposition"] = configuration.fetch("decomposition", {}).merge(
-          extract_decomposition_config(rules),
-          extract_decomposition_config(parameters)
-        )
+        configuration["recovery"] ||= {
+          "actions" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTIONS.deep_dup,
+          "default_action" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTION
+        }
       end
     end
 
@@ -273,6 +392,70 @@ module CoordinationPolicyEvolution
         config["max_tasks"] = payload["max_tasks"] if payload.key?("max_tasks")
         config["layer_order"] = payload["layer_order"] if payload.key?("layer_order")
       end.compact
+    end
+
+    def extract_recovery_config(payload)
+      return {} unless payload.is_a?(Hash)
+
+      recovery = payload.fetch("recovery", {})
+
+      {}.tap do |config|
+        actions = if recovery.is_a?(Hash)
+          recovery["actions"] || recovery["failure_actions"]
+        end
+        actions ||= payload["failure_actions"] || payload["actions"]
+
+        config["actions"] = actions if actions.is_a?(Hash)
+        config["default_action"] = recovery["default_action"] if recovery.is_a?(Hash) && recovery.key?("default_action")
+        config["default_action"] = payload["default_action"] if payload.key?("default_action")
+      end.compact
+    end
+
+    def extract_escalation_config(payload)
+      return {} unless payload.is_a?(Hash)
+
+      escalation = payload.fetch("escalation", {})
+
+      {}.tap do |config|
+        source = escalation.is_a?(Hash) ? escalation : payload
+
+        %w[
+          human_value_threshold
+          explicit_triggers
+          auto_resolve_trigger_types
+          weights
+          interruption_cost
+        ].each do |key|
+          config[key] = source[key] if source.key?(key)
+        end
+      end.compact
+    end
+
+    def decomposition_policy_type?
+      policy_type == "decomposition"
+    end
+
+    def orchestration_policy_type?
+      %w[recovery escalation].include?(policy_type)
+    end
+
+    def orchestration_decision_actor
+      case policy_type
+      when "recovery" then "coordination_failure_recovery"
+      when "escalation" then "coordination_escalation_service"
+      end
+    end
+
+    def policy_key
+      POLICY_KEYS.fetch(policy_type, POLICY_KEY)
+    end
+
+    def policy_name
+      POLICY_NAMES.fetch(policy_type, policy_type.humanize)
+    end
+
+    def policy_description
+      POLICY_DESCRIPTIONS.fetch(policy_type, "Account-level coordination policy.")
     end
   end
 end
