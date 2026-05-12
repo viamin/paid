@@ -219,6 +219,8 @@ RSpec.describe "Dashboard" do
         issue = create(:issue, project: project, labels: [ "P1" ])
         run = create(:agent_run, :running, project: project, issue: issue)
 
+        expect(AgentRun).to receive(:preload_source_pull_requests).and_call_original
+
         get dashboard_path
 
         document = Nokogiri::HTML(response.body)
