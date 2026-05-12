@@ -85,15 +85,18 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
 
   def expect_current_question(question, position:)
     expect(page).to have_css("turbo-frame#context_intake_wizard")
-    expect(page).to have_css("form", count: 1)
-    expect(page).to have_css("textarea", count: 1)
-    expect(page).to have_no_button("Save")
-    expect(page).to have_content("Question #{position} of #{ordered_questions.length}")
-    expect(page).to have_content(question[:section_title])
-    expect(page).to have_content(question[:text])
 
-    other_question = ordered_questions.find { |entry| entry[:key] != question[:key] }
-    expect(page).to have_no_content(other_question[:text]) if other_question
+    within("turbo-frame#context_intake_wizard") do
+      expect(page).to have_css("form", count: 1)
+      expect(page).to have_css("textarea", count: 1)
+      expect(page).to have_no_button("Save")
+      expect(page).to have_content("Question #{position} of #{ordered_questions.length}")
+      expect(page).to have_content(question[:section_title])
+      expect(page).to have_content(question[:text])
+
+      other_question = ordered_questions.find { |entry| entry[:key] != question[:key] }
+      expect(page).to have_no_content(other_question[:text]) if other_question
+    end
   end
 
   def answer_question(question_key, answer_text, button:)
