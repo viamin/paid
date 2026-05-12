@@ -352,7 +352,8 @@ module ApplicationHelper
   end
 
   def agent_run_goal_text(run)
-    agent_run_goal_label(run.goal)
+    goal = run.respond_to?(:goal) ? run.goal : nil
+    agent_run_goal_label(goal)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then
