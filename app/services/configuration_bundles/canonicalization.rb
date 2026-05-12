@@ -16,5 +16,13 @@ module ConfigurationBundles
         value
       end
     end
+
+    def normalized_mcp_servers(source)
+      snapshots = source.is_a?(Hash) ? source["mcp_servers"] : source
+
+      Array(snapshots)
+        .filter_map { |snapshot| canonicalize(snapshot) if snapshot.is_a?(Hash) }
+        .sort_by { |snapshot| JSON.generate(snapshot) }
+    end
   end
 end
