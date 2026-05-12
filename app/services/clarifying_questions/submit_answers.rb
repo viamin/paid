@@ -23,6 +23,13 @@ module ClarifyingQuestions
     attr_reader :project, :issue, :questions_and_answers
 
     def validate_answers!
+      raise ArgumentError, "No clarifying questions found for this issue." if questions_and_answers.empty?
+
+      missing_questions = questions_and_answers.select { |qa| qa[:question].blank? }
+      if missing_questions.any?
+        raise ArgumentError, "Clarifying question text is missing for #{missing_questions.size} item(s)."
+      end
+
       missing = questions_and_answers.select { |qa| qa[:answer].blank? }
       return if missing.empty?
 

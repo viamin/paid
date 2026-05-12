@@ -101,5 +101,17 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers do
         expect(github_client).not_to have_received(:add_comment)
       end
     end
+
+    context "when there are no questions to answer" do
+      it "raises ArgumentError" do
+        expect {
+          described_class.call(
+            project: project,
+            issue: issue,
+            questions_and_answers: []
+          )
+        }.to raise_error(ArgumentError, /No clarifying questions found/)
+      end
+    end
   end
 end

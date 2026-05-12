@@ -9,15 +9,17 @@ module Projects
     before_action :authorize_project_update, only: [ :create ]
 
     def show
-      @questions = fetch_questions
+      @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
 
       if @questions.empty?
         redirect_to project_path(@project), alert: "No clarifying questions found for issue ##{@issue.github_number}."
       end
+    rescue GithubClient::Error => e
+      redirect_to project_path(@project), alert: "Failed to load clarifying questions: #{e.message}"
     end
 
     def create
-      questions_and_answers = build_questions_and_answers
+      questions_and_answers = build_questions_and_answers(questions: current_questions)
 
       ClarifyingQuestions::SubmitAnswers.call(
         project: @project,
@@ -50,24 +52,13 @@ module Projects
       authorize @project, :update?
     end
 
-    def fetch_questions
-      questions = ClarifyingQuestions::Parse.call(comment_body: @issue.body)
-      return questions if questions.any?
-
-      client = @project.github_token.client
-      comments = client.issue_comments(@project.full_name, @issue.github_number)
-      enhancement_comment = comments.reverse.find do |comment|
-        comment.body.to_s.include?(ClarifyingQuestions::Parse::ENHANCEMENT_MARKER) &&
-          comment.body.to_s.include?("## Clarifying questions")
-      end
-      return [] unless enhancement_comment
-
-      ClarifyingQuestions::Parse.call(comment_body: enhancement_comment.body)
+    def current_questions
+      @current_questions ||= ClarifyingQuestions::Load.call(project: @project, issue: @issue)
     end
 
-    def build_questions_and_answers
-      questions = params[:questions] || []
+    def build_questions_and_answers(questions:)
       answers = params[:answers] || []
+      raise ArgumentError, "No clarifying questions found for this issue." if questions.empty?
 
       questions.each_with_index.map do |question, i|
         { question: question, answer: answers[i].to_s.strip }

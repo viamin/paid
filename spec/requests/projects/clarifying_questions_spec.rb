@@ -93,5 +93,21 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response).to redirect_to(project_issue_clarifying_question_path(project, issue))
       end
     end
+
+    context "when the issue no longer has clarifying questions" do
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "redirects back with an alert instead of posting an empty comment" do
+        post project_issue_clarifying_question_path(project, issue), params: {
+          questions: [ "Tampered question?" ],
+          answers: [ "Tampered answer" ]
+        }
+
+        expect(github_client).not_to have_received(:add_comment)
+        expect(response).to redirect_to(project_issue_clarifying_question_path(project, issue))
+      end
+    end
   end
 end
