@@ -6,7 +6,7 @@ module Activities
 
     def execute(input)
       mutations = CoordinationPolicyEvolution::GenerateCandidates.call(
-        strategy: input.fetch(:strategy),
+        policy: input.fetch(:policy),
         analysis: input.slice(:performance, :sample_successes, :sample_failures, :prior_versions),
         options: {
           mutation_count: input.fetch(:mutation_count, 2),
@@ -15,7 +15,7 @@ module Activities
       )
 
       {
-        policy_type: input.fetch(:strategy).fetch(:strategy_type),
+        policy_type: input.fetch(:policy).fetch(:policy_type),
         mutations: mutations.map do |mutation|
           {
             configuration: mutation.configuration,
