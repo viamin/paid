@@ -100,6 +100,14 @@ class AgentRun < ApplicationRecord
   STALE_CLAIMED_TIMEOUT = 15.minutes
   STALE_PAUSED_TIMEOUT = 2.hours
   STALE_RUNNING_GRACE_PERIOD = 10.minutes
+  STALE_RUNNING_HEALTHY_LOOKBACK = 14.days
+  STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE = 20
+  STALE_RUNNING_HEALTHY_PERCENTILE = 0.95
+  STALE_RUNNING_HEALTHY_MULTIPLIER = 3
+  STALE_RUNNING_MIN_ACTIVE_TIME = 10.minutes
+  STALE_RUNNING_HEALTHY_STATUSES = %w[completed no_output].freeze
+  STALE_RUNNING_TIMEOUT_CACHE_KEY = "agent_runs/stale_running_timeouts_by_goal/v1"
+  STALE_RUNNING_TIMEOUT_CACHE_TTL = 5.minutes
 
   # Sentinel prefix written into AgentRun#error_message by `bin/rails dev:cleanup`
   # when it forcibly times out an in-flight run because the host process is being
@@ -224,7 +232,7 @@ class AgentRun < ApplicationRecord
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
-  scope :stale_running, -> { running.started_before(stale_running_cutoff) }
+  scope :stale_running, -> { running.where(stale_running_condition_sql(now: Time.current)) }
   scope :stale_claimed, -> { claimed.updated_before(stale_claimed_cutoff) }
   scope :stale_for_cleanup, -> { stale_running.or(stale_claimed) }
   scope :search_by_goal, lambda { |query|
@@ -511,8 +519,10 @@ class AgentRun < ApplicationRecord
     capacity_inflight.where(project_id: project.id).count
   end
 
-  def self.stale_running_timeout
-    AGENT_TIMEOUT_DEFAULT.seconds + STALE_RUNNING_GRACE_PERIOD
+  def self.stale_running_timeout(goal: nil)
+    return default_stale_running_timeout if goal.blank?
+
+    stale_running_timeouts_by_goal.fetch(goal.to_s, default_stale_running_timeout)
   end
 
   def self.stale_claimed_timeout
@@ -523,8 +533,8 @@ class AgentRun < ApplicationRecord
     STALE_PAUSED_TIMEOUT
   end
 
-  def self.stale_running_cutoff(now: Time.current)
-    now - stale_running_timeout
+  def self.stale_running_cutoff(goal: nil, now: Time.current)
+    now - stale_running_timeout(goal: goal)
   end
 
   def self.stale_claimed_cutoff(now: Time.current)
@@ -542,6 +552,96 @@ class AgentRun < ApplicationRecord
     user.account.fallback_owner_id == user.id
   end
 
+  def self.stale_running?(agent_run, now: Time.current)
+    agent_run.status == "running" &&
+      agent_run.started_at.present? &&
+      agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now)
+  end
+
+  def self.default_stale_running_timeout
+    AGENT_TIMEOUT_DEFAULT.seconds + STALE_RUNNING_GRACE_PERIOD
+  end
+
+  def self.stale_running_timeouts_by_goal
+    return build_stale_running_timeouts_by_goal if Rails.env.test?
+
+    Rails.cache.fetch(STALE_RUNNING_TIMEOUT_CACHE_KEY, expires_in: STALE_RUNNING_TIMEOUT_CACHE_TTL) do
+      build_stale_running_timeouts_by_goal
+    end
+  end
+
+  def self.stale_running_condition_sql(now: Time.current)
+    default_timeout = default_stale_running_timeout
+    cutoffs_by_goal = stale_running_cutoffs_by_goal(now: now,
+      timeouts_by_goal: stale_running_timeouts_by_goal,
+      default_timeout: default_timeout)
+    goal_column = %("#{table_name}"."goal")
+    started_at_column = %("#{table_name}"."started_at")
+
+    known_goal_clauses = GOALS.map do |goal|
+      sanitize_sql_array([
+        "(#{goal_column} = ? AND #{started_at_column} < ?)",
+        goal,
+        cutoffs_by_goal.fetch(goal)
+      ])
+    end
+
+    known_goals_sql = GOALS.map { |goal| sanitize_sql_array([ "?", goal ]) }.join(", ")
+    fallback_clause = sanitize_sql_array([
+      "((#{goal_column} IS NULL OR #{goal_column} NOT IN (#{known_goals_sql})) AND #{started_at_column} < ?)",
+      now - default_timeout
+    ])
+
+    "(#{(known_goal_clauses << fallback_clause).join(' OR ')})"
+  end
+
+  def self.healthy_successful_runtime_stats_by_goal
+    TenantContext.with_system_access do
+      where(status: STALE_RUNNING_HEALTHY_STATUSES)
+        .where(goal: GOALS, completed_at: STALE_RUNNING_HEALTHY_LOOKBACK.ago..Time.current)
+        .where.not(duration_seconds: nil)
+        .group(:goal)
+        .pluck(
+          :goal,
+          Arel.sql("COUNT(*)"),
+          Arel.sql("percentile_cont(#{STALE_RUNNING_HEALTHY_PERCENTILE}) WITHIN GROUP (ORDER BY duration_seconds)")
+        )
+        .to_h do |goal, count, p95|
+          [ goal, { count: count.to_i, p95: p95.to_f } ]
+        end
+    end
+  end
+
+  def self.build_stale_running_timeouts_by_goal
+    healthy_runtime_stats = healthy_successful_runtime_stats_by_goal
+
+    GOALS.index_with do |goal|
+      adaptive_stale_running_timeout(healthy_runtime_stats[goal])
+    end
+  end
+
+  def self.stale_running_cutoffs_by_goal(now:, timeouts_by_goal:, default_timeout:)
+    GOALS.index_with do |goal|
+      now - timeouts_by_goal.fetch(goal, default_timeout)
+    end
+  end
+
+  def self.adaptive_stale_running_timeout(stats)
+    return default_stale_running_timeout unless healthy_runtime_stats?(stats)
+
+    adaptive_active_time = [
+      (stats[:p95] * STALE_RUNNING_HEALTHY_MULTIPLIER).ceil,
+      STALE_RUNNING_MIN_ACTIVE_TIME
+    ].max
+
+    [ adaptive_active_time + STALE_RUNNING_GRACE_PERIOD, default_stale_running_timeout ].min
+  end
+
+  def self.healthy_runtime_stats?(stats)
+    stats.present? &&
+      stats[:count] >= STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE &&
+      stats[:p95].positive?
+  end
   # Priority ordering for the run queue (6 tiers):
   #   0 = manual runs (user pre-emption — highest)
   #   1 = P1 user-defined label
