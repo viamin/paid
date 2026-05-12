@@ -30,6 +30,19 @@ RSpec.describe "Knowledge::ContextIntake" do
     end
   end
 
+  describe "GET /projects/:project_id/context_intake" do
+    it "marks completed pages for full reload when loaded from a turbo frame" do
+      session.update!(status: "completed", completed_at: Time.current)
+
+      get project_context_intake_path(project),
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(%(name="turbo-visit-control" content="reload"))
+      expect(response.body).to include("Business context captured")
+    end
+  end
+
   describe "PATCH /projects/:project_id/context_intake" do
     it "redirects turbo-frame finish submissions to the full page with a success notice" do
       patch project_context_intake_path(project),
