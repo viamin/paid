@@ -226,6 +226,11 @@ module Screenshots
     }.freeze
 
     def targets_for(path)
+      if path.start_with?("app/javascript/controllers/")
+        explicit_targets = targets_for_javascript_controller(path.delete_prefix("app/javascript/controllers/"))
+        return explicit_targets if explicit_targets.any?
+      end
+
       return SHARED_TARGET_KEYS if shared_ui_file?(path)
 
       if path.start_with?("app/views/")
@@ -252,6 +257,14 @@ module Screenshots
         path == "app/views/layouts/application.html.erb" ||
         path.start_with?("app/views/shared/") ||
         path == "app/helpers/application_helper.rb"
+    end
+
+    def targets_for_javascript_controller(relative_path)
+      case relative_path
+      when "clarifying_questions_controller.js" then [ :project_issue_clarifying_questions ]
+      else
+        []
+      end
     end
 
     def targets_for_helper(path)
