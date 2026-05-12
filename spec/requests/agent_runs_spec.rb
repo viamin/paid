@@ -31,9 +31,9 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(project.name)
       end
 
-      it "shows each run goal in the index table" do
-        goal_text = "Implement multi-step OAuth token refresh handling for stale sessions"
-        run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: goal_text)
+      it "shows each run goal type in the index table" do
+        run = create(:agent_run, :with_custom_prompt, project: project,
+          custom_prompt: "Implement multi-step OAuth token refresh handling for stale sessions")
 
         get agent_runs_path
 
@@ -43,8 +43,8 @@ RSpec.describe "AgentRuns" do
 
         goal_cell = goal_cell_for_run(document, run)
 
-        expect(goal_cell.text).to include(goal_text)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(goal_cell.text).to include("Create PR")
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Create PR")
         expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
@@ -114,20 +114,20 @@ RSpec.describe "AgentRuns" do
         expect(provider_cell.text.squish).to eq(Provider.display_name_for("claude"))
       end
 
-      it "prefers the issue title over custom prompt text" do
+      it "shows the issue title in the context column when present" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
         run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
           custom_prompt: "Rendered task instructions that should not appear")
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        context_cell = cell_for_run(parsed_html, run, "Context")
 
-        expect(goal_cell.text).to include(issue.title)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(issue.title)
+        expect(context_cell.text).to include(issue.title)
+        expect(context_cell.at_css("a")["title"]).to eq(issue.title)
       end
 
-      it "prefers review pull request text over custom prompt text" do
+      it "shows review pull request text in the context column" do
         run = create(:agent_run, :review_goal, :with_custom_prompt, project: project, issue: nil,
           custom_prompt: "Generated review instructions that should not appear",
           source_pull_request_number: 87)
@@ -135,12 +135,14 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
+        context_cell = cell_for_run(parsed_html, run, "Context")
 
-        expect(goal_cell.text).to include("Review PR #87")
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Review PR #87")
+        expect(goal_cell.text).to include("Code Review")
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Code Review")
+        expect(context_cell.text).to include("PR #87")
       end
 
-      it "shows PR label for create_pr runs targeting an existing pull request" do
+      it "shows PR context for create_pr runs targeting an existing pull request" do
         run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr", issue: nil,
           custom_prompt: "Generated instructions that should not appear",
           source_pull_request_number: 55)
@@ -148,26 +150,30 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
+        context_cell = cell_for_run(parsed_html, run, "Context")
 
-        expect(goal_cell.text).to include("PR #55")
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("PR #55")
+        expect(goal_cell.text).to include("Create PR")
+        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Create PR")
+        expect(context_cell.text).to include("PR #55")
       end
 
-      it "falls back to custom prompt text when no issue or review goal text is available" do
+      it "falls back to custom prompt text in the context column when no issue or review context is available" do
         goal_text = "Investigate the flaky deploy status check"
         run = create(:agent_run, :with_custom_prompt, project: project, issue: nil, custom_prompt: goal_text)
 
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
+        context_cell = cell_for_run(parsed_html, run, "Context")
 
-        expect(goal_cell.text).to include(goal_text)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(goal_cell.text).to include("Create PR")
+        expect(context_cell.text).to include(goal_text)
+        expect(context_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
       end
 
-      it "shows a placeholder when a run has no goal text to display" do
+      it "shows a placeholder when a run has no goal type to display" do
         run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: "Temporary goal")
-        run.update_columns(custom_prompt: nil, issue_id: nil)
+        run.update_columns(custom_prompt: nil, issue_id: nil, goal: nil)
 
         get agent_runs_path
 
@@ -177,15 +183,15 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.at_css("span")["class"]).to include("text-gray-400")
       end
 
-      it "redacts secrets from custom goal text in the table cell and tooltip" do
+      it "redacts secrets from custom context text in the table cell and tooltip" do
         token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
         run = create(:agent_run, :with_custom_prompt, project: project,
           custom_prompt: "Investigate deploy failure with GITHUB_TOKEN=#{token}")
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
-        truncated_span = goal_cell.at_css("span.block.truncate")
+        context_cell = cell_for_run(parsed_html, run, "Context")
+        truncated_span = context_cell.at_css("span.block.truncate")
 
         expect(truncated_span.text).to include("[REDACTED:github_token]")
         expect(truncated_span.text).not_to include(token)
