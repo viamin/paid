@@ -109,15 +109,13 @@ module CoordinationPolicyEvolution
     end
 
     def successful_orchestration_decisions
-      statuses = orchestration_success_statuses
-      placeholders = statuses.map { |s| "'#{s}'" }.join(", ")
       @successful_orchestration_decisions ||= scoped_decisions
-        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN (#{placeholders})"))
+        .where("COALESCE(context->>'decision_status', 'unknown') IN (?)", orchestration_success_statuses)
     end
 
     def failed_orchestration_decisions
       @failed_orchestration_decisions ||= scoped_decisions
-        .where(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('failed')"))
+        .where("COALESCE(context->>'decision_status', 'unknown') IN (?)", ORCHESTRATION_FAILURE_STATUSES)
     end
 
     def performance_summary

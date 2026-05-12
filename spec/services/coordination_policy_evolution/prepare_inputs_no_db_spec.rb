@@ -58,7 +58,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
 
       allow(service).to receive(:scoped_decisions).and_return(scoped)
       allow(scoped).to receive(:where)
-        .with(Arel.sql("COALESCE(context->>'decision_status', 'unknown') IN ('applied', 'deferred', 'resolved')"))
+        .with("COALESCE(context->>'decision_status', 'unknown') IN (?)", %w[applied deferred resolved])
         .and_return(successful)
       allow(successful).to receive(:order).with(created_at: :desc, id: :desc).and_return(successful)
       allow(successful).to receive(:limit).with(5).and_return(sampled)
