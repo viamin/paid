@@ -336,15 +336,16 @@ module ApplicationHelper
     mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
   end
 
+  GOAL_LABELS = {
+    "create_pr" => "Create PR",
+    "create_issue" => "Create Issue",
+    "review" => "Code Review",
+    "enhance_issue" => "Enhance Issue",
+    "analyze_issue" => "Analyze Issue"
+  }.freeze
+
   def agent_run_goal_text(run)
-    return run.issue&.title if run.issue&.title.present?
-
-    if run.source_pull_request_number.present?
-      prefix = run.review_goal? ? "Review PR" : "PR"
-      return "#{prefix} ##{run.source_pull_request_number}"
-    end
-
-    redacted_goal_text(run.custom_prompt)
+    GOAL_LABELS.fetch(run.goal, run.goal.to_s.humanize)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then
