@@ -6,8 +6,8 @@ module CoordinationPolicyEvolution
       new(...).call
     end
 
-    def initialize(strategy:, analysis:, options: {})
-      @strategy = strategy.deep_symbolize_keys
+    def initialize(policy:, analysis:, options: {})
+      @policy = policy.deep_symbolize_keys
       @analysis = analysis.deep_symbolize_keys
       @options = options.deep_symbolize_keys
     end
@@ -18,14 +18,24 @@ module CoordinationPolicyEvolution
 
     private
 
-    attr_reader :strategy, :analysis, :options
+    attr_reader :policy, :analysis, :options
 
     def mutations
       @mutations ||= StrategyEvolution::Mutate.call(
-        strategy: strategy,
+        strategy: mutation_strategy,
         analysis: analysis,
         options: options
       )
+    end
+
+    def mutation_strategy
+      {
+        id: policy[:version_id] || policy[:id],
+        strategy_type: policy[:policy_type],
+        version: policy[:version],
+        account_id: policy[:account_id],
+        configuration: policy.fetch(:configuration)
+      }
     end
 
     def stamp_provenance(mutation)
@@ -37,7 +47,10 @@ module CoordinationPolicyEvolution
         diff: mutation.diff,
         provenance: mutation.provenance.to_h.merge(
           "generated_by" => self.class.name,
-          "policy_type" => strategy[:strategy_type],
+          "policy_type" => policy[:policy_type],
+          "policy_key" => policy[:policy_key],
+          "source_policy_id" => policy[:id],
+          "source_policy_version_id" => policy[:version_id],
           "sampled_decision_ids" => sampled_decision_ids,
           "prior_versions" => prior_version_summary,
           "measured_outcomes" => measured_outcomes

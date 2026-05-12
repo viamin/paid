@@ -2,12 +2,13 @@
 
 require "rails_helper"
 
-RSpec.describe CoordinationPolicyEvolution::GenerateCandidates do
+RSpec.describe CoordinationPolicyEvolution::GenerateCandidates, :no_db do
   describe ".call" do
-    let(:strategy) do
+    let(:policy) do
       {
         id: 7,
-        strategy_type: "feature_orchestration",
+        policy_type: "decomposition",
+        policy_key: "feature_decomposition",
         version: 3,
         account_id: 11,
         configuration: OrchestrationStrategies::Defaults.feature_orchestration
@@ -38,7 +39,7 @@ RSpec.describe CoordinationPolicyEvolution::GenerateCandidates do
     end
     let(:mutation) do
       StrategyEvolution::Mutate::Mutation.new(
-        configuration: strategy[:configuration].deep_dup,
+        configuration: policy[:configuration].deep_dup,
         strategy: "risk_reduction",
         reasoning: "Reduce over-parallelization",
         expected_improvement: "Fewer failed plans",
@@ -52,12 +53,13 @@ RSpec.describe CoordinationPolicyEvolution::GenerateCandidates do
     end
 
     it "adds reviewable coordination provenance to each candidate mutation" do
-      result = described_class.call(strategy: strategy, analysis: analysis, options: { mutation_count: 1 })
+      result = described_class.call(policy: policy, analysis: analysis, options: { mutation_count: 1 })
 
       expect(result.size).to eq(1)
       expect(result.first.provenance).to include(
         "generated_by" => "CoordinationPolicyEvolution::GenerateCandidates",
-        "policy_type" => "feature_orchestration",
+        "policy_type" => "decomposition",
+        "policy_key" => "feature_decomposition",
         "sampled_decision_ids" => [ 101, 202 ]
       )
       expect(result.first.provenance.fetch("prior_versions")).to include(

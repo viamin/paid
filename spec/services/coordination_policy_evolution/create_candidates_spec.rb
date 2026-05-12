@@ -5,11 +5,28 @@ require "rails_helper"
 RSpec.describe CoordinationPolicyEvolution::CreateCandidates do
   describe ".call" do
     let(:account) { create(:account) }
-    let(:strategy) { create(:orchestration_strategy, :feature_orchestration, account: account, version: 3) }
+    let(:policy) do
+      create(:coordination_policy, :active,
+        account: account,
+        policy_type: "decomposition",
+        policy_key: "feature_decomposition",
+        name: "Feature Decomposition").tap do |record|
+          record.current_version.update!(
+            version: 3,
+            rules: { "enabled" => true, "min_components_to_decompose" => 2 },
+            parameters: { "max_tasks" => 20, "layer_order" => %w[view model service controller] }
+          )
+        end
+    end
     let(:mutation) do
       StrategyEvolution::Mutate::Mutation.new(
-        configuration: strategy.configuration.deep_dup.tap do |config|
-          config["decomposition"] = { "max_tasks" => 12 }
+        configuration: OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.tap do |config|
+          config["decomposition"] = {
+            "enabled" => true,
+            "min_components_to_decompose" => 2,
+            "max_tasks" => 12,
+            "layer_order" => %w[view controller service model]
+          }
         end,
         strategy: "risk_reduction",
         reasoning: "Reduce large decompositions",
@@ -18,29 +35,34 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates do
         provenance: { "sampled_decision_ids" => [ 101, 202 ] }
       )
     end
-    let(:strategy_snapshot) do
+    let(:policy_snapshot) do
       {
-        id: strategy.id,
-        strategy_type: strategy.strategy_type,
-        name: strategy.name,
-        version: strategy.version,
-        configuration: strategy.configuration
+        id: policy.id,
+        policy_type: policy.policy_type,
+        policy_key: policy.policy_key,
+        name: policy.name,
+        version_id: policy.current_version.id,
+        version: policy.current_version.version,
+        llm_prompt: policy.current_version.llm_prompt,
+        configuration: OrchestrationStrategies::Defaults.feature_orchestration.deep_dup
       }
     end
 
-    it "persists inactive candidates with explicit pending approval metadata" do
-      candidates = described_class.call(strategy_snapshot: strategy_snapshot, account: account, mutations: [ mutation ])
+    it "persists draft policy versions with explicit pending approval metadata" do
+      candidates = described_class.call(policy_snapshot: policy_snapshot, account: account, mutations: [ mutation ])
 
       expect(candidates.size).to eq(1)
-      expect(candidates.first).not_to be_active
+      expect(candidates.first.status).to eq("draft")
       expect(candidates.first.version).to eq(4)
-      expect(candidates.first.configuration.dig("_evolution", "approval")).to eq(
+      expect(candidates.first.metadata.dig("evolution", "approval")).to eq(
         "required" => true,
         "status" => "pending_review",
         "auto_promote" => false
       )
-      expect(candidates.first.configuration.dig("_evolution", "provenance", "sampled_decision_ids")).to eq([ 101, 202 ])
-      expect(OrchestrationStrategy.active_for("feature_orchestration", account: account)).to eq(strategy)
+      expect(candidates.first.metadata.dig("evolution", "provenance", "sampled_decision_ids")).to eq([ 101, 202 ])
+      expect(candidates.first.rules).to include("enabled" => true, "min_components_to_decompose" => 2)
+      expect(candidates.first.parameters).to include("max_tasks" => 12)
+      expect(policy.reload.current_version).not_to eq(candidates.first)
     end
   end
 end
