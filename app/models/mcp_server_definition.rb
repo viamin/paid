@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class McpServerDefinition < ApplicationRecord
+  has_logidze
   TRANSPORTS = %w[stdio sse].freeze
   INSTALL_TYPES = %w[npx docker_image].freeze
 

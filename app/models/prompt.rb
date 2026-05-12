@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Prompt < ApplicationRecord
+  has_logidze
   CATEGORIES = %w[planning coding review testing].freeze
 
   attr_accessor :template, :system_prompt, :variables_text, :change_notes
