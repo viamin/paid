@@ -34,7 +34,8 @@ module Knowledge
         /database adapter.*(?:not found|not loaded)/i,
         /Error loading the .+ Active Record adapter/,
         /(?:Active Record adapter|database adapter).*is not part of the bundle/m,
-        /no such table/i
+        /no such table/i,
+        /Cannot load database configuration:/i
       ].freeze
 
       def collect
