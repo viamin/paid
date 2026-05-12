@@ -194,8 +194,13 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     described_class.call(agent_run: agent_run)
 
+    optimized_variant_id = optimized_definition.dig(
+      "experiments",
+      "knowledge.token_budget",
+      "configuration_experiment_variant_id"
+    )
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run))
-      .to have_attributes(configuration_experiment_variant_id: variant.id)
+      .to have_attributes(configuration_experiment_variant_id: optimized_variant_id)
   end
 
   it "falls back to rebuilding the bundle definition when persisted assignments disagree with the optimizer definition" do
