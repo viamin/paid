@@ -640,7 +640,7 @@ RSpec.describe Issues::AutoPick do
 
     it "returns nil and warns when no runnable provider can be resolved" do
       create(:issue, project: project)
-      allow(Provider).to receive_messages(ensure_default_for: nil, first_enabled_for_owner: nil)
+      allow(Runner).to receive_messages(ensure_default_for: nil, first_enabled_for_owner: nil)
       allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(nil)
       allow(Rails.logger).to receive(:warn)
 

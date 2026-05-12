@@ -46,7 +46,7 @@ module Screenshots
             record.allowed_github_usernames = [ user.email ]
           end
 
-          provider = user.providers.subscription.first!
+          provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
           service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|
@@ -134,7 +134,7 @@ module Screenshots
           chat_session = ChatSession.where(account: account, title: "Screenshot Chat").first_or_create!(
             created_by: user,
             project: project,
-            provider: provider,
+            runner: provider,
             mode: "workspace",
             status: "active"
           )
@@ -200,7 +200,7 @@ module Screenshots
           {
             "user" => { "id" => user.id, "email" => user.email, "password" => password },
             "project" => { "id" => project.id, "name" => project.name, "slug" => project.repo },
-            "provider" => { "id" => provider.id, "name" => provider.name },
+            "runner" => { "id" => provider.id, "name" => provider.display_name },
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
@@ -239,8 +239,8 @@ module Screenshots
             review_url: nil, review_posted_at: nil,
             result_commit_sha: nil, base_commit_sha: nil,
             worktree_path: nil, branch_name: nil,
-            provider_id: nil,
-            providers_attempted: [], final_provider: nil, provider_switches: 0,
+            runner_id: nil,
+            runners_attempted: [], final_runner: nil, runner_switches: 0,
             iterations: 0, cost_cents: 0,
             tokens_input: 0, tokens_output: 0,
             trigger_type: "automatic",

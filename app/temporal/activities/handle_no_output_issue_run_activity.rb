@@ -129,7 +129,7 @@ module Activities
     end
 
     def provider_error_patterns
-      @provider_error_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
+      @provider_error_patterns ||= RunnerSupport.aggregated_error_classification_patterns(:quota) +
         SUPPLEMENTARY_ERROR_PATTERNS
     end
 

@@ -40,8 +40,8 @@ module AgentRuns
     private
 
     def validate!
-      provider_name = provider_name_for(agent_run.agent_type)
-      raise ArgumentError, "Unsupported agent type: #{agent_run.agent_type}" unless provider_name
+      runner_key = Runner.runner_key_for_agent_type(agent_run.agent_type)
+      raise ArgumentError, "Unsupported agent type: #{agent_run.agent_type}" unless runner_key
     end
 
     def start_run
@@ -51,9 +51,9 @@ module AgentRuns
     end
 
     def execute_agent
-      provider_name = provider_name_for(agent_run.agent_type)
+      runner_key = Runner.runner_key_for_agent_type(agent_run.agent_type)
 
-      options = { provider: provider_name, dangerous_mode: true }
+      options = { runner: runner_key, dangerous_mode: true }
       options[:timeout] = timeout unless timeout.nil?
 
       AgentHarness.send_message(prompt, **options)
@@ -100,9 +100,9 @@ module AgentRuns
     end
 
     def handle_auth_error(error)
-      provider_name = provider_name_for(agent_run.agent_type)
-      agent_run.auth_expire!(error: error.message, provider: provider_name.to_s)
-      agent_run.log!("system", "Authentication expired for #{provider_name}")
+      runner_key = Runner.runner_key_for_agent_type(agent_run.agent_type)
+      agent_run.auth_expire!(error: error.message, runner: runner_key.to_s)
+      agent_run.log!("system", "Authentication expired for #{runner_key}")
 
       Result.new(success: false, error: error)
     end
@@ -125,11 +125,11 @@ module AgentRuns
       Result.new(success: false, error: error)
     end
 
-    def provider_name_for(agent_type)
-      provider_key = Provider.provider_key_for_agent_type(agent_type)
-      return nil unless Provider.supported_provider_key?(provider_key)
+    def runner_key_for(agent_type)
+      runner_key = Runner.runner_key_for_agent_type(agent_type)
+      return nil unless Runner.supported_runner_key?(runner_key)
 
-      Provider.harness_provider_key_for(provider_key).to_sym
+      Runner.harness_runner_key_for(runner_key).to_sym
     end
 
     # Simple result object for execute outcomes

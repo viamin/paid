@@ -21,8 +21,8 @@ RSpec.describe "UserSettings" do
         get edit_user_settings_path
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Settings")
-        expect(response.body).not_to include("Provider Priority")
-        expect(response.body).not_to include("Default Agent Provider")
+        expect(response.body).not_to include("Runner Priority")
+        expect(response.body).not_to include("Default Agent Runner")
       end
 
       it "renders the signed-in theme preference as authoritative" do
@@ -73,21 +73,21 @@ RSpec.describe "UserSettings" do
       end
 
       it "updates agent execution settings" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
-        cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
+        cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true)
 
         patch user_settings_path, params: {
           user_setting: {
             agent_timeout_seconds: 7200,
             max_execution_seconds: 5400,
-            default_agent_provider: "cursor"
+            default_agent_runner: "cursor"
           }
         }
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.agent_timeout_seconds).to eq(7200)
         expect(settings.max_execution_seconds).to eq(5400)
-        expect(settings.default_agent_provider).to eq(cursor.routing_key)
+        expect(settings.default_agent_runner).to eq(cursor.routing_key)
       end
 
       it "allows clearing the max execution time override" do
@@ -198,9 +198,9 @@ RSpec.describe "UserSettings" do
       end
 
       it "renders errors for invalid agent provider" do
-        patch user_settings_path, params: { user_setting: { default_agent_provider: "invalid" } }
+        patch user_settings_path, params: { user_setting: { default_agent_runner: "invalid" } }
         expect(response).to redirect_to(edit_user_settings_path)
-        expect(user.reload.settings.default_agent_provider).to eq(user.providers.find_by!(provider_key: "claude").routing_key)
+        expect(user.reload.settings.default_agent_runner).to eq(user.runners.find_by!(runner_key: "claude").routing_key)
       end
 
       it "renders errors for blank default branch" do
@@ -210,14 +210,14 @@ RSpec.describe "UserSettings" do
 
       it "renders errors for malformed knowledge fallback params" do
         user.settings.update!(
-          kb_embedding_fallback_providers: [ "openrouter" ],
-          kb_chat_fallback_providers: [ "cursor" ]
+          kb_embedding_fallback_runners: [ "openrouter" ],
+          kb_chat_fallback_runners: [ "cursor" ]
         )
 
         patch user_settings_path, params: {
           user_setting: {
-            kb_embedding_fallback_providers: "{invalid json",
-            kb_chat_fallback_providers: "\"claude\""
+            kb_embedding_fallback_runners: "{invalid json",
+            kb_chat_fallback_runners: "\"claude\""
           }
         }
 
@@ -225,39 +225,39 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("must be an array")
 
         settings = user.reload.settings
-        expect(settings.kb_embedding_fallback_providers).to eq([ "openrouter" ])
-        expect(settings.kb_chat_fallback_providers).to eq([ "cursor" ])
+        expect(settings.kb_embedding_fallback_runners).to eq([ "openrouter" ])
+        expect(settings.kb_chat_fallback_runners).to eq([ "cursor" ])
       end
 
       it "updates knowledge provider settings from array params" do
         patch user_settings_path, params: {
           user_setting: {
-            kb_embedding_provider: "openrouter",
-            kb_embedding_fallback_providers: [ "openai", "deepseek" ],
-            kb_chat_provider: "claude",
-            kb_chat_fallback_providers: [ "cursor" ]
+            kb_embedding_runner: "openrouter",
+            kb_embedding_fallback_runners: [ "openai", "deepseek" ],
+            kb_chat_runner: "claude",
+            kb_chat_fallback_runners: [ "cursor" ]
           }
         }
 
         expect(response).to redirect_to(edit_user_settings_path)
 
         settings = user.reload.settings
-        expect(settings.kb_embedding_provider).to eq("openrouter")
-        expect(settings.kb_embedding_fallback_providers).to eq(%w[openai deepseek])
-        expect(settings.kb_chat_provider).to eq("claude")
-        expect(settings.kb_chat_fallback_providers).to eq([ "cursor" ])
+        expect(settings.kb_embedding_runner).to eq("openrouter")
+        expect(settings.kb_embedding_fallback_runners).to eq(%w[openai deepseek])
+        expect(settings.kb_chat_runner).to eq("claude")
+        expect(settings.kb_chat_fallback_runners).to eq([ "cursor" ])
       end
 
       it "renders errors for unsupported knowledge embedding providers" do
         user.settings.update!(
-          kb_embedding_provider: "openai",
-          kb_embedding_fallback_providers: [ "openrouter" ]
+          kb_embedding_runner: "openai",
+          kb_embedding_fallback_runners: [ "openrouter" ]
         )
 
         patch user_settings_path, params: {
           user_setting: {
-            kb_embedding_provider: "anthropic",
-            kb_embedding_fallback_providers: [ "openai", "also-not-a-provider" ]
+            kb_embedding_runner: "anthropic",
+            kb_embedding_fallback_runners: [ "openai", "also-not-a-provider" ]
           }
         }
 
@@ -266,8 +266,8 @@ RSpec.describe "UserSettings" do
         expect(response.body).to match(/unsupported providers: also-not-a-provider/i)
 
         settings = user.reload.settings
-        expect(settings.kb_embedding_provider).to eq("openai")
-        expect(settings.kb_embedding_fallback_providers).to eq([ "openrouter" ])
+        expect(settings.kb_embedding_runner).to eq("openai")
+        expect(settings.kb_embedding_fallback_runners).to eq([ "openrouter" ])
       end
     end
   end

@@ -368,14 +368,14 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
         expect(AgentHarness).to have_received(:send_message).with(
           a_string_including(issue.title).and(including(issue.body)),
-          provider: :claude,
+          runner: :claude,
           model: Llm::GeneratePrDescription::DEFAULT_MODEL,
           timeout: Llm::GeneratePrDescription::TIMEOUT,
           tools: :none
         )
       end
 
-      it "falls back to agent summary when LLM provider fails and logs with context" do
+      it "falls back to agent summary when LLM runner fails and logs with context" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))

@@ -168,7 +168,7 @@ module Issues
         project: @project,
         issue: issue,
         provider: provider,
-        agent_type: Provider.agent_type_for(provider.provider_key),
+        agent_type: Runner.agent_type_for(provider.runner_key),
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true,
@@ -177,8 +177,8 @@ module Issues
     end
 
     def resolve_provider(goal)
-      provider_id, = AgentRuns::ProviderResolver.call(project: @project, goal: goal)
-      Provider.kept_only.find_by(id: provider_id) if provider_id
+      runner_id, = AgentRuns::RunnerResolver.call(project: @project, goal: goal)
+      Runner.kept_only.find_by(id: runner_id) if runner_id
     end
   end
 end

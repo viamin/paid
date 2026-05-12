@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  attr_accessor :preloaded_final_provider_record, :preloaded_final_provider_record_loaded
+  self.ignored_columns = %w[provider_id provider_switches providers_attempted final_provider]
 
-  MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
-  PROVIDER_ATTEMPT_SECRET_PATTERNS = [
+  attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
+
+  MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
+  RUNNER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
     [ /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/, "[REDACTED:github_token]" ],
     [ %r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com" ],
@@ -23,7 +25,7 @@ class AgentRun < ApplicationRecord
   STDOUT_TAIL_LINES = 500
 
   OPERATIONAL_FAILURE_KEYWORDS = [
-    "providers exhausted",
+    "runners exhausted",
     "Docker exec",
     "Activity task timed out",
     "Activity task failed",
@@ -82,7 +84,7 @@ class AgentRun < ApplicationRecord
   # when it forcibly times out an in-flight run because the host process is being
   # restarted (e.g. `bin/setup --skip-server`). Code that observes a run failing
   # while marked with this prefix should treat the failure as caused by the
-  # cleanup, not by the provider — in particular, do not increment provider
+  # cleanup, not by the runner — in particular, do not increment runner
   # circuit-breaker counters on its behalf.
   STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
 
@@ -91,7 +93,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
-  belongs_to :provider, -> { with_discarded }, optional: true
+  belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
@@ -133,7 +135,7 @@ class AgentRun < ApplicationRecord
   after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
-  after_commit :invalidate_provider_options_cache_on_change, on: [ :create, :update ]
+  after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
@@ -166,8 +168,8 @@ class AgentRun < ApplicationRecord
   validates :auth_provider, length: { maximum: 50 }
   validates :diagnosis_status, inclusion: { in: %w[in_progress processing completed failed] }, allow_nil: true
   validates :diagnosis_issue_url, length: { maximum: 500 }
-  validates :final_provider, length: { maximum: 50 }
-  validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :final_runner, length: { maximum: 50 }
+  validates :runner_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_skip_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :turns_completed, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -175,7 +177,7 @@ class AgentRun < ApplicationRecord
   validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
-  validate :provider_belongs_to_project_owner, if: -> { provider.present? }
+  validate :runner_belongs_to_project_owner, if: -> { runner.present? }
   validate :has_prompt_source, on: :create
   validate :draft_review_round_tracking_is_consistent
 
@@ -215,35 +217,35 @@ class AgentRun < ApplicationRecord
   }
 
   # Trusted SQL column expressions that may be passed to
-  # normalize_provider_sql. Restricting to a whitelist prevents
+  # normalize_runner_sql. Restricting to a whitelist prevents
   # accidental SQL injection if a future caller passes untrusted input.
   NORMALIZABLE_COLUMNS = [
     "agent_type",
-    "final_provider",
-    "NULLIF(final_provider, '')",
-    "attempt->>'provider'"
+    "final_runner",
+    "NULLIF(final_runner, '')",
+    "attempt->>'runner'"
   ].freeze
 
   # SQL CASE expression that normalizes a column's value to its canonical
-  # provider key (e.g. "claude_code" → "claude") so SQL aggregations match
+  # runner key (e.g. "claude_code" → "claude") so SQL aggregations match
   # Ruby logic.
   #
-  # Derived from ProviderSupport.provider_key_for_agent_type for all known
+  # Derived from RunnerSupport.runner_key_for_agent_type for all known
   # AGENT_TYPES so that SQL and Ruby stay in sync if new aliases are added
   # or existing mappings change.
   #
   # +column+ must be one of NORMALIZABLE_COLUMNS to guard against SQL
   # injection. Defaults to "agent_type".
-  def self.normalize_provider_sql(column = "agent_type")
+  def self.normalize_runner_sql(column = "agent_type")
     unless NORMALIZABLE_COLUMNS.include?(column)
       raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe"
     end
 
     remapped = AGENT_TYPES.filter_map do |agent_type|
-      provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
-      next if provider_key == agent_type
+      runner_key = RunnerSupport.runner_key_for_agent_type(agent_type)
+      next if runner_key == agent_type
 
-      "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(provider_key)}"
+      "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(runner_key)}"
     end
 
     return column if remapped.empty?
@@ -252,81 +254,81 @@ class AgentRun < ApplicationRecord
   end
 
   def self.normalized_agent_type_sql
-    normalize_provider_sql("agent_type")
+    normalize_runner_sql("agent_type")
   end
 
-  # SQL expression for the effective provider: the provider that actually
-  # produced the output. Mirrors the Ruby #effective_provider method so that
+  # SQL expression for the effective runner: the runner that actually
+  # produced the output. Mirrors the Ruby #effective_runner method so that
   # both SQL aggregations and Ruby code share the same logic.
-  def self.effective_provider_sql
-    "COALESCE(#{normalize_provider_sql("NULLIF(final_provider, '')")}, #{normalized_agent_type_sql})"
+  def self.effective_runner_sql
+    "COALESCE(#{normalize_runner_sql("NULLIF(final_runner, '')")}, #{normalized_agent_type_sql})"
   end
 
   ransacker :tokens_total, type: :integer do
     Arel.sql("COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)")
   end
 
-  ransacker :effective_provider do
-    Arel.sql(effective_provider_sql)
+  ransacker :effective_runner do
+    Arel.sql(effective_runner_sql)
   end
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at effective_provider]
+    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at effective_runner]
   end
 
   def self.ransackable_associations(auth_object = nil)
     %w[project]
   end
 
-  PROVIDER_OPTIONS_CACHE_TTL = 5.minutes
+  RUNNER_OPTIONS_CACHE_TTL = 5.minutes
 
-  def self.distinct_effective_provider_options(account_id:, cache_key: nil)
+  def self.distinct_effective_runner_options(account_id:, cache_key: nil)
     if cache_key
-      Rails.cache.fetch(cache_key, expires_in: PROVIDER_OPTIONS_CACHE_TTL) do
-        compute_distinct_effective_provider_options(account_id: account_id)
+      Rails.cache.fetch(cache_key, expires_in: RUNNER_OPTIONS_CACHE_TTL) do
+        compute_distinct_effective_runner_options(account_id: account_id)
       end
     else
-      compute_distinct_effective_provider_options(account_id: account_id)
+      compute_distinct_effective_runner_options(account_id: account_id)
     end
   end
 
-  def self.provider_options_cache_key_for(account_id:, project_id: nil)
-    generation = provider_options_cache_generation_for(account_id: account_id)
+  def self.runner_options_cache_key_for(account_id:, project_id: nil)
+    generation = runner_options_cache_generation_for(account_id: account_id)
 
     if project_id
-      "agent_runs/providers/account/#{account_id}/v#{generation}/project/#{project_id}"
+      "agent_runs/runners/account/#{account_id}/v#{generation}/project/#{project_id}"
     else
-      "agent_runs/providers/account/#{account_id}/v#{generation}"
+      "agent_runs/runners/account/#{account_id}/v#{generation}"
     end
   end
 
-  def self.invalidate_provider_options_cache(account_id:, project_id: nil)
-    keys = [ provider_options_cache_key_for(account_id: account_id) ]
-    keys << provider_options_cache_key_for(account_id: account_id, project_id: project_id) if project_id
+  def self.invalidate_runner_options_cache(account_id:, project_id: nil)
+    keys = [ runner_options_cache_key_for(account_id: account_id) ]
+    keys << runner_options_cache_key_for(account_id: account_id, project_id: project_id) if project_id
     keys.each { |key| Rails.cache.delete(key) }
 
     return if project_id
 
-    invalidate_provider_options_cache_for_account(account_id: account_id)
+    invalidate_runner_options_cache_for_account(account_id: account_id)
   end
 
-  def self.preload_final_provider_records(runs)
+  def self.preload_final_runner_records(runs)
     runs = runs.to_a
     return runs if runs.empty?
 
     fallback_owner_ids = fallback_owner_ids_by_account(
       runs.filter_map { |run| run.project&.account_id if run.project&.created_by_id.nil? }.uniq
     )
-    records_by_lookup = final_provider_records_by_lookup(runs, fallback_owner_ids)
+    records_by_lookup = final_runner_records_by_lookup(runs, fallback_owner_ids)
 
     runs.each do |run|
-      final_identifier = run.final_provider.presence
+      final_identifier = run.final_runner.presence
       next if final_identifier.blank?
 
-      run.preloaded_final_provider_record_loaded = true
-      run.preloaded_final_provider_record =
-        if run.provider.present? && run.provider.matches_identifier?(final_identifier)
-          run.provider
+      run.preloaded_final_runner_record_loaded = true
+      run.preloaded_final_runner_record =
+        if run.runner.present? && run.runner.matches_identifier?(final_identifier)
+          run.runner
         else
           owner_id = effective_owner_id_for(run, fallback_owner_ids)
           records_by_lookup[[ owner_id, final_identifier ]]
@@ -336,70 +338,70 @@ class AgentRun < ApplicationRecord
     runs
   end
 
-  def self.compute_distinct_effective_provider_options(account_id:)
-    identifiers = pluck(Arel.sql("DISTINCT #{effective_provider_sql}")).compact
-    routed_options = routed_provider_filter_options_by_identifier(identifiers, account_id:)
+  def self.compute_distinct_effective_runner_options(account_id:)
+    identifiers = pluck(Arel.sql("DISTINCT #{effective_runner_sql}")).compact
+    routed_options = routed_runner_filter_options_by_identifier(identifiers, account_id:)
 
     identifiers
       .filter_map do |identifier|
-        if Provider.routing_key?(identifier)
+        if Runner.routing_key?(identifier)
           routed_options[identifier]
         else
-          Provider.filter_option_for_identifier(identifier, account_id: account_id)
+          Runner.filter_option_for_identifier(identifier, account_id: account_id)
         end
       end
       .uniq
       .sort_by { |option| [ option[:label], option[:value] ] }
   end
-  private_class_method :compute_distinct_effective_provider_options
+  private_class_method :compute_distinct_effective_runner_options
 
-  def self.provider_options_cache_generation_for(account_id:)
-    Rails.cache.read(provider_options_cache_generation_key_for(account_id: account_id)) || 1
+  def self.runner_options_cache_generation_for(account_id:)
+    Rails.cache.read(runner_options_cache_generation_key_for(account_id: account_id)) || 1
   end
-  private_class_method :provider_options_cache_generation_for
+  private_class_method :runner_options_cache_generation_for
 
-  def self.provider_options_cache_generation_key_for(account_id:)
-    "agent_runs/providers/account/#{account_id}/generation"
+  def self.runner_options_cache_generation_key_for(account_id:)
+    "agent_runs/runners/account/#{account_id}/generation"
   end
-  private_class_method :provider_options_cache_generation_key_for
+  private_class_method :runner_options_cache_generation_key_for
 
-  def self.invalidate_provider_options_cache_for_account(account_id:)
-    prefix = /\Aagent_runs\/providers\/account\/#{account_id}(?:\/|\z)/
+  def self.invalidate_runner_options_cache_for_account(account_id:)
+    prefix = /\Aagent_runs\/runners\/account\/#{account_id}(?:\/|\z)/
     Rails.cache.delete_matched(prefix)
   rescue NotImplementedError
-    generation_key = provider_options_cache_generation_key_for(account_id: account_id)
-    current_generation = provider_options_cache_generation_for(account_id: account_id)
+    generation_key = runner_options_cache_generation_key_for(account_id: account_id)
+    current_generation = runner_options_cache_generation_for(account_id: account_id)
     Rails.cache.write(generation_key, current_generation + 1)
   end
-  private_class_method :invalidate_provider_options_cache_for_account
+  private_class_method :invalidate_runner_options_cache_for_account
 
-  def self.routed_provider_filter_options_by_identifier(identifiers, account_id:)
-    provider_ids_by_identifier = identifiers.each_with_object({}) do |identifier, memo|
-      provider_id = Provider.id_from_routing_key(identifier)
-      memo[identifier] = provider_id if provider_id
+  def self.routed_runner_filter_options_by_identifier(identifiers, account_id:)
+    runner_ids_by_identifier = identifiers.each_with_object({}) do |identifier, memo|
+      runner_id = Runner.id_from_routing_key(identifier)
+      memo[identifier] = runner_id if runner_id
     end
-    return {} if provider_ids_by_identifier.empty?
+    return {} if runner_ids_by_identifier.empty?
 
-    providers_by_id = Provider.with_discarded.joins(:user)
-      .where(id: provider_ids_by_identifier.values.uniq, users: { account_id: account_id })
+    runners_by_id = Runner.with_discarded.joins(:user)
+      .where(id: runner_ids_by_identifier.values.uniq, users: { account_id: account_id })
       .index_by(&:id)
 
-    provider_ids_by_identifier.each_with_object({}) do |(identifier, provider_id), memo|
-      provider = providers_by_id[provider_id]
-      next unless provider
+    runner_ids_by_identifier.each_with_object({}) do |(identifier, runner_id), memo|
+      runner = runners_by_id[runner_id]
+      next unless runner
 
       memo[identifier] = {
-        label: provider.display_name,
+        label: runner.display_name,
         value: identifier
       }
     end
   end
-  private_class_method :routed_provider_filter_options_by_identifier
+  private_class_method :routed_runner_filter_options_by_identifier
 
-  def self.final_provider_records_by_lookup(runs, fallback_owner_ids)
+  def self.final_runner_records_by_lookup(runs, fallback_owner_ids)
     lookup_pairs = runs.filter_map do |run|
-      final_identifier = run.final_provider.presence
-      next unless Provider.routing_key?(final_identifier)
+      final_identifier = run.final_runner.presence
+      next unless Runner.routing_key?(final_identifier)
 
       owner_id = effective_owner_id_for(run, fallback_owner_ids)
       next unless owner_id
@@ -408,12 +410,12 @@ class AgentRun < ApplicationRecord
     end.uniq
     return {} if lookup_pairs.empty?
 
-    provider_ids = lookup_pairs.map { |(_, identifier)| Provider.id_from_routing_key(identifier) }.uniq
+    runner_ids = lookup_pairs.map { |(_, identifier)| Runner.id_from_routing_key(identifier) }.uniq
     owner_ids = lookup_pairs.map(&:first).uniq
 
-    Provider.with_discarded.where(id: provider_ids, user_id: owner_ids).index_by { |provider| [ provider.user_id, provider.routing_key ] }
+    Runner.with_discarded.where(id: runner_ids, user_id: owner_ids).index_by { |runner| [ runner.user_id, runner.routing_key ] }
   end
-  private_class_method :final_provider_records_by_lookup
+  private_class_method :final_runner_records_by_lookup
 
   def self.effective_owner_id_for(run, fallback_owner_ids)
     project = run.project
@@ -911,12 +913,12 @@ class AgentRun < ApplicationRecord
   end
   private_class_method :next_queued_run_from
 
-  def provider_belongs_to_project_owner
+  def runner_belongs_to_project_owner
     owner = project&.effective_owner
     return unless owner
-    return if provider.user_id == owner.id
+    return if runner.user_id == owner.id
 
-    errors.add(:provider, "must belong to the same user as the project owner")
+    errors.add(:runner, "must belong to the same user as the project owner")
   end
 
   # Atomically claims a queued run by setting temporal_workflow_id inside a
@@ -1011,13 +1013,13 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns true when this run failed due to an operational/infrastructure
-  # issue (provider exhaustion, timeout, auth expiry, rate limiting) rather
+  # issue (runner exhaustion, timeout, auth expiry, rate limiting) rather
   # than a code-level failure. Used by the PR scanner's operational failure
   # breaker to detect when a PR is stalled due to infrastructure problems
   # that the agent cannot fix by retrying.
   #
   # A "failed" run is only operational when the error message indicates
-  # provider exhaustion or rate limiting — other "failed" runs are assumed
+  # runner exhaustion or rate limiting — other "failed" runs are assumed
   # to be code-level failures where a retry might help.
   def operational_failure?
     return false unless FAILURE_STATUSES.include?(status)
@@ -1328,9 +1330,9 @@ class AgentRun < ApplicationRecord
   end
 
   # True when this run was force-timed-out externally (by `dev:cleanup` or
-  # `StaleRunDetectorJob`), not by the provider itself. The in-flight Temporal
-  # activity uses this to suppress provider circuit-breaker bookkeeping for
-  # failures that the external cleanup induced, not the provider.
+  # `StaleRunDetectorJob`), not by the runner itself. The in-flight Temporal
+  # activity uses this to suppress runner circuit-breaker bookkeeping for
+  # failures that the external cleanup induced, not the runner.
   def cancelled_by_cleanup?
     return false unless status == "timeout"
 
@@ -1358,12 +1360,12 @@ class AgentRun < ApplicationRecord
     status == "auth_expired"
   end
 
-  def auth_expire!(error: nil, provider: nil)
+  def auth_expire!(error: nil, runner_key: nil)
     update!(
       status: "auth_expired",
       completed_at: Time.current,
       error_message: error,
-      auth_provider: provider,
+      auth_provider: runner_key,
       duration_seconds: duration
     )
   end
@@ -1481,103 +1483,103 @@ class AgentRun < ApplicationRecord
     "Review pull request ##{source_pull_request_number} in #{project.full_name}."
   end
 
-  # Returns the provider that actually produced the output for this run.
-  # Prefers final_provider (the provider that ultimately completed successfully)
-  # when present, otherwise falls back to agent_type (the originally requested provider).
-  # Note: whether a fallback occurred should be determined via provider tracking
-  # fields (e.g., providers_attempted / provider_switches), not by final_provider alone.
+  # Returns the runner that actually produced the output for this run.
+  # Prefers final_runner (the runner that ultimately completed successfully)
+  # when present, otherwise falls back to agent_type (the originally requested runner).
+  # Note: whether a fallback occurred should be determined via runner tracking
+  # fields (e.g., runners_attempted / runner_switches), not by final_runner alone.
   #
-  # @return [String] The effective provider name
-  def effective_provider
-    ProviderSupport.provider_key_for_agent_type(final_provider.presence || agent_type)
+  # @return [String] The effective runner name
+  def effective_runner
+    RunnerSupport.runner_key_for_agent_type(final_runner.presence || agent_type)
   end
 
-  def final_provider_record
-    return preloaded_final_provider_record if preloaded_final_provider_record_loaded
+  def final_runner_record
+    return preloaded_final_runner_record if preloaded_final_runner_record_loaded
 
     owner = project&.effective_owner
     return unless owner
 
-    return unless final_provider.present?
+    return unless final_runner.present?
 
-    provider_id = Provider.id_from_routing_key(final_provider)
-    owner.providers.with_discarded.find_by(id: provider_id) if provider_id
+    runner_id = Runner.id_from_routing_key(final_runner)
+    owner.runners.with_discarded.find_by(id: runner_id) if runner_id
   end
 
-  # Returns the Provider record that reflects which provider actually ran the
-  # agent. Prefers the final provider (post-fallback) when resolvable, falling
-  # back to the initially-assigned provider. Handles both routing-key and
-  # provider-key forms of final_provider via Provider.for_identifier. Returns
+  # Returns the Runner record that reflects which runner actually ran the
+  # agent. Prefers the final runner (post-fallback) when resolvable, falling
+  # back to the initially-assigned runner. Handles both routing-key and
+  # runner-key forms of final_runner via Runner.for_identifier. Returns
   # nil if neither can be resolved.
-  def effective_provider_record
-    Provider.for_identifier(project&.effective_owner, final_provider, include_discarded: true) ||
-      provider ||
-      Provider.with_discarded.find_by(id: provider_id)
+  def effective_runner_record
+    Runner.for_identifier(project&.effective_owner, final_runner, include_discarded: true) ||
+      runner ||
+      Runner.with_discarded.find_by(id: runner_id)
   end
 
-  def attempted_providers_by_routing_key
+  def attempted_runners_by_routing_key
     owner = project&.effective_owner
     return {} unless owner
 
-    routing_ids = providers_attempted.filter_map do |attempt|
-      Provider.id_from_routing_key(attempt["provider"])
+    routing_ids = runners_attempted.filter_map do |attempt|
+      Runner.id_from_routing_key(attempt["runner"])
     end
     return {} if routing_ids.empty?
 
-    owner.providers.with_discarded.where(id: routing_ids).index_by(&:routing_key)
+    owner.runners.with_discarded.where(id: routing_ids).index_by(&:routing_key)
   end
 
-  # Records a provider attempt in the providers_attempted array.
+  # Records a runner attempt in the runners_attempted array.
   #
-  # @param provider [String] The provider name
+  # @param runner [String] The runner name
   # @param success [Boolean] Whether the attempt succeeded
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
-  def record_provider_attempt(provider, success:, error_type: nil, error_message: nil, duration_seconds: nil, diagnostics: nil)
+  def record_runner_attempt(runner, success:, error_type: nil, error_message: nil, duration_seconds: nil, diagnostics: nil)
     attempt = {
-      "provider" => provider,
+      "runner" => runner,
       "success" => success,
       "attempted_at" => Time.current.iso8601
     }
     attempt["error_type"] = error_type if error_type.present?
-    sanitized_error_message = sanitize_provider_attempt_error_message(error_message)
+    sanitized_error_message = sanitize_runner_attempt_error_message(error_message)
     attempt["error_message"] = sanitized_error_message if sanitized_error_message.present?
     attempt["duration_seconds"] = duration_seconds if duration_seconds.present?
-    attempt["diagnostics"] = sanitize_provider_attempt_diagnostics(diagnostics) if diagnostics.present?
+    attempt["diagnostics"] = sanitize_runner_attempt_diagnostics(diagnostics) if diagnostics.present?
 
-    self.providers_attempted = (providers_attempted || []) + [ attempt ]
+    self.runners_attempted = (runners_attempted || []) + [ attempt ]
     save!
   end
 
-  # Logs a provider switch and increments the switch counter.
+  # Logs a runner switch and increments the switch counter.
   #
-  # @param from [String] The provider being switched from
-  # @param to [String] The provider being switched to
+  # @param from [String] The runner being switched from
+  # @param to [String] The runner being switched to
   # @param reason [String] Why the switch occurred
-  def log_provider_switch!(from, to, reason)
-    log!("system", "Provider fallback: #{from} -> #{to} (#{reason})")
-    increment!(:provider_switches)
+  def log_runner_switch!(from, to, reason)
+    log!("system", "Runner fallback: #{from} -> #{to} (#{reason})")
+    increment!(:runner_switches)
   end
 
-  def sanitize_provider_attempt_diagnostics(diagnostics)
+  def sanitize_runner_attempt_diagnostics(diagnostics)
     return unless diagnostics.is_a?(Hash)
 
     diagnostics.deep_stringify_keys.each_with_object({}) do |(key, value), sanitized|
       sanitized[key] = case value
       when Hash
-        sanitize_provider_attempt_diagnostics(value)
+        sanitize_runner_attempt_diagnostics(value)
       when Array
         value.map do |entry|
           case entry
           when Hash
-            sanitize_provider_attempt_diagnostics(entry)
+            sanitize_runner_attempt_diagnostics(entry)
           when String
-            sanitize_provider_attempt_error_message(entry)
+            sanitize_runner_attempt_error_message(entry)
           else
             entry
           end
         end
       when String
-        sanitize_provider_attempt_error_message(value)
+        sanitize_runner_attempt_error_message(value)
       else
         value
       end
@@ -1775,9 +1777,9 @@ class AgentRun < ApplicationRecord
   end
 
   def parse_structured_stdout(raw_stdout)
-    structured_stdout_parsers.each do |provider_key, provider|
-      parser_input = structured_stdout_input_for(provider_key, raw_stdout)
-      response = provider.parse_container_output(stdout: parser_input)
+    structured_stdout_parsers.each do |runner_key, parser|
+      parser_input = structured_stdout_input_for(runner_key, raw_stdout)
+      response = parser.parse_container_output(stdout: parser_input)
       return response if structured_stdout_response?(response, parser_input)
     end
 
@@ -1789,21 +1791,21 @@ class AgentRun < ApplicationRecord
   end
 
   def structured_stdout_parsers
-    [ effective_provider, "claude", "codex" ].uniq.filter_map do |provider_key|
-      provider = structured_stdout_parser_for(provider_key)
-      [ provider_key, provider ] if provider
+    [ effective_runner, "claude", "codex" ].uniq.filter_map do |runner_key|
+      parser = structured_stdout_parser_for(runner_key)
+      [ runner_key, parser ] if parser
     end
   end
 
-  def structured_stdout_parser_for(provider_key)
-    harness_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
+  def structured_stdout_parser_for(runner_key)
+    harness_key = RunnerSupport.harness_provider_key_for(runner_key).to_sym
     AgentHarness.provider(harness_key)
   rescue AgentHarness::ConfigurationError
     nil
   end
 
-  def structured_stdout_input_for(provider_key, raw_stdout)
-    return raw_stdout unless provider_key == "codex"
+  def structured_stdout_input_for(runner_key, raw_stdout)
+    return raw_stdout unless runner_key == "codex"
 
     raw_stdout.lines.last(STDOUT_TAIL_LINES).join
   end
@@ -1815,17 +1817,17 @@ class AgentRun < ApplicationRecord
     text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
   end
 
-  def sanitize_provider_attempt_error_message(message)
+  def sanitize_runner_attempt_error_message(message)
     return nil if message.blank?
 
     normalized = normalize_log_content(message)
     redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
-    redacted = redact_provider_attempt_secrets(redacted)
-    redacted.truncate(MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH)
+    redacted = redact_runner_attempt_secrets(redacted)
+    redacted.truncate(MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH)
   end
 
-  def redact_provider_attempt_secrets(text)
-    PROVIDER_ATTEMPT_SECRET_PATTERNS.reduce(text) do |result, (pattern, replacement)|
+  def redact_runner_attempt_secrets(text)
+    RUNNER_ATTEMPT_SECRET_PATTERNS.reduce(text) do |result, (pattern, replacement)|
       result.gsub(pattern, replacement)
     end
   end
@@ -2118,10 +2120,10 @@ class AgentRun < ApplicationRecord
     project.broadcast_agent_run_detail_update(self)
   end
 
-  def invalidate_provider_options_cache_on_change
-    return unless previous_changes.key?("agent_type") || previous_changes.key?("final_provider")
+  def invalidate_runner_options_cache_on_change
+    return unless previous_changes.key?("agent_type") || previous_changes.key?("final_runner")
 
-    self.class.invalidate_provider_options_cache(
+    self.class.invalidate_runner_options_cache(
       account_id: project.account_id,
       project_id: project_id
     )

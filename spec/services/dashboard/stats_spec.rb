@@ -426,10 +426,10 @@ RSpec.describe Dashboard::Stats do
         create(:agent_run, :completed, project: project, agent_type: "claude_code")
         # Run requested claude_code, fell back to codex
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "codex", provider_switches: 1)
+          final_runner: "codex", runner_switches: 1)
         # Run requested claude_code, fell back to cursor
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "cursor", provider_switches: 1)
+          final_runner: "cursor", runner_switches: 1)
         # Run requested cursor, completed by cursor (no fallback)
         create(:agent_run, :completed, :cursor, project: project)
       end
@@ -437,9 +437,9 @@ RSpec.describe Dashboard::Stats do
       it "groups runs_by_provider by effective provider" do
         providers = stats[:runs_by_provider]
         provider_hash = providers.to_h
-        expect(provider_hash[Provider.display_name("claude")]).to eq(1)
-        expect(provider_hash[Provider.display_name("codex")]).to eq(1)
-        expect(provider_hash[Provider.display_name("cursor")]).to eq(2)
+        expect(provider_hash[Runner.display_name("claude")]).to eq(1)
+        expect(provider_hash[Runner.display_name("codex")]).to eq(1)
+        expect(provider_hash[Runner.display_name("cursor")]).to eq(2)
       end
 
       it "still groups runs_by_agent_type by requested provider" do
@@ -462,8 +462,8 @@ RSpec.describe Dashboard::Stats do
 
       it "breaks down fallbacks by effective provider" do
         by_effective = stats[:provider_fallback_stats][:by_effective_provider].to_h
-        expect(by_effective[Provider.display_name("codex")]).to eq(1)
-        expect(by_effective[Provider.display_name("cursor")]).to eq(1)
+        expect(by_effective[Runner.display_name("codex")]).to eq(1)
+        expect(by_effective[Runner.display_name("cursor")]).to eq(1)
       end
     end
 
@@ -471,14 +471,14 @@ RSpec.describe Dashboard::Stats do
       let(:owner) { project.effective_owner }
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:provider_entry) do
-        create(:provider, :api_key, user: owner, provider_key: "opencode",
+        create(:runner, :api_key, user: owner, runner_key: "opencode",
           provider_api_key: api_key, name: "Opencode Kimi K2",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
       end
 
       before do
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: provider_entry.routing_key, provider_switches: 1)
+          final_runner: provider_entry.routing_key, runner_switches: 1)
       end
 
       it "uses the provider entry display name for runs_by_provider" do
@@ -496,7 +496,7 @@ RSpec.describe Dashboard::Stats do
       let(:owner) { project.effective_owner }
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:deleted_provider_routing_key) do
-        provider = create(:provider, :api_key, user: owner, provider_key: "opencode",
+        provider = create(:runner, :api_key, user: owner, runner_key: "opencode",
           provider_api_key: api_key, name: "Deleted Provider Entry 1",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
         routing_key = provider.routing_key
@@ -504,7 +504,7 @@ RSpec.describe Dashboard::Stats do
         routing_key
       end
       let(:other_deleted_provider_routing_key) do
-        provider = create(:provider, :api_key, user: owner, provider_key: "opencode",
+        provider = create(:runner, :api_key, user: owner, runner_key: "opencode",
           provider_api_key: api_key, name: "Deleted Provider Entry 2",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
         routing_key = provider.routing_key
@@ -514,9 +514,9 @@ RSpec.describe Dashboard::Stats do
 
       before do
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: deleted_provider_routing_key, provider_switches: 1)
+          final_runner: deleted_provider_routing_key, runner_switches: 1)
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: other_deleted_provider_routing_key, provider_switches: 1)
+          final_runner: other_deleted_provider_routing_key, runner_switches: 1)
       end
 
       it "shows a deleted provider entry label in runs_by_provider" do
@@ -530,21 +530,21 @@ RSpec.describe Dashboard::Stats do
       let(:first_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:second_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let!(:first_provider_entry) do
-        create(:provider, :api_key, user: owner, provider_key: "opencode",
+        create(:runner, :api_key, user: owner, runner_key: "opencode",
           provider_api_key: first_api_key, name: "Shared Label",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
       end
       let!(:second_provider_entry) do
-        create(:provider, :api_key, user: owner, provider_key: "opencode",
+        create(:runner, :api_key, user: owner, runner_key: "opencode",
           provider_api_key: second_api_key, name: "Shared Label", fallback_role: "rate_limit_fallback",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
       end
 
       before do
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: first_provider_entry.routing_key, provider_switches: 1)
+          final_runner: first_provider_entry.routing_key, runner_switches: 1)
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: second_provider_entry.routing_key, provider_switches: 1)
+          final_runner: second_provider_entry.routing_key, runner_switches: 1)
       end
 
       it "sums counts across identifiers that resolve to the same label" do
@@ -553,12 +553,12 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
-    context "with provider fallback via skipped primary (no provider_switches)" do
+    context "with provider fallback via skipped primary (no runner_switches)" do
       before do
         # Primary provider was skipped as unavailable; fallback used directly.
-        # final_provider differs from agent_type but provider_switches remains 0.
+        # final_runner differs from agent_type but runner_switches remains 0.
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "cursor", provider_switches: 0)
+          final_runner: "cursor", runner_switches: 0)
         # Normal run with no fallback
         create(:agent_run, :completed, project: project, agent_type: "claude_code")
       end
@@ -572,17 +572,17 @@ RSpec.describe Dashboard::Stats do
 
       it "attributes the skipped-primary run to the effective provider" do
         providers = stats[:runs_by_provider].to_h
-        expect(providers[Provider.display_name("cursor")]).to eq(1)
-        expect(providers[Provider.display_name("claude")]).to eq(1)
+        expect(providers[Runner.display_name("cursor")]).to eq(1)
+        expect(providers[Runner.display_name("claude")]).to eq(1)
       end
     end
 
     context "with claude_code run completed by claude provider (no fallback)" do
       before do
-        # final_provider is the normalized provider key "claude" for agent_type "claude_code".
+        # final_runner is the normalized provider key "claude" for agent_type "claude_code".
         # This should NOT be counted as a fallback.
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "claude", provider_switches: 0)
+          final_runner: "claude", runner_switches: 0)
       end
 
       it "does not count normalized provider match as a fallback" do
@@ -593,21 +593,21 @@ RSpec.describe Dashboard::Stats do
 
       it "groups under the claude provider" do
         providers = stats[:runs_by_provider].to_h
-        expect(providers[Provider.display_name("claude")]).to eq(1)
+        expect(providers[Runner.display_name("claude")]).to eq(1)
         expect(providers).not_to have_key("claude_code")
       end
     end
 
-    context "with legacy final_provider matching agent_type (no fallback)" do
+    context "with legacy final_runner matching agent_type (no fallback)" do
       before do
-        # final_provider contains the legacy agent-type identifier "claude_code"
+        # final_runner contains the legacy agent-type identifier "claude_code"
         # rather than the normalized provider key "claude". Both should normalize
         # to "claude", so this must NOT be counted as a fallback.
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "claude_code", provider_switches: 0)
+          final_runner: "claude_code", runner_switches: 0)
       end
 
-      it "does not count legacy final_provider as a fallback" do
+      it "does not count legacy final_runner as a fallback" do
         fs = stats[:provider_fallback_stats]
         expect(fs[:fallback_count]).to eq(0)
         expect(fs[:fallback_rate]).to eq(0.0)

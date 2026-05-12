@@ -94,11 +94,11 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-022](RDR-022-auto-merge-pr-strategy.md) | Auto-Merge PR Merge Strategy | Final | Medium |
 | [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Draft | High |
 
-### Provider Intelligence
+### Runner Intelligence
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Draft | Medium |
+| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Draft | Medium |
 
 ### Semantic Understanding
 

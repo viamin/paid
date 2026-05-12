@@ -175,65 +175,65 @@ module Api
       return unless @agent_run
       return unless request.headers["X-Paid-Provider-Id"].present?
 
-      provider_entry = agent_run_provider_entry(provider)
-      unless provider_entry
-        log_error("secrets_proxy.invalid_provider_key", "Provider key is not available for #{provider}")
-        render json: { error: "Provider key is not available for this agent run" }, status: :forbidden
+      runner_entry = agent_run_runner_entry(provider)
+      unless runner_entry
+        log_error("secrets_proxy.invalid_runner_key", "Runner key is not available for #{provider}")
+        render json: { error: "Runner key is not available for this agent run" }, status: :forbidden
         return nil
       end
 
-      provider_entry.provider_api_key.api_key
+      runner_entry.provider_api_key.api_key
     end
 
-    def agent_run_provider_entry(provider)
+    def agent_run_runner_entry(provider)
       provider_id = request.headers["X-Paid-Provider-Id"].presence
       return unless provider_id
 
-      provider_entries = @agent_run.project.effective_owner
-        &.providers
+      runner_entries = @agent_run.project.effective_owner
+        &.runners
         &.api_key
         &.joins(:provider_api_key)
-      return unless provider_entries
+      return unless runner_entries
 
-      available_provider_entries(provider_entries)
+      available_runner_entries(runner_entries)
         .find_by(id: provider_id, provider_api_keys: { api_service_type: provider.to_s })
     end
 
     def knowledge_run_api_key(provider)
       return unless @knowledge_run
 
-      provider_key = resolved_knowledge_run_provider_key
-      return knowledge_run_provider_api_key(provider.to_s) unless provider_key
+      runner_key = resolved_knowledge_run_runner_key
+      return knowledge_run_provider_api_key(provider.to_s) unless runner_key
 
-      config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
+      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner_key]
       unless config
-        log_error("secrets_proxy.invalid_knowledge_provider", "Unknown knowledge provider #{provider_key}")
-        render json: { error: "Knowledge provider is not available for this run" }, status: :forbidden
+        log_error("secrets_proxy.invalid_knowledge_runner", "Unknown knowledge runner #{runner_key}")
+        render json: { error: "Knowledge runner is not available for this run" }, status: :forbidden
         return nil
       end
 
-      unless compatible_proxy_route?(provider, provider_key)
-        log_error("secrets_proxy.invalid_knowledge_provider_route", "Provider #{provider_key} is incompatible with #{provider}")
-        render json: { error: "Knowledge provider is not compatible with this proxy route" }, status: :forbidden
+      unless compatible_proxy_route?(provider, runner_key)
+        log_error("secrets_proxy.invalid_knowledge_runner_route", "Runner #{runner_key} is incompatible with #{provider}")
+        render json: { error: "Knowledge runner is not compatible with this proxy route" }, status: :forbidden
         return nil
       end
 
       key = knowledge_run_provider_api_key(config.fetch(:service_type))
       return key if key.present?
 
-      return nil if provider_key == "openai"
+      return nil if runner_key == "openai"
 
-      log_error("secrets_proxy.missing_knowledge_provider_key", "No API key configured for knowledge provider #{provider_key}")
-      render json: { error: "API key not configured for knowledge provider #{provider_key}" }, status: :service_unavailable
+      log_error("secrets_proxy.missing_knowledge_runner_key", "No API key configured for knowledge runner #{runner_key}")
+      render json: { error: "API key not configured for knowledge runner #{runner_key}" }, status: :service_unavailable
       nil
     end
 
     def resolve_openai_proxy_target
-      provider_key = resolved_knowledge_run_provider_key
+      runner_key = resolved_knowledge_run_runner_key
       request_path = (params[:path] || "").sub(%r{\A/+}, "")
-      return { base_url: "https://api.openai.com", path: request_path } unless provider_key && @knowledge_run
+      return { base_url: "https://api.openai.com", path: request_path } unless runner_key && @knowledge_run
 
-      config = Provider::DIRECT_OUTBOUND_API_PROVIDERS[provider_key]
+      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner_key]
       return { base_url: "https://api.openai.com", path: request_path } unless config
 
       uri = URI.parse(config.fetch(:base_url))
@@ -243,25 +243,25 @@ module Api
       }
     end
 
-    def resolved_knowledge_run_provider_key
+    def resolved_knowledge_run_runner_key
       return unless @knowledge_run
 
-      requested_provider = request.headers["X-Paid-Knowledge-Provider"].presence
-      return @knowledge_run.final_provider.presence unless requested_provider
+      requested_runner_key = request.headers["X-Paid-Knowledge-Provider"].presence
+      return @knowledge_run.final_provider.presence unless requested_runner_key
 
-      return requested_provider if allowed_knowledge_run_provider_keys.include?(requested_provider)
+      return requested_runner_key if allowed_knowledge_run_runner_keys.include?(requested_runner_key)
 
-      log_error("secrets_proxy.invalid_knowledge_provider_selection", "Provider #{requested_provider} is not allowed for knowledge run #{@knowledge_run.id}")
-      render json: { error: "Knowledge provider is not available for this run" }, status: :forbidden
+      log_error("secrets_proxy.invalid_knowledge_runner_selection", "Runner #{requested_runner_key} is not allowed for knowledge run #{@knowledge_run.id}")
+      render json: { error: "Knowledge runner is not available for this run" }, status: :forbidden
       nil
     end
 
-    def compatible_proxy_route?(provider, provider_key)
+    def compatible_proxy_route?(provider, runner_key)
       case provider.to_sym
       when :openai
-        Provider::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.include?(provider_key)
+        Runner::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.include?(runner_key)
       when :anthropic
-        provider_key == "anthropic"
+        runner_key == "anthropic"
       else
         false
       end
@@ -276,11 +276,11 @@ module Api
         &.api_key
     end
 
-    def available_provider_entries(provider_entries)
-      provider_entries.for_agent_runs.or(provider_entries.for_fallback)
+    def available_runner_entries(runner_entries)
+      runner_entries.for_agent_runs.or(runner_entries.for_fallback)
     end
 
-    def allowed_knowledge_run_provider_keys
+    def allowed_knowledge_run_runner_keys
       attempted = Array(@knowledge_run.provider_attempts).filter_map do |attempt|
         attempt.is_a?(Hash) ? attempt["provider"].presence : attempt.presence
       end
@@ -379,7 +379,7 @@ module Api
     end
 
     def harness_provider
-      ProviderSupport.harness_provider_for_api_service_type(@api_service_type)
+      RunnerSupport.harness_provider_for_api_service_type(@api_service_type)
     end
 
     def token_usage_request_type

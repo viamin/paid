@@ -97,7 +97,7 @@
           1. Visit the login URL to re-authenticate:
           <%= link_to auth_url, auth_url, target: "_blank", rel: "noopener noreferrer", class: "text-amber-800 underline hover:text-amber-900 break-all dark:text-amber-200 dark:hover:text-amber-100" %>
         <% else %>
-          Authentication has expired for <%= Provider.display_name(agent_run.auth_provider) %>, but Paid cannot generate a browser login URL for this provider. Refresh the configured provider credentials, then retry the run.
+          Authentication has expired for <%= Runner.display_name(agent_run.auth_provider) %>, but Paid cannot generate a browser login URL for this provider. Refresh the configured provider credentials, then retry the run.
         <% end %>
       </p>
       <% if auth_url.present? %>

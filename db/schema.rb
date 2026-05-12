@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_11_171813) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -191,6 +191,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.text "error_message"
     t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
+    t.string "final_runner", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
@@ -216,6 +217,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
     t.string "review_url", limit: 500
+    t.bigint "runner_id"
+    t.integer "runner_switches", default: 0, null: false
+    t.jsonb "runners_attempted", default: [], null: false
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -249,6 +253,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
     t.index ["provider_id"], name: "index_agent_runs_on_provider_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
+    t.index ["runner_id"], name: "index_agent_runs_on_runner_id"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
@@ -392,6 +397,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.bigint "project_id"
     t.bigint "provider_id"
     t.string "proxy_token", limit: 64
+    t.bigint "runner_id"
     t.string "status", default: "active", null: false
     t.text "system_prompt"
     t.string "title"
@@ -404,6 +410,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.index ["project_id"], name: "index_chat_sessions_on_project_id"
     t.index ["provider_id"], name: "index_chat_sessions_on_provider_id"
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
+    t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
   end
 
@@ -1613,11 +1620,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.string "circuit_state", limit: 20, default: "closed", null: false
     t.datetime "created_at", null: false
     t.integer "failure_count", default: 0, null: false
-    t.string "provider_name", limit: 50, null: false
     t.datetime "rate_limited_until"
+    t.string "runner_name", limit: 50, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.index ["user_id", "provider_name"], name: "index_provider_states_on_user_id_and_provider_name", unique: true
+    t.index ["user_id", "runner_name"], name: "index_provider_states_on_user_id_and_runner_name", unique: true
   end
 
   create_table "providers", force: :cascade do |t|
@@ -1632,7 +1639,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.string "fallback_role", limit: 30, default: "standard", null: false
     t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
-    t.string "provider_key", limit: 50, null: false
+    t.string "runner_key", limit: 50, null: false
     t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
@@ -1641,12 +1648,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.index ["discarded_at"], name: "index_providers_on_discarded_at"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
-    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "runner_key", "provider_api_key_id", "name"], name: "idx_runners_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "runner_key"], name: "idx_runners_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
     t.index ["user_id"], name: "index_providers_on_user_id"
-    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "providers_api_key_requires_key"
-    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
-    t.check_constraint "weight >= 1", name: "providers_weight_positive"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "runners_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "runners_subscription_invariants"
+    t.check_constraint "weight >= 1", name: "runners_weight_positive"
   end
 
   create_table "quality_gate_events", comment: "Records each threshold breach and recovery observed by the quality gate system.", force: :cascade do |t|
@@ -1988,6 +1995,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.bigint "account_id", null: false
     t.jsonb "agent_settings", default: {}, null: false
     t.text "allowed_provider_keys", default: [], array: true
+    t.text "allowed_runner_keys", default: [], array: true
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
     t.jsonb "features", default: {}, null: false
@@ -2000,6 +2008,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.integer "max_users", default: 25, null: false
     t.jsonb "provider_preferences", default: {}, null: false
     t.jsonb "quality_thresholds", default: {}, null: false
+    t.jsonb "runner_preferences", default: {}, null: false
     t.string "self_repo_full_name"
     t.datetime "updated_at", null: false
     t.jsonb "worker_settings", default: {}, null: false
@@ -2060,6 +2069,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_agent_providers_by_goal", default: {}, null: false
+    t.string "default_agent_runner", default: "claude", null: false
+    t.jsonb "default_agent_runners_by_goal", default: {}, null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
@@ -2067,15 +2078,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.boolean "fair_queue_across_projects", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
+    t.jsonb "fallback_runners", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false
     t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_providers", default: [], null: false
+    t.jsonb "kb_chat_fallback_runners", default: [], null: false
     t.string "kb_chat_provider", default: "claude", null: false
+    t.string "kb_chat_runner", default: "claude", null: false
     t.jsonb "kb_embedding_fallback_providers", default: [], null: false
+    t.jsonb "kb_embedding_fallback_runners", default: [], null: false
     t.string "kb_embedding_provider", default: "openai", null: false
+    t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
@@ -2092,6 +2108,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
     t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
+    t.jsonb "runner_round_robin_state", default: {}, null: false
+    t.string "runner_selection_mode", limit: 20, default: "single", null: false
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
@@ -2103,6 +2121,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
     t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
+    t.check_constraint "runner_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_runner_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -2176,6 +2195,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "providers", column: "runner_id", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "providers", on_delete: :nullify
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
@@ -2191,6 +2211,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_11_150725) do
   add_foreign_key "chat_sessions", "accounts"
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "providers"
+  add_foreign_key "chat_sessions", "providers", column: "runner_id", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade

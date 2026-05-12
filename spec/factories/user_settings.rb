@@ -8,7 +8,7 @@ FactoryBot.define do
     github_token_cache_ttl_minutes { 60 }
     token_validation_stale_minutes { 2 }
     agent_timeout_seconds { 3600 }
-    default_agent_provider { "claude" }
+    default_agent_runner { "claude" }
     container_memory_bytes { 4 * 1024 * 1024 * 1024 }
     max_concurrent_runs { 2 }
     max_parallel_agents_per_project { 3 }
@@ -21,10 +21,10 @@ FactoryBot.define do
     retry_max_attempts { 3 }
     retry_base_delay { 1.0 }
     retry_max_delay { 60.0 }
-    kb_embedding_provider { UserSetting::KB_EMBEDDING_PROVIDER_DEFAULT }
-    kb_embedding_fallback_providers { [] }
-    kb_chat_provider { UserSetting::KB_CHAT_PROVIDER_DEFAULT }
-    kb_chat_fallback_providers { [] }
+    kb_embedding_runner { UserSetting::KB_EMBEDDING_RUNNER_DEFAULT }
+    kb_embedding_fallback_runners { [] }
+    kb_chat_runner { UserSetting::KB_CHAT_RUNNER_DEFAULT }
+    kb_chat_fallback_runners { [] }
     allowed_service_images { [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ] }
   end
 end

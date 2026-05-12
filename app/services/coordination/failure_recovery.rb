@@ -133,9 +133,9 @@ module Coordination
       {
         error_message: agent_run.error_message.to_s.truncate(1000),
         status: agent_run.status,
-        final_provider: agent_run.final_provider,
-        providers_attempted: agent_run.providers_attempted,
-        provider_switches: agent_run.provider_switches,
+        final_runner: agent_run.final_runner,
+        runners_attempted: agent_run.runners_attempted,
+        runner_switches: agent_run.runner_switches,
         guardrail_violation_type: agent_run.guardrail_violation_type
       }.compact_blank
     end
@@ -156,13 +156,13 @@ module Coordination
     end
 
     def attempted_provider_identifiers
-      Array(agent_run.providers_attempted).filter_map do |attempt|
-        attempt.is_a?(Hash) ? attempt["provider"] : attempt
+      Array(agent_run.runners_attempted).filter_map do |attempt|
+        attempt.is_a?(Hash) ? attempt["runner"] : attempt
       end
     end
 
     def preferred_provider_identifier
-      attempted_provider_identifiers.last || agent_run.effective_provider
+      attempted_provider_identifiers.last || agent_run.effective_runner
     end
 
     class Result

@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: TBD
-- **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-004](RDR-004-container-isolation.md) (containers), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy), [RDR-025](RDR-025-provider-quota-tracking.md) (quota tracking)
+- **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-004](RDR-004-container-isolation.md) (containers), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy), [RDR-025](RDR-025-runner-quota-tracking.md) (quota tracking)
 
 ## Problem Statement
 

@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 class TenantSetting < ApplicationRecord
+  self.ignored_columns = %w[provider_preferences allowed_provider_keys]
+
   has_logidze
   PG_INT_MAX = 2_147_483_647
   BUDGET_TYPES = CostBudget::BUDGET_TYPES
-  DEFAULT_PROVIDER_PREFERENCES = {
+  DEFAULT_RUNNER_PREFERENCES = {
     "model_preferences" => {},
     "api_key_ids" => {}
   }.freeze
@@ -78,7 +80,7 @@ class TenantSetting < ApplicationRecord
 
   def configuration
     {
-      "provider_preferences" => effective_provider_preferences,
+      "runner_preferences" => effective_runner_preferences,
       "default_budgets" => effective_default_budgets,
       "guardrails" => effective_guardrails,
       "quality_thresholds" => effective_quality_thresholds,
@@ -90,8 +92,8 @@ class TenantSetting < ApplicationRecord
     }
   end
 
-  def effective_provider_preferences
-    merge_defaults(DEFAULT_PROVIDER_PREFERENCES, provider_preferences)
+  def effective_runner_preferences
+    merge_defaults(DEFAULT_RUNNER_PREFERENCES, runner_preferences)
   end
 
   def effective_default_budgets
@@ -125,14 +127,14 @@ class TenantSetting < ApplicationRecord
   end
 
   def provider_api_key_for(api_service_type)
-    key_id = effective_provider_preferences.dig("api_key_ids", api_service_type.to_s)
+    key_id = effective_runner_preferences.dig("api_key_ids", api_service_type.to_s)
     return nil if key_id.blank?
 
     account.provider_api_keys.find_by(id: key_id)
   end
 
-  def model_preference_for(provider_key)
-    effective_provider_preferences.dig("model_preferences", provider_key.to_s).presence
+  def model_preference_for(runner_key)
+    effective_runner_preferences.dig("model_preferences", runner_key.to_s).presence
   end
 
   def auto_continue?
@@ -209,7 +211,7 @@ class TenantSetting < ApplicationRecord
   private
 
   def normalize_configuration_namespaces
-    self.provider_preferences = normalize_hash(provider_preferences)
+    self.runner_preferences = normalize_hash(runner_preferences)
     self.default_budgets = normalize_budget_hash(default_budgets)
     self.guardrails = normalize_integer_hash(guardrails, %w[max_concurrent_runs max_tokens_per_run max_monthly_cost_cents])
     self.quality_thresholds = normalize_quality_thresholds(quality_thresholds)
@@ -226,7 +228,7 @@ class TenantSetting < ApplicationRecord
   end
 
   def validate_configuration_namespaces
-    %i[provider_preferences default_budgets guardrails quality_thresholds agent_settings worker_settings].each do |attribute|
+    %i[runner_preferences default_budgets guardrails quality_thresholds agent_settings worker_settings].each do |attribute|
       errors.add(attribute, "must be a JSON object") unless public_send(attribute).is_a?(Hash)
     end
   end

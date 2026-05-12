@@ -14,7 +14,7 @@
                sidebar_next_frame_id: @sidebar_next_frame_id,
                sidebar_next_params: @sidebar_next_params,
                chat_session: @new_chat_session,
-               available_providers: @available_providers,
+               available_runners: @available_runners,
                available_projects: @available_projects,
                available_models: @available_models %>
 
@@ -75,10 +75,10 @@
                               class: "grid gap-3 md:grid-cols-2 xl:grid-cols-1",
                               data: { action: "change->chat#submitForm" } do |form| %>
                   <div>
-                    <%= form.label :provider_id, "Provider", class: "block text-sm font-medium text-gray-700" %>
-                    <%= form.select :provider_id,
-                                    options_from_collection_for_select(@available_providers, :id, :display_name, @chat_session.provider_id),
-                                    { include_blank: "Default provider" },
+                    <%= form.label :runner_id, "Runner", class: "block text-sm font-medium text-gray-700" %>
+                    <%= form.select :runner_id,
+                                    options_from_collection_for_select(@available_runners, :id, :display_name, @chat_session.runner_id),
+                                    { include_blank: "Default runner" },
                                     class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
                   </div>
                   <div>
@@ -92,8 +92,8 @@
               <% else %>
                 <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
                   <div class="rounded-lg bg-gray-50 px-4 py-3">
-                    <p class="text-sm font-medium text-gray-500">Provider</p>
-                    <p class="mt-1 text-sm text-gray-900"><%= @chat_session.provider&.display_name || "Default provider" %></p>
+                    <p class="text-sm font-medium text-gray-500">Runner</p>
+                    <p class="mt-1 text-sm text-gray-900"><%= @chat_session.runner&.display_name || "Default runner" %></p>
                   </div>
                   <div class="rounded-lg bg-gray-50 px-4 py-3">
                     <p class="text-sm font-medium text-gray-500">Model</p>
@@ -186,7 +186,7 @@
                                chat_session: @chat_session,
                                available_projects: @available_projects,
                                available_models: @available_models,
-                               available_providers: @available_providers %>
+                               available_runners: @available_runners %>
                   </div>
                 <% end %>
               <% else %>

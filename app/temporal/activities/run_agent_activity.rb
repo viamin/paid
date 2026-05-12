@@ -8,29 +8,29 @@ module Activities
 
     include Containers::QualityHooks
 
-    # Returns true if the given provider key can be executed inside the
+    # Returns true if the given runner key can be executed inside the
     # container. Replaces the former AGENT_COMMANDS.key? check. Container
-    # executability is gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS
-    # — providers not in that set are filtered out upstream (UserSetting,
-    # ProvidersController) before reaching provider_order.
-    def self.container_executable?(provider_key)
-      key = AGENT_TYPE_TO_PROVIDER.fetch(provider_key, provider_key)
-      ProviderSupport.container_executable_provider_key?(key)
+    # executability is gated by RunnerSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS
+    # — runners not in that set are filtered out upstream (UserSetting,
+    # ProvidersController) before reaching runner_order.
+    def self.container_executable?(runner_key)
+      key = AGENT_TYPE_TO_RUNNER.fetch(runner_key, runner_key)
+      RunnerSupport.container_executable_runner_key?(key)
     end
 
-    # Maps agent_type values to their canonical settings provider name.
-    # Some agent types (e.g., "claude_code") share the same underlying provider as
+    # Maps agent_type values to their canonical settings runner name.
+    # Some agent types (e.g., "claude_code") share the same underlying runner as
     # a settings-level name ("claude"), so they should be deduplicated during fallback.
-    AGENT_TYPE_TO_PROVIDER = {
+    AGENT_TYPE_TO_RUNNER = {
       "claude_code" => "claude"
     }.freeze
 
-    # No-op executor for provider instances used only for response parsing.
+    # No-op executor for runner instances used only for response parsing.
     NULL_EXECUTOR = Object.new.tap do |obj|
       obj.define_singleton_method(:execute) { |*, **| raise "NULL_EXECUTOR: not meant for execution" }
     end.freeze
 
-    # Patterns that indicate a rate limit or quota error from provider output.
+    # Patterns that indicate a rate limit or quota error from runner output.
     RATE_LIMIT_PATTERNS = [
       /rate.?limit/i,
       /too many requests/i,
@@ -86,29 +86,29 @@ module Activities
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
 
-    def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
+    def self.runner_order(agent_type:, fallback_enabled:, fallback_runners:)
       return [ agent_type ].select { |p| container_executable?(p) } unless fallback_enabled
 
-      canonical = AGENT_TYPE_TO_PROVIDER.fetch(agent_type, agent_type)
-      providers = [ agent_type ]
+      canonical = AGENT_TYPE_TO_RUNNER.fetch(agent_type, agent_type)
+      runners = [ agent_type ]
       seen = Set.new([ canonical ])
 
-      Array(fallback_providers).each do |fallback|
-        fallback_canonical = AGENT_TYPE_TO_PROVIDER.fetch(fallback, fallback)
+      Array(fallback_runners).each do |fallback|
+        fallback_canonical = AGENT_TYPE_TO_RUNNER.fetch(fallback, fallback)
         next if seen.include?(fallback_canonical)
 
         seen << fallback_canonical
-        providers << fallback
+        runners << fallback
       end
 
-      providers.select { |p| container_executable?(p) }
+      runners.select { |p| container_executable?(p) }
     end
 
-    def self.provider_attempt_count(agent_type:, fallback_enabled:, fallback_providers:)
-      provider_order(
+    def self.runner_attempt_count(agent_type:, fallback_enabled:, fallback_runners:)
+      runner_order(
         agent_type: agent_type,
         fallback_enabled: fallback_enabled,
-        fallback_providers: fallback_providers
+        fallback_runners: fallback_runners
       ).size
     end
 
@@ -124,8 +124,8 @@ module Activities
         end
 
         user_settings = resolve_user_settings(agent_run)
-        providers = build_provider_order(agent_run, user_settings)
-        provider_states = load_provider_state_cache(user_settings.user, providers)
+        runners = build_runner_order(agent_run, user_settings)
+        runner_states = load_runner_state_cache(user_settings.user, runners)
 
         pre_agent_sha = nil
         last_error = nil
@@ -137,8 +137,8 @@ module Activities
         max_execution_seconds = resolve_max_execution_seconds(agent_run, user_settings)
 
         index = 0
-        while index < providers.length
-          provider_candidate = providers[index]
+        while index < runners.length
+          runner_candidate = runners[index]
           # Check if the project's execution time limit has been exceeded
           if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
             violation_result = Guardrails::ViolationHandler.call(
@@ -153,31 +153,31 @@ module Activities
             break
           end
 
-          # Skip routing keys whose provider entry has been deleted — attempting
-          # execution would fail with "Unsupported provider" and leak internal
+          # Skip routing keys whose runner entry has been deleted — attempting
+          # execution would fail with "Unsupported runner" and leak internal
           # identifiers in user-visible error messages.
-          if Provider.routing_key?(provider_candidate) && provider_entry_for(provider_candidate, user_settings.user).nil?
-            agent_run.record_provider_attempt("Deleted provider entry", success: false, error_type: "unavailable")
+          if Runner.routing_key?(runner_candidate) && runner_entry_for(runner_candidate, user_settings.user).nil?
+            agent_run.record_runner_attempt("Deleted runner entry", success: false, error_type: "unavailable")
             index += 1
             next
           end
 
-          provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
-          attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
-          provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
-          heartbeat("provider_attempt", provider, index)
+          runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
+          attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
+          runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
+          heartbeat("runner_attempt", runner, index)
 
-          # Skip unavailable providers, tracking rate-limited skips separately
-          if provider_unavailable?(user_settings, provider_state_name, provider_states)
-            state = provider_states[provider_state_name]
+          # Skip unavailable runners, tracking rate-limited skips separately
+          if runner_unavailable?(user_settings, runner_state_name, runner_states)
+            state = runner_states[runner_state_name]
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
             skipped_rate_limited_count += 1 if error_type == "rate_limited"
             error_message = if error_type == "rate_limited" && state&.rate_limited_until.present?
               "Skipped due to cached rate limit until #{state.rate_limited_until.iso8601}"
             elsif error_type == "unavailable" && state&.circuit_open?
-              "Skipped because provider circuit is open"
+              "Skipped because runner circuit is open"
             end
-            agent_run.record_provider_attempt(
+            agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: error_type,
@@ -187,28 +187,28 @@ module Activities
             next
           end
 
-          # Log provider switch when we have a previous actually-attempted provider.
+          # Log runner switch when we have a previous actually-attempted runner.
           # Use attempt_label (per-entry identifier) so entries sharing the same
           # command key (e.g. two OpenCode API-key entries) are distinguishable.
           if last_attempted_label
-            agent_run.log_provider_switch!(last_attempted_label, attempt_label, last_error || "fallback")
+            agent_run.log_runner_switch!(last_attempted_label, attempt_label, last_error || "fallback")
           end
 
           begin
             last_attempted_label = attempt_label
             attempt_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
+            runner_result = run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
-            pre_agent_sha = provider_result.fetch(:pre_agent_sha)
+            pre_agent_sha = runner_result.fetch(:pre_agent_sha)
 
-            # Success - heartbeat and record final provider
-            heartbeat("provider_completed", provider)
-            record_provider_success(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(attempt_label, success: true, duration_seconds: attempt_duration)
+            # Success - heartbeat and record final runner
+            heartbeat("runner_completed", runner)
+            record_runner_success(user_settings, runner_state_name, runner_states)
+            agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration)
             # Persist the routing key so multiple entries sharing the same
-            # provider_key (e.g. several OpenCode API-key entries with
+            # runner_key (e.g. several OpenCode API-key entries with
             # different models) remain distinguishable in UI and retry logic.
-            agent_run.update!(final_provider: attempt_label)
+            agent_run.update!(final_runner: attempt_label)
 
             # Skip git post-processing for goals that don't clone a repo.
             # These runs only interact via the GitHub API proxy — no git repo exists.
@@ -251,61 +251,61 @@ module Activities
 
             has_changes = bookkeeping_result.fetch(:has_changes)
 
-            if !has_changes && !provider_result.fetch(:output_present)
-              agent_run.log!("system", "Provider completed with no output and no changes")
+            if !has_changes && !runner_result.fetch(:output_present)
+              agent_run.log!("system", "Runner completed with no output and no changes")
             end
 
             return {
               agent_run_id: agent_run_id,
               success: true,
               has_changes: has_changes,
-              output_present: provider_result.fetch(:output_present),
-              review_threads_already_addressed: provider_result.fetch(:review_threads_already_addressed, false),
-              final_provider: attempt_label
+              output_present: runner_result.fetch(:output_present),
+              review_threads_already_addressed: runner_result.fetch(:review_threads_already_addressed, false),
+              final_runner: attempt_label
             }
-          rescue ProviderRateLimitError => e
+          rescue RunnerRateLimitError => e
             last_error = "rate_limited"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
-            persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
-            agent_run.record_provider_attempt(
+            persist_rate_limit(user_settings, runner_state_name, runner_states, e.reset_at)
+            agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: "rate_limited",
               error_message: e.message,
               duration_seconds: attempt_duration
             )
-            logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
+            logger.info(message: "agent_execution.rate_limited", runner: runner, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
               # Peek at rate-limit fallback candidates without consuming them so
               # insert_rate_limit_fallbacks! can still insert after recovery.
-              remaining_after_rate_limit_insertion = providers[(index + 1)..].to_a +
-                peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+              remaining_after_rate_limit_insertion = runners[(index + 1)..].to_a +
+                peek_rate_limit_fallback_candidates(runner_candidate, runner, runners)
 
               break unless recover_container_for_fallback!(
                 agent_run: agent_run,
-                provider: provider,
+                runner: runner,
                 error_type: "rate_limited",
                 error_message: e.message,
                 fallback_remaining: remaining_after_rate_limit_insertion
               )
             end
             insert_rate_limit_fallbacks!(
-              providers: providers,
+              runners: runners,
               index: index,
-              provider_candidate: provider_candidate,
-              provider: provider,
+              runner_candidate: runner_candidate,
+              runner: runner,
               agent_run: agent_run
             )
           rescue InfiniteLoopError => e
             last_error = "infinite_loop"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
               break
             end
-            record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(
+            record_runner_failure(user_settings, runner_state_name, runner_states)
+            agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: "infinite_loop",
@@ -329,16 +329,16 @@ module Activities
               type: "InfiniteLoopDetected",
               non_retryable: true
             )
-          rescue ProviderTimeoutError => e
+          rescue RunnerTimeoutError => e
             last_error = "timeout"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             timeout_error ||= e.message
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
               break
             end
-            record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(
+            record_runner_failure(user_settings, runner_state_name, runner_states)
+            agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: "timeout",
@@ -346,59 +346,59 @@ module Activities
               duration_seconds: attempt_duration,
               diagnostics: e.diagnostics
             )
-            logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.runner_timeout", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
               # Peek without consuming so future rate-limit fallback insertion
               # is not affected by this timeout recovery check.
-              remaining_after_rate_limit_insertion = providers[(index + 1)..].to_a +
-                peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+              remaining_after_rate_limit_insertion = runners[(index + 1)..].to_a +
+                peek_rate_limit_fallback_candidates(runner_candidate, runner, runners)
 
               break unless recover_container_for_fallback!(
                 agent_run: agent_run,
-                provider: provider,
+                runner: runner,
                 error_type: "timeout",
                 error_message: e.message,
                 fallback_remaining: remaining_after_rate_limit_insertion
               )
             end
-            # Fall through to next provider instead of breaking — per-provider
-            # timeout should not fail the entire run when fallback providers
+            # Fall through to next runner instead of breaking — per-runner
+            # timeout should not fail the entire run when fallback runners
             # are available. Only break when max_execution_seconds is exceeded
             # (checked at the top of the loop).
-          rescue ProviderAuthExpiredError => e
+          rescue RunnerAuthExpiredError => e
             last_error = "auth_expired"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
-            auth_provider = ProviderSupport.harness_provider_key_for(e.provider)
-            agent_run.auth_expire!(error: e.message, provider: auth_provider)
-            agent_run.record_provider_attempt(
+            auth_runner = RunnerSupport.harness_runner_key_for(e.runner)
+            agent_run.auth_expire!(error: e.message, runner_key: auth_runner)
+            agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: "auth_expired",
               error_message: e.message,
               duration_seconds: attempt_duration
             )
-            logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.auth_expired", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
-          rescue ProviderExecutionError => e
+          rescue RunnerExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
               break
             end
-            record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(
+            record_runner_failure(user_settings, runner_state_name, runner_states)
+            agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: "error",
               error_message: e.message,
               duration_seconds: attempt_duration
             )
-            logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+            logger.warn(message: "agent_execution.runner_failed", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
 
             if container_dead_after_exec_error?(agent_run, e)
               logger.error(
-                message: "agent_execution.container_dead_breaking_provider_loop",
+                message: "agent_execution.container_dead_breaking_runner_loop",
                 agent_run_id: agent_run.id,
                 container_id: agent_run.container_id,
                 error: e.message
@@ -410,12 +410,12 @@ module Activities
           index += 1
         end
 
-        # When all providers were skipped due to cached rate-limit state (no
-        # attempts made), compute the earliest reset time from provider states.
-        all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
+        # When all runners were skipped due to cached rate-limit state (no
+        # attempts made), compute the earliest reset time from runner states.
+        all_skipped_rate_limited = runners.any? && skipped_rate_limited_count == runners.size
         if rate_limit_reset_at.nil? && all_skipped_rate_limited
-          reset_candidates = providers.filter_map do |provider|
-            state = provider_states[state_key_for(provider, provider_command_key(provider, agent_run, user_settings.user), user_settings.user)]
+          reset_candidates = runners.filter_map do |runner|
+            state = runner_states[state_key_for(runner, runner_command_key(runner, agent_run, user_settings.user), user_settings.user)]
             state&.rate_limited_until
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
@@ -427,36 +427,36 @@ module Activities
         agent_run.reload
         return paused_result(agent_run_id) if agent_run.paused?
 
-        # All providers exhausted. Timeout takes precedence over rate_limited
+        # All runners exhausted. Timeout takes precedence over rate_limited
         # because it indicates an actual execution attempt that should trigger
         # ProcessRunQueueJob to re-schedule work.
         if timeout_error.present?
           timed_out = !agent_run.finished? && agent_run.timeout!(error: timeout_error)
           Notifications::Rules::ZeroIterationTimeout.call(scope: agent_run) if timed_out
           # Skip queue processing when cleanup killed the run — the timeout
-          # was not a real provider issue, so there is nothing to re-schedule.
+          # was not a real runner issue, so there is nothing to re-schedule.
           # (agent_run was reloaded above, so the model method sees current state)
           ProcessRunQueueJob.perform_later if timed_out && !agent_run.cancelled_by_cleanup?
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
-          provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
+          runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
-            error: "All providers rate limited: #{provider_list}",
+            error: "All runners rate limited: #{runner_list}",
             reset_at: rate_limit_reset_at
           )
         elsif !agent_run.finished?
-          provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
-          agent_run.fail!(error: "All providers exhausted: #{provider_list}")
+          runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
+          agent_run.fail!(error: "All runners exhausted: #{runner_list}")
         end
         raise Temporalio::Error::ApplicationError.new(
-          "All providers exhausted",
-          type: "AllProvidersExhausted",
+          "All runners exhausted",
+          type: "AllRunnersExhausted",
           non_retryable: true
         )
       end
     end
 
-    # Custom error classes for provider-specific failures
-    class ProviderRateLimitError < StandardError
+    # Custom error classes for runner-specific failures
+    class RunnerRateLimitError < StandardError
       attr_reader :reset_at
 
       def initialize(message, reset_at: nil)
@@ -465,17 +465,17 @@ module Activities
       end
     end
 
-    class ProviderAuthExpiredError < StandardError
-      attr_reader :provider
+    class RunnerAuthExpiredError < StandardError
+      attr_reader :runner
 
-      def initialize(message, provider:)
+      def initialize(message, runner:)
         super(message)
-        @provider = provider
+        @runner = runner
       end
     end
 
-    class ProviderExecutionError < StandardError; end
-    class ProviderTimeoutError < StandardError
+    class RunnerExecutionError < StandardError; end
+    class RunnerTimeoutError < StandardError
       attr_reader :timeout_type, :diagnostics
 
       def initialize(message, timeout_type: nil, diagnostics: {})
@@ -485,7 +485,7 @@ module Activities
       end
     end
     class InfiniteLoopError < StandardError; end
-    CommandContext = Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
+    CommandContext = Struct.new(:runner_candidate, :runner, :user, keyword_init: true)
 
     private
 
@@ -527,55 +527,55 @@ module Activities
       [ startup_base, effective_timeout ].compact.min
     end
 
-    # Builds the ordered list of providers to attempt.
-    # Uses fallback providers if enabled, otherwise just the agent's type.
-    # Rate-limit fallback providers are tracked separately (via
+    # Builds the ordered list of runners to attempt.
+    # Uses fallback runners if enabled, otherwise just the agent's type.
+    # Rate-limit fallback runners are tracked separately (via
     # @rate_limit_fallbacks) and handled during execution; they do not
-    # modify the provider order returned by this method.
+    # modify the runner order returned by this method.
     #
-    # @return [Array<String>] Provider names in priority order
-    def build_provider_order(agent_run, user_settings)
-      if agent_run.provider
-        providers = [ agent_run.provider.routing_key ]
+    # @return [Array<String>] Runner names in priority order
+    def build_runner_order(agent_run, user_settings)
+      if agent_run.runner
+        runners = [ agent_run.runner.routing_key ]
         if user_settings.fallback_enabled
-          providers.concat(user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true))
+          runners.concat(user_settings.fallback_priority_for(primary_runner: agent_run.runner.routing_key, identifiers: true))
         end
       else
-        providers =
+        runners =
           if user_settings.fallback_enabled
-            fallback_providers = user_settings.fallback_priority_for(
-              primary_provider: canonical_provider(agent_run.agent_type),
+            fallback_runners = user_settings.fallback_priority_for(
+              primary_runner: canonical_runner(agent_run.agent_type),
               identifiers: true
             )
-            deduplicate_provider_candidates(
-              primary_provider: agent_run.agent_type,
-              fallback_providers: fallback_providers,
+            deduplicate_runner_candidates(
+              primary_runner: agent_run.agent_type,
+              fallback_runners: fallback_runners,
               user: user_settings.user
             )
           else
-            [ agent_run.agent_type ].select { |provider| self.class.container_executable?(provider) }
+            [ agent_run.agent_type ].select { |runner| self.class.container_executable?(runner) }
           end
       end
 
-      providers = providers.select do |provider_candidate|
-        self.class.container_executable?(provider_command_key(provider_candidate, agent_run, user_settings.user))
+      runners = runners.select do |runner_candidate|
+        self.class.container_executable?(runner_command_key(runner_candidate, agent_run, user_settings.user))
       end
-      if providers.empty? && fallback_to_default_provider?(agent_run)
-        providers = default_provider_candidates(agent_run, user_settings)
+      if runners.empty? && fallback_to_default_runner?(agent_run)
+        runners = default_runner_candidates(agent_run, user_settings)
       end
 
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
       @inserted_rate_limit_fallbacks = Set.new
 
-      providers
+      runners
     end
 
-    # Checks if a provider is currently unavailable (rate limited or circuit open).
+    # Checks if a runner is currently unavailable (rate limited or circuit open).
     #
-    # @return [Boolean] true if provider should be skipped
-    def provider_unavailable?(user_settings, provider_state_name, provider_states)
-      state = provider_states.fetch(provider_state_name) do
-        provider_states[provider_state_name] = user_settings.user.provider_states.find_by(provider_name: provider_state_name)
+    # @return [Boolean] true if runner should be skipped
+    def runner_unavailable?(user_settings, runner_state_name, runner_states)
+      state = runner_states.fetch(runner_state_name) do
+        runner_states[runner_state_name] = user_settings.user.runner_states.find_by(runner_name: runner_state_name)
       end
       return false unless state
 
@@ -585,28 +585,28 @@ module Activities
       state.unavailable?
     end
 
-    # Records a rate limit for a provider.
-    def persist_rate_limit(user_settings, provider_state_name, provider_states, reset_at = nil)
-      state = provider_state_for(user_settings, provider_state_name, provider_states)
+    # Records a rate limit for a runner.
+    def persist_rate_limit(user_settings, runner_state_name, runner_states, reset_at = nil)
+      state = runner_state_for(user_settings, runner_state_name, runner_states)
       state.mark_rate_limited!(reset_at: reset_at)
     end
 
-    # Records a successful provider execution.
-    def record_provider_success(user_settings, provider_state_name, provider_states = nil)
-      state = provider_states ? provider_states[provider_state_name] : user_settings.user.provider_states.find_by(provider_name: provider_state_name)
+    # Records a successful runner execution.
+    def record_runner_success(user_settings, runner_state_name, runner_states = nil)
+      state = runner_states ? runner_states[runner_state_name] : user_settings.user.runner_states.find_by(runner_name: runner_state_name)
       state&.record_success!
     end
 
-    # Records a failed provider execution.
-    def record_provider_failure(user_settings, provider_state_name, provider_states)
-      state = provider_state_for(user_settings, provider_state_name, provider_states)
+    # Records a failed runner execution.
+    def record_runner_failure(user_settings, runner_state_name, runner_states)
+      state = runner_state_for(user_settings, runner_state_name, runner_states)
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
     end
 
     # True when the agent run we're executing has already been force-timed-out
     # by external cleanup (e.g. `dev:cleanup` or `StaleRunDetectorJob` killed
     # our container). In that case the failure we just rescued was caused by
-    # cleanup, not by the provider, so we must not penalize the circuit breaker.
+    # cleanup, not by the runner, so we must not penalize the circuit breaker.
     def cancelled_by_cleanup?(agent_run)
       agent_run.reload
       agent_run.cancelled_by_cleanup?
@@ -616,101 +616,101 @@ module Activities
 
     # Mirror of the failed-attempt bookkeeping for externally-cancelled runs:
     # records the attempt with a distinct error_type so the UI can show what
-    # happened, but skips both record_provider_failure and the standard warn
-    # log (which would imply a real provider problem).
-    def record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, error)
-      agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+    # happened, but skips both record_runner_failure and the standard warn
+    # log (which would imply a real runner problem).
+    def record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, error)
+      agent_run.record_runner_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
       logger.info(
         message: "agent_execution.cancelled_by_cleanup",
-        provider: provider,
+        runner: runner,
         agent_run_id: agent_run.id,
         error: error.message
       )
     end
 
-    # Returns the canonical settings-level provider name for a given agent type.
-    def canonical_provider(provider)
-      AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
+    # Returns the canonical settings-level runner name for a given agent type.
+    def canonical_runner(runner)
+      AGENT_TYPE_TO_RUNNER.fetch(runner, runner)
     end
 
-    def default_provider_candidates(agent_run, user_settings)
-      first_key = ProviderSupport.container_executable_provider_keys.first
-      default_fallback = first_key ? ProviderSupport.agent_type_for(first_key) : "claude_code"
+    def default_runner_candidates(agent_run, user_settings)
+      first_key = RunnerSupport.container_executable_runner_keys.first
+      default_fallback = first_key ? RunnerSupport.agent_type_for(first_key) : "claude_code"
 
       candidates = [
-        user_settings.default_provider_identifier_for_goal(agent_run.goal),
+        user_settings.default_runner_identifier_for_goal(agent_run.goal),
         default_fallback
       ].compact_blank
 
       seen = Set.new
-      candidates.each_with_object([]) do |provider_candidate, runnable|
-        provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
-        next unless self.class.container_executable?(provider)
+      candidates.each_with_object([]) do |runner_candidate, runnable|
+        runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
+        next unless self.class.container_executable?(runner)
 
-        canonical = canonical_provider(provider)
+        canonical = canonical_runner(runner)
         next if seen.include?(canonical)
 
         seen << canonical
-        runnable << provider_candidate
+        runnable << runner_candidate
       end
     end
 
-    def fallback_to_default_provider?(agent_run)
-      return true if agent_run.provider.present?
+    def fallback_to_default_runner?(agent_run)
+      return true if agent_run.runner.present?
 
-      provider_key = Provider.provider_key_for_agent_type(agent_run.agent_type)
+      runner_key = Runner.runner_key_for_agent_type(agent_run.agent_type)
       AgentRun::AGENT_TYPES.include?(agent_run.agent_type) &&
-        ProviderSupport.supported_provider_key?(provider_key)
+        RunnerSupport.supported_runner_key?(runner_key)
     end
 
-    def provider_state_for(user_settings, provider_state_name, provider_states)
-      provider_states[provider_state_name] ||= user_settings.provider_state_for(provider_state_name)
+    def runner_state_for(user_settings, runner_state_name, runner_states)
+      runner_states[runner_state_name] ||= user_settings.runner_state_for(runner_state_name)
     end
 
-    def load_provider_state_cache(user, providers)
-      provider_state_names = providers.map { |provider| state_key_for(provider, provider_command_key(provider, nil, user), user) }.uniq
-      user.provider_states.where(provider_name: provider_state_names).index_by(&:provider_name)
+    def load_runner_state_cache(user, runners)
+      runner_state_names = runners.map { |runner| state_key_for(runner, runner_command_key(runner, nil, user), user) }.uniq
+      user.runner_states.where(runner_name: runner_state_names).index_by(&:runner_name)
     end
 
-    # Runs the agent with a specific provider.
-    # Raises ProviderRateLimitError, ProviderTimeoutError, or ProviderExecutionError on failure.
+    # Runs the agent with a specific runner.
+    # Raises RunnerRateLimitError, RunnerTimeoutError, or RunnerExecutionError on failure.
     #
     # @return [Hash] The pre-agent SHA and whether output was present
-    def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
+    def run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
       container_service = reconnect_container(agent_run)
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
-        raise ProviderExecutionError,
+        raise RunnerExecutionError,
           "Container #{agent_run.container_id} is not running. #{container_exit_info}"
       end
 
-      provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
+      runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
 
-      unless self.class.container_executable?(provider)
-        raise ProviderExecutionError, "Unsupported provider: #{provider}"
+      unless self.class.container_executable?(runner)
+        raise RunnerExecutionError, "Unsupported runner: #{runner}"
       end
 
       # Assemble effective MCP servers from the run's provisioned state so
       # harness_execution_plan_for can pass them to agent-harness for
-      # provider-specific translation. Stored as an instance variable so the
+      # runner-specific translation. Stored as an instance variable so the
       # plan builder (which does not receive agent_run) can read it.
       @effective_mcp_servers = effective_mcp_servers_for(agent_run)
-      validate_provider_mcp_support!(provider, @effective_mcp_servers)
+      validate_runner_mcp_support!(runner, @effective_mcp_servers)
 
       # Refresh the co-author trailer file before the agent runs so any
       # intermediate commits it creates via the commit-msg hook carry the
-      # trailer for the provider actually producing them. Without this,
+      # trailer for the runner actually producing them. Without this,
       # rate-limit fallback would leave the hook bound to the initial
-      # provider's trailer for every subsequent commit in the run.
+      # runner's trailer for every subsequent commit in the run.
       if agent_run.repo_cloned?
-        refresh_co_author_trailer(container_service, agent_run, provider_candidate, user_settings.user)
+        refresh_co_author_trailer(container_service, agent_run, runner_candidate, user_settings.user)
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
       command_context = CommandContext.new(
-        provider_candidate: provider_candidate,
-        provider: provider,
+        runner_candidate: runner_candidate,
+        runner: runner,
         user: user_settings.user
       )
       command = build_command(command_context, prompt)
@@ -718,13 +718,13 @@ module Activities
       command_preparation = command_preparation_for(command_context, prompt)
 
       resolved_harness_provider = begin
-        harness_provider_for(provider)
+        harness_provider_for(runner)
       rescue AgentHarness::ConfigurationError, KeyError
         nil
       end
 
       heartbeat = Containers::HeartbeatSetup.new(
-        provider: provider,
+        runner: runner,
         worktree_path: agent_run.worktree_path,
         host_heartbeat_path: container_service.heartbeat_host_path,
         harness_provider: resolved_harness_provider
@@ -734,24 +734,24 @@ module Activities
         command_preparation = merge_preparations(command_preparation, heartbeat.preparation)
       end
 
-      raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
+      raise RunnerExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
-      run_provider_preflight!(
+      run_runner_preflight!(
         agent_run: agent_run,
         container_service: container_service,
         command_context: command_context,
-        provider: provider,
+        runner: runner,
         execution_env: command_env
       )
 
-      # Only start! on first provider attempt.
+      # Only start! on first runner attempt.
       agent_run.start! unless agent_run.running?
 
-      agent_run.log!("system", "Starting #{provider} agent in container")
+      agent_run.log!("system", "Starting #{runner} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
-      log_container_context(agent_run, provider)
+      log_container_context(agent_run, runner)
       execution_started_at = Time.current
 
       effective_timeout = if agent_run.create_issue_goal? || agent_run.enhance_issue_goal? || agent_run.analyze_issue_goal?
@@ -762,7 +762,7 @@ module Activities
 
       # Cap timeout by the resolved max execution time limit (user setting
       # overrides project default). Uses started_at to compute remaining
-      # budget so the limit covers the full run, not just a single provider attempt.
+      # budget so the limit covers the full run, not just a single runner attempt.
       max_exec = resolve_max_execution_seconds(agent_run, user_settings)
       if max_exec && agent_run.started_at
         remaining = (max_exec - (Time.current - agent_run.started_at).to_i).clamp(1, max_exec)
@@ -783,10 +783,10 @@ module Activities
       )
 
       # Periodic heartbeats during container execution complement the
-      # checkpoint heartbeats at provider attempt boundaries (lines 106, 129).
-      # Provider calls can run for many minutes, so without periodic
+      # checkpoint heartbeats at runner attempt boundaries (lines 106, 129).
+      # Runner calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
-      result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
+      result = with_periodic_heartbeat("executing", runner, agent_run: agent_run) do
         container_service.execute(
           command,
           timeout: effective_timeout,
@@ -802,25 +802,25 @@ module Activities
       stderr = normalize_output_text(result[:stderr])
 
       if result.success?
-        # Detect provider credit/quota errors that slip through as successful
-        # exits. Some providers (e.g. OpenRouter) return a billing error as
+        # Detect runner credit/quota errors that slip through as successful
+        # exits. Some runners (e.g. OpenRouter) return a billing error as
         # the only stdout line with exit code 0. The agent never actually ran,
-        # so treat this as a provider failure to trigger fallback/retry.
+        # so treat this as a runner failure to trigger fallback/retry.
         combined_output = [ stdout, stderr ].compact.join("\n")
         sanitized_output = strip_prompt_echo(combined_output, prompt)
         if insufficient_credits_error?(sanitized_output)
-          raise ProviderExecutionError,
-            "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
+          raise RunnerExecutionError,
+            "Runner credit/quota error from #{runner}: #{sanitized_output.truncate(500)}"
         end
 
-        if provider_model_not_found_error?(sanitized_output)
-          raise ProviderExecutionError,
-            "Provider model not found error from #{provider}: #{sanitized_output.truncate(500)}"
+        if runner_model_not_found_error?(sanitized_output)
+          raise RunnerExecutionError,
+            "Runner model not found error from #{runner}: #{sanitized_output.truncate(500)}"
         end
 
         output_present = stdout.present? || stderr.present?
-        track_harness_tokens(agent_run, provider_candidate, provider, user_settings.user, result, execution_started_at)
-        agent_run.log!("system", "Agent execution succeeded with #{provider}")
+        track_harness_tokens(agent_run, runner_candidate, runner, user_settings.user, result, execution_started_at)
+        agent_run.log!("system", "Agent execution succeeded with #{runner}")
         return {
           pre_agent_sha: pre_agent_sha,
           output_present: output_present,
@@ -831,26 +831,26 @@ module Activities
       output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(output, prompt)
 
-      if auth_expired_error?(provider, rate_limit_output)
-        raise ProviderAuthExpiredError.new(output.truncate(500), provider: provider)
+      if auth_expired_error?(runner, rate_limit_output)
+        raise RunnerAuthExpiredError.new(output.truncate(500), runner: runner)
       end
 
       # Check if this is a rate limit error
       if rate_limit_error?(rate_limit_output)
-        reset_at = rate_limit_reset_at(provider, rate_limit_output)
-        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        reset_at = rate_limit_reset_at(runner, rate_limit_output)
+        raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
 
       # Other execution error
-      raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
+      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
       # execution_started_at is nil if the timeout fires before execution
       # begins (e.g. during start!/callbacks); recent_timeout_output
       # short-circuits on blank.
       timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
       if timeout_rate_limit_error?(timeout_output)
-        reset_at = rate_limit_reset_at(provider, timeout_output)
-        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        reset_at = rate_limit_reset_at(runner, timeout_output)
+        raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
 
       timeout_type = case e
@@ -858,7 +858,7 @@ module Activities
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
       end
-      raise ProviderTimeoutError.new(
+      raise RunnerTimeoutError.new(
         "#{timeout_type}_timeout: #{e.message}",
         timeout_type: timeout_type,
         diagnostics: timeout_attempt_diagnostics(
@@ -872,44 +872,44 @@ module Activities
       )
     rescue Containers::Provision::OutputAbortError => e
       # The container was stopped early because stderr matched a fatal
-      # provider quota pattern (e.g. KiloCode "Free tier limit reached").
+      # runner quota pattern (e.g. KiloCode "Free tier limit reached").
       # Classify as rate-limited so dashboards and retry logic see the
       # real root cause instead of a generic timeout.
-      reset_at = rate_limit_reset_at(provider, e.matched_output.to_s)
-      raise ProviderRateLimitError.new(
-        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+      reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
+      raise RunnerRateLimitError.new(
+        "Rate limited by #{runner}: #{e.matched_output.to_s.truncate(200)}",
         reset_at: reset_at
       )
     rescue Containers::Provision::ExecutionError => e
-      raise ProviderExecutionError, "Docker exec error: #{e.message}"
+      raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
-    def run_provider_preflight!(agent_run:, container_service:, command_context:, provider:, execution_env:)
-      # Run the provider-owned harness preflight (auth, CLI version,
+    def run_runner_preflight!(agent_run:, container_service:, command_context:, runner:, execution_env:)
+      # Run the runner-owned harness preflight (auth, CLI version,
       # OPENAI_BASE_URL reachability) when available — fails fast before
       # the smoke exec below.  The smoke exec always runs as a safety
       # net regardless of whether the harness supports preflight_check.
       #
-      # Skip the harness preflight for subscription-auth providers: it
+      # Skip the harness preflight for subscription-auth runners: it
       # runs outside the container where OAuth credentials (auth.json,
       # .credentials.json) are unavailable.  The harness auth check only
       # understands API keys, so subscription auth always appears invalid.
       # The smoke-exec preflight below runs inside the container with the
       # correct environment and will catch real auth failures.
-      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      subscription_auth = provider_entry&.subscription? &&
-        ProviderSupport.subscription_auth_unset_vars_for(provider_entry.provider_key).any?
+      runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
+      subscription_auth = runner_entry&.subscription? &&
+        RunnerSupport.subscription_auth_unset_vars_for(runner_entry.runner_key).any?
       harness_provider = preflight_provider_instance(command_context)
       if harness_provider && !subscription_auth
         run_harness_preflight!(
           agent_run: agent_run,
           harness_provider: harness_provider,
-          provider: provider,
+          runner: runner,
           execution_env: execution_env
         )
       end
 
-      prompt = provider_preflight_prompt_for(provider)
+      prompt = runner_preflight_prompt_for(runner)
       command = build_command(command_context, prompt)
       env = command_env_for(command_context, prompt)
       preparation = command_preparation_for(command_context, prompt)
@@ -931,16 +931,16 @@ module Activities
         if insufficient_credits_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
-            provider: provider,
-            reason: "Provider credit/quota error: #{sanitized_output.truncate(500)}"
+            runner: runner,
+            reason: "Runner credit/quota error: #{sanitized_output.truncate(500)}"
           )
         end
 
-        if provider_model_not_found_error?(sanitized_output)
+        if runner_model_not_found_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
-            provider: provider,
-            reason: "Provider model not found error: #{sanitized_output.truncate(500)}"
+            runner: runner,
+            reason: "Runner model not found error: #{sanitized_output.truncate(500)}"
           )
         end
 
@@ -948,9 +948,9 @@ module Activities
       end
 
       if rate_limit_error?(sanitized_output)
-        reset_at = rate_limit_reset_at(provider, sanitized_output)
-        log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
-        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        reset_at = rate_limit_reset_at(runner, sanitized_output)
+        log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
+        raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
 
       reason = if sanitized_output.present?
@@ -958,34 +958,34 @@ module Activities
       else
         "No output before exit code #{result[:exit_code]}. Check proxy configuration, auth, and network policy."
       end
-      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+      raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::TimeoutError => e
       reason = "Timed out after #{PREFLIGHT_TIMEOUT_SECONDS}s: #{e.message}. Check proxy configuration, auth, and network policy."
-      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+      raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
-      reset_at = rate_limit_reset_at(provider, e.matched_output.to_s)
-      log_preflight_failure(agent_run: agent_run, provider: provider, reason: e.matched_output.to_s.truncate(200))
-      raise ProviderRateLimitError.new(
-        "Rate limited by #{provider}: #{e.matched_output.to_s.truncate(200)}",
+      reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
+      log_preflight_failure(agent_run: agent_run, runner: runner, reason: e.matched_output.to_s.truncate(200))
+      raise RunnerRateLimitError.new(
+        "Rate limited by #{runner}: #{e.matched_output.to_s.truncate(200)}",
         reset_at: reset_at
       )
     rescue Containers::Provision::ExecutionError => e
       raise_preflight_failure!(
         agent_run: agent_run,
-        provider: provider,
+        runner: runner,
         reason: "Docker exec error: #{e.message}"
       )
     end
 
-    def run_harness_preflight!(agent_run:, harness_provider:, provider:, execution_env:)
+    def run_harness_preflight!(agent_run:, harness_provider:, runner:, execution_env:)
       result = harness_provider.preflight_check(env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
 
       return if result[:healthy]
 
       reason = result[:reason] || "Preflight check failed"
-      raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
+      raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue AgentHarness::ConfigurationError, KeyError
-      # Provider config unavailable — skip harness preflight and let the
+      # Runner config unavailable — skip harness preflight and let the
       # smoke execution catch any real issues.
       nil
     end
@@ -1001,11 +1001,11 @@ module Activities
     # traceability.  If a future run exhibits cross-run contamination
     # (see #905), these log entries make it possible to determine whether
     # the container/worktree was reused.
-    def log_container_context(agent_run, provider)
+    def log_container_context(agent_run, runner)
       logger.info(
         message: "agent_execution.container_context",
         agent_run_id: agent_run.id,
-        provider: provider.to_s,
+        runner: runner.to_s,
         container_id: agent_run.container_id,
         worktree_path: agent_run.worktree_path
       )
@@ -1024,19 +1024,19 @@ module Activities
       TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
-    def auth_expired_error?(provider, output)
+    def auth_expired_error?(runner, output)
       return false if output.blank?
 
-      provider_key = ProviderSupport.provider_key_for_agent_type(provider)
-      ProviderSupport.error_classification_patterns_for(provider_key, :auth_expired)
+      runner_key = RunnerSupport.runner_key_for_agent_type(runner)
+      RunnerSupport.error_classification_patterns_for(runner_key, :auth_expired)
         .any? { |pattern| output.match?(pattern) }
     end
 
     QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
 
-    # Detects provider-level credit/quota exhaustion errors surfaced as
+    # Detects runner-level credit/quota exhaustion errors surfaced as
     # agent output. Used in the successful-exit-code path to catch cases
-    # where a provider (e.g. OpenRouter) returns a billing error as the
+    # where a runner (e.g. OpenRouter) returns a billing error as the
     # only stdout content with exit code 0.
     #
     # Real billing/quota errors are short standalone messages. If the
@@ -1048,7 +1048,7 @@ module Activities
       return false if output.blank?
       return false if output.length > QUOTA_ERROR_MAX_OUTPUT_LENGTH
 
-      ProviderSupport.aggregated_error_classification_patterns(:quota)
+      RunnerSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
     end
 
@@ -1066,7 +1066,7 @@ module Activities
       /\A\s*\^+\s*\z/
     ].freeze
 
-    def provider_model_not_found_error?(output)
+    def runner_model_not_found_error?(output)
       return false if output.blank?
 
       signal = strip_model_not_found_noise(output)
@@ -1164,29 +1164,29 @@ module Activities
       end.join("\n").strip
     end
 
-    def rate_limit_reset_at(provider_key, output)
-      ProviderSupport.rate_limit_reset_at(harness_provider_for(provider_key), output)
+    def rate_limit_reset_at(runner_key, output)
+      RunnerSupport.rate_limit_reset_at(harness_provider_for(runner_key), output)
     end
 
-    def harness_provider_for(provider_key)
-      app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
-      harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
+    def harness_provider_for(runner_key)
+      app_runner_key = RunnerSupport.runner_key_for_agent_type(runner_key)
+      harness_key = RunnerSupport.harness_runner_key_for(app_runner_key).to_sym
       AgentHarness.provider(harness_key)
     end
 
     def aggregated_abort_patterns
-      ProviderSupport.aggregated_error_classification_patterns(:abort)
+      RunnerSupport.aggregated_error_classification_patterns(:abort)
     end
 
-    def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
+    def track_harness_tokens(agent_run, runner_candidate, runner_key, user, result, execution_started_at)
       response =
         begin
-          parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+          parse_harness_response(runner_candidate, runner_key, user, result, execution_started_at)
         rescue => e
           logger.warn(
             message: "agent_execution.token_usage_parse_failed",
             agent_run_id: agent_run.id,
-            provider: provider_key.to_s,
+            runner: runner_key.to_s,
             error_class: e.class.name,
             error: e.message
           )
@@ -1207,23 +1207,23 @@ module Activities
       scope.where("created_at >= ?", execution_started_at)
     end
 
-    def parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
-      harness_provider = harness_response_provider(provider_candidate, provider_key, user)
+    def parse_harness_response(runner_candidate, runner_key, user, result, execution_started_at)
+      harness_provider = harness_response_provider(runner_candidate, runner_key, user)
       response = harness_provider.parse_container_output(
         stdout: result[:stdout],
         stderr: result[:stderr],
         exit_code: result[:exit_code],
         duration: harness_duration(execution_started_at)
       )
-      apply_runtime_model(response, provider_candidate, user)
+      apply_runtime_model(response, runner_candidate, user)
     end
 
-    def harness_response_provider(provider_candidate, provider_key, user)
-      app_provider_key = ProviderSupport.provider_key_for_agent_type(provider_key)
-      harness_key = ProviderSupport.harness_provider_key_for(app_provider_key).to_sym
+    def harness_response_provider(runner_candidate, runner_key, user)
+      app_runner_key = RunnerSupport.runner_key_for_agent_type(runner_key)
+      harness_key = RunnerSupport.harness_runner_key_for(app_runner_key).to_sym
       klass = AgentHarness.provider_class(harness_key)
-      config = harness_response_config(harness_key, provider_candidate, user)
-      # Pass a no-op executor to satisfy providers whose initializer requires
+      config = harness_response_config(harness_key, runner_candidate, user)
+      # Pass a no-op executor to satisfy runners whose initializer requires
       # one for execution. This instance is only used for parse_response, so
       # the executor is never invoked.
       klass.new(executor: NULL_EXECUTOR, config: config)
@@ -1231,8 +1231,8 @@ module Activities
 
     def preflight_provider_for(command_context)
       harness_response_provider(
-        command_context.provider_candidate,
-        command_context.provider,
+        command_context.runner_candidate,
+        command_context.runner,
         command_context.user
       )
     end
@@ -1250,36 +1250,36 @@ module Activities
       nil
     end
 
-    def provider_preflight_prompt_for(provider_key)
-      harness_provider = harness_provider_for(provider_key)
+    def runner_preflight_prompt_for(runner_key)
+      harness_provider = harness_provider_for(runner_key)
       harness_provider.class.smoke_test_contract&.fetch(:prompt, nil).presence || "Reply with exactly OK."
     rescue AgentHarness::ConfigurationError, KeyError
       "Reply with exactly OK."
     end
 
-    def log_preflight_failure(agent_run:, provider:, reason:)
+    def log_preflight_failure(agent_run:, runner:, reason:)
       logger.warn(
         message: "agent_execution.preflight_failed",
-        provider: provider,
+        runner: runner,
         agent_run_id: agent_run.id,
         reason: reason
       )
     end
 
-    def raise_preflight_failure!(agent_run:, provider:, reason:)
-      log_preflight_failure(agent_run: agent_run, provider: provider, reason: reason)
-      raise ProviderExecutionError, "Preflight check failed: #{reason}"
+    def raise_preflight_failure!(agent_run:, runner:, reason:)
+      log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
+      raise RunnerExecutionError, "Preflight check failed: #{reason}"
     end
 
-    def harness_response_config(harness_key, provider_candidate, user)
+    def harness_response_config(harness_key, runner_candidate, user)
       config = AgentHarness.build_config(harness_key)
       config.externally_sandboxed = true
-      config.model = provider_runtime_model(provider_candidate, user)
+      config.model = runner_runtime_model(runner_candidate, user)
       config
     end
 
-    def apply_runtime_model(response, provider_candidate, user)
-      model = provider_runtime_model(provider_candidate, user)
+    def apply_runtime_model(response, runner_candidate, user)
+      model = runner_runtime_model(runner_candidate, user)
       return response if model.blank? || response.model == model
 
       AgentHarness::Response.new(
@@ -1294,8 +1294,8 @@ module Activities
       )
     end
 
-    def provider_runtime_model(provider_candidate, user)
-      provider_entry_for(provider_candidate, user)&.agent_harness_provider_runtime&.model
+    def runner_runtime_model(runner_candidate, user)
+      runner_entry_for(runner_candidate, user)&.agent_harness_provider_runtime&.model
     end
 
     def harness_duration(execution_started_at)
@@ -1439,55 +1439,55 @@ module Activities
     end
 
     def build_command(command_context, prompt)
-      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
 
-      if provider_entry&.agent_harness_runtime?
-        harness_runtime_command(provider_entry, prompt)
-      elsif provider_entry&.requires_direct_outbound?
-        plan = harness_execution_plan_for(command_context.provider, prompt, provider_entry: provider_entry)
-        provider_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
-      elsif provider_entry&.api_key?
-        plan = harness_execution_plan_for(command_context.provider, prompt)
-        api_key_auth_command(provider_entry, plan.command[0..-2], prompt)
-      elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
-        plan = harness_execution_plan_for(command_context.provider, prompt)
-        subscription_auth_command(command_context.provider, plan.command[0..-2], prompt)
+      if runner_entry&.agent_harness_runtime?
+        harness_runtime_command(runner_entry, prompt)
+      elsif runner_entry&.requires_direct_outbound?
+        plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry)
+        runner_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
+      elsif runner_entry&.api_key?
+        plan = harness_execution_plan_for(command_context.runner, prompt)
+        api_key_auth_command(runner_entry, plan.command[0..-2], prompt)
+      elsif RunnerSupport.subscription_auth_unset_vars_for(command_context.runner).any?
+        plan = harness_execution_plan_for(command_context.runner, prompt)
+        subscription_auth_command(command_context.runner, plan.command[0..-2], prompt)
       else
-        plan = harness_execution_plan_for(command_context.provider, prompt)
+        plan = harness_execution_plan_for(command_context.runner, prompt)
         plan.command
       end
     end
 
-    # Builds a harness execution plan for a provider identified by its
+    # Builds a harness execution plan for a runner identified by its
     # app-level key. Delegates command construction to agent-harness so
-    # provider CLI flag semantics are owned upstream.
+    # runner CLI flag semantics are owned upstream.
     #
-    # The plan is cached per (provider_key, prompt, harness_runtime?,
+    # The plan is cached per (runner_key, prompt, harness_runtime?,
     # effective_mcp_servers) tuple so that multiple branches within
     # build_command can share the same capture without re-running the
     # harness provider. The boolean discriminator ensures calls with
-    # and without a provider_entry that has an
+    # and without a runner_entry that has an
     # agent_harness_provider_runtime are never conflated. The MCP
     # servers are included so that a later execution on the same
     # activity instance with a different MCP setup does not reuse a
     # stale plan.
-    def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
+    def harness_execution_plan_for(runner_key, prompt, runner_entry: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
+      cache_key = [ runner_key, prompt, runner_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
       options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
-      @harness_plan_cache[cache_key] = if provider_entry&.agent_harness_provider_runtime
-        Providers::HarnessExecutionPlan.call(
-          provider: provider_entry,
+      @harness_plan_cache[cache_key] = if runner_entry&.agent_harness_provider_runtime
+        Runners::HarnessExecutionPlan.call(
+          provider: runner_entry,
           prompt: prompt,
           options: options
         )
       else
-        Providers::HarnessExecutionPlan.for_provider_key(
-          provider_key: ProviderSupport.provider_key_for_agent_type(provider_key),
+        Runners::HarnessExecutionPlan.for_runner_key(
+          runner_key: RunnerSupport.runner_key_for_agent_type(runner_key),
           prompt: prompt,
           options: options
         )
@@ -1495,21 +1495,21 @@ module Activities
     end
 
     def command_env_for(command_context, prompt)
-      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
-      return {} unless provider_entry
+      runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
+      return direct_outbound_execution_plan(runner_entry, prompt).env if runner_entry&.agent_harness_runtime?
+      return {} unless runner_entry
 
       env = {}
-      env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
-      env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
+      env.merge!(runner_entry.direct_outbound_exec_env) if runner_entry.requires_direct_outbound?
+      env.merge!(api_key_command_env(runner_entry)) if runner_entry.api_key?
       env
     end
 
     def command_preparation_for(command_context, prompt)
-      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.agent_harness_runtime?
+      runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
+      return nil unless runner_entry&.agent_harness_runtime?
 
-      direct_outbound_execution_plan(provider_entry, prompt).preparation
+      direct_outbound_execution_plan(runner_entry, prompt).preparation
     end
 
     # Assembles the effective MCP server list from the agent run's
@@ -1531,24 +1531,24 @@ module Activities
       servers
     end
 
-    # Validates that the provider supports MCP before attempting execution.
-    # Raises ProviderExecutionError with a clear message when a run has MCP
-    # servers but the selected provider does not support them, allowing the
-    # fallback loop to try the next provider.
-    def validate_provider_mcp_support!(provider_key, mcp_servers)
+    # Validates that the runner supports MCP before attempting execution.
+    # Raises RunnerExecutionError with a clear message when a run has MCP
+    # servers but the selected runner does not support them, allowing the
+    # fallback loop to try the next runner.
+    def validate_runner_mcp_support!(runner_key, mcp_servers)
       return if mcp_servers.blank?
 
       harness_provider = begin
-        harness_provider_for(provider_key)
+        harness_provider_for(runner_key)
       rescue AgentHarness::ConfigurationError, KeyError
-        raise ProviderExecutionError,
-          "Provider #{provider_key} is not recognized and cannot be validated for MCP support"
+        raise RunnerExecutionError,
+          "Runner #{runner_key} is not recognized and cannot be validated for MCP support"
       end
 
       unless harness_provider.supports_mcp?
-        raise ProviderExecutionError,
-          "Provider #{provider_key} does not support MCP servers. " \
-          "Select a provider with MCP capability or remove MCP servers from this project."
+        raise RunnerExecutionError,
+          "Runner #{runner_key} does not support MCP servers. " \
+          "Select a runner with MCP capability or remove MCP servers from this project."
       end
     end
 
@@ -1563,107 +1563,107 @@ module Activities
       )
     end
 
-    # Builds an execution plan for providers that use the agent-harness
+    # Builds an execution plan for runners that use the agent-harness
     # runtime directly (e.g. opencode, copilot). MCP servers are
-    # intentionally NOT propagated here because none of the providers
+    # intentionally NOT propagated here because none of the runners
     # that route through this path currently support MCP — see
-    # validate_provider_mcp_support! which rejects them earlier. If a
-    # provider gains MCP support in the future, this method (and its
+    # validate_runner_mcp_support! which rejects them earlier. If a
+    # runner gains MCP support in the future, this method (and its
     # cache key) must be updated to include @effective_mcp_servers,
     # mirroring harness_execution_plan_for.
-    def direct_outbound_execution_plan(provider_entry, prompt)
+    def direct_outbound_execution_plan(runner_entry, prompt)
       @direct_outbound_execution_plan_cache ||= {}
-      cache_key = [ provider_entry.id, prompt ]
+      cache_key = [ runner_entry.id, prompt ]
       return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
 
-      @direct_outbound_execution_plan_cache[cache_key] = Providers::HarnessExecutionPlan.call(
-        provider: provider_entry,
+      @direct_outbound_execution_plan_cache[cache_key] = Runners::HarnessExecutionPlan.call(
+        provider: runner_entry,
         prompt: prompt,
         options: { dangerous_mode: true }
       )
     end
 
-    def provider_command_key(provider_candidate, agent_run, user = nil)
-      provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_candidate unless provider_entry
-      return "claude_code" if agent_run&.provider_id == provider_entry.id && provider_entry.provider_key == "claude" && agent_run.agent_type == "claude_code"
+    def runner_command_key(runner_candidate, agent_run, user = nil)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_candidate unless runner_entry
+      return "claude_code" if agent_run&.runner_id == runner_entry.id && runner_entry.runner_key == "claude" && agent_run.agent_type == "claude_code"
 
-      provider_entry.provider_key
+      runner_entry.runner_key
     end
 
-    def state_key_for(provider_candidate, provider, user = nil)
-      provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry.routing_key if provider_entry&.api_key?
-      return provider_entry.provider_key if provider_entry
+    def state_key_for(runner_candidate, runner, user = nil)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_entry.routing_key if runner_entry&.api_key?
+      return runner_entry.runner_key if runner_entry
 
-      canonical_provider(provider)
+      canonical_runner(runner)
     end
 
-    def provider_entry_for(provider_candidate, user)
-      return provider_candidate if provider_candidate.is_a?(Provider)
+    def runner_entry_for(runner_candidate, user)
+      return runner_candidate if runner_candidate.is_a?(Runner)
       return nil unless user
-      return nil unless Provider.routing_key?(provider_candidate)
+      return nil unless Runner.routing_key?(runner_candidate)
 
-      @provider_entry_cache ||= {}
-      cache_key = [ user.id, provider_candidate ]
-      return @provider_entry_cache[cache_key] if @provider_entry_cache.key?(cache_key)
+      @runner_entry_cache ||= {}
+      cache_key = [ user.id, runner_candidate ]
+      return @runner_entry_cache[cache_key] if @runner_entry_cache.key?(cache_key)
 
-      @provider_entry_cache[cache_key] = Provider.for_identifier(user, provider_candidate)
+      @runner_entry_cache[cache_key] = Runner.for_identifier(user, runner_candidate)
     end
 
-    def deduplicate_provider_candidates(primary_provider:, fallback_providers:, user:)
-      providers = [ primary_provider ]
-      seen = Set.new([ canonical_provider_candidate(primary_provider, user) ])
+    def deduplicate_runner_candidates(primary_runner:, fallback_runners:, user:)
+      runners = [ primary_runner ]
+      seen = Set.new([ canonical_runner_candidate(primary_runner, user) ])
 
-      Array(fallback_providers).each do |provider_candidate|
-        canonical_candidate = canonical_provider_candidate(provider_candidate, user)
+      Array(fallback_runners).each do |runner_candidate|
+        canonical_candidate = canonical_runner_candidate(runner_candidate, user)
         next if seen.include?(canonical_candidate)
 
         seen << canonical_candidate
-        providers << provider_candidate
+        runners << runner_candidate
       end
 
-      providers.select do |provider_candidate|
-        self.class.container_executable?(provider_command_key(provider_candidate, nil, user))
+      runners.select do |runner_candidate|
+        self.class.container_executable?(runner_command_key(runner_candidate, nil, user))
       end
     end
 
-    def canonical_provider_candidate(provider_candidate, user)
-      provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry.provider_key if provider_entry
+    def canonical_runner_candidate(runner_candidate, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_entry.runner_key if runner_entry
 
-      canonical_provider(provider_candidate)
+      canonical_runner(runner_candidate)
     end
 
     def load_rate_limit_fallbacks(user)
       return {} unless user
       return {} if user.new_record?
 
-      executable_keys = ProviderSupport.container_executable_provider_keys
+      executable_keys = RunnerSupport.container_executable_runner_keys
 
-      user.providers.api_key.rate_limit_fallback.for_fallback
-        .where(provider_key: executable_keys)
+      user.runners.api_key.rate_limit_fallback.for_fallback
+        .where(runner_key: executable_keys)
         .ordered
-        .group_by(&:provider_key)
+        .group_by(&:runner_key)
         .transform_values { |entries| entries.map(&:routing_key) }
     end
 
-    def insert_rate_limit_fallbacks!(providers:, index:, provider_candidate:, provider:, agent_run:)
-      fallback_candidates = rate_limit_fallback_candidates_for(provider_candidate, provider, providers)
+    def insert_rate_limit_fallbacks!(runners:, index:, runner_candidate:, runner:, agent_run:)
+      fallback_candidates = rate_limit_fallback_candidates_for(runner_candidate, runner, runners)
       return if fallback_candidates.empty?
 
       logger.info(
         message: "agent_execution.rate_limit_fallback_available",
-        provider: canonical_provider(provider),
+        runner: canonical_runner(runner),
         agent_run_id: agent_run.id,
-        fallback_providers: fallback_candidates
+        fallback_runners: fallback_candidates
       )
 
-      providers.insert(index + 1, *fallback_candidates)
+      runners.insert(index + 1, *fallback_candidates)
     end
 
-    def rate_limit_fallback_candidates_for(provider_candidate, provider, providers)
-      candidates = peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+    def rate_limit_fallback_candidates_for(runner_candidate, runner, runners)
+      candidates = peek_rate_limit_fallback_candidates(runner_candidate, runner, runners)
       @inserted_rate_limit_fallbacks.merge(candidates)
       candidates
     end
@@ -1671,90 +1671,90 @@ module Activities
     # Returns eligible rate-limit fallback candidates without marking them as
     # inserted. Use this when you need to check whether fallbacks exist (e.g.,
     # for container recovery decisions) without consuming them.
-    def peek_rate_limit_fallback_candidates(provider_candidate, provider, providers)
+    def peek_rate_limit_fallback_candidates(runner_candidate, runner, runners)
       @inserted_rate_limit_fallbacks ||= Set.new
 
-      canonical_key = canonical_provider(provider)
+      canonical_key = canonical_runner(runner)
       configured = Array(@rate_limit_fallbacks&.fetch(canonical_key, []))
       return [] if configured.empty?
 
-      already_scheduled = providers.to_set
-      current_provider = provider_candidate.to_s
+      already_scheduled = runners.to_set
+      current_runner = runner_candidate.to_s
 
       configured.reject do |candidate|
-        candidate == current_provider ||
+        candidate == current_runner ||
           @inserted_rate_limit_fallbacks.include?(candidate) ||
           already_scheduled.include?(candidate)
       end
     end
 
-    def simulated_provider_attempt_count(agent_run, providers, user)
+    def simulated_runner_attempt_count(agent_run, runners, user)
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user)
       @inserted_rate_limit_fallbacks = Set.new
-      simulated_providers = providers.dup
+      simulated_runners = runners.dup
 
       index = 0
-      while index < simulated_providers.length
-        provider_candidate = simulated_providers[index]
-        provider = provider_command_key(provider_candidate, agent_run, user)
-        fallback_candidates = rate_limit_fallback_candidates_for(provider_candidate, provider, simulated_providers)
-        simulated_providers.insert(index + 1, *fallback_candidates) if fallback_candidates.any?
+      while index < simulated_runners.length
+        runner_candidate = simulated_runners[index]
+        runner = runner_command_key(runner_candidate, agent_run, user)
+        fallback_candidates = rate_limit_fallback_candidates_for(runner_candidate, runner, simulated_runners)
+        simulated_runners.insert(index + 1, *fallback_candidates) if fallback_candidates.any?
         index += 1
       end
 
-      simulated_providers.size
+      simulated_runners.size
     end
 
     # Returns a per-entry identifier suitable for persisting in
-    # providers_attempted and final_provider. Uses the routing key for
+    # runners_attempted and final_runner. Uses the routing key for
     # API-key-backed entries so that multiple entries sharing the same
-    # provider_key remain distinguishable; uses provider_key for
+    # runner_key remain distinguishable; uses runner_key for
     # subscription entries so the value stays compatible with
-    # matches_identifier?, effective_provider_sql, and dashboard
-    # aggregations (which group by provider key, not agent_type).
-    def provider_attempt_label(provider_candidate, agent_run, user)
-      provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry.routing_key if provider_entry&.api_key?
-      return provider_entry.provider_key if provider_entry
-      provider_command_key(provider_candidate, agent_run, user)
+    # matches_identifier?, effective_runner_sql, and dashboard
+    # aggregations (which group by runner key, not agent_type).
+    def runner_attempt_label(runner_candidate, agent_run, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_entry.routing_key if runner_entry&.api_key?
+      return runner_entry.runner_key if runner_entry
+      runner_command_key(runner_candidate, agent_run, user)
     end
 
-    def provider_attempt_labels(providers, agent_run, user)
-      providers.map do |provider_candidate|
-        provider_entry = provider_entry_for(provider_candidate, user)
-        if provider_entry&.display_name
-          provider_entry.display_name
-        elsif Provider.routing_key?(provider_candidate)
-          "Deleted provider entry"
+    def runner_attempt_labels(runners, agent_run, user)
+      runners.map do |runner_candidate|
+        runner_entry = runner_entry_for(runner_candidate, user)
+        if runner_entry&.display_name
+          runner_entry.display_name
+        elsif Runner.routing_key?(runner_candidate)
+          "Deleted runner entry"
         else
-          provider_command_key(provider_candidate, agent_run, user)
+          runner_command_key(runner_candidate, agent_run, user)
         end
       end
     end
 
     class << self
-      def provider_attempt_count_for_run(agent_run:, user_settings:)
+      def runner_attempt_count_for_run(agent_run:, user_settings:)
         return 1 unless user_settings
 
         activity = new
-        providers = activity.send(:build_provider_order, agent_run, user_settings)
-        count = activity.send(:simulated_provider_attempt_count, agent_run, providers, user_settings.user)
+        runners = activity.send(:build_runner_order, agent_run, user_settings)
+        count = activity.send(:simulated_runner_attempt_count, agent_run, runners, user_settings.user)
 
         [ count, 1 ].max
       end
     end
 
-    # Wraps a provider command so that, when subscription auth is active,
+    # Wraps a runner command so that, when subscription auth is active,
     # proxy-related env vars are unset and the CLI talks directly to the
-    # provider. The prompt is passed as a positional parameter ($1) to
+    # runner. The prompt is passed as a positional parameter ($1) to
     # preserve multi-line content from augment_prompt_for_goal. The
-    # unset-var list is shared with Providers::TestAgent via
-    # ProviderSupport.subscription_auth_unset_vars_for.
-    def subscription_auth_command(provider, command_prefix, prompt)
+    # unset-var list is shared with Runners::TestAgent via
+    # RunnerSupport.subscription_auth_unset_vars_for.
+    def subscription_auth_command(runner, command_prefix, prompt)
       base = command_prefix.shelljoin
-      env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
-      unset_flags = subscription_auth_unset_vars_for(provider)
-      if provider == "copilot"
+      env_flag = "PAID_#{runner.upcase}_SUBSCRIPTION_AUTH"
+      unset_flags = subscription_auth_unset_vars_for(runner)
+      if runner == "copilot"
         unset_flags = unset_flags.reject { |var| var == "COPILOT_GITHUB_TOKEN" }
       end
       unset_str = unset_flags.map { |var| "-u #{var}" }.join(" ")
@@ -1763,28 +1763,28 @@ module Activities
       [ "sh", "-c", script, "--", prompt ]
     end
 
-    def api_key_auth_command(provider_entry, command_prefix, prompt)
+    def api_key_auth_command(runner_entry, command_prefix, prompt)
       base = command_prefix.shelljoin
-      env_assignments = api_key_env_var_names_for(provider_entry)
+      env_assignments = api_key_env_var_names_for(runner_entry)
         .map { |var| %(#{var}="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN") }
         .join(" ")
-      header_assignments = api_key_proxy_header_assignments_for(provider_entry)
+      header_assignments = api_key_proxy_header_assignments_for(runner_entry)
         .join(" ")
 
       script = "env #{header_assignments} #{env_assignments} #{base} \"$1\""
       [ "sh", "-c", script, "--", prompt ]
     end
 
-    def api_key_command_env(provider_entry)
-      { "PAID_PROVIDER_ID" => provider_entry.id.to_s }
+    def api_key_command_env(runner_entry)
+      { "PAID_PROVIDER_ID" => runner_entry.id.to_s }
     end
 
-    def api_key_env_var_names_for(provider_entry)
-      harness_provider_for(provider_entry.provider_key).api_key_env_var_names
+    def api_key_env_var_names_for(runner_entry)
+      harness_provider_for(runner_entry.runner_key).api_key_env_var_names
     end
 
-    def api_key_proxy_header_assignments_for(provider_entry)
-      case provider_entry.provider_key
+    def api_key_proxy_header_assignments_for(runner_entry)
+      case runner_entry.runner_key
       when "gemini"
         [
           %(GOOGLE_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"),
@@ -1804,17 +1804,17 @@ module Activities
       end
     end
 
-    def subscription_auth_unset_vars_for(provider)
-      ProviderSupport.subscription_auth_unset_vars_for(provider)
+    def subscription_auth_unset_vars_for(runner)
+      RunnerSupport.subscription_auth_unset_vars_for(runner)
     end
 
     # Wraps the harness execution plan command with `env -u` to strip
     # proxy-specific headers inherited from container startup so they
-    # are not forwarded to the real provider API.
-    def harness_runtime_command(provider_entry, prompt)
-      plan = direct_outbound_execution_plan(provider_entry, prompt)
-      unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider_entry.provider_key)
-      ProviderSupport.command_with_unset_env(plan.command, unset_vars)
+    # are not forwarded to the real runner API.
+    def harness_runtime_command(runner_entry, prompt)
+      plan = direct_outbound_execution_plan(runner_entry, prompt)
+      unset_vars = RunnerSupport.harness_runtime_unset_vars_for(runner_entry.runner_key)
+      RunnerSupport.command_with_unset_env(plan.command, unset_vars)
     end
 
     def capture_head_sha(container_service, agent_run)
@@ -1964,10 +1964,10 @@ module Activities
       end
     end
 
-    def recover_container_for_fallback!(agent_run:, provider:, error_type:, error_message:, fallback_remaining:)
+    def recover_container_for_fallback!(agent_run:, runner:, error_type:, error_message:, fallback_remaining:)
       if Array(fallback_remaining).blank?
         logger.error(
-          message: "agent_execution.container_unavailable_breaking_provider_loop",
+          message: "agent_execution.container_unavailable_breaking_runner_loop",
           agent_run_id: agent_run.id,
           container_id: agent_run.container_id,
           error: error_message,
@@ -1978,16 +1978,16 @@ module Activities
       end
 
       reprovision_container_for_fallback!(agent_run)
-      logger.info(
+        logger.info(
         message: "agent_execution.container_reprovisioned_for_fallback",
         agent_run_id: agent_run.id,
-        provider: provider,
-        next_providers: Array(fallback_remaining).take(3)
+        runner: runner,
+        next_runners: Array(fallback_remaining).take(3)
       )
       true
     rescue StandardError => e
       logger.error(
-        message: "agent_execution.container_unavailable_breaking_provider_loop",
+        message: "agent_execution.container_unavailable_breaking_runner_loop",
         agent_run_id: agent_run.id,
         container_id: agent_run.container_id,
         error: error_message,
@@ -2040,7 +2040,7 @@ module Activities
 
     def restore_repo_for_fallback!(git_ops, agent_run)
       branch_name = agent_run.branch_name
-      raise ProviderExecutionError, "Cannot restore repo without branch name" if branch_name.blank?
+      raise RunnerExecutionError, "Cannot restore repo without branch name" if branch_name.blank?
 
       git_ops.clone_and_restore_branch(
         branch_name: branch_name,
@@ -2077,7 +2077,7 @@ module Activities
     end
 
     def timeout_attempt_diagnostics(timeout_error:, timeout_type:, heartbeat:, effective_timeout:, startup_timeout:, effective_idle_timeout:)
-      provider_idle_timeout = heartbeat&.idle_timeout_for(effective_idle_timeout)
+      runner_idle_timeout = heartbeat&.idle_timeout_for(effective_idle_timeout)
       diagnostics = timeout_error.diagnostics.dup
       diagnostics["output_received"] = timeout_type != "startup" if !diagnostics.key?("output_received") && timeout_type.present?
 
@@ -2086,7 +2086,7 @@ module Activities
         "effective_timeout_seconds" => effective_timeout,
         "startup_timeout_seconds" => startup_timeout,
         "configured_idle_timeout_seconds" => effective_idle_timeout,
-        "idle_timeout_seconds" => provider_idle_timeout || effective_idle_timeout,
+        "idle_timeout_seconds" => runner_idle_timeout || effective_idle_timeout,
         "heartbeat_supported" => heartbeat&.available? || false,
         "heartbeat_path_configured" => heartbeat&.heartbeat_path.present? || false
       ).compact
@@ -2632,27 +2632,27 @@ module Activities
       repo
     end
 
-    # Writes the given provider candidate's co-author trailer into the
+    # Writes the given runner candidate's co-author trailer into the
     # container so the commit-msg hook uses it for subsequent intermediate
-    # commits. When no provider record can be resolved from the candidate
+    # commits. When no runner record can be resolved from the candidate
     # (e.g. non-routing-key agent_type), the file is cleared so the hook
     # falls back to a no-op rather than silently using a stale trailer.
-    def refresh_co_author_trailer(container_service, agent_run, provider_candidate, user)
-      provider_record = resolve_provider_record_for_candidate(provider_candidate, user)
+    def refresh_co_author_trailer(container_service, agent_run, runner_candidate, user)
+      runner_record = resolve_runner_record_for_candidate(runner_candidate, user)
       Containers::GitOperations
         .new(container_service: container_service, agent_run: agent_run)
-        .write_co_author_trailer(provider_record)
+        .write_co_author_trailer(runner_record)
     end
 
-    def resolve_provider_record_for_candidate(provider_candidate, user)
-      provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry if provider_entry
+    def resolve_runner_record_for_candidate(runner_candidate, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_entry if runner_entry
       return nil unless user
-      return nil if provider_candidate.blank?
+      return nil if runner_candidate.blank?
 
-      identifier = provider_candidate.to_s
-      Provider.for_identifier(user, identifier) ||
-        Provider.for_identifier(user, ProviderSupport.provider_key_for_agent_type(identifier))
+      identifier = runner_candidate.to_s
+      Runner.for_identifier(user, identifier) ||
+        Runner.for_identifier(user, RunnerSupport.runner_key_for_agent_type(identifier))
     end
 
     def reconnect_container(agent_run)

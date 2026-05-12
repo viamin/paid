@@ -39,14 +39,14 @@ RSpec.describe KnowledgeRun do
   end
 
   describe "#effective_provider" do
-    it "prefers final_provider when present" do
-      knowledge_run = build(:knowledge_run, final_provider: "openai", provider_attempts: [ { "provider" => "claude" } ])
+    it "prefers final_runner when present" do
+      knowledge_run = build(:knowledge_run, final_runner: "openai", runner_attempts: [ { "provider" => "claude" } ])
 
       expect(knowledge_run.effective_provider).to eq("openai")
     end
 
     it "falls back to the last attempted provider" do
-      knowledge_run = build(:knowledge_run, final_provider: nil, provider_attempts: [ { "provider" => "claude" }, { "provider" => "openai" } ])
+      knowledge_run = build(:knowledge_run, final_runner: nil, runner_attempts: [ { "provider" => "claude" }, { "provider" => "openai" } ])
 
       expect(knowledge_run.effective_provider).to eq("openai")
     end
