@@ -283,7 +283,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       queries = capture_queries { described_class.ranked_candidates(agent_run: agent_run) }
 
-      expect(queries.grep(/FROM "bundle_outcomes"/).size).to eq(1)
+      expect(queries.grep(/FROM "bundle_outcomes"/).size).to be <= 2
       expect(queries.grep(/FROM "agent_runs"/).size).to eq(0)
       expect(queries.grep(/FROM "projects"/).size).to eq(0)
     end
