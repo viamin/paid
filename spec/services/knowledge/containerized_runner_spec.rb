@@ -81,6 +81,20 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     end
   end
 
+  describe "DATABASE_YML_STUB" do
+    it "is valid YAML" do
+      expect { YAML.safe_load(described_class::DATABASE_YML_STUB) }.not_to raise_error
+    end
+
+    it "provides sqlite3 in-memory config for all standard environments" do
+      config = YAML.safe_load(described_class::DATABASE_YML_STUB)
+      expect(config.keys).to contain_exactly("test", "development", "production")
+      config.each_value do |env_config|
+        expect(env_config).to eq({ "adapter" => "sqlite3", "database" => ":memory:" })
+      end
+    end
+  end
+
   describe "#run" do
     let(:runner_result) do
       {
@@ -271,6 +285,51 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
         Knowledge::ContainerizedRunner::ContainerError,
         /Failed to set workspace permissions/
       )
+    end
+
+    it "writes database.yml stub before locking workspace permissions" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c", a_string_including("config/database.yml") ],
+        user: "root"
+      )
+    end
+
+    it "guards stub write behind file-existence and symlink checks" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c", a_string_including("if [ -f '/workspace/config/database.yml' ] && [ ! -L '/workspace/config/database.yml' ]") ],
+        user: "root"
+      )
+    end
+
+    it "raises ContainerError when database.yml stub write fails" do
+      allow(mock_container).to receive(:exec)
+        .with([ "sh", "-c", a_string_including("database.yml") ], user: "root")
+        .and_return([ [], [ "write error" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to write database.yml stub/
+      )
+    end
+
+    it "writes database.yml stub between mkdir and chmod" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root"
+      ).ordered
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c", a_string_including("database.yml") ], user: "root"
+      ).ordered
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "a=rX", "/workspace" ], user: "root"
+      ).ordered
     end
 
     it "wraps Docker errors from seed_workspace! as ContainerError" do
