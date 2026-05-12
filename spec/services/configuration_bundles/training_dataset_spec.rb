@@ -124,7 +124,8 @@ RSpec.describe ConfigurationBundles::TrainingDataset do
     end
 
     it "skips outcomes with missing bundle definitions" do
-      bundle = create(:configuration_bundle, account: project.account, definition: nil)
+      bundle = create(:configuration_bundle, account: project.account)
+      bundle.update_column(:definition, [])
       run = create(:agent_run,
         :completed,
         project: project,
