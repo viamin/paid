@@ -161,8 +161,21 @@ module ConfigurationBundles
         return [ definition, computed_fingerprint ]
       end
 
-      fallback_definition = bundle_definition(selection&.variant_by_experiment_id)
+      fallback_definition = rebuild_bundle_definition(selection)
       [ fallback_definition, bundle_fingerprint(fallback_definition) ]
+    end
+
+    def rebuild_bundle_definition(selection)
+      bundle_definition(selection&.variant_by_experiment_id)
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_fallback_rebuild_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+
+      bundle_definition
     end
 
     def persist_optimizer_assignments(selection)
@@ -241,6 +254,14 @@ module ConfigurationBundles
         agent_run_id: agent_run.id,
         optimizer_fingerprint: fingerprint,
         computed_fingerprint: computed_fingerprint
+      )
+      false
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_payload_validation_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
       )
       false
     end

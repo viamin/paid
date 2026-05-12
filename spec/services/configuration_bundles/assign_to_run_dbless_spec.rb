@@ -209,6 +209,24 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
       service.call
     end
+
+    it "rebuilds the bundle payload from scratch when optimizer-selected variants cannot be reused" do
+      selection = optimizer_selection(
+        definition: selection_definition,
+        variant_by_experiment_id: { 999 => selected_variant }
+      )
+      fallback_definition = experiment_definition_for(selected_variant.parsed_value)
+
+      allow(service).to receive(:optimizer_selection).and_return(selection)
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_raise(KeyError, "missing experiment")
+      allow(service).to receive(:bundle_definition).with(no_args).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
   end
 
   describe "#find_or_create_bundle" do

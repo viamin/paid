@@ -302,6 +302,26 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
+  it "rebuilds the bundle definition from scratch when the optimizer-selected variants cannot be reused" do
+    selection = optimizer_selection(
+      definition: optimizer_definition_without_experiments,
+      variant_by_experiment_id: { 999 => variant }
+    )
+    service = described_class.new(agent_run: agent_run)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+    allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_raise(KeyError, "missing experiment")
+    allow(service).to receive(:bundle_definition).with(no_args).and_call_original
+
+    bundle = service.call
+
+    expect(bundle.fingerprint).to eq(service.send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_id" => experiment.id,
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
   it "persists the fingerprint for the resolved assignment when a run already has an experiment assignment" do
     challenger = create(:configuration_experiment_variant,
       configuration_experiment: experiment,
