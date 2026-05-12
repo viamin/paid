@@ -1,0 +1,84 @@
+<%= turbo_frame_tag Knowledge::ContextIntakeController::WIZARD_FRAME_ID do %>
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-4 sm:px-6">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm font-medium text-gray-700">
+            Question <%= current_question_index + 1 %> of <%= progress[:total] %>
+          </p>
+          <p class="mt-1 text-sm text-gray-500">
+            <%= progress[:answered] %> answered · <%= progress[:percentage] %>% complete
+          </p>
+        </div>
+        <p class="text-sm font-medium text-gray-500"><%= current_question[:section_title] %></p>
+      </div>
+      <div class="mt-3 h-2 w-full rounded-full bg-gray-200">
+        <div class="h-2 rounded-full bg-indigo-600 transition-all duration-300" style="width: <%= progress[:percentage] %>%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:p-6">
+      <% if wizard_error.present? %>
+        <div class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <%= wizard_error %>
+        </div>
+      <% end %>
+
+      <%= form_with url: project_context_intake_path(project),
+            method: :patch,
+            data: { turbo_frame: Knowledge::ContextIntakeController::WIZARD_FRAME_ID } do |f| %>
+        <%= f.hidden_field :question_key, value: current_question[:key] %>
+
+        <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600"><%= current_question[:section_title] %></p>
+        <label class="mt-2 block text-lg font-medium text-gray-900" for="answer_text">
+          <%= current_question[:text] %>
+          <% if current_question[:required] %>
+            <span class="ml-1 text-red-500">*</span>
+          <% end %>
+        </label>
+
+        <% unless current_question[:required] %>
+          <p class="mt-1 text-sm text-gray-500">Optional. Leave blank or skip if this does not apply.</p>
+        <% end %>
+
+        <%= f.text_area :answer_text,
+              value: current_response&.answer_text,
+              rows: 5,
+              placeholder: "Enter your answer...",
+              class: "mt-4 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <div>
+            <% if current_response&.answered? %>
+              <span class="text-xs font-medium text-green-600">Saved</span>
+            <% end %>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <% if previous_question.present? %>
+              <button type="submit" name="navigation_action" value="previous"
+                      class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer">
+                Previous
+              </button>
+            <% end %>
+
+            <% unless current_question[:required] %>
+              <button type="submit" name="navigation_action"
+                      value="<%= next_question.present? ? 'skip_next' : 'skip_finish' %>"
+                      class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer">
+                <%= next_question.present? ? "Skip and Next" : "Skip and Finish" %>
+              </button>
+            <% end %>
+
+            <button type="submit" name="navigation_action" value="<%= next_question.present? ? 'next' : 'finish' %>"
+                    class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer">
+              <%= next_question.present? ? "Next" : "Finish" %>
+            </button>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+<% end %>

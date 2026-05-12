@@ -1,87 +1,11 @@
 <div class="mt-6">
-  <div class="overflow-hidden rounded-lg bg-white shadow">
-    <div class="px-4 py-4 sm:px-6">
-      <div class="flex items-center justify-between">
-        <p class="text-sm font-medium text-gray-700">
-          Progress: <%= progress[:answered] %> / <%= progress[:total] %> questions answered
-        </p>
-        <p class="text-sm text-gray-500"><%= progress[:percentage] %>%</p>
-      </div>
-      <div class="mt-2 w-full bg-gray-200 rounded-full h-2">
-        <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: <%= progress[:percentage] %>%"></div>
-      </div>
-    </div>
-  </div>
-
-  <%# Section navigation %>
-  <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-    <nav class="flex overflow-x-auto px-4 py-3 sm:px-6" aria-label="Sections">
-      <% sections.each do |section| %>
-        <%= link_to project_context_intake_path(project, section: section[:key]),
-              class: "mr-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors #{section[:key] == active_section_key ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}" do %>
-          <%= section[:title] %>
-        <% end %>
-      <% end %>
-    </nav>
-  </div>
-
-  <%# Questions per section %>
-  <% sections.each do |section| %>
-    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
-         data-section="<%= section[:key] %>"
-         style="<%= section[:key] == active_section_key ? '' : 'display: none;' %>">
-      <div class="px-4 py-5 sm:p-6">
-        <h3 class="text-lg font-medium text-gray-900 mb-4"><%= section[:title] %></h3>
-
-        <% section[:questions].each do |question| %>
-          <% response = responses[question[:key]] %>
-          <div class="mb-6 last:mb-0">
-            <%= form_with url: project_context_intake_path(project),
-                          method: :patch,
-                          data: { turbo: false } do |f| %>
-              <%= f.hidden_field :question_key, value: question[:key] %>
-
-              <label class="block text-sm font-medium text-gray-700 mb-1">
-                <%= question[:text] %>
-                <% if question[:required] %>
-                  <span class="text-red-500 ml-1">*</span>
-                <% end %>
-              </label>
-
-              <%= f.text_area :answer_text,
-                    value: response&.answer_text,
-                    rows: 3,
-                    placeholder: "Enter your answer...",
-                    class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
-
-              <div class="mt-2 flex items-center gap-3">
-                <%= f.submit "Save",
-                      class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
-
-                <% unless question[:required] %>
-                  <button type="submit" name="skipped" value="true"
-                          class="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer">
-                    Skip
-                  </button>
-                <% end %>
-
-                <% if response&.answered? %>
-                  <span class="text-xs text-green-600 font-medium">Saved</span>
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
-    </div>
-  <% end %>
-
-  <%# Complete button %>
-  <div class="mt-6 flex justify-end">
-    <%= button_to "Complete & Save Business Context",
-          complete_project_context_intake_path(project),
-          method: :post,
-          class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 cursor-pointer",
-          data: { turbo_confirm: "Are you sure you want to complete the questionnaire? You can start a new one later to update." } %>
-  </div>
+  <%= render "wizard_frame",
+    project: project,
+    current_question: current_question,
+    current_question_index: current_question_index,
+    current_response: current_response,
+    previous_question: previous_question,
+    next_question: next_question,
+    progress: progress,
+    wizard_error: wizard_error %>
 </div>

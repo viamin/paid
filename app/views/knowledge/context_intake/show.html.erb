@@ -18,7 +18,15 @@
   <% if @session.nil? %>
     <%= render "no_session", project: @project %>
   <% elsif @session.in_progress? %>
-    <%= render "wizard", progress: @progress, sections: @sections, project: @project, active_section_key: @active_section_key, responses: @responses %>
+    <%= render "wizard",
+      project: @project,
+      current_question: @current_question,
+      current_question_index: @current_question_index,
+      current_response: @current_response,
+      previous_question: @previous_question,
+      next_question: @next_question,
+      progress: @progress,
+      wizard_error: @wizard_error %>
   <% else %>
     <%= render "summary", session: @session, project: @project %>
   <% end %>
