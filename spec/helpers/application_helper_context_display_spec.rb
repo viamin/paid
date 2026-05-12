@@ -2,10 +2,18 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationHelper do
+RSpec.describe ApplicationHelper, :no_db do
   describe "#issue_label_badge_classes" do
+    def priority_label_project(labels = {})
+      Struct.new(:priority_labels, keyword_init: true) do
+        def priority_label_for(tier)
+          Project::DEFAULT_PRIORITY_LABELS.merge(priority_labels)[tier.to_s]
+        end
+      end.new(priority_labels: labels)
+    end
+
     it "uses GitHub-like styling for default priority labels" do
-      project = build(:project)
+      project = priority_label_project
 
       expect(helper.issue_label_badge_classes(project, "P0")).to include("bg-red-700 text-red-50")
       expect(helper.issue_label_badge_classes(project, "P1")).to include("bg-red-100 text-red-800")
@@ -14,7 +22,7 @@ RSpec.describe ApplicationHelper do
     end
 
     it "uses GitHub-like styling for configured priority labels only" do
-      project = build(:project, priority_labels: { "P1" => "urgent", "P2" => "high-touch", "P3" => "later" })
+      project = priority_label_project("P1" => "urgent", "P2" => "high-touch", "P3" => "later")
 
       expect(helper.issue_label_badge_classes(project, "urgent")).to include("bg-red-100 text-red-800")
       expect(helper.issue_label_badge_classes(project, "high-touch")).to include("bg-orange-100 text-orange-800")
