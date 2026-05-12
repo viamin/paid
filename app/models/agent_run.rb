@@ -595,18 +595,23 @@ class AgentRun < ApplicationRecord
   end
 
   def self.stale_running_condition_sql(now: Time.current)
+    default_timeout = default_stale_running_timeout
+    cutoffs_by_goal = stale_running_cutoffs_by_goal(now: now,
+      timeouts_by_goal: stale_running_timeouts_by_goal,
+      default_timeout: default_timeout)
+
     known_goal_clauses = GOALS.map do |goal|
       sanitize_sql_array([
         "(goal = ? AND started_at < ?)",
         goal,
-        stale_running_cutoff(goal: goal, now: now)
+        cutoffs_by_goal.fetch(goal)
       ])
     end
 
     known_goals_sql = GOALS.map { |goal| connection.quote(goal) }.join(", ")
     fallback_clause = sanitize_sql_array([
       "((goal IS NULL OR goal NOT IN (#{known_goals_sql})) AND started_at < ?)",
-      stale_running_cutoff(now: now)
+      now - default_timeout
     ])
 
     "(#{(known_goal_clauses << fallback_clause).join(' OR ')})"
@@ -634,6 +639,12 @@ class AgentRun < ApplicationRecord
 
     GOALS.index_with do |goal|
       adaptive_stale_running_timeout(healthy_runtime_stats[goal])
+    end
+  end
+
+  def self.stale_running_cutoffs_by_goal(now:, timeouts_by_goal:, default_timeout:)
+    GOALS.index_with do |goal|
+      now - timeouts_by_goal.fetch(goal, default_timeout)
     end
   end
 
