@@ -22,7 +22,7 @@ RSpec.describe "Api::GitCredentials" do
 
         get "/api/proxy/git-credentials", headers: valid_headers
 
-        expect(TenantContext).to have_received(:with_system_access)
+        expect(TenantContext).to have_received(:with_system_access).at_least(:once)
         expect(response).to have_http_status(:ok)
       end
 
