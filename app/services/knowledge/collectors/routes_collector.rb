@@ -32,6 +32,8 @@ module Knowledge
         /no such database/i,
         /database .* does not exist/i,
         /database adapter.*(?:not found|not loaded)/i,
+        /Error loading the .+ Active Record adapter/,
+        /is not part of the bundle\. Add it to your Gemfile/,
         /no such table/i
       ].freeze
 
