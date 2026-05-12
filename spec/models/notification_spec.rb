@@ -126,4 +126,23 @@ RSpec.describe Notification do
       end
     end
   end
+
+  describe "#active?" do
+    let(:account) { create(:account) }
+
+    it "returns true when neither dismissed nor resolved" do
+      notification = create(:notification, account: account)
+      expect(notification).to be_active
+    end
+
+    it "returns false when dismissed" do
+      notification = create(:notification, :dismissed, account: account)
+      expect(notification).not_to be_active
+    end
+
+    it "returns false when resolved" do
+      notification = create(:notification, :resolved, account: account)
+      expect(notification).not_to be_active
+    end
+  end
 end
