@@ -30,6 +30,7 @@ module Knowledge
       authorize @project, :update?
 
       save_current_response!
+      @session.reload
 
       if finish_navigation?
         complete_session!
@@ -102,7 +103,7 @@ module Knowledge
       ContextIntake::SaveResponse.call(
         session: @session,
         question_key: params[:question_key],
-        answer_text: params[:answer_text],
+        answer_text: normalized_answer_text,
         skipped: skip_navigation?
       )
     end
@@ -162,7 +163,7 @@ module Knowledge
 
     def validate_required_answer!
       return unless answer_required_for_navigation?
-      return if params[:answer_text].present?
+      return if normalized_answer_text.present?
 
       raise ActiveRecord::RecordInvalid.new(@session),
         "Please answer this required question before continuing."
@@ -187,7 +188,7 @@ module Knowledge
     end
 
     def submitted_answer_text_for(target_question_key)
-      params[:answer_text] if target_question_key == params[:question_key]
+      normalized_answer_text if target_question_key == params[:question_key]
     end
 
     def first_unanswered_required_question_key
@@ -201,6 +202,13 @@ module Knowledge
 
     def wizard_state
       @wizard_state ||= ContextIntake::WizardState.new(responses: @responses)
+    end
+
+    def normalized_answer_text
+      answer_text = params[:answer_text].to_s
+      return if answer_text.strip.empty?
+
+      answer_text
     end
 
     def abort_if_in_progress!
