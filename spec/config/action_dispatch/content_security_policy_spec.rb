@@ -17,7 +17,7 @@ RSpec.describe ActionDispatch::ContentSecurityPolicy, :no_db do
 
     expect(nonce).to be_present
     expect(request.content_security_policy_nonce).to eq(nonce)
-    expect(header).to include("script-src 'self' https: 'nonce-#{nonce}'")
+    expect(header).to include("script-src 'self' 'nonce-#{nonce}'")
     expect(header).to include("object-src 'none'")
     expect(header).to include("style-src 'self' https: 'unsafe-inline'")
     expect(layout).to include(%(<script nonce="<%= content_security_policy_nonce %>">))
