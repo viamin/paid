@@ -1,9 +1,9 @@
 <%
-require_relative "./worktree_database_names"
+require File.expand_path("config/worktree_database_names", Dir.pwd)
 
-development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name(app_root: __dir__)
-development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name(app_root: __dir__)
-test_database = Paid::WorktreeDatabaseNames.test_name(app_root: __dir__)
+development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name
+development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name
+test_database = Paid::WorktreeDatabaseNames.test_name
 %>
 
 # PostgreSQL. Versions 9.3 and up are supported.

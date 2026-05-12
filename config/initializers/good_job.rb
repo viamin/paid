@@ -179,6 +179,11 @@ Rails.application.configure do
       cron: "0 3 * * 2",
       class: "KnowledgeEvolutionJob",
       description: "Analyze knowledge gaps and recommend collector improvements (weekly)"
+    },
+    agent_run_pattern_detector: {
+      cron: "*/15 * * * *",
+      class: "AgentRunPatternDetectorJob",
+      description: "Detect goal-level failure patterns in agent runs and notify"
     }
   }
 end

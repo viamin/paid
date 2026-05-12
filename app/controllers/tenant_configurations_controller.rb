@@ -81,8 +81,8 @@ class TenantConfigurationsController < ApplicationController
     attrs = params.require(:tenant_setting).permit(
       :max_concurrent_runs, :max_projects, :max_users, :max_tokens_per_run, :max_monthly_cost_cents,
       :self_repo_full_name,
-      allowed_provider_keys: [],
-      provider_preferences: [
+      allowed_runner_keys: [],
+      runner_preferences: [
         api_key_ids: RunnerSupport.api_service_types.keys,
         model_preferences: RunnerSupport.supported_runner_keys
       ],

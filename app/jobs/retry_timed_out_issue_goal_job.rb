@@ -28,13 +28,14 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         next unless locked_run && eligible_for_retry?(locked_run)
 
         previous_retries = count_previous_retries(locked_run)
+        retry_attempt = previous_retries + 1
         if previous_retries >= MAX_RETRIES
           locked_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} retries)")
           log_retry_decision(
             agent_run: locked_run,
             status: "noop",
-            signals: { previous_retries: previous_retries, max_retries: MAX_RETRIES },
-            result: { reason: "retry_limit_reached" }
+            signals: { previous_retries: previous_retries, retry_attempt: retry_attempt, max_retries: MAX_RETRIES },
+            result: { reason: "retry_limit_reached", retry_attempt: retry_attempt }
           )
 
           Rails.logger.info(
@@ -66,8 +67,8 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         )
         locked_run.retry!(
           decision_point: "timeout_auto_retry",
-          signals: { previous_retries: previous_retries, max_retries: MAX_RETRIES },
-          result: { new_agent_run_id: created.id }
+          signals: { previous_retries: previous_retries, retry_attempt: retry_attempt, max_retries: MAX_RETRIES },
+          result: { new_agent_run_id: created.id, retry_attempt: retry_attempt }
         )
         created
       end
@@ -97,10 +98,16 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       # the exception so unexpected unique violations aren't silently hidden.
       raise unless existing_run
 
+      previous_retries = count_previous_retries(agent_run)
+      retry_attempt = previous_retries + 1
       agent_run.retry!(
         decision_point: "timeout_auto_retry",
-        signals: { max_retries: MAX_RETRIES },
-        result: { existing_agent_run_id: existing_run.id, reason: "existing_active_run" }
+        signals: {
+          previous_retries: previous_retries,
+          retry_attempt: retry_attempt,
+          max_retries: MAX_RETRIES
+        },
+        result: { existing_agent_run_id: existing_run.id, reason: "existing_active_run", retry_attempt: retry_attempt }
       )
 
       Rails.logger.info(

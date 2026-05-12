@@ -53,12 +53,7 @@ module ConfigurationBundles
     end
 
     def normalized_mcp_servers
-      servers = Array(agent_run.mcp_server_snapshot).filter_map do |snapshot|
-        next unless snapshot.is_a?(Hash)
-
-        canonicalize(snapshot)
-      end
-      servers = servers.sort_by { |snapshot| JSON.generate(snapshot) }
+      servers = super(agent_run.mcp_server_snapshot)
       servers if servers.any?
     end
   end

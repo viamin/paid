@@ -690,6 +690,72 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#infra_failure?" do
+      it "returns true for failed run with validation error and zero tokens" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Validation failed: Review settings paid_agent requires credentials",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be true
+      end
+
+      it "returns true for failed run with ProviderAuthExpiredError and zero tokens" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "ProviderAuthExpiredError: token expired",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be true
+      end
+
+      it "returns true for no_output run with Provision::TimeoutError and zero tokens" do
+        agent_run = build(:agent_run, :no_output,
+          error_message: "Containers::Provision::TimeoutError: startup timed out",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be true
+      end
+
+      it "returns false for failed run with infra keyword but non-zero tokens" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Validation failed: something after model ran",
+          tokens_input: 5000)
+
+        expect(agent_run.infra_failure?).to be false
+      end
+
+      it "returns false for completed run" do
+        agent_run = build(:agent_run, :completed,
+          error_message: "Validation failed: something",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be false
+      end
+
+      it "returns true for case-insensitive match on infra keyword" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "validation failed: review settings paid_agent requires credentials",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be true
+      end
+
+      it "returns false for failed run without infra keyword" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Agent exited with code 1",
+          tokens_input: 0)
+
+        expect(agent_run.infra_failure?).to be false
+      end
+
+      it "returns false for nil tokens_input without infra keyword" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Agent exited with code 1",
+          tokens_input: nil)
+
+        expect(agent_run.infra_failure?).to be false
+      end
+    end
+
     describe "#total_tokens" do
       it "returns sum of input and output tokens" do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
@@ -3316,6 +3382,63 @@ RSpec.describe AgentRun do
       expect {
         agent_run.update!(branch_name: "feature/test")
       }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+  end
+
+  describe "failure recovery callback" do
+    it "enqueues failure recovery when transitioning to a failure status" do
+      agent_run = create(:agent_run, :running, error_message: nil)
+
+      expect {
+        agent_run.fail!(error: "RateLimit: exceeded quota")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "failed",
+          "error_message" => "RateLimit: exceeded quota"
+        )
+      )
+    end
+
+    it "enqueues failure recovery when transitioning to completed" do
+      agent_run = create(:agent_run, :running, started_at: 1.minute.ago)
+
+      expect {
+        agent_run.complete!
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including("status" => "completed")
+      )
+    end
+
+    it "captures the timeout status in the enqueued snapshot" do
+      agent_run = create(:agent_run, :running, goal: "create_issue")
+
+      expect {
+        agent_run.update!(status: "timeout", error_message: "Agent execution timed out")
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "timeout",
+          "error_message" => "Agent execution timed out"
+        )
+      )
+    end
+
+    it "does not enqueue failure recovery for retried transitions" do
+      agent_run = create(:agent_run, :failed)
+
+      expect {
+        agent_run.retry!
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
+    end
+
+    it "does not enqueue failure recovery when status does not change" do
+      agent_run = create(:agent_run, :running)
+
+      expect {
+        agent_run.update!(branch_name: "feature/test")
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
     end
   end
 

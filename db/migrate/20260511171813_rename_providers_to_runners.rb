@@ -3,8 +3,9 @@
 # Phase 1 of the providers→runners rename. Safe to deploy alongside old code.
 #
 # This migration:
-# - Renames columns on the providers and provider_states tables (NOT the
-#   tables themselves — rename_table is deferred to phase 2)
+# - Adds runner-named columns on the providers and provider_states tables
+#   alongside the old provider-named columns (NOT the tables themselves —
+#   rename_table is deferred to phase 2)
 # - Adds new runner-named columns on agent_runs, chat_sessions,
 #   user_settings, and tenant_settings alongside the old provider-named
 #   columns (add + backfill + keep old pattern)
@@ -13,9 +14,9 @@
 # The Runner model uses self.table_name = "providers" until phase 2
 # renames the table. Similarly RunnerState uses "provider_states".
 #
-# Rails rename_column auto-renames column-based indexes via
-# rename_column_indexes. We manually rename custom idx_* indexes
-# and check constraints.
+# Phase 1 keeps the old provider-named indexes in place for legacy code and
+# adds runner-named indexes for the new columns. The check constraints are
+# renamed because their expressions do not reference provider_key.
 class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
   def up
     up_providers_columns
@@ -46,16 +47,17 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
       "providers_subscription_invariants", "runners_subscription_invariants")
     rename_constraint(:providers,
       "providers_weight_positive", "runners_weight_positive")
-    rename_index(:providers,
-      "idx_providers_unique_api_key", "idx_runners_unique_api_key")
-    rename_index(:providers,
-      "idx_providers_unique_subscription", "idx_runners_unique_subscription")
+    add_column :providers, :runner_key, :string, limit: 50
 
-    safety_assured { rename_column :providers, :provider_key, :runner_key }
+    backfill "UPDATE providers SET runner_key = provider_key"
+
+    safety_assured { change_column_null :providers, :runner_key, false }
+    add_runner_unique_indexes
   end
 
   def down_providers_columns
-    safety_assured { rename_column :providers, :runner_key, :provider_key }
+    remove_runner_unique_indexes
+    safety_assured { remove_column :providers, :runner_key }
 
     rename_constraint(:providers,
       "runners_weight_positive", "providers_weight_positive")
@@ -63,20 +65,25 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
       "runners_subscription_invariants", "providers_subscription_invariants")
     rename_constraint(:providers,
       "runners_api_key_requires_key", "providers_api_key_requires_key")
-    rename_index(:providers,
-      "idx_runners_unique_subscription", "idx_providers_unique_subscription")
-    rename_index(:providers,
-      "idx_runners_unique_api_key", "idx_providers_unique_api_key")
   end
 
   # ── provider_states columns (table stays as "provider_states") ──────
 
   def up_provider_states_columns
-    safety_assured { rename_column :provider_states, :provider_name, :runner_name }
+    add_column :provider_states, :runner_name, :string, limit: 50
+
+    backfill "UPDATE provider_states SET runner_name = provider_name"
+
+    safety_assured { change_column_null :provider_states, :runner_name, false }
+    safety_assured do
+      add_index :provider_states, [ :user_id, :runner_name ],
+        unique: true, name: "index_provider_states_on_user_id_and_runner_name"
+    end
   end
 
   def down_provider_states_columns
-    safety_assured { rename_column :provider_states, :runner_name, :provider_name }
+    safety_assured { remove_index :provider_states, name: "index_provider_states_on_user_id_and_runner_name" }
+    safety_assured { remove_column :provider_states, :runner_name }
   end
 
   # ── agent_runs columns ───────────────────────────────────────────────
@@ -229,6 +236,24 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
     safety_assured do
       execute "ALTER TABLE #{table} RENAME CONSTRAINT #{old_name} TO #{new_name}"
     end
+  end
+
+  def add_runner_unique_indexes
+    safety_assured do
+      add_index :providers, [ :user_id, :runner_key, :provider_api_key_id, :name ],
+        unique: true,
+        where: "auth_type = 'api_key' AND discarded_at IS NULL",
+        name: "idx_runners_unique_api_key"
+      add_index :providers, [ :user_id, :runner_key ],
+        unique: true,
+        where: "auth_type = 'subscription' AND discarded_at IS NULL",
+        name: "idx_runners_unique_subscription"
+    end
+  end
+
+  def remove_runner_unique_indexes
+    safety_assured { remove_index :providers, name: "idx_runners_unique_subscription" }
+    safety_assured { remove_index :providers, name: "idx_runners_unique_api_key" }
   end
 
   def backfill(sql)

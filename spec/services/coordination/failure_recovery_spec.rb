@@ -35,6 +35,49 @@ RSpec.describe Coordination::FailureRecovery do
         expect(classification.project).to eq(project)
         expect(classification.agent_run).to eq(agent_run)
       end
+
+      it "logs a retry orchestration decision" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.actor).to eq("coordination_failure_recovery")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.inputs).to include(
+          "failure_category" => "rate_limit",
+          "chosen_action" => "retry_alternate_provider"
+        )
+        expect(decision.outputs).to include(
+          "chosen_action" => "retry_alternate_provider",
+          "action_status" => "pending"
+        )
+      end
+
+      it "returns a failed result when applied decision persistence fails" do
+        service = described_class.new(agent_run: agent_run)
+        allow(service).to receive(:build_decision_result).and_return([])
+
+        expect {
+          result = service.call
+
+          expect(result).not_to be_success
+          expect(result.error).to include("must be an object")
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.inputs).to include(
+          "failure_category" => "rate_limit",
+          "chosen_action" => "retry_alternate_provider"
+        )
+        expect(decision.outputs).to include(
+          "chosen_action" => "retry_alternate_provider",
+          "error_class" => "ActiveRecord::RecordInvalid"
+        )
+      end
     end
 
     context "with a non-failure agent run" do
@@ -47,6 +90,28 @@ RSpec.describe Coordination::FailureRecovery do
           expect(result).not_to be_success
           expect(result.error).to eq("agent run status must be a failure status")
         }.not_to change(FailureClassification, :count)
+      end
+
+      it "logs a noop orchestration decision" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("noop")
+        expect(decision.context["decision_status"]).to eq("noop")
+        expect(decision.outputs).to include("reason" => "non_failure_status")
+      end
+
+      it "returns a failed result when noop decision persistence fails" do
+        allow(OrchestrationDecision).to receive(:record!).and_raise(
+          ActiveRecord::RecordInvalid.new(OrchestrationDecision.new)
+        )
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result).not_to be_success
+        expect(result.error).to include("Validation failed")
       end
     end
 
@@ -62,6 +127,30 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result).to be_success
         expect(result.failure_category).to eq("auth_failure")
         expect(result.chosen_action).to eq("pause_and_notify")
+      end
+
+      it "logs the mapped action when failed decision persistence falls back" do
+        service = described_class.new(agent_run: agent_run)
+        allow(service).to receive(:build_decision_result).and_return([])
+
+        expect {
+          result = service.call
+
+          expect(result).not_to be_success
+          expect(result.error).to include("must be an object")
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("pause")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.inputs).to include(
+          "failure_category" => "auth_failure",
+          "chosen_action" => "pause_and_notify"
+        )
+        expect(decision.outputs).to include(
+          "chosen_action" => "pause_and_notify",
+          "error_class" => "ActiveRecord::RecordInvalid"
+        )
       end
     end
 
@@ -92,6 +181,31 @@ RSpec.describe Coordination::FailureRecovery do
         result = described_class.call(agent_run: agent_run)
 
         expect(result.classification.action_params["provider"]).to eq("codex")
+      end
+
+      it "classifies from the enqueued snapshot even if the row was later retried" do
+        agent_run.update!(status: "retried")
+
+        result = described_class.call(
+          agent_run: agent_run,
+          run_snapshot: {
+            status: "timeout",
+            error_message: "Agent execution timed out",
+            providers_attempted: [ anthropic_attempt ]
+          }
+        )
+
+        expect(result).to be_success
+        expect(result.failure_category).to eq("timeout")
+        expect(result.chosen_action).to eq("retry_same_provider")
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("retry")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.inputs).to include(
+          "failure_category" => "timeout",
+          "agent_run_status" => "timeout"
+        )
       end
     end
 
@@ -179,6 +293,43 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result).to be_success
         expect(result.failure_category).to eq("timeout")
         expect(result.chosen_action).to eq("escalate_model")
+      end
+
+      it "logs escalation decisions when the override escalates the model" do
+        described_class.call(
+          agent_run: agent_run,
+          policy_overrides: { "timeout" => "escalate_model" }
+        )
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("escalate")
+        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.inputs).to include(
+          "failure_category" => "timeout",
+          "chosen_action" => "escalate_model"
+        )
+      end
+
+      it "preserves the selected action when decision persistence fails" do
+        invalid_record = FailureClassification.new
+        allow(FailureClassification).to receive(:create!).and_raise(ActiveRecord::RecordInvalid.new(invalid_record))
+
+        result = described_class.call(
+          agent_run: agent_run,
+          policy_overrides: { "timeout" => "escalate_model" }
+        )
+
+        expect(result).not_to be_success
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("escalate")
+        expect(decision.context["decision_status"]).to eq("failed")
+        expect(decision.inputs).to include(
+          "failure_category" => "timeout",
+          "chosen_action" => "escalate_model"
+        )
+        expect(decision.outputs["chosen_action"]).to eq("escalate_model")
+        expect(decision.outputs["error_class"]).to eq("ActiveRecord::RecordInvalid")
       end
     end
 

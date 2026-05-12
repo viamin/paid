@@ -69,7 +69,7 @@ module Screenshots
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
-      providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?auth_type=subscription", requires_auth: true),
+      providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
       providers_edit: Target.new(slug: "providers_edit", path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/edit" }, requires_auth: true),
       service_containers: Target.new(slug: "service_containers", path_builder: "/service_containers", requires_auth: true),
       service_container_new: Target.new(slug: "service_container_new", path_builder: "/service_containers/new", requires_auth: true),
