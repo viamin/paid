@@ -5,7 +5,8 @@ module CoordinationPolicyEvolution
     DEFAULT_LOOKBACK_DAYS = 60
     DEFAULT_MIN_DECISIONS = 10
     DEFAULT_SAMPLE_LIMIT = 5
-    POLICY_TYPE = DecompositionService::STRATEGY_TYPE
+    POLICY_TYPE = DecompositionService::POLICY_TYPE
+    POLICY_KEY = DecompositionService::POLICY_KEY
     NOOP_OUTCOMES = Orchestration::DecompositionDecisions::Log::NOOP_OUTCOMES
     FAILURE_OUTCOMES = %w[
       decomposition_failed
@@ -30,8 +31,8 @@ module CoordinationPolicyEvolution
 
     def call
       {
-        strategy: serialize_strategy(current_strategy),
-        prior_versions: prior_versions.map { |strategy| serialize_strategy(strategy) },
+        policy: serialize_policy_snapshot,
+        prior_versions: prior_versions.map { |version| serialize_policy_version(version) },
         performance: performance_summary,
         sample_successes: serialize_decisions(sample_successes),
         sample_failures: serialize_decisions(sample_failures)
@@ -42,17 +43,19 @@ module CoordinationPolicyEvolution
 
     attr_reader :account, :policy_type, :lookback_days, :min_decisions, :sample_limit
 
-    def current_strategy
-      @current_strategy ||= OrchestrationStrategies::Resolve.call(
-        strategy_type: policy_type,
-        account: account
-      )
+    def serialize_policy_snapshot
+      if coordination_policy&.current_version
+        serialize_existing_policy
+      else
+        serialize_bootstrap_policy
+      end
     end
 
     def prior_versions
-      @prior_versions ||= OrchestrationStrategy
-        .where(account:, strategy_type: policy_type)
-        .order(version: :desc, id: :desc)
+      return CoordinationPolicyVersion.none unless coordination_policy
+
+      @prior_versions ||= coordination_policy.coordination_policy_versions
+        .recent
         .limit(5)
     end
 
@@ -152,18 +155,124 @@ module CoordinationPolicyEvolution
       end
     end
 
-    def serialize_strategy(strategy)
-      return nil unless strategy
+    def coordination_policy
+      @coordination_policy ||= CoordinationPolicy
+        .where(account:, policy_type:, policy_key: POLICY_KEY, project_id: nil)
+        .includes(:current_version, :coordination_policy_versions)
+        .order(Arel.sql("CASE status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END"), id: :desc)
+        .first
+    end
+
+    def current_strategy
+      @current_strategy ||= OrchestrationStrategies::Resolve.call(
+        strategy_type: DecompositionService::STRATEGY_TYPE,
+        account: account
+      )
+    end
+
+    def serialize_existing_policy
+      version = coordination_policy.current_version
 
       {
-        id: strategy.id,
-        strategy_type: strategy.strategy_type,
-        name: strategy.name,
-        version: strategy.version,
-        active: strategy.active,
-        account_id: strategy.account_id,
-        configuration: strategy.configuration
+        id: coordination_policy.id,
+        policy_type: coordination_policy.policy_type,
+        policy_key: coordination_policy.policy_key,
+        name: coordination_policy.name,
+        description: coordination_policy.description,
+        status: coordination_policy.status,
+        account_id: coordination_policy.account_id,
+        project_id: coordination_policy.project_id,
+        context_selector: coordination_policy.context_selector,
+        source: "coordination_policy",
+        version_id: version.id,
+        version: version.version,
+        version_status: version.status,
+        llm_prompt: version.llm_prompt,
+        reasoning: version.reasoning,
+        metadata: version.metadata,
+        rules: version.rules,
+        parameters: version.parameters,
+        configuration: effective_configuration(version.rules, version.parameters)
       }
+    end
+
+    def serialize_bootstrap_policy
+      {
+        id: coordination_policy&.id,
+        policy_type: policy_type,
+        policy_key: POLICY_KEY,
+        name: "Feature Decomposition",
+        description: "Account-level coordination policy for feature decomposition.",
+        status: coordination_policy&.status || "draft",
+        account_id: account.id,
+        project_id: nil,
+        context_selector: coordination_policy&.context_selector || {},
+        source: bootstrap_source,
+        version_id: nil,
+        version: nil,
+        version_status: nil,
+        llm_prompt: nil,
+        reasoning: nil,
+        metadata: {},
+        rules: {},
+        parameters: {},
+        configuration: bootstrap_configuration
+      }
+    end
+
+    def bootstrap_source
+      current_strategy.present? ? DecompositionService::STRATEGY_TYPE : "defaults"
+    end
+
+    def bootstrap_configuration
+      return current_strategy.configuration if current_strategy.present?
+
+      OrchestrationStrategies::Defaults.feature_orchestration
+    end
+
+    def serialize_policy_version(version)
+      {
+        id: version.id,
+        version: version.version,
+        status: version.status,
+        activated_at: version.activated_at&.iso8601,
+        retired_at: version.retired_at&.iso8601,
+        llm_prompt: version.llm_prompt,
+        reasoning: version.reasoning,
+        metadata: version.metadata,
+        rules: version.rules,
+        parameters: version.parameters,
+        configuration: effective_configuration(version.rules, version.parameters)
+      }
+    end
+
+    def effective_configuration(rules, parameters)
+      OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.tap do |configuration|
+        configuration["decomposition"] = configuration.fetch("decomposition", {}).merge(
+          extract_decomposition_config(rules),
+          extract_decomposition_config(parameters)
+        )
+      end
+    end
+
+    def extract_decomposition_config(payload)
+      return {} unless payload.is_a?(Hash)
+
+      decomposition = payload.fetch("decomposition", {})
+
+      {}.tap do |config|
+        if decomposition.is_a?(Hash)
+          config["enabled"] = decomposition["enabled"] if decomposition.key?("enabled")
+          config["min_components_to_decompose"] = decomposition["min_components_to_decompose"] if decomposition.key?("min_components_to_decompose")
+          config["max_tasks"] = decomposition["max_tasks"] if decomposition.key?("max_tasks")
+          config["layer_order"] = decomposition["layer_order"] if decomposition.key?("layer_order")
+        end
+
+        config["enabled"] = payload["enabled"] if payload.key?("enabled")
+        config["min_components_to_decompose"] = payload["min_components_to_decompose"] if payload.key?("min_components_to_decompose")
+        config["max_tasks"] = payload["max_tasks"] if payload.key?("max_tasks")
+        config["layer_order"] = payload["layer_order"] if payload.key?("layer_order")
+      end.compact
     end
   end
 end

@@ -12,8 +12,8 @@ module CoordinationPolicyEvolution
       new(...).call
     end
 
-    def initialize(strategy_snapshot:, account:, mutations:)
-      @strategy_snapshot = strategy_snapshot.deep_symbolize_keys
+    def initialize(policy_snapshot:, account:, mutations:)
+      @policy_snapshot = policy_snapshot.deep_symbolize_keys
       @account = account
       @mutations = Array(mutations)
     end
@@ -23,16 +23,18 @@ module CoordinationPolicyEvolution
 
       ActiveRecord::Base.transaction do
         account.with_lock do
+          policy = coordination_policy
           next_version = next_version_number
 
           mutations.map do |mutation|
-            candidate = OrchestrationStrategy.create!(
-              account: account,
-              strategy_type: strategy_type,
-              name: strategy_name,
+            candidate = policy.coordination_policy_versions.create!(
               version: next_version,
-              configuration: candidate_configuration(mutation),
-              active: false
+              status: "draft",
+              rules: candidate_rules(mutation),
+              parameters: candidate_parameters(mutation),
+              metadata: candidate_metadata(mutation),
+              reasoning: mutation.reasoning,
+              llm_prompt: policy_snapshot[:llm_prompt]
             )
             next_version += 1
             candidate
@@ -43,26 +45,69 @@ module CoordinationPolicyEvolution
 
     private
 
-    attr_reader :strategy_snapshot, :account, :mutations
+    attr_reader :policy_snapshot, :account, :mutations
 
-    def strategy_type
-      strategy_snapshot.fetch(:strategy_type)
+    def coordination_policy
+      @coordination_policy ||= begin
+        account.coordination_policies.find_by(id: policy_snapshot[:id]) ||
+          account.coordination_policies.find_or_create_by!(
+            project_id: policy_snapshot[:project_id],
+            policy_type: policy_type,
+            policy_key: policy_key
+          ) do |policy|
+            policy.name = policy_name
+            policy.description = policy_snapshot[:description]
+            policy.status = "draft"
+            policy.context_selector = policy_snapshot[:context_selector] || {}
+            policy.metadata = {
+              "created_by" => self.class.name,
+              "bootstrap_source" => policy_snapshot[:source]
+            }.compact
+          end
+      end
     end
 
-    def strategy_name
-      strategy_snapshot.fetch(:name)
+    def policy_type
+      policy_snapshot.fetch(:policy_type)
+    end
+
+    def policy_key
+      policy_snapshot.fetch(:policy_key)
+    end
+
+    def policy_name
+      policy_snapshot.fetch(:name)
     end
 
     def next_version_number
-      current_max = OrchestrationStrategy.where(account:, strategy_type:).maximum(:version).to_i
+      current_max = coordination_policy.coordination_policy_versions.maximum(:version).to_i
       [ current_max + 1, 1 ].max
     end
 
-    def candidate_configuration(mutation)
-      mutation.configuration.deep_stringify_keys.merge(
-        "_evolution" => {
-          "source_strategy_id" => strategy_snapshot[:id],
-          "source_version" => strategy_snapshot[:version],
+    def candidate_rules(mutation)
+      decomposition = mutation.configuration.deep_stringify_keys.fetch("decomposition", {})
+
+      {
+        "enabled" => decomposition["enabled"],
+        "min_components_to_decompose" => decomposition["min_components_to_decompose"]
+      }.compact
+    end
+
+    def candidate_parameters(mutation)
+      decomposition = mutation.configuration.deep_stringify_keys.fetch("decomposition", {})
+
+      {
+        "max_tasks" => decomposition["max_tasks"],
+        "layer_order" => decomposition["layer_order"]
+      }.compact
+    end
+
+    def candidate_metadata(mutation)
+      {
+        "evolution" => {
+          "source_policy_id" => policy_snapshot[:id],
+          "source_policy_version_id" => policy_snapshot[:version_id],
+          "source_version" => policy_snapshot[:version],
           "generated_at" => Time.current.iso8601,
           "mutation_strategy" => mutation.strategy,
           "reasoning" => mutation.reasoning,
@@ -71,7 +116,7 @@ module CoordinationPolicyEvolution
           "provenance" => mutation.provenance,
           "approval" => APPROVAL_STATE
         }
-      )
+      }
     end
   end
 end

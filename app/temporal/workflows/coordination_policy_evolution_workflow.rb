@@ -58,7 +58,7 @@ module Workflows
         Activities::PersistCoordinationPolicyCandidatesActivity,
         {
           account_id: account_id,
-          strategy: inputs_result.fetch(:strategy),
+          policy: inputs_result.fetch(:policy),
           mutations: mutations
         },
         timeout: 30

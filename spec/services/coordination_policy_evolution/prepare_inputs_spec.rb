@@ -6,8 +6,25 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
   describe ".call" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
-    let!(:strategy) { create(:orchestration_strategy, :feature_orchestration, account: account, version: 2) }
-    let!(:older_version) { create(:orchestration_strategy, :feature_orchestration, account: account, version: 1, active: false) }
+    let!(:policy) do
+      create(:coordination_policy, :active,
+        account: account,
+        policy_type: described_class::POLICY_TYPE,
+        policy_key: described_class::POLICY_KEY,
+        name: "Feature Decomposition").tap do |record|
+          record.current_version.update!(
+            version: 2,
+            rules: { "enabled" => true, "min_components_to_decompose" => 2 },
+            parameters: { "max_tasks" => 12 }
+          )
+          create(:coordination_policy_version,
+            coordination_policy: record,
+            version: 1,
+            status: "superseded",
+            rules: { "enabled" => true, "min_components_to_decompose" => 3 },
+            parameters: { "max_tasks" => 8 })
+        end
+    end
     let(:result) { described_class.call(account: account, min_decisions: 2) }
 
     before do
@@ -53,8 +70,8 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
     end
 
     it "collects policy history for the account" do
-      expect(result[:strategy]).to include(id: strategy.id, version: 2, strategy_type: "feature_orchestration")
-      expect(result[:prior_versions].map { |row| row[:id] }).to include(strategy.id, older_version.id)
+      expect(result[:policy]).to include(id: policy.id, version: 2, policy_type: "decomposition")
+      expect(result[:prior_versions].map { |row| row[:id] }).to include(policy.current_version.id)
     end
 
     it "summarizes classified outcomes without counting noop decisions as successes" do
@@ -79,6 +96,14 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
       expect(result.dig(:performance, :average_task_count)).to eq(1.67)
       expect(result[:sample_successes].size).to eq(1)
       expect(result[:sample_failures].size).to eq(1)
+    end
+
+    it "includes effective policy configuration for mutation" do
+      expect(result.dig(:policy, :configuration, "decomposition")).to include(
+        "enabled" => true,
+        "min_components_to_decompose" => 2,
+        "max_tasks" => 12
+      )
     end
   end
 end

@@ -20,13 +20,13 @@ module Activities
       end
 
       candidates = CoordinationPolicyEvolution::CreateCandidates.call(
-        strategy_snapshot: input.fetch(:strategy),
+        policy_snapshot: input.fetch(:policy),
         account: account,
         mutations: mutations
       )
 
       {
-        policy_type: input.fetch(:strategy).fetch(:strategy_type),
+        policy_type: input.fetch(:policy).fetch(:policy_type),
         candidate_ids: candidates.map(&:id),
         candidate_count: candidates.size
       }

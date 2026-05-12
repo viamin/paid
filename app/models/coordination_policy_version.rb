@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class CoordinationPolicyVersion < ApplicationRecord
+  class InvalidTransitionError < StandardError; end
+
   STATUSES = %w[draft active superseded retired].freeze
 
   belongs_to :coordination_policy, touch: true
@@ -19,7 +21,27 @@ class CoordinationPolicyVersion < ApplicationRecord
     coordination_policy.activate_version!(self)
   end
 
+  def review_required?
+    approval_state.fetch("required", false) == true
+  end
+
+  def review_status
+    approval_state["status"]
+  end
+
+  def approved?
+    review_status == "approved"
+  end
+
+  def activatable?
+    !review_required? || approved?
+  end
+
   private
+
+  def approval_state
+    metadata.to_h.fetch("evolution", {}).fetch("approval", {})
+  end
 
   def rules_is_object
     validate_json_object(:rules)
