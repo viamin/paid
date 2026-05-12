@@ -124,8 +124,8 @@ module Scaling
 
     def group_by_agent_count
       fresh_observations
-        .select { |obs| obs.agent_count_launched.to_i.positive? }
-        .group_by { |obs| obs.agent_count_launched.to_i }
+        .select { |obs| obs.agent_count_planned.to_i.positive? }
+        .group_by { |obs| obs.agent_count_planned.to_i }
         .transform_values { |group| compute_group_stats(group) }
         .select { |_value, stats| stats[:count] >= 2 }
     end
@@ -135,6 +135,9 @@ module Scaling
       avg_duration = group.sum { |obs| obs.duration_seconds.to_i }.to_f / group.size
       avg_cost = group.sum(&:total_cost_cents).to_f / group.size
       avg_iterations = group.sum { |obs| obs.total_iterations.to_i }.to_f / group.size
+      total_planned = group.sum { |obs| obs.agent_count_planned.to_i }
+      total_launched = group.sum { |obs| obs.agent_count_launched.to_i }
+      total_blocked = group.sum { |obs| obs.agent_count_blocked.to_i }
 
       {
         count: group.size,
@@ -142,6 +145,8 @@ module Scaling
         avg_duration_seconds: avg_duration,
         avg_cost_cents: avg_cost,
         avg_iterations: avg_iterations,
+        launch_rate: ratio(total_launched, total_planned),
+        blocked_rate: ratio(total_blocked, total_planned),
         observations: group
       }
     end
@@ -161,21 +166,27 @@ module Scaling
     end
 
     def compute_allocation_score(stats, value, sorted_values)
-      success_weight = 0.5
-      cost_weight = 0.3
-      duration_weight = 0.2
+      success_weight = 0.45
+      cost_weight = 0.2
+      duration_weight = 0.15
+      launch_weight = 0.1
+      blocked_weight = 0.1
 
       max_cost = sorted_values.map { |v| grouped[v][:avg_cost_cents] }.max.to_f
       max_duration = sorted_values.map { |v| grouped[v][:avg_duration_seconds] }.max.to_f
 
       cost_efficiency = max_cost.positive? ? 1.0 - (stats[:avg_cost_cents] / max_cost) : 0.5
       duration_efficiency = max_duration.positive? ? 1.0 - (stats[:avg_duration_seconds] / max_duration) : 0.5
+      launch_reliability = stats[:launch_rate] || 0.0
+      blocked_capacity = 1.0 - (stats[:blocked_rate] || 0.0)
 
       diminishing_penalty = compute_diminishing_penalty(value, sorted_values)
 
       raw_score = (stats[:success_rate] * success_weight) +
                   (cost_efficiency * cost_weight) +
-                  (duration_efficiency * duration_weight) -
+                  (duration_efficiency * duration_weight) +
+                  (launch_reliability * launch_weight) +
+                  (blocked_capacity * blocked_weight) -
                   diminishing_penalty
 
       [ raw_score, 0.0 ].max
@@ -292,7 +303,7 @@ module Scaling
     ALLOCATOR_DECISION_DIMENSIONS = %w[parallelism].freeze
 
     def experiment_allocator_decisions
-      @experiment_allocator_decisions ||= experiment_summaries.filter_map do |summary|
+      @experiment_allocator_decisions ||= fresh_experiment_summaries.filter_map do |summary|
         next unless summary_value(summary, :status).to_s == "ready_for_analysis"
         decision = summary_value(summary, :allocator_decision)
         next unless decision.is_a?(Hash)
@@ -316,7 +327,7 @@ module Scaling
     # cached_summary shape produced by ScalingExperiments::SummarizeResults,
     # which wraps per-value data in a top-level hash with a "values" array.
     def normalized_experiment_values
-      @normalized_experiment_values ||= experiment_summaries.flat_map do |summary|
+      @normalized_experiment_values ||= fresh_experiment_summaries.flat_map do |summary|
         values = summary_value(summary, :values)
         if values.is_a?(Array)
           values
@@ -326,9 +337,37 @@ module Scaling
       end
     end
 
+    def fresh_experiment_summaries
+      @fresh_experiment_summaries ||= experiment_summaries.select { |summary| summary_fresh?(summary) }
+    end
+
     def summary_value(summary, key, default: nil)
       val = summary.fetch(key) { summary.fetch(key.to_s, default) }
       val.nil? ? default : val
+    end
+
+    def summary_fresh?(summary)
+      timestamp = summary_timestamp(summary)
+      return true unless timestamp
+
+      timestamp > STALE_THRESHOLD.ago
+    end
+
+    def summary_timestamp(summary)
+      raw = summary_value(summary, :generated_at) ||
+        summary_value(summary, :updated_at) ||
+        summary_value(summary, :created_at)
+
+      case raw
+      when Time
+        raw
+      when DateTime
+        raw.to_time
+      when String
+        Time.zone.parse(raw)
+      end
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def parallelism_cap(agent_count)
@@ -348,6 +387,7 @@ module Scaling
     def fallback_reason
       reasons = []
       reasons << "insufficient observations (#{observations.size}/#{MIN_OBSERVATIONS_FOR_CONFIDENCE})"
+      reasons << "stale experiment data" if experiment_summaries.any? && fresh_experiment_summaries.empty?
       reasons << "no usable experiment data" unless experiment_summaries_usable?
       reasons.join("; ")
     end
@@ -356,6 +396,8 @@ module Scaling
       stats = grouped[best_value]
       "best observed agent_count=#{best_value} " \
         "success_rate=#{format_rate(stats[:success_rate])} " \
+        "launch_rate=#{format_rate(stats[:launch_rate])} " \
+        "blocked_rate=#{format_rate(stats[:blocked_rate])} " \
         "n=#{stats[:count]}"
     end
 
@@ -386,6 +428,12 @@ module Scaling
       when "medium" then 1
       else 0
       end
+    end
+
+    def ratio(numerator, denominator)
+      return 0.0 if denominator.to_i <= 0
+
+      numerator.to_f / denominator
     end
   end
 end

@@ -37,4 +37,10 @@ RSpec.describe ScalingExperiments::SummarizeResults do
       "blocked_task_rate" => 0.25
     )
   end
+
+  it "stamps summaries with a generation timestamp for freshness checks" do
+    summary = described_class.call(scaling_experiment: experiment)
+
+    expect(Time.zone.parse(summary.fetch("generated_at"))).to be_within(5.seconds).of(Time.current)
+  end
 end

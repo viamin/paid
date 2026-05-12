@@ -6,6 +6,10 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
   let(:default_inputs) { Scaling::AllocationInputs.new(task_count: 4, max_agent_count: 8) }
 
   def build_observation(agent_count:, success:, created_at: Time.current, **overrides)
+    planned_agent_count = overrides.fetch(:agent_count_planned, agent_count)
+    launched_agent_count = overrides.fetch(:agent_count_launched, agent_count)
+    blocked_agent_count = overrides.fetch(:agent_count_blocked, 0)
+
     observation_class.new(
       workflow_id: SecureRandom.uuid,
       workflow_name: "TestWorkflow",
@@ -14,16 +18,16 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       success: success,
       parallel_execution: true,
       task_count: 4,
-      agent_count_planned: agent_count,
-      agent_count_launched: agent_count,
-      agent_count_succeeded: success ? agent_count : 0,
-      agent_count_failed: success ? 0 : agent_count,
-      agent_count_blocked: 0,
+      agent_count_planned: planned_agent_count,
+      agent_count_launched: launched_agent_count,
+      agent_count_succeeded: success ? launched_agent_count : 0,
+      agent_count_failed: success ? 0 : launched_agent_count,
+      agent_count_blocked: blocked_agent_count,
       total_iterations: overrides.fetch(:total_iterations, 3),
       max_iterations: 2,
-      parallelism_planned: agent_count,
+      parallelism_planned: planned_agent_count,
       parallelism_observed: overrides.fetch(:parallelism_observed, agent_count),
-      batch_count: agent_count,
+      batch_count: planned_agent_count,
       duration_seconds: overrides.fetch(:duration_seconds, 120),
       total_cost_cents: overrides.fetch(:total_cost_cents, 100 * agent_count),
       total_input_tokens: 500,
@@ -148,6 +152,26 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.agent_count).to eq(4)
         expect(result.reason).to include("agent_count=4")
       end
+
+      it "groups cohorts by planned agent count instead of partial launched count" do
+        observations = [
+          *3.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 160, duration_seconds: 210) },
+          *3.times.map do
+            build_observation(
+              agent_count: 4,
+              agent_count_launched: 2,
+              success: true,
+              total_cost_cents: 120,
+              duration_seconds: 90
+            )
+          end
+        ]
+
+        result = described_class.call(inputs: default_inputs, observations: observations)
+
+        expect(result.source).to eq(:observations)
+        expect(result.agent_count).to eq(4)
+      end
     end
 
     context "with observations showing diminishing returns" do
@@ -177,6 +201,28 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
 
         expect(result.source).to eq(:observations)
         expect(result.agent_count).to eq(2)
+      end
+
+      it "penalizes cohorts with repeated launch shortfalls and blocked capacity" do
+        observations = [
+          *3.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 180, duration_seconds: 140) },
+          *3.times.map do
+            build_observation(
+              agent_count: 4,
+              agent_count_launched: 2,
+              agent_count_blocked: 2,
+              success: true,
+              total_cost_cents: 160,
+              duration_seconds: 120
+            )
+          end
+        ]
+
+        result = described_class.call(inputs: default_inputs, observations: observations)
+
+        expect(result.source).to eq(:observations)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("launch_rate=100.00%")
       end
     end
 
@@ -365,6 +411,17 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.agent_count).to eq(2)
         expect(result.parallelism_level).to eq(2)
         expect(result.reason).to include("experiment leading value=2")
+      end
+
+      it "falls back when experiment summaries are stale" do
+        summaries = [
+          parallelism_experiment_summary.merge("generated_at" => 10.days.ago.iso8601)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+        expect(result.reason).to include("stale experiment data")
       end
     end
 
@@ -657,6 +714,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
 
   def parallelism_experiment_summary
     {
+      "generated_at" => Time.current.iso8601,
       "status" => "ready_for_analysis",
       "dimension" => "parallelism",
       "sample_count" => 12,
@@ -688,6 +746,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
 
   def experiment_summary(value:, **attributes)
     {
+      "generated_at" => Time.current.iso8601,
       "status" => "ready_for_analysis",
       "dimension" => "agent_count",
       "values" => [
