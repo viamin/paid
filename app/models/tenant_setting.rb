@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 class TenantSetting < ApplicationRecord
-  self.ignored_columns = %w[provider_preferences allowed_provider_keys]
-
   has_logidze
   PG_INT_MAX = 2_147_483_647
   BUDGET_TYPES = CostBudget::BUDGET_TYPES

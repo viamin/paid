@@ -122,7 +122,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
     it "uses the tenant API key runner for the default runner" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       create(:tenant_setting, account: user.account,
-        provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id.to_s } })
+        runner_preferences: { "api_key_ids" => { "anthropic" => api_key.id.to_s } })
 
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
