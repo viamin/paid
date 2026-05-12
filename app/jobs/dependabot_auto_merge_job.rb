@@ -163,7 +163,7 @@ class DependabotAutoMergeJob < ApplicationJob
     Rails.logger.warn(
       message: "dependabot_auto_merge.merge_failed_expected",
       project_id: project.id,
-      pr_number: pr_number_from(pr_data),
+      pr_number: pr_number,
       status: e.status,
       error: e.message
     )
