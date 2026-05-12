@@ -664,7 +664,6 @@ class AgentRun < ApplicationRecord
       stats[:count] >= STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE &&
       stats[:p95].positive?
   end
-
   # Priority ordering for the run queue (6 tiers):
   #   0 = manual runs (user pre-emption — highest)
   #   1 = P1 user-defined label

@@ -51,6 +51,24 @@ RSpec.describe Dashboard::LiveBroadcaster do
       )
     end
 
+    it "preloads source pull requests for active-run priority badges" do
+      issue = create(:issue, :pull_request, project: project, github_number: 88, labels: [ "P1" ])
+      active_run = create(:agent_run,
+        project: project,
+        status: "running",
+        started_at: 1.minute.ago,
+        source_pull_request_number: issue.github_number)
+
+      described_class.call(account: account, agent_run: active_run)
+
+      expect(broadcasted_active_runs).to include(
+        have_attributes(
+          id: active_run.id,
+          source_pull_request_record: issue
+        )
+      )
+    end
+
     it "broadcasts activity stream when a run finishes" do
       agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 30)
 
