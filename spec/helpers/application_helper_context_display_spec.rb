@@ -331,4 +331,15 @@ RSpec.describe ApplicationHelper do
       expect(helper.agent_run_goal_text(run)).to eq("Custom goal")
     end
   end
+
+  describe "#agent_run_goal_label" do
+    it "matches the shared label for review goals" do
+      expect(helper.agent_run_goal_label("review")).to eq("Code Review")
+    end
+
+    it "returns nil for blank goals" do
+      expect(helper.agent_run_goal_label(nil)).to be_nil
+      expect(helper.agent_run_goal_label("")).to be_nil
+    end
+  end
 end
