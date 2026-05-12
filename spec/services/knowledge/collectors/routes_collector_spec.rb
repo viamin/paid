@@ -389,6 +389,20 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         end
       end
 
+      it "skips on database.yml YAML syntax errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): /tmp/bundle/ruby/3.4.0/gems/activesupport-8.1.3/lib/active_support/configuration_file.rb:38:in 'ActiveSupport::ConfigurationFile#parse': Cannot load database configuration: (RuntimeError) YAML syntax error occurred while parsing /workspace/config/database.yml. Please note that YAML must be consistently indented using spaces. Tabs are not allowed."
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
       it "skips when the sqlite3 adapter gem is missing from the bundle" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
