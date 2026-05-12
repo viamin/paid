@@ -70,7 +70,7 @@ module CoordinationPolicyEvolution
         {
           id: row[:id],
           version: row[:version],
-          active: row[:active]
+          status: row[:status]
         }.compact
       end
     end

@@ -17,8 +17,8 @@ RSpec.describe CoordinationPolicyEvolution::GenerateCandidates, :no_db do
     let(:analysis) do
       {
         prior_versions: [
-          { id: 7, version: 3, active: true },
-          { id: 5, version: 2, active: false }
+          { id: 7, version: 3, status: "active" },
+          { id: 5, version: 2, status: "retired" }
         ],
         performance: {
           decision_count: 12,
@@ -63,7 +63,7 @@ RSpec.describe CoordinationPolicyEvolution::GenerateCandidates, :no_db do
         "sampled_decision_ids" => [ 101, 202 ]
       )
       expect(result.first.provenance.fetch("prior_versions")).to include(
-        include(id: 7, version: 3, active: true)
+        include(id: 7, version: 3, status: "active")
       )
       expect(result.first.provenance.fetch("measured_outcomes")).to include(
         decision_count: 12,
