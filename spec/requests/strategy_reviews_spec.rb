@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "cgi"
 
 RSpec.describe "StrategyReviews" do
   let(:account) { create(:account) }
@@ -96,7 +97,7 @@ RSpec.describe "StrategyReviews" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Evolved candidate")
       expect(response.body).to include("Promotion Diff")
-      expect(response.body).to include("\"parallel\"")
+      expect(CGI.unescapeHTML(response.body)).to include("\"parallel\"")
     end
 
     it "does not allow direct review access for global strategies" do

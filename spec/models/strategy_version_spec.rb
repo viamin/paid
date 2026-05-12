@@ -129,7 +129,7 @@ RSpec.describe StrategyVersion do
 
     it "allows a later seeded global activation without reviewer metadata" do
       strategy = create(:strategy, :global)
-      create(:strategy_version, :active, strategy: strategy, version: 1)
+      create(:strategy_version, :retired, strategy: strategy, version: 1)
 
       version = build(
         :strategy_version,
