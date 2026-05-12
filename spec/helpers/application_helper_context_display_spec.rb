@@ -349,6 +349,12 @@ RSpec.describe ApplicationHelper, :no_db do
 
       expect(helper.agent_run_goal_text(run)).to eq("Custom goal")
     end
+
+    it "returns nil when the run does not expose a goal" do
+      run = Struct.new(:id, keyword_init: true).new(id: 1)
+
+      expect(helper.agent_run_goal_text(run)).to be_nil
+    end
   end
 
   describe "#agent_run_goal_label" do
