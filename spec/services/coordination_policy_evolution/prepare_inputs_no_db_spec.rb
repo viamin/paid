@@ -66,4 +66,29 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
       expect(service.send(:sample_successes)).to eq(sampled)
     end
   end
+
+  describe "escalation configuration extraction" do
+    it "reconstructs escalation config from persisted top-level rules and parameters" do
+      configuration = service.send(
+        :effective_configuration,
+        {
+          "explicit_triggers" => %w[operational_failure_breaker],
+          "auto_resolve_trigger_types" => %w[owner_approved]
+        },
+        {
+          "human_value_threshold" => 0.45,
+          "weights" => { "review_goal_retry_pressure" => 0.6 },
+          "interruption_cost" => { "base" => 0.2 }
+        }
+      )
+
+      expect(configuration.fetch("escalation")).to include(
+        "human_value_threshold" => 0.45,
+        "explicit_triggers" => %w[operational_failure_breaker],
+        "auto_resolve_trigger_types" => %w[owner_approved],
+        "weights" => { "review_goal_retry_pressure" => 0.6 },
+        "interruption_cost" => { "base" => 0.2 }
+      )
+    end
+  end
 end

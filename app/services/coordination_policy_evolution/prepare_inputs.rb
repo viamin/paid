@@ -420,8 +420,6 @@ module CoordinationPolicyEvolution
       escalation = payload.fetch("escalation", {})
 
       {}.tap do |config|
-        source = escalation.is_a?(Hash) ? escalation : payload
-
         %w[
           human_value_threshold
           explicit_triggers
@@ -429,7 +427,8 @@ module CoordinationPolicyEvolution
           weights
           interruption_cost
         ].each do |key|
-          config[key] = source[key] if source.key?(key)
+          config[key] = escalation[key] if escalation.is_a?(Hash) && escalation.key?(key)
+          config[key] = payload[key] if payload.key?(key)
         end
       end.compact
     end
