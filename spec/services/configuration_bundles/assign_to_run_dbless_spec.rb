@@ -86,6 +86,27 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "falls back to rebuilding the bundle payload when the optimizer definition value disagrees with the referenced variant" do
+      fallback_definition = experiment_definition_for(8000)
+      inconsistent_definition = experiment_definition_for(selected_variant.parsed_value)
+      selection = optimizer_selection(definition: inconsistent_definition)
+      referenced_variant = build_assignment_variant(8, 8000)
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        expected_optimizer_definition_attributes: selection_definition.except("experiments"),
+        optimizer_assignment_inputs_from_definition: [ [ experiment, referenced_variant ] ]
+      )
+      allow(service).to receive(:optimizer_definition_variant_matches?).and_return(false)
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
+
     it "falls back to rebuilding the bundle payload when the optimizer fingerprint is inconsistent" do
       fallback_definition = selection_definition.merge(
         "experiments" => {

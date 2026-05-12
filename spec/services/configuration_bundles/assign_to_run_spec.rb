@@ -216,6 +216,21 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
+  it "falls back to rebuilding the bundle definition when the optimizer definition value disagrees with the referenced variant" do
+    inconsistent_definition = optimizer_definition_for_variant(variant:, value: 12_000)
+    selection = optimizer_selection(definition: inconsistent_definition)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.fingerprint).to eq(described_class.new(agent_run: agent_run).send(:bundle_fingerprint, bundle.definition))
+    expect(bundle.fingerprint).not_to eq(selection.fingerprint)
+    expect(bundle.definition.dig("experiments", "knowledge.token_budget")).to include(
+      "configuration_experiment_variant_id" => variant.id,
+      "value" => 8000
+    )
+  end
+
   it "recomputes the fingerprint when the optimizer payload omits it" do
     optimized_definition = optimizer_definition_with_value(12_000)
     selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)
@@ -300,7 +315,10 @@ RSpec.describe ConfigurationBundles::AssignToRun do
   end
 
   def optimizer_definition_with_value(value)
-    optimizer_definition_for_variant(variant:, value:)
+    matching_variant = experiment.configuration_experiment_variants.find_or_create_by!(config_value: JSON.generate(value)) do |created_variant|
+      created_variant.is_control = false
+    end
+    optimizer_definition_for_variant(variant: matching_variant, value:)
   end
 
   def optimizer_definition_for_variant(variant:, value:)

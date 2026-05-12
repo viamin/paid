@@ -185,6 +185,7 @@ module ConfigurationBundles
         experiment = ConfigurationExperiment.find(experiment_id)
         variant = ConfigurationExperimentVariant.find(variant_id)
         raise ArgumentError, "configuration experiment variant must belong to the same experiment" if variant.configuration_experiment_id != experiment.id
+        raise ArgumentError, "configuration experiment variant value must match the optimizer definition" unless optimizer_definition_variant_matches?(experiment_definition, variant, experiment:)
 
         [ experiment, variant ]
       end
@@ -261,6 +262,14 @@ module ConfigurationBundles
       )
 
       INVALID_EXPERIMENT_VALUE
+    end
+
+    def optimizer_definition_variant_matches?(experiment_definition, variant, experiment:)
+      expected_value = experiment_definition["value"]
+      parsed_value = parsed_optimizer_variant_value(variant, experiment:)
+      return false if parsed_value.equal?(INVALID_EXPERIMENT_VALUE)
+
+      expected_value == parsed_value
     end
 
     def expected_optimizer_definition_attributes
