@@ -290,12 +290,14 @@ module Scaling
         decision = summary_value(summary, :allocator_decision)
         next unless decision.is_a?(Hash)
         next unless summary_value(summary, :dimension)
+        sample_count = summary_value(summary, :sample_count, default: 0)
+        next unless sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
 
         {
           summary: summary,
           decision: decision,
           dimension: summary_value(summary, :dimension),
-          sample_count: summary_value(summary, :sample_count, default: 0)
+          sample_count: sample_count
         }
       end
     end

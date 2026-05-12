@@ -289,6 +289,20 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.parallelism_level).to eq(2)
         expect(result.reason).to include("parallelism allocator decision")
       end
+
+      it "ignores allocator decisions that do not meet the minimum sample threshold" do
+        summaries = [
+          low_confidence_parallelism_summary,
+          experiment_summary(value: 2, success_rate: 0.8, avg_duration_seconds: 150, sample_count: 10, avg_cost_cents: 100.0)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("experiment leading value=2")
+      end
     end
 
     context "with experiment-based budget constraint" do
@@ -592,6 +606,27 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       "values" => [
         { "assigned_value" => 1, "success_rate" => 1.0, "avg_duration_seconds" => 300, "sample_count" => 6, "avg_cost_cents" => 120.0 },
         { "assigned_value" => 2, "success_rate" => 1.0, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 125.0 }
+      ]
+    }
+  end
+
+  def low_confidence_parallelism_summary
+    parallelism_experiment_summary.merge(
+      "sample_count" => 2,
+      "allocator_decision" => parallelism_experiment_summary.fetch("allocator_decision").merge(
+        "requested_agent_count" => 4,
+        "parallelism" => 4,
+        "max_batch_size" => 4
+      )
+    )
+  end
+
+  def experiment_summary(value:, **attributes)
+    {
+      "status" => "ready_for_analysis",
+      "dimension" => "agent_count",
+      "values" => [
+        { "assigned_value" => value }.merge(attributes.transform_keys(&:to_s))
       ]
     }
   end
