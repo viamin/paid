@@ -49,10 +49,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       optimized_definition = selection_definition
       selection = optimizer_selection(definition: optimized_definition)
 
-      allow(service).to receive_messages(
-        optimizer_selection: selection,
-        expected_optimizer_definition_attributes: optimized_definition.except("experiments")
-      )
+      allow(service).to receive(:optimizer_selection).and_return(selection)
       expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
       expect(agent_run).to receive(:update!).with(expected_update_arguments)
 
@@ -64,10 +61,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       selection = optimizer_selection(definition: optimized_definition, fingerprint: nil)
       computed_fingerprint = bundle_fingerprint(optimized_definition)
 
-      allow(service).to receive_messages(
-        optimizer_selection: selection,
-        expected_optimizer_definition_attributes: optimized_definition.except("experiments")
-      )
+      allow(service).to receive(:optimizer_selection).and_return(selection)
       expect_bundle_lookup(definition: optimized_definition, fingerprint: computed_fingerprint)
       expect(agent_run).to receive(:update!).with(expected_update_arguments)
 
@@ -94,7 +88,6 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
       allow(service).to receive_messages(
         optimizer_selection: selection,
-        expected_optimizer_definition_attributes: selection_definition.except("experiments"),
         optimizer_assignment_inputs_from_definition: [ [ experiment, referenced_variant ] ]
       )
       allow(service).to receive(:optimizer_definition_variant_matches?).and_return(false)
@@ -116,7 +109,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       selection = optimizer_selection(
         definition: selection_definition,
         fingerprint: "incorrect",
-        variant_by_experiment_id: { 42 => Object.new }
+        variant_by_experiment_id: { experiment.id => build_assignment_variant(8, 8000) }
       )
 
       allow(service).to receive(:optimizer_selection).and_return(selection)
@@ -236,7 +229,6 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
     allow(service).to receive_messages(
       optimizer_selection: selection,
-      expected_optimizer_definition_attributes: selection_definition.except("experiments"),
       optimizer_assignment_inputs_from_definition: [ [ experiment, optimizer_variant ] ]
     )
     expect(ConfigurationExperiments::Assign).to receive(:call).with(
@@ -260,7 +252,6 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
     allow(service).to receive_messages(
       optimizer_selection: selection,
-      expected_optimizer_definition_attributes: selection_definition.except("experiments"),
       optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ]
     )
     expect(ConfigurationExperiments::Assign).to receive(:call).with(

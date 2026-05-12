@@ -8,6 +8,12 @@ module ConfigurationBundles
 
     INVALID_EXPERIMENT_VALUE = Object.new
     FingerprintMismatchError = Class.new(StandardError)
+    OPTIONAL_EMPTY_DEFINITION_KEYS = %w[
+      custom_prompt_sha256
+      model_selection
+      mcp_servers
+      service_container_ids
+    ].freeze
 
     attr_reader :agent_run
 
@@ -240,7 +246,7 @@ module ConfigurationBundles
     end
 
     def optimizer_definition_matches_run?(definition)
-      return true if definition.except("experiments") == expected_optimizer_definition_attributes
+      return true if normalized_optimizer_definition_attributes(definition) == expected_optimizer_definition_attributes
 
       Rails.logger.warn(
         message: "configuration_bundles.optimizer_payload_definition_mismatch",
@@ -286,6 +292,14 @@ module ConfigurationBundles
           mcp_servers: normalized_mcp_servers
         }.compact
       )
+    end
+
+    def normalized_optimizer_definition_attributes(definition)
+      canonicalize(definition.except("experiments")).tap do |attributes|
+        OPTIONAL_EMPTY_DEFINITION_KEYS.each do |key|
+          attributes.delete(key) if attributes[key].blank?
+        end
+      end
     end
 
     def optimizer_selection
