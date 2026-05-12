@@ -11,10 +11,10 @@ RSpec.describe Coordination::FailureRecovery, :no_db do
       decision_point: "coordination_failure_recovery",
       action: orchestration_action,
       status: "failed",
-      signals: {
+      signals: hash_including(
         failure_category: "timeout",
         chosen_action: "escalate_model"
-      },
+      ),
       result: hash_including(
         chosen_action: "escalate_model",
         error_class: error_class_name
@@ -49,7 +49,13 @@ RSpec.describe Coordination::FailureRecovery, :no_db do
         end
       end)
       allow(OrchestrationDecision).to receive(:record)
-      allow(service).to receive(:build_decision_signals).with("timeout", "escalate_model").and_return(
+      allow(service).to receive(:build_decision_signals_from_values).with(
+        category: "timeout",
+        subcategory: nil,
+        action: "escalate_model",
+        policy: {},
+        failure_context: {}
+      ).and_return(
         failure_category: "timeout",
         chosen_action: "escalate_model"
       )
@@ -62,6 +68,55 @@ RSpec.describe Coordination::FailureRecovery, :no_db do
       service.send(:persist_failed_decision, error, category: "timeout", action: "escalate_model")
 
       expect_failed_decision_recorded(orchestration_action: "escalate", error_class_name: error_class.name)
+    end
+  end
+
+  describe "#build_decision_signals_from_values" do
+    let(:signal_builder) do
+      described_class.new(
+        agent_run: agent_run,
+        policy_overrides: {},
+        run_snapshot: { status: "timeout", parent_workflow_id: nil }
+      )
+    end
+
+    let(:policy) do
+      {
+        "source" => "defaults",
+        "policy_key" => "failure_recovery"
+      }
+    end
+
+    let(:failure_context) do
+      {
+        "policy_source" => "override",
+        "policy_key" => "failure_recovery",
+        "coordination_policy_id" => 12,
+        "error_message" => "timeout"
+      }
+    end
+
+    let(:signals) do
+      signal_builder.send(
+        :build_decision_signals_from_values,
+        category: "timeout",
+        subcategory: nil,
+        action: "escalate_model",
+        policy: policy,
+        failure_context: failure_context
+      )
+    end
+
+    it "uses a single policy metadata source when failure context already includes it" do
+      expect(signals).to include(
+        failure_category: "timeout",
+        chosen_action: "escalate_model",
+        policy_source: "override",
+        policy_key: "failure_recovery",
+        coordination_policy_id: 12
+      )
+      expect(signals["error_message"]).to eq("timeout")
+      expect(signals.keys.count(:policy_source)).to eq(1)
     end
   end
 end
