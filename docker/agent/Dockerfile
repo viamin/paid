@@ -221,6 +221,16 @@ RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
     fi \
     && npm install -g --ignore-scripts "${OPENCODE_PACKAGE}"
 
+# Pi CLI: version is owned by agent-harness (installation_contract).
+# PI_PACKAGE is extracted from agent-harness at build time by
+# build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
+ARG PI_PACKAGE
+RUN if [ -z "${PI_PACKAGE}" ]; then \
+        echo "ERROR: PI_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && npm install -g --ignore-scripts "${PI_PACKAGE}"
+
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,
 # non-interactive agent execution. Install recipe is owned by agent-harness.

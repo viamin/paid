@@ -6,6 +6,7 @@ require "shellwords"
 
 class Runner < ApplicationRecord
   self.table_name = "providers"
+  has_logidze
   include Discard::Model
 
   AUTH_TYPES = %w[subscription api_key].freeze

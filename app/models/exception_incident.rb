@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class ExceptionIncident < ApplicationRecord
+  has_logidze
   belongs_to :account
   belongs_to :project, optional: true
 

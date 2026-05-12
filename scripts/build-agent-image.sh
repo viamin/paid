@@ -101,6 +101,15 @@ if [ -z "${OPENCODE_PACKAGE}" ]; then
     exit 1
 fi
 
+# Extract Pi CLI package from agent-harness installation contract.
+# agent-harness owns the supported Pi CLI version; Paid consumes it at build time.
+PI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" pi)
+PI_PACKAGE=$(echo "${PI_CONTRACT}" | sed -n 's/^PACKAGE=//p')
+if [ -z "${PI_PACKAGE}" ]; then
+    echo "ERROR: Could not extract Pi package from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Kilocode CLI install command from agent-harness (single source of truth).
 KILOCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" kilocode)
 KILOCODE_INSTALL_COMMAND=$(echo "${KILOCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
@@ -146,6 +155,7 @@ echo "  claude-install: via agent-harness contract"
 echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
 echo "  opencode: ${OPENCODE_PACKAGE}"
+echo "  pi: ${PI_PACKAGE}"
 echo "  kilocode-cli: ${KILOCODE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 echo "  aider-cli: via agent-harness contract"
@@ -163,6 +173,7 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
     --build-arg "CURSOR_GLOBAL_PATH=${CURSOR_GLOBAL_PATH}" \
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     --build-arg "OPENCODE_PACKAGE=${OPENCODE_PACKAGE}" \
+    --build-arg "PI_PACKAGE=${PI_PACKAGE}" \
     --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     --build-arg "AIDER_INSTALL_COMMAND=${AIDER_INSTALL_COMMAND}" \

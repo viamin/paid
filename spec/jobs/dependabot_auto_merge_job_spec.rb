@@ -95,7 +95,7 @@ RSpec.describe DependabotAutoMergeJob do
         merged_at: nil,
         mergeable: true
       )
-      allow(client).to receive_messages(pull_requests: [ human_pr ], pull_request: human_pr)
+      allow(client).to receive(:pull_requests).and_return([ human_pr ])
 
       described_class.perform_now(project.id)
 
@@ -111,11 +111,72 @@ RSpec.describe DependabotAutoMergeJob do
         merged_at: Time.current,
         mergeable: true
       )
-      allow(client).to receive_messages(pull_requests: [ merged_pr ], pull_request: merged_pr)
+      allow(client).to receive(:pull_requests).and_return([ merged_pr ])
 
       described_class.perform_now(project.id)
 
       expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    it "merges the second PR when the first has failing CI" do
+      failing_pr = OpenStruct.new(
+        number: 99,
+        title: "Bump a from 1.0 to 2.0",
+        user: OpenStruct.new(login: "dependabot[bot]"),
+        head: OpenStruct.new(sha: "fail123"),
+        merged_at: nil,
+        mergeable: true
+      )
+      allow(client).to receive(:pull_requests).and_return([ failing_pr, dependabot_pr ])
+      allow(client).to receive(:pull_request).and_return(failing_pr, dependabot_pr)
+      allow(client).to receive(:check_runs_for_ref) do |_repo, sha|
+        sha == "fail123" ? [ { conclusion: "failure", name: "ci" } ] : green_checks
+      end
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request).with(
+        project.full_name, 42, merge_method: project.merge_method
+      )
+    end
+
+    it "stops after the first successful merge" do
+      green_pr_2 = OpenStruct.new(
+        number: 100,
+        title: "Bump b from 2.0 to 3.0",
+        user: OpenStruct.new(login: "dependabot[bot]"),
+        head: OpenStruct.new(sha: "green456"),
+        merged_at: nil,
+        mergeable: true
+      )
+      allow(client).to receive(:pull_requests).and_return([ dependabot_pr, green_pr_2 ])
+      allow(client).to receive(:pull_request).and_return(dependabot_pr, green_pr_2)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request).once
+      expect(client).to have_received(:merge_pull_request).with(
+        project.full_name, 42, merge_method: project.merge_method
+      )
+    end
+
+    it "fetches full PR lazily and skips unneeded fetches after merge" do
+      unmergeable_pr = OpenStruct.new(
+        number: 50,
+        title: "Bump c from 3.0 to 4.0",
+        user: OpenStruct.new(login: "dependabot[bot]"),
+        head: OpenStruct.new(sha: "conflict789"),
+        merged_at: nil,
+        mergeable: false
+      )
+      allow(client).to receive(:pull_requests).and_return([ unmergeable_pr, dependabot_pr ])
+      allow(client).to receive(:pull_request).and_return(unmergeable_pr, dependabot_pr)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:pull_request).with(project.full_name, 50)
+      expect(client).to have_received(:pull_request).with(project.full_name, 42)
+      expect(client).to have_received(:merge_pull_request).once
     end
 
     it "skips when no Dependabot PRs are found" do

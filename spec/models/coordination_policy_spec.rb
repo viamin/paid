@@ -62,6 +62,21 @@ RSpec.describe CoordinationPolicy do
       expect(coordination_policy.errors[:current_version]).to include("must be active before it can become current on an active policy")
     end
 
+    it "rejects a review-gated current version that is still pending approval" do
+      coordination_policy.current_version = build(:coordination_policy_version, coordination_policy:, status: "active", metadata: {
+        "evolution" => {
+          "approval" => {
+            "required" => true,
+            "status" => "pending_review"
+          }
+        }
+      })
+      coordination_policy.status = "active"
+
+      expect(coordination_policy).not_to be_valid
+      expect(coordination_policy.errors[:current_version]).to include("must be approved before it can become active")
+    end
+
     it "rejects an inactive policy that still points at an active current version" do
       active_version = create(:coordination_policy_version, :active, coordination_policy: coordination_policy)
       coordination_policy.current_version = active_version
@@ -140,6 +155,22 @@ RSpec.describe CoordinationPolicy do
         expect(next_version.reload.status).to eq("active")
         expect(next_version.activated_at).to eq(Time.current)
       end
+    end
+
+    it "refuses to activate a review-gated version until approved" do
+      policy = create(:coordination_policy)
+      pending_review_version = create(:coordination_policy_version, coordination_policy: policy, version: 1, metadata: {
+        "evolution" => {
+          "approval" => {
+            "required" => true,
+            "status" => "pending_review"
+          }
+        }
+      })
+
+      expect {
+        policy.activate_version!(pending_review_version)
+      }.to raise_error(CoordinationPolicyVersion::InvalidTransitionError, "cannot activate version pending review approval")
     end
   end
 end

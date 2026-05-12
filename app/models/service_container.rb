@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class ServiceContainer < ApplicationRecord
+  has_logidze
   STATUSES = %w[stopped starting running error].freeze
 
   belongs_to :account

@@ -5,6 +5,8 @@ require "rails_helper"
 RSpec.describe Projects::BundlePerformanceDashboardStats do
   describe ".call" do
     let(:project) { create(:project) }
+    let(:project_issue) { create(:issue, project: project) }
+    let(:shared_issues) { {} }
 
     it "returns a sparse payload with no outcomes or experiments" do
       stats = described_class.call(project: project)
@@ -84,7 +86,7 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
 
     it "is not sparse when optimizer insights have candidates despite no outcomes or experiments" do
-      run = create(:agent_run, project: project, issue: create(:issue, project: project), goal: "create_pr")
+      run = create(:agent_run, project: project, issue: project_issue, goal: "create_pr")
 
       allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates).and_return([])
       allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates)
@@ -232,10 +234,13 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
   end
 
   def create_assignment(project:, experiment:, variant:, quality_scores:)
+    issue = shared_issue_for(project)
+
     quality_scores.each do |score|
       run = create(:agent_run,
+        :completed,
         project: project,
-        issue: create(:issue, project: project),
+        issue: issue,
         goal: "create_pr")
       create(:configuration_experiment_assignment,
         configuration_experiment: experiment,
@@ -246,10 +251,12 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
   end
 
   def create_bundle_outcome(project:, bundle:, quality_score:, cost_cents:, metrics: nil)
+    issue = shared_issue_for(project)
+
     run = create(:agent_run,
       :completed,
       project: project,
-      issue: create(:issue, project: project),
+      issue: issue,
       goal: "create_pr",
       configuration_bundle: bundle,
       cost_cents: cost_cents)
@@ -272,6 +279,10 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
         "quality_per_dollar" => objective.quality_per_dollar
       },
       success: true)
+  end
+
+  def shared_issue_for(project)
+    shared_issues[project.id] ||= create(:issue, project: project)
   end
 
   def mock_optimizer_selection

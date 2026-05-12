@@ -59,6 +59,10 @@ module Scaling
     end
 
     def allocate_from_experiments
+      if (decision_summary = selected_experiment_allocator_decision)
+        return allocate_from_experiment_decision(decision_summary)
+      end
+
       best_summary = usable_experiment_summaries.max_by do |summary|
         [
           summary_value(summary, :success_rate, default: 0.0),
@@ -77,6 +81,21 @@ module Scaling
         parallelism_level: parallelism_cap(agent_count),
         source: :experiment,
         reason: "experiment leading value=#{value} success_rate=#{format_rate(summary_value(best_summary, :success_rate, default: 0.0))}"
+      )
+    end
+
+    def allocate_from_experiment_decision(decision_summary)
+      decision = decision_summary[:decision]
+      requested_agent_count = summary_value(decision, :requested_agent_count, default: conservative_agent_count)
+      agent_count = clamp_agents(requested_agent_count)
+      recommended_parallelism = summary_value(decision, :max_batch_size, default: parallelism_cap(agent_count))
+
+      build_allocation(
+        agent_count: agent_count,
+        max_iterations: 3,
+        parallelism_level: parallelism_cap([ recommended_parallelism.to_i, agent_count ].min),
+        source: :experiment,
+        reason: experiment_decision_reason(decision_summary)
       )
     end
 
@@ -257,6 +276,41 @@ module Scaling
       end
     end
 
+    def selected_experiment_allocator_decision
+      @selected_experiment_allocator_decision ||= experiment_allocator_decisions.max_by do |entry|
+        [
+          confidence_rank(summary_value(entry[:decision], :confidence)),
+          entry[:decision_sample_count]
+        ]
+      end
+    end
+
+    # Only parallelism-dimension summaries carry allocator decisions that
+    # should steer agent_count / parallelism_level.  Other dimensions
+    # (e.g. iteration_count, max_iterations) may have allocator_decision
+    # hashes but their values are not compatible with this code path.
+    ALLOCATOR_DECISION_DIMENSIONS = %w[parallelism].freeze
+
+    def experiment_allocator_decisions
+      @experiment_allocator_decisions ||= experiment_summaries.filter_map do |summary|
+        next unless summary_value(summary, :status).to_s == "ready_for_analysis"
+        decision = summary_value(summary, :allocator_decision)
+        next unless decision.is_a?(Hash)
+        dimension = summary_value(summary, :dimension).to_s
+        next unless ALLOCATOR_DECISION_DIMENSIONS.include?(dimension)
+        decision_sample_count = summary_value(decision, :sample_count, default: 0)
+        next unless decision_sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
+
+        {
+          summary: summary,
+          decision: decision,
+          dimension: summary_value(summary, :dimension),
+          sample_count: summary_value(summary, :sample_count, default: 0),
+          decision_sample_count: decision_sample_count
+        }
+      end
+    end
+
     # Normalizes experiment summaries to a flat per-value format.
     # Accepts both flat value hashes (already per-value) and the nested
     # cached_summary shape produced by ScalingExperiments::SummarizeResults,
@@ -279,6 +333,16 @@ module Scaling
 
     def parallelism_cap(agent_count)
       [ agent_count, inputs.parallelism_limit ].min
+    end
+
+    def experiment_decision_reason(decision_summary)
+      decision = decision_summary[:decision]
+
+      "#{decision_summary[:dimension]} allocator decision " \
+        "agents=#{summary_value(decision, :requested_agent_count, default: conservative_agent_count)} " \
+        "parallelism=#{summary_value(decision, :max_batch_size, default: nil)} " \
+        "n=#{decision_summary[:decision_sample_count]} " \
+        "confidence=#{summary_value(decision, :confidence, default: "unknown")}"
     end
 
     def fallback_reason
@@ -314,6 +378,14 @@ module Scaling
 
     def format_rate(value)
       format("%.2f%%", (value || 0.0) * 100)
+    end
+
+    def confidence_rank(value)
+      case value
+      when "high" then 2
+      when "medium" then 1
+      else 0
+      end
     end
   end
 end

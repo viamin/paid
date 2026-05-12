@@ -58,7 +58,7 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.18.0"
+gem "agent-harness", "~> 0.18.1"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.
