@@ -13,18 +13,9 @@ module Screenshots
       seed_records = {}
       results = {}
 
-      RUNNER_PATTERN = /\\A(?<class>Screenshots::SeedData::[A-Z]\\w*(?:::[A-Z]\\w*)*)\\.call\\z/
+      runner_pattern = /\\A(?<class>Screenshots::SeedData::[A-Z]\\w*(?:::[A-Z]\\w*)*)\\.call\\z/
 
-      def capture_seed_result(record)
-        return record unless record.respond_to?(:attributes)
-
-        record.attributes.each_with_object({}) do |(attribute, value), captured|
-          serialized = serialize_seed_value(value)
-          captured[attribute] = serialized unless serialized == :__screenshots_skip__
-        end
-      end
-
-      def serialize_seed_value(value)
+      serialize_seed_value = lambda do |value|
         case value
         when String, Numeric, TrueClass, FalseClass, NilClass
           value
@@ -35,12 +26,21 @@ module Screenshots
         end
       end
 
-      def resolve_seed_value(value, seed_records)
+      capture_seed_result = lambda do |record|
+        next record unless record.respond_to?(:attributes)
+
+        record.attributes.each_with_object({}) do |(attribute, value), captured|
+          serialized = serialize_seed_value.call(value)
+          captured[attribute] = serialized unless serialized == :__screenshots_skip__
+        end
+      end
+
+      resolve_seed_value = lambda do |value, seed_records|
         case value
         when Hash
-          value.transform_values { |nested| resolve_seed_value(nested, seed_records) }
+          value.transform_values { |nested| resolve_seed_value.call(nested, seed_records) }
         when Array
-          value.map { |nested| resolve_seed_value(nested, seed_records) }
+          value.map { |nested| resolve_seed_value.call(nested, seed_records) }
         when String
           seed_records.fetch(value, value)
         else
@@ -48,12 +48,12 @@ module Screenshots
         end
       end
 
-      def resolve_seed_attributes(attributes, seed_records)
-        attributes.to_h.transform_values { |value| resolve_seed_value(value, seed_records) }
+      resolve_seed_attributes = lambda do |attributes, seed_records|
+        attributes.to_h.transform_values { |value| resolve_seed_value.call(value, seed_records) }
       end
 
-      def execute_seed_runner(reference)
-        match = RUNNER_PATTERN.match(reference)
+      execute_seed_runner = lambda do |reference|
+        match = runner_pattern.match(reference)
         raise ArgumentError, "seed runner must reference Screenshots::SeedData::<Runner>.call" unless match
 
         runner_class = match[:class].safe_constantize
@@ -68,31 +68,31 @@ module Screenshots
         runner_class.call
       end
 
-      def with_seed_context
-        return yield unless defined?(TenantContext)
+      with_seed_context = lambda do |&block|
+        return block.call unless defined?(TenantContext)
 
-        TenantContext.with_system_access { yield }
+        TenantContext.with_system_access { block.call }
       end
 
-      with_seed_context do
+      with_seed_context.call do
         seed.each do |entry|
           key = entry.fetch("key")
 
           if entry["runner"].present?
-            result = execute_seed_runner(entry.fetch("runner"))
+            result = execute_seed_runner.call(entry.fetch("runner"))
             if key == "__all__" && result.is_a?(Hash)
               result.each do |rk, rv|
                 seed_records[rk.to_s] = rv
-                results[rk] = rv.respond_to?(:attributes) ? capture_seed_result(rv) : rv
+                results[rk] = rv.respond_to?(:attributes) ? capture_seed_result.call(rv) : rv
               end
             else
               seed_records[key] = result
-              results[key] = result.respond_to?(:attributes) ? capture_seed_result(result) : result
+              results[key] = result.respond_to?(:attributes) ? capture_seed_result.call(result) : result
             end
             next
           end
 
-          attributes = resolve_seed_attributes(entry["attributes"], seed_records)
+          attributes = resolve_seed_attributes.call(entry["attributes"], seed_records)
 
           record = if defined?(FactoryBot) && entry["factory"].present?
             FactoryBot.create(entry.fetch("factory").to_sym, **attributes.symbolize_keys)
@@ -106,7 +106,7 @@ module Screenshots
           end
 
           seed_records[key] = record
-          results[key] = capture_seed_result(record)
+          results[key] = capture_seed_result.call(record)
         end
       end
 

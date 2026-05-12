@@ -67,6 +67,9 @@ RSpec.describe ExceptionHandler::IssueFiler do
     end
 
     it "adds a comment instead of creating a duplicate issue for concurrent calls when the first filing is slow" do
+      incident
+      project
+
       allow(gh_issue).to receive_messages(html_url: "https://github.com/acme/widgets/issues/56", number: 56)
       create_issue_started = Queue.new
       release_create_issue = Queue.new

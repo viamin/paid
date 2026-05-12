@@ -6,6 +6,7 @@ RSpec.describe QualityRecovery::AutoImprove do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project, goal: "create_pr", status: "completed") }
   let(:threshold) { create(:quality_threshold, account: project.account, project: project, min_value: 0.6) }
+  let(:evaluation_runs) { 3 }
   let(:breach) do
     {
       threshold: threshold,
@@ -16,9 +17,11 @@ RSpec.describe QualityRecovery::AutoImprove do
   end
 
   describe "model escalation with per-goal tracking" do
-    let(:window_size) { QualityThreshold::DEFAULT_WINDOW_SIZE }
+    let(:window_size) { evaluation_runs }
 
     before do
+      stub_const("QualityRecovery::AutoImprove::EVALUATION_RUNS", evaluation_runs)
+
       create(:quality_recovery_action,
         project: project,
         agent_run: agent_run,
