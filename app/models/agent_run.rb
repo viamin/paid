@@ -520,29 +520,6 @@ class AgentRun < ApplicationRecord
     capacity_inflight.where(project_id: project.id).count
   end
 
-  # Returns the count of unfinished (queued/running/paused) auto-pick
-  # runs attributable to the given user. Used by queue seeding to cap queued
-  # auto-pick work at the user's max_concurrent_runs instead of seeding every
-  # eligible issue. Mirrors active_count_for_user's owner-resolution chain.
-  #
-  # Filters on the explicit `auto_pick: true` column set by
-  # Issues::AutoPick#create_agent_run. The column is set on every new auto-pick
-  # run, so the count is accurate for seeding decisions.
-  def self.unfinished_auto_pick_count_for_user(user)
-    base = where(status: UNFINISHED_STATUSES, auto_pick: true)
-    scope = base.joins(:project).where(projects: { created_by_id: user.id })
-
-    if orphaned_project_owner?(user)
-      scope = scope.or(
-        base.joins(:project).where(
-          projects: { created_by_id: nil, account_id: user.account_id }
-        )
-      )
-    end
-
-    scope.count
-  end
-
   def self.stale_running_timeout(goal: nil)
     return default_stale_running_timeout if goal.blank?
 
