@@ -243,7 +243,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
-  it "persists the existing assignment when a run already has an experiment assignment" do
+  it "persists the fingerprint for the resolved assignment when a run already has an experiment assignment" do
     challenger = create(:configuration_experiment_variant,
       configuration_experiment: experiment,
       config_value: JSON.generate(12_000))
@@ -327,7 +327,6 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       selection_context: "task"
     )
   end
-
   def expect_bundle_definition(bundle)
     expect(bundle.definition).to include(
       "schema_version" => 1,
