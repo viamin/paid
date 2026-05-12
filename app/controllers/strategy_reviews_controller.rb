@@ -81,18 +81,13 @@ class StrategyReviewsController < ApplicationController
   end
 
   def edit_params
-    permitted = params.require(:strategy_version)
-      .permit(:change_notes, :reasoning, :content)
+    strategy_version_params = params.require(:strategy_version)
+    permitted = strategy_version_params
+      .permit(:change_notes, :reasoning)
       .to_h
       .deep_symbolize_keys
-
-    if permitted[:content].is_a?(String)
-      permitted[:content] = JSON.parse(permitted[:content])
-    end
-
+    permitted[:content] = normalized_content(strategy_version_params[:content]) if strategy_version_params.key?(:content)
     permitted
-  rescue JSON::ParserError
-    raise ArgumentError, "content must be valid JSON"
   end
 
   def error_message(error)
@@ -100,5 +95,22 @@ class StrategyReviewsController < ApplicationController
     when ActiveRecord::RecordInvalid then error.record.errors.full_messages.join(", ")
     else error.message
     end
+  end
+
+  def normalized_content(content)
+    parsed_content =
+      case content
+      when String then JSON.parse(content)
+      when ActionController::Parameters then content.to_unsafe_h
+      when Hash, nil then content
+      else
+        raise ArgumentError, "content must be an object"
+      end
+
+    return parsed_content if parsed_content.nil? || parsed_content.is_a?(Hash)
+
+    raise ArgumentError, "content must be an object"
+  rescue JSON::ParserError
+    raise ArgumentError, "content must be valid JSON"
   end
 end
