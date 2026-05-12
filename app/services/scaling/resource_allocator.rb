@@ -285,11 +285,18 @@ module Scaling
       end
     end
 
+    # Only parallelism-dimension summaries carry allocator decisions that
+    # should steer agent_count / parallelism_level.  Other dimensions
+    # (e.g. iteration_count, max_iterations) may have allocator_decision
+    # hashes but their values are not compatible with this code path.
+    ALLOCATOR_DECISION_DIMENSIONS = %w[parallelism].freeze
+
     def experiment_allocator_decisions
       @experiment_allocator_decisions ||= experiment_summaries.filter_map do |summary|
         decision = summary_value(summary, :allocator_decision)
         next unless decision.is_a?(Hash)
-        next unless summary_value(summary, :dimension)
+        dimension = summary_value(summary, :dimension).to_s
+        next unless ALLOCATOR_DECISION_DIMENSIONS.include?(dimension)
         sample_count = summary_value(summary, :sample_count, default: 0)
         next unless sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
 

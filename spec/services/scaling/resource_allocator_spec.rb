@@ -290,6 +290,31 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.reason).to include("parallelism allocator decision")
       end
 
+      it "ignores allocator decisions from non-parallelism dimensions" do
+        summaries = [
+          {
+            "status" => "ready_for_analysis",
+            "dimension" => "iteration_count",
+            "sample_count" => 12,
+            "allocator_decision" => {
+              "requested_agent_count" => 8,
+              "max_batch_size" => 8,
+              "confidence" => "high"
+            },
+            "values" => [
+              { "assigned_value" => 3, "success_rate" => 0.9, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 100.0 },
+              { "assigned_value" => 5, "success_rate" => 0.8, "avg_duration_seconds" => 250, "sample_count" => 6, "avg_cost_cents" => 110.0 }
+            ]
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).not_to eq(8)
+        expect(result.reason).not_to include("allocator decision")
+      end
+
       it "ignores allocator decisions that do not meet the minimum sample threshold" do
         summaries = [
           low_confidence_parallelism_summary,
