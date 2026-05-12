@@ -46,7 +46,6 @@ class AgentRun < ApplicationRecord
     "No container provisioned",
     "commit_uncommitted_changes failed"
   ].freeze
-
   INFRA_FAILURE_KEYWORDS = [
     "Validation failed:",
     "ProviderAuthExpiredError",

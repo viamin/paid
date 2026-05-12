@@ -90,6 +90,34 @@ module Screenshots
             parent_version: current_prompt_version
           )
 
+          strategy = Strategy.find_or_create_by!(account: account, slug: "screenshots.strategy") do |record|
+            record.name = "Screenshot Strategy"
+            record.decision_type = "issue_execution"
+            record.status = "active"
+            record.selection_rules = {}
+          end
+
+          current_strategy_version = strategy.current_version || strategy.create_version!(
+            content: { "mode" => "single" },
+            provenance: { "source" => "screenshots_seed" },
+            promotion_state: "active",
+            created_by: "screenshots",
+            created_by_user: user,
+            promoted_at: Time.current,
+            promoted_by_user: user,
+            change_notes: "Initial screenshot strategy seed"
+          ).tap { |version| strategy.update!(current_version: version) }
+
+          pending_strategy_version = strategy.strategy_versions.pending_review.order(:id).first || strategy.create_pending_version!(
+            content: { "mode" => "parallel" },
+            provenance: { "source" => "screenshots_seed" },
+            reasoning: "Increase parallel review coverage",
+            change_notes: "Pending strategy review seed",
+            created_by: "screenshots",
+            created_by_user: user,
+            parent_version: current_strategy_version
+          )
+
           ab_test = prompt.ab_tests.where(name: "Screenshot A/B Test").first_or_create!(
             control_version: current_prompt_version,
             description: "Representative screenshot coverage",
@@ -210,6 +238,8 @@ module Screenshots
             "agent_run" => { "id" => agent_run.id },
             "prompt" => { "id" => prompt.id, "name" => prompt.name },
             "pending_prompt_version" => { "id" => pending_prompt_version.id },
+            "strategy" => { "id" => strategy.id, "name" => strategy.name },
+            "pending_strategy_version" => { "id" => pending_strategy_version.id },
             "ab_test" => { "id" => ab_test.id },
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },

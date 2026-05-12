@@ -3,7 +3,6 @@
 module Dashboard
   class ProviderHealth
     CACHE_TTL = 20.seconds
-    DEFAULT_CIRCUIT_BREAKER_TIMEOUT = UserSetting.column_defaults["circuit_breaker_timeout_seconds"]
 
     ProviderStatus = Struct.new(
       :provider,
@@ -100,7 +99,7 @@ module Dashboard
     end
 
     def circuit_breaker_timeout_for(provider)
-      provider.user.user_setting&.circuit_breaker_timeout_seconds || DEFAULT_CIRCUIT_BREAKER_TIMEOUT
+      provider.user.user_setting&.circuit_breaker_timeout_seconds || self.class.default_circuit_breaker_timeout
     end
 
     def status_priority(status)
@@ -114,6 +113,10 @@ module Dashboard
 
     def cache_key
       "dashboard/provider_health/#{account.id}"
+    end
+
+    def self.default_circuit_breaker_timeout
+      UserSetting.column_defaults["circuit_breaker_timeout_seconds"]
     end
   end
 end

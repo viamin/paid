@@ -88,6 +88,9 @@ module Screenshots
       prompt_reviews_queue: Target.new(slug: "prompt_reviews_queue", path_builder: "/prompt_reviews", requires_auth: true),
       prompt_reviews: Target.new(slug: "prompt_reviews", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews" }, requires_auth: true),
       prompt_review_show: Target.new(slug: "prompt_review_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews/#{seed_data.fetch(:pending_prompt_version).id}" }, requires_auth: true),
+      strategy_reviews_queue: Target.new(slug: "strategy_reviews_queue", path_builder: "/strategy_reviews", requires_auth: true),
+      strategy_reviews: Target.new(slug: "strategy_reviews", path_builder: ->(seed_data) { "/strategies/#{seed_data.fetch(:strategy).id}/reviews" }, requires_auth: true),
+      strategy_review_show: Target.new(slug: "strategy_review_show", path_builder: ->(seed_data) { "/strategies/#{seed_data.fetch(:strategy).id}/reviews/#{seed_data.fetch(:pending_strategy_version).id}" }, requires_auth: true),
       ab_tests: Target.new(slug: "ab_tests", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/ab_tests" }, requires_auth: true),
       ab_test_new: Target.new(slug: "ab_test_new", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/ab_tests/new" }, requires_auth: true),
       ab_test_show: Target.new(slug: "ab_test_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/ab_tests/#{seed_data.fetch(:ab_test).id}" }, requires_auth: true),
@@ -164,6 +167,7 @@ module Screenshots
       "agent_runs_controller.rb" => [ :agent_runs ],
       "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
+      "strategy_reviews_controller.rb" => %i[strategy_reviews_queue strategy_reviews strategy_review_show],
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
@@ -275,6 +279,7 @@ module Screenshots
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
+      when /\Astrategy_reviews\// then strategy_review_targets(relative_path.delete_prefix("strategy_reviews/"))
       when /\Aab_tests\// then ab_test_targets(relative_path.delete_prefix("ab_tests/"))
       when /\Aprompts\// then prompts_targets(relative_path.delete_prefix("prompts/"))
       when /\Astyle_guides\// then rest_resource_targets(relative_path, "style_guides", index: :style_guides, new: :style_guide_new, show: :style_guide_show, edit: :style_guide_edit)
@@ -304,6 +309,15 @@ module Screenshots
       when "index.html.erb" then [ :prompt_reviews ]
       else
         [ :prompt_review_show ]
+      end
+    end
+
+    def strategy_review_targets(leaf)
+      case leaf
+      when "queue.html.erb" then [ :strategy_reviews_queue ]
+      when "index.html.erb" then [ :strategy_reviews ]
+      else
+        [ :strategy_review_show ]
       end
     end
 
