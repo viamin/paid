@@ -108,7 +108,7 @@ class StrategyVersion < ApplicationRecord
   end
 
   def initial_seed_activation?
-    return false unless strategy&.persisted?
+    return true unless strategy&.persisted?
 
     strategy.strategy_versions.where.not(id: id).none?
   end

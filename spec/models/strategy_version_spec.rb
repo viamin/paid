@@ -111,7 +111,7 @@ RSpec.describe StrategyVersion do
       expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
     end
 
-    it "allows creating an active seed version without review metadata" do
+    it "allows creating an active seed version without review metadata for a new strategy" do
       version = build(:strategy_version, promotion_state: "active", promoted_at: nil, promoted_by_user: nil)
 
       expect(version).to be_valid
