@@ -293,6 +293,7 @@ module Scaling
 
     def experiment_allocator_decisions
       @experiment_allocator_decisions ||= experiment_summaries.filter_map do |summary|
+        next unless summary_value(summary, :status).to_s == "ready_for_analysis"
         decision = summary_value(summary, :allocator_decision)
         next unless decision.is_a?(Hash)
         dimension = summary_value(summary, :dimension).to_s

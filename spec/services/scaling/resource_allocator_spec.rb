@@ -340,6 +340,19 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.reason).not_to include("allocator decision")
       end
 
+      it "ignores allocator decisions from summaries that are not ready_for_analysis" do
+        summaries = [
+          parallelism_experiment_summary.merge("status" => "collecting"),
+          experiment_summary(value: 2, success_rate: 0.8, avg_duration_seconds: 150, sample_count: 10, avg_cost_cents: 100.0)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).not_to include("allocator decision")
+      end
+
       it "ignores allocator decisions that do not meet the minimum sample threshold" do
         summaries = [
           low_confidence_parallelism_summary,
