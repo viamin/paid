@@ -57,7 +57,9 @@ class Strategy < ApplicationRecord
     with_lock do
       next_version = (strategy_versions.maximum(:version) || 0) + 1
       safe_attributes = attributes.except(:version, "version")
-      safe_attributes[:promotion_state] = safe_attributes.delete("promotion_state") || safe_attributes[:promotion_state] || "candidate"
+      safe_attributes.delete("promotion_state")
+      safe_attributes.delete(:promotion_state)
+      safe_attributes[:promotion_state] = "candidate"
 
       strategy_versions.create!(safe_attributes.merge(version: next_version))
     end

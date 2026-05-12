@@ -32,7 +32,7 @@ class StrategyVersion < ApplicationRecord
   validate :single_active_version_per_strategy
   validate :immutable_content_after_creation, on: :update
   validate :parent_version_belongs_to_strategy
-  validate :activation_requires_promotion_metadata, on: :update
+  validate :activation_requires_promotion_metadata
 
   scope :draft, -> { where(promotion_state: "draft") }
   scope :candidate, -> { where(promotion_state: "candidate") }

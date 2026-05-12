@@ -197,6 +197,18 @@ RSpec.describe Strategy do
         expect(version.promotion_state).to eq("candidate")
         expect(strategy.reload.current_version).to be_nil
       end
+
+      it "ignores caller-supplied promotion state" do
+        strategy = create(:strategy, :global)
+
+        version = strategy.create_pending_version!(
+          content: { "mode" => "single" },
+          promotion_state: "active"
+        )
+
+        expect(version.promotion_state).to eq("candidate")
+        expect(version).to be_pending_review
+      end
     end
 
     describe "#pending_reviews" do
