@@ -48,6 +48,7 @@ module Knowledge
 
       ContextIntake::CompleteSession.call(session: @session)
       redirect_to project_context_intake_path(@project),
+        status: :see_other,
         notice: "Business context saved and synthesized into project knowledge."
     rescue ActiveRecord::RecordInvalid => e
       redirect_to project_context_intake_path(@project), alert: e.message
@@ -101,14 +102,9 @@ module Knowledge
 
     def complete_session!
       ContextIntake::CompleteSession.call(session: @session)
-
-      if turbo_frame_request?
-        render partial: "knowledge/context_intake/summary_frame",
-          locals: { project: @project, session: @session }
-      else
-        redirect_to project_context_intake_path(@project),
-          notice: "Business context saved and synthesized into project knowledge."
-      end
+      redirect_to project_context_intake_path(@project),
+        status: :see_other,
+        notice: "Business context saved and synthesized into project knowledge."
     end
 
     def render_wizard_response(status: :ok)
