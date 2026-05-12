@@ -42,6 +42,22 @@ RSpec.describe Knowledge::ContextIntake::WizardState, :no_db do
     end
   end
 
+  describe "boundary helpers" do
+    it "does not expose a previous question for the first step" do
+      state = described_class.new(responses: responses, active_question_key: "product_description")
+
+      expect(state.first_question?).to be(true)
+      expect(state.previous_question).to be_nil
+    end
+
+    it "marks the last step and omits a next question there" do
+      state = described_class.new(responses: responses, active_question_key: "naming_conventions")
+
+      expect(state.last_question?).to be(true)
+      expect(state.next_question).to be_nil
+    end
+  end
+
   describe "#first_unanswered_required_question_key" do
     it "returns the first unanswered required question in questionnaire order" do
       state = described_class.new(

@@ -39,9 +39,10 @@ module Knowledge
       end
     rescue ArgumentError, ActiveRecord::RecordInvalid => e
       @wizard_error = e.message
+      target_question_key = error_question_key
       load_wizard_state(
-        active_question_key: error_question_key,
-        submitted_answer_text: params[:answer_text]
+        active_question_key: target_question_key,
+        submitted_answer_text: submitted_answer_text_for(target_question_key)
       )
       render_wizard_response(status: :unprocessable_entity)
     end
@@ -183,6 +184,10 @@ module Knowledge
       return first_unanswered_required_question_key if finish_navigation?
 
       params[:question_key]
+    end
+
+    def submitted_answer_text_for(target_question_key)
+      params[:answer_text] if target_question_key == params[:question_key]
     end
 
     def first_unanswered_required_question_key

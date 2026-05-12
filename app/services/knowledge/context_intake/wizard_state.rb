@@ -6,7 +6,7 @@ module Knowledge
       attr_reader :responses, :active_question_key
 
       def initialize(responses:, active_question_key: nil)
-        @responses = responses
+        @responses = responses || {}
         @active_question_key = active_question_key
       end
 
@@ -37,6 +37,14 @@ module Knowledge
 
       def next_question
         ordered_questions[current_question_index + 1]
+      end
+
+      def first_question?
+        current_question_index.zero?
+      end
+
+      def last_question?
+        current_question_index == ordered_questions.length - 1
       end
 
       def navigation_question_key(current_question_key:, direction:)

@@ -99,7 +99,7 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
   def answer_question(question_key, answer_text, button:)
     within(:xpath, %(.//form[input[@name='question_key' and @value='#{question_key}']])) do
       fill_in "answer_text", with: answer_text
-      click_button button
+      click_button button, exact: true
     end
   end
 
