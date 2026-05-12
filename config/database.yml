@@ -1,3 +1,11 @@
+<%
+require_relative "./worktree_database_names"
+
+development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name(app_root: __dir__)
+development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name(app_root: __dir__)
+test_database = Paid::WorktreeDatabaseNames.test_name(app_root: __dir__)
+%>
+
 # PostgreSQL. Versions 9.3 and up are supported.
 #
 # Install the pg driver:
@@ -28,10 +36,10 @@ default: &default
 development:
   primary: &primary_development
     <<: *default
-    database: paid_development
+    database: <%= development_primary_database %>
   cable:
     <<: *primary_development
-    database: paid_development_cable
+    database: <%= development_cable_database %>
     migrations_paths: db/cable_migrate
 
   # The specified database role being used to connect to PostgreSQL.
@@ -66,7 +74,7 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: paid_test
+  database: <%= test_database %>
   # Disable prepared statements in tests to avoid cached-plan failures when
   # order-dependent examples recreate or change schema objects mid-suite.
   prepared_statements: false
@@ -95,7 +103,7 @@ test:
 #   CACHE_DATABASE_URL="postgres://cacheuser:cachepass@localhost/cachedatabase"
 #
 # Read https://guides.rubyonrails.org/configuring.html#configuring-a-database
-# for a full overview on how database connection configuration can be specified.
+# for a full overview of how database connection configuration can be specified.
 #
 production:
   primary: &primary_production

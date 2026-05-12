@@ -7,16 +7,16 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
   let(:user) { create(:user, :owner, account: account) }
 
   describe ".call" do
-    context "with an Anthropic API key provider" do
+    context "with an Anthropic API key runner" do
       it "returns an HttpClient with TextTransport" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-ant-test-key", api_service_type: "anthropic")
-        provider = create(:provider, :api_key,
+        runner = create(:runner, :api_key,
           user: user,
-          provider_key: "kilocode",
+          runner_key: "kilocode",
           provider_api_key: api_key_record,
           config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
         )
-        chat_session = create(:chat_session, account: account, created_by: user, provider: provider, model: "claude-sonnet-4-20250514")
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "claude-sonnet-4-20250514")
 
         client = described_class.call(chat_session: chat_session)
 
@@ -25,16 +25,16 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       end
     end
 
-    context "with an OpenAI-compatible API key provider" do
+    context "with an OpenAI-compatible API key runner" do
       it "returns an HttpClient with OpenAICompatibleTransport" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
-        provider = create(:provider, :api_key,
+        runner = create(:runner, :api_key,
           user: user,
-          provider_key: "opencode",
+          runner_key: "opencode",
           provider_api_key: api_key_record,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
         )
-        chat_session = create(:chat_session, account: account, created_by: user, provider: provider, model: "moonshotai/kimi-k2")
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "moonshotai/kimi-k2")
 
         client = described_class.call(chat_session: chat_session)
 
@@ -43,10 +43,10 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       end
     end
 
-    context "with a subscription provider (no API key)" do
+    context "with a subscription runner (no API key)" do
       it "returns a FallbackClient" do
-        provider = user.providers.find_or_create_by!(provider_key: "cursor", auth_type: "subscription")
-        chat_session = create(:chat_session, account: account, created_by: user, provider: provider)
+        runner = user.runners.find_or_create_by!(runner_key: "cursor", auth_type: "subscription")
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
 
         client = described_class.call(chat_session: chat_session)
 
@@ -54,7 +54,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       end
     end
 
-    context "without a provider" do
+    context "without a runner" do
       it "returns a FallbackClient" do
         chat_session = create(:chat_session, account: account, created_by: user)
 

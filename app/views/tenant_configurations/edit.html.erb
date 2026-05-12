@@ -14,27 +14,27 @@
 
   <%= form_with model: @tenant_setting, url: tenant_configuration_path, method: :patch, class: "space-y-10" do |form| %>
     <section>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Provider Preferences</h2>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Runner Preferences</h2>
       <div class="mt-4 grid gap-4 sm:grid-cols-2">
-        <% ProviderSupport.api_service_types.each do |service_type, label| %>
-          <% selected_id = @tenant_setting.effective_provider_preferences.dig("api_key_ids", service_type).to_s %>
+        <% RunnerSupport.api_service_types.each do |service_type, label| %>
+          <% selected_id = @tenant_setting.effective_runner_preferences.dig("api_key_ids", service_type).to_s %>
           <div>
-            <%= label_tag "tenant_setting_provider_preferences_api_key_ids_#{service_type}", "#{label} API key", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= select_tag "tenant_setting[provider_preferences][api_key_ids][#{service_type}]",
+            <%= label_tag "tenant_setting_runner_preferences_api_key_ids_#{service_type}", "#{label} API key", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= select_tag "tenant_setting[runner_preferences][api_key_ids][#{service_type}]",
               options_for_select([["Account fallback", ""]] + @provider_api_keys.select { |key| key.api_service_type == service_type }.map { |key| ["#{key.name} (#{key.user.email})", key.id] }, selected_id),
-              id: "tenant_setting_provider_preferences_api_key_ids_#{service_type}",
+              id: "tenant_setting_runner_preferences_api_key_ids_#{service_type}",
               class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
           </div>
         <% end %>
       </div>
 
       <div class="mt-6 grid gap-4 sm:grid-cols-2">
-        <% ProviderSupport.supported_provider_keys.each do |provider_key| %>
-          <% model_id = @tenant_setting.effective_provider_preferences.dig("model_preferences", provider_key).to_s %>
+        <% RunnerSupport.supported_runner_keys.each do |runner_key| %>
+          <% model_id = @tenant_setting.effective_runner_preferences.dig("model_preferences", runner_key).to_s %>
           <div>
-            <%= label_tag "tenant_setting_provider_preferences_model_preferences_#{provider_key}", "#{Provider.display_name_for(provider_key)} model", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= text_field_tag "tenant_setting[provider_preferences][model_preferences][#{provider_key}]", model_id,
-              id: "tenant_setting_provider_preferences_model_preferences_#{provider_key}",
+            <%= label_tag "tenant_setting_runner_preferences_model_preferences_#{runner_key}", "#{Runner.display_name_for(runner_key)} model", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+            <%= text_field_tag "tenant_setting[runner_preferences][model_preferences][#{runner_key}]", model_id,
+              id: "tenant_setting_runner_preferences_model_preferences_#{runner_key}",
               class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
           </div>
         <% end %>

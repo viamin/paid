@@ -49,16 +49,16 @@
         </div>
 
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Provider Entries</dt>
+          <dt class="text-sm font-medium text-gray-500">Runner Entries</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-            <% if @provider_api_key.providers.any? %>
+            <% if @provider_api_key.runners.any? %>
               <ul class="list-disc pl-5 space-y-1">
-                <% @provider_api_key.providers.each do |provider| %>
-                  <li><%= provider.display_name %> (<%= provider.fallback_role.titleize %>)</li>
+                <% @provider_api_key.runners.each do |runner| %>
+                  <li><%= runner.display_name %> (<%= runner.fallback_role.titleize %>)</li>
                 <% end %>
               </ul>
             <% else %>
-              <p class="text-gray-500">No provider entries yet. <%= link_to "Add one on the Providers page", new_provider_path, class: "text-indigo-600 hover:text-indigo-500" %>.</p>
+              <p class="text-gray-500">No runner entries yet. <%= link_to "Add one on the Runners page", new_runner_path, class: "text-indigo-600 hover:text-indigo-500" %>.</p>
             <% end %>
           </dd>
         </div>

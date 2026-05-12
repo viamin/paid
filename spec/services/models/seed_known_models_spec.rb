@@ -19,7 +19,7 @@ RSpec.describe Models::SeedKnownModels do
 
       model = LlmModel.find_by(model_id: "claude-sonnet-4-6")
       expect(model).to be_present
-      expect(model.provider).to eq("anthropic")
+      expect(model.runner).to eq("anthropic")
       expect(model.input_cost_per_million).to eq(3.0)
       expect(model.capability_score).to eq(9.0)
     end
@@ -39,7 +39,7 @@ RSpec.describe Models::SeedKnownModels do
       existing = LlmModel.create!(
         model_id: "claude-opus-4-6",
         display_name: "Outdated",
-        provider: "anthropic",
+        runner: "anthropic",
         category: "coding",
         tier: nil
       )

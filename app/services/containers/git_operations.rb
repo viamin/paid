@@ -424,7 +424,7 @@ module Containers
     # container/filesystem error does not abort an agent run for what is
     # a metadata-only concern.
     #
-    # @param provider_record [Provider, nil] the provider whose trailer to
+    # @param runner_record [Runner, nil] the runner whose trailer to
     #   use; pass nil to clear the file.
     # @return [void]
     def write_co_author_trailer(provider_record)
@@ -1045,7 +1045,7 @@ module Containers
       owner = agent_run.project&.effective_owner
       return false unless owner
 
-      owner.providers
+      owner.runners
         .where.not(agent_co_author_trailer: nil)
         .where.not(agent_co_author_trailer: "")
         .exists?

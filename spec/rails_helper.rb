@@ -80,7 +80,7 @@ RSpec.configure do |config|
 
   # Reset memoized provider support data between tests
   config.after do
-    ProviderSupport.reset_supported_provider_keys!
+    RunnerSupport.reset_supported_runner_keys!
   end
 
   config.filter_run_excluding :provider_smoke unless ENV["RUN_PROVIDER_SMOKE"] == "true"

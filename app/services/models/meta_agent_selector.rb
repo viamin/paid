@@ -2,7 +2,7 @@
 
 module Models
   class MetaAgentSelector
-    include ProviderTierLookup
+    include RunnerTierLookup
 
     MODEL = "claude-haiku-4-5-20251001"
     TIMEOUT = 15
@@ -23,7 +23,7 @@ module Models
       candidates = available_candidates(tier: initial_tier)
       return nil if candidates.empty?
 
-      # When the candidate pool contains a single entry — whether from a provider
+      # When the candidate pool contains a single entry — whether from a runner
       # tier pin or a global pool with one active model — skip the LLM round-trip.
       if candidates.size == 1
         only = candidates.first
@@ -75,10 +75,10 @@ module Models
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
 
-      # Prefer the provider's explicitly configured tier model when available
-      provider_model = provider_tier_model(tier)
-      if provider_model && !excluded_model?(provider_model, excluded)
-        return [ provider_model ]
+      # Prefer the runner's explicitly configured tier model when available
+      runner_model = runner_tier_model(tier)
+      if runner_model && !excluded_model?(runner_model, excluded)
+        return [ runner_model ]
       end
 
       if tier
@@ -94,7 +94,7 @@ module Models
     def request_selection(candidates)
       response = AgentHarness.send_message(
         build_prompt(candidates),
-        provider: :claude,
+        runner: :claude,
         model: MODEL,
         timeout: TIMEOUT,
         tools: :none,

@@ -21,8 +21,8 @@ class ProjectsController < ApplicationController
 
   def show
     authorize @project
-    @recent_agent_runs = @project.agent_runs.recent.includes(:provider, :issue, project: [ :created_by, :account ]).limit(10).to_a
-    AgentRun.preload_final_provider_records(@recent_agent_runs)
+    @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
+    AgentRun.preload_final_runner_records(@recent_agent_runs)
     @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
     AgentRun.preload_source_pull_requests(@recent_agent_runs)
@@ -39,10 +39,10 @@ class ProjectsController < ApplicationController
       .where(issue_id: visible_issue_ids)
       .pluck(:issue_id)
     @paused_agent_runs = @project.agent_runs.paused
-      .includes(:issue, :provider, project: [ :created_by, :account ])
+      .includes(:issue, :runner, project: [ :created_by, :account ])
       .order(paused_at: :desc, created_at: :desc)
       .to_a
-    AgentRun.preload_final_provider_records(@paused_agent_runs)
+    AgentRun.preload_final_runner_records(@paused_agent_runs)
     @paused_runs_by_issue_id = @paused_agent_runs.each_with_object({}) do |run, h|
       h[run.issue_id] ||= run if run.issue_id.present?
     end

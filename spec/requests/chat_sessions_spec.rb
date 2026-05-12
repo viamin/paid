@@ -258,7 +258,7 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("You have read-only access to this chat.")
         expect(response.body).not_to include(%(name="chat_session[title]"))
-        expect(response.body).not_to include(%(name="chat_session[provider_id]"))
+        expect(response.body).not_to include(%(name="chat_session[runner_id]"))
         expect(response.body).not_to include(%(name="chat_session[model]"))
         expect(response.body).not_to include(%(name="content"))
         expect(response.body).not_to include("New Chat")

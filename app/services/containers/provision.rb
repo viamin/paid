@@ -87,7 +87,7 @@ module Containers
     end
 
     # Raised when streaming output matches an abort pattern, indicating a
-    # fatal provider error where the CLI is known to hang instead of exiting.
+    # fatal runner error where the CLI is known to hang instead of exiting.
     class OutputAbortError < Error
       attr_reader :matched_output
 
@@ -161,7 +161,7 @@ module Containers
         Rails.logger.warn(
           message: "container_manager.container.network_option_ignored",
           agent_run_id: agent_run&.id,
-          hint: "The :network option is ignored; containers use the network selected by provider auth mode"
+          hint: "The :network option is ignored; containers use the network selected by runner auth mode"
         )
         options.delete(:network)
       end
@@ -1006,7 +1006,7 @@ module Containers
     # Writes a minimal Codex config into the writable ~/.codex tmpfs so the
     # CLI uses API-key auth against Paid's OpenAI proxy instead of cached
     # ChatGPT credentials. This keeps containerized runs aligned with Paid's
-    # provider configuration.
+    # runner configuration.
     def seed_codex_config!
       config_toml = codex_harness_provider.config_file_content(
         model_provider: "paid",
@@ -1128,7 +1128,7 @@ module Containers
     # auth.json. After lock_timeout_seconds, logs a warning and proceeds
     # without the lock — a concurrent OAuth refresh may fail with
     # refresh_token_reused, which Paid classifies as auth_expired and handles
-    # via the standard provider fallback path.
+    # via the standard runner fallback path.
     def with_codex_auth_lock(command)
       return yield unless codex_auth_lock_required?(command)
 
@@ -1176,7 +1176,7 @@ module Containers
     end
 
     def seed_opencode_database!
-      return unless opencode_provider_requested?
+      return unless opencode_runner_requested?
 
       result = container.exec(
         [ "sh", "-c",
@@ -1194,13 +1194,13 @@ module Containers
       log_system("container.opencode_database_seed_failed", error: e.message)
     end
 
-    def opencode_provider_requested?
+    def opencode_runner_requested?
       return false unless agent_run
 
-      providers = resolved_run_provider_candidates
-      return providers.any? { |provider| provider.provider_key == "opencode" } if providers.any?
+      runners = resolved_run_runner_candidates
+      return runners.any? { |runner| runner.runner_key == "opencode" } if runners.any?
 
-      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "opencode"
+      RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
 
     def seed_gemini_credentials!
@@ -1798,8 +1798,8 @@ module Containers
     end
 
     # Proxy-mode API key auth uses the restricted paid_agent network.
-    # Subscription auth and direct-outbound providers use paid_internal so
-    # provider CLIs can reach their upstream APIs directly.
+    # Subscription auth and direct-outbound runners use paid_internal so
+    # runner CLIs can reach their upstream APIs directly.
     def container_network
       network_name
     end
@@ -1807,97 +1807,97 @@ module Containers
     def network_contract
       @network_contract ||= NetworkPolicy.contract(
         subscription_auth: subscription_auth?,
-        direct_outbound: direct_outbound_provider?
+        direct_outbound: direct_outbound_runner?
       )
     end
 
-    def direct_outbound_provider?
-      return @direct_outbound_provider if instance_variable_defined?(:@direct_outbound_provider)
+    def direct_outbound_runner?
+      return @direct_outbound_runner if instance_variable_defined?(:@direct_outbound_runner)
 
-      @direct_outbound_provider = compute_direct_outbound_provider?
+      @direct_outbound_runner = compute_direct_outbound_runner?
     end
 
-    def compute_direct_outbound_provider?
+    def compute_direct_outbound_runner?
       settings = resolved_user_settings
-      return true if primary_provider_requires_direct_outbound?(settings)
+      return true if primary_runner_requires_direct_outbound?(settings)
       return false unless settings
 
-      return true if settings.fallback_enabled? && fallback_providers_require_direct_outbound?(settings)
+      return true if settings.fallback_enabled? && fallback_runners_require_direct_outbound?(settings)
 
-      rate_limit_fallback_providers_require_direct_outbound?(settings)
+      rate_limit_fallback_runners_require_direct_outbound?(settings)
     end
 
-    def primary_provider_requires_direct_outbound?(settings)
-      provider_requires_direct_outbound?(primary_provider_identifier(settings), user: settings&.user)
+    def primary_runner_requires_direct_outbound?(settings)
+      runner_requires_direct_outbound?(primary_runner_identifier(settings), user: settings&.user)
     end
 
-    def primary_provider_identifier(settings)
-      if runnable_saved_provider?
-        agent_run.provider.routing_key
-      elsif agent_run&.provider.present? && settings&.fallback_enabled?
-        # Saved provider exists but isn't container-executable — derive the
+    def primary_runner_identifier(settings)
+      if runnable_saved_runner?
+        agent_run.runner.routing_key
+      elsif agent_run&.runner.present? && settings&.fallback_enabled?
+        # Saved runner exists but isn't container-executable — derive the
         # effective primary from the same fallback order that
-        # RunAgentActivity#build_provider_order uses: try configured fallbacks
+        # RunAgentActivity#build_runner_order uses: try configured fallbacks
         # first, only fall through to the goal default when none are runnable.
-        first_runnable_fallback_for_saved_provider(settings) ||
-          settings.default_provider_identifier_for_goal(run_goal)
+        first_runnable_fallback_for_saved_runner(settings) ||
+          settings.default_runner_identifier_for_goal(run_goal)
       elsif agent_run.present? && runnable_agent_type?(agent_run.agent_type)
         agent_run.agent_type
       elsif settings
-        settings.default_provider_identifier_for_goal(run_goal)
+        settings.default_runner_identifier_for_goal(run_goal)
       end
     end
 
-    def runnable_saved_provider?
-      agent_run&.provider.present? && runnable_provider?(agent_run.provider)
+    def runnable_saved_runner?
+      agent_run&.runner.present? && runnable_runner?(agent_run.runner)
     end
 
-    def first_runnable_fallback_for_saved_provider(settings)
+    def first_runnable_fallback_for_saved_runner(settings)
       fallbacks = settings.fallback_priority_for(
-        primary_provider: agent_run.provider.routing_key, identifiers: true
+        primary_runner: agent_run.runner.routing_key, identifiers: true
       )
       fallbacks.find do |identifier|
-        provider = Provider.for_identifier(settings.user, identifier)
-        provider && ProviderSupport.container_executable_provider_key?(provider.provider_key)
+        runner = Runner.for_identifier(settings.user, identifier)
+        runner && RunnerSupport.container_executable_runner_key?(runner.runner_key)
       end
     end
 
-    def runnable_provider?(provider)
-      ProviderSupport.container_executable_provider_key?(provider.provider_key)
+    def runnable_runner?(runner)
+      RunnerSupport.container_executable_runner_key?(runner.runner_key)
     end
 
     def runnable_agent_type?(agent_type)
       return false unless agent_type.present? && AgentRun::AGENT_TYPES.include?(agent_type)
 
-      provider_key = Provider.provider_key_for_agent_type(agent_type)
-      ProviderSupport.container_executable_provider_key?(provider_key)
+      runner_key = Runner.runner_key_for_agent_type(agent_type)
+      RunnerSupport.container_executable_runner_key?(runner_key)
     end
 
     def run_goal
       agent_run&.goal || "create_pr"
     end
 
-    def provider_requires_direct_outbound?(identifier, user:)
+    def runner_requires_direct_outbound?(identifier, user:)
       return false if identifier.blank?
       return true if identifier.to_s == "kilocode"
 
-      provider = Provider.for_identifier(user, identifier)
-      return true if provider&.provider_key == "kilocode"
+      runner = Runner.for_identifier(user, identifier)
+      return true if runner&.runner_key == "kilocode"
 
-      provider&.requires_direct_outbound? || false
+      runner&.requires_direct_outbound? || false
     end
 
-    def fallback_providers_require_direct_outbound?(settings)
-      primary_identifier = primary_provider_identifier(settings)
-      fallback_identifiers = settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true)
+    def fallback_runners_require_direct_outbound?(settings)
+      primary_identifier = primary_runner_identifier(settings)
+      fallback_identifiers = settings.fallback_priority_for(primary_runner: primary_identifier, identifiers: true)
       fallback_identifiers.any? do |identifier|
-        provider_requires_direct_outbound?(identifier, user: settings.user)
+        runner_requires_direct_outbound?(identifier, user: settings.user)
       end
     end
 
-    def rate_limit_fallback_providers_require_direct_outbound?(settings)
-      rate_limit_fallback_providers = settings.user.providers.api_key.rate_limit_fallback.for_fallback
-      rate_limit_fallback_providers.any?(&:requires_direct_outbound?)
+    def rate_limit_fallback_runners_require_direct_outbound?(settings)
+      rate_limit_fallback_runners = settings.user.runners.api_key.rate_limit_fallback.for_fallback
+      rate_limit_fallback_runners.any?(&:requires_direct_outbound?)
     end
 
     def resolved_user_settings
@@ -1969,24 +1969,24 @@ module Containers
         "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ]
 
-      # Append provider-specific CLI settings (e.g. sandbox flags, retry config)
+      # Append runner-specific CLI settings (e.g. sandbox flags, retry config)
       # from agent-harness so the gem is the single source of truth.
       # Filter out vars already set above so app-managed values (e.g.
       # PAID_CODEX_SUBSCRIPTION_AUTH) are never overridden by harness defaults.
       existing_keys = env.each_with_object(Set.new) { |entry, set| set << entry.split("=", 2).first }
-      env.concat(provider_cli_env_overrides.reject { |entry| existing_keys.include?(entry.split("=", 2).first) })
+      env.concat(runner_cli_env_overrides.reject { |entry| existing_keys.include?(entry.split("=", 2).first) })
 
       env
     end
 
-    # Intentionally no rescue — if a harness provider is misconfigured or
+    # Intentionally no rescue — if a harness runner is misconfigured or
     # stops exporting cli_env_overrides, we want the error to propagate so
     # containers are never provisioned without required flags (e.g.
     # GEMINI_SANDBOX=false).
-    def provider_cli_env_overrides
-      ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS.flat_map do |key|
-        harness_key = ProviderSupport.harness_provider_key_for(key).to_sym
-        AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
+    def runner_cli_env_overrides
+      RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS.flat_map do |key|
+        harness_key = RunnerSupport.harness_runner_key_for(key).to_sym
+        AgentHarness.runner(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
       end
     end
 
@@ -2000,7 +2000,7 @@ module Containers
       pool_entry.present?
     end
 
-    # Returns true when any provider CLI config is available for
+    # Returns true when any runner CLI config is available for
     # subscription-based authentication via copied host login state.
     def subscription_auth?
       claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
@@ -2059,7 +2059,7 @@ module Containers
     end
 
     def unshared_codex_subscription_auth?
-      unshared_codex_auth_path.present? && codex_subscription_provider_requested?
+      unshared_codex_auth_path.present? && codex_subscription_runner_requested?
     end
 
     def unshared_codex_auth_path
@@ -2068,46 +2068,46 @@ module Containers
       end
     end
 
-    def codex_subscription_provider_requested?
+    def codex_subscription_runner_requested?
       return false unless agent_run
 
-      providers = resolved_run_provider_candidates
-      return providers.any? { |provider| provider.provider_key == "codex" && provider.subscription? } if providers.any?
+      runners = resolved_run_runner_candidates
+      return runners.any? { |runner| runner.runner_key == "codex" && runner.subscription? } if runners.any?
 
-      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "codex"
+      RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "codex"
     end
 
-    def resolved_run_provider_candidates
-      return run_provider_candidates if agent_run.provider
+    def resolved_run_runner_candidates
+      return run_runner_candidates if agent_run.runner
 
       settings = resolved_user_settings
       return [] unless settings
 
-      primary = settings.default_provider_identifier_for_goal(agent_run.goal)
+      primary = settings.default_runner_identifier_for_goal(agent_run.goal)
       identifiers = [ primary ].compact
       if settings.fallback_enabled?
-        identifiers.concat(settings.fallback_priority_for(primary_provider: primary, identifiers: true))
+        identifiers.concat(settings.fallback_priority_for(primary_runner: primary, identifiers: true))
       end
 
-      providers_for_identifiers(identifiers, user: settings.user)
+      runners_for_identifiers(identifiers, user: settings.user)
     end
 
-    def run_provider_candidates
-      providers = [ agent_run.provider ]
+    def run_runner_candidates
+      runners = [ agent_run.runner ]
       settings = resolved_user_settings
       if settings&.fallback_enabled?
-        providers.concat(providers_for_identifiers(
-          settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true),
+        runners.concat(runners_for_identifiers(
+          settings.fallback_priority_for(primary_runner: agent_run.runner.routing_key, identifiers: true),
           user: settings.user
         ))
       end
 
-      providers.compact
+      runners.compact
     end
 
-    def providers_for_identifiers(identifiers, user:)
+    def runners_for_identifiers(identifiers, user:)
       identifiers.filter_map do |identifier|
-        Provider.for_identifier(user, identifier)
+        Runner.for_identifier(user, identifier)
       end
     end
 
@@ -2160,8 +2160,8 @@ module Containers
     end
 
     def codex_auth_lockfile_path
-      provider = codex_harness_provider
-      lock_config = provider.respond_to?(:auth_lock_config) ? provider.auth_lock_config : nil
+      runner = codex_harness_provider
+      lock_config = runner.respond_to?(:auth_lock_config) ? runner.auth_lock_config : nil
       base_path = lock_config&.dig(:path)&.sub(/\.lock\z/, "")
       raise TypeError, "no lock path configured" unless base_path
 
@@ -2174,7 +2174,7 @@ module Containers
     end
 
     def codex_harness_provider
-      AgentHarness.provider(:codex)
+      AgentHarness.runner(:codex)
     end
 
     # Single source of truth for the Codex heartbeat notify line used in both

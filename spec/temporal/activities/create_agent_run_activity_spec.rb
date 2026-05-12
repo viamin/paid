@@ -7,8 +7,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
-  let(:claude_provider) { project.created_by.providers.find_by!(provider_key: "claude") }
-  let(:codex_provider) { create(:provider, user: project.created_by, provider_key: "codex") }
+  let(:claude_runner) { project.created_by.runners.find_by!(runner_key: "claude") }
+  let(:codex_runner) { create(:runner, user: project.created_by, runner_key: "codex") }
 
   before do
     # Stub conversation_section_for so the activity does not make real HTTP
@@ -69,41 +69,41 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
-    it "derives agent_type from provider_id when only a provider is supplied" do
-      provider = create(:provider, user: project.created_by, provider_key: "cursor")
+    it "derives agent_type from runner_id when only a runner is supplied" do
+      runner = create(:runner, user: project.created_by, runner_key: "cursor")
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: runner.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(provider)
+      expect(agent_run.runner).to eq(runner)
       expect(agent_run.agent_type).to eq("cursor")
     end
 
-    it "records the provider selection decision with requested and ranked alternatives" do
-      provider = create(:provider, user: project.created_by, provider_key: "cursor")
+    it "records the runner selection decision with requested and ranked alternatives" do
+      runner = create(:runner, user: project.created_by, runner_key: "cursor")
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: runner.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
       decision = agent_run.orchestration_decisions.where(decision_type: "select_agent").find_by(actor: "requested_provider")
 
       expect_requested_provider_decision(
         decision: decision,
-        provider_id: provider.id,
-        provider_key: "cursor",
+        runner_id: runner.id,
+        runner_key: "cursor",
         agent_type: "cursor"
       )
     end
 
-    it "falls back to the runnable default when a requested provider_id is not container executable" do
-      provider = create(:provider, user: project.created_by, provider_key: "copilot")
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
+    it "falls back to the runnable default when a requested runner_id is not container executable" do
+      runner = create(:runner, user: project.created_by, runner_key: "copilot")
+      allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+      allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: runner.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(project.created_by.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.runner).to eq(project.created_by.runners.find_by!(runner_key: "claude"))
       expect(agent_run.agent_type).to eq("claude_code")
     end
 
@@ -119,38 +119,38 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
-    it "uses the configured primary provider when agent type is omitted" do
-      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
-      project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+    it "uses the configured primary runner when agent type is omitted" do
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
+      project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
 
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
     end
 
-    it "fails fast when a selected provider is disabled for agent runs" do
-      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
-      codex_provider.update!(enabled_for_agent_runs: false)
+    it "fails fast when a selected runner is disabled for agent runs" do
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
+      codex_runner.update!(enabled_for_agent_runs: false)
 
       expect {
-        activity.execute(project_id: project.id, issue_id: issue.id, provider_id: codex_provider.id)
+        activity.execute(project_id: project.id, issue_id: issue.id, runner_id: codex_runner.id)
       }.to raise_error(Temporalio::Error::ApplicationError) { |error|
         expect(error.type).to eq("NoRunnableProvider")
         expect(error.non_retryable).to be(true)
       }
     end
 
-    it "fails fast when an explicit provider_id no longer resolves" do
-      missing_provider_id = create(:provider, user: project.created_by, provider_key: "cursor").id
-      Provider.find(missing_provider_id).destroy!
+    it "fails fast when an explicit runner_id no longer resolves" do
+      missing_provider_id = create(:runner, user: project.created_by, runner_key: "cursor").id
+      Runner.find(missing_provider_id).destroy!
 
       expect {
         activity.execute(
           project_id: project.id,
           issue_id: issue.id,
-          provider_id: missing_provider_id,
+          runner_id: missing_provider_id,
           agent_type: "claude_code"
         )
       }.to raise_error(Temporalio::Error::ApplicationError) { |error|
@@ -160,12 +160,12 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       decision = project.orchestration_decisions.order(:id).last
 
-      expect_failed_provider_decision(decision: decision, provider_id: missing_provider_id)
+      expect_failed_provider_decision(decision: decision, runner_id: missing_provider_id)
     end
 
-    it "uses the goal-specific provider for fresh review runs" do
-      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
-      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+    it "uses the goal-specific runner for fresh review runs" do
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
+      project.created_by.settings.update!(default_agent_runners_by_goal: { "review" => codex_runner.routing_key })
 
       result = activity.execute(
         project_id: project.id,
@@ -175,12 +175,12 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
     end
 
-    it "refreshes automatic runs to the goal-specific default provider on resume" do
-      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+    it "refreshes automatic runs to the goal-specific default runner on resume" do
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
       queued_run = create(
         :agent_run,
         :queued,
@@ -210,7 +210,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         :queued,
         project: project,
         issue: issue,
-        provider: claude_provider,
+        runner: claude_runner,
         agent_type: "claude_code",
         configuration_bundle: existing_bundle)
 
@@ -219,21 +219,21 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(queued_run.reload.configuration_bundle).to eq(existing_bundle)
     end
 
-    it "recomputes the configuration bundle on resume when automatic provider selection changes" do
+    it "recomputes the configuration bundle on resume when automatic runner selection changes" do
       existing_bundle = create(:configuration_bundle,
         account: project.account,
         definition: existing_review_bundle_definition)
       queued_run = create_review_run_with_bundle(existing_bundle)
-      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+      project.created_by.settings.update!(default_agent_runners_by_goal: { "review" => codex_runner.routing_key })
 
       activity.execute(agent_run_id: queued_run.id)
 
       queued_run.reload
-      expect(queued_run.provider).to eq(codex_provider)
+      expect(queued_run.runner).to eq(codex_runner)
       expect(queued_run.agent_type).to eq("codex")
       expect(queued_run.configuration_bundle).not_to eq(existing_bundle)
       expect(queued_run.configuration_bundle.definition).to include(
-        "provider_id" => codex_provider.id,
+        "runner_id" => codex_runner.id,
         "agent_type" => "codex"
       )
     end
@@ -265,7 +265,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "schema_version" => 1,
         "goal" => "review",
         "agent_type" => "claude_code",
-        "provider_id" => claude_provider.id
+        "runner_id" => claude_runner.id
       }
     end
 
@@ -274,7 +274,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "schema_version" => 1,
         "goal" => "create_pr",
         "agent_type" => "claude_code",
-        "provider_id" => claude_provider.id,
+        "runner_id" => claude_runner.id,
         "experiments" => {}
       }
     end
@@ -348,7 +348,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(error.non_retryable).to be(true)
       }
 
-      expect(queued_run.reload.provider).to eq(claude_provider)
+      expect(queued_run.reload.runner).to eq(claude_runner)
       expect(queued_run.agent_type).to eq("claude_code")
       expect(queued_run.status).to eq("queued")
     end
@@ -384,10 +384,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "returns deduplicated provider_attempt_count when fallback is enabled" do
-      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
-      project.created_by.providers.find_or_create_by!(provider_key: "cursor")
-      project.created_by.providers.find_or_create_by!(provider_key: "aider")
-      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      project.created_by.runners.find_or_create_by!(runner_key: "cursor")
+      project.created_by.runners.find_or_create_by!(runner_key: "aider")
+      project.created_by.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor aider])
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
@@ -395,59 +395,59 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "counts configured fallback-only providers even when not explicitly ordered yet" do
-      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
-      project.created_by.providers.find_or_create_by!(
-        provider_key: "cursor",
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      project.created_by.runners.find_or_create_by!(
+        runner_key: "cursor",
         enabled_for_agent_runs: false,
         enabled_for_fallback: true
       )
-      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: [])
+      project.created_by.settings.update!(fallback_enabled: true, fallback_runners: [])
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
       expect(result[:provider_attempt_count]).to eq(2)
     end
 
-    it "returns one attempt for an explicitly selected provider when fallback is disabled" do
-      provider = create(:provider, user: project.created_by, provider_key: "cursor")
-      project.created_by.settings.update!(fallback_enabled: false, fallback_providers: [ provider.routing_key ])
+    it "returns one attempt for an explicitly selected runner when fallback is disabled" do
+      runner = create(:runner, user: project.created_by, runner_key: "cursor")
+      project.created_by.settings.update!(fallback_enabled: false, fallback_runners: [ runner.routing_key ])
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id, agent_type: "cursor")
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: runner.id, agent_type: "cursor")
 
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
-    it "counts fallbacks for an explicitly selected provider only when fallback is enabled" do
-      primary_provider = create(:provider, user: project.created_by, provider_key: "cursor")
-      fallback_provider = create(:provider, user: project.created_by, provider_key: "aider")
-      project.created_by.providers.find_by!(provider_key: "claude").update!(enabled_for_fallback: false)
-      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: [ fallback_provider.routing_key ])
+    it "counts fallbacks for an explicitly selected runner only when fallback is enabled" do
+      primary_provider = create(:runner, user: project.created_by, runner_key: "cursor")
+      fallback_provider = create(:runner, user: project.created_by, runner_key: "aider")
+      project.created_by.runners.find_by!(runner_key: "claude").update!(enabled_for_fallback: false)
+      project.created_by.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_provider.routing_key ])
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: primary_provider.id, agent_type: "cursor")
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: primary_provider.id, agent_type: "cursor")
 
       expect(result[:provider_attempt_count]).to eq(2)
     end
 
     it "includes rate-limit fallback entries in provider_attempt_count" do
-      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
       api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
-      project.created_by.providers.create!(
-        provider_key: "claude",
+      project.created_by.runners.create!(
+        runner_key: "claude",
         auth_type: "api_key",
         provider_api_key: api_key,
         fallback_role: "rate_limit_fallback",
         enabled_for_agent_runs: false,
         enabled_for_fallback: true
       )
-      project.created_by.providers.find_or_create_by!(provider_key: "cursor")
-      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: [ "cursor" ])
+      project.created_by.runners.find_or_create_by!(runner_key: "cursor")
+      project.created_by.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
       expect(result[:provider_attempt_count]).to eq(3)
     end
 
-    it "warns when the selected provider is already rate limited" do
+    it "warns when the selected runner is already rate limited" do
       logger = instance_spy(Logger, info: nil, warn: nil)
       allow(activity).to receive(:logger).and_return(logger)
 
@@ -455,7 +455,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         :provider_state,
         :rate_limited,
         user: project.created_by,
-        provider_name: "claude"
+        runner_name: "claude"
       )
 
       activity.execute(project_id: project.id, issue_id: issue.id)
@@ -464,7 +464,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         hash_including(
           message: "agent_execution.selected_provider_rate_limited",
           project_id: project.id,
-          provider_key: "claude",
+          runner_key: "claude",
           provider_state_name: "claude",
           agent_type: "claude_code",
           goal: "create_pr"
@@ -721,9 +721,9 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(claimed_run.reload.status).to eq("queued")
       end
 
-      it "refreshes automatic claimed queued runs to the current primary provider before starting" do
-        claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
-        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+      it "refreshes automatic claimed queued runs to the current primary runner before starting" do
+        claude_runner = project.created_by.runners.find_by!(runner_key: "claude")
+        codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
         claimed_run = create(
           :agent_run,
           :queued,
@@ -731,94 +731,94 @@ RSpec.describe Activities::CreateAgentRunActivity do
           issue: issue,
           temporal_workflow_id: "wf-123",
           trigger_type: "automatic",
-          provider: claude_provider,
+          runner: claude_runner,
           agent_type: "claude_code"
         )
-        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
 
         activity.execute(agent_run_id: claimed_run.id, project_id: project.id)
 
         claimed_run.reload
         expect(claimed_run.status).to eq("queued")
-        expect(claimed_run.provider).to eq(codex_provider)
+        expect(claimed_run.runner).to eq(codex_runner)
         expect(claimed_run.agent_type).to eq("codex")
       end
 
-      it "refreshes automatic queued runs to the current primary provider before starting" do
-        claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
-        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+      it "refreshes automatic queued runs to the current primary runner before starting" do
+        claude_runner = project.created_by.runners.find_by!(runner_key: "claude")
+        codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
         queued_run = create(
           :agent_run,
           :queued,
           project: project,
           issue: issue,
           trigger_type: "automatic",
-          provider: claude_provider,
+          runner: claude_runner,
           agent_type: "claude_code"
         )
-        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
 
         activity.execute(agent_run_id: queued_run.id, project_id: project.id)
 
         queued_run.reload
         expect(queued_run.status).to eq("queued")
-        expect(queued_run.provider).to eq(codex_provider)
+        expect(queued_run.runner).to eq(codex_runner)
         expect(queued_run.agent_type).to eq("codex")
       end
 
       it "preserves manual queued runs when resuming" do
-        claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
-        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+        claude_runner = project.created_by.runners.find_by!(runner_key: "claude")
+        codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
         queued_run = create(
           :agent_run,
           :queued,
           project: project,
           issue: issue,
           trigger_type: "manual",
-          provider: claude_provider,
+          runner: claude_runner,
           agent_type: "claude_code"
         )
-        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
 
         activity.execute(agent_run_id: queued_run.id, project_id: project.id)
 
         queued_run.reload
         expect(queued_run.status).to eq("queued")
-        expect(queued_run.provider).to eq(claude_provider)
+        expect(queued_run.runner).to eq(claude_runner)
         expect(queued_run.agent_type).to eq("claude_code")
       end
     end
   end
 
-  def expect_requested_provider_decision(decision:, provider_id:, provider_key:, agent_type:)
+  def expect_requested_provider_decision(decision:, runner_id:, runner_key:, agent_type:)
     expect(decision).to be_present
     expect(decision.context).to include(
       "decision_status" => "applied",
       "issue_id" => issue.id
     )
-    expect(decision.inputs.dig("requested_selection", "provider_id")).to eq(provider_id)
+    expect(decision.inputs.dig("requested_selection", "runner_id")).to eq(runner_id)
     expect(decision.inputs.dig("repository", "full_name")).to eq(project.full_name)
     expect(decision.outputs).to include(
       "outcome" => "selected",
       "selection" => include(
-        "provider_id" => provider_id,
+        "runner_id" => runner_id,
         "provider_key" => provider_key,
         "agent_type" => agent_type,
         "candidates" => include(
-          include("rank" => 1, "selected" => true, "provider_id" => provider_id, "provider_key" => provider_key)
+          include("rank" => 1, "selected" => true, "runner_id" => runner_id, "provider_key" => provider_key)
         )
       )
     )
   end
 
-  def expect_failed_provider_decision(decision:, provider_id:)
+  def expect_failed_provider_decision(decision:, runner_id:)
     expect(decision.agent_run_id).to be_nil
     expect(decision.decision_type).to eq("select_agent")
     expect(decision.context["decision_status"]).to eq("failed")
-    expect(decision.inputs.dig("requested_selection", "provider_id")).to eq(provider_id)
+    expect(decision.inputs.dig("requested_selection", "runner_id")).to eq(runner_id)
     expect(decision.outputs["error"]).to include(
       "class" => "Temporalio::Error::ApplicationError",
-      "message" => include("provider_id=#{provider_id}")
+      "message" => include("runner_id=#{runner_id}")
     )
   end
 end

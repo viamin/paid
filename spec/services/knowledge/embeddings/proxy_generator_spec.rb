@@ -37,10 +37,10 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
           "X-Paid-Knowledge-Provider" => "openrouter"
         )
       )
-      expect(knowledge_run.reload.final_provider).to eq("openrouter")
-      expect(knowledge_run.provider_attempts.size).to eq(1)
-      expect(knowledge_run.provider_attempts.first).to include("provider" => "openrouter")
-      expect(knowledge_run.provider_attempts.first["attempted_at"]).to match(/\A.+\z/)
+      expect(knowledge_run.reload.final_runner).to eq("openrouter")
+      expect(knowledge_run.runner_attempts.size).to eq(1)
+      expect(knowledge_run.runner_attempts.first).to include("provider" => "openrouter")
+      expect(knowledge_run.runner_attempts.first["attempted_at"]).to match(/\A.+\z/)
       expect(knowledge_run.status).to eq("completed")
     end
 
@@ -57,8 +57,8 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       generator.close
 
       expect(results).to eq([ result ])
-      expect(knowledge_run.reload.final_provider).to eq("openai")
-      expect(knowledge_run.provider_attempts).to contain_exactly(
+      expect(knowledge_run.reload.final_runner).to eq("openai")
+      expect(knowledge_run.runner_attempts).to contain_exactly(
         hash_including("provider" => "openrouter", "attempted_at" => be_present),
         hash_including("provider" => "openai", "attempted_at" => be_present)
       )
@@ -68,12 +68,12 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
 
       generator.call(texts: [ "hello" ])
-      expect(knowledge_run.reload.final_provider).to eq("openrouter")
+      expect(knowledge_run.reload.final_runner).to eq("openrouter")
 
       allow(knowledge_run).to receive(:update!).and_call_original
       generator.call(texts: [ "again" ])
 
-      expect(knowledge_run).not_to have_received(:update!).with(hash_including(final_provider: "openrouter"))
+      expect(knowledge_run).not_to have_received(:update!).with(hash_including(final_runner: "openrouter"))
     end
 
     it "marks the knowledge run failed when every provider fails" do

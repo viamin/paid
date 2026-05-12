@@ -33,7 +33,7 @@ export default class extends Controller {
 
       if (!contentType.includes("application/json")) {
         if (response.status === 404) {
-          this.showError("unexpected", "Provider not found. It may have been deleted. Please refresh the page.")
+          this.showError("unexpected", "Runner not found. It may have been deleted. Please refresh the page.")
         } else {
           this.showError("unexpected", "Unexpected server response. Please try again.")
         }
@@ -46,12 +46,12 @@ export default class extends Controller {
       }
 
       if (response.status === 403) {
-        this.showError("unexpected", "You do not have permission to test this provider.")
+        this.showError("unexpected", "You do not have permission to test this runner.")
         return
       }
 
       if (response.status === 404) {
-        this.showError("unexpected", "Provider not found. It may have been deleted. Please refresh the page.")
+        this.showError("unexpected", "Runner not found. It may have been deleted. Please refresh the page.")
         return
       }
 
@@ -131,12 +131,12 @@ export default class extends Controller {
 
   troubleshootingFor(errorType) {
     const messages = {
-      connection: "Could not reach the agent. Verify the provider URL is correct and the agent container is running.",
-      authentication: "Authentication is missing, invalid, or expired. Review the Provider Auth Setup guide on this page and confirm the required API key or local CLI credentials are available to Paid.",
+      connection: "Could not reach the agent. Verify the runner URL is correct and the agent container is running.",
+      authentication: "Authentication is missing, invalid, or expired. Review the Runner Auth Setup guide on this page and confirm the required API key or local CLI credentials are available to Paid.",
       timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
-      installation: "The provider CLI is not installed in the agent container. Verify the container image includes this provider and that it is on the PATH.",
-      rate_limited: "The provider rejected the request due to usage or rate limits. Check the message above for the provider's reset or quota details.",
-      test_cooldown: "This button has a short local cooldown to avoid stacking duplicate test requests. The provider status has not changed.",
+      installation: "The runner CLI is not installed in the agent container. Verify the container image includes this runner and that it is on the PATH.",
+      rate_limited: "The runner rejected the request due to usage or rate limits. Check the message above for the runner's reset or quota details.",
+      test_cooldown: "This button has a short local cooldown to avoid stacking duplicate test requests. The runner status has not changed.",
       unexpected: "An unexpected error occurred. Check the agent logs for more details."
     }
     return messages[errorType] || messages.unexpected

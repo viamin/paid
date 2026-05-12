@@ -144,7 +144,7 @@ module QualityMetrics
           scores: m.scores,
           feedback_source: m.feedback_source,
           agent_run_id: m.agent_run_id,
-          provider: m.agent_run&.effective_provider,
+          provider: m.agent_run&.effective_runner,
           goal: m.agent_run&.goal,
           prompt_version: m.prompt_version&.version,
           tier: selection&.tier,

@@ -151,12 +151,12 @@ class ChatSessionsController < ApplicationController
 
   def create_params
     source = params.key?(:chat_session) ? params.require(:chat_session) : params
-    source.permit(:mode, :model, :provider_id, :project_id, :system_prompt, :title)
+    source.permit(:mode, :model, :runner_id, :project_id, :system_prompt, :title)
       .to_h.symbolize_keys
   end
 
   def update_params
-    params.fetch(:chat_session, params).permit(:title, :model, :project_id, :provider_id)
+    params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id)
   end
 
   def session_json(session)
@@ -169,8 +169,8 @@ class ChatSessionsController < ApplicationController
       status: session.status,
       mode: session.mode,
       model: session.model,
-      provider_id: session.provider_id,
-      provider_name: session.provider&.display_name,
+      runner_id: session.runner_id,
+      runner_name: session.runner&.display_name,
       project_id: session.project_id,
       project_name: session.project&.name || projects.first&.name,
       project_names: projects.map(&:name),
@@ -203,7 +203,7 @@ class ChatSessionsController < ApplicationController
   def session_scope
     policy_scope(ChatSession)
       .with_preview_content
-      .includes(:project, :provider, :chat_session_projects, :projects)
+      .includes(:project, :runner, :chat_session_projects, :projects)
       .order(updated_at: :desc, id: :desc)
   end
 
@@ -216,7 +216,7 @@ class ChatSessionsController < ApplicationController
         "(SELECT COALESCE(SUM(output_tokens),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_tokens_output",
         "(SELECT COALESCE(SUM(cost_cents),0) FROM token_usages WHERE token_usages.chat_session_id = chat_sessions.id) AS preloaded_cost_cents"
       )
-      .includes(:project, :provider, :chat_session_projects, :projects)
+      .includes(:project, :runner, :chat_session_projects, :projects)
       .order(updated_at: :desc, id: :desc)
   end
 
@@ -272,7 +272,7 @@ class ChatSessionsController < ApplicationController
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
     @new_chat_session = ChatSession.new(mode: "api")
-    @available_providers = current_user.providers.kept_only.ordered
+    @available_runners = current_user.runners.kept_only.ordered
     @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)
   end

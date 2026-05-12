@@ -37,8 +37,8 @@ RSpec.describe Containers::ChatSessionManager do
       .with("chat-container-abc123")
       .and_return(mock_container)
     allow(Docker::Volume).to receive(:get).and_return(mock_volume)
-    harness_result = Providers::HarnessExecutionPlan::Result.new(command: harness_command, env: harness_env, preparation: harness_preparation)
-    allow(Providers::HarnessExecutionPlan).to receive_messages(for_provider_key: harness_result, call: harness_result)
+    harness_result = Runners::HarnessExecutionPlan::Result.new(command: harness_command, env: harness_env, preparation: harness_preparation)
+    allow(Runners::HarnessExecutionPlan).to receive_messages(for_runner_key: harness_result, call: harness_result)
   end
 
   describe "#execute_agent_command" do
@@ -58,8 +58,8 @@ RSpec.describe Containers::ChatSessionManager do
     end
 
     it "delegates command building to agent-harness" do
-      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
-        provider_key: "claude",
+      expect(Runners::HarnessExecutionPlan).to receive(:for_runner_key).with(
+        runner_key: "claude",
         prompt: "Fix the bug",
         options: {}
       )
@@ -68,8 +68,8 @@ RSpec.describe Containers::ChatSessionManager do
     end
 
     it "passes session_id to harness when resuming" do
-      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
-        provider_key: "claude",
+      expect(Runners::HarnessExecutionPlan).to receive(:for_runner_key).with(
+        runner_key: "claude",
         prompt: "Continue",
         options: { session_id: "prev-session-123" }
       )
@@ -77,12 +77,12 @@ RSpec.describe Containers::ChatSessionManager do
       manager.execute_agent_command(prompt: "Continue", session_id: "prev-session-123")
     end
 
-    it "uses HarnessExecutionPlan.call with Provider record when available" do
-      provider = create(:provider, user: chat_session.created_by, provider_key: "codex")
-      chat_session.update!(provider: provider)
+    it "uses HarnessExecutionPlan.call with Runner record when available" do
+      runner = create(:runner, user: chat_session.created_by, runner_key: "codex")
+      chat_session.update!(runner: runner)
 
-      expect(Providers::HarnessExecutionPlan).to receive(:call).with(
-        provider: provider,
+      expect(Runners::HarnessExecutionPlan).to receive(:call).with(
+        runner: runner,
         prompt: "Fix the bug",
         options: {}
       )
@@ -91,8 +91,8 @@ RSpec.describe Containers::ChatSessionManager do
     end
 
     it "passes plan.env to container exec" do
-      allow(Providers::HarnessExecutionPlan).to receive(:for_provider_key)
-        .and_return(Providers::HarnessExecutionPlan::Result.new(
+      allow(Runners::HarnessExecutionPlan).to receive(:for_runner_key)
+        .and_return(Runners::HarnessExecutionPlan::Result.new(
           command: harness_command,
           env: { "OPENAI_API_KEY" => "sk-test", "CUSTOM_VAR" => "value" },
           preparation: nil

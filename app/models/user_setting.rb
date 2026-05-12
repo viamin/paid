@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
+  self.ignored_columns = %w[
+    default_agent_provider default_agent_providers_by_goal fallback_providers
+    provider_selection_mode provider_round_robin_state kb_chat_provider
+    kb_chat_fallback_providers kb_embedding_provider kb_embedding_fallback_providers
+  ]
+
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647
@@ -8,17 +14,17 @@ class UserSetting < ApplicationRecord
   MAX_CONTAINER_MEMORY_BYTES = 64 * 1024 * 1024 * 1024
   # Reasonable upper bound for delay settings (24 hours in seconds)
   MAX_DELAY_SECONDS = 86_400
-  KB_EMBEDDING_PROVIDERS = Provider::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
-  KB_EMBEDDING_PROVIDER_DEFAULT = "openai"
-  KB_CHAT_PROVIDERS = ProviderSupport::APP_PROVIDER_KEYS.freeze
-  KB_CHAT_PROVIDER_DEFAULT = "claude"
-  PROVIDER_SELECTION_MODES = %w[single round_robin random].freeze
-  PROVIDER_SELECTION_MODE_DEFAULT = "single"
+  KB_EMBEDDING_RUNNERS = Runner::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
+  KB_EMBEDDING_RUNNER_DEFAULT = "openai"
+  KB_CHAT_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
+  KB_CHAT_RUNNER_DEFAULT = "claude"
+  RUNNER_SELECTION_MODES = %w[single round_robin random].freeze
+  RUNNER_SELECTION_MODE_DEFAULT = "single"
 
   THEME_PREFERENCES = %w[light dark system].freeze
 
   belongs_to :user
-  has_many :provider_states, through: :user
+  has_many :runner_states, through: :user
 
   # Theme
   validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
@@ -34,8 +40,8 @@ class UserSetting < ApplicationRecord
   # Agent Execution
   validates :agent_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
-  validate :validate_default_agent_provider
-  validate :validate_default_agent_providers_by_goal
+  validate :validate_default_agent_runner
+  validate :validate_default_agent_runners_by_goal
 
   # Container Resources
   validates :container_memory_bytes,
@@ -110,81 +116,81 @@ class UserSetting < ApplicationRecord
   validates :retry_max_delay,
     numericality: { greater_than: 0, less_than_or_equal_to: MAX_DELAY_SECONDS }
 
-  # Provider Fallback
-  validates :provider_selection_mode, inclusion: { in: PROVIDER_SELECTION_MODES }
-  validate :validate_fallback_providers
-  validate :validate_kb_embedding_provider
-  validate :validate_kb_embedding_fallback_providers
-  validate :validate_kb_chat_provider
-  validate :validate_kb_chat_fallback_providers
+  # Runner Fallback
+  validates :runner_selection_mode, inclusion: { in: RUNNER_SELECTION_MODES }
+  validate :validate_fallback_runners
+  validate :validate_kb_embedding_runner
+  validate :validate_kb_embedding_fallback_runners
+  validate :validate_kb_chat_runner
+  validate :validate_kb_chat_fallback_runners
 
-  def self.normalize_provider_array_param(value)
+  def self.normalize_runner_array_param(value)
     return value unless value.is_a?(String)
 
     parsed = JSON.parse(value)
     return [] unless parsed.is_a?(Array)
 
-    parsed.select { |provider| provider.is_a?(String) }
+    parsed.select { |runner| runner.is_a?(String) }
   rescue JSON::ParserError
     []
   end
 
-  def self.parse_provider_array_param(value)
+  def self.parse_runner_array_param(value)
     return value unless value.is_a?(String)
 
     parsed = JSON.parse(value)
     return value unless parsed.is_a?(Array)
 
-    parsed.select { |provider| provider.is_a?(String) }
+    parsed.select { |runner| runner.is_a?(String) }
   rescue JSON::ParserError
     value
   end
 
-  def self.normalize_fallback_providers_param(value)
-    normalize_provider_array_param(value)
+  def self.normalize_fallback_runners_param(value)
+    normalize_runner_array_param(value)
   end
 
-  # Returns providers enabled for agent runs for a user.
-  # Filtered to container-executable providers only, since non-executable
-  # providers would cause immediate "All providers exhausted" failures
+  # Returns runners enabled for agent runs for a user.
+  # Filtered to container-executable runners only, since non-executable
+  # runners would cause immediate "All runners exhausted" failures
   # in RunAgentActivity.
-  def self.enabled_agent_providers(user = nil, identifiers: false)
-    executable_keys = ProviderSupport.container_executable_provider_keys
+  def self.enabled_agent_runners(user = nil, identifiers: false)
+    executable_keys = RunnerSupport.container_executable_runner_keys
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    provider_identifiers_for(
-      user.providers.kept_only.for_agent_runs.where(provider_key: executable_keys).ordered,
+    runner_identifiers_for(
+      user.runners.kept_only.for_agent_runs.where(runner_key: executable_keys).ordered,
       identifiers: identifiers
     )
   end
 
-  # Returns providers that can be used as fallback for a user.
-  # Filtered to container-executable providers only, since non-executable
-  # providers would cause immediate failures during fallback in RunAgentActivity.
-  def self.fallback_candidate_providers(user, identifiers: false)
-    executable_keys = ProviderSupport.container_executable_provider_keys
+  # Returns runners that can be used as fallback for a user.
+  # Filtered to container-executable runners only, since non-executable
+  # runners would cause immediate failures during fallback in RunAgentActivity.
+  def self.fallback_candidate_runners(user, identifiers: false)
+    executable_keys = RunnerSupport.container_executable_runner_keys
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    provider_identifiers_for(
-      user.providers.kept_only.for_fallback.where(provider_key: executable_keys).ordered,
+    runner_identifiers_for(
+      user.runners.kept_only.for_fallback.where(runner_key: executable_keys).ordered,
       identifiers: identifiers
     )
   end
 
-  # Returns canonical provider keys that have API-key-based entries configured
+  # Returns canonical runner keys that have API-key-based entries configured
   # as rate-limit fallbacks. These are only used when the subscription entry
-  # for the same provider_key is rate-limited.
-  def self.rate_limit_fallback_providers(user)
+  # for the same runner_key is rate-limited.
+  def self.rate_limit_fallback_runners(user)
     return [] unless user
     return [] if user.new_record?
 
-    executable_keys = ProviderSupport.container_executable_provider_keys
-    user.providers.kept_only.api_key.rate_limit_fallback.for_agent_runs.for_fallback
-      .where(provider_key: executable_keys)
+    executable_keys = RunnerSupport.container_executable_runner_keys
+    user.runners.kept_only.api_key.rate_limit_fallback.for_agent_runs.for_fallback
+      .where(runner_key: executable_keys)
       .distinct
-      .pluck(:provider_key)
+      .pluck(:runner_key)
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -227,126 +233,126 @@ class UserSetting < ApplicationRecord
     self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
-  # Returns the ordered list of providers to try: primary first, then fallbacks.
+  # Returns the ordered list of runners to try: primary first, then fallbacks.
   #
-  # @return [Array<String>] Provider names in priority order
-  def provider_priority(identifiers: false)
-    default_identifier = default_provider_identifier
+  # @return [Array<String>] Runner names in priority order
+  def runner_priority(identifiers: false)
+    default_identifier = default_runner_identifier
     default = default_identifier.present? ? [ default_identifier ] : []
-    priorities = default + fallback_priority_for(primary_provider: default_identifier || default_agent_provider, identifiers: true)
+    priorities = default + fallback_priority_for(primary_runner: default_identifier || default_agent_runner, identifiers: true)
 
     return priorities if identifiers
 
-    map_identifiers_to_provider_keys(priorities)
+    map_identifiers_to_runner_keys(priorities)
   end
 
-  def default_provider_identifier
-    normalized_default_agent_provider || allowed_provider_identifiers_for_agent_runs.first
+  def default_runner_identifier
+    normalized_default_agent_runner || allowed_runner_identifiers_for_agent_runs.first
   end
 
-  def default_provider_identifier_for_goal(goal)
+  def default_runner_identifier_for_goal(goal)
     goal = goal.to_s
-    goal_provider = default_agent_providers_by_goal[goal] if goal.present?
-    return default_provider_identifier if goal_provider.blank?
+    goal_runner = default_agent_runners_by_goal[goal] if goal.present?
+    return default_runner_identifier if goal_runner.blank?
 
-    resolved = identifiers_for_provider_token(goal_provider, candidates: allowed_provider_identifiers_for_agent_runs).first
-    resolved || default_provider_identifier
+    resolved = identifiers_for_runner_token(goal_runner, candidates: allowed_runner_identifiers_for_agent_runs).first
+    resolved || default_runner_identifier
   end
 
-  # Returns the next automated provider identifier to use for an agent run,
-  # honoring the configured provider_selection_mode (single, round_robin,
-  # random) and per-provider weights.
+  # Returns the next automated runner identifier to use for an agent run,
+  # honoring the configured runner_selection_mode (single, round_robin,
+  # random) and per-runner weights.
   #
-  # When fewer than two providers are enabled or the mode is "single",
-  # falls back to the goal-specific default provider identifier.
+  # When fewer than two runners are enabled or the mode is "single",
+  # falls back to the goal-specific default runner identifier.
   #
   # round_robin mode persists state on the user_setting so the next call
-  # picks up where the previous call left off, respecting provider weights
-  # (a provider with weight N is used N consecutive times).
+  # picks up where the previous call left off, respecting runner weights
+  # (a runner with weight N is used N consecutive times).
   #
   # @param goal [String, nil] The agent run goal (e.g. "create_pr").
-  # @return [String, nil] A provider routing-key identifier or nil if none.
-  def select_automated_provider_identifier(goal: nil)
-    fallback_identifier = default_provider_identifier_for_goal(goal)
-    candidates = allowed_provider_identifiers_for_agent_runs
-    return fallback_identifier if candidates.length < 2 || provider_selection_mode == "single"
+  # @return [String, nil] A runner routing-key identifier or nil if none.
+  def select_automated_runner_identifier(goal: nil)
+    fallback_identifier = default_runner_identifier_for_goal(goal)
+    candidates = allowed_runner_identifiers_for_agent_runs
+    return fallback_identifier if candidates.length < 2 || runner_selection_mode == "single"
 
-    case provider_selection_mode
+    case runner_selection_mode
     when "random"
-      pick_random_provider_identifier(candidates) || fallback_identifier
+      pick_random_runner_identifier(candidates) || fallback_identifier
     when "round_robin"
-      pick_round_robin_provider_identifier(candidates) || fallback_identifier
+      pick_round_robin_runner_identifier(candidates) || fallback_identifier
     else
       fallback_identifier
     end
   end
 
-  def provider_priority_for_goal(goal, identifiers: false)
-    goal_identifier = default_provider_identifier_for_goal(goal)
+  def runner_priority_for_goal(goal, identifiers: false)
+    goal_identifier = default_runner_identifier_for_goal(goal)
     default = goal_identifier.present? ? [ goal_identifier ] : []
     priorities = default + fallback_priority_for(
-      primary_provider: goal_identifier || default_agent_provider,
+      primary_runner: goal_identifier || default_agent_runner,
       identifiers: true
     )
 
     return priorities if identifiers
 
-    map_identifiers_to_provider_keys(priorities)
+    map_identifiers_to_runner_keys(priorities)
   end
 
-  def sanitize_provider_tokens(tokens, candidates:)
+  def sanitize_runner_tokens(tokens, candidates:)
     Array(tokens).flat_map do |token|
       token = token.to_s
       next [] if token.blank?
       next token if candidates.include?(token)
-      resolved = identifiers_for_provider_token(token, candidates: candidates)
+      resolved = identifiers_for_runner_token(token, candidates: candidates)
       next resolved if resolved.any?
 
       []
     end.uniq
   end
 
-  # Returns the ordered fallback providers for the given primary provider.
-  # Saved order is respected first, then any other configured fallback providers
-  # are appended so newly added providers participate automatically.
+  # Returns the ordered fallback runners for the given primary runner.
+  # Saved order is respected first, then any other configured fallback runners
+  # are appended so newly added runners participate automatically.
   #
   # If the current primary appears in the saved fallback order, fallback wraps
   # around that position so a goal-specific or manually selected primary lower
-  # in the list still exhausts the providers after it before wrapping to the
-  # providers above it.
+  # in the list still exhausts the runners after it before wrapping to the
+  # runners above it.
   #
-  # @param primary_provider [String] The provider already being attempted
-  # @return [Array<String>] Fallback provider keys in attempt order
-  def fallback_priority_for(primary_provider:, identifiers: false)
-    candidates = allowed_provider_identifiers_for_fallback
-    saved_order = Array(fallback_providers).flat_map do |provider|
-      identifiers_for_provider_token(provider, candidates: candidates)
+  # @param primary_runner [String] The runner already being attempted
+  # @return [Array<String>] Fallback runner keys in attempt order
+  def fallback_priority_for(primary_runner:, identifiers: false)
+    candidates = allowed_runner_identifiers_for_fallback
+    saved_order = Array(fallback_runners).flat_map do |runner|
+      identifiers_for_runner_token(runner, candidates: candidates)
     end
     ordered_candidates = (saved_order + (candidates - saved_order)).uniq
-    primary_identifiers = identifiers_for_provider_token(primary_provider, candidates: ordered_candidates)
-    primary_index = saved_order.index { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
+    primary_identifiers = identifiers_for_runner_token(primary_runner, candidates: ordered_candidates)
+    primary_index = saved_order.index { |runner| primary_identifiers.include?(runner) || runner == primary_runner }
     rotated_candidates = primary_index ? ordered_candidates.rotate(primary_index + 1) : ordered_candidates
-    priorities = rotated_candidates.reject { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
+    priorities = rotated_candidates.reject { |runner| primary_identifiers.include?(runner) || runner == primary_runner }
     return priorities if identifiers
 
-    map_identifiers_to_provider_keys(priorities)
+    map_identifiers_to_runner_keys(priorities)
   end
 
-  # Returns providers that are currently available (not rate limited, circuit not open).
-  # Checks ProviderState for each provider and filters out unavailable ones.
+  # Returns runners that are currently available (not rate limited, circuit not open).
+  # Checks RunnerState for each runner and filters out unavailable ones.
   #
   # @param check_circuit_recovery [Boolean] Whether to check for circuit recovery before filtering
-  # @return [Array<String>] Available provider names in priority order
-  def available_providers(check_circuit_recovery: true, identifiers: false)
-    priorities = provider_priority(identifiers: true)
-    provider_keys_by_identifier = priorities.index_with do |identifier|
-      provider_key_for_identifier(identifier)
+  # @return [Array<String>] Available runner names in priority order
+  def available_runners(check_circuit_recovery: true, identifiers: false)
+    priorities = runner_priority(identifiers: true)
+    runner_keys_by_identifier = priorities.index_with do |identifier|
+      runner_key_for_identifier(identifier)
     end
-    provider_keys = provider_keys_by_identifier.values.uniq
-    states_by_name = user.provider_states.where(provider_name: priorities + provider_keys).index_by(&:provider_name)
+    runner_keys = runner_keys_by_identifier.values.uniq
+    states_by_name = user.runner_states.where(runner_name: priorities + runner_keys).index_by(&:runner_name)
 
-    available = priorities.select do |provider|
-      state = states_by_name[provider] || states_by_name[provider_keys_by_identifier[provider]]
+    available = priorities.select do |runner|
+      state = states_by_name[runner] || states_by_name[runner_keys_by_identifier[runner]]
       next true unless state
 
       # Check if circuit can recover before filtering
@@ -357,25 +363,25 @@ class UserSetting < ApplicationRecord
 
     return available if identifiers
 
-    map_identifiers_to_provider_keys(available)
+    map_identifiers_to_runner_keys(available)
   end
 
-  # Returns the ProviderState for a given provider, creating one if it doesn't exist.
+  # Returns the RunnerState for a given runner, creating one if it doesn't exist.
   #
-  # @param provider_name [String] The provider name
-  # @return [ProviderState]
-  def provider_state_for(provider_name)
-    user.provider_states.find_or_create_by!(provider_name: provider_name)
+  # @param runner_name [String] The runner name
+  # @return [RunnerState]
+  def runner_state_for(runner_name)
+    user.runner_states.find_or_create_by!(runner_name: runner_name)
   rescue ActiveRecord::RecordNotUnique
-    user.provider_states.find_by!(provider_name: provider_name)
+    user.runner_states.find_by!(runner_name: runner_name)
   end
 
   private
 
-  # Picks a candidate at random, weighted by each provider's weight column.
+  # Picks a candidate at random, weighted by each runner's weight column.
   # Falls back to uniform random when weights cannot be resolved (e.g. no
   # user attached for unsaved settings).
-  def pick_random_provider_identifier(candidates)
+  def pick_random_runner_identifier(candidates)
     weighted = weighted_candidate_pairs(candidates)
     return candidates.sample if weighted.empty?
 
@@ -391,10 +397,10 @@ class UserSetting < ApplicationRecord
     weighted.last.first
   end
 
-  # Picks the next provider in round-robin order, repeating each provider
+  # Picks the next runner in round-robin order, repeating each runner
   # consecutively N times when its weight is N. Persists state on the
   # user_setting so subsequent calls advance the cursor.
-  def pick_round_robin_provider_identifier(candidates)
+  def pick_round_robin_runner_identifier(candidates)
     weighted = weighted_candidate_pairs(candidates)
     return candidates.first if weighted.empty?
 
@@ -417,35 +423,35 @@ class UserSetting < ApplicationRecord
   end
 
   # Returns [[identifier, weight], ...] in candidate order, looking up each
-  # provider's weight from the user's saved providers. Unknown identifiers
-  # fall back to Provider::DEFAULT_WEIGHT so the cycle still advances.
+  # runner's weight from the user's saved runners. Unknown identifiers
+  # fall back to Runner::DEFAULT_WEIGHT so the cycle still advances.
   def weighted_candidate_pairs(candidates)
-    weights_by_identifier = provider_weights_by_identifier(candidates)
+    weights_by_identifier = runner_weights_by_identifier(candidates)
     candidates.map do |identifier|
-      [ identifier, weights_by_identifier.fetch(identifier, Provider::DEFAULT_WEIGHT) ]
+      [ identifier, weights_by_identifier.fetch(identifier, Runner::DEFAULT_WEIGHT) ]
     end
   end
 
-  def provider_weights_by_identifier(candidates)
+  def runner_weights_by_identifier(candidates)
     return {} unless user
     return {} if user.new_record?
 
-    routing_ids = candidates.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
+    routing_ids = candidates.filter_map { |identifier| Runner.id_from_routing_key(identifier) }
     return {} if routing_ids.empty?
 
-    user.providers.kept_only.where(id: routing_ids).pluck(:id, :weight).to_h do |id, weight|
-      [ "#{Provider::ROUTING_KEY_PREFIX}#{id}", weight || Provider::DEFAULT_WEIGHT ]
+    user.runners.kept_only.where(id: routing_ids).pluck(:id, :weight).to_h do |id, weight|
+      [ "#{Runner::ROUTING_KEY_PREFIX}#{id}", weight || Runner::DEFAULT_WEIGHT ]
     end
   end
 
   # Returns a fingerprint for the current candidate ordering and weights so
-  # the cursor resets when providers are added, removed, or re-weighted.
+  # the cursor resets when runners are added, removed, or re-weighted.
   def round_robin_fingerprint(weighted)
     weighted.map { |identifier, weight| "#{identifier}:#{weight}" }.join("|")
   end
 
   def round_robin_state_for(weighted)
-    state = provider_round_robin_state.is_a?(Hash) ? provider_round_robin_state.dup : {}
+    state = runner_round_robin_state.is_a?(Hash) ? runner_round_robin_state.dup : {}
     fingerprint = round_robin_fingerprint(weighted)
     state = {} if state["fingerprint"] != fingerprint
     state
@@ -454,7 +460,7 @@ class UserSetting < ApplicationRecord
   def persist_round_robin_state!(state)
     return unless persisted?
 
-    update_column(:provider_round_robin_state, state)
+    update_column(:runner_round_robin_state, state)
   rescue ActiveRecord::ActiveRecordError => e
     Rails.logger.warn(
       message: "user_setting.round_robin_state_persist_failed",
@@ -463,131 +469,131 @@ class UserSetting < ApplicationRecord
     )
   end
 
-  def validate_fallback_providers
-    return if fallback_providers.blank?
+  def validate_fallback_runners
+    return if fallback_runners.blank?
 
-    unless fallback_providers.is_a?(Array)
-      errors.add(:fallback_providers, "must be an array")
+    unless fallback_runners.is_a?(Array)
+      errors.add(:fallback_runners, "must be an array")
       return
     end
 
-    self.fallback_providers = sanitize_provider_tokens(fallback_providers, candidates: allowed_provider_identifiers_for_fallback)
+    self.fallback_runners = sanitize_runner_tokens(fallback_runners, candidates: allowed_runner_identifiers_for_fallback)
   end
 
-  def validate_kb_embedding_provider
-    self.kb_embedding_provider = normalize_kb_provider(kb_embedding_provider, default: KB_EMBEDDING_PROVIDER_DEFAULT)
-    return if KB_EMBEDDING_PROVIDERS.include?(kb_embedding_provider)
+  def validate_kb_embedding_runner
+    self.kb_embedding_runner = normalize_kb_runner(kb_embedding_runner, default: KB_EMBEDDING_RUNNER_DEFAULT)
+    return if KB_EMBEDDING_RUNNERS.include?(kb_embedding_runner)
 
-    errors.add(:kb_embedding_provider, "is not a supported knowledge embedding provider")
+    errors.add(:kb_embedding_runner, "is not a supported knowledge embedding runner")
   end
 
-  def validate_kb_embedding_fallback_providers
-    self.kb_embedding_fallback_providers = normalize_kb_provider_list(
-      kb_embedding_fallback_providers,
-      attribute: :kb_embedding_fallback_providers,
-      supported_providers: KB_EMBEDDING_PROVIDERS
+  def validate_kb_embedding_fallback_runners
+    self.kb_embedding_fallback_runners = normalize_kb_runner_list(
+      kb_embedding_fallback_runners,
+      attribute: :kb_embedding_fallback_runners,
+      supported_runners: KB_EMBEDDING_RUNNERS
     )
   end
 
-  def validate_kb_chat_provider
-    self.kb_chat_provider = normalize_kb_provider(kb_chat_provider, default: KB_CHAT_PROVIDER_DEFAULT)
-    return if KB_CHAT_PROVIDERS.include?(kb_chat_provider)
+  def validate_kb_chat_runner
+    self.kb_chat_runner = normalize_kb_runner(kb_chat_runner, default: KB_CHAT_RUNNER_DEFAULT)
+    return if KB_CHAT_RUNNERS.include?(kb_chat_runner)
 
-    errors.add(:kb_chat_provider, "is not a supported knowledge chat provider")
+    errors.add(:kb_chat_runner, "is not a supported knowledge chat runner")
   end
 
-  def validate_kb_chat_fallback_providers
-    self.kb_chat_fallback_providers = normalize_kb_provider_list(
-      kb_chat_fallback_providers,
-      attribute: :kb_chat_fallback_providers,
-      supported_providers: KB_CHAT_PROVIDERS
+  def validate_kb_chat_fallback_runners
+    self.kb_chat_fallback_runners = normalize_kb_runner_list(
+      kb_chat_fallback_runners,
+      attribute: :kb_chat_fallback_runners,
+      supported_runners: KB_CHAT_RUNNERS
     )
   end
 
-  def validate_default_agent_providers_by_goal
-    return if default_agent_providers_by_goal.blank?
+  def validate_default_agent_runners_by_goal
+    return if default_agent_runners_by_goal.blank?
 
-    unless default_agent_providers_by_goal.is_a?(Hash)
-      errors.add(:default_agent_providers_by_goal, "must be a hash")
+    unless default_agent_runners_by_goal.is_a?(Hash)
+      errors.add(:default_agent_runners_by_goal, "must be a hash")
       return
     end
 
     allowed_goals = AgentRun::GOALS
-    allowed_providers = allowed_provider_identifiers_for_agent_runs
+    allowed_runners = allowed_runner_identifiers_for_agent_runs
     normalized = {}
 
-    default_agent_providers_by_goal.each do |goal, provider|
+    default_agent_runners_by_goal.each do |goal, runner|
       goal = goal.to_s
 
       unless allowed_goals.include?(goal)
-        errors.add(:default_agent_providers_by_goal, "contains invalid goal: #{goal}")
+        errors.add(:default_agent_runners_by_goal, "contains invalid goal: #{goal}")
         next
       end
 
-      next if provider.blank?
+      next if runner.blank?
 
-      resolved = identifiers_for_provider_token(provider.to_s, candidates: allowed_providers)
-      if resolved.empty? && !allowed_providers.include?(provider.to_s)
-        errors.add(:default_agent_providers_by_goal, "contains invalid provider for #{goal}")
+      resolved = identifiers_for_runner_token(runner.to_s, candidates: allowed_runners)
+      if resolved.empty? && !allowed_runners.include?(runner.to_s)
+        errors.add(:default_agent_runners_by_goal, "contains invalid runner for #{goal}")
         next
       end
 
-      normalized[goal] = resolved.first || provider.to_s
+      normalized[goal] = resolved.first || runner.to_s
     end
 
-    self.default_agent_providers_by_goal = normalized
+    self.default_agent_runners_by_goal = normalized
   end
 
-  def validate_default_agent_provider
-    allowed = allowed_provider_identifiers_for_agent_runs
-    token = default_agent_provider.to_s
-    normalized = normalized_default_agent_provider
+  def validate_default_agent_runner
+    allowed = allowed_runner_identifiers_for_agent_runs
+    token = default_agent_runner.to_s
+    normalized = normalized_default_agent_runner
 
     if token.present? && allowed.include?(token)
-      self.default_agent_provider = token
+      self.default_agent_runner = token
       return
     end
 
     if normalized.present?
-      self.default_agent_provider = normalized
+      self.default_agent_runner = normalized
       return
     end
 
     if allowed.any?
-      self.default_agent_provider = allowed.first
+      self.default_agent_runner = allowed.first
       return
     end
 
-    errors.add(:default_agent_provider, "is not an enabled provider")
+    errors.add(:default_agent_runner, "is not an enabled runner")
   end
 
-  def allowed_provider_identifiers_for_agent_runs
-    return self.class.enabled_agent_providers(nil, identifiers: true) unless user
-    return self.class.enabled_agent_providers(user, identifiers: true) if user.new_record?
+  def allowed_runner_identifiers_for_agent_runs
+    return self.class.enabled_agent_runners(nil, identifiers: true) unless user
+    return self.class.enabled_agent_runners(user, identifiers: true) if user.new_record?
 
-    executable_keys = ProviderSupport.container_executable_provider_keys
-    self.class.provider_identifiers_for(
-      user.providers.kept_only.for_agent_runs.where(provider_key: executable_keys).ordered,
+    executable_keys = RunnerSupport.container_executable_runner_keys
+    self.class.runner_identifiers_for(
+      user.runners.kept_only.for_agent_runs.where(runner_key: executable_keys).ordered,
       identifiers: true
     )
   end
 
-  def allowed_provider_identifiers_for_fallback
-    return self.class.fallback_candidate_providers(nil, identifiers: true) unless user
-    return self.class.fallback_candidate_providers(user, identifiers: true) if user.new_record?
+  def allowed_runner_identifiers_for_fallback
+    return self.class.fallback_candidate_runners(nil, identifiers: true) unless user
+    return self.class.fallback_candidate_runners(user, identifiers: true) if user.new_record?
 
-    executable_keys = ProviderSupport.container_executable_provider_keys
-    self.class.provider_identifiers_for(
-      user.providers.kept_only.for_fallback.where(provider_key: executable_keys).ordered,
+    executable_keys = RunnerSupport.container_executable_runner_keys
+    self.class.runner_identifiers_for(
+      user.runners.kept_only.for_fallback.where(runner_key: executable_keys).ordered,
       identifiers: true
     )
   end
 
-  def normalized_default_agent_provider
-    identifiers_for_provider_token(default_agent_provider, candidates: allowed_provider_identifiers_for_agent_runs).first
+  def normalized_default_agent_runner
+    identifiers_for_runner_token(default_agent_runner, candidates: allowed_runner_identifiers_for_agent_runs).first
   end
 
-  def identifiers_for_provider_token(token, candidates:)
+  def identifiers_for_runner_token(token, candidates:)
     token = token.to_s
     return [] if token.blank?
 
@@ -595,43 +601,43 @@ class UserSetting < ApplicationRecord
     return exact if exact.any?
     return [] unless user
 
-    provider_index_by_id = {}
+    runner_index_by_id = {}
     routing_ids = candidates.filter_map.with_index do |candidate, index|
-      provider_id = Provider.id_from_routing_key(candidate)
-      provider_index_by_id[provider_id] ||= index if provider_id
-      provider_id
+      runner_id = Runner.id_from_routing_key(candidate)
+      runner_index_by_id[runner_id] ||= index if runner_id
+      runner_id
     end
     return [] if routing_ids.empty?
 
-    matching_providers = user.providers.kept_only.where(id: routing_ids, provider_key: token).ordered.to_a
-    return [] if matching_providers.empty?
+    matching_runners = user.runners.kept_only.where(id: routing_ids, runner_key: token).ordered.to_a
+    return [] if matching_runners.empty?
 
-    preferred_provider = matching_providers.min_by do |provider|
+    preferred_runner = matching_runners.min_by do |runner|
       [
-        provider.subscription? ? 0 : 1,
-        provider_index_by_id.fetch(provider.id, Float::INFINITY)
+        runner.subscription? ? 0 : 1,
+        runner_index_by_id.fetch(runner.id, Float::INFINITY)
       ]
     end
-    preferred_identifier = "#{Provider::ROUTING_KEY_PREFIX}#{preferred_provider.id}"
+    preferred_identifier = "#{Runner::ROUTING_KEY_PREFIX}#{preferred_runner.id}"
 
     candidates.include?(preferred_identifier) ? [ preferred_identifier ] : []
   end
 
-  def map_identifiers_to_provider_keys(identifiers)
+  def map_identifiers_to_runner_keys(identifiers)
     Array(identifiers).map do |identifier|
-      provider_key_for_identifier(identifier)
+      runner_key_for_identifier(identifier)
     end.uniq
   end
 
-  def provider_key_for_identifier(identifier)
-    Provider.for_identifier(user, identifier)&.provider_key || identifier
+  def runner_key_for_identifier(identifier)
+    Runner.for_identifier(user, identifier)&.runner_key || identifier
   end
 
-  def normalize_kb_provider(value, default:)
+  def normalize_kb_runner(value, default:)
     value.to_s.strip.downcase.presence || default
   end
 
-  def normalize_kb_provider_list(value, attribute:, supported_providers: nil)
+  def normalize_kb_runner_list(value, attribute:, supported_runners: nil)
     return [] if value.nil?
 
     unless value.is_a?(Array)
@@ -639,25 +645,25 @@ class UserSetting < ApplicationRecord
       return value
     end
 
-    normalized = value.filter_map do |provider|
-      provider.to_s.strip.downcase.presence
+    normalized = value.filter_map do |runner|
+      runner.to_s.strip.downcase.presence
     end.uniq
 
-    return normalized unless supported_providers
+    return normalized unless supported_runners
 
-    unsupported = normalized - supported_providers
+    unsupported = normalized - supported_runners
     if unsupported.any?
-      errors.add(attribute, "contains unsupported providers: #{unsupported.join(', ')}")
+      errors.add(attribute, "contains unsupported runners: #{unsupported.join(', ')}")
     end
 
     normalized
   end
 
-  def self.provider_identifiers_for(providers, identifiers:)
+  def self.runner_identifiers_for(runners, identifiers:)
     if identifiers
-      providers.pluck(:id).map { |id| "#{Provider::ROUTING_KEY_PREFIX}#{id}" }
+      runners.pluck(:id).map { |id| "#{Runner::ROUTING_KEY_PREFIX}#{id}" }
     else
-      providers.pluck(:provider_key).uniq
+      runners.pluck(:runner_key).uniq
     end
   end
 end

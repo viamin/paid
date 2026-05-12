@@ -202,7 +202,7 @@ module Knowledge
             parsed = parse_response(response)
             unless parsed
               raise AgentHarness::ProviderError.new(
-                "Provider #{provider} returned unparseable response"
+                "Runner #{provider} returned unparseable response"
               )
             end
             parsed
@@ -299,7 +299,7 @@ module Knowledge
 
       def llm_request_options(provider)
         options = {
-          provider: ProviderSupport.harness_provider_key_for(provider).to_sym,
+          provider: RunnerSupport.harness_runner_key_for(provider).to_sym,
           timeout: TIMEOUT,
           dangerous_mode: false,
           tools: :none

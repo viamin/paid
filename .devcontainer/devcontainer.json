@@ -22,6 +22,8 @@
     "DB_HOST": "postgres",
     "DB_USERNAME": "paid",
     "DB_PASSWORD": "paid",
+    "DB_ADMIN_USERNAME": "postgres",
+    "DB_ADMIN_PASSWORD": "postgres",
     // Keep devcontainer worker concurrency conservative to avoid OOM-killing
     // Overmind when Rails, GoodJob, Temporal, and asset watchers are all live.
     "DB_POOL": "10",

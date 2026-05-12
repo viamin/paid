@@ -13,7 +13,7 @@ module ChatSessions
     end
 
     def call
-      provider = chat_session.provider
+      provider = chat_session.runner
       return fallback_client unless provider
 
       api_key_record = provider.provider_api_key
@@ -39,7 +39,7 @@ module ChatSessions
 
     def openai_compatible_client(api_key_record)
       service_type = api_key_record.api_service_type
-      config = Provider::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
+      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       base_url = config&.dig(:base_url) || "https://api.openai.com/v1"
       model = chat_session.model || "gpt-4o"
 

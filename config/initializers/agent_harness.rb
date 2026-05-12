@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require Rails.root.join("lib/provider_support").to_s
+require Rails.root.join("lib/runner_support").to_s
 
 # Backport fix for viamin/agent-harness#173 — agent-harness 0.17.x passes
 # `nil` as the smoke-test timeout when a contract exists, so the adapter
@@ -72,36 +72,36 @@ AGENT_TIMEOUT_DEFAULT = 3600
 Rails.application.config.x.agent_timeout = AGENT_TIMEOUT_DEFAULT
 
 AgentHarness.configure do |config|
-  # Order is deterministic: follows APP_PROVIDER_KEYS declaration order.
-  supported_provider_keys = ProviderSupport.supported_provider_keys
+  # Order is deterministic: follows APP_RUNNER_KEYS declaration order.
+  supported_runner_keys = RunnerSupport.supported_runner_keys
 
-  default_key = if supported_provider_keys.include?("claude")
+  default_key = if supported_runner_keys.include?("claude")
     :claude
-  elsif supported_provider_keys.any?
-    ProviderSupport.harness_provider_key_for(supported_provider_keys.first).to_sym
+  elsif supported_runner_keys.any?
+    RunnerSupport.harness_runner_key_for(supported_runner_keys.first).to_sym
   end
 
   config.default_provider = default_key if default_key
-  config.fallback_providers = %w[cursor aider].filter_map do |provider_key|
-    next unless supported_provider_keys.include?(provider_key)
+  config.fallback_providers = %w[cursor aider].filter_map do |runner_key|
+    next unless supported_runner_keys.include?(runner_key)
 
-    harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
-    next if default_key && harness_provider_key == default_key
+    harness_runner_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym
+    next if default_key && harness_runner_key == default_key
 
-    harness_provider_key
+    harness_runner_key
   end
   config.default_timeout = AGENT_TIMEOUT_DEFAULT
 
-  supported_provider_keys.each_with_index do |provider_key, index|
-    harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
+  supported_runner_keys.each_with_index do |runner_key, index|
+    harness_runner_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym
 
-    config.provider(harness_provider_key) do |provider|
+    config.provider(harness_runner_key) do |provider|
       provider.enabled = true
       provider.priority = (index + 1) * 10
-      provider.timeout = AGENT_TIMEOUT_DEFAULT if harness_provider_key == :claude
+      provider.timeout = AGENT_TIMEOUT_DEFAULT if harness_runner_key == :claude
 
-      # Tell the harness that container-executed providers are externally
-      # sandboxed so provider-specific nested sandbox mechanisms (e.g.
+      # Tell the harness that container-executed runners are externally
+      # sandboxed so runner-specific nested sandbox mechanisms (e.g.
       # Codex bubblewrap) are bypassed automatically.
       provider.externally_sandboxed = true
     end

@@ -38,13 +38,13 @@ RSpec.describe "Chat end-to-end", :chat_e2e, :js, type: :system do
     model = provider_config["model"]
     label = "#{service_type}/#{model}"
 
-    context "with provider ##{idx + 1}: #{label}", chat_provider: service_type do
+    context "with runner ##{idx + 1}: #{label}", chat_provider: service_type do
       it "sends a message and renders the response via #{label}", :chat_ui do
         test_provider = setup_provider(user, api_key, service_type, model)
         session = ChatSessions::Create.call(
           account: user.account,
           user: user,
-          provider_id: test_provider.id,
+          runner_id: test_provider.id,
           model: model
         )
 
@@ -67,7 +67,7 @@ RSpec.describe "Chat end-to-end", :chat_e2e, :js, type: :system do
         session = ChatSessions::Create.call(
           account: user.account,
           user: user,
-          provider_id: test_provider.id,
+          runner_id: test_provider.id,
           model: model
         )
 
@@ -91,12 +91,12 @@ RSpec.describe "Chat end-to-end", :chat_e2e, :js, type: :system do
 
     provider_api_key = create(:provider_api_key, user: user, api_key: api_key, api_service_type: service_type)
 
-    provider = user.providers.api_key.find_or_initialize_by(
-      provider_key: "opencode",
+    runner = user.runners.api_key.find_or_initialize_by(
+      runner_key: "opencode",
       provider_api_key: provider_api_key,
       name: "Chat E2E #{service_type}"
     )
-    provider.assign_attributes(
+    runner.assign_attributes(
       auth_type: "api_key",
       enabled_for_agent_runs: true,
       enabled_for_fallback: false,
@@ -107,8 +107,8 @@ RSpec.describe "Chat end-to-end", :chat_e2e, :js, type: :system do
         }
       }
     )
-    provider.save!
-    provider
+    runner.save!
+    runner
   end
 
   def send_chat_message_json(session_id, content)

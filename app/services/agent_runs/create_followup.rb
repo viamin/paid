@@ -36,12 +36,12 @@ module AgentRuns
     end
 
     def create_followup_run
-      provider, agent_type = resolve_provider_selection
+      runner, agent_type = resolve_runner_selection
 
       AgentRun.create!(
         project: agent_run.project,
         issue: agent_run.issue,
-        provider: provider,
+        runner: runner,
         agent_type: agent_type,
         status: "queued",
         trigger_type: "automatic",
@@ -50,24 +50,24 @@ module AgentRuns
       )
     end
 
-    def resolve_provider_selection
-      if agent_run.provider
-        return [ agent_run.provider, Provider.agent_type_for(agent_run.provider.provider_key) ]
+    def resolve_runner_selection
+      if agent_run.runner
+        return [ agent_run.runner, Runner.agent_type_for(agent_run.runner.runner_key) ]
       end
 
-      provider_id, agent_type = AgentRuns::ProviderResolver.call(project: agent_run.project, goal: goal)
-      provider = Provider.kept_only.find_by(id: provider_id) if provider_id
-      agent_type ||= provider ? Provider.agent_type_for(provider.provider_key) : fallback_agent_type
+      runner_id, agent_type = AgentRuns::RunnerResolver.call(project: agent_run.project, goal: goal)
+      runner = Runner.kept_only.find_by(id: runner_id) if runner_id
+      agent_type ||= runner ? Runner.agent_type_for(runner.runner_key) : fallback_agent_type
 
-      [ provider, agent_type ]
+      [ runner, agent_type ]
     end
 
     def fallback_agent_type
-      enabled = Provider.first_enabled_for_owner(agent_run.project.effective_owner)
-      return Provider.agent_type_for(enabled.provider_key) if enabled
+      enabled = Runner.first_enabled_for_owner(agent_run.project.effective_owner)
+      return Runner.agent_type_for(enabled.runner_key) if enabled
 
-      first_key = ProviderSupport.container_executable_provider_keys.first
-      first_key ? Provider.agent_type_for(first_key) : "claude_code"
+      first_key = RunnerSupport.container_executable_runner_keys.first
+      first_key ? Runner.agent_type_for(first_key) : "claude_code"
     end
 
     def handle_duplicate

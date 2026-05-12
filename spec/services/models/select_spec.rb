@@ -52,7 +52,7 @@ RSpec.describe Models::Select do
         expect(decision_log.metadata.dig("selection", "agent_type")).to eq(agent_run.agent_type)
         expect(decision_log.metadata.dig("selection", "provider_key")).to eq("claude")
         expect(decision_log.metadata.dig("selection", "model_id")).to eq("claude-sonnet-4-6")
-        expect(decision_log.metadata.dig("selection", "model_provider")).to eq(llm_model.provider)
+        expect(decision_log.metadata.dig("selection", "model_provider")).to eq(llm_model.runner)
       end
 
       it "records an orchestration decision with selection context" do
@@ -82,7 +82,7 @@ RSpec.describe Models::Select do
             "rank" => 1,
             "selected" => true,
             "model_id" => "claude-sonnet-4-6",
-            "provider" => llm_model.provider,
+            "runner" => llm_model.runner,
             "tier" => "high"
           )
         )
@@ -194,7 +194,7 @@ RSpec.describe Models::Select do
           provider_preferences: { "model_preferences" => { "claude" => tenant_model.model_id } })
       end
 
-      it "selects the tenant default model for the run provider" do
+      it "selects the tenant default model for the run runner" do
         selection = described_class.call(agent_run: agent_run)
 
         expect(selection.llm_model).to eq(tenant_model)

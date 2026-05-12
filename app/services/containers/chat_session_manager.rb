@@ -37,9 +37,9 @@ module Containers
 
     # Executes an agent CLI command inside the container.
     #
-    # Delegates command building to agent-harness via Providers::HarnessExecutionPlan
-    # so the correct CLI is invoked for whatever provider the chat session uses
-    # (Claude, Codex, Gemini, etc.) without hard-coding provider-specific commands.
+    # Delegates command building to agent-harness via Runners::HarnessExecutionPlan
+    # so the correct CLI is invoked for whatever runner the chat session uses
+    # (Claude, Codex, Gemini, etc.) without hard-coding runner-specific commands.
     # Carries the full execution plan (command, env, preparation) through to the
     # container exec call, matching how RunAgentActivity applies plans.
     #
@@ -173,21 +173,21 @@ module Containers
     end
 
     # Builds a full execution plan using agent-harness.
-    # When a Provider record is available, uses HarnessExecutionPlan.call to
-    # include per-provider runtime config (API keys, custom base URLs, etc.).
-    # Falls back to for_provider_key when no Provider record exists.
+    # When a Runner record is available, uses HarnessExecutionPlan.call to
+    # include per-runner runtime config (API keys, custom base URLs, etc.).
+    # Falls back to for_runner_key when no Runner record exists.
     def build_execution_plan(prompt:, session_id: nil)
       options = session_id.present? ? { session_id: session_id } : {}
 
-      if chat_session.provider.present?
-        Providers::HarnessExecutionPlan.call(
-          provider: chat_session.provider,
+      if chat_session.runner.present?
+        Runners::HarnessExecutionPlan.call(
+          runner: chat_session.runner,
           prompt: prompt,
           options: options
         )
       else
-        Providers::HarnessExecutionPlan.for_provider_key(
-          provider_key: "claude",
+        Runners::HarnessExecutionPlan.for_runner_key(
+          runner_key: "claude",
           prompt: prompt,
           options: options
         )

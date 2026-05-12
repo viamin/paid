@@ -19,7 +19,7 @@ RSpec.describe "TenantConfigurations" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Tenant Configuration")
-      expect(response.body).to include("Provider Preferences")
+      expect(response.body).to include("Runner Preferences")
       expect(response.body).to include("Percentage of actors")
     end
   end

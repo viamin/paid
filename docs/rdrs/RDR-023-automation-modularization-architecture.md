@@ -603,7 +603,7 @@ end
 4. Replace direct Octokit calls in `ScanPaidPrsActivity` and `MergePullRequestActivity` with provider calls.
 5. Verify behavior parity via existing integration tests.
 
-The interface code is placed under `app/services/automation/providers/` (rather than `app/adapters/` as originally sketched) so that the capability modules live alongside other automation namespaces (`Automation::Decision`, `Automation::Result`, `Automation::Strategies::*`). The term "provider" tracks the wording used in #1116 and avoids collision with the existing `::Provider` model, which models LLM providers.
+The interface code is placed under `app/services/automation/providers/` (rather than `app/adapters/` as originally sketched) so that the capability modules live alongside other automation namespaces (`Automation::Decision`, `Automation::Result`, `Automation::Strategies::*`). The term "provider" tracks the wording used in #1116 and avoids collision with the existing `::Runner` model, which represents per-user agent runner configurations.
 
 **Files to create**:
 

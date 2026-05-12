@@ -556,8 +556,8 @@ RSpec.describe "Projects" do
 
       it "shows the provider column for recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        provider = create(:provider, user: user, provider_key: "codex")
-        run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
+        provider = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, project: project, provider: provider, final_runner: provider.routing_key)
 
         get project_path(project)
 
@@ -565,7 +565,7 @@ RSpec.describe "Projects" do
         section = document.at_css(%(div[id="#{ActionView::RecordIdentifier.dom_id(project, :agent_runs)}"]))
 
         expect(section).to be_present
-        expect(section.css("thead th").map { |header| header.text.squish }).to include("Provider")
+        expect(section.css("thead th").map { |header| header.text.squish }).to include("Runner")
 
         row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
 
@@ -575,8 +575,8 @@ RSpec.describe "Projects" do
 
       it "shows the final provider label for legacy fallback runs in recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        initial_provider = create(:provider, user: user, provider_key: "codex")
-        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+        initial_provider = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_runner: "cursor")
 
         get project_path(project)
 
@@ -585,12 +585,12 @@ RSpec.describe "Projects" do
         row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
 
         expect(row).to be_present
-        expect(row.text).to include(Provider.display_name_for("cursor"))
+        expect(row.text).to include(Runner.display_name_for("cursor"))
       end
 
       it "renders unsupported provider identifiers in recent agent runs without error" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+        run = create(:agent_run, project: project, provider: nil, final_runner: "api", agent_type: "api")
 
         get project_path(project)
 

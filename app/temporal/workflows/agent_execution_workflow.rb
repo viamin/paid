@@ -101,7 +101,7 @@ module Workflows
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
-      provider_attempt_count = [ agent_run_result.fetch(:provider_attempt_count, 1), 1 ].max
+      provider_attempt_count = [ agent_run_result.fetch(:runner_attempt_count, 1), 1 ].max
       agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
       issue_goal_timeout_seconds = agent_run_result.fetch(
         :issue_goal_timeout_seconds,

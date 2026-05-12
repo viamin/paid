@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class ChatSession < ApplicationRecord
+  self.ignored_columns = %w[provider_id]
+
   include TenantScoped
 
   STATUSES = %w[active idle closed archived].freeze
@@ -14,7 +16,7 @@ class ChatSession < ApplicationRecord
   after_destroy_commit :broadcast_sidebar_remove
 
   belongs_to :project, optional: true
-  belongs_to :provider, -> { with_discarded }, optional: true
+  belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
@@ -25,7 +27,7 @@ class ChatSession < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :mode, inclusion: { in: MODES }
   validates :external_id, uniqueness: true
-  validate :provider_must_belong_to_same_account
+  validate :runner_must_belong_to_same_account
   validate :project_must_belong_to_same_account
 
   scope :active, -> { where(status: "active") }
@@ -97,13 +99,13 @@ class ChatSession < ApplicationRecord
     self.proxy_token ||= SecureRandom.hex(32)
   end
 
-  def provider_must_belong_to_same_account
-    return unless provider && account
+  def runner_must_belong_to_same_account
+    return unless runner && account
 
-    provider_account_id = provider.user&.account_id
-    return if provider_account_id == account_id
+    runner_account_id = runner.user&.account_id
+    return if runner_account_id == account_id
 
-    errors.add(:provider, "must belong to the same account")
+    errors.add(:runner, "must belong to the same account")
   end
 
   def project_must_belong_to_same_account

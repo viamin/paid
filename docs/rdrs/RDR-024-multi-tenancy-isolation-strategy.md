@@ -150,7 +150,7 @@ Account-level operational configuration, analogous to `UserSetting` but scoped t
 | `max_users` | integer | 25 | Max users per account |
 | `max_tokens_per_run` | integer | 10,000,000 | Token limit per agent run |
 | `max_monthly_cost_cents` | integer | nil | Monthly cost cap (nil = unlimited) |
-| `allowed_provider_keys` | text[] | [] | Allowed AI providers (empty = all) |
+| `allowed_runner_keys` | text[] | [] | Allowed AI runners (empty = all) |
 | `features` | jsonb | {} | Feature flags/overrides for account |
 
 ### Setting Precedence
@@ -191,7 +191,7 @@ CREATE TABLE tenant_settings (
   max_users integer NOT NULL DEFAULT 25,
   max_tokens_per_run integer NOT NULL DEFAULT 10000000,
   max_monthly_cost_cents integer,
-  allowed_provider_keys text[] DEFAULT '{}',
+  allowed_runner_keys text[] DEFAULT '{}',
   features jsonb NOT NULL DEFAULT '{}',
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL

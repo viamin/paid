@@ -32,7 +32,7 @@
       <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6", data: {
         controller: "goal-toggle",
         goal_toggle_current_goal_value: selected_goal,
-        goal_toggle_provider_defaults_value: @default_provider_identifiers_by_goal.to_json
+        goal_toggle_runner_defaults_value: @default_runner_identifiers_by_goal.to_json
       } do |f| %>
 
         <fieldset>
@@ -141,11 +141,11 @@
         </div>
 
         <div>
-          <h2 class="text-base font-semibold text-gray-900">Provider</h2>
+          <h2 class="text-base font-semibold text-gray-900">Runner</h2>
           <div class="mt-4">
-            <select name="provider" id="provider" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" data-action="change->goal-toggle#providerChanged" data-goal-toggle-target="providerSelect">
-              <option value="" selected>Inherit (from provider settings)</option>
-              <% @available_run_provider_options.each do |label, identifier| %>
+            <select name="runner" id="runner" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" data-action="change->goal-toggle#runnerChanged" data-goal-toggle-target="runnerSelect">
+              <option value="" selected>Inherit (from runner settings)</option>
+              <% @available_run_runner_options.each do |label, identifier| %>
                 <option value="<%= identifier %>">
                   <%= label %>
                 </option>

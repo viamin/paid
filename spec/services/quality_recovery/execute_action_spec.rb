@@ -119,7 +119,7 @@ RSpec.describe QualityRecovery::ExecuteAction do
     context "with model change" do
       it "applies the agent preference at project level without mutating owner defaults" do
         owner = project.created_by
-        original_default = owner.settings.default_agent_provider
+        original_default = owner.settings.default_agent_runner
 
         result = described_class.call(
           project: project,
@@ -139,7 +139,7 @@ RSpec.describe QualityRecovery::ExecuteAction do
           "to_provider" => "cursor"
         )
         expect(project.reload.model_preferences["preferred_agent_type"]).to eq("cursor")
-        expect(owner.settings.reload.default_agent_provider).to eq(original_default)
+        expect(owner.settings.reload.default_agent_runner).to eq(original_default)
       end
 
       it "applies the required model preference" do

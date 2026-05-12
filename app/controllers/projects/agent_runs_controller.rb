@@ -11,25 +11,25 @@ module Projects
 
     def index
       authorize @project, :show?
-      base_scope = @project.agent_runs.includes(:provider, project: [ :created_by, :account ], issue: :project)
+      base_scope = @project.agent_runs.includes(:runner, project: [ :created_by, :account ], issue: :project)
       @q = base_scope.ransack(params[:q])
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @pagy, @agent_runs = pagy(@q.result)
-      AgentRun.preload_final_provider_records(@agent_runs)
+      AgentRun.preload_final_runner_records(@agent_runs)
       AgentRun.preload_source_pull_requests(@agent_runs)
-      cache_key = AgentRun.provider_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
-      @provider_options = base_scope.distinct_effective_provider_options(account_id: @project.account_id, cache_key: cache_key)
+      cache_key = AgentRun.runner_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
+      @runner_options = base_scope.distinct_effective_runner_options(account_id: @project.account_id, cache_key: cache_key)
     end
 
     def show
       authorize @agent_run
-      @retry_provider_options = retry_provider_options_for(@agent_run)
+      @retry_runner_options = retry_runner_options_for(@agent_run)
       @quality_metrics = @agent_run.quality_metrics.with_composite_score.load
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
       @phase_timeline = @agent_run.agent_run_phases.load
       @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
-      @final_provider_record = @agent_run.final_provider_record
-      @attempted_providers_by_routing_key = @agent_run.attempted_providers_by_routing_key
+      @final_runner_record = @agent_run.final_runner_record
+      @attempted_runners_by_routing_key = @agent_run.attempted_runners_by_routing_key
     end
 
     def cancel
@@ -40,11 +40,11 @@ module Projects
     def new
       authorize @project, :run_agent?
       selected_goal = params[:goal].presence || "create_pr"
-      @default_provider_identifiers_by_goal = AgentRun::GOALS.index_with do |goal|
-        settings_owner&.settings&.default_provider_identifier_for_goal(goal)
+      @default_runner_identifiers_by_goal = AgentRun::GOALS.index_with do |goal|
+        settings_owner&.settings&.default_runner_identifier_for_goal(goal)
       end.compact
-      @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
-      @available_run_provider_options = available_run_provider_options
+      @default_runner_identifier = @default_runner_identifiers_by_goal[selected_goal]
+      @available_run_runner_options = available_run_runner_options
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -165,7 +165,7 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
-        provider_identifier: settings_owner&.settings&.default_provider_identifier_for_goal("create_pr"),
+        runner_identifier: settings_owner&.settings&.default_runner_identifier_for_goal("create_pr"),
         goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
@@ -368,16 +368,16 @@ module Projects
         return
       end
 
-      retry_provider = if params[:provider].present?
-        configured_provider_for_retry(params[:provider])
+      retry_runner = if params[:runner].present?
+        configured_runner_for_retry(params[:runner])
       else
-        @agent_run.provider || current_retry_provider_for(@agent_run)
+        @agent_run.runner || current_retry_runner_for(@agent_run)
       end
 
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
-        provider: retry_provider,
+        runner: retry_runner,
         agent_type: agent_type,
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
@@ -390,7 +390,7 @@ module Projects
         decision_point: "manual_retry",
         signals: {
           selected_agent_type: agent_type,
-          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+          selected_provider: retry_runner&.routing_key || retry_runner&.runner_key
         },
         result: { new_agent_run_id: new_run.id }
       )
@@ -404,7 +404,7 @@ module Projects
         decision_point: "manual_retry",
         signals: {
           selected_agent_type: agent_type,
-          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+          selected_provider: retry_runner&.routing_key || retry_runner&.runner_key
         },
         error: e
       )
@@ -459,7 +459,7 @@ module Projects
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
-        provider: @agent_run.provider,
+        runner: @agent_run.runner,
         agent_type: @agent_run.agent_type,
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
@@ -614,25 +614,25 @@ module Projects
       @agent_run.reload
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
       requested_agent_type = agent_type || params[:agent_type].presence
-      requested_provider_identifier = provider_identifier || params[:provider].presence
-      resolved_provider = resolve_provider_selection(
+      requested_runner_identifier = runner_identifier || params[:runner].presence
+      resolved_runner = resolve_runner_selection(
         requested_agent_type: requested_agent_type,
-        requested_provider_identifier: requested_provider_identifier,
+        requested_runner_identifier: requested_runner_identifier,
         goal: goal
       )
-      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_provider
+      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_runner
 
-      resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
+      resolved_agent_type = runner_key_to_agent_type(resolved_runner.runner_key)
 
       AgentRun.create!(
         project: @project,
         issue: issue,
-        provider: resolved_provider,
+        runner: resolved_runner,
         agent_type: resolved_agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
@@ -646,7 +646,7 @@ module Projects
     def enqueue_resume_run(pr)
       create_agent_run(
         source_pull_request_number: pr.github_number,
-        provider_identifier: settings_owner&.settings&.default_provider_identifier_for_goal("create_pr"),
+        runner_identifier: settings_owner&.settings&.default_runner_identifier_for_goal("create_pr"),
         goal: "create_pr",
         trigger_type: "automatic"
       )
@@ -722,54 +722,54 @@ module Projects
       redirect_to on_error_path, alert: alert
     end
 
-    def provider_key_to_agent_type(provider_key)
-      Provider.agent_type_for(provider_key)
+    def runner_key_to_agent_type(runner_key)
+      Runner.agent_type_for(runner_key)
     end
 
-    def agent_type_to_provider_key(agent_type)
-      Provider.provider_key_for_agent_type(agent_type)
+    def agent_type_to_runner_key(agent_type)
+      Runner.runner_key_for_agent_type(agent_type)
     end
 
-    def managed_provider_key?(provider_key)
-      Provider.supported_provider_key?(provider_key)
+    def managed_runner_key?(runner_key)
+      Runner.supported_runner_key?(runner_key)
     end
 
-    def retry_provider_options_for(agent_run)
-      current_provider = current_retry_provider_for(agent_run)
+    def retry_runner_options_for(agent_run)
+      current_runner = current_retry_runner_for(agent_run)
 
-      enabled_retry_provider_entries.filter_map do |identifier, provider|
-        agent_type = provider_key_to_agent_type(provider.provider_key)
+      enabled_retry_runner_entries.filter_map do |identifier, runner|
+        agent_type = runner_key_to_agent_type(runner.runner_key)
         next unless AgentRun::AGENT_TYPES.include?(agent_type)
 
         {
-          provider_key: identifier,
+          runner_key: identifier,
           agent_type: agent_type,
-          label: provider.display_name,
-          current: current_provider.present? && provider.id == current_provider.id
+          label: runner.display_name,
+          current: current_runner.present? && runner.id == current_runner.id
         }
       end
     end
 
-    def current_retry_provider_for(agent_run)
-      return agent_run.provider if agent_run.provider
+    def current_retry_runner_for(agent_run)
+      return agent_run.runner if agent_run.runner
 
-      provider_key = agent_type_to_provider_key(agent_run.agent_type)
-      return unless provider_key
+      runner_key = agent_type_to_runner_key(agent_run.agent_type)
+      return unless runner_key
 
-      Provider.for_identifier(settings_owner, provider_key)
+      Runner.for_identifier(settings_owner, runner_key)
     end
 
     def retry_agent_type_for(agent_run)
-      requested_provider_identifier = params[:provider].presence
+      requested_runner_identifier = params[:runner].presence
       requested_agent_type = params[:agent_type].presence
 
-      return agent_run.agent_type if requested_provider_identifier.blank? && requested_agent_type.blank?
+      return agent_run.agent_type if requested_runner_identifier.blank? && requested_agent_type.blank?
 
-      if requested_provider_identifier.present?
-        provider = configured_provider_for_retry(requested_provider_identifier)
-        return nil unless provider
+      if requested_runner_identifier.present?
+        runner = configured_runner_for_retry(requested_runner_identifier)
+        return nil unless runner
 
-        requested_agent_type = provider_key_to_agent_type(provider.provider_key)
+        requested_agent_type = runner_key_to_agent_type(runner.runner_key)
       end
       return nil unless retry_agent_type_allowed?(requested_agent_type)
 
@@ -779,10 +779,10 @@ module Projects
     def retry_agent_type_allowed?(agent_type)
       return false unless AgentRun::AGENT_TYPES.include?(agent_type)
 
-      provider_key = agent_type_to_provider_key(agent_type)
-      return true unless managed_provider_key?(provider_key)
+      runner_key = agent_type_to_runner_key(agent_type)
+      return true unless managed_runner_key?(runner_key)
 
-      enabled_retry_providers.any? { |provider| provider.provider_key == provider_key }
+      enabled_retry_runners.any? { |runner| runner.runner_key == runner_key }
     end
 
     def log_failed_retry_decision(decision_point:, signals:, error:)
@@ -801,7 +801,7 @@ module Projects
       )
     end
 
-    def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:, goal:)
+    def resolve_runner_selection(requested_agent_type:, requested_runner_identifier:, goal:)
       owner = settings_owner
       return unless owner
 
@@ -809,16 +809,16 @@ module Projects
       priority_identifiers = owner.settings.provider_priority_for_goal(goal, identifiers: true)
       default_identifier = priority_identifiers.first
 
-      if requested_provider_identifier.present?
-        provider = configured_provider_for_retry(requested_provider_identifier)
-        return provider if provider
+      if requested_runner_identifier.present?
+        runner = configured_runner_for_retry(requested_runner_identifier)
+        return runner if runner
       end
 
       if requested_agent_type.present? && AgentRun::AGENT_TYPES.include?(requested_agent_type)
-        requested_provider_key = agent_type_to_provider_key(requested_agent_type)
-        matches = enabled_retry_providers.select { |entry| entry.provider_key == requested_provider_key }
-        provider = matches.find(&:subscription?) || matches.first
-        return provider if provider
+        requested_runner_key = agent_type_to_runner_key(requested_agent_type)
+        matches = enabled_retry_runners.select { |entry| entry.runner_key == requested_runner_key }
+        runner = matches.find(&:subscription?) || matches.first
+        return runner if runner
       end
 
       selected_identifier = if configured_identifiers.include?(default_identifier)
@@ -827,17 +827,17 @@ module Projects
         priority_identifiers.first || configured_identifiers.first
       end
 
-      provider_for_identifier(selected_identifier) || Provider.ensure_default_for(owner)
+      runner_for_identifier(selected_identifier) || Runner.ensure_default_for(owner)
     end
 
-    def provider_for_identifier(identifier)
-      Provider.for_identifier(settings_owner, identifier)
+    def runner_for_identifier(identifier)
+      Runner.for_identifier(settings_owner, identifier)
     end
 
-    # Returns [identifier, provider] pairs for all enabled agent providers,
+    # Returns [identifier, runner] pairs for all enabled agent runners,
     # bulk-loaded in two queries to avoid N+1.
-    def enabled_retry_provider_entries
-      @enabled_retry_provider_entries ||= begin
+    def enabled_retry_runner_entries
+      @enabled_retry_runner_entries ||= begin
         owner = settings_owner
         unless owner
           []
@@ -847,29 +847,29 @@ module Projects
           routing_ids = []
           plain_keys = []
           identifiers.each do |id|
-            if Provider.routing_key?(id)
-              routing_ids << Provider.id_from_routing_key(id)
+            if Runner.routing_key?(id)
+              routing_ids << Runner.id_from_routing_key(id)
             else
               plain_keys << id
             end
           end
 
-          providers_by_id = owner.providers.kept_only.where(id: routing_ids).index_by(&:id)
-          providers_by_key = owner.providers.kept_only.where(provider_key: plain_keys).ordered
-            .group_by(&:provider_key)
+          runners_by_id = owner.runners.kept_only.where(id: routing_ids).index_by(&:id)
+          runners_by_key = owner.runners.kept_only.where(runner_key: plain_keys).ordered
+            .group_by(&:runner_key)
 
           identifiers.filter_map do |identifier|
-            provider = if Provider.routing_key?(identifier)
-              providers_by_id[Provider.id_from_routing_key(identifier)]
+            runner = if Runner.routing_key?(identifier)
+              runners_by_id[Runner.id_from_routing_key(identifier)]
             else
-              group = providers_by_key[identifier]
+              group = runners_by_key[identifier]
               next unless group
-              # Prefer subscription entry, matching Provider.for_identifier behavior
+              # Prefer subscription entry, matching Runner.for_identifier behavior
               group.find(&:subscription?) || group.first
             end
-            next unless provider
+            next unless runner
 
-            [ identifier, provider ]
+            [ identifier, runner ]
           end
         end
       end
@@ -879,20 +879,20 @@ module Projects
       @settings_owner ||= @project.effective_owner
     end
 
-    def enabled_retry_providers
-      @enabled_retry_providers ||= enabled_retry_provider_entries.map(&:last)
+    def enabled_retry_runners
+      @enabled_retry_runners ||= enabled_retry_runner_entries.map(&:last)
     end
 
-    def configured_provider_for_retry(identifier)
+    def configured_runner_for_retry(identifier)
       return if identifier.blank?
 
       identifier = identifier.to_s
-      if Provider.routing_key?(identifier)
-        enabled_retry_providers.find { |entry| entry.routing_key == identifier }
+      if Runner.routing_key?(identifier)
+        enabled_retry_runners.find { |entry| entry.routing_key == identifier }
       else
-        # Prefer subscription entry when multiple providers share the same key,
-        # matching Provider.for_identifier backward-compat behavior.
-        matches = enabled_retry_providers.select { |entry| entry.provider_key == identifier }
+        # Prefer subscription entry when multiple runners share the same key,
+        # matching Runner.for_identifier backward-compat behavior.
+        matches = enabled_retry_runners.select { |entry| entry.runner_key == identifier }
         matches.find(&:subscription?) || matches.first
       end
     end
@@ -1024,9 +1024,9 @@ module Projects
       end
     end
 
-    def available_run_provider_options
-      enabled_retry_provider_entries.map do |identifier, provider|
-        [ provider.display_name, identifier ]
+    def available_run_runner_options
+      enabled_retry_runner_entries.map do |identifier, runner|
+        [ runner.display_name, identifier ]
       end
     end
   end

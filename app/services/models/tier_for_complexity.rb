@@ -4,7 +4,7 @@ module Models
   # Maps a complexity score (1-10) to an LlmModel tier ("low" | "mid" | "high")
   # using tunable thresholds. Thresholds are resolved from the first source that
   # defines them: project-level `model_preferences["complexity_thresholds"]`,
-  # the agent_run's provider, or Provider::DEFAULT_COMPLEXITY_THRESHOLDS.
+  # the agent_run's runner, or Runner::DEFAULT_COMPLEXITY_THRESHOLDS.
   #
   # Returns nil when the complexity score is nil or non-numeric — callers fall
   # back to their existing behavior when no tier can be derived.
@@ -13,11 +13,11 @@ module Models
       new(...).call
     end
 
-    def initialize(complexity:, agent_run: nil, project: nil, provider: nil, goal: nil)
+    def initialize(complexity:, agent_run: nil, project: nil, runner: nil, goal: nil)
       @complexity = complexity
       @agent_run = agent_run
       @project = project || agent_run&.project
-      @provider = provider || agent_run&.provider
+      @runner = runner || agent_run&.runner
       @goal = goal || agent_run&.goal
     end
 
@@ -41,12 +41,12 @@ module Models
     end
 
     def effective_thresholds
-      project_override || provider_thresholds || Provider::DEFAULT_COMPLEXITY_THRESHOLDS.dup
+      project_override || runner_thresholds || Runner::DEFAULT_COMPLEXITY_THRESHOLDS.dup
     end
 
     private
 
-    attr_reader :complexity, :agent_run, :project, :provider, :goal
+    attr_reader :complexity, :agent_run, :project, :runner, :goal
 
     def apply_project_tier_bounds(tier)
       tier = raise_to_minimum_tier(tier)
@@ -87,14 +87,14 @@ module Models
       raw = project.model_preferences&.dig("complexity_thresholds")
       return nil unless raw.is_a?(Hash)
 
-      normalized = Provider::DEFAULT_COMPLEXITY_THRESHOLDS.merge(
-        raw.slice(*Provider::COMPLEXITY_THRESHOLD_KEYS)
+      normalized = Runner::DEFAULT_COMPLEXITY_THRESHOLDS.merge(
+        raw.slice(*Runner::COMPLEXITY_THRESHOLD_KEYS)
       )
       normalized.transform_values { |v| Integer(v, exception: false) || v }
     end
 
-    def provider_thresholds
-      provider&.effective_complexity_thresholds
+    def runner_thresholds
+      runner&.effective_complexity_thresholds
     end
   end
 end

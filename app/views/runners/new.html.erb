@@ -1,0 +1,15 @@
+<% content_for(:title) { "New Runner - Paid" } %>
+
+<div class="mx-auto max-w-xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="rounded-lg bg-white p-6 shadow">
+    <h1 class="text-xl font-semibold text-gray-900">Add Runner</h1>
+    <p class="mt-1 text-sm text-gray-500">Add a runner that is already installed in the prebuilt paid-agent image, then choose whether it can be used for agent runs and fallback.</p>
+
+    <div class="mt-6">
+      <%= render "form", runner: @runner,
+            subscription_runner_options: @subscription_runner_options,
+            api_key_runner_options: @api_key_runner_options,
+            available_api_keys: @available_api_keys %>
+    </div>
+  </div>
+</div>

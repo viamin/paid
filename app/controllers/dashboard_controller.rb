@@ -12,15 +12,15 @@ class DashboardController < ApplicationController
     @goal_filter = valid_goal_filter
     @live_stats = Dashboard::LiveStats.call(account: current_account)
     @queue_preview = Dashboard::QueuePreview.call(user: current_user)
-    @active_runs = live_agent_runs.active.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
+    @active_runs = live_agent_runs.active.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order("agent_runs.created_at DESC")
       .limit(20)
-    AgentRun.preload_final_provider_records(@active_runs)
-    @paused_runs = live_agent_runs.paused.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
+    AgentRun.preload_final_runner_records(@active_runs)
+    @paused_runs = live_agent_runs.paused.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order(paused_at: :desc, created_at: :desc)
       .limit(20)
       .to_a
-    AgentRun.preload_final_provider_records(@paused_runs)
+    AgentRun.preload_final_runner_records(@paused_runs)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)

@@ -213,14 +213,14 @@ RSpec.describe User do
     end
   end
 
-  describe "provider cleanup" do
+  describe "runner cleanup" do
     it "destroys discarded providers when the user is destroyed" do
       user = create(:user)
-      provider = create(:provider, user: user, provider_key: "cursor")
-      provider.discard!
+      runner = create(:runner, user: user, runner_key: "cursor")
+      runner.discard!
 
       expect { user.destroy! }
-        .to change { Provider.with_discarded.where(id: provider.id).count }
+        .to change { Runner.with_discarded.where(id: runner.id).count }
         .from(1).to(0)
     end
   end

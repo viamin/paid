@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
-  MISSING_PROVIDER_ENTRY_LABEL = "Deleted provider entry"
+  MISSING_RUNNER_ENTRY_LABEL = "Deleted runner entry"
 
   # Dark-mode colors for these badges are handled by the global unlayered
   # overrides in application.tailwind.css (e.g. `.dark .bg-indigo-100`),
@@ -95,30 +95,30 @@ module ApplicationHelper
     )
   end
 
-  def agent_run_provider_displays(runs)
+  def agent_run_runner_displays(runs)
     runs = runs.to_a
-    routed_providers_by_owner_and_id = routed_providers_for_runs(runs)
-    configured_providers_by_owner_and_key = configured_providers_for_runs(runs)
+    routed_runners_by_owner_and_id = routed_runners_for_runs(runs)
+    configured_runners_by_owner_and_key = configured_runners_for_runs(runs)
 
     runs.each_with_object({}) do |run, displays|
       displays[run.id] =
-        if run.final_provider.present?
-          provider_display_for_identifier(
-            run.final_provider,
-            provider: provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
+        if run.final_runner.present?
+          runner_display_for_identifier(
+            run.final_runner,
+            runner: runner_for_identifier(run, configured_runners_by_owner_and_key, routed_runners_by_owner_and_id)
           )
-        elsif run.provider.present?
-          run.provider.display_name
+        elsif run.runner.present?
+          run.runner.display_name
         else
-          Provider.display_name_for(run.effective_provider)
+          Runner.display_name_for(run.effective_runner)
         end
     end
   end
 
-  def agent_run_provider_display(run, provider_displays = nil)
-    return provider_displays.fetch(run.id) if provider_displays
+  def agent_run_runner_display(run, runner_displays = nil)
+    return runner_displays.fetch(run.id) if runner_displays
 
-    agent_run_provider_displays([ run ]).fetch(run.id)
+    agent_run_runner_displays([ run ]).fetch(run.id)
   end
 
   PAID_STATE_STYLES = {
@@ -158,7 +158,7 @@ module ApplicationHelper
   def issue_lifecycle_legend_tooltip
     legend = ISSUE_LIFECYCLE_DISPLAY.map { |_key, display| "#{display[:emoji]} = #{display[:label]}" }.join("  ·  ")
     tag.span(
-      "ℹ️",
+      "\u{2139}\u{FE0F}",
       title: legend,
       class: "ml-1 cursor-help text-sm text-gray-400",
       aria: { label: "Status legend" }
@@ -369,7 +369,7 @@ module ApplicationHelper
     Knowledge::Redaction::Redactor.call(text: message).clean_text
   end
 
-  def provider_attempt_diagnostics_summary(attempt)
+  def runner_attempt_diagnostics_summary(attempt)
     diagnostics = attempt["diagnostics"]
     return nil unless diagnostics.is_a?(Hash)
 
@@ -517,58 +517,58 @@ module ApplicationHelper
     "#{run.project.github_url}/pull/#{run.source_pull_request_number}"
   end
 
-  def provider_display_for_identifier(identifier, provider: nil)
-    return provider.display_name if provider
-    return MISSING_PROVIDER_ENTRY_LABEL if Provider.routing_key?(identifier)
+  def runner_display_for_identifier(identifier, runner: nil)
+    return runner.display_name if runner
+    return MISSING_RUNNER_ENTRY_LABEL if Runner.routing_key?(identifier)
 
-    Provider.display_name_for(normalized_provider_identifier(identifier))
+    Runner.display_name_for(normalized_runner_identifier(identifier))
   end
 
-  def provider_for_identifier(run, configured_providers_by_owner_and_key, routed_providers_by_owner_and_id)
-    if Provider.routing_key?(run.final_provider)
+  def runner_for_identifier(run, configured_runners_by_owner_and_key, routed_runners_by_owner_and_id)
+    if Runner.routing_key?(run.final_runner)
       owner_id = run.project&.effective_owner&.id
-      provider_id = Provider.id_from_routing_key(run.final_provider)
-      return routed_providers_by_owner_and_id[[ owner_id, provider_id ]]
+      runner_id = Runner.id_from_routing_key(run.final_runner)
+      return routed_runners_by_owner_and_id[[ owner_id, runner_id ]]
     end
 
-    normalized_identifier = normalized_provider_identifier(run.final_provider)
+    normalized_identifier = normalized_runner_identifier(run.final_runner)
 
-    configured_providers_by_owner_and_key[[ run.project&.effective_owner&.id, normalized_identifier ]] ||
-      (run.provider if run.provider&.matches_identifier?(run.final_provider))
+    configured_runners_by_owner_and_key[[ run.project&.effective_owner&.id, normalized_identifier ]] ||
+      (run.runner if run.runner&.matches_identifier?(run.final_runner))
   end
 
-  def routed_providers_for_runs(runs)
-    provider_ids_by_owner_id = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, provider_ids|
-      next unless Provider.routing_key?(run.final_provider)
+  def routed_runners_for_runs(runs)
+    runner_ids_by_owner_id = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, runner_ids|
+      next unless Runner.routing_key?(run.final_runner)
 
       owner_id = run.project&.effective_owner&.id
-      provider_id = Provider.id_from_routing_key(run.final_provider)
-      next unless owner_id && provider_id
+      runner_id = Runner.id_from_routing_key(run.final_runner)
+      next unless owner_id && runner_id
 
-      provider_ids[owner_id] << provider_id
+      runner_ids[owner_id] << runner_id
     end
-    return {} if provider_ids_by_owner_id.empty?
+    return {} if runner_ids_by_owner_id.empty?
 
-    Provider.with_discarded.where(user_id: provider_ids_by_owner_id.keys, id: provider_ids_by_owner_id.values.flatten.uniq)
-      .index_by { |provider| [ provider.user_id, provider.id ] }
+    Runner.with_discarded.where(user_id: runner_ids_by_owner_id.keys, id: runner_ids_by_owner_id.values.flatten.uniq)
+      .index_by { |runner| [ runner.user_id, runner.id ] }
   end
 
-  def configured_providers_for_runs(runs)
-    owner_ids_by_provider_key = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, provider_keys|
-      next if run.final_provider.blank? || Provider.routing_key?(run.final_provider)
+  def configured_runners_for_runs(runs)
+    owner_ids_by_runner_key = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, runner_keys|
+      next if run.final_runner.blank? || Runner.routing_key?(run.final_runner)
 
       owner_id = run.project&.effective_owner&.id
       next unless owner_id
 
-      provider_keys[normalized_provider_identifier(run.final_provider)] << owner_id
+      runner_keys[normalized_runner_identifier(run.final_runner)] << owner_id
     end
-    return {} if owner_ids_by_provider_key.empty?
+    return {} if owner_ids_by_runner_key.empty?
 
-    Provider.with_discarded.where(
-      user_id: owner_ids_by_provider_key.values.flatten.uniq,
-      provider_key: owner_ids_by_provider_key.keys
-    ).ordered.group_by { |provider| [ provider.user_id, provider.provider_key ] }
-      .transform_values { |providers| providers.find(&:subscription?) || providers.first }
+    Runner.with_discarded.where(
+      user_id: owner_ids_by_runner_key.values.flatten.uniq,
+      runner_key: owner_ids_by_runner_key.keys
+    ).ordered.group_by { |runner| [ runner.user_id, runner.runner_key ] }
+      .transform_values { |runners| runners.find(&:subscription?) || runners.first }
   end
 
   def safe_asset_tag
@@ -577,8 +577,8 @@ module ApplicationHelper
     raise unless Rails.env.test?
   end
 
-  def normalized_provider_identifier(identifier)
-    ProviderSupport.provider_key_for_agent_type(identifier)
+  def normalized_runner_identifier(identifier)
+    RunnerSupport.runner_key_for_agent_type(identifier)
   end
 
   def safe_return_path?(path)

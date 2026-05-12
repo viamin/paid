@@ -48,26 +48,26 @@ RSpec.describe ChatSessions::Create do
       expect(session.project).to eq(project)
     end
 
-    it "resolves and associates a provider" do
-      provider = create(:provider, user: user)
+    it "resolves and associates a runner" do
+      runner = create(:runner, user: user)
       session = described_class.call(
         account: account,
         user: user,
-        provider_id: provider.id,
+        runner_id: runner.id,
         model: "gpt-4o"
       )
 
-      expect(session.provider).to eq(provider)
+      expect(session.runner).to eq(runner)
       expect(session.model).to eq("gpt-4o")
     end
 
-    it "raises when provider belongs to a different account" do
+    it "raises when runner belongs to a different account" do
       other_account = create(:account)
       other_user = create(:user, account: other_account)
-      provider = create(:provider, user: other_user)
+      runner = create(:runner, user: other_user)
 
       expect {
-        described_class.call(account: account, user: user, provider_id: provider.id)
+        described_class.call(account: account, user: user, runner_id: runner.id)
       }.to raise_error(ArgumentError, /same account/)
     end
 

@@ -83,8 +83,8 @@ class TenantConfigurationsController < ApplicationController
       :self_repo_full_name,
       allowed_provider_keys: [],
       provider_preferences: [
-        api_key_ids: ProviderSupport.api_service_types.keys,
-        model_preferences: ProviderSupport.supported_provider_keys
+        api_key_ids: RunnerSupport.api_service_types.keys,
+        model_preferences: RunnerSupport.supported_runner_keys
       ],
       default_budgets: budget_params,
       guardrails: %i[max_concurrent_runs max_tokens_per_run max_monthly_cost_cents],

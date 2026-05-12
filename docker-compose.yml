@@ -71,10 +71,11 @@ services:
         aliases:
           - paid-proxy
     environment:
-      DATABASE_URL: postgres://paid:paid@postgres:5432/paid_development
       DB_HOST: postgres
       DB_USERNAME: paid
       DB_PASSWORD: paid
+      DB_ADMIN_USERNAME: paid_admin
+      DB_ADMIN_PASSWORD: paid_admin
       RAILS_ENV: development
       REDIS_URL: redis://redis:6379/0
       TEMPORAL_HOST: temporal:7233
@@ -183,10 +184,11 @@ services:
       web:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgres://paid:paid@postgres:5432/paid_development
       - DB_HOST=postgres
       - DB_USERNAME=paid
       - DB_PASSWORD=paid
+      - DB_ADMIN_USERNAME=paid_admin
+      - DB_ADMIN_PASSWORD=paid_admin
       - REDIS_URL=redis://redis:6379/0
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_NAMESPACE=default

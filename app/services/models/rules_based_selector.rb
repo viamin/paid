@@ -2,7 +2,7 @@
 
 module Models
   class RulesBasedSelector
-    include ProviderTierLookup
+    include RunnerTierLookup
 
     def self.call(...)
       new(...).call
@@ -66,9 +66,9 @@ module Models
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
 
-      # Prefer the provider's explicitly configured tier model when available
-      provider_model = provider_tier_model(tier)
-      return [ provider_model ] if provider_model && !excluded_model?(provider_model, excluded)
+      # Prefer the runner's explicitly configured tier model when available
+      runner_model = runner_tier_model(tier)
+      return [ runner_model ] if runner_model && !excluded_model?(runner_model, excluded)
 
       tier_candidates = tier ? tier_scope(scope, tier).to_a : []
       # Fall back to the broader pool when the tier has no active models, so a

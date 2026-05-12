@@ -104,6 +104,9 @@ group :development, :test do
   # Additional RuboCop extensions
   gem "rubocop-rspec", require: false
 
+  # Catch unsafe migrations at dev time [https://github.com/ankane/strong_migrations]
+  gem "strong_migrations"
+
   # Performance suggestions for Ruby code [https://github.com/fasterer/fasterer]
   gem "fasterer", require: false
 

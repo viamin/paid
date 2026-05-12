@@ -201,7 +201,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       agent_run = create(:agent_run, :running, project: project, issue: issue,
         goal: "review", source_pull_request_number: 42)
 
-      activity.execute(agent_run_id: agent_run.id, error: "Provider error")
+      activity.execute(agent_run_id: agent_run.id, error: "Runner error")
 
       expect(agent_run.reload.status).to eq("failed")
       expect(issue.reload.paid_state).to eq("completed")

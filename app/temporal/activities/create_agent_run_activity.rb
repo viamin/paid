@@ -16,7 +16,7 @@ module Activities
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
-      provider_id = input[:provider_id]
+      provider_id = input[:runner_id]
       goal = input[:goal]
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
@@ -26,15 +26,15 @@ module Activities
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
-      provider_selection_options = {
+      runner_selection_options = {
         project: project,
         issue: issue,
         goal: goal,
         requested_agent_type: input[:agent_type],
-        requested_provider_id: input[:provider_id],
-        respect_requested: input.key?(:agent_type) || input.key?(:provider_id)
+        requested_runner_id: input[:runner_id],
+        respect_requested: input.key?(:agent_type) || input.key?(:runner_id)
       }
-      provider_id, agent_type = resolve_and_validate_provider_selection!(**provider_selection_options)
+      provider_id, agent_type = resolve_and_validate_runner_selection!(**runner_selection_options)
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -74,7 +74,7 @@ module Activities
       attrs = {
         project: project,
         issue: issue,
-        provider_id: provider_id,
+        runner_id: provider_id,
         agent_type: agent_type,
         goal: goal,
         custom_prompt: custom_prompt,
@@ -88,7 +88,7 @@ module Activities
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
       agent_run = AgentRun.create!(**attrs)
-      log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
+      log_runner_selection(agent_run: agent_run, **runner_selection_options, resolved_runner_id: provider_id, resolved_agent_type: agent_type)
 
       track_phase(
         agent_run_id: agent_run.id,
@@ -122,7 +122,7 @@ module Activities
 
         {
           agent_run_id: agent_run.id,
-          provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
+          runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
           agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
           issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
           max_execution_seconds: effective_max_execution_seconds(project, user_settings),
@@ -137,45 +137,45 @@ module Activities
 
     private
 
-    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, respect_requested: true)
-      AgentRuns::ProviderResolver.call(
+    def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, respect_requested: true)
+      AgentRuns::RunnerResolver.call(
         project: project,
         goal: goal,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: requested_provider_id,
+        requested_runner_id: requested_runner_id,
         respect_requested: respect_requested,
         logger: logger
       )
     end
 
-    def resolve_and_validate_provider_selection!(project:, issue:, requested_agent_type:, requested_provider_id:, goal:, respect_requested:)
+    def resolve_and_validate_runner_selection!(project:, issue:, requested_agent_type:, requested_runner_id:, goal:, respect_requested:)
       provider_id = nil
       agent_type = nil
-      provider_id, agent_type = resolve_provider_selection(
+      provider_id, agent_type = resolve_runner_selection(
         project: project,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: requested_provider_id,
+        requested_runner_id: requested_runner_id,
         goal: goal,
         respect_requested: respect_requested
       )
 
-      validate_requested_provider_resolution!(
+      validate_requested_runner_resolution!(
         project: project,
-        requested_provider_id: requested_provider_id,
-        resolved_provider_id: provider_id
+        requested_runner_id: requested_runner_id,
+        resolved_runner_id: provider_id
       )
 
-      validate_runnable_provider!(project: project, provider_id: provider_id, agent_type: agent_type, goal: goal)
+      validate_runnable_runner!(project: project, runner_id: provider_id, agent_type: agent_type, goal: goal)
       [ provider_id, agent_type ]
     rescue Temporalio::Error::ApplicationError => error
-      log_provider_selection(
+      log_runner_selection(
         project: project,
         issue: issue,
         goal: goal,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: requested_provider_id,
+        requested_runner_id: requested_runner_id,
         respect_requested: respect_requested,
-        resolved_provider_id: provider_id,
+        resolved_runner_id: provider_id,
         resolved_agent_type: agent_type,
         outcome: "failed",
         error: error
@@ -183,13 +183,13 @@ module Activities
       raise
     end
 
-    def refresh_automatic_run_provider!(agent_run)
-      return [ agent_run.provider_id, agent_run.agent_type ] unless agent_run.automatic?
+    def refresh_automatic_run_runner!(agent_run)
+      return [ agent_run.runner_id, agent_run.agent_type ] unless agent_run.automatic?
 
-      resolve_provider_selection(
+      resolve_runner_selection(
         project: agent_run.project,
         requested_agent_type: nil,
-        requested_provider_id: nil,
+        requested_runner_id: nil,
         goal: agent_run.goal,
         respect_requested: false
       )
@@ -268,25 +268,25 @@ module Activities
       AgentRuns::UserSettingsResolver.call(project: project, strict: false)
     end
 
-    def log_provider_selection(project:, goal:, resolved_agent_type:, resolved_provider_id:, issue: nil, agent_run: nil,
-      requested_agent_type: nil, requested_provider_id: nil, respect_requested: false, outcome: "selected", error: nil)
-      AgentRuns::ProviderSelectionLogger.call(
+    def log_runner_selection(project:, goal:, resolved_agent_type:, resolved_runner_id:, issue: nil, agent_run: nil,
+      requested_agent_type: nil, requested_runner_id: nil, respect_requested: false, outcome: "selected", error: nil)
+      AgentRuns::RunnerSelectionLogger.call(
         project: project,
         issue: issue,
         agent_run: agent_run,
         goal: goal,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: requested_provider_id,
+        requested_runner_id: requested_runner_id,
         respect_requested: respect_requested,
-        resolved_provider_id: resolved_provider_id,
+        resolved_runner_id: resolved_runner_id,
         resolved_agent_type: resolved_agent_type,
         outcome: outcome,
         error: error
       )
     end
 
-    def provider_attempt_count_for(agent_run, user_settings)
-      Activities::RunAgentActivity.provider_attempt_count_for_run(
+    def runner_attempt_count_for(agent_run, user_settings)
+      Activities::RunAgentActivity.runner_attempt_count_for_run(
         agent_run: agent_run,
         user_settings: user_settings
       )
@@ -310,78 +310,78 @@ module Activities
       )
     end
 
-    def validate_runnable_provider!(project:, provider_id:, agent_type:, goal:)
+    def validate_runnable_runner!(project:, runner_id:, agent_type:, goal:)
       return if goal.in?(NON_CONTAINER_GOALS)
 
-      provider = resolved_provider!(project: project, provider_id: provider_id)
-      if provider
+      runner = resolved_runner!(project: project, runner_id: runner_id)
+      if runner
         raise_no_runnable_provider!(
-          "No runnable provider available for project (provider_id=#{provider.id}, enabled_for_agent_runs=#{provider.enabled_for_agent_runs?})"
-        ) unless provider.enabled_for_agent_runs?
+          "No runnable runner available for project (runner_id=#{runner.id}, enabled_for_agent_runs=#{runner.enabled_for_agent_runs?})"
+        ) unless runner.enabled_for_agent_runs?
 
-        warn_if_rate_limited(provider, project: project, goal: goal)
+        warn_if_rate_limited(runner, project: project, goal: goal)
         return
       end
 
-      provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
-      return if ProviderSupport.container_executable_provider_key?(provider_key)
+      provider_key = RunnerSupport.runner_key_for_agent_type(agent_type)
+      return if RunnerSupport.container_executable_runner_key?(provider_key)
 
-      raise_no_runnable_provider!("No runnable provider available for project (agent_type=#{agent_type})")
+      raise_no_runnable_provider!("No runnable runner available for project (agent_type=#{agent_type})")
     end
 
-    def resolved_provider!(project:, provider_id:)
-      provider = AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: provider_id)
-      raise_unresolved_provider!(project: project, provider_id: provider_id) if provider_id.present? && provider.nil?
+    def resolved_runner!(project:, runner_id:)
+      runner = AgentRuns::RunnerResolver.selected_runner(project: project, runner_id: runner_id)
+      raise_unresolved_runner!(project: project, runner_id: runner_id) if runner_id.present? && runner.nil?
 
-      provider
+      runner
     end
 
-    def validate_requested_provider_resolution!(project:, requested_provider_id:, resolved_provider_id:)
-      return if requested_provider_id.blank?
-      return if requested_provider_id.to_s == resolved_provider_id.to_s
-      return if AgentRuns::ProviderResolver.selected_provider(project: project, provider_id: requested_provider_id)
+    def validate_requested_runner_resolution!(project:, requested_runner_id:, resolved_runner_id:)
+      return if requested_runner_id.blank?
+      return if requested_runner_id.to_s == resolved_runner_id.to_s
+      return if AgentRuns::RunnerResolver.selected_runner(project: project, runner_id: requested_runner_id)
 
-      raise_unresolved_provider!(project: project, provider_id: requested_provider_id)
+      raise_unresolved_runner!(project: project, runner_id: requested_runner_id)
     end
 
-    def raise_unresolved_provider!(project:, provider_id:)
-      return if provider_id.blank?
+    def raise_unresolved_runner!(project:, runner_id:)
+      return if runner_id.blank?
 
-      raise_no_runnable_provider!("No runnable provider available for project (project_id=#{project.id}, provider_id=#{provider_id}, resolved=false)")
+      raise_no_runnable_provider!("No runnable runner available for project (project_id=#{project.id}, runner_id=#{runner_id}, resolved=false)")
     end
 
-    def warn_if_rate_limited(provider, project:, goal:)
-      provider_state = provider.user.provider_states.find_by(provider_name: provider.state_key)
-      return unless provider_state&.rate_limited?
+    def warn_if_rate_limited(runner, project:, goal:)
+      runner_state = runner.user.runner_states.find_by(runner_name: runner.state_key)
+      return unless runner_state&.rate_limited?
 
       logger.warn(
-        message: "agent_execution.selected_provider_rate_limited",
+        message: "agent_execution.selected_runner_rate_limited",
         project_id: project.id,
-        provider_id: provider.id,
-        provider_key: provider.provider_key,
-        provider_state_name: provider.state_key,
-        agent_type: Provider.agent_type_for(provider.provider_key),
+        runner_id: runner.id,
+        runner_key: runner.runner_key,
+        runner_state_name: runner.state_key,
+          agent_type: Runner.agent_type_for(runner.runner_key),
         goal: goal,
-        rate_limited_until: provider_state.rate_limited_until
+        rate_limited_until: runner_state.rate_limited_until
       )
     end
 
-    def validate_and_sync_resumed_provider!(agent_run)
-      provider_id, agent_type = refresh_automatic_run_provider!(agent_run)
-      validate_runnable_provider!(
+    def validate_and_sync_resumed_runner!(agent_run)
+      provider_id, agent_type = refresh_automatic_run_runner!(agent_run)
+      validate_runnable_runner!(
         project: agent_run.project,
-        provider_id: provider_id,
+        runner_id: provider_id,
         agent_type: agent_type,
         goal: agent_run.goal
       )
-      sync_provider_selection!(agent_run, provider_id: provider_id, agent_type: agent_type)
+      sync_runner_selection!(agent_run, runner_id: provider_id, agent_type: agent_type)
     end
 
-    def sync_provider_selection!(agent_run, provider_id:, agent_type:)
-      return false if agent_run.provider_id == provider_id && agent_run.agent_type == agent_type
+    def sync_runner_selection!(agent_run, runner_id:, agent_type:)
+      return false if agent_run.runner_id == runner_id && agent_run.agent_type == agent_type
 
       agent_run.update!(
-        provider: Provider.kept_only.find_by(id: provider_id),
+        runner: Runner.kept_only.find_by(id: runner_id),
         agent_type: agent_type
       )
       true
