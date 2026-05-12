@@ -179,9 +179,9 @@ module Knowledge
       providers =
         case operation.to_sym
         when :embedding
-          [ user_setting.kb_embedding_provider, *Array(user_setting.kb_embedding_fallback_providers) ]
+           [ user_setting.kb_embedding_runner, *Array(user_setting.kb_embedding_fallback_runners) ]
         when :chat
-          [ user_setting.kb_chat_provider, *Array(user_setting.kb_chat_fallback_providers) ]
+          [ user_setting.kb_chat_runner, *Array(user_setting.kb_chat_fallback_runners) ]
         else
           []
         end

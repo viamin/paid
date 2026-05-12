@@ -1,12 +1,6 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
-  self.ignored_columns = %w[
-    default_agent_provider default_agent_providers_by_goal fallback_providers
-    provider_selection_mode provider_round_robin_state kb_chat_provider
-    kb_chat_fallback_providers kb_embedding_provider kb_embedding_fallback_providers
-  ]
-
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647

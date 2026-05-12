@@ -191,7 +191,7 @@ RSpec.describe Models::Select do
 
       before do
         create(:tenant_setting, account: project.account,
-          provider_preferences: { "model_preferences" => { "claude" => tenant_model.model_id } })
+          runner_preferences: { "model_preferences" => { "claude" => tenant_model.model_id } })
       end
 
       it "selects the tenant default model for the run runner" do

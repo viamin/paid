@@ -41,7 +41,7 @@ class UserSettingsController < ApplicationController
       :token_validation_stale_minutes,
       :agent_timeout_seconds,
       :max_execution_seconds,
-      :default_agent_provider,
+      :default_agent_runner,
       :container_memory_gb,
       :max_concurrent_runs,
       :max_auto_pick_open_prs,
@@ -69,15 +69,15 @@ class UserSettingsController < ApplicationController
       :max_issues_per_page,
       :max_prs_per_page,
       :fallback_enabled,
-      :fallback_providers,
-      :kb_embedding_provider,
-      :kb_chat_provider
+      :fallback_runners,
+      :kb_embedding_runner,
+      :kb_chat_runner
     )
 
     %i[
-      fallback_providers
-      kb_embedding_fallback_providers
-      kb_chat_fallback_providers
+      fallback_runners
+      kb_embedding_fallback_runners
+      kb_chat_fallback_runners
     ].each do |key|
       next unless raw_params.key?(key)
 
