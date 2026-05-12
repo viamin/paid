@@ -12,7 +12,7 @@
     <%= agent_run_context_display(agent_run) %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <%= agent_run_provider_display(agent_run, provider_displays) %>
+    <%= agent_run_provider_display(agent_run, local_assigns[:provider_displays]) %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
     <% elapsed = if agent_run.duration_seconds.present?

@@ -305,7 +305,7 @@ module ApplicationHelper
   # Desktop: native title tooltip on hover. Mobile: tappable info icon.
   def agent_run_context_display(run)
     context = agent_run_context(run)
-    tooltip_id = "context_#{run.id}"
+    tooltip_id = agent_run_tooltip_dom_id("context", run)
     inner = case context[:type]
     when :link
       tooltip_data = context[:tooltip].present? ? { action: "focusin->tooltip#show" } : {}
