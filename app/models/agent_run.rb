@@ -55,6 +55,7 @@ class AgentRun < ApplicationRecord
     "Provision::IdleTimeoutError"
   ].freeze
   PRE_MODEL_FAILURE_STATUSES = %w[failed no_output].freeze
+
   def self.quality_scoreable_sql
     excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
 
@@ -1159,6 +1160,7 @@ class AgentRun < ApplicationRecord
     msg = error_message.to_s
     INFRA_FAILURE_KEYWORDS.any? { |keyword| msg.downcase.include?(keyword.downcase) }
   end
+
   def total_tokens
     tokens_input.to_i + tokens_output.to_i
   end

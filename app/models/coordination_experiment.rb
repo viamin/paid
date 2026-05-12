@@ -48,6 +48,7 @@ class CoordinationExperiment < ApplicationRecord
 
     variant.effective_policy(control_policy: baseline_policy)
   end
+
   def includes_traffic?(workflow_id:)
     return false if traffic_percentage.zero?
     return true if traffic_percentage == 100
