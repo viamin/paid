@@ -340,7 +340,10 @@ module ApplicationHelper
     text = agent_run_goal_text(run)
     return tag.span("-", class: "text-gray-400") if text.blank?
 
-    tag.span(text, class: "min-w-0 block truncate", title: text)
+    inner = tag.span(text, class: "min-w-0 block truncate", title: text)
+    tooltip_id = "goal_#{run.id || run.object_id}"
+
+    mobile_tooltip_wrapper(inner, text, tooltip_id, aria_label: "Show goal details")
   end
 
   def agent_run_goal_text(run)

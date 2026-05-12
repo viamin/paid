@@ -31,9 +31,9 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(project.name)
       end
 
-      it "shows each run goal in the index table" do
-        goal_text = "Implement multi-step OAuth token refresh handling for stale sessions"
-        run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: goal_text)
+      it "shows each run goal type label in the index table with a mobile tooltip wrapper" do
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr",
+          custom_prompt: "Implement multi-step OAuth token refresh handling for stale sessions")
 
         get agent_runs_path
 
@@ -42,10 +42,14 @@ RSpec.describe "AgentRuns" do
         expect(goal_column_index(document)).not_to be_nil
 
         goal_cell = goal_cell_for_run(document, run)
+        tooltip_wrapper = goal_cell.at_css('[data-controller="tooltip"]')
+        truncated_label = goal_cell.at_css("span.block.truncate")
 
-        expect(goal_cell.text).to include(goal_text)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_present
+        expect(goal_cell.text).to include("PR Creation")
+        expect(truncated_label["title"]).to eq("PR Creation")
+        expect(tooltip_wrapper).to be_present
+        expect(tooltip_wrapper.at_css('button[aria-label="Show goal details"]')).to be_present
+        expect(tooltip_wrapper.at_css('span[role="tooltip"]')["id"]).to eq("goal_#{run.id}")
       end
 
       it "aligns the Provider header with provider values in each row" do
@@ -114,83 +118,67 @@ RSpec.describe "AgentRuns" do
         expect(provider_cell.text.squish).to eq(Provider.display_name_for("claude"))
       end
 
-      it "prefers the issue title over custom prompt text" do
+      it "shows distinct goal and context values for create_pr runs" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
         run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
           custom_prompt: "Rendered task instructions that should not appear")
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        document = parsed_html
+        goal_cell = goal_cell_for_run(document, run)
+        context_cell = cell_for_run(document, run, "Context")
 
-        expect(goal_cell.text).to include(issue.title)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(issue.title)
+        expect(goal_cell.text).to include("PR Creation")
+        expect(goal_cell.text).not_to include(issue.title)
+        expect(goal_cell.text).not_to include(run.custom_prompt)
+        expect(context_cell.text).to include("Issue ##{issue.github_number}")
       end
 
-      it "prefers review pull request text over custom prompt text" do
+      it "shows review goal labels separately from review context" do
         run = create(:agent_run, :review_goal, :with_custom_prompt, project: project, issue: nil,
           custom_prompt: "Generated review instructions that should not appear",
           source_pull_request_number: 87)
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        document = parsed_html
+        goal_cell = goal_cell_for_run(document, run)
+        context_cell = cell_for_run(document, run, "Context")
 
-        expect(goal_cell.text).to include("Review PR #87")
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Review PR #87")
+        expect(goal_cell.text).to include("Code Review")
+        expect(goal_cell.text).not_to include("PR #87")
+        expect(goal_cell.text).not_to include(run.custom_prompt)
+        expect(context_cell.text).to include("PR #87")
       end
 
-      it "shows PR label for create_pr runs targeting an existing pull request" do
-        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr", issue: nil,
-          custom_prompt: "Generated instructions that should not appear",
-          source_pull_request_number: 55)
-
-        get agent_runs_path
-
-        goal_cell = goal_cell_for_run(parsed_html, run)
-
-        expect(goal_cell.text).to include("PR #55")
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("PR #55")
-      end
-
-      it "falls back to custom prompt text when no issue or review goal text is available" do
+      it "shows custom prompt context separately from the goal label" do
         goal_text = "Investigate the flaky deploy status check"
-        run = create(:agent_run, :with_custom_prompt, project: project, issue: nil, custom_prompt: goal_text)
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr",
+          issue: nil, custom_prompt: goal_text)
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        document = parsed_html
+        goal_cell = goal_cell_for_run(document, run)
+        context_cell = cell_for_run(document, run, "Context")
 
-        expect(goal_cell.text).to include(goal_text)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(goal_cell.text).to include("PR Creation")
+        expect(goal_cell.text).not_to include(goal_text)
+        expect(context_cell.text).to include(goal_text)
+        expect(context_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(context_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
-      it "shows a placeholder when a run has no goal text to display" do
+      it "shows a titleized fallback label for unexpected goal values" do
         run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: "Temporary goal")
-        run.update_columns(custom_prompt: nil, issue_id: nil)
+        run.update_columns(goal: "some_new_goal")
 
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
-        expect(goal_cell.text.squish).to eq("-")
-        expect(goal_cell.at_css("span")["class"]).to include("text-gray-400")
-      end
-
-      it "redacts secrets from custom goal text in the table cell and tooltip" do
-        token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
-        run = create(:agent_run, :with_custom_prompt, project: project,
-          custom_prompt: "Investigate deploy failure with GITHUB_TOKEN=#{token}")
-
-        get agent_runs_path
-
-        goal_cell = goal_cell_for_run(parsed_html, run)
-        truncated_span = goal_cell.at_css("span.block.truncate")
-
-        expect(truncated_span.text).to include("[REDACTED:github_token]")
-        expect(truncated_span.text).not_to include(token)
-        expect(truncated_span["title"]).to include("[REDACTED:github_token]")
-        expect(truncated_span["title"]).not_to include(token)
+        expect(goal_cell.text).to include("Some New Goal")
       end
 
       it "shows the provider column with the resolved provider name" do
