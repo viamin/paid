@@ -146,26 +146,6 @@ module Coordination
       snapshot_value(:status)
     end
 
-    def current_error_message
-      snapshot_value(:error_message)
-    end
-
-    def current_guardrail_violation_type
-      snapshot_value(:guardrail_violation_type)
-    end
-
-    def current_final_provider
-      snapshot_value(:final_provider)
-    end
-
-    def current_providers_attempted
-      snapshot_value(:providers_attempted)
-    end
-
-    def current_provider_switches
-      snapshot_value(:provider_switches)
-    end
-
     def current_parent_workflow_id
       snapshot_value(:parent_workflow_id)
     end
@@ -217,12 +197,8 @@ module Coordination
         agent_run_status: current_status,
         parent_workflow_id: current_parent_workflow_id,
         chosen_action: action,
-        policy_source: policy["source"],
-        policy_key: policy["policy_key"],
-        coordination_policy_id: policy["coordination_policy_id"],
-        coordination_policy_version_id: policy["coordination_policy_version_id"],
-        coordination_policy_version: policy["coordination_policy_version"]
-      }.merge(failure_context).compact
+        **decision_policy_metadata(policy, failure_context)
+      }.merge(failure_context.except(*policy_metadata_keys)).compact
     end
 
     def build_decision_result(classification, service_result)
@@ -233,6 +209,26 @@ module Coordination
         action_status: classification.action_status,
         policy_source: service_result.policy["source"]
       }.compact
+    end
+
+    def decision_policy_metadata(policy, failure_context)
+      failure_context.slice(*policy_metadata_keys).symbolize_keys.presence || {
+        policy_source: policy["source"],
+        policy_key: policy["policy_key"],
+        coordination_policy_id: policy["coordination_policy_id"],
+        coordination_policy_version_id: policy["coordination_policy_version_id"],
+        coordination_policy_version: policy["coordination_policy_version"]
+      }.compact
+    end
+
+    def policy_metadata_keys
+      %w[
+        policy_source
+        policy_key
+        coordination_policy_id
+        coordination_policy_version_id
+        coordination_policy_version
+      ]
     end
 
     class Result

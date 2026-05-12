@@ -70,4 +70,53 @@ RSpec.describe Coordination::FailureRecovery, :no_db do
       expect_failed_decision_recorded(orchestration_action: "escalate", error_class_name: error_class.name)
     end
   end
+
+  describe "#build_decision_signals_from_values" do
+    let(:signal_builder) do
+      described_class.new(
+        agent_run: agent_run,
+        policy_overrides: {},
+        run_snapshot: { status: "timeout", parent_workflow_id: nil }
+      )
+    end
+
+    let(:policy) do
+      {
+        "source" => "defaults",
+        "policy_key" => "failure_recovery"
+      }
+    end
+
+    let(:failure_context) do
+      {
+        "policy_source" => "override",
+        "policy_key" => "failure_recovery",
+        "coordination_policy_id" => 12,
+        "error_message" => "timeout"
+      }
+    end
+
+    let(:signals) do
+      signal_builder.send(
+        :build_decision_signals_from_values,
+        category: "timeout",
+        subcategory: nil,
+        action: "escalate_model",
+        policy: policy,
+        failure_context: failure_context
+      )
+    end
+
+    it "uses a single policy metadata source when failure context already includes it" do
+      expect(signals).to include(
+        failure_category: "timeout",
+        chosen_action: "escalate_model",
+        policy_source: "override",
+        policy_key: "failure_recovery",
+        coordination_policy_id: 12
+      )
+      expect(signals["error_message"]).to eq("timeout")
+      expect(signals.keys.count(:policy_source)).to eq(1)
+    end
+  end
 end
