@@ -333,7 +333,7 @@ module ApplicationHelper
     return tag.span("-", class: "text-gray-400") if text.blank?
 
     inner = tag.span(text, class: "min-w-0 block truncate", title: text)
-    mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
+    mobile_tooltip_wrapper(inner, text, agent_run_tooltip_dom_id("goal", run), aria_label: "Show goal")
   end
 
   GOAL_LABELS = {
@@ -509,6 +509,11 @@ module ApplicationHelper
         )
       ])
     end
+  end
+
+  def agent_run_tooltip_dom_id(prefix, run)
+    suffix = run.try(:id).presence || run.object_id
+    "#{prefix}_#{suffix}"
   end
 
   def github_link_or_text(link_label, text_label, url, tooltip: nil)

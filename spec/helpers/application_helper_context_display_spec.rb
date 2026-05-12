@@ -342,4 +342,16 @@ RSpec.describe ApplicationHelper do
       expect(helper.agent_run_goal_label("")).to be_nil
     end
   end
+
+  describe "#agent_run_goal_display" do
+    it "renders a tooltip wrapper for goal labels even when the run has no id" do
+      run = Struct.new(:goal, keyword_init: true).new(goal: "create_pr")
+
+      result = helper.agent_run_goal_display(run)
+
+      expect(result).to include("Create PR")
+      expect(result).to include('data-controller="tooltip"')
+      expect(result).to match(/id="goal_\d+"/)
+    end
+  end
 end
