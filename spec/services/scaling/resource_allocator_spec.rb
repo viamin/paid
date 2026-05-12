@@ -410,7 +410,20 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.reason).to include("stale experiment data")
       end
 
-      it "treats timestamp-less cached summaries as stale" do
+      it "uses legacy cached summaries when record timestamps are available" do
+        summaries = [
+          parallelism_experiment_summary
+            .except("generated_at")
+            .merge("updated_at" => 2.days.ago.iso8601)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.reason).to include("allocator decision")
+      end
+
+      it "treats generated summaries with no timestamps as stale" do
         summaries = [
           parallelism_experiment_summary.except("generated_at")
         ]
