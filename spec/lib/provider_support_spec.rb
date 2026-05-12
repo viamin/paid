@@ -40,6 +40,10 @@ RSpec.describe ProviderSupport do
     it "includes aider" do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("aider")
     end
+
+    it "includes pi" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("pi")
+    end
   end
 
   describe ".container_executable_provider_keys" do
@@ -73,6 +77,11 @@ RSpec.describe ProviderSupport do
       keys = described_class.container_executable_provider_keys
       expect(keys).to include("aider")
     end
+
+    it "includes pi when backed by the agent harness registry" do
+      keys = described_class.container_executable_provider_keys
+      expect(keys).to include("pi")
+    end
   end
 
   describe ".container_executable_provider_key?" do
@@ -102,6 +111,10 @@ RSpec.describe ProviderSupport do
 
     it "returns true for aider" do
       expect(described_class.container_executable_provider_key?("aider")).to be true
+    end
+
+    it "returns true for pi" do
+      expect(described_class.container_executable_provider_key?("pi")).to be true
     end
 
     it "returns false for unsupported providers" do
@@ -330,7 +343,8 @@ RSpec.describe ProviderSupport do
           "cursor" => "cursor-agent",
           "gemini" => "gemini",
           "kilocode" => "kilo",
-          "opencode" => "opencode"
+          "opencode" => "opencode",
+          "pi" => "pi"
         }
 
         described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS.each do |key|
@@ -401,6 +415,16 @@ RSpec.describe ProviderSupport do
 
       it "is addable as a container-executable provider" do
         expect(described_class.addable_provider_key?("copilot")).to be true
+      end
+    end
+
+    describe "pi inclusion" do
+      it "is listed in APP_PROVIDER_KEYS as a known provider" do
+        expect(described_class::APP_PROVIDER_KEYS).to include("pi")
+      end
+
+      it "is addable as a container-executable provider" do
+        expect(described_class.addable_provider_key?("pi")).to be true
       end
     end
   end
