@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -758,6 +758,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.integer "github_issue_number"
     t.string "github_issue_url"
     t.datetime "last_occurred_at", null: false
+    t.jsonb "log_data"
     t.text "message", null: false
     t.integer "occurrence_count", default: 1, null: false
     t.bigint "project_id"
@@ -1241,6 +1242,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.jsonb "env", default: {}, null: false
     t.string "image", limit: 500
     t.string "install_type", limit: 50, null: false
+    t.jsonb "log_data"
     t.jsonb "metadata", default: {}, null: false
     t.string "name", limit: 255, null: false
     t.string "transport", limit: 50, null: false
@@ -1369,6 +1371,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.datetime "created_at", null: false
     t.text "description"
     t.boolean "enabled", default: true, null: false
+    t.jsonb "log_data"
     t.string "name", limit: 255, null: false
     t.integer "position", default: 0, null: false
     t.string "pr_type", limit: 50, default: "default", null: false
@@ -1395,6 +1398,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.boolean "enabled", default: true, null: false
     t.string "failure_behavior", limit: 50, default: "block", null: false
     t.text "fix_command"
+    t.jsonb "log_data"
     t.string "name", limit: 255, null: false
     t.integer "position", default: 0, null: false
     t.bigint "project_id"
@@ -1438,6 +1442,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
 
   create_table "project_memberships", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.jsonb "log_data"
     t.bigint "project_id", null: false
     t.integer "role", default: 0, null: false
     t.datetime "updated_at", null: false
@@ -1585,6 +1590,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.datetime "created_at", null: false
     t.bigint "current_version_id"
     t.text "description"
+    t.jsonb "log_data"
     t.string "name", limit: 255, null: false
     t.bigint "project_id"
     t.boolean "requires_review", default: false, null: false
@@ -1865,6 +1871,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.string "docker_container_id"
     t.jsonb "env", default: {}
     t.string "image", null: false
+    t.jsonb "log_data"
     t.string "name", null: false
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
@@ -1979,6 +1986,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.jsonb "compression_metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.string "language", limit: 50
+    t.jsonb "log_data"
     t.string "name", limit: 255, null: false
     t.bigint "project_id"
     t.text "raw_content", null: false
@@ -2047,6 +2055,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.bigint "created_by_id", comment: "User who created the tracker configuration."
     t.boolean "enabled", default: true, null: false, comment: "Whether this tracker configuration is active for automation."
     t.bigint "integration_credential_id", comment: "Credential used to authenticate to the external tracker when one is required."
+    t.jsonb "log_data"
     t.jsonb "project_mapping", default: {}, comment: "Mapping data between Paid entities and tracker-specific project identifiers."
     t.string "tracker_type", null: false, comment: "External tracker implementation, such as github_issues, jira, linear, azure_devops, mcp, or generic_webhook."
     t.datetime "updated_at", null: false
@@ -2119,6 +2128,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
     t.datetime "created_at", null: false
     t.string "email", default: "", null: false
     t.string "encrypted_password", default: "", null: false
+    t.jsonb "log_data"
     t.string "name"
     t.datetime "remember_created_at"
     t.datetime "reset_password_sent_at"
@@ -3171,6 +3181,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
       CREATE TRIGGER logidze_on_cost_budgets BEFORE INSERT OR UPDATE ON public.cost_budgets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
+  SQL
+
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -3179,24 +3193,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
       CREATE TRIGGER logidze_on_integration_credentials BEFORE INSERT OR UPDATE ON public.integration_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{secret}')
   SQL
 
-  create_trigger :knowledge_chunks_tsvector_update, sql_definition: <<-SQL
-      CREATE TRIGGER knowledge_chunks_tsvector_update BEFORE INSERT OR UPDATE OF content ON public.knowledge_chunks FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('content_tsvector', 'pg_catalog.english', 'content')
-  SQL
-
   create_trigger :logidze_on_llm_models, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_llm_models BEFORE INSERT OR UPDATE ON public.llm_models FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :knowledge_chunks_tsvector_update, sql_definition: <<-SQL
+      CREATE TRIGGER knowledge_chunks_tsvector_update BEFORE INSERT OR UPDATE OF content ON public.knowledge_chunks FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('content_tsvector', 'pg_catalog.english', 'content')
+  SQL
+
+  create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
+  SQL
+
+  create_trigger :logidze_on_pre_commit_requirements, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_pr_templates, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_pr_templates BEFORE INSERT OR UPDATE ON public.pr_templates FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_project_memberships BEFORE INSERT OR UPDATE ON public.project_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
   create_trigger :logidze_on_projects, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_projects BEFORE INSERT OR UPDATE ON public.projects FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_polled_at,last_agent_run_at,last_github_activity_at,last_issue_sync_at,total_cost_cents,total_tokens_used}')
+  SQL
+
+  create_trigger :logidze_on_prompts, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_prompts BEFORE INSERT OR UPDATE ON public.prompts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_provider_api_keys, sql_definition: <<-SQL
@@ -3215,8 +3249,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_034009) do
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_service_containers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_service_containers BEFORE INSERT OR UPDATE ON public.service_containers FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env,status,docker_container_id,peak_cpu_percent,peak_memory_bytes,avg_cpu_percent,avg_memory_bytes,container_metrics_count}')
+  SQL
+
+  create_trigger :logidze_on_style_guides, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_style_guides BEFORE INSERT OR UPDATE ON public.style_guides FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_tenant_settings BEFORE INSERT OR UPDATE ON public.tenant_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_tracker_configurations, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_tracker_configurations BEFORE INSERT OR UPDATE ON public.tracker_configurations FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_users, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
   SQL
 
   create_trigger :logidze_on_user_settings, sql_definition: <<-SQL
