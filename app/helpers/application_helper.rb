@@ -345,7 +345,10 @@ module ApplicationHelper
   }.freeze
 
   def agent_run_goal_text(run)
-    GOAL_LABELS.fetch(run.goal, run.goal.to_s.humanize)
+    goal = run.goal.to_s
+    return if goal.blank?
+
+    GOAL_LABELS.fetch(goal, goal.humanize)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then

@@ -1,5 +1,6 @@
 <div id="<%= dom_id(project, :agent_runs_list) %>">
   <% agent_runs = agent_runs.to_a %>
+  <% provider_displays = agent_run_provider_displays(agent_runs) %>
   <% if agent_runs.any? %>
     <div class="mt-4 flow-root">
       <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
@@ -10,7 +11,9 @@
                 <tr>
                   <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Status</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Priority</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Goal</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Context</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Provider</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
                   <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
@@ -27,8 +30,14 @@
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= agent_run_priority_badge(run) %>
                     </td>
+                    <td class="max-w-md px-3 py-4 text-sm text-gray-500">
+                      <%= agent_run_goal_display(run) %>
+                    </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= agent_run_context_display(run) %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <%= agent_run_provider_display(run, provider_displays) %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <% if run.duration_seconds.present? %>
