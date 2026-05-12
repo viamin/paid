@@ -2,7 +2,7 @@
 
 module Coordination
   class FailureRecoveryService
-    FAILURE_HOOKS = {
+    CATEGORY_PATTERNS = {
       "rate_limit" => [ /RateLimit/i, /rate.?limit/i, /\b429\b/ ],
       "auth_failure" => [ /AuthenticationError/i, /auth.?expir/i, /unauthorized/i, /\b403\b/ ],
       "timeout" => [ /timeout/i, /timed?\s*out/i ],
@@ -45,7 +45,7 @@ module Coordination
     def classify_failure
       error_text = build_error_text
 
-      FAILURE_HOOKS.each do |category, patterns|
+      CATEGORY_PATTERNS.each do |category, patterns|
         return category if patterns.any? { |pattern| pattern.match?(error_text) }
       end
 
