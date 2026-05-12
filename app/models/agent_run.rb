@@ -576,18 +576,20 @@ class AgentRun < ApplicationRecord
     cutoffs_by_goal = stale_running_cutoffs_by_goal(now: now,
       timeouts_by_goal: stale_running_timeouts_by_goal,
       default_timeout: default_timeout)
+    goal_column = %("#{table_name}"."goal")
+    started_at_column = %("#{table_name}"."started_at")
 
     known_goal_clauses = GOALS.map do |goal|
       sanitize_sql_array([
-        "(goal = ? AND started_at < ?)",
+        "(#{goal_column} = ? AND #{started_at_column} < ?)",
         goal,
         cutoffs_by_goal.fetch(goal)
       ])
     end
 
-    known_goals_sql = GOALS.map { |goal| connection.quote(goal) }.join(", ")
+    known_goals_sql = GOALS.map { |goal| sanitize_sql_array([ "?", goal ]) }.join(", ")
     fallback_clause = sanitize_sql_array([
-      "((goal IS NULL OR goal NOT IN (#{known_goals_sql})) AND started_at < ?)",
+      "((#{goal_column} IS NULL OR #{goal_column} NOT IN (#{known_goals_sql})) AND #{started_at_column} < ?)",
       now - default_timeout
     ])
 
