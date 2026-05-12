@@ -39,11 +39,12 @@ class CoordinationExperiment < ApplicationRecord
   end
 
   def baseline_policy
-    OrchestrationStrategies::Defaults.feature_orchestration.deep_merge(control_policy.deep_dup)
+    control_policy.deep_dup
   end
 
   def effective_policy_for(variant)
     return baseline_policy if variant.nil?
+    return baseline_policy if variant.is_control?
 
     variant.effective_policy(control_policy: baseline_policy)
   end

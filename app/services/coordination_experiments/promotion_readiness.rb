@@ -55,19 +55,24 @@ module CoordinationExperiments
     def summarize(variant)
       assignments = variant.coordination_experiment_assignments.recorded.to_a
       metrics = assignments.map(&:outcome_metrics)
+      total_tasks = summed(metrics) { |metric| metric["task_count"] }
+      total_cost_cents = summed(metrics) { |metric| metric["total_cost_cents"] }
+      total_duration_seconds = summed(metrics) { |metric| metric["total_duration_seconds"] }
+
       {
         sample_count: assignments.size,
+        total_task_count: total_tasks,
         avg_coordination_score: variant.avg_coordination_score.to_f,
         success_rate: rate(metrics) { |metric| metric["success"] },
-        completion_rate: average(metrics) { |metric| metric["completion_rate"].to_f },
-        failed_task_rate: average(metrics) { |metric| metric["failed_task_rate"].to_f },
-        dependency_failed_task_rate: average(metrics) { |metric| metric["dependency_failed_task_rate"].to_f },
+        completion_rate: ratio(metrics, denominator: total_tasks) { |metric| metric["completed_tasks"] },
+        failed_task_rate: ratio(metrics, denominator: total_tasks) { |metric| metric["failed_tasks"] },
+        dependency_failed_task_rate: ratio(metrics, denominator: total_tasks) { |metric| metric["dependency_failed_tasks"] },
         conflict_rate: rate(metrics) { |metric| metric["conflict_detected"] },
         manual_review_rate: rate(metrics) { |metric| metric["manual_review_required"] },
-        avg_cost_cents: average(metrics) { |metric| metric["total_cost_cents"].to_f },
-        avg_duration_seconds: average(metrics) { |metric| metric["total_duration_seconds"].to_f },
-        avg_cost_per_task_cents: average(metrics) { |metric| metric["avg_cost_per_task_cents"].to_f },
-        avg_duration_per_task_seconds: average(metrics) { |metric| metric["avg_duration_per_task_seconds"].to_f },
+        avg_cost_cents: average_metric(metrics) { |metric| metric["total_cost_cents"].to_f },
+        avg_duration_seconds: average_metric(metrics) { |metric| metric["total_duration_seconds"].to_f },
+        avg_cost_per_task_cents: average_total(total_cost_cents, total_tasks),
+        avg_duration_per_task_seconds: average_total(total_duration_seconds, total_tasks),
         aggregated_pr_rate: rate(metrics) { |metric| metric["aggregated_pr_created"] }
       }
     end
@@ -103,13 +108,13 @@ module CoordinationExperiments
         failures << "manual_review_rate_too_high"
       end
 
-      control_cost = control_summary[:avg_cost_cents]
-      if control_cost.positive? && candidate_summary[:avg_cost_cents] > (control_cost * MAX_COST_INCREASE_RATIO)
+      control_cost = control_summary[:avg_cost_per_task_cents]
+      if control_cost.positive? && candidate_summary[:avg_cost_per_task_cents] > (control_cost * MAX_COST_INCREASE_RATIO)
         failures << "cost_increase_too_high"
       end
 
-      control_duration = control_summary[:avg_duration_seconds]
-      if control_duration.positive? && candidate_summary[:avg_duration_seconds] > (control_duration * MAX_DURATION_INCREASE_RATIO)
+      control_duration = control_summary[:avg_duration_per_task_seconds]
+      if control_duration.positive? && candidate_summary[:avg_duration_per_task_seconds] > (control_duration * MAX_DURATION_INCREASE_RATIO)
         failures << "duration_increase_too_high"
       end
 
@@ -122,10 +127,26 @@ module CoordinationExperiments
       metrics.count { |metric| yield(metric) }.to_f / metrics.size
     end
 
-    def average(metrics)
+    def average_metric(metrics)
       return 0.0 if metrics.empty?
 
       metrics.sum { |metric| yield(metric) } / metrics.size
+    end
+
+    def ratio(metrics, denominator:)
+      return 0.0 if denominator.to_i <= 0
+
+      summed(metrics) { |metric| yield(metric) }.to_f / denominator
+    end
+
+    def summed(metrics)
+      metrics.sum { |metric| yield(metric).to_i }
+    end
+
+    def average_total(total, count)
+      return 0.0 if count.to_i <= 0
+
+      total.to_f / count
     end
   end
 end

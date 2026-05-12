@@ -16,7 +16,7 @@ RSpec.describe CoordinationExperiments::Assign do
   let!(:variant) do
     create(:coordination_experiment_variant,
       coordination_experiment: experiment,
-      policy_config: experiment.control_policy.merge("parallel_execution" => { "max_batch_size" => 1 }))
+      policy_config: { "parallel_execution" => { "max_batch_size" => 1 } })
   end
 
   it "creates a workflow-scoped assignment" do
