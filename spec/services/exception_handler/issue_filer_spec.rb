@@ -70,14 +70,7 @@ RSpec.describe ExceptionHandler::IssueFiler do
       incident
       project
 
-      allow(gh_issue).to receive_messages(html_url: "https://github.com/acme/widgets/issues/56", number: 56)
-      create_issue_started = Queue.new
-      release_create_issue = Queue.new
-      allow(client).to receive(:create_issue) do
-        create_issue_started << true
-        release_create_issue.pop
-        gh_issue
-      end
+      create_issue_started, release_create_issue = stub_slow_issue_creation
       allow(client).to receive(:add_comment)
 
       thread_one = concurrent_call
@@ -126,6 +119,19 @@ RSpec.describe ExceptionHandler::IssueFiler do
       ensure
         ActiveRecord::Base.connection_pool.release_connection
       end
+    end
+
+    def stub_slow_issue_creation
+      allow(gh_issue).to receive_messages(html_url: "https://github.com/acme/widgets/issues/56", number: 56)
+      create_issue_started = Queue.new
+      release_create_issue = Queue.new
+      allow(client).to receive(:create_issue) do
+        create_issue_started << true
+        release_create_issue.pop
+        gh_issue
+      end
+
+      [ create_issue_started, release_create_issue ]
     end
   end
 end
