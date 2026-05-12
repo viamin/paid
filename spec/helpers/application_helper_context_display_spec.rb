@@ -128,6 +128,17 @@ RSpec.describe ApplicationHelper, :no_db do
         expect(result).to include('aria-expanded="false"')
         expect(result).to include('aria-hidden="true"')
       end
+
+      it "falls back to a generated tooltip id when the run has no id" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix bug")
+        run = stub_run(id: nil, "create_pr_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to match(/id="context_\d+"/)
+        expect(result).to match(/aria-controls="context_\d+"/)
+        expect(result).to match(/aria-describedby="context_\d+"/)
+      end
     end
 
     context "when create_pr goal without issue" do
