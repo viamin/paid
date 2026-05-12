@@ -7,5 +7,5 @@ WHEN (coalesce(current_setting('logidze.disabled', true), '') <> 'on')
 EXECUTE PROCEDURE logidze_logger(
   null,
   'updated_at',
-  '{env,peak_cpu_percent,peak_memory_bytes,avg_cpu_percent,avg_memory_bytes,container_metrics_count}'
+  '{env,status,docker_container_id,peak_cpu_percent,peak_memory_bytes,avg_cpu_percent,avg_memory_bytes,container_metrics_count}'
 );
