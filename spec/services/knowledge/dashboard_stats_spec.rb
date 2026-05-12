@@ -67,11 +67,11 @@ RSpec.describe Knowledge::DashboardStats do
 
       it "checks circuit recovery once per configured runner state" do
         dashboard = described_class.new(account: account)
-        allow(dashboard).to receive(:provider_status).and_call_original
+        allow(dashboard).to receive(:runner_status).and_call_original
 
         dashboard.call
 
-        expect(dashboard).to have_received(:provider_status).twice
+        expect(dashboard).to have_received(:runner_status).twice
       end
 
       it "does not report an expired rate limit as active" do

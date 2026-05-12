@@ -344,7 +344,7 @@ RSpec.describe RunnerSupport do
     describe "agent-harness registry backing" do
       it "only contains providers backed by the agent-harness registry" do
         described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS.each do |key|
-          harness_key = described_class.harness_provider_key_for(key)
+          harness_key = described_class.harness_runner_key_for(key)
           expect {
             AgentHarness.provider(harness_key.to_sym)
           }.not_to raise_error
