@@ -206,9 +206,9 @@ RSpec.describe QualityMetric do
     end
   end
 
-  describe ".weights_for" do
+  describe ".weights_for", :no_db do
     it "returns focus-specific weights for focused create_pr runs" do
-      expect(described_class.weights_for(focus: "ci_fix")).to eq(described_class::FOCUS_WEIGHTS[:ci_fix])
+      expect(described_class.weights_for(focus: "ci_fix")).to eq(described_class::FOCUS_WEIGHTS["ci_fix"])
     end
 
     it "returns general create_pr weights for general focus" do

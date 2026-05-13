@@ -19,30 +19,30 @@ class QualityMetric < ApplicationRecord
   }.freeze
 
   FOCUS_WEIGHTS = {
-    ci_fix: {
+    "ci_fix" => {
       "ci_passed" => 0.50,
       "lint_clean" => 0.20,
       "tests_pass" => 0.20,
       "iterations" => 0.10
     },
-    review_feedback: {
+    "review_feedback" => {
       "focus_resolved" => 0.60,
       "iterations" => 0.20,
       "lint_clean" => 0.10,
       "tests_pass" => 0.10
     },
-    merge_conflict: {
+    "merge_conflict" => {
       "focus_resolved" => 0.70,
       "ci_passed" => 0.15,
       "iterations" => 0.15
     },
-    conversation: {
+    "conversation" => {
       "focus_resolved" => 0.60,
       "iterations" => 0.20,
       "lint_clean" => 0.10,
       "tests_pass" => 0.10
     },
-    label_action: {
+    "label_action" => {
       "focus_resolved" => 0.60,
       "iterations" => 0.20,
       "lint_clean" => 0.10,
@@ -139,7 +139,7 @@ class QualityMetric < ApplicationRecord
     goal_weights = GOAL_WEIGHTS.fetch(goal, SCORE_WEIGHTS)
     return goal_weights unless goal == "create_pr"
 
-    FOCUS_WEIGHTS.fetch(focus.to_s.presence&.to_sym, SCORE_WEIGHTS)
+    FOCUS_WEIGHTS.fetch(focus.to_s, SCORE_WEIGHTS)
   end
 
   # Calculates composite score from individual scores using goal-specific weights.

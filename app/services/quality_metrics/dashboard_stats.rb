@@ -79,7 +79,7 @@ module QualityMetrics
 
         weights_by_focus = {}
         QualityMetric::FOCUS_WEIGHTS.each do |focus, weights|
-          weights_by_focus[focus.to_s] = weights[key] if weights.key?(key)
+          weights_by_focus[focus] = weights[key] if weights.key?(key)
         end
 
         {
