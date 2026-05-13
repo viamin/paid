@@ -19,6 +19,7 @@ RSpec.describe Knowledge::ContextIntake::WizardState, :no_db do
 
       expect(state.current_question.fetch(:key)).to eq("business_model")
       expect(state.current_question_index).to eq(1)
+      expect(state.current_question_number).to eq(2)
     end
 
     it "uses the explicitly requested question when it exists" do
@@ -26,6 +27,17 @@ RSpec.describe Knowledge::ContextIntake::WizardState, :no_db do
 
       expect(state.current_question.fetch(:key)).to eq("primary_users")
       expect(state.current_question.fetch(:section_title)).to eq("Target Users & Markets")
+    end
+  end
+
+  describe "step position helpers" do
+    it "reports the schema-backed current step and total question count" do
+      state = described_class.new(responses: responses, active_question_key: "primary_users")
+
+      expect(state.current_question_number).to eq(3)
+      expect(state.total_questions).to eq(
+        Knowledge::ContextIntake::QuestionnaireSchema.total_questions
+      )
     end
   end
 

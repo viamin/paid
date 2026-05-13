@@ -4,7 +4,7 @@
       <div class="flex items-center justify-between gap-4">
         <div>
           <p class="text-sm font-medium text-gray-700">
-            Question <%= current_question_index + 1 %> of <%= progress[:total] %>
+            Question <%= wizard_state.current_question_number %> of <%= wizard_state.total_questions %>
           </p>
           <p class="mt-1 text-sm text-gray-500">
             <%= progress[:answered] %> answered · <%= progress[:percentage] %>% complete

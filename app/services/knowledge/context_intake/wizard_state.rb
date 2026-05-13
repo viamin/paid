@@ -29,6 +29,14 @@ module Knowledge
         ordered_questions.fetch(current_question_index)
       end
 
+      def total_questions
+        ordered_questions.length
+      end
+
+      def current_question_number
+        current_question_index + 1
+      end
+
       def previous_question
         return if current_question_index.zero?
 
@@ -44,13 +52,13 @@ module Knowledge
       end
 
       def last_question?
-        current_question_index == ordered_questions.length - 1
+        current_question_index == total_questions - 1
       end
 
       def navigation_question_key(current_question_key:, direction:)
         offset = direction == "previous" ? -1 : 1
         current_index = ordered_questions.index { |question| question[:key] == current_question_key } || 0
-        target_index = (current_index + offset).clamp(0, ordered_questions.length - 1)
+        target_index = (current_index + offset).clamp(0, total_questions - 1)
 
         ordered_questions.fetch(target_index).fetch(:key)
       end

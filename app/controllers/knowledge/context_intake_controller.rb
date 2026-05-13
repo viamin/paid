@@ -127,8 +127,8 @@ module Knowledge
     def wizard_locals
       {
         project: @project,
+        wizard_state: @wizard_state,
         current_question: @current_question,
-        current_question_index: @current_question_index,
         current_answer_text: @current_answer_text,
         current_response: @current_response,
         previous_question: @previous_question,
