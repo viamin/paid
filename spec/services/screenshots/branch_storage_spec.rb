@@ -120,7 +120,7 @@ RSpec.describe Screenshots::BranchStorage, :no_db do
 
     it "bootstraps the screenshots branch before the first push" do
       bare_repo_dir = Dir.mktmpdir("screenshots-remote")
-      system("git", "init", "--bare", bare_repo_dir, exception: true)
+      system("git", "init", "--bare", "--initial-branch=main", bare_repo_dir, exception: true)
       allow(storage).to receive(:setup_repo).and_call_original
       allow(storage).to receive(:branch_exists?).and_call_original
       allow(storage).to receive(:nothing_staged?).and_call_original

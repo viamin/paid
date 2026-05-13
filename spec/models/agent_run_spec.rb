@@ -195,6 +195,8 @@ RSpec.describe AgentRun do
       end
 
       it "uses goal-specific adaptive cutoffs when healthy runtime history exists" do
+        stub_const("AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE", 3)
+
         create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
           :completed,
           :review_goal,

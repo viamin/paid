@@ -2793,7 +2793,7 @@ expect(container_service).to receive(:execute).with(
       it "does not reclassify timeout when quota message falls outside the bounded log scan window" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
           agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
-          250.times { |index| agent_run.log!("stdout", "provider still warming up: #{index}") }
+          201.times { |index| agent_run.log!("stdout", "provider still warming up: #{index}") }
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 
