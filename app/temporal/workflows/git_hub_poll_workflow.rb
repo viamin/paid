@@ -332,6 +332,7 @@ module Workflows
         count_toward_draft_review_round: decision.fetch(:count_toward_draft_review_round, false),
         expected_draft_review_count: decision[:expected_draft_review_count]
       }.compact
+      queue_input[:focus] = decision[:focus] || "general" if decision[:source_pull_request_number].present?
       queue_input.delete(:count_toward_draft_review_round) unless queue_input[:count_toward_draft_review_round]
 
       run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
@@ -344,7 +345,8 @@ module Workflows
         project_id: project_id,
         issue_id: decision[:issue_id],
         source_pull_request_number: decision[:source_pull_request_number],
-        goal: "review"
+        goal: "review",
+        focus: decision[:focus] || "general"
       }, timeout: 30)
     end
 

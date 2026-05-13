@@ -40,7 +40,8 @@ RSpec.describe Automation::Strategies::AutoReview do
           {
             type: "queue_review_run",
             issue_id: pull_request.id,
-            source_pull_request_number: 42
+            source_pull_request_number: 42,
+            focus: "general"
           }
         ]
       )
@@ -147,7 +148,7 @@ RSpec.describe Automation::Strategies::AutoReview do
       expect(result.to_h).to eq(
         decisions: [
           { type: "request_review", pr_number: 42, reviewers: [ "copilot" ] },
-          { type: "queue_create_pr_run", issue_id: pull_request.id, source_pull_request_number: 42 },
+          { type: "queue_create_pr_run", issue_id: pull_request.id, source_pull_request_number: 42, focus: "general" },
           { type: "record_pr_followup", issue_id: pull_request.id, labels_to_remove: [], expected_followup_count: 0 }
         ]
       )
@@ -325,7 +326,7 @@ RSpec.describe Automation::Strategies::AutoReview do
       })
 
       expect(result.to_h[:decisions]).to eq([
-        { type: "queue_create_pr_run", issue_id: pull_request.id, source_pull_request_number: 42 },
+        { type: "queue_create_pr_run", issue_id: pull_request.id, source_pull_request_number: 42, focus: "general" },
         { type: "record_pr_followup", issue_id: pull_request.id, labels_to_remove: [], expected_followup_count: nil }
       ])
     end

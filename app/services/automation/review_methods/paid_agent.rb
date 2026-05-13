@@ -68,7 +68,8 @@ module Automation
 
         Automation::Decision.queue_review_run(
           issue_id: signals.issue_id,
-          source_pull_request_number: signals.pr_number
+          source_pull_request_number: signals.pr_number,
+          focus: signals.focus
         )
       end
 

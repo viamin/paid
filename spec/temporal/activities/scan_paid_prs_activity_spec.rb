@@ -187,7 +187,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:automation_results]).to contain_exactly(
           {
             decisions: [
-              { type: "queue_create_pr_run", issue_id: pr_issue.id, source_pull_request_number: 42 },
+              { type: "queue_create_pr_run", issue_id: pr_issue.id, source_pull_request_number: 42, focus: "general" },
               { type: "record_pr_followup", issue_id: pr_issue.id, labels_to_remove: [], expected_followup_count: 0 }
             ]
           }
