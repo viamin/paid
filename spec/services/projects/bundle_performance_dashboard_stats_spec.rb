@@ -175,7 +175,12 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:bundle_rankings].first[:avg_quality_score]).to be_within(0.001).of(0.85)
       expect(stats[:experiment_confidence].first[:variants].size).to eq(2)
       expect(stats[:tradeoff_frontier].first[:bundle]).to eq(bundle)
-      expect(stats[:optimizer_insights].find { |row| row[:goal] == "create_pr" }[:candidates]).not_to be_empty
+      candidate = stats[:optimizer_insights].find { |row| row[:goal] == "create_pr" }[:candidates].first
+
+      expect(candidate).to include(
+        acquisition_function: "expected_improvement",
+        best_observed_objective_score: 0.71
+      )
     end
   end
 
@@ -293,6 +298,8 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       predicted_quality_score: 0.8,
       uncertainty: 0.1,
       sample_count: 5,
+      best_observed_objective_score: 0.71,
+      acquisition_function: "expected_improvement",
       acquisition_score: 0.84
     )
 

@@ -329,7 +329,9 @@ module Projects
       uncertainty = selection.score_inputs.uncertainty.to_f
 
       {
+        acquisition_function: selection.score_inputs.acquisition_function,
         acquisition_score: selection.score_inputs.acquisition_score.to_f,
+        best_observed_objective_score: selection.score_inputs.best_observed_objective_score.to_f,
         predicted_objective_score: selection.score_inputs.predicted_objective_score.to_f,
         predicted_quality_score: selection.score_inputs.predicted_quality_score.to_f,
         uncertainty: uncertainty,
