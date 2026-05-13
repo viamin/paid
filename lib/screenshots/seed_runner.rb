@@ -128,7 +128,7 @@ module Screenshots
       raise "Screenshot seed setup failed: #{stderr.presence || stdout}" unless status.success?
 
       JSON.parse(stdout).transform_keys(&:to_sym).transform_values do |value|
-        OpenStruct.new(value)
+        value.is_a?(Hash) ? OpenStruct.new(value) : value
       end
     rescue JSON::ParserError => e
       raise "Screenshot seed setup returned invalid JSON: #{e.message}"
