@@ -357,7 +357,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
         predicted_success_probability: 0.6,
         predicted_cost_cents: 80,
         predicted_duration_seconds: 180,
-        uncertainty: 0.35,
+        uncertainty: 1.0,
         sample_count: 1,
         trained_at: Time.current
       )
