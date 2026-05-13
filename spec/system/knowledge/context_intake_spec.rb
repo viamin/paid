@@ -30,6 +30,22 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
     expect_later_prompt_to_include_business_context(answers)
   end
 
+  it "shows one question at a time and preserves answers when navigating backward" do
+    sign_in_and_start_questionnaire
+
+    first_question, second_question = ordered_questions.first(2)
+    first_answer = questionnaire_answers.fetch(first_question[:key])
+
+    expect_current_question(first_question, position: 1)
+    answer_question(first_question[:key], first_answer, button: "Next")
+
+    expect_current_question(second_question, position: 2)
+    click_button "Previous"
+
+    expect_current_question(first_question, position: 1)
+    expect(page).to have_field("answer_text", with: first_answer)
+  end
+
   def sign_in_and_start_questionnaire
     visit project_context_intake_path(project)
     click_button "Start Business Context Questionnaire"
@@ -38,26 +54,12 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
   end
 
   def complete_questionnaire(answers)
-    sections = Knowledge::ContextIntake::QuestionnaireSchema.sections
+    ordered_questions.each_with_index do |question, index|
+      expect_current_question(question, position: index + 1)
 
-    sections.each_with_index do |section, section_index|
-      expect_active_section(section[:key], section[:title])
-
-      section[:questions].each_with_index do |question, question_index|
-        answer_question(question[:key], answers.fetch(question[:key]))
-
-        next_section_key = if question_index < section[:questions].length - 1
-          section[:key]
-        else
-          sections[section_index + 1]&.fetch(:key, section[:key]) || section[:key]
-        end
-
-        next_section_title = sections.find { |entry| entry[:key] == next_section_key }[:title]
-        expect_active_section(next_section_key, next_section_title)
-      end
+      button = index == ordered_questions.length - 1 ? "Finish" : "Next"
+      answer_question(question[:key], answers.fetch(question[:key]), button: button)
     end
-
-    click_button "Complete & Save Business Context"
 
     expect(page).to have_content("Business context saved and synthesized into project knowledge.")
     expect(page).to have_content("Business context captured")
@@ -98,24 +100,34 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
     expect(prompt).to include(answers.fetch("domain_terms"))
   end
 
-  def within_section_panel(section_key, &)
-    within(find(%([data-section="#{section_key}"]), visible: true)) do
-      yield
+  def expect_current_question(question, position:)
+    expect(page).to have_css("turbo-frame#context_intake_wizard")
+
+    within("turbo-frame#context_intake_wizard") do
+      expect(page).to have_css("form", count: 1)
+      expect(page).to have_css("textarea", count: 1)
+      expect(page).to have_no_button("Save")
+      expect(page).to have_content("Question #{position} of #{ordered_questions.length}")
+      expect(page).to have_content(question[:section_title])
+      expect(page).to have_content(question[:text])
+
+      other_question = ordered_questions.find { |entry| entry[:key] != question[:key] }
+      expect(page).to have_no_content(other_question[:text]) if other_question
     end
   end
 
-  def expect_active_section(section_key, section_title)
-    expect(page).to have_css("[data-section]", visible: true, count: 1)
-
-    within_section_panel(section_key) do
-      expect(page).to have_css("h3", text: section_title)
-    end
-  end
-
-  def answer_question(question_key, answer_text)
+  def answer_question(question_key, answer_text, button:)
     within(:xpath, %(.//form[input[@name='question_key' and @value='#{question_key}']])) do
       fill_in "answer_text", with: answer_text
-      click_button "Save"
+      click_button button, exact: true
+    end
+  end
+
+  def ordered_questions
+    @ordered_questions ||= Knowledge::ContextIntake::QuestionnaireSchema.sections.flat_map do |section|
+      section[:questions].map do |question|
+        question.merge(section_title: section[:title])
+      end
     end
   end
 
