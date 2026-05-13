@@ -86,6 +86,30 @@ RSpec.describe ConfigurationBundles::Optimizer, :no_db do
     end
   end
 
+  describe "#prior_objective_score_for_goal" do
+    it "considers metric-only objective observations when quality is absent" do
+      outcome_run = Struct.new(:project).new(project)
+      metric_only_outcome = Struct.new(:metrics, :agent_run, :quality_score, :cost_cents, :duration_seconds).new(
+        { "objective_score" => "1.25" },
+        outcome_run,
+        nil,
+        nil,
+        nil
+      )
+      fallback_outcome = Struct.new(:metrics, :agent_run, :quality_score, :cost_cents, :duration_seconds).new(
+        nil,
+        outcome_run,
+        0.7,
+        40,
+        120
+      )
+
+      allow(optimizer).to receive(:prior_objective_outcomes_for_goal).and_return([ metric_only_outcome, fallback_outcome ])
+
+      expect(optimizer.send(:prior_objective_score_for_goal)).to eq(1.25)
+    end
+  end
+
   def prediction_for(bundle_definition)
     variant_id = bundle_definition.dig("experiments", experiment.config_key, "configuration_experiment_variant_id")
     return control_prediction if variant_id == control.id

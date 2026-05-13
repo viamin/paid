@@ -337,14 +337,25 @@ module ConfigurationBundles
 
     def prior_objective_score_for_goal
       @prior_objective_score_for_goal ||= begin
-        BundleOutcome
-          .eager_load(agent_run: :project)
-          .where(agent_runs: { project_id: agent_run.project_id, goal: agent_run.goal })
-          .where.not(id: agent_run.bundle_outcomes.select(:id))
-          .where.not(quality_score: nil)
+        prior_objective_outcomes_for_goal
           .filter_map { |outcome| outcome_objective_score(outcome) }
           .max
       end
+    end
+
+    def prior_objective_outcomes_for_goal
+      BundleOutcome
+        .eager_load(agent_run: :project)
+        .where(agent_runs: { project_id: agent_run.project_id, goal: agent_run.goal })
+        .where.not(id: agent_run.bundle_outcomes.select(:id))
+        .where(objective_observation_sql)
+    end
+
+    def objective_observation_sql
+      <<~SQL.squish
+        bundle_outcomes.quality_score IS NOT NULL
+        OR NULLIF(bundle_outcomes.metrics ->> 'objective_score', '') IS NOT NULL
+      SQL
     end
 
     def outcome_objective_score(outcome)
