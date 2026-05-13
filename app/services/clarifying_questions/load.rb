@@ -32,6 +32,10 @@ module ClarifyingQuestions
       return [] unless enhancement_comment
 
       Parse.call(comment_body: comment_body(enhancement_comment))
+    rescue GithubClient::Error
+      raise if body_questions.empty?
+
+      body_questions
     end
 
     private

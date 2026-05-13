@@ -56,6 +56,14 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
         expect(github_client).to have_received(:issue_comments).once
       end
+
+      it "falls back to body questions when GitHub comments cannot be loaded" do
+        allow(github_client).to receive(:issue_comments).and_raise(GithubClient::Error, "GitHub unavailable")
+
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ "What should happen next?" ])
+      end
     end
 
     context "when clarifying questions only exist in GitHub comments" do
