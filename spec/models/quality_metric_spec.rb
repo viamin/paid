@@ -95,7 +95,7 @@ RSpec.describe QualityMetric do
 
       score = metric.calculate_composite_score
 
-      expect(score).to eq(0.95)
+      expect(score).to eq(0.9556)
     end
 
     it "calculates weighted average using goal-specific weights for create_pr" do

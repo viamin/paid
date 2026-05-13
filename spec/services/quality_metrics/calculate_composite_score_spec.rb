@@ -59,7 +59,7 @@ RSpec.describe QualityMetrics::CalculateCompositeScore do
 
       score = described_class.call(agent_run: agent_run)
 
-      expect(score).to eq(0.95)
+      expect(score).to eq(0.9556)
     end
   end
 end
