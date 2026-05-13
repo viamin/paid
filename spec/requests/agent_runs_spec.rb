@@ -180,7 +180,7 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.text).to include("PR Creation")
         expect(goal_cell.text).not_to include(goal_text)
         expect(context_cell.text).to include(goal_text)
-        expect(context_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(context_cell.at_css("span[title]")["title"]).to eq(goal_text)
         expect(context_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
