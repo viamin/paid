@@ -237,26 +237,24 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       .to have_attributes(configuration_experiment_variant_id: optimized_variant_id)
   end
 
-  it "accepts optimizer definitions that omit optional empty identity keys" do
-    optimized_definition = optimizer_definition_with_value(12_000).except(
+  it "accepts optimizer definitions that omit optional empty identity keys when those values are blank for the run" do
+    run = create_empty_identity_run
+    optimized_definition = optimizer_definition_with_value(12_000, agent_run: run).except(
       "custom_prompt_sha256",
       "model_selection",
       "mcp_servers",
       "service_container_ids"
     )
-    selection = optimizer_selection(definition: optimized_definition)
+    optimized_variant_id = optimizer_variant_id(optimized_definition)
+    selection = optimizer_selection(definition: optimized_definition, agent_run: run)
     allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
 
-    bundle = described_class.call(agent_run: agent_run)
+    bundle = described_class.call(agent_run: run)
 
     expect(bundle.definition).to eq(optimized_definition)
     expect(bundle.fingerprint).to eq(selection.fingerprint)
-    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run))
-      .to have_attributes(configuration_experiment_variant_id: optimized_definition.dig(
-        "experiments",
-        "knowledge.token_budget",
-        "configuration_experiment_variant_id"
-      ))
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: run))
+      .to have_attributes(configuration_experiment_variant_id: optimized_variant_id)
   end
 
   it "falls back to rebuilding the bundle definition when persisted assignments disagree with the optimizer definition" do
@@ -413,14 +411,14 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     }
   end
 
-  def optimizer_definition_with_value(value)
+  def optimizer_definition_with_value(value, agent_run: self.agent_run)
     matching_variant = experiment.configuration_experiment_variants.find_or_create_by!(config_value: JSON.generate(value)) do |created_variant|
       created_variant.is_control = false
     end
-    optimizer_definition_for_variant(variant: matching_variant, value:)
+    optimizer_definition_for_variant(variant: matching_variant, value:, agent_run:)
   end
 
-  def optimizer_definition_for_variant(variant:, value:)
+  def optimizer_definition_for_variant(variant:, value:, agent_run: self.agent_run)
     {
       "schema_version" => 1,
       "goal" => agent_run.goal,
@@ -439,10 +437,10 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     }
   end
 
-  def optimizer_selection(definition:, fingerprint: described_class.new(agent_run: agent_run).send(:bundle_fingerprint, definition), variant_by_experiment_id: {})
+  def optimizer_selection(definition:, fingerprint: nil, variant_by_experiment_id: {}, agent_run: self.agent_run)
     ConfigurationBundles::Optimizer::Selection.new(
       definition: definition,
-      fingerprint: fingerprint,
+      fingerprint: fingerprint || described_class.new(agent_run: agent_run).send(:bundle_fingerprint, definition),
       variant_by_experiment_id: variant_by_experiment_id,
       selection_mode: "exploitative",
       selection_context: "task"
@@ -470,6 +468,17 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       selection_mode: "exploitative",
       selection_context: "task"
     )
+  end
+
+  def create_empty_identity_run
+    create(:agent_run,
+      project: project,
+      issue: create(:issue, project: project),
+      mcp_server_snapshot: [])
+  end
+
+  def optimizer_variant_id(definition)
+    definition.dig("experiments", "knowledge.token_budget", "configuration_experiment_variant_id")
   end
 
   def expect_bundle_definition(bundle)
