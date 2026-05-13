@@ -1943,7 +1943,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         automation_results: [
           {
             decisions: [
-              { type: "queue_review_run", issue_id: 10, source_pull_request_number: 42 }
+              { type: "queue_review_run", issue_id: 10, source_pull_request_number: 42, focus: "general" }
             ]
           }
         ]
