@@ -156,6 +156,10 @@ RSpec.describe AgentRun do
   end
 
   describe "#focused?" do
+    it "defaults new runs to general focus" do
+      expect(described_class.new.focus).to eq("general")
+    end
+
     it "is false for general runs" do
       expect(build(:agent_run, focus: "general")).not_to be_focused
     end

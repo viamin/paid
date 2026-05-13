@@ -3,6 +3,8 @@
 class AgentRun < ApplicationRecord
   attr_accessor :preloaded_final_provider_record, :preloaded_final_provider_record_loaded
 
+  attribute :focus, :string, default: "general"
+
   MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   PROVIDER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
