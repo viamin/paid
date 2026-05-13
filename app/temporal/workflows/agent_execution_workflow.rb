@@ -94,6 +94,7 @@ module Workflows
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
         agent_run_id: agent_run_id, goal: goal,
+        focus: input[:focus],
         parent_workflow_id: parent_workflow_id,
         workflow_id: current_workflow_id,
         count_toward_draft_review_round: input[:count_toward_draft_review_round],

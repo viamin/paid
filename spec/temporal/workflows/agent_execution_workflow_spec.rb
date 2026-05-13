@@ -698,6 +698,39 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_direct_start_with_focus(expected_focus)
+      allow(workflow).to receive(:run_activity) do |activity_class, input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          expect(input[:focus]).to eq(expected_focus)
+          { agent_run_id: 42, provider_attempt_count: 1, focus: expected_focus }
+        when "Activities::ProvisionServicesActivity",
+          "Activities::ProvisionContainerActivity",
+          "Activities::CloneRepoActivity",
+          "Activities::PushBranchActivity",
+          "Activities::CompleteExistingPrRunActivity",
+          "Activities::RequestReviewActivity",
+          "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity"
+          {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then { review_thread_ids: [] }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        else {}
+        end
+      end
+    end
+
+    it "forwards workflow focus input to CreateAgentRunActivity for direct starts" do
+      stub_direct_start_with_focus("ci_fix")
+
+      workflow.execute(input.merge(focus: "ci_fix"))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateAgentRunActivity, hash_including(focus: "ci_fix"), timeout: 30)
+    end
+
     it "passes focus through to PreparePrPromptActivity" do
       stub_existing_pr_followup_with_focus("ci_fix")
 

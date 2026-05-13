@@ -23,7 +23,7 @@ module Automation
           issue_id: issue_id,
           source_pull_request_number: source_pull_request_number,
           focus: focus
-        })
+        }.compact)
       end
 
       def start_planning(issue_id:)
