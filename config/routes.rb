@@ -178,6 +178,8 @@ Rails.application.routes.draw do
     resources :issues, only: [] do
       resource :merge_subscription, only: [ :show, :create, :destroy ],
         controller: "projects/issue_merge_subscriptions"
+      resource :clarifying_questions, only: [ :show, :create ],
+        controller: "projects/clarifying_questions"
     end
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],

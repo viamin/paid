@@ -41,6 +41,7 @@ FactoryBot.define do
 
     trait :needs_input do
       paid_state { "needs_input" }
+      labels { [ project.enhance_issue_needs_input_label_name ] }
     end
 
     trait :recommend_close do
