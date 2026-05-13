@@ -402,7 +402,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr" },
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr", focus: "general" },
           timeout: 30)
     end
 
@@ -725,7 +725,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10), timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr" },
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr", focus: "general" },
           timeout: 30)
     end
 
@@ -839,7 +839,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr" },
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr", focus: "general" },
           timeout: 30)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RecordDraftReviewActivity,
@@ -862,7 +862,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 },
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, focus: "general" },
           timeout: 30)
     end
 
@@ -878,6 +878,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: 10,
             source_pull_request_number: 42,
+            focus: "general",
             count_toward_draft_review_round: true,
             expected_draft_review_count: 1 }, timeout: 30)
     end
@@ -963,7 +964,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, focus: "general" }, timeout: 30)
     end
 
     it "routes review_bot_review_pending to RequestReviewActivity using the trigger's request_login" do
