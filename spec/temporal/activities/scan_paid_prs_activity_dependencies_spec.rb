@@ -106,4 +106,50 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
       expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(true)
     end
   end
+
+  describe "#human_dependency_check_required?" do
+    it "returns false when any earlier human auto-merge gate already failed" do
+      expect(activity.send(
+        :human_dependency_check_required?,
+        owner_approved: false,
+        checks_green: true,
+        mergeable: true,
+        review_feedback_clear: true,
+        blocking_reviews_complete: true,
+        reviews_fresh: true
+      )).to be(false)
+    end
+
+    it "returns true only when the other human gates are satisfied" do
+      expect(activity.send(
+        :human_dependency_check_required?,
+        owner_approved: true,
+        checks_green: true,
+        mergeable: true,
+        review_feedback_clear: true,
+        blocking_reviews_complete: true,
+        reviews_fresh: true
+      )).to be(true)
+    end
+  end
+
+  describe "#bot_dependency_check_required?" do
+    it "returns false when any earlier bot auto-merge gate already failed" do
+      expect(activity.send(
+        :bot_dependency_check_required?,
+        dependabot_eligible: false,
+        checks_green: true,
+        mergeable: true
+      )).to be(false)
+    end
+
+    it "returns true only when the other bot gates are satisfied" do
+      expect(activity.send(
+        :bot_dependency_check_required?,
+        dependabot_eligible: true,
+        checks_green: true,
+        mergeable: true
+      )).to be(true)
+    end
+  end
 end

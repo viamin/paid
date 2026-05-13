@@ -2392,20 +2392,39 @@ module Activities
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:)
       return false unless project.auto_merge_enabled? && pr_data.present?
 
+      owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
+      checks_green = !checks.nil? && all_checks_green?(checks)
+      mergeable = pr_data[:mergeable] == true
+      review_feedback_clear = no_outstanding_review_feedback?(
+        project, client, issue, reviews, checks: checks, pr_data: pr_data
+      )
+      blocking_reviews_complete = all_blocking_review_methods_complete?(
+        project, reviews, checks, pr_data: pr_data
+      )
+      reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
+      dependencies_resolved = if human_dependency_check_required?(
+        owner_approved: owner_approved,
+        checks_green: checks_green,
+        mergeable: mergeable,
+        review_feedback_clear: review_feedback_clear,
+        blocking_reviews_complete: blocking_reviews_complete,
+        reviews_fresh: reviews_fresh
+      )
+        dependencies_resolved?(client, project, issue)
+      else
+        false
+      end
+
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
-        owner_approved: owner_approved_or_self_authored?(project, reviews, pr_data),
-        checks_green: !checks.nil? && all_checks_green?(checks),
-        mergeable: pr_data[:mergeable] == true,
-        review_feedback_clear: no_outstanding_review_feedback?(
-          project, client, issue, reviews, checks: checks, pr_data: pr_data
-        ),
-        blocking_reviews_complete: all_blocking_review_methods_complete?(
-          project, reviews, checks, pr_data: pr_data
-        ),
-        reviews_fresh: !review_stale_for_head?(client, project, issue, pr_data, reviews),
-        dependencies_resolved: dependencies_resolved?(client, project, issue)
+        owner_approved: owner_approved,
+        checks_green: checks_green,
+        mergeable: mergeable,
+        review_feedback_clear: review_feedback_clear,
+        blocking_reviews_complete: blocking_reviews_complete,
+        reviews_fresh: reviews_fresh,
+        dependencies_resolved: dependencies_resolved
       )
 
       evaluate_auto_merge(project, signals)
@@ -2414,17 +2433,46 @@ module Activities
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
     # strategy. Bot PRs skip owner-approval and review-feedback gates.
     def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
+      dependabot_eligible = project.auto_merge_dependabot?
+      checks_green = !checks.nil? && checks.any? && all_checks_green?(checks)
+      mergeable_signal = mergeable == true
+      dependencies_resolved = if bot_dependency_check_required?(
+        dependabot_eligible: dependabot_eligible,
+        checks_green: checks_green,
+        mergeable: mergeable_signal
+      )
+        dependencies_resolved?(client, project, issue)
+      else
+        false
+      end
+
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
         bot_authored: true,
-        dependabot_eligible: project.auto_merge_dependabot?,
-        checks_green: !checks.nil? && checks.any? && all_checks_green?(checks),
-        mergeable: mergeable == true,
-        dependencies_resolved: dependencies_resolved?(client, project, issue)
+        dependabot_eligible: dependabot_eligible,
+        checks_green: checks_green,
+        mergeable: mergeable_signal,
+        dependencies_resolved: dependencies_resolved
       )
 
       evaluate_auto_merge(project, signals)
+    end
+
+    def human_dependency_check_required?(owner_approved:, checks_green:, mergeable:,
+      review_feedback_clear:, blocking_reviews_complete:, reviews_fresh:)
+      owner_approved &&
+        checks_green &&
+        mergeable &&
+        review_feedback_clear &&
+        blocking_reviews_complete &&
+        reviews_fresh
+    end
+
+    def bot_dependency_check_required?(dependabot_eligible:, checks_green:, mergeable:)
+      dependabot_eligible &&
+        checks_green &&
+        mergeable
     end
 
     def dependencies_resolved?(client, project, issue)
