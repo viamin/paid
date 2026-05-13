@@ -97,9 +97,11 @@ module Issues
     # Matches phrases that mention issue refs but must NOT be treated as
     # dependencies. Applied in both section-path (before bare-ref extraction)
     # and inline-path (before INLINE_DEPENDS_PATTERN) so that e.g.
-    # "Not blocked by #N" is not misread as "blocked by #N".
+    # "Not blocked by #N" is not misread as "blocked by #N". Also strips
+    # deployment-worded variants like "Not blocked by deployment of #N".
     NON_DEPENDENCY_PATTERN = /
-      \b(?:independent\s+of|not\s+blocked\s+by|no\s+dependency\s+on)\b
+      \b(?:independent\s+of|not\s+blocked\s+by|no\s+dependency\s+on)
+      (?:\s+deployment\s+of)?\b
       :?\s*
       ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)
     /xi
@@ -253,6 +255,7 @@ module Issues
     # plain dependencies.
     def extract_section_refs(section_body, local_deps, cross_deps)
       scratch = section_body.dup
+      scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
@@ -260,8 +263,6 @@ module Issues
         end
         scratch = scratch.gsub(pattern, "")
       end
-
-      scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       extract_all_refs(scratch, local_deps, cross_deps, requires_deployment: false)
     end
