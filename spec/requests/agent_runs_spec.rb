@@ -196,7 +196,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the provider column with the resolved provider name" do
-        provider = create(:provider, user: user, provider_key: "codex")
+        provider = create(:provider, user: project.effective_owner, provider_key: "codex")
         run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
 
         get agent_runs_path
@@ -216,7 +216,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the final provider label for legacy fallback runs" do
-        initial_provider = create(:provider, user: user, provider_key: "codex")
+        initial_provider = create(:provider, user: project.effective_owner, provider_key: "codex")
         run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
 
         get agent_runs_path
@@ -600,7 +600,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the provider column with the resolved provider name" do
-        provider = create(:provider, user: user, provider_key: "cursor")
+        provider = create(:provider, user: project.effective_owner, provider_key: "cursor")
         run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
 
         get project_agent_runs_path(project)
@@ -612,7 +612,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the final provider label for legacy fallback runs" do
-        initial_provider = create(:provider, user: user, provider_key: "codex")
+        initial_provider = create(:provider, user: project.effective_owner, provider_key: "codex")
         run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
 
         get project_agent_runs_path(project)
@@ -2514,8 +2514,7 @@ RSpec.describe "AgentRuns" do
   end
 
   def row_for_run(document, run)
-    run_path = project_agent_run_path(run.project, run)
-    row = document.at_css(%(a[href="#{run_path}"]))&.ancestors("tr")&.first
+    row = document.at_css(%(tr##{ActionView::RecordIdentifier.dom_id(run)}))
 
     expect(row).to be_present
     row

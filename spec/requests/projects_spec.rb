@@ -556,7 +556,7 @@ RSpec.describe "Projects" do
 
       it "shows the provider column for recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        provider = create(:provider, user: user, provider_key: "codex")
+        provider = create(:provider, user: project.effective_owner, provider_key: "codex")
         run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
 
         get project_path(project)
@@ -575,7 +575,7 @@ RSpec.describe "Projects" do
 
       it "shows the final provider label for legacy fallback runs in recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        initial_provider = create(:provider, user: user, provider_key: "codex")
+        initial_provider = create(:provider, user: project.effective_owner, provider_key: "codex")
         run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
 
         get project_path(project)
