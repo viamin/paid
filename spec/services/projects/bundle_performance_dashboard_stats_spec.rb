@@ -18,7 +18,9 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
 
     it "computes summary counts from all bundles, not just the displayed rows" do
-      Array.new(12) do
+      bundle_count = described_class::MAX_BUNDLE_ROWS + 1
+
+      Array.new(bundle_count) do
         bundle = create(:configuration_bundle, account: project.account, definition: {
           "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
         })
@@ -28,8 +30,8 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
       stats = described_class.call(project: project)
 
-      expect(stats[:summary][:bundle_count]).to eq(12)
-      expect(stats[:summary][:reviewable_bundle_count]).to eq(12)
+      expect(stats[:summary][:bundle_count]).to eq(bundle_count)
+      expect(stats[:summary][:reviewable_bundle_count]).to eq(bundle_count)
       expect(stats[:bundle_rankings].size).to eq(described_class::MAX_BUNDLE_ROWS)
     end
 
