@@ -234,10 +234,23 @@ module ConfigurationBundles
     end
 
     def optimizer_experiment_for(variant, experiment_id)
-      experiment = variant.respond_to?(:configuration_experiment) ? variant.configuration_experiment : nil
-      return experiment if experiment&.id == experiment_id
+      experiment = active_experiments_by_id[experiment_id]
+      raise ActiveRecord::RecordNotFound, "configuration experiment is no longer active" unless experiment
 
-      ConfigurationExperiment.find(experiment_id)
+      return experiment if optimizer_variant_matches_experiment?(variant, experiment)
+
+      raise ArgumentError, "configuration experiment variant does not belong to the optimizer experiment"
+    end
+
+    def optimizer_variant_matches_experiment?(variant, experiment)
+      variant_experiment_id =
+        if variant.respond_to?(:configuration_experiment_id)
+          variant.configuration_experiment_id
+        elsif variant.respond_to?(:configuration_experiment)
+          variant.configuration_experiment&.id
+        end
+
+      variant_experiment_id.nil? || variant_experiment_id == experiment.id
     end
 
     def optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint)

@@ -216,6 +216,33 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       service.call
     end
 
+    it "falls back to rebuilding the bundle payload when the optimizer variant map references an inactive experiment" do
+      fallback_definition = experiment_definition_for(selected_variant.parsed_value)
+      selection = optimizer_selection(
+        definition: fallback_definition,
+        variant_by_experiment_id: { 999 => selected_variant }
+      )
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        active_experiments: [ experiment ]
+      )
+      allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_raise(KeyError, "missing experiment")
+      allow(service).to receive(:bundle_definition).with(no_args).and_return(fallback_definition)
+      expect_bundle_lookup(
+        definition: fallback_definition,
+        fingerprint: bundle_fingerprint(fallback_definition)
+      )
+
+      service.call
+    end
+
+    it "falls back to rebuilding the bundle payload when the optimizer variant belongs to another experiment" do
+      setup_mismatched_variant_fallback
+
+      expect(service.call).to eq(bundle)
+    end
+
     it "rebuilds the bundle payload from scratch when optimizer-selected variants cannot be reused" do
       selection = optimizer_selection(
         definition: selection_definition,
@@ -402,6 +429,30 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       parsed_value,
       experiment.id,
       experiment
+    )
+  end
+
+  def setup_mismatched_variant_fallback
+    fallback_definition = experiment_definition_for(selected_variant.parsed_value)
+    mismatched_variant = Struct.new(
+      :id,
+      :parsed_value,
+      :configuration_experiment_id,
+      :configuration_experiment
+    ).new(selected_variant.id, selected_variant.parsed_value, 999, nil)
+    selection = optimizer_selection(
+      definition: fallback_definition,
+      variant_by_experiment_id: { experiment.id => mismatched_variant }
+    )
+
+    allow(service).to receive_messages(
+      optimizer_selection: selection,
+      active_experiments: [ experiment ]
+    )
+    allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+    expect_bundle_lookup(
+      definition: fallback_definition,
+      fingerprint: bundle_fingerprint(fallback_definition)
     )
   end
 
