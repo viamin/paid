@@ -957,7 +957,8 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
 
-      expect(prompt).to eq("assigned Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("assigned Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(run.reload.prompt_version).to eq(variant_version)
     end
   end
