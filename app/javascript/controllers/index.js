@@ -28,6 +28,9 @@ application.register("chat-session-list", ChatSessionListController)
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
+import ClarifyingQuestionsController from "./clarifying_questions_controller"
+application.register("clarifying-questions", ClarifyingQuestionsController)
+
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
 

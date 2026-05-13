@@ -6,8 +6,21 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:project) { create(:project, account: account) }
-  let(:issue) { create(:issue, :needs_input, project: project) }
+  let(:issue_body) { "This is the issue body" }
+  let(:issue) { create(:issue, :needs_input, project: project, body: issue_body) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:comment_body) do
+    <<~COMMENT
+      <!-- paid:enhance-issue -->
+
+      ## Clarifying questions
+      1. What is the expected behavior?
+      2. Should this be behind a flag?
+
+      ## Current context
+      - Some context
+    COMMENT
+  end
 
   before do
     sign_in user
@@ -18,17 +31,6 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
     context "when enhancement comment with clarifying questions exists" do
       before do
-        comment_body = <<~COMMENT
-          <!-- paid:enhance-issue -->
-
-          ## Clarifying questions
-          1. What is the expected behavior?
-          2. Should this be behind a flag?
-
-          ## Current context
-          - Some context
-        COMMENT
-
         comment = double(body: comment_body)
         allow(github_client).to receive(:issue_comments).and_return([ comment ])
       end
@@ -66,6 +68,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     end
 
     context "when all answers are provided" do
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ double(body: comment_body) ])
+      end
+
       it "posts answers as a GitHub comment and redirects" do
         post project_issue_clarifying_question_path(project, issue), params: {
           questions: [ "What is X?", "Should this be enabled?" ],
@@ -84,6 +90,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     end
 
     context "when some answers are blank" do
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ double(body: comment_body) ])
+      end
+
       it "redirects back with an alert" do
         post project_issue_clarifying_question_path(project, issue), params: {
           questions: [ "What is X?", "Should this be enabled?" ],
