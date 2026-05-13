@@ -33,6 +33,7 @@ FactoryBot.define do
 
     trait :with_version do
       after(:create) do |strategy|
+        reviewer = create(:user, account: strategy.account || create(:account))
         version = strategy.create_version!(
           content: {
             "decomposition_approach" => "single",
@@ -41,7 +42,9 @@ FactoryBot.define do
           },
           provenance: { "source" => "seed" },
           promotion_state: "active",
-          created_by: "seed"
+          created_by: "seed",
+          promoted_at: Time.current,
+          promoted_by_user: reviewer
         )
         strategy.update!(current_version: version)
       end
