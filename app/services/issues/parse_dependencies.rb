@@ -107,20 +107,27 @@ module Issues
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(```|~~~)/
 
-    attr_reader :issue, :adjacency, :comments
+    attr_reader :issue, :adjacency, :comments, :body
 
-    def initialize(issue:, adjacency: nil, comments: [])
+    def initialize(issue:, adjacency: nil, comments: [], body: nil)
       @issue = issue
       @adjacency = adjacency
       @comments = comments || []
+      @body = body || issue&.body
     end
 
     def self.call(...)
       new(...).call
     end
 
+    def self.extract(body:, comments: [])
+      new(issue: nil, body: body, comments: comments).extract
+    end
+
     def call
-      local_deps, cross_deps = resolve_dependencies
+      raise ArgumentError, "issue is required" if issue.nil?
+
+      local_deps, cross_deps = extract
 
       current_deps = issue.issue_dependencies.to_a
       current_local_by_id = current_deps.select(&:local?).index_by(&:depends_on_issue_id)
@@ -140,6 +147,12 @@ module Issues
       remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
     end
 
+    def extract
+      local_deps, cross_deps = resolve_dependencies
+
+      [ local_deps, cross_deps ]
+    end
+
     private
 
     # Processes body then comments in the order given. Within a single comment,
@@ -155,8 +168,8 @@ module Issues
       local_deps = {}
       cross_deps = {}
 
-      if issue.body.present?
-        extract_body_refs(issue.body, local_deps, cross_deps)
+      if body.present?
+        extract_body_refs(body, local_deps, cross_deps)
       end
 
       comments.each do |comment_body|

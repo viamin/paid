@@ -27,6 +27,9 @@ module Automation
       #   method (+ci_action+, +manual+) has a completion signal.
       # * +reviews_fresh+ — the HEAD commit was not pushed after the
       #   latest blocking approval(s).
+      # * +dependencies_resolved+ — every declared PR dependency has
+      #   already merged. Cross-repo and missing PR references remain
+      #   blocking until Paid can verify them.
       # * +bot_authored+ — the PR was created by a known bot user
       #   (Dependabot, Renovate, etc.).
       # * +dependabot_eligible+ — the project allows auto-merging
@@ -40,6 +43,7 @@ module Automation
         :review_feedback_clear,
         :blocking_reviews_complete,
         :reviews_fresh,
+        :dependencies_resolved,
         :bot_authored,
         :dependabot_eligible
       )
@@ -56,6 +60,7 @@ module Automation
               review_feedback_clear: kwargs.fetch(:review_feedback_clear, false),
               blocking_reviews_complete: kwargs.fetch(:blocking_reviews_complete, false),
               reviews_fresh: kwargs.fetch(:reviews_fresh, false),
+              dependencies_resolved: kwargs.fetch(:dependencies_resolved, false),
               bot_authored: kwargs.fetch(:bot_authored, false),
               dependabot_eligible: kwargs.fetch(:dependabot_eligible, false)
             )
@@ -68,6 +73,7 @@ module Automation
         def review_feedback_clear? = review_feedback_clear == true
         def blocking_reviews_complete? = blocking_reviews_complete == true
         def reviews_fresh? = reviews_fresh == true
+        def dependencies_resolved? = dependencies_resolved == true
         def bot_authored? = bot_authored == true
         def dependabot_eligible? = dependabot_eligible == true
       end
