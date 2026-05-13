@@ -166,7 +166,7 @@ module ConfigurationBundles
     end
 
     def rebuild_bundle_definition(selection)
-      bundle_definition(selection&.variant_by_experiment_id)
+      bundle_definition(normalized_variant_by_experiment_id(selection))
     rescue StandardError => e
       Rails.logger.warn(
         message: "configuration_bundles.optimizer_fallback_rebuild_failed",
@@ -204,10 +204,20 @@ module ConfigurationBundles
     end
 
     def optimizer_assignment_inputs(selection)
-      variant_by_experiment_id = selection&.variant_by_experiment_id
+      variant_by_experiment_id = normalized_variant_by_experiment_id(selection)
       return variant_by_experiment_id.map { |experiment_id, variant| [ optimizer_experiment_for(variant, experiment_id), variant ] } if variant_by_experiment_id.present?
 
       optimizer_assignment_inputs_from_definition(selection&.definition)
+    end
+
+    def normalized_variant_by_experiment_id(selection)
+      normalize_variant_by_experiment_id(selection&.variant_by_experiment_id)
+    end
+
+    def normalize_variant_by_experiment_id(variant_by_experiment_id)
+      return {} unless variant_by_experiment_id.is_a?(Hash)
+
+      variant_by_experiment_id.transform_keys { |experiment_id| Integer(experiment_id, exception: false) || experiment_id }
     end
 
     def optimizer_assignment_inputs_from_definition(definition)
@@ -301,6 +311,7 @@ module ConfigurationBundles
     end
 
     def optimizer_experiments_match_variants?(definition, variant_by_experiment_id)
+      variant_by_experiment_id = normalize_variant_by_experiment_id(variant_by_experiment_id)
       return true if variant_by_experiment_id.blank?
 
       expected_experiments = variant_by_experiment_id.each_with_object({}) do |(experiment_id, variant), definitions|

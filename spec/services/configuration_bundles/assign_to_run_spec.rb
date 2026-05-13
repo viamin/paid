@@ -187,6 +187,23 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       .to have_attributes(configuration_experiment_variant_id: optimized_variant.id)
   end
 
+  it "normalizes string experiment ids in optimizer-selected variant maps" do
+    optimized_definition = optimizer_definition_with_value(12_000)
+    optimized_variant = ConfigurationExperimentVariant.find(
+      optimized_definition.dig("experiments", "knowledge.token_budget", "configuration_experiment_variant_id")
+    )
+    selection = optimizer_selection(
+      definition: optimized_definition,
+      variant_by_experiment_id: { experiment.id.to_s => optimized_variant }
+    )
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    described_class.call(agent_run: agent_run)
+
+    expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run))
+      .to have_attributes(configuration_experiment_variant_id: optimized_variant.id)
+  end
+
   it "persists optimizer-selected experiment assignments from the optimizer definition when the variant map is missing" do
     optimized_definition = optimizer_definition_with_value(12_000)
     selection = optimizer_selection(definition: optimized_definition)

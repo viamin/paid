@@ -84,6 +84,29 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "normalizes string experiment ids in optimizer-selected variant maps" do
+      optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+      selection = optimizer_selection(
+        definition: optimized_definition,
+        variant_by_experiment_id: { experiment.id.to_s => build_assignment_variant(selected_variant.id, selected_variant.parsed_value) }
+      )
+      assignment = Struct.new(:configuration_experiment_variant).new(build_assignment_variant(selected_variant.id, selected_variant.parsed_value))
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        active_experiments: [ experiment ]
+      )
+      expect(ConfigurationExperiments::Assign).to receive(:call).with(
+        configuration_experiment: experiment,
+        agent_run: agent_run,
+        variant: have_attributes(id: selected_variant.id)
+      ).and_return(assignment)
+      expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+      expect(agent_run).to receive(:update!).with(expected_update_arguments)
+
+      expect(service.call).to eq(bundle)
+    end
+
     it "accepts optimizer definitions that omit optional empty identity keys" do
       setup_optional_identity_keys_omitted_selection
 
