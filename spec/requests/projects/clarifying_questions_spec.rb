@@ -25,7 +25,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   before do
     sign_in user
     user.add_role(:admin, account)
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    allow(GithubClient).to receive(:new).and_return(github_client)
   end
 
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
