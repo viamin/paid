@@ -76,6 +76,29 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_cost_dashboard" ])
     end
 
+    it "maps the clarifying-questions wizard controller to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/clarifying_questions_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
+    it "maps the clarifying-questions Stimulus controller to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/javascript/controllers/clarifying_questions_controller.js" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
+    it "does not broaden screenshot capture when the controller registry changes alongside a mapped Stimulus controller" do
+      targets = described_class.call(
+        changed_files: [
+          "app/javascript/controllers/index.js",
+          "app/javascript/controllers/clarifying_questions_controller.js"
+        ]
+      )
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
     it "maps projects/agent_runs_controller to include the new action target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/agent_runs_controller.rb" ])
 
@@ -164,6 +187,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/views/projects/_issues.html.erb" ])
 
       expect(targets.map(&:slug)).to eq([ "project_show" ])
+    end
+
+    it "maps the clarifying-questions wizard view to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/clarifying_questions/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
     end
 
     it "maps project index partials to projects target" do

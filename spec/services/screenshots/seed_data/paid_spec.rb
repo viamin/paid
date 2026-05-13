@@ -14,6 +14,18 @@ RSpec.describe Screenshots::SeedData::Paid do
     )
   end
 
+  it "returns the seeded clarifying issue metadata" do
+    result = described_class.call
+
+    issue = Issue.find(result.dig("clarifying_issue", "id"))
+
+    expect(result.fetch("clarifying_issue")).to eq(
+      "id" => issue.id,
+      "github_number" => 1964
+    )
+    expect(issue).to be_needs_input
+  end
+
   it "returns seeded strategy review metadata" do
     result = described_class.call
 
