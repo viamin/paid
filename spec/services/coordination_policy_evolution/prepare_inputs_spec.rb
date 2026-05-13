@@ -124,6 +124,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
 
       before do
         create(:orchestration_decision,
+          :without_agent_run,
           project: project,
           decision_type: "retry",
           actor: "coordination_failure_recovery",
@@ -131,6 +132,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
           inputs: { "policy_source" => "coordination_policy" },
           outputs: { "chosen_action" => "retry_same_provider" })
         create(:orchestration_decision,
+          :without_agent_run,
           project: project,
           decision_type: "pause",
           actor: "coordination_failure_recovery",
@@ -160,6 +162,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
 
       before do
         create(:orchestration_decision,
+          :without_agent_run,
           project: project,
           decision_type: "escalate",
           actor: "coordination_escalation_service",
@@ -167,6 +170,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
           inputs: { "policy_source" => "defaults" },
           outputs: { "human_value_score" => 0.9 })
         create(:orchestration_decision,
+          :without_agent_run,
           project: project,
           decision_type: "escalate",
           actor: "coordination_escalation_service",
@@ -174,6 +178,7 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
           inputs: { "policy_source" => "defaults" },
           outputs: { "human_value_score" => 0.2 })
         create(:orchestration_decision,
+          :without_agent_run,
           project: project,
           decision_type: "escalate",
           actor: "coordination_escalation_service",
