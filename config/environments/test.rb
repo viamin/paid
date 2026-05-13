@@ -8,9 +8,10 @@
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
-  # Pull request CI may not have access to encrypted test credentials, so keep
-  # the test app bootable with an explicit non-production secret fallback.
-  config.secret_key_base = ENV.fetch("SECRET_KEY_BASE", "test-secret-key-base")
+  # Pull request CI may not have access to encrypted test credentials. Prefer
+  # an explicit env-provided test key when available, then fall back to a
+  # non-production default so the app still boots in isolated environments.
+  config.secret_key_base = ENV.fetch("SECRET_KEY_BASE", ENV.fetch("RAILS_TEST_KEY", "test-secret-key-base"))
 
   # While tests run files are not watched, reloading is not necessary.
   config.enable_reloading = false
