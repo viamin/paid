@@ -275,7 +275,7 @@ module Screenshots
         .flat_map { |file| targets_for_javascript_controller(file.delete_prefix("app/javascript/controllers/")) }
         .uniq
 
-      return nil if explicit_targets.any?
+      return explicit_targets if explicit_targets.any?
 
       SHARED_TARGET_KEYS
     end
