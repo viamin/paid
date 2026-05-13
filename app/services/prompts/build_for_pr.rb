@@ -45,7 +45,7 @@ module Prompts
     end
 
     def includes_review_threads?
-      include_section?(:code_review) && unresolved_threads.any?
+      include_section?(:code_review) && review_threads_present?
     end
 
     def unresolved_review_thread_ids
@@ -136,14 +136,18 @@ module Prompts
     end
 
     def priority_list
-      return focused_priority_list if focused?
+      return focused_priority_list if use_focused_priority_list?
 
+      dynamic_priority_list
+    end
+
+    def dynamic_priority_list
       priorities = []
-      priorities << "Resolve merge conflicts" unless rebase_succeeded
-      priorities << "Fix CI failures" if ci_failure_context.failing?
-      priorities << "Close implementation gaps against the linked issue" if linked_issue?
-      priorities << "Address code review comments" if includes_review_threads?
-      priorities << "Address conversation comments" if trusted_comments.any?
+      priorities << "Resolve merge conflicts" if merge_conflicts_present?
+      priorities << "Fix CI failures" if ci_failures_present?
+      priorities << "Close implementation gaps against the linked issue" if issue_requirements_present?
+      priorities << "Address code review comments" if review_threads_present?
+      priorities << "Address conversation comments" if conversation_comments_present?
       priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
     end
 
@@ -387,19 +391,53 @@ module Prompts
     end
 
     def include_issue_requirements_section?
-      include_section?(:issue_requirements) && linked_issue?
+      include_section?(:issue_requirements) && issue_requirements_present?
     end
 
     def include_merge_conflicts_section?
-      include_section?(:merge_conflicts) && !rebase_succeeded
+      include_section?(:merge_conflicts) && merge_conflicts_present?
     end
 
     def include_ci_failures_section?
-      include_section?(:ci_failures) && ci_failure_context.failing?
+      include_section?(:ci_failures) && ci_failures_present?
     end
 
     def include_conversation_section?
-      include_section?(:conversation) && trusted_comments.any?
+      include_section?(:conversation) && conversation_comments_present?
+    end
+
+    def merge_conflicts_present?
+      !rebase_succeeded
+    end
+
+    def ci_failures_present?
+      ci_failure_context.failing?
+    end
+
+    def issue_requirements_present?
+      linked_issue?
+    end
+
+    def review_threads_present?
+      unresolved_threads.any?
+    end
+
+    def conversation_comments_present?
+      trusted_comments.any?
+    end
+
+    def use_focused_priority_list?
+      focused_priority_section_present? || focus == "label_action"
+    end
+
+    def focused_priority_section_present?
+      {
+        "ci_fix" => include_ci_failures_section?,
+        "review_feedback" => includes_review_threads?,
+        "merge_conflict" => include_merge_conflicts_section?,
+        "conversation" => include_conversation_section?,
+        "issue_implementation" => include_issue_requirements_section?
+      }.fetch(focus, false)
     end
 
     def focused_priority_list
@@ -419,11 +457,11 @@ module Prompts
 
     def deferred_issue_descriptions
       descriptions = []
-      descriptions << "merge conflicts with the base branch" if defer_issue?(:merge_conflicts) && !rebase_succeeded
-      descriptions << "failing CI checks" if defer_issue?(:ci_failures) && ci_failure_context.failing?
-      descriptions << "implementation gaps against the linked issue" if defer_issue?(:issue_requirements) && linked_issue?
-      descriptions << "unresolved code review comments" if defer_issue?(:code_review) && unresolved_threads.any?
-      descriptions << "actionable conversation comments" if defer_issue?(:conversation) && trusted_comments.any?
+      descriptions << "merge conflicts with the base branch" if defer_issue?(:merge_conflicts) && merge_conflicts_present?
+      descriptions << "failing CI checks" if defer_issue?(:ci_failures) && ci_failures_present?
+      descriptions << "implementation gaps against the linked issue" if defer_issue?(:issue_requirements) && issue_requirements_present?
+      descriptions << "unresolved code review comments" if defer_issue?(:code_review) && review_threads_present?
+      descriptions << "actionable conversation comments" if defer_issue?(:conversation) && conversation_comments_present?
       descriptions
     end
 

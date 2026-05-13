@@ -871,6 +871,23 @@ RSpec.describe Prompts::BuildForPr do
         expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
         expect(prompt).not_to include("same classes of issues the reviewers")
       end
+
+      context "when the CI failures have already cleared" do
+        before do
+          allow(github_client).to receive(:check_runs_for_ref)
+            .with(project.full_name, "abc123")
+            .and_return([])
+        end
+
+        it "falls back to the live priority list instead of stale focused instructions" do
+          expect(prompt).not_to include("CI Status: FAILING")
+          expect(prompt).not_to include("1. Fix the failing CI checks on this PR")
+          expect(prompt).to include("1. Resolve merge conflicts")
+          expect(prompt).to include("2. Close implementation gaps against the linked issue")
+          expect(prompt).to include("3. Address code review comments")
+          expect(prompt).to include("4. Address conversation comments")
+        end
+      end
     end
 
     context "with review_feedback focus" do
@@ -902,6 +919,25 @@ RSpec.describe Prompts::BuildForPr do
         expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
         expect(prompt).to include("same classes of issues the reviewers")
       end
+
+      context "when the review threads have already been resolved" do
+        before do
+          allow(github_client).to receive(:review_threads)
+            .with(project.full_name, 42)
+            .and_return([])
+        end
+
+        it "falls back to the live priority list and omits review-only metadata" do
+          expect(prompt).not_to include("Code Review Comments")
+          expect(prompt).not_to include("1. Address the unresolved code review comments on this PR")
+          expect(prompt).to include("1. Resolve merge conflicts")
+          expect(prompt).to include("2. Fix CI failures")
+          expect(prompt).to include("3. Close implementation gaps against the linked issue")
+          expect(prompt).to include("4. Address conversation comments")
+          expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+          expect(prompt).not_to include("same classes of issues the reviewers")
+        end
+      end
     end
 
     context "with merge_conflict focus" do
@@ -927,6 +963,30 @@ RSpec.describe Prompts::BuildForPr do
           "actionable conversation comments"
         )
         expect(prompt).to include("1. Resolve the merge conflicts on this PR")
+      end
+
+      context "when the merge conflict has already cleared" do
+        subject(:prompt) do
+          described_class.call(
+            project: project,
+            pr_number: 42,
+            github_client: github_client,
+            rebase_succeeded: rebase_succeeded,
+            issue: issue,
+            focus: "merge_conflict"
+          )
+        end
+
+        let(:rebase_succeeded) { true }
+
+        it "falls back to the live priority list" do
+          expect(prompt).not_to include("Merge Conflicts")
+          expect(prompt).not_to include("1. Resolve the merge conflicts on this PR")
+          expect(prompt).to include("1. Fix CI failures")
+          expect(prompt).to include("2. Close implementation gaps against the linked issue")
+          expect(prompt).to include("3. Address code review comments")
+          expect(prompt).to include("4. Address conversation comments")
+        end
       end
     end
   end
@@ -991,6 +1051,28 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("1. Fix the failing CI checks on this PR")
     end
 
+    it "falls back to live priorities when a ci_fix run reaches a green PR" do
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([])
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: "ci_fix"
+      )
+
+      expect(prompt).not_to include("CI Status: FAILING")
+      expect(prompt).not_to include("1. Fix the failing CI checks on this PR")
+      expect(prompt).to include("1. Resolve merge conflicts")
+      expect(prompt).to include("2. Close implementation gaps against the linked issue")
+      expect(prompt).to include("3. Address code review comments")
+      expect(prompt).to include("4. Address conversation comments")
+    end
+
     it "builds a scoped review_feedback prompt with review-only instructions" do
       prompt = described_class.call(
         project: project,
@@ -1006,6 +1088,30 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("1. Address the unresolved code review comments on this PR")
       expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
       expect(prompt).to include("same classes of issues the reviewers")
+    end
+
+    it "falls back to live priorities when a review_feedback run reaches a cleared review queue" do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([])
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: "review_feedback"
+      )
+
+      expect(prompt).not_to include("Code Review Comments")
+      expect(prompt).not_to include("1. Address the unresolved code review comments on this PR")
+      expect(prompt).to include("1. Resolve merge conflicts")
+      expect(prompt).to include("2. Fix CI failures")
+      expect(prompt).to include("3. Close implementation gaps against the linked issue")
+      expect(prompt).to include("4. Address conversation comments")
+      expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).not_to include("same classes of issues the reviewers")
     end
   end
 
