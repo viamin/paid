@@ -15,10 +15,9 @@ module ClarifyingQuestions
 
     def call
       body_questions = Parse.call(comment_body: issue.body)
-      return body_questions if body_questions.any? && !github_available?
-
       enhancement_comment = latest_enhancement_comment
-      return [] if answered_after_enhancement?(enhancement_comment)
+      return body_questions if body_questions.any? && !github_available?
+      return [] if answered_after_latest_questions?(body_questions:, enhancement_comment:)
       return body_questions if body_questions.any?
       return [] unless enhancement_comment
 
@@ -42,15 +41,18 @@ module ClarifyingQuestions
       end
     end
 
-    def answered_after_enhancement?(enhancement_comment)
-      return false unless enhancement_comment
-
-      latest_answer_comment = issue_comments.reverse.find do |comment|
-        comment_body(comment).include?(ANSWER_MARKER)
-      end
+    def answered_after_latest_questions?(body_questions:, enhancement_comment:)
+      latest_answer_comment = latest_answer_comment()
       return false unless latest_answer_comment
+      return true if body_questions.any? && enhancement_comment.blank?
 
       comment_timestamp(latest_answer_comment) > comment_timestamp(enhancement_comment)
+    end
+
+    def latest_answer_comment
+      issue_comments.reverse.find do |comment|
+        comment_body(comment).include?(ANSWER_MARKER)
+      end
     end
 
     def comment_body(comment)
