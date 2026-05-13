@@ -17,6 +17,13 @@ RSpec.describe FeatureFlags do
       expect(definition.intent).to include("#1077")
     end
 
+    it "returns metadata for focused agent runs" do
+      definition = described_class.definition(:focused_agent_runs)
+
+      expect(definition.owner).to eq("agent-runs")
+      expect(definition.intent).to include("focused agent runs")
+    end
+
     it "raises for unknown flags" do
       expect {
         described_class.definition(:missing_flag)
@@ -58,6 +65,16 @@ RSpec.describe FeatureFlags do
       described_class.enable!(:explicit_pr_automation_decisions, project:)
 
       expect(described_class.enabled?(:explicit_pr_automation_decisions, project:)).to be(true)
+    end
+  end
+
+  describe ".focused_agent_runs?" do
+    it "returns the focused-agent-runs state for a project" do
+      expect(described_class.focused_agent_runs?(project:)).to be(false)
+
+      described_class.enable!(:focused_agent_runs, project:)
+
+      expect(described_class.focused_agent_runs?(project:)).to be(true)
     end
   end
 
@@ -131,7 +148,8 @@ RSpec.describe FeatureFlags do
       described_class.enable!(:explicit_pr_automation_decisions, project:)
 
       expect(described_class.snapshot(project:)).to eq(
-        explicit_pr_automation_decisions: true
+        explicit_pr_automation_decisions: true,
+        focused_agent_runs: false
       )
     end
   end

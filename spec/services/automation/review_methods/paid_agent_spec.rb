@@ -96,7 +96,8 @@ RSpec.describe Automation::ReviewMethods::PaidAgent do
       expect(plugin.decision.to_h).to eq(
         type: "queue_review_run",
         issue_id: 7,
-        source_pull_request_number: 42
+        source_pull_request_number: 42,
+        focus: "general"
       )
     end
 
