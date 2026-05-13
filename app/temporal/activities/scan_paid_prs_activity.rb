@@ -2451,7 +2451,9 @@ module Activities
     end
 
     def dependency_comment_bodies(client, project, issue)
-      client.issue_comments(project.full_name, issue.github_number).map(&:body)
+      client.issue_comments(project.full_name, issue.github_number).map do |comment|
+        dependency_value(comment, :body)
+      end
     end
 
     def dependency_pull_request_merged?(client, project, pr_number)
@@ -2462,7 +2464,19 @@ module Activities
     end
 
     def pull_request_merged?(pr_data)
-      pr_data&.merged == true || pr_data&.merged_at.present?
+      dependency_value(pr_data, :merged) == true || dependency_value(pr_data, :merged_at).present?
+    end
+
+    def dependency_value(source, key)
+      return nil if source.nil?
+
+      if source.respond_to?(key)
+        source.public_send(key)
+      elsif source.respond_to?(:key?) && source.key?(key)
+        source[key]
+      elsif source.respond_to?(:[])
+        source[key.to_s]
+      end
     end
 
     def evaluate_auto_merge(project, signals)

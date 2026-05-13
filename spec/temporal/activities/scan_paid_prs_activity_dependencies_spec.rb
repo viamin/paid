@@ -78,5 +78,21 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
 
       expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(true)
     end
+
+    it "accepts hash-shaped GitHub payloads for comments and PRs" do
+      allow(client).to receive(:issue_comments)
+        .with(project.full_name, issue.github_number)
+        .and_return([ { "body" => "Depends on #41" } ])
+      allow(client).to receive(:pull_request)
+        .with(project.full_name, 41)
+        .and_return({ "number" => 41, "merged" => true, "merged_at" => Time.current.iso8601 })
+
+      hash_body_issue = Data.define(:body, :github_number).new(
+        body: nil,
+        github_number: 42
+      )
+
+      expect(activity.send(:dependencies_resolved?, client, project, hash_body_issue)).to be(true)
+    end
   end
 end
