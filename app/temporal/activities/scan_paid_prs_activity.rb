@@ -2451,7 +2451,7 @@ module Activities
     end
 
     def dependency_comment_bodies(client, project, issue)
-      client.issue_comments(project.full_name, issue.github_number).map do |comment|
+      Array(client.issue_comments(project.full_name, issue.github_number)).filter_map do |comment|
         dependency_value(comment, :body)
       end
     end

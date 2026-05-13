@@ -94,5 +94,16 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
 
       expect(activity.send(:dependencies_resolved?, client, project, hash_body_issue)).to be(true)
     end
+
+    it "ignores nil comment collections and body-less comment payloads" do
+      allow(client).to receive(:issue_comments)
+        .with(project.full_name, issue.github_number)
+        .and_return([ nil, OpenStruct.new(body: nil) ])
+      allow(client).to receive(:pull_request)
+        .with(project.full_name, 41)
+        .and_return(OpenStruct.new(number: 41, merged: true, merged_at: Time.current))
+
+      expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(true)
+    end
   end
 end
