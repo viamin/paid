@@ -774,9 +774,9 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
 
-      expect(prompt).to include("Synthesize the issue title, body, and any appropriate labels")
+      expect(prompt).to match(/Synthesize the issue title, body,\s+and any appropriate labels/)
       expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
-      expect(prompt).to include("When no labels are clearly requested, omit them.")
+      expect(prompt).to match(/When no labels are\s+clearly requested, omit them\./)
     end
   end
 

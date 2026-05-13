@@ -195,7 +195,7 @@ RSpec.describe Prompt, type: :model do
       expect(seed_template).to include(
         "Do NOT reply by asking the user to provide the issue type, title, description,"
       )
-      expect(seed_template).to include("When no labels are clearly requested, omit them.")
+      expect(seed_template).to match(/When no labels are\s+clearly requested, omit them\./)
     end
 
     it "FALLBACK_ISSUE_GOAL_PROMPT matches the seeded drafting guidance" do
@@ -206,7 +206,7 @@ RSpec.describe Prompt, type: :model do
         "Do NOT reply by asking the user to provide the issue type, title, description,"
       )
       expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT)
-        .to include("When no labels are clearly requested, omit them.")
+        .to match(/When no labels are\s+clearly requested, omit them\./)
     end
 
     it "seeded template matches the shared template source exactly" do
