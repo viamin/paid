@@ -328,14 +328,14 @@ module ApplicationHelper
     mobile_tooltip_wrapper(inner, context[:tooltip], tooltip_id, aria_label: "Show context details")
   end
 
+  AGENT_RUN_GOAL_LABEL_OVERRIDES = {
+    "create_pr" => "PR Creation",
+    "create_issue" => "Issue Creation",
+    "review" => "Code Review"
+  }.freeze
+
   AGENT_RUN_GOAL_LABELS = AgentRun::GOALS.index_with do |goal|
-    {
-      "create_pr" => "PR Creation",
-      "create_issue" => "Issue Creation",
-      "review" => "Code Review",
-      "enhance_issue" => "Enhance Issue",
-      "analyze_issue" => "Analyze Issue"
-    }.fetch(goal, goal.to_s.titleize)
+    AGENT_RUN_GOAL_LABEL_OVERRIDES.fetch(goal, goal.to_s.titleize)
   end.freeze
 
   def agent_run_goal_display(run)

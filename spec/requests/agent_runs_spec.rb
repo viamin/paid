@@ -70,6 +70,20 @@ RSpec.describe "AgentRuns" do
         expect(provider_cell.text.squish).to eq(configured_provider.display_name)
       end
 
+      it "renders exactly one Provider column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr")
+
+        get agent_runs_path
+
+        document = parsed_html
+        provider_headers = document.css("thead th").select { |header| header.text.squish == "Provider" }
+        provider_cells = document.css("tbody tr##{ActionView::RecordIdentifier.dom_id(run)} td")
+          .select { |cell| cell.text.squish == Provider.display_name_for(run.effective_provider) }
+
+        expect(provider_headers.size).to eq(1)
+        expect(provider_cells.size).to eq(1)
+      end
+
       it "shows a deleted-provider fallback label in the Provider column" do
         run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
           final_provider: "provider:999999")
