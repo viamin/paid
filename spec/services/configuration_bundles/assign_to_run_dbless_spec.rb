@@ -321,6 +321,19 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
     end
   end
 
+  describe "#optimizer_assignment_inputs_from_definition" do
+    it "accepts string experiment ids in optimizer definitions" do
+      optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+      optimized_definition.dig("experiments", "knowledge.token_budget")["configuration_experiment_id"] = experiment.id.to_s
+      variant_record = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+
+      allow(service).to receive(:active_experiments).and_return([ experiment ])
+      allow(service).to receive(:optimizer_definition_variant_for).with(experiment, selected_variant.id).and_return(variant_record)
+
+      expect(service.send(:optimizer_assignment_inputs_from_definition, optimized_definition)).to eq([ [ experiment, variant_record ] ])
+    end
+  end
+
   def selection_definition
     {
       "schema_version" => 1,

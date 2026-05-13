@@ -222,7 +222,7 @@ module ConfigurationBundles
 
     def optimizer_assignment_inputs_from_definition(definition)
       definition.fetch("experiments", {}).values.filter_map do |experiment_definition|
-        experiment_id = experiment_definition["configuration_experiment_id"]
+        experiment_id = normalize_optimizer_experiment_id(experiment_definition["configuration_experiment_id"])
         variant_id = experiment_definition["configuration_experiment_variant_id"]
         next if experiment_id.blank? || variant_id.blank?
 
@@ -261,6 +261,10 @@ module ConfigurationBundles
         end
 
       variant_experiment_id.nil? || variant_experiment_id == experiment.id
+    end
+
+    def normalize_optimizer_experiment_id(experiment_id)
+      Integer(experiment_id, exception: false) || experiment_id
     end
 
     def optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint)
@@ -305,7 +309,7 @@ module ConfigurationBundles
       experiment = expected_experiments[config_key]
       return false unless experiment_definition.is_a?(Hash)
 
-      experiment_definition["configuration_experiment_id"] == experiment.id &&
+      normalize_optimizer_experiment_id(experiment_definition["configuration_experiment_id"]) == experiment.id &&
         experiment_definition["configuration_experiment_variant_id"].present?
     end
 
