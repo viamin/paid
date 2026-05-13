@@ -1065,7 +1065,7 @@ module Activities
         .first
     end
 
-    def last_completed_focused_run(project, issue)
+    def completed_focused_runs_for(project, issue)
       project.agent_runs
         .where(
           "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
@@ -1075,11 +1075,21 @@ module Activities
         .where.not(focus: "general")
         .completed
         .order(completed_at: :desc)
-        .first
+    end
+
+    def last_unattributed_focused_run(project, issue)
+      completed_focused_runs_for(project, issue)
+        .includes(:quality_metrics)
+        .detect { |run| focus_resolution_pending?(run) }
+    end
+
+    def focus_resolution_pending?(focused_run)
+      metric = focused_run.quality_metrics.find { |quality_metric| quality_metric.metric_type == "automated" }
+      metric.blank? || !metric.scores.to_h.key?("focus_resolved")
     end
 
     def record_focus_resolution(project, client, issue)
-      focused_run = last_completed_focused_run(project, issue)
+      focused_run = last_unattributed_focused_run(project, issue)
       return unless focused_run
 
       score_updates = focus_resolution_scores(project, client, issue, focused_run)
@@ -1149,6 +1159,8 @@ module Activities
 
     def issue_implementation_resolution_scores(project, client, issue, focused_run)
       triggers = issue_implementation_triggers(project, client, issue, focused_run)
+      return nil if triggers.nil?
+
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
@@ -1158,7 +1170,7 @@ module Activities
     end
 
     def issue_implementation_triggers(_project, _client, _issue, _focused_run)
-      []
+      nil
     end
 
     def fetch_pr_data(client, project, issue)

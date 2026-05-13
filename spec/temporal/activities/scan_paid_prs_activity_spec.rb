@@ -520,6 +520,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(metric.reload.scores).not_to include("focus_resolved", "ci_passed")
         expect(metric.composite_score).to eq(0.9)
       end
+
+      it "does not overwrite an existing focus_resolved score on later scans" do
+        metric.update!(
+          scores: metric.scores.merge("focus_resolved" => 1.0, "ci_passed" => 1.0),
+          composite_score: 0.9833
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores).to include(
+          "focus_resolved" => 1.0,
+          "ci_passed" => 1.0
+        )
+        expect(metric.composite_score).to eq(0.9833)
+      end
     end
 
     context "when attributing focus resolution for a review_feedback run" do
@@ -651,6 +667,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         activity.execute(project_id: project.id)
 
         expect(metric.reload.scores["focus_resolved"]).to eq(0.0)
+      end
+
+      it "defers recording when implementation-gap detection is unavailable" do
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores).not_to include("focus_resolved")
+        expect(metric.composite_score).to eq(1.0)
       end
     end
 
