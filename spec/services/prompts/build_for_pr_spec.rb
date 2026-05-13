@@ -46,6 +46,12 @@ RSpec.describe Prompts::BuildForPr do
     expect(prompt).to include("Focus solely on the task described above.")
   end
 
+  def expect_priority_list(prompt, expected_lines)
+    priority_list = prompt[/Priority order:\n(.*?)\n\nSteps:/m, 1]
+
+    expect(priority_list).to eq(expected_lines.join("\n"))
+  end
+
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
   let(:user_settings) { OpenStruct.new(max_prompt_comments: 20, max_comment_length: 2000) }
@@ -866,8 +872,7 @@ RSpec.describe Prompts::BuildForPr do
       end
 
       it "uses a single focused priority without review-only instructions" do
-        expect(prompt).to include("1. Fix the failing CI checks on this PR")
-        expect(prompt).not_to include("2.")
+        expect_priority_list(prompt, [ "1. Fix the failing CI checks on this PR" ])
         expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
         expect(prompt).not_to include("same classes of issues the reviewers")
       end
