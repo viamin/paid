@@ -218,6 +218,7 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
+      record_focus_resolution(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
       # Escalate PRs that are repeatedly failing due to operational issues
@@ -1064,6 +1065,102 @@ module Activities
         .first
     end
 
+    def last_completed_focused_run(project, issue)
+      project.agent_runs
+        .where(
+          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          pr_num: issue.github_number
+        )
+        .where(goal: "create_pr")
+        .where.not(focus: "general")
+        .completed
+        .order(completed_at: :desc)
+        .first
+    end
+
+    def record_focus_resolution(project, client, issue)
+      focused_run = last_completed_focused_run(project, issue)
+      return unless focused_run
+
+      score_updates = focus_resolution_scores(project, client, issue, focused_run)
+      return if score_updates.nil?
+
+      metric = QualityMetric.find_or_initialize_by(
+        agent_run: focused_run,
+        metric_type: "automated"
+      )
+      metric.assign_attributes(
+        prompt_version: focused_run.prompt_version,
+        feedback_source: "system",
+        scores: (metric.scores || {}).merge(score_updates)
+      )
+      metric.save! if metric.changed?
+
+      composite_score = QualityMetrics::CalculateCompositeScore.call(agent_run: focused_run)
+      return unless metric.composite_score != composite_score
+
+      metric.update!(composite_score:)
+    end
+
+    def focus_resolution_scores(project, client, issue, focused_run)
+      case focused_run.focus
+      when "ci_fix"
+        ci_focus_resolution_scores(project, client, issue)
+      when "review_feedback"
+        review_feedback_resolution_scores(project, client, issue)
+      when "merge_conflict"
+        merge_conflict_resolution_scores(project, client, issue)
+      when "conversation"
+        conversation_resolution_scores(project, client, issue, focused_run)
+      when "issue_implementation"
+        issue_implementation_resolution_scores(project, client, issue, focused_run)
+      when "label_action"
+        label_action_resolution_scores(project, issue)
+      end
+    end
+
+    def ci_focus_resolution_scores(project, client, issue)
+      pr_data = fetch_pr_data(client, project, issue)
+      checks = fetch_check_runs(client, project, pr_data)
+      return nil if checks.nil? || checks_pending?(checks)
+
+      score = all_checks_green?(checks) ? 1.0 : 0.0
+      { "focus_resolved" => score, "ci_passed" => score }
+    end
+
+    def review_feedback_resolution_scores(project, client, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return nil if unresolved_threads.nil?
+
+      { "focus_resolved" => unresolved_threads.empty? ? 1.0 : 0.0 }
+    end
+
+    def merge_conflict_resolution_scores(project, client, issue)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil? || pr_data.mergeable.nil?
+
+      { "focus_resolved" => pr_data.mergeable ? 1.0 : 0.0 }
+    end
+
+    def conversation_resolution_scores(project, client, issue, focused_run)
+      triggers = check_conversation_comments(client, project, issue, focused_run)
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
+    end
+
+    def issue_implementation_resolution_scores(project, client, issue, focused_run)
+      triggers = issue_implementation_triggers(project, client, issue, focused_run)
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
+    end
+
+    def label_action_resolution_scores(project, issue)
+      triggers = check_actionable_labels(project, issue)
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
+    end
+
+    def issue_implementation_triggers(_project, _client, _issue, _focused_run)
+      []
+    end
+
     def fetch_pr_data(client, project, issue)
       client.pull_request(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
@@ -1168,6 +1265,13 @@ module Activities
       return true if checks.empty?
 
       checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+    end
+
+    def checks_pending?(checks)
+      Array(checks).any? do |check|
+        %w[queued in_progress pending requested waiting].include?(check[:status]) ||
+          check[:conclusion].blank?
+      end
     end
 
     # Returns pending-style triggers when an enabled non-bot review method

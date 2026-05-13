@@ -85,6 +85,19 @@ RSpec.describe QualityMetric do
   end
 
   describe "#calculate_composite_score" do
+    it "uses focus-specific weights for focused create_pr runs" do
+      agent_run = build(:agent_run, goal: "create_pr", focus: "review_feedback")
+      metric = build(:quality_metric, agent_run: agent_run, scores: {
+        "focus_resolved" => 1.0,
+        "iterations" => 0.8,
+        "lint_clean" => 1.0
+      })
+
+      score = metric.calculate_composite_score
+
+      expect(score).to eq(0.95)
+    end
+
     it "calculates weighted average using goal-specific weights for create_pr" do
       agent_run = build(:agent_run, goal: "create_pr")
       metric = build(:quality_metric, agent_run: agent_run, scores: {
@@ -190,6 +203,22 @@ RSpec.describe QualityMetric do
 
       # pr_created=0.25, ci_passed=0.15 -> (0.25*1.0 + 0.15*0.0) / 0.40 = 0.625
       expect(metric.reload.composite_score).to eq(0.625)
+    end
+  end
+
+  describe ".weights_for" do
+    it "returns focus-specific weights for focused create_pr runs" do
+      expect(described_class.weights_for(focus: "ci_fix")).to eq(described_class::FOCUS_WEIGHTS[:ci_fix])
+    end
+
+    it "returns general create_pr weights for general focus" do
+      expect(described_class.weights_for(focus: "general")).to eq(described_class::SCORE_WEIGHTS)
+    end
+
+    it "returns goal-specific weights for non-create_pr goals" do
+      expect(described_class.weights_for(goal: "review", focus: "review_feedback")).to eq(
+        described_class::GOAL_WEIGHTS["review"]
+      )
     end
   end
 end

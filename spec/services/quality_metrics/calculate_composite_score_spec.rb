@@ -48,5 +48,18 @@ RSpec.describe QualityMetrics::CalculateCompositeScore do
       # 0.25/0.40 = 0.625
       expect(score).to eq(0.625)
     end
+
+    it "uses focus-specific weights for focused create_pr runs" do
+      agent_run = create(:agent_run, :completed, focus: "review_feedback")
+      create(:quality_metric, :automated, agent_run: agent_run, scores: {
+        "focus_resolved" => 1.0,
+        "iterations" => 0.8,
+        "lint_clean" => 1.0
+      })
+
+      score = described_class.call(agent_run: agent_run)
+
+      expect(score).to eq(0.95)
+    end
   end
 end

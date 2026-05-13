@@ -28,7 +28,7 @@ module QualityMetrics
         metric.scores.each { |key, value| combined[key] = value.to_f }
       end
 
-      weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
+      weights = QualityMetric.weights_for(goal: agent_run.goal, focus: agent_run.focus)
       QualityMetric.weighted_average(merged_scores, weights: weights)
     end
   end

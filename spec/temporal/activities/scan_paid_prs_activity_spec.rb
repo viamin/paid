@@ -479,6 +479,214 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when attributing focus resolution for a ci_fix run" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+      end
+      let!(:focused_run) do
+        create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "ci_fix",
+          iterations: 2)
+      end
+      let!(:metric) do
+        create(:quality_metric, :automated,
+          agent_run: focused_run,
+          scores: { "iterations" => 0.9 },
+          composite_score: 0.9)
+      end
+
+      it "records focus_resolved and recalculates the composite when CI is green" do
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores).to include(
+          "focus_resolved" => 1.0,
+          "ci_passed" => 1.0
+        )
+        expect(metric.composite_score).to eq(0.9833)
+      end
+
+      it "defers recording while CI is still pending" do
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: nil } ])
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores).not_to include("focus_resolved", "ci_passed")
+        expect(metric.composite_score).to eq(0.9)
+      end
+    end
+
+    context "when attributing focus resolution for a review_feedback run" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+      end
+      let!(:focused_run) do
+        create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "review_feedback")
+      end
+      let!(:metric) do
+        create(:quality_metric, :automated,
+          agent_run: focused_run,
+          scores: { "iterations" => 1.0, "lint_clean" => 1.0 },
+          composite_score: 1.0)
+      end
+
+      it "records 0.0 when unresolved threads remain" do
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Please fix this", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores["focus_resolved"]).to eq(0.0)
+      end
+    end
+
+    context "when attributing focus resolution for a merge_conflict run" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+      end
+      let!(:focused_run) do
+        create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "merge_conflict")
+      end
+      let!(:metric) do
+        create(:quality_metric, :automated,
+          agent_run: focused_run,
+          scores: { "iterations" => 1.0 },
+          composite_score: 1.0)
+      end
+
+      it "records 1.0 when the PR is mergeable again" do
+        stub_github_for_pr(mergeable: true)
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores["focus_resolved"]).to eq(1.0)
+      end
+    end
+
+    context "when attributing focus resolution for a conversation run" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+      end
+      let!(:focused_run) do
+        create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "conversation",
+          completed_at: 30.minutes.ago)
+      end
+      let!(:metric) do
+        create(:quality_metric, :automated,
+          agent_run: focused_run,
+          scores: { "iterations" => 1.0, "lint_clean" => 1.0 },
+          composite_score: 1.0)
+      end
+
+      it "records 1.0 when no actionable comments remain" do
+        old_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Already addressed in the last run",
+          created_at: 2.hours.ago
+        )
+        stub_github_for_pr(issue_comments: [ old_comment ])
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores["focus_resolved"]).to eq(1.0)
+      end
+    end
+
+    context "when attributing focus resolution for an issue_implementation run" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+      end
+      let!(:focused_run) do
+        create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "issue_implementation")
+      end
+      let!(:metric) do
+        create(:quality_metric, :automated,
+          agent_run: focused_run,
+          scores: { "iterations" => 1.0, "lint_clean" => 1.0 },
+          composite_score: 1.0)
+      end
+
+      it "records 0.0 when implementation-gap triggers remain" do
+        stub_github_for_pr
+        allow(activity).to receive(:issue_implementation_triggers)
+          .and_return([ { type: "issue_implementation_gap" } ])
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores["focus_resolved"]).to eq(0.0)
+      end
+    end
+
+    context "when attributing focus resolution for a label_action run" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+      end
+      let!(:focused_run) do
+        create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "label_action")
+      end
+      let!(:metric) do
+        create(:quality_metric, :automated,
+          agent_run: focused_run,
+          scores: { "iterations" => 1.0, "lint_clean" => 1.0 },
+          composite_score: 1.0)
+      end
+
+      before do
+        project.update!(pr_action_labels: [ "needs-docs" ])
+      end
+
+      it "records 1.0 when actionable labels are gone" do
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores["focus_resolved"]).to eq(1.0)
+      end
+    end
+
     context "when checks are still pending" do
       before do
         create(:issue, :pull_request,
