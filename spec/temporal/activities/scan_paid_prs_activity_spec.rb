@@ -521,6 +521,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(metric.composite_score).to eq(0.9)
       end
 
+      it "defers recording when PR data cannot be fetched" do
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "GitHub API unavailable")
+
+        activity.execute(project_id: project.id)
+
+        expect(metric.reload.scores).not_to include("focus_resolved", "ci_passed")
+        expect(metric.composite_score).to eq(0.9)
+      end
+
       it "does not overwrite an existing focus_resolved score on later scans" do
         metric.update!(
           scores: metric.scores.merge("focus_resolved" => 1.0, "ci_passed" => 1.0),

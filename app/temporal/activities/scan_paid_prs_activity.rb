@@ -1131,6 +1131,8 @@ module Activities
 
     def ci_focus_resolution_scores(project, client, issue)
       pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil?
+
       checks = fetch_check_runs(client, project, pr_data)
       return nil if checks.nil? || checks_pending?(checks)
 
