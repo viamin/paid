@@ -8,12 +8,15 @@ module ConfigurationBundles
 
     INVALID_EXPERIMENT_VALUE = Object.new
     FingerprintMismatchError = Class.new(StandardError)
+<<<<<<< HEAD
     OPTIONAL_EMPTY_DEFINITION_KEYS = %w[
       custom_prompt_sha256
       model_selection
       mcp_servers
       service_container_ids
     ].freeze
+=======
+>>>>>>> origin/main
 
     attr_reader :agent_run
 
@@ -27,7 +30,13 @@ module ConfigurationBundles
 
     def call
       selection = optimizer_selection
+<<<<<<< HEAD
       definition, fingerprint = selected_bundle_payload(selection)
+=======
+      definition = bundle_definition(selection&.variant_by_experiment_id)
+      fingerprint = bundle_fingerprint(definition)
+
+>>>>>>> origin/main
       log_selection_fingerprint_mismatch(selection:, fingerprint:) if selection
 
       bundle = find_or_create_bundle(fingerprint:, definition:)
@@ -43,6 +52,7 @@ module ConfigurationBundles
 
     def find_or_create_bundle(fingerprint:, definition:)
       existing_bundle = bundle_scope.find_by(fingerprint: fingerprint)
+<<<<<<< HEAD
       return existing_bundle if matching_bundle_definition?(existing_bundle, definition)
       raise_fingerprint_mismatch! if existing_bundle
 
@@ -58,6 +68,16 @@ module ConfigurationBundles
       return retried_bundle if matching_bundle_definition?(retried_bundle, definition)
 
       raise_fingerprint_mismatch!
+=======
+      return existing_bundle if existing_bundle&.definition == definition
+      raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}" if existing_bundle
+
+      account.with_lock do
+        bundle_scope.find_by(fingerprint: fingerprint) || create_runtime_bundle(fingerprint:, definition:)
+      end
+    rescue ActiveRecord::RecordNotUnique
+      bundle_scope.find_by!(fingerprint: fingerprint)
+>>>>>>> origin/main
     end
 
     def create_runtime_bundle(fingerprint:, definition:)
@@ -88,6 +108,7 @@ module ConfigurationBundles
       agent_run.project.account
     end
 
+<<<<<<< HEAD
     def matching_bundle_definition?(bundle, definition)
       bundle&.definition == definition
     end
@@ -96,6 +117,8 @@ module ConfigurationBundles
       raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}"
     end
 
+=======
+>>>>>>> origin/main
     def bundle_definition(selected_variants = nil)
       canonicalize(
         {
@@ -151,6 +174,7 @@ module ConfigurationBundles
       INVALID_EXPERIMENT_VALUE
     end
 
+<<<<<<< HEAD
     def selected_bundle_payload(selection)
       definition = selection&.definition
       fingerprint = selection&.fingerprint
@@ -406,6 +430,8 @@ module ConfigurationBundles
       end
     end
 
+=======
+>>>>>>> origin/main
     def optimizer_selection
       ConfigurationBundles::Optimizer.call(agent_run: agent_run)
     rescue StandardError => e
