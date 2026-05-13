@@ -1135,11 +1135,6 @@ module Activities
         merge_conflict_resolution_scores(project, client, issue)
       when "conversation"
         conversation_resolution_scores(project, client, issue, focused_run)
-      when "issue_implementation"
-        # Deferred until the scanner has a concrete implementation-gap detector.
-        # Falling back to general create_pr scoring is less misleading than
-        # inventing a placeholder focus_resolved score.
-        issue_implementation_resolution_scores(project, client, issue, focused_run)
       when "label_action"
         label_action_resolution_scores(project, issue)
       end
@@ -1175,21 +1170,15 @@ module Activities
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
-    def issue_implementation_resolution_scores(project, client, issue, focused_run)
-      triggers = issue_implementation_triggers(project, client, issue, focused_run)
-      return nil if triggers.nil?
-
-      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
-    end
-
     def label_action_resolution_scores(project, issue)
       triggers = check_actionable_labels(project, issue)
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
-    def issue_implementation_triggers(_project, _client, _issue, _focused_run)
-      nil
-    end
+    # issue_implementation focus uses the general create_pr scoring path until
+    # a concrete implementation-gap detector is built. See FOCUS_WEIGHTS in
+    # QualityMetric — issue_implementation is intentionally absent so it falls
+    # back to SCORE_WEIGHTS.
 
     def fetch_pr_data(client, project, issue)
       client.pull_request(project.full_name, issue.github_number)

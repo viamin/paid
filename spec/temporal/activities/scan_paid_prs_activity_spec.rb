@@ -650,7 +650,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when attributing focus resolution for an issue_implementation run" do
+    context "when an issue_implementation run exists" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -670,7 +670,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           composite_score: 1.0)
       end
 
-      it "defers focus attribution until implementation-gap detection exists" do
+      it "skips focus attribution — issue_implementation uses general scoring" do
         stub_github_for_pr
 
         activity.execute(project_id: project.id)

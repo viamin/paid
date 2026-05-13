@@ -215,8 +215,8 @@ RSpec.describe QualityMetric do
       expect(described_class.weights_for(focus: "general")).to eq(described_class::SCORE_WEIGHTS)
     end
 
-    it "returns focus-specific weights for issue_implementation focus" do
-      expect(described_class.weights_for(focus: "issue_implementation")).to eq(described_class::FOCUS_WEIGHTS["issue_implementation"])
+    it "falls back to general weights for issue_implementation focus (no detector yet)" do
+      expect(described_class.weights_for(focus: "issue_implementation")).to eq(described_class::SCORE_WEIGHTS)
     end
 
     it "returns goal-specific weights for non-create_pr goals" do

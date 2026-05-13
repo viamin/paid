@@ -12,15 +12,13 @@ RSpec.describe QualityMetrics::DashboardStats do
 
       expect(ci_passed[:weights_by_focus]).to eq(
         "ci_fix" => 0.50,
-        "merge_conflict" => 0.15,
-        "issue_implementation" => 0.15
+        "merge_conflict" => 0.15
       )
       expect(focus_resolved[:weights_by_focus]).to eq(
         "review_feedback" => 0.60,
         "merge_conflict" => 0.70,
         "conversation" => 0.60,
-        "label_action" => 0.60,
-        "issue_implementation" => 0.50
+        "label_action" => 0.60
       )
     end
   end
@@ -184,15 +182,13 @@ RSpec.describe QualityMetrics::DashboardStats do
       expect(pr_created[:goal_types]).to include("create_pr")
       expect(ci_passed[:weights_by_focus]).to eq(
         "ci_fix" => 0.50,
-        "merge_conflict" => 0.15,
-        "issue_implementation" => 0.15
+        "merge_conflict" => 0.15
       )
       expect(focus_resolved[:weights_by_focus]).to eq(
         "review_feedback" => 0.60,
         "merge_conflict" => 0.70,
         "conversation" => 0.60,
-        "label_action" => 0.60,
-        "issue_implementation" => 0.50
+        "label_action" => 0.60
       )
     end
 
