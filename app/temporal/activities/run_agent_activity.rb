@@ -2124,49 +2124,9 @@ module Activities
     # FALLBACK_* constants below are the safety net used when the seeded
     # row is missing or deactivated; they must stay in sync with the seeds.
     # spec/db/seeds_prompts_spec.rb asserts both pairs match.
-    ISSUE_GOAL_PROMPT_SLUG = "goal.create_github_issue"
+    ISSUE_GOAL_PROMPT_SLUG = Prompts::GoalCreateGithubIssue::PROMPT_SLUG
 
-    FALLBACK_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
-      {{base_prompt}}
-
-      ---
-      IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
-
-      You have access to the GitHub API via a proxy. Use curl to create the issue.
-
-      IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
-      markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
-      Instead, write the JSON payload to a temporary file and use --data-binary @file:
-
-      ```bash
-      tmpfile=$(mktemp)
-      cat > "$tmpfile" <<'ISSUE_JSON'
-      {
-        "title": "Issue title",
-        "body": "Issue description with `code` and apostrophes",
-        "labels": []
-      }
-      ISSUE_JSON
-      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues" \
-        -H "Content-Type: application/json" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN" \
-        --data-binary @"$tmpfile"
-      rm -f "$tmpfile"
-      ```
-
-      Available endpoints:
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues — list issues
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get issue
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues — create issue
-      - PATCH $GITHUB_API_URL/repos/{{repo}}/issues/{number} — update issue
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/comments — add comment
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
-
-      Do NOT push code or create a pull request. Only create the GitHub issue.
-
-      {{decomposition_instructions}}
-    AUGMENTED
+    FALLBACK_ISSUE_GOAL_PROMPT = Prompts::GoalCreateGithubIssue::TEMPLATE
 
     NO_DECOMPOSE_LABEL = "no-decompose"
 
@@ -2545,7 +2505,7 @@ module Activities
     def resolve_and_persist_goal_prompt(agent_run:, slug:, variables:, fallback_template:)
       prompt_version = Prompts::Resolve.call(slug: slug, project: agent_run.project)
 
-      if prompt_version
+      rendered = if prompt_version
         agent_run.update!(prompt_version: prompt_version) unless agent_run.prompt_version_id
         prompt_version.render(variables)
       else
@@ -2557,6 +2517,8 @@ module Activities
         )
         Prompts::Render.interpolate(fallback_template, variables)
       end
+
+      append_missing_issue_goal_runtime_instructions(rendered, slug, variables)
     end
 
     def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)
@@ -2571,14 +2533,15 @@ module Activities
       append_missing_issue_goal_runtime_instructions(rendered_variant, slug, vars)
     end
 
-    # Older running A/B variants may predate runtime-only additions such as
-    # decomposition instructions. Keep those runs aligned with the current
-    # issue-goal contract by appending required guidance when the stored
-    # variant template cannot render it itself.
+    # Older stored issue-goal prompts may predate runtime-only additions such as
+    # decomposition instructions or the non-interactive drafting guidance. Keep
+    # those runs aligned with the current issue-goal contract by appending the
+    # required guidance when the stored template cannot render it itself.
     def append_missing_issue_goal_runtime_instructions(rendered, slug, vars)
       return rendered unless slug == ISSUE_GOAL_PROMPT_SLUG
 
-      append_prompt_section(rendered, vars[:decomposition_instructions])
+      prompt = append_prompt_section(rendered, Prompts::GoalCreateGithubIssue::DRAFTING_GUIDANCE)
+      append_prompt_section(prompt, vars[:decomposition_instructions])
     end
 
     def append_prompt_section(rendered, addition)
