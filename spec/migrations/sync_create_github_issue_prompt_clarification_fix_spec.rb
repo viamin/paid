@@ -11,7 +11,7 @@ RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures 
       :prompt,
       :global,
       :planning,
-      slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG,
+      slug: described_class::PROMPT_SLUG,
       name: "Goal: Create GitHub Issue"
     )
     previous_version = prompt.create_version!(
@@ -25,8 +25,8 @@ RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures 
     }.to change { prompt.reload.prompt_versions.count }.by(1)
 
     expect(prompt.reload.current_version).not_to eq(previous_version)
-    expect(prompt.current_version.template).to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
-    expect(prompt.current_version.variables).to eq(Prompts::GoalCreateGithubIssue::VARIABLES)
+    expect(prompt.current_version.template).to eq(described_class::TEMPLATE)
+    expect(prompt.current_version.variables).to eq(described_class::VARIABLES)
     expect(prompt.current_version.created_by).to eq("migration")
     expect(prompt.current_version.change_notes).to eq(described_class::CHANGE_NOTES)
   end
@@ -36,12 +36,12 @@ RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures 
       :prompt,
       :global,
       :planning,
-      slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG,
+      slug: described_class::PROMPT_SLUG,
       name: "Goal: Create GitHub Issue"
     )
     prompt.create_version!(
-      template: Prompts::GoalCreateGithubIssue::TEMPLATE,
-      variables: Prompts::GoalCreateGithubIssue::VARIABLES,
+      template: described_class::TEMPLATE,
+      variables: described_class::VARIABLES,
       created_by: "seed"
     )
 
@@ -59,7 +59,7 @@ RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures 
       :prompt,
       :global,
       :planning,
-      slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG,
+      slug: described_class::PROMPT_SLUG,
       name: "Goal: Create GitHub Issue"
     )
 
@@ -69,8 +69,8 @@ RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures 
       migration.up
     }.to change { prompt.reload.prompt_versions.count }.by(1)
 
-    expect(prompt.reload.current_version.template).to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
-    expect(prompt.current_version.variables).to eq(Prompts::GoalCreateGithubIssue::VARIABLES)
+    expect(prompt.reload.current_version.template).to eq(described_class::TEMPLATE)
+    expect(prompt.current_version.variables).to eq(described_class::VARIABLES)
     expect(prompt.current_version.created_by).to eq("migration")
   end
 end

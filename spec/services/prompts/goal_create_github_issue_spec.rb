@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-require "rails_helper"
+require "spec_helper"
+require_relative "../../../app/services/prompts/goal_create_github_issue"
 
 RSpec.describe Prompts::GoalCreateGithubIssue, :no_db do
   it "declares the expected prompt slug and variables" do
