@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Authentication", type: :system do
+RSpec.describe "Authentication", system_driver: :rack_test, type: :system do
   let!(:account) { create(:account) }
   let!(:user) do
     create(:user, :owner, account: account, email: "owner@example.com", password: "password123")

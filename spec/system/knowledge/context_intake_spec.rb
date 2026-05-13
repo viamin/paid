@@ -1,13 +1,25 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "warden/test/helpers"
 
 RSpec.describe "Business context questionnaire", system_driver: :rack_test, type: :system do
+  include Warden::Test::Helpers
+
   let!(:account) { create(:account) }
   let!(:user) do
     create(:user, :owner, account: account, email: "owner@example.com", password: "password123")
   end
   let!(:project) { create(:project, account: account, created_by: user) }
+
+  before do
+    Warden.test_mode!
+    login_as(user, scope: :user)
+  end
+
+  after do
+    Warden.test_reset!
+  end
 
   it "completes the questionnaire, persists business context, and reuses it for later prompts" do
     answers = questionnaire_answers
@@ -19,11 +31,6 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
   end
 
   def sign_in_and_start_questionnaire
-    visit new_user_session_path
-    fill_in "Email", with: user.email
-    fill_in "Password", with: "password123"
-    click_button "Sign in"
-
     visit project_context_intake_path(project)
     click_button "Start Business Context Questionnaire"
 
@@ -57,24 +64,34 @@ RSpec.describe "Business context questionnaire", system_driver: :rack_test, type
   end
 
   def expect_persisted_business_context(answers)
-    artifacts = KnowledgeArtifact.for_project(project).active.by_type("business_context").includes(:knowledge_chunks)
+    artifacts, chunk_contents = TenantContext.with_system_access do
+      fresh_project = Project.find(project.id)
+      loaded_artifacts = KnowledgeArtifact.for_project(fresh_project).active.by_type("business_context").includes(:knowledge_chunks).to_a
+      loaded_chunk_contents = loaded_artifacts.flat_map do |artifact|
+        artifact.knowledge_chunks.select { |chunk| chunk.status == "active" }.map(&:content)
+      end
+
+      [ loaded_artifacts, loaded_chunk_contents ]
+    end
 
     expect(artifacts.count).to eq(Knowledge::ContextIntake::QuestionnaireSchema.sections.count)
     expect(artifacts.map(&:identifier)).to include("business_context:product_purpose", "business_context:terminology")
-    expect(artifacts.find_by(identifier: "business_context:product_purpose")&.content)
+    expect(artifacts.find { |artifact| artifact.identifier == "business_context:product_purpose" }&.content)
       .to include(answers.fetch("product_description"))
-    expect(artifacts.flat_map { |artifact| artifact.knowledge_chunks.active.pluck(:content) })
-      .to include(a_string_including(answers.fetch("domain_terms")))
+    expect(chunk_contents).to include(a_string_including(answers.fetch("domain_terms")))
   end
 
   def expect_later_prompt_to_include_business_context(answers)
-    issue = create(:issue,
-      project: project,
-      title: "Clarify enterprise billing workflows",
-      body: "Need to update billing behavior for enterprise customers.",
-      github_creator_login: project.allowed_github_usernames.first)
+    prompt = TenantContext.with(account) do
+      fresh_project = Project.find(project.id)
+      created_issue = create(:issue,
+        project: fresh_project,
+        title: "Clarify enterprise billing workflows",
+        body: "Need to update billing behavior for enterprise customers.",
+        github_creator_login: fresh_project.allowed_github_usernames.first)
 
-    prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
+      Prompts::BuildForIssue.call(issue: created_issue, project: fresh_project)
+    end
 
     expect(prompt).to include("Business Context (maintainer-provided)")
     expect(prompt).to include(answers.fetch("product_description"))
