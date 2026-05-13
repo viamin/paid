@@ -148,8 +148,8 @@ module Screenshots
       return materialize(SHARED_TARGET_KEYS) if @changed_files.empty?
 
       mapping = @changed_files.each_with_object({}) { |path, h| h[path] = targets_for(path) }
-      target_keys = mapping.values.compact.flatten.uniq
-      unresolved_files = mapping.select { |_, targets| targets == [] }.keys
+      target_keys = mapping.values.flatten.uniq
+      unresolved_files = mapping.select { |_, targets| targets.empty? }.keys
 
       if unresolved_files.any?
         raise UnmappedUiChangeError,
