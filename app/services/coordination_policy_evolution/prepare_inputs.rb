@@ -366,6 +366,9 @@ module CoordinationPolicyEvolution
     end
 
     def effective_configuration(rules, parameters)
+      rules = rules.to_h.deep_stringify_keys
+      parameters = parameters.to_h.deep_stringify_keys
+
       default_configuration.deep_dup.tap do |configuration|
         case policy_type
         when "decomposition"

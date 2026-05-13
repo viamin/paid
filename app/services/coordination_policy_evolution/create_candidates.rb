@@ -94,7 +94,7 @@ module CoordinationPolicyEvolution
     end
 
     def candidate_rules(mutation)
-      configuration = mutation.configuration.deep_stringify_keys
+      configuration = policy_specific_configuration(mutation)
 
       case policy_type
       when "decomposition"
@@ -123,7 +123,7 @@ module CoordinationPolicyEvolution
     end
 
     def candidate_parameters(mutation)
-      configuration = mutation.configuration.deep_stringify_keys
+      configuration = policy_specific_configuration(mutation)
 
       case policy_type
       when "decomposition"
@@ -150,6 +150,10 @@ module CoordinationPolicyEvolution
       else
         {}
       end
+    end
+
+    def policy_specific_configuration(mutation)
+      base_configuration.deep_merge(mutation.configuration.to_h.deep_stringify_keys)
     end
 
     def candidate_metadata(mutation)
@@ -217,6 +221,10 @@ module CoordinationPolicyEvolution
           config[key] = configuration[key] if configuration.key?(key)
         end
       end.compact
+    end
+
+    def base_configuration
+      @base_configuration ||= policy_snapshot.fetch(:configuration, {}).to_h.deep_stringify_keys
     end
   end
 end
