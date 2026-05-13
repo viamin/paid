@@ -40,7 +40,7 @@
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
               <% runs.each do |run| %>
-                <tr>
+                <tr id="<%= dom_id(run) %>">
                   <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
                     <%= agent_run_status_badge(run.status) %>
                   </td>
