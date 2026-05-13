@@ -291,49 +291,67 @@ RSpec.describe ApplicationHelper do
   end
 
   describe "#agent_run_goal_text" do
-    def goal_text_run(issue: nil, custom_prompt: nil, review_goal: false, source_pull_request_number: nil)
-      Struct.new(:issue, :custom_prompt, :source_pull_request_number, keyword_init: true) do
-        define_method(:review_goal?) { review_goal }
-      end.new(
-        issue: issue,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pull_request_number
-      )
+    def goal_text_run(goal:)
+      Struct.new(:goal, keyword_init: true).new(goal: goal)
     end
 
-    it "prefers the issue title over custom prompt text" do
-      issue = Struct.new(:title, keyword_init: true).new(title: "Fix flaky webhook retry handling")
-      run = goal_text_run(issue: issue, custom_prompt: "Rendered task instructions")
-
-      expect(helper.agent_run_goal_text(run)).to eq(issue.title)
+    it "returns 'PR Creation' for create_pr goal" do
+      run = goal_text_run(goal: "create_pr")
+      expect(helper.agent_run_goal_text(run)).to eq("PR Creation")
     end
 
-    it "prefers the review pull request label over custom prompt text" do
-      run = goal_text_run(custom_prompt: "Generated review instructions", review_goal: true,
-        source_pull_request_number: 87)
-
-      expect(helper.agent_run_goal_text(run)).to eq("Review PR #87")
+    it "returns 'Issue Creation' for create_issue goal" do
+      run = goal_text_run(goal: "create_issue")
+      expect(helper.agent_run_goal_text(run)).to eq("Issue Creation")
     end
 
-    it "shows PR label for non-review runs with a source pull request number" do
-      run = goal_text_run(custom_prompt: "Generated instructions", review_goal: false,
-        source_pull_request_number: 42)
-
-      expect(helper.agent_run_goal_text(run)).to eq("PR #42")
+    it "returns 'Code Review' for review goal" do
+      run = goal_text_run(goal: "review")
+      expect(helper.agent_run_goal_text(run)).to eq("Code Review")
     end
 
-    it "falls back to redacted custom prompt text" do
-      token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
-      run = goal_text_run(custom_prompt: "Investigate GITHUB_TOKEN=#{token}")
-
-      expect(helper.agent_run_goal_text(run)).to include("[REDACTED:github_token]")
-      expect(helper.agent_run_goal_text(run)).not_to include(token)
+    it "returns 'Enhance Issue' for enhance_issue goal" do
+      run = goal_text_run(goal: "enhance_issue")
+      expect(helper.agent_run_goal_text(run)).to eq("Enhance Issue")
     end
 
-    it "returns nil when no goal text is available" do
-      run = goal_text_run
+    it "returns 'Analyze Issue' for analyze_issue goal" do
+      run = goal_text_run(goal: "analyze_issue")
+      expect(helper.agent_run_goal_text(run)).to eq("Analyze Issue")
+    end
 
-      expect(helper.agent_run_goal_text(run)).to be_nil
+    it "titleizes unknown goal values" do
+      run = goal_text_run(goal: "some_new_goal")
+      expect(helper.agent_run_goal_text(run)).to eq("Some New Goal")
+    end
+
+    it "covers every goal in AgentRun::GOALS" do
+      expect(ApplicationHelper::AGENT_RUN_GOAL_LABELS.keys).to match_array(AgentRun::GOALS)
+    end
+  end
+
+  describe "#agent_run_goal_display" do
+    def goal_display_run(id:, goal:)
+      Struct.new(:id, :goal, keyword_init: true).new(id: id, goal: goal)
+    end
+
+    it "renders the goal label with a mobile tooltip wrapper" do
+      run = goal_display_run(id: 42, goal: "create_pr")
+      result = helper.agent_run_goal_display(run)
+
+      expect(result).to include("PR Creation")
+      expect(result).to include('title="PR Creation"')
+      expect(result).to include('data-controller="tooltip"')
+      expect(result).to include('role="tooltip"')
+      expect(result).to include('aria-label="Show goal details"')
+      expect(result).to include('aria-controls="goal_42"')
+    end
+
+    it "titleizes unknown goal values in the rendered label" do
+      run = goal_display_run(id: 7, goal: "some_new_goal")
+      result = helper.agent_run_goal_display(run)
+
+      expect(result).to include("Some New Goal")
     end
   end
 end
