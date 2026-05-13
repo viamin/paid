@@ -49,6 +49,12 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
         expect(questions).to eq([ "What should happen next?" ])
       end
+
+      it "only loads GitHub comments once to check for newer answers" do
+        described_class.call(project: project, issue: issue)
+
+        expect(github_client).to have_received(:issue_comments).once
+      end
     end
 
     context "when clarifying questions only exist in GitHub comments" do

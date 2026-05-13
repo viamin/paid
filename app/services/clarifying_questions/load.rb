@@ -15,10 +15,20 @@ module ClarifyingQuestions
 
     def call
       body_questions = Parse.call(comment_body: issue.body)
+
+      if body_questions.any?
+        return body_questions unless github_available?
+
+        enhancement_comment = latest_enhancement_comment
+        return [] if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+
+        return body_questions
+      end
+
+      return [] unless github_available?
+
       enhancement_comment = latest_enhancement_comment
-      return body_questions if body_questions.any? && !github_available?
       return [] if answered_after_latest_questions?(body_questions:, enhancement_comment:)
-      return body_questions if body_questions.any?
       return [] unless enhancement_comment
 
       Parse.call(comment_body: comment_body(enhancement_comment))
@@ -65,7 +75,7 @@ module ClarifyingQuestions
     end
 
     def issue_comments
-      project.github_token.client.issue_comments(project.full_name, issue.github_number)
+      @issue_comments ||= project.github_token.client.issue_comments(project.full_name, issue.github_number)
     end
   end
 end

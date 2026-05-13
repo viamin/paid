@@ -57,8 +57,13 @@ module Projects
     end
 
     def build_questions_and_answers(questions:)
-      answers = params[:answers] || []
+      answers = Array(params[:answers])
+      submitted_questions = Array(params[:questions]).map { |question| question.to_s.strip }
+
       raise ArgumentError, "No clarifying questions found for this issue." if questions.empty?
+      unless submitted_questions == questions
+        raise ArgumentError, "Clarifying questions changed. Please reload and try again."
+      end
 
       questions.each_with_index.map do |question, i|
         { question: question, answer: answers[i].to_s.strip }
