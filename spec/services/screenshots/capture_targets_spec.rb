@@ -88,6 +88,17 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
     end
 
+    it "does not broaden screenshot capture when the controller registry changes alongside a mapped Stimulus controller" do
+      targets = described_class.call(
+        changed_files: [
+          "app/javascript/controllers/index.js",
+          "app/javascript/controllers/clarifying_questions_controller.js"
+        ]
+      )
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
     it "maps projects/agent_runs_controller to include the new action target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/agent_runs_controller.rb" ])
 

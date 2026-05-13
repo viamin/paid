@@ -148,8 +148,8 @@ module Screenshots
       return materialize(SHARED_TARGET_KEYS) if @changed_files.empty?
 
       mapping = @changed_files.each_with_object({}) { |path, h| h[path] = targets_for(path) }
-      target_keys = mapping.values.flatten.uniq
-      unresolved_files = mapping.select { |_, targets| targets.empty? }.keys
+      target_keys = mapping.values.compact.flatten.uniq
+      unresolved_files = mapping.select { |_, targets| targets == [] }.keys
 
       if unresolved_files.any?
         raise UnmappedUiChangeError,
@@ -226,6 +226,8 @@ module Screenshots
     }.freeze
 
     def targets_for(path)
+      return targets_for_javascript_registry if path == "app/javascript/controllers/index.js"
+
       if path.start_with?("app/javascript/controllers/")
         explicit_targets = targets_for_javascript_controller(path.delete_prefix("app/javascript/controllers/"))
         return explicit_targets if explicit_targets.any?
@@ -265,6 +267,17 @@ module Screenshots
       else
         []
       end
+    end
+
+    def targets_for_javascript_registry
+      explicit_targets = @changed_files
+        .grep(%r{\Aapp/javascript/controllers/(?!index\.js\z)})
+        .flat_map { |file| targets_for_javascript_controller(file.delete_prefix("app/javascript/controllers/")) }
+        .uniq
+
+      return nil if explicit_targets.any?
+
+      SHARED_TARGET_KEYS
     end
 
     def targets_for_helper(path)
