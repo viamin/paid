@@ -53,6 +53,13 @@ module Activities
       "review_goal_retry" => "review_feedback",
       "review_threads" => "review_feedback"
     }.freeze
+    FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES = %w[
+      ci_fix
+      review_feedback
+      merge_conflict
+      conversation
+      label_action
+    ].freeze
     FOCUS_PRIORITY = %w[
       merge_conflict
       ci_fix
@@ -1084,8 +1091,14 @@ module Activities
     end
 
     def focus_resolution_pending?(focused_run)
+      return false unless focus_resolution_attribution_enabled?(focused_run.focus)
+
       metric = focused_run.quality_metrics.find { |quality_metric| quality_metric.metric_type == "automated" }
       metric.blank? || !metric.scores.to_h.key?("focus_resolved")
+    end
+
+    def focus_resolution_attribution_enabled?(focus)
+      FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES.include?(focus.to_s)
     end
 
     def record_focus_resolution(project, client, issue)
@@ -1123,6 +1136,9 @@ module Activities
       when "conversation"
         conversation_resolution_scores(project, client, issue, focused_run)
       when "issue_implementation"
+        # Deferred until the scanner has a concrete implementation-gap detector.
+        # Falling back to general create_pr scoring is less misleading than
+        # inventing a placeholder focus_resolved score.
         issue_implementation_resolution_scores(project, client, issue, focused_run)
       when "label_action"
         label_action_resolution_scores(project, issue)

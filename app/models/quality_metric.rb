@@ -42,12 +42,6 @@ class QualityMetric < ApplicationRecord
       "lint_clean" => 0.10,
       "tests_pass" => 0.10
     },
-    issue_implementation: {
-      "focus_resolved" => 0.50,
-      "ci_passed" => 0.20,
-      "lint_clean" => 0.15,
-      "iterations" => 0.15
-    },
     label_action: {
       "focus_resolved" => 0.60,
       "iterations" => 0.20,

@@ -102,7 +102,7 @@ module QualityMetrics
       case agent_run.focus
       when "ci_fix"
         build_ci_fix_scores
-      when "review_feedback", "conversation", "issue_implementation", "label_action"
+      when "review_feedback", "conversation", "label_action"
         build_focus_resolution_scores
       when "merge_conflict"
         build_merge_conflict_scores

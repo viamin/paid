@@ -77,11 +77,17 @@ module QualityMetrics
           weights_by_goal[goal] = weights[key] if weights.key?(key)
         end
 
+        weights_by_focus = {}
+        QualityMetric::FOCUS_WEIGHTS.each do |focus, weights|
+          weights_by_focus[focus.to_s] = weights[key] if weights.key?(key)
+        end
+
         {
           key: key,
           name: display[:name],
           description: display[:description],
           weights_by_goal: weights_by_goal,
+          weights_by_focus: weights_by_focus,
           goal_types: display[:collected_for],
           signal_type: display[:signal_type]
         }

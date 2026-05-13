@@ -670,17 +670,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           composite_score: 1.0)
       end
 
-      it "records 0.0 when implementation-gap triggers remain" do
-        stub_github_for_pr
-        allow(activity).to receive(:issue_implementation_triggers)
-          .and_return([ { type: "issue_implementation_gap" } ])
-
-        activity.execute(project_id: project.id)
-
-        expect(metric.reload.scores["focus_resolved"]).to eq(0.0)
-      end
-
-      it "defers recording when implementation-gap detection is unavailable" do
+      it "defers focus attribution until implementation-gap detection exists" do
         stub_github_for_pr
 
         activity.execute(project_id: project.id)
