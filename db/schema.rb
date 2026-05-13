@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_13_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -191,6 +191,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
     t.text "error_message"
     t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
+    t.string "focus", limit: 50, default: "general", null: false, comment: "Focused run intent derived from the highest-priority PR trigger or assigned workflow context."
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
@@ -235,6 +236,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
     t.string "worktree_path", limit: 500
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["focus"], name: "index_agent_runs_on_focus"
     t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"

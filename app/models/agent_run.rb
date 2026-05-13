@@ -12,6 +12,7 @@ class AgentRun < ApplicationRecord
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode pi api].freeze
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -174,6 +175,7 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validates :focus, presence: true, inclusion: { in: FOCUSES }
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
@@ -1087,6 +1089,10 @@ class AgentRun < ApplicationRecord
 
   def analyze_issue_goal?
     goal == "analyze_issue"
+  end
+
+  def focused?
+    focus != "general"
   end
 
   # Whether this run has a cloned git repository in its container.

@@ -27,6 +27,8 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_presence_of(:goal) }
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
+    it { is_expected.to validate_presence_of(:focus) }
+    it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
     it { is_expected.to validate_presence_of(:trigger_type) }
     it { is_expected.to validate_inclusion_of(:trigger_type).in_array(described_class::TRIGGER_TYPES) }
     it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
@@ -150,6 +152,16 @@ RSpec.describe AgentRun do
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:provider]).to include("must belong to the same user as the project owner")
       end
+    end
+  end
+
+  describe "#focused?" do
+    it "is false for general runs" do
+      expect(build(:agent_run, focus: "general")).not_to be_focused
+    end
+
+    it "is true for non-general runs" do
+      expect(build(:agent_run, focus: "ci_fix")).to be_focused
     end
   end
 

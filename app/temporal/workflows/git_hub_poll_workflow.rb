@@ -781,6 +781,7 @@ module Workflows
         legacy_input = { project_id: project_id, issue_id: issue_id,
           source_pull_request_number: pr_number }
         legacy_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
+        legacy_input[:focus] = pr_data[:focus] if pr_data[:focus].present?
         run_activity(Activities::QueueAgentRunActivity, legacy_input, timeout: 30)
         run_activity(Activities::RecordDraftReviewActivity,
           {
@@ -794,6 +795,7 @@ module Workflows
         project_id: project_id,
         issue_id: issue_id,
         source_pull_request_number: pr_number,
+        focus: pr_data[:focus] || "general",
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
@@ -814,7 +816,8 @@ module Workflows
       }
 
       followup_queue_input = { project_id: project_id, issue_id: issue_id,
-        source_pull_request_number: pr_number }
+        source_pull_request_number: pr_number,
+        focus: pr_data[:focus] || "general" }
       followup_queue_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
       run_activity(Activities::QueueAgentRunActivity, followup_queue_input, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)

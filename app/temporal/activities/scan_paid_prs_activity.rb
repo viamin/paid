@@ -40,6 +40,27 @@ module Activities
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
     PAID_ESCALATED_LABEL = "paid-escalated"
+    TRIGGER_TO_FOCUS = {
+      "actionable_labels" => "label_action",
+      "changes_requested" => "review_feedback",
+      "ci_failure" => "ci_fix",
+      "conversation_comments" => "conversation",
+      "merge_conflicts" => "merge_conflict",
+      "paid_agent_review_pending" => "review_feedback",
+      "review_bot_comments" => "review_feedback",
+      "review_bot_review_pending" => "review_feedback",
+      "review_bot_threads" => "review_feedback",
+      "review_goal_retry" => "review_feedback",
+      "review_threads" => "review_feedback"
+    }.freeze
+    FOCUS_PRIORITY = %w[
+      merge_conflict
+      ci_fix
+      review_feedback
+      conversation
+      issue_implementation
+      label_action
+    ].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -297,6 +318,7 @@ module Activities
         result
       else
         {
+          focus: focus_for(issue.project, [ retry_trigger ]),
           issue_id: issue.id,
           pr_number: issue.github_number,
           triggers: [ retry_trigger ],
@@ -567,6 +589,7 @@ module Activities
       log_triggers(project, issue, triggers)
 
       {
+        focus: focus_for(issue.project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -592,6 +615,7 @@ module Activities
       log_triggers(project, issue, triggers)
 
       {
+        focus: focus_for(project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -634,6 +658,7 @@ module Activities
       log_triggers(project, issue, triggers)
 
       {
+        focus: focus_for(project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -650,6 +675,7 @@ module Activities
       log_triggers(issue.project, issue, triggers)
 
       {
+        focus: focus_for(project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -662,6 +688,7 @@ module Activities
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
+        focus: focus_for(issue.project, [ { type: "escalate_to_owner", details: reason } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "escalate_to_owner", details: reason } ],
@@ -675,6 +702,7 @@ module Activities
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
       {
+        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ],
@@ -688,6 +716,7 @@ module Activities
       log_triggers(issue.project, issue, [ { type: "owner_approved" } ])
 
       {
+        focus: focus_for(issue.project, [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ],
@@ -697,6 +726,7 @@ module Activities
 
     def draft_trigger_payload(issue, triggers)
       {
+        focus: focus_for(issue.project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -757,6 +787,20 @@ module Activities
       end
 
       triggers
+    end
+
+    def resolve_focus(triggers)
+      candidate_focuses = Array(triggers)
+        .filter_map { |trigger| TRIGGER_TO_FOCUS[trigger[:type].to_s] }
+        .uniq
+
+      FOCUS_PRIORITY.find { |focus| candidate_focuses.include?(focus) } || "general"
+    end
+
+    def focus_for(project, triggers)
+      return "general" unless FeatureFlags.focused_agent_runs?(project:)
+
+      resolve_focus(triggers)
     end
 
     # Detect when a user converts a ready/escalated PR back to draft on GitHub.
