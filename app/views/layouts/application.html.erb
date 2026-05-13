@@ -17,7 +17,7 @@
         display: block;
       }
     </style>
-    <script>
+    <script nonce="<%= content_security_policy_nonce %>">
       (function() {
         var root = document.documentElement;
         var serverPref = root.dataset.themePreferenceValue || "system";
