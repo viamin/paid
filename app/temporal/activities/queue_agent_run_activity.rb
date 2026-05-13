@@ -12,6 +12,7 @@ module Activities
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
       goal = input[:goal]
+      focus = input[:focus] || "general"
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
 
@@ -50,6 +51,7 @@ module Activities
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
             goal: goal,
+            focus: focus,
             count_toward_draft_review_round: count_toward_draft_review_round,
             expected_draft_review_count: expected_draft_review_count,
             status: "queued"

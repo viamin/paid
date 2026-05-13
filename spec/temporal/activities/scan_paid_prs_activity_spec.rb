@@ -187,7 +187,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:automation_results]).to contain_exactly(
           {
             decisions: [
-              { type: "queue_create_pr_run", issue_id: pr_issue.id, source_pull_request_number: 42 },
+              { type: "queue_create_pr_run", issue_id: pr_issue.id, source_pull_request_number: 42, focus: "general" },
               { type: "record_pr_followup", issue_id: pr_issue.id, labels_to_remove: [], expected_followup_count: 0 }
             ]
           }
@@ -426,6 +426,56 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].first[:labels_to_remove]).to eq([])
+      end
+
+      it "defaults focus to general when focused agent runs are disabled" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].first[:focus]).to eq("general")
+      end
+    end
+
+    context "when focused agent runs are enabled" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "needs-docs" ],
+          paid_state: "completed")
+      end
+
+      before do
+        FeatureFlags.enable!(:focused_agent_runs, project:)
+        project.update!(pr_action_labels: [ "needs-docs" ], auto_fix_merge_conflicts: true)
+        pr_issue
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(
+            draft: false,
+            number: 42,
+            head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: false)),
+            mergeable: false,
+            user: OpenStruct.new(login: "someone-else")
+          ),
+          check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
+          review_threads: [],
+          pull_request_reviews: [],
+          issue_comments: [],
+          recent_issue_comments: []
+        )
+      end
+
+      it "resolves focus from the highest-priority trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].first[:focus]).to eq("merge_conflict")
+      end
+
+      it "resolves review feedback focus for review triggers" do
+        expect(activity.send(:resolve_focus, [ { type: "review_threads" } ])).to eq("review_feedback")
+      end
+
+      it "resolves general focus when no trigger maps to a specific focus" do
+        expect(activity.send(:resolve_focus, [ { type: "owner_approved" } ])).to eq("general")
       end
     end
 

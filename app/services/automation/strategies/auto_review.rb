@@ -254,6 +254,7 @@ module Automation
             Automation::Decision.queue_create_pr_run(
               issue_id: signals.issue_id,
               source_pull_request_number: signals.pr_number,
+              focus: signals.focus,
               count_toward_draft_review_round: true,
               expected_draft_review_count: signals.draft_review_count
             )
@@ -262,7 +263,8 @@ module Automation
           [
             Automation::Decision.queue_create_pr_run(
               issue_id: signals.issue_id,
-              source_pull_request_number: signals.pr_number
+              source_pull_request_number: signals.pr_number,
+              focus: signals.focus
             ),
             Automation::Decision.record_pr_followup(
               issue_id: signals.issue_id,
@@ -290,6 +292,7 @@ module Automation
           pr_number: signals.pr_number,
           phase: signals.phase,
           triggers: filtered.freeze,
+          focus: signals.focus,
           counters: signals.counters,
           owner_reviewer_login: signals.owner_reviewer_login,
           labels_to_remove: signals.labels_to_remove

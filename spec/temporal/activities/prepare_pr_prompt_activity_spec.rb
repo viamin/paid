@@ -93,6 +93,12 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
     end
 
+    it "accepts focus input without changing prompt generation" do
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true, focus: "ci_fix")
+
+      expect(agent_run.reload.custom_prompt).to include("Fix the bug")
+    end
+
     it "passes rebase_succeeded through to the prompt builder" do
       activity.execute(agent_run_id: agent_run.id, rebase_succeeded: false)
 
