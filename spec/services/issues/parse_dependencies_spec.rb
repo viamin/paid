@@ -160,6 +160,63 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(dep)
     end
 
+    context "when inline text contains non-dependency phrases" do
+      it "ignores 'Not blocked by #N' outside a Dependencies section" do
+        dep = create(:issue, project: project, github_number: 9101)
+        _not_blocked = create(:issue, project: project, github_number: 9102)
+        issue = create(:issue, project: project, body: "Depends on #9101. Not blocked by #9102.")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "ignores 'Independent of #N' outside a Dependencies section" do
+        dep = create(:issue, project: project, github_number: 9101)
+        _independent = create(:issue, project: project, github_number: 9102)
+        issue = create(:issue, project: project, body: "Depends on #9101. Independent of #9102.")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+    end
+
+    context "when a Dependencies section contains non-dependency phrases" do
+      it "ignores 'Independent of #N' in a Dependencies section" do
+        dep = create(:issue, project: project, github_number: 9101)
+        _independent = create(:issue, project: project, github_number: 9102)
+        body = "## Dependencies\n- Depends on #9101\n- Independent of #9102\n"
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "ignores 'Not blocked by #N' in a Dependencies section" do
+        dep = create(:issue, project: project, github_number: 9101)
+        _not_blocked = create(:issue, project: project, github_number: 9102)
+        body = "## Dependencies\n- #9101\n- Not blocked by #9102\n"
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "ignores 'No dependency on #N' in a Dependencies section" do
+        dep = create(:issue, project: project, github_number: 9101)
+        _no_dep = create(:issue, project: project, github_number: 9102)
+        body = "## Dependencies\n- #9101\n- No dependency on #9102\n"
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+    end
+
     it "parses checklist items with issue references" do
       dep = create(:issue, project: project, github_number: 9015)
       body = "## Dependencies\n- [ ] #9015 complete the setup\n"

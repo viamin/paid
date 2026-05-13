@@ -136,23 +136,26 @@ class StaleRunDetectorJob < ApplicationJob
       .where.not(issue_id: nil)
       .select(:issue_id)
 
-    orphans = Issue.where(paid_state: "in_progress", is_pull_request: false)
+    count = 0
+
+    Issue.where(paid_state: "in_progress")
       .where.not(id: active_issue_ids)
       .where("updated_at < ?", ORPHANED_IN_PROGRESS_AGE.ago)
-
-    count = 0
-    orphans.find_each do |issue|
+      .find_each do |issue|
       issue.with_lock do
         issue.reload
         next unless recoverable_orphaned_issue?(issue)
 
-        issue.update!(paid_state: "new")
+        target_state = issue.is_pull_request? ? "completed" : "new"
+        issue.update!(paid_state: target_state)
         count += 1
         Rails.logger.info(
           message: "stale_run_detector.recovered_orphaned_in_progress",
           issue_id: issue.id,
           issue_number: issue.github_number,
-          project_id: issue.project_id
+          project_id: issue.project_id,
+          is_pull_request: issue.is_pull_request?,
+          new_paid_state: target_state
         )
       end
     rescue => e

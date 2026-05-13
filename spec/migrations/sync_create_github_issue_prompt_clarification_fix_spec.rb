@@ -6,6 +6,10 @@ require Rails.root.join("db/migrate/20260512153000_sync_create_github_issue_prom
 RSpec.describe SyncCreateGithubIssuePromptClarificationFix, :aggregate_failures do
   let(:migration) { described_class.new }
 
+  before do
+    Prompt.unscoped.where(slug: described_class::PROMPT_SLUG).destroy_all
+  end
+
   it "promotes the updated template for the persisted global prompt" do
     prompt = create(
       :prompt,
