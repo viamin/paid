@@ -54,10 +54,23 @@ module ClarifyingQuestions
     def answered_after_latest_questions?(body_questions:, enhancement_comment:)
       latest_answer_comment = latest_answer_comment()
       return false unless latest_answer_comment
-      return true if body_questions.any? && enhancement_comment.blank?
-      return false if enhancement_comment.blank?
 
-      comment_timestamp(latest_answer_comment) > comment_timestamp(enhancement_comment)
+      latest_answer_timestamp = comment_timestamp(latest_answer_comment)
+      latest_question_timestamp = latest_question_timestamp(
+        body_questions: body_questions,
+        enhancement_comment: enhancement_comment
+      )
+      return false unless latest_question_timestamp
+
+      latest_answer_timestamp > latest_question_timestamp
+    end
+
+    def latest_question_timestamp(body_questions:, enhancement_comment:)
+      timestamps = []
+      timestamps << issue_timestamp if body_questions.any?
+      timestamps << comment_timestamp(enhancement_comment) if enhancement_comment.present?
+
+      timestamps.compact.max
     end
 
     def latest_answer_comment
@@ -72,6 +85,10 @@ module ClarifyingQuestions
 
     def comment_timestamp(comment)
       comment.created_at&.to_time || Time.at(0)
+    end
+
+    def issue_timestamp
+      issue.github_updated_at&.to_time || issue.updated_at&.to_time || Time.at(0)
     end
 
     def issue_comments

@@ -15,7 +15,8 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
   let(:issue) do
     double(
       body: issue_body,
-      github_number: 1964
+      github_number: 1964,
+      github_updated_at: 2.minutes.ago
     )
   end
   let(:comment_body) do
@@ -120,6 +121,40 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when the issue body was updated after answers were posted" do
+      let(:issue_body) { comment_body }
+      let(:issue) do
+        double(
+          body: issue_body,
+          github_number: 1964,
+          github_updated_at: 30.seconds.ago
+        )
+      end
+
+      before do
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+      end
+
+      it "returns the refreshed body questions" do
+        expect(described_class.call(project: project, issue: issue)).to eq([
+          "What is the expected behavior?",
+          "Should this be behind a flag?"
+        ])
       end
     end
 
