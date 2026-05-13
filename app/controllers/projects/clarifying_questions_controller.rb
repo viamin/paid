@@ -29,9 +29,9 @@ module Projects
 
       redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
     rescue ArgumentError => e
-      redirect_to project_issue_clarifying_question_path(@project, @issue), alert: e.message
+      redirect_to project_issue_clarifying_questions_path(@project, @issue), alert: e.message
     rescue GithubClient::Error => e
-      redirect_to project_issue_clarifying_question_path(@project, @issue), alert: "Failed to post answers: #{e.message}"
+      redirect_to project_issue_clarifying_questions_path(@project, @issue), alert: "Failed to post answers: #{e.message}"
     end
 
     private
