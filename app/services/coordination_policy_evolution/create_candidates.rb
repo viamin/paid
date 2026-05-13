@@ -89,21 +89,20 @@ module CoordinationPolicyEvolution
 
       case policy_type
       when "decomposition"
-        decomposition = configuration.fetch("decomposition", {})
+        decomposition = extract_decomposition_config(configuration)
 
         {
           "enabled" => decomposition["enabled"],
           "min_components_to_decompose" => decomposition["min_components_to_decompose"]
         }.compact
       when "recovery"
-        recovery = configuration.fetch("recovery", {})
-        actions = recovery["actions"] || recovery["failure_actions"]
+        recovery = extract_recovery_config(configuration)
 
         {
-          "failure_actions" => actions
+          "failure_actions" => recovery["actions"]
         }.compact
       when "escalation"
-        escalation = configuration.fetch("escalation", {})
+        escalation = extract_escalation_config(configuration)
 
         {
           "explicit_triggers" => escalation["explicit_triggers"],
@@ -119,20 +118,20 @@ module CoordinationPolicyEvolution
 
       case policy_type
       when "decomposition"
-        decomposition = configuration.fetch("decomposition", {})
+        decomposition = extract_decomposition_config(configuration)
 
         {
           "max_tasks" => decomposition["max_tasks"],
           "layer_order" => decomposition["layer_order"]
         }.compact
       when "recovery"
-        recovery = configuration.fetch("recovery", {})
+        recovery = extract_recovery_config(configuration)
 
         {
           "default_action" => recovery["default_action"]
         }.compact
       when "escalation"
-        escalation = configuration.fetch("escalation", {})
+        escalation = extract_escalation_config(configuration)
 
         {
           "human_value_threshold" => escalation["human_value_threshold"],
@@ -159,6 +158,50 @@ module CoordinationPolicyEvolution
           "approval" => APPROVAL_STATE
         }
       }
+    end
+
+    def extract_decomposition_config(configuration)
+      decomposition = configuration.fetch("decomposition", {})
+
+      {}.tap do |config|
+        config["enabled"] = decomposition["enabled"] if decomposition.key?("enabled")
+        config["min_components_to_decompose"] = decomposition["min_components_to_decompose"] if decomposition.key?("min_components_to_decompose")
+        config["max_tasks"] = decomposition["max_tasks"] if decomposition.key?("max_tasks")
+        config["layer_order"] = decomposition["layer_order"] if decomposition.key?("layer_order")
+        config["enabled"] = configuration["enabled"] if configuration.key?("enabled")
+        config["min_components_to_decompose"] = configuration["min_components_to_decompose"] if configuration.key?("min_components_to_decompose")
+        config["max_tasks"] = configuration["max_tasks"] if configuration.key?("max_tasks")
+        config["layer_order"] = configuration["layer_order"] if configuration.key?("layer_order")
+      end.compact
+    end
+
+    def extract_recovery_config(configuration)
+      recovery = configuration.fetch("recovery", {})
+      actions = recovery["actions"] || recovery["failure_actions"]
+      actions ||= configuration["actions"] || configuration["failure_actions"]
+
+      {}.tap do |config|
+        config["actions"] = actions if actions.is_a?(Hash)
+        config["default_action"] = recovery["default_action"] if recovery.key?("default_action")
+        config["default_action"] = configuration["default_action"] if configuration.key?("default_action")
+      end.compact
+    end
+
+    def extract_escalation_config(configuration)
+      escalation = configuration.fetch("escalation", {})
+
+      {}.tap do |config|
+        %w[
+          human_value_threshold
+          explicit_triggers
+          auto_resolve_trigger_types
+          weights
+          interruption_cost
+        ].each do |key|
+          config[key] = escalation[key] if escalation.key?(key)
+          config[key] = configuration[key] if configuration.key?(key)
+        end
+      end.compact
     end
   end
 end
