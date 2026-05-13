@@ -115,6 +115,13 @@ RSpec.describe OrchestrationStrategies::Defaults do
       )
     end
 
+    it "includes recovery policy defaults" do
+      expect(config["recovery"]).to include(
+        "actions" => include("timeout" => "retry_same_provider"),
+        "default_action" => "pause_and_notify"
+      )
+    end
+
     it "preserves all planning outcomes returned by the workflow" do
       mappings = Workflows::PlanningWorkflow.outcome_mappings
       outcomes = mappings[:success] + mappings[:failure].values
