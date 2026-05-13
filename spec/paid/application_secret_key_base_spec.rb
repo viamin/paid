@@ -3,9 +3,11 @@
 require "rails_helper"
 
 RSpec.describe Paid::Application, :no_db do
-  it "uses an explicit fallback chain when SECRET_KEY_BASE is unset" do
+  it "treats blank CI secrets as absent when resolving the test secret key base" do
     expect(Rails.application.secret_key_base).to eq(
-      ENV.fetch("SECRET_KEY_BASE", ENV.fetch("RAILS_TEST_KEY", "test-secret-key-base"))
+      ENV["SECRET_KEY_BASE"].presence ||
+      ENV["RAILS_TEST_KEY"].presence ||
+      "test-secret-key-base"
     )
   end
 end
