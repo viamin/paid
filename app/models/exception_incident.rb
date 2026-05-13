@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
 class ExceptionIncident < ApplicationRecord
-  has_logidze
+  begin
+    has_logidze if columns_hash.key?("log_data")
+  rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid
+    # Allow boot in db-less contexts and when the DB schema has not caught up yet.
+  end
+
   belongs_to :account
   belongs_to :project, optional: true
 
