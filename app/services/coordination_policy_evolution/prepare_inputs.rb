@@ -34,6 +34,7 @@ module CoordinationPolicyEvolution
     ESCALATION_SUCCESS_STATUSES = %w[applied deferred resolved].freeze
     ORCHESTRATION_FAILURE_STATUSES = %w[failed].freeze
     ORCHESTRATION_NOOP_STATUSES = %w[noop].freeze
+    DEFAULT_ORCHESTRATION_DECISION_STATUS = "applied"
 
     def self.call(...)
       new(...).call
@@ -110,12 +111,14 @@ module CoordinationPolicyEvolution
 
     def successful_orchestration_decisions
       @successful_orchestration_decisions ||= scoped_decisions
-        .where("COALESCE(context->>'decision_status', 'unknown') IN (?)", orchestration_success_statuses)
+        .where("COALESCE(context->>'decision_status', ?) IN (?)",
+          DEFAULT_ORCHESTRATION_DECISION_STATUS, orchestration_success_statuses)
     end
 
     def failed_orchestration_decisions
       @failed_orchestration_decisions ||= scoped_decisions
-        .where("COALESCE(context->>'decision_status', 'unknown') IN (?)", ORCHESTRATION_FAILURE_STATUSES)
+        .where("COALESCE(context->>'decision_status', ?) IN (?)",
+          DEFAULT_ORCHESTRATION_DECISION_STATUS, ORCHESTRATION_FAILURE_STATUSES)
     end
 
     def performance_summary
@@ -211,7 +214,7 @@ module CoordinationPolicyEvolution
 
     def orchestration_status_counts
       @orchestration_status_counts ||= scoped_decisions
-        .group(Arel.sql("COALESCE(context->>'decision_status', 'unknown')"))
+        .group(Arel.sql("COALESCE(context->>'decision_status', '#{DEFAULT_ORCHESTRATION_DECISION_STATUS}')"))
         .count
     end
 
@@ -251,7 +254,7 @@ module CoordinationPolicyEvolution
         decision_type: decision.decision_type,
         created_at: decision.created_at.iso8601,
         actor: decision.actor,
-        decision_status: context["decision_status"],
+        decision_status: context.fetch("decision_status", DEFAULT_ORCHESTRATION_DECISION_STATUS),
         context: context,
         inputs: decision.inputs.to_h,
         outputs: decision.outputs.to_h

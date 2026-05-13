@@ -58,12 +58,24 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
 
       allow(service).to receive(:scoped_decisions).and_return(scoped)
       allow(scoped).to receive(:where)
-        .with("COALESCE(context->>'decision_status', 'unknown') IN (?)", %w[applied deferred resolved])
+        .with("COALESCE(context->>'decision_status', ?) IN (?)", "applied", %w[applied deferred resolved])
         .and_return(successful)
       allow(successful).to receive(:order).with(created_at: :desc, id: :desc).and_return(successful)
       allow(successful).to receive(:limit).with(5).and_return(sampled)
 
       expect(service.send(:sample_successes)).to eq(sampled)
+    end
+
+    it "treats missing decision statuses as applied for historical orchestration records" do
+      scoped = instance_double(ActiveRecord::Relation)
+      successful = instance_double(ActiveRecord::Relation)
+
+      allow(service).to receive(:scoped_decisions).and_return(scoped)
+      allow(scoped).to receive(:where)
+        .with("COALESCE(context->>'decision_status', ?) IN (?)", "applied", %w[applied deferred resolved])
+        .and_return(successful)
+
+      expect(service.send(:successful_decisions)).to eq(successful)
     end
   end
 
