@@ -328,23 +328,28 @@ module ApplicationHelper
     mobile_tooltip_wrapper(inner, context[:tooltip], tooltip_id, aria_label: "Show context details")
   end
 
+  AGENT_RUN_GOAL_LABEL_OVERRIDES = {
+    "create_pr" => "PR Creation",
+    "create_issue" => "Issue Creation",
+    "review" => "Code Review"
+  }.freeze
+
+  AGENT_RUN_GOAL_LABELS = AgentRun::GOALS.index_with do |goal|
+    AGENT_RUN_GOAL_LABEL_OVERRIDES.fetch(goal, goal.to_s.titleize)
+  end.freeze
+
   def agent_run_goal_display(run)
     text = agent_run_goal_text(run)
     return tag.span("-", class: "text-gray-400") if text.blank?
 
     inner = tag.span(text, class: "min-w-0 block truncate", title: text)
-    mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
+    tooltip_id = "goal_#{run.id || run.object_id}"
+
+    mobile_tooltip_wrapper(inner, text, tooltip_id, aria_label: "Show goal details")
   end
 
   def agent_run_goal_text(run)
-    return run.issue&.title if run.issue&.title.present?
-
-    if run.source_pull_request_number.present?
-      prefix = run.review_goal? ? "Review PR" : "PR"
-      return "#{prefix} ##{run.source_pull_request_number}"
-    end
-
-    redacted_goal_text(run.custom_prompt)
+    AGENT_RUN_GOAL_LABELS.fetch(run.goal, run.goal.to_s.titleize)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then
