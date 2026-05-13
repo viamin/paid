@@ -546,7 +546,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         project_id: project_id,
         issue_id: 10,
         source_pull_request_number: 42,
-        goal: "review"
+        goal: "review",
+        focus: "general"
       }
     end
 
@@ -1476,6 +1477,30 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
     end
 
+    it "passes focus through when review_goal_retry queues a review run" do
+      pr_data = {
+        issue_id: 10,
+        pr_number: 42,
+        phase: "ready",
+        focus: "review_feedback",
+        triggers: [ { type: "review_goal_retry", details: "Retrying failed review-goal run" } ],
+        current_review_goal_retry_count: 1
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(
+            project_id: project_id,
+            issue_id: 10,
+            source_pull_request_number: 42,
+            goal: "review",
+            focus: "review_feedback"
+          ),
+          timeout: 30)
+    end
+
     it "does not queue duplicate review when paid_agent_review_pending is bundled with review_goal_retry and ready_for_owner" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
@@ -1551,7 +1576,24 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
           hash_including(project_id: 1, issue_id: 10,
-            source_pull_request_number: 42, goal: "review"),
+            source_pull_request_number: 42, goal: "review", focus: "general"),
+          timeout: anything)
+    end
+
+    it "passes focus through when paid_agent_review_pending queues a review run" do
+      pr_data = {
+        issue_id: 10,
+        pr_number: 42,
+        focus: "review_feedback",
+        triggers: [ { type: "paid_agent_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: 1, issue_id: 10,
+            source_pull_request_number: 42, goal: "review", focus: "review_feedback"),
           timeout: anything)
     end
 

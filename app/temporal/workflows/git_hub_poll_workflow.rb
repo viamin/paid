@@ -568,7 +568,8 @@ module Workflows
       run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: pr_data[:issue_id],
           source_pull_request_number: pr_data[:pr_number],
-          goal: "review" }, timeout: 30)
+          goal: "review",
+          focus: pr_data[:focus] || "general" }, timeout: 30)
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
@@ -643,7 +644,8 @@ module Workflows
         project_id: project_id,
         issue_id: issue_id,
         source_pull_request_number: pr_number,
-        goal: "review"
+        goal: "review",
+        focus: pr_data[:focus] || "general"
       }, timeout: 30)
 
       if trigger_types.include?("ready_for_owner")
