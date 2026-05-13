@@ -9,6 +9,7 @@ require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260512120010_add_logidze_to_exception_incidents")
 require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
 require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
 require Rails.root.join("db/migrate/20260507164917_create_orchestration_decisions")
@@ -250,6 +251,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
       EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
+      restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
@@ -329,6 +331,13 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   def exception_incidents_table_exists?
     ActiveRecord::Base.connection.table_exists?(:exception_incidents)
+  end
+
+  def restore_exception_incidents_logidze!
+    return unless exception_incidents_table_exists?
+    return if ActiveRecord::Base.connection.column_exists?(:exception_incidents, :log_data)
+
+    AddLogidzeToExceptionIncidents.new.migrate(:up)
   end
 
   def failure_classifications_table_exists?
