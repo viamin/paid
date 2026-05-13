@@ -101,9 +101,8 @@ module QualityMetrics
     def build_focused_scores
       case agent_run.focus
       when "ci_fix"
-        build_ci_fix_scores
       when "review_feedback", "conversation", "label_action"
-        build_focus_resolution_scores
+        build_iteration_and_lint_scores
       when "merge_conflict"
         build_merge_conflict_scores
       else
@@ -125,15 +124,7 @@ module QualityMetrics
       scores
     end
 
-    def build_ci_fix_scores
-      scores = {}
-      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
-      lint = lint_clean_score
-      scores["lint_clean"] = lint unless lint.nil?
-      scores
-    end
-
-    def build_focus_resolution_scores
+    def build_iteration_and_lint_scores
       scores = {}
       scores["iterations"] = iteration_score if agent_run.iterations&.positive?
       lint = lint_clean_score
