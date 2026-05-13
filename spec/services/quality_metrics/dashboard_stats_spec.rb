@@ -3,6 +3,28 @@
 require "rails_helper"
 
 RSpec.describe QualityMetrics::DashboardStats do
+  describe ".metrics_reference", :no_db do
+    it "includes focus-specific weights for create_pr metrics" do
+      result = described_class.metrics_reference
+
+      ci_passed = result.find { |metric| metric[:key] == "ci_passed" }
+      focus_resolved = result.find { |metric| metric[:key] == "focus_resolved" }
+
+      expect(ci_passed[:weights_by_focus]).to eq(
+        "ci_fix" => 0.50,
+        "merge_conflict" => 0.15,
+        "issue_implementation" => 0.15
+      )
+      expect(focus_resolved[:weights_by_focus]).to eq(
+        "review_feedback" => 0.60,
+        "merge_conflict" => 0.70,
+        "conversation" => 0.60,
+        "label_action" => 0.60,
+        "issue_implementation" => 0.50
+      )
+    end
+  end
+
   describe ".overview" do
     let(:project) { create(:project) }
 
@@ -160,12 +182,17 @@ RSpec.describe QualityMetrics::DashboardStats do
       expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.25)
       expect(pr_created[:weights_by_focus]).to eq({})
       expect(pr_created[:goal_types]).to include("create_pr")
-      expect(ci_passed[:weights_by_focus]).to eq("ci_fix" => 0.50, "merge_conflict" => 0.15)
+      expect(ci_passed[:weights_by_focus]).to eq(
+        "ci_fix" => 0.50,
+        "merge_conflict" => 0.15,
+        "issue_implementation" => 0.15
+      )
       expect(focus_resolved[:weights_by_focus]).to eq(
         "review_feedback" => 0.60,
         "merge_conflict" => 0.70,
         "conversation" => 0.60,
-        "label_action" => 0.60
+        "label_action" => 0.60,
+        "issue_implementation" => 0.50
       )
     end
 

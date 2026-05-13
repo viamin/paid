@@ -100,14 +100,10 @@ module QualityMetrics
 
     def build_focused_scores
       case agent_run.focus
-      when "ci_fix"
-        build_iteration_and_lint_scores
-      when "review_feedback", "conversation", "label_action"
-        build_iteration_and_lint_scores
-      when "issue_implementation"
-        build_iteration_and_lint_scores
       when "merge_conflict"
         build_merge_conflict_scores
+      when "ci_fix", "review_feedback", "conversation", "label_action", "issue_implementation"
+        build_iteration_and_lint_scores
       else
         build_pr_scores
       end
