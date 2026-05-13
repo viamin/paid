@@ -2,16 +2,36 @@
 
 require "rails_helper"
 
-RSpec.describe ClarifyingQuestions::Load do
-  let(:account) { create(:account) }
-  let(:project) { create(:project, account: account) }
-  let(:issue) { create(:issue, :needs_input, project: project, body: issue_body) }
+RSpec.describe ClarifyingQuestions::Load, :no_db do
   let(:issue_body) { "Original issue body" }
   let(:github_client) { instance_double(GithubClient) }
-
-  before do
-    allow(project.github_token).to receive(:client).and_return(github_client)
+  let(:github_token) { double(client: github_client) }
+  let(:project) do
+    double(
+      github_token: github_token,
+      full_name: "paid/app"
+    )
   end
+  let(:issue) do
+    double(
+      body: issue_body,
+      github_number: 1964
+    )
+  end
+  let(:comment_body) do
+    <<~COMMENT
+      <!-- paid:enhance-issue -->
+
+      ## Clarifying questions
+      1. What is the expected behavior?
+      2. Should this be behind a flag?
+
+      ## Current context
+      - Some context
+    COMMENT
+  end
+
+  before { allow(github_client).to receive(:issue_comments).and_return([]) }
 
   describe ".call" do
     context "when the issue body already contains clarifying questions" do
@@ -24,26 +44,16 @@ RSpec.describe ClarifyingQuestions::Load do
         COMMENT
       end
 
-      it "returns questions from the issue body without fetching comments" do
+      it "returns questions from the issue body" do
         questions = described_class.call(project: project, issue: issue)
 
         expect(questions).to eq([ "What should happen next?" ])
-        expect(github_client).not_to have_received(:issue_comments)
       end
     end
 
     context "when clarifying questions only exist in GitHub comments" do
       before do
-        comment = double(body: <<~COMMENT)
-          <!-- paid:enhance-issue -->
-
-          ## Clarifying questions
-          1. What is the expected behavior?
-          2. Should this be behind a flag?
-
-          ## Current context
-          - Some context
-        COMMENT
+        comment = double(body: comment_body)
         allow(github_client).to receive(:issue_comments).and_return([ comment ])
       end
 
@@ -57,13 +67,55 @@ RSpec.describe ClarifyingQuestions::Load do
       end
     end
 
-    context "when no clarifying questions are available" do
+    context "when the latest clarifying questions were already answered" do
       before do
-        allow(github_client).to receive(:issue_comments).and_return([])
+        enhancement_comment = double(
+          body: comment_body,
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
       end
 
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when no clarifying questions are available" do
+      it "returns an empty array" do
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when GitHub access is not configured" do
+      let(:project) do
+        double(
+          github_token: nil
+        )
+      end
+      let(:issue_body) do
+        <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. What should happen next?
+        COMMENT
+      end
+
+      it "returns questions from the issue body" do
+        expect(described_class.call(project: project, issue: issue)).to eq([ "What should happen next?" ])
       end
     end
   end

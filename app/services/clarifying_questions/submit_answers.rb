@@ -2,6 +2,8 @@
 
 module ClarifyingQuestions
   class SubmitAnswers
+    ANSWER_MARKER = Load::ANSWER_MARKER
+
     def self.call(...)
       new(...).call
     end
@@ -14,7 +16,7 @@ module ClarifyingQuestions
 
     def call
       validate_answers!
-      client = project.github_token.client
+      client = github_client
       client.add_comment(project.full_name, issue.github_number, formatted_comment)
     end
 
@@ -24,6 +26,7 @@ module ClarifyingQuestions
 
     def validate_answers!
       raise ArgumentError, "No clarifying questions found for this issue." if questions_and_answers.empty?
+      raise ArgumentError, "GitHub access is not configured for this project." unless github_client
 
       missing_questions = questions_and_answers.select { |qa| qa[:question].blank? }
       if missing_questions.any?
@@ -37,13 +40,17 @@ module ClarifyingQuestions
     end
 
     def formatted_comment
-      parts = [ "<!-- paid:clarifying-answers -->", "", "## Clarifying question answers", "" ]
+      parts = [ ANSWER_MARKER, "", "## Clarifying question answers", "" ]
       questions_and_answers.each_with_index do |qa, i|
         parts << "**Q#{i + 1}: #{qa[:question]}**"
-        parts << qa[:answer]
+        parts << "**A#{i + 1}:** #{qa[:answer]}"
         parts << ""
       end
       parts.join("\n")
+    end
+
+    def github_client
+      project.github_token&.client
     end
   end
 end

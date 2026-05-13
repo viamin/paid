@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ClarifyingQuestions::Parse do
+RSpec.describe ClarifyingQuestions::Parse, :no_db do
   describe ".call" do
     context "when comment has clarifying questions" do
       it "parses numbered questions from the clarifying section" do

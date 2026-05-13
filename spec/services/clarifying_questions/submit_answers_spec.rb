@@ -2,14 +2,22 @@
 
 require "rails_helper"
 
-RSpec.describe ClarifyingQuestions::SubmitAnswers do
-  let(:account) { create(:account) }
-  let(:project) { create(:project, account: account) }
-  let(:issue) { create(:issue, :needs_input, project: project) }
+RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
   let(:github_client) { instance_double(GithubClient) }
+  let(:github_token) { double(client: github_client) }
+  let(:project) do
+    double(
+      github_token: github_token,
+      full_name: "paid/app"
+    )
+  end
+  let(:issue) do
+    double(
+      github_number: 1964
+    )
+  end
 
   before do
-    allow(project.github_token).to receive(:client).and_return(github_client)
     allow(github_client).to receive(:add_comment).and_return(double(html_url: "https://github.com/test"))
   end
 
@@ -64,7 +72,8 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers do
 
         expect(github_client).to have_received(:add_comment).with(
           anything, anything,
-          a_string_matching(/\*\*Q1: What is X\?\*\*/).and(a_string_matching(/X is Y/))
+          a_string_matching(/\*\*Q1: What is X\?\*\*/)
+            .and(a_string_matching(/\*\*A1:\*\* X is Y/))
         )
       end
     end
@@ -111,6 +120,24 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers do
             questions_and_answers: []
           )
         }.to raise_error(ArgumentError, /No clarifying questions found/)
+      end
+    end
+
+    context "when GitHub access is not configured" do
+      before do
+        allow(project).to receive(:github_token).and_return(nil)
+      end
+
+      it "raises ArgumentError before attempting to post" do
+        expect {
+          described_class.call(
+            project: project,
+            issue: issue,
+            questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+          )
+        }.to raise_error(ArgumentError, /GitHub access is not configured/)
+
+        expect(github_client).not_to have_received(:add_comment)
       end
     end
   end

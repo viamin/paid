@@ -850,6 +850,16 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#needs_input?" do
+    it "returns true when the issue is waiting on user answers" do
+      expect(build(:issue, paid_state: "needs_input")).to be_needs_input
+    end
+
+    it "returns false for other paid states" do
+      expect(build(:issue, paid_state: "planning")).not_to be_needs_input
+    end
+  end
+
   describe "broadcast callbacks" do
     let(:project) { create(:project) }
 
