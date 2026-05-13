@@ -94,6 +94,16 @@ module Issues
       ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+) # local or cross-repo refs
     /xi
 
+    # Matches phrases that mention issue refs but must NOT be treated as
+    # dependencies. Applied in both section-path (before bare-ref extraction)
+    # and inline-path (before INLINE_DEPENDS_PATTERN) so that e.g.
+    # "Not blocked by #N" is not misread as "blocked by #N".
+    NON_DEPENDENCY_PATTERN = /
+      \b(?:independent\s+of|not\s+blocked\s+by|no\s+dependency\s+on)\b
+      :?\s*
+      ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)
+    /xi
+
     # Matches cross-repo references like owner/repo#123
     # Uses [1-9]\d* to reject #0 — GitHub issues start at 1 and the DB
     # CHECK constraint requires depends_on_number > 0.
@@ -251,6 +261,8 @@ module Issues
         scratch = scratch.gsub(pattern, "")
       end
 
+      scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
+
       extract_all_refs(scratch, local_deps, cross_deps, requires_deployment: false)
     end
 
@@ -259,6 +271,8 @@ module Issues
     # not double-count them as non-deployment deps.
     def extract_inline_refs(text, local_deps, cross_deps)
       scratch = text.dup
+
+      scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       scratch.scan(INLINE_DEPLOYMENT_PATTERN) do |(refs_str)|
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
