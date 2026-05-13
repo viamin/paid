@@ -44,14 +44,9 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(selection.score_inputs.predicted_objective_score).to be > 0
       expect(selection.score_inputs.predicted_quality_score).to be > 0
       expect(selection.score_inputs.uncertainty).to be > 0
-<<<<<<< HEAD
       expect(selection.score_inputs.acquisition_function).to eq("expected_improvement")
       expect(selection.score_inputs.best_observed_objective_score).to be > 0
       expect(selection.score_inputs.acquisition_score).to be > 0
-=======
-      expect(selection.score_inputs.acquisition_score).to be >
-        selection.score_inputs.predicted_objective_score
->>>>>>> origin/main
     end
 
     it "routes no-issue runs through the project exploration budget" do
@@ -217,7 +212,6 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(ranked.first.variant_by_experiment_id).to eq(experiment.id => challenger)
     end
 
-<<<<<<< HEAD
     it "scores candidates against the best observed objective for the goal" do
       create_bundle_history(
         experiment: experiment,
@@ -234,7 +228,8 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       expect(ranked).to all(have_attributes(score_inputs: have_attributes(acquisition_function: "expected_improvement")))
       expect(ranked.first.score_inputs.best_observed_objective_score).to be > 0
-      expect(ranked.first.score_inputs.acquisition_score).to be <= ranked.first.score_inputs.uncertainty + ranked.first.score_inputs.predicted_objective_score
+      expect(ranked.first.score_inputs.acquisition_score).to be <= ranked.first.score_inputs.uncertainty +
+        ranked.first.score_inputs.predicted_objective_score
     end
 
     it "keeps the incumbent from older outcomes outside the surrogate training window" do
@@ -257,8 +252,6 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(ranked).to all(have_attributes(score_inputs: have_attributes(best_observed_objective_score: 1.25)))
     end
 
-=======
->>>>>>> origin/main
     it "loads experiment variants in a single query" do
       create_bundle_history(
         experiment: experiment,
@@ -275,7 +268,6 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       expect(queries.grep(/FROM "configuration_experiment_variants"/).size).to eq(1)
     end
-<<<<<<< HEAD
 
     it "does not issue per-outcome agent_run or project queries when objective scores are computed" do
       create_bundle_history(
@@ -296,8 +288,6 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(queries.grep(/FROM "agent_runs"/).size).to eq(0)
       expect(queries.grep(/FROM "projects"/).size).to eq(0)
     end
-=======
->>>>>>> origin/main
   end
 
   def create_prior_history
@@ -368,11 +358,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
         predicted_success_probability: 0.6,
         predicted_cost_cents: 80,
         predicted_duration_seconds: 180,
-<<<<<<< HEAD
-        uncertainty: 1.0,
-=======
         uncertainty: 0.35,
->>>>>>> origin/main
         sample_count: 1,
         trained_at: Time.current
       )
@@ -388,11 +374,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
   end
 
-<<<<<<< HEAD
   def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40, objective_scores: nil, created_at: Time.current)
-=======
-  def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40)
->>>>>>> origin/main
     definition = {
       "schema_version" => 1,
       "goal" => agent_run.goal,
@@ -409,33 +391,21 @@ RSpec.describe ConfigurationBundles::Optimizer do
     }
     bundle = create(:configuration_bundle, account: project.account, definition: definition)
 
-<<<<<<< HEAD
     quality_scores.each_with_index do |quality_score, index|
-=======
-    quality_scores.each do |quality_score|
->>>>>>> origin/main
       run = create(:agent_run,
         :completed,
         configuration_bundle: bundle,
         project: project,
         issue: create(:issue, project: project),
-<<<<<<< HEAD
         cost_cents: cost_cents,
         created_at: created_at)
-=======
-        cost_cents: cost_cents)
->>>>>>> origin/main
       create(:bundle_outcome,
         configuration_bundle: bundle,
         agent_run: run,
         quality_score: quality_score,
-<<<<<<< HEAD
         cost_cents: cost_cents,
         metrics: objective_scores ? { "objective_score" => objective_scores.fetch(index) } : {},
         created_at: created_at)
-=======
-        cost_cents: cost_cents)
->>>>>>> origin/main
     end
   end
 end

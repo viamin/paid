@@ -13,6 +13,7 @@ module ConfigurationBundles
     }.freeze
     PRIMARY_SELECTION_CONTEXT = "project"
     TASK_BOOTSTRAP_CONTEXT = "task"
+    ACQUISITION_FUNCTION = "expected_improvement"
 
     Selection = Struct.new(
       :definition,
@@ -35,9 +36,6 @@ module ConfigurationBundles
       :acquisition_score,
       keyword_init: true
     )
-
-    ACQUISITION_FUNCTION = "expected_improvement"
-    EXPLORATION_WEIGHT = 0.4
 
     attr_reader :agent_run
 
@@ -101,11 +99,8 @@ module ConfigurationBundles
           predicted_quality_score: prediction_quality_score(prediction),
           uncertainty: prediction.uncertainty,
           sample_count: prediction.sample_count,
-<<<<<<< HEAD
           best_observed_objective_score: best_observed_objective_score,
           acquisition_function: ACQUISITION_FUNCTION,
-=======
->>>>>>> origin/main
           acquisition_score: acquisition_score
         )
       )
@@ -278,7 +273,6 @@ module ConfigurationBundles
     end
 
     def prediction_objective_score(prediction)
-<<<<<<< HEAD
       return prediction.predicted_objective_score if prediction.respond_to?(:predicted_objective_score)
 
       prediction.mean_objective_score
@@ -288,13 +282,6 @@ module ConfigurationBundles
       return prediction.predicted_quality_score if prediction.respond_to?(:predicted_quality_score)
 
       prediction.mean_quality_score
-=======
-      prediction.predicted_objective_score
-    end
-
-    def prediction_quality_score(prediction)
-      prediction.predicted_quality_score
->>>>>>> origin/main
     end
 
     def bundle_definition(variant_by_experiment_id)
@@ -342,18 +329,15 @@ module ConfigurationBundles
 
       @parsed_variant_values[variant.id] = INVALID_VARIANT_VALUE
     end
-<<<<<<< HEAD
 
     def best_observed_objective_score_for
       @best_observed_objective_score_for ||= prior_objective_score_for_goal || 0.0
     end
 
     def prior_objective_score_for_goal
-      @prior_objective_score_for_goal ||= begin
-        prior_objective_outcomes_for_goal
-          .filter_map { |outcome| outcome_objective_score(outcome) }
-          .max
-      end
+      @prior_objective_score_for_goal ||= prior_objective_outcomes_for_goal
+        .filter_map { |outcome| outcome_objective_score(outcome) }
+        .max
     end
 
     def prior_objective_outcomes_for_goal
@@ -396,7 +380,5 @@ module ConfigurationBundles
     def normal_cdf(value)
       0.5 * (1.0 + Math.erf(value / Math.sqrt(2.0)))
     end
-=======
->>>>>>> origin/main
   end
 end

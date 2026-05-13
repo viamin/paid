@@ -158,7 +158,6 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(agent_run.configuration_bundle_selection_context).to eq("task")
   end
 
-<<<<<<< HEAD
   it "uses the optimizer-provided bundle definition when available" do
     optimized_definition = optimizer_definition_with_value(12_000)
     selection = optimizer_selection(definition: optimized_definition)
@@ -362,8 +361,6 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
-=======
->>>>>>> origin/main
   it "persists the fingerprint for the resolved assignment when a run already has an experiment assignment" do
     challenger = create(:configuration_experiment_variant,
       configuration_experiment: experiment,
@@ -399,7 +396,6 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     }
   end
 
-<<<<<<< HEAD
   def optimizer_definition_with_value(value)
     matching_variant = experiment.configuration_experiment_variants.find_or_create_by!(config_value: JSON.generate(value)) do |created_variant|
       created_variant.is_control = false
@@ -459,8 +455,6 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     )
   end
 
-=======
->>>>>>> origin/main
   def expect_bundle_definition(bundle)
     expect(bundle.definition).to include(
       "schema_version" => 1,
