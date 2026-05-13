@@ -2,10 +2,16 @@
 
 require "rails_helper"
 
-RSpec.describe Automation::Strategies::AutoMerge do
+RSpec.describe Automation::Strategies::AutoMerge, :no_db do
   subject(:strategy) { described_class.new }
 
-  let(:project) { build_stubbed(:project) }
+  let(:project) do
+    Class.new do
+      attr_accessor :merge_method, :auto_fix_merge_conflicts
+
+      def auto_merge_enabled? = true
+    end.new
+  end
 
   def build_context(signals: nil)
     Automation::Context.build(
@@ -25,6 +31,7 @@ RSpec.describe Automation::Strategies::AutoMerge do
       review_feedback_clear: true,
       blocking_reviews_complete: true,
       reviews_fresh: true,
+      dependencies_resolved: true,
       **overrides
     )
   end
@@ -37,6 +44,7 @@ RSpec.describe Automation::Strategies::AutoMerge do
       dependabot_eligible: true,
       checks_green: true,
       mergeable: true,
+      dependencies_resolved: true,
       **overrides
     )
   end
@@ -119,6 +127,13 @@ RSpec.describe Automation::Strategies::AutoMerge do
 
         expect(result.decisions.map(&:type)).to eq([ "noop" ])
       end
+
+      it "returns noop when dependencies are unresolved" do
+        signals = human_signals(dependencies_resolved: false)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
     end
 
     context "with a bot-authored PR" do
@@ -146,6 +161,13 @@ RSpec.describe Automation::Strategies::AutoMerge do
 
       it "returns noop when PR is not mergeable" do
         signals = bot_signals(mergeable: false)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
+
+      it "returns noop when dependencies are unresolved" do
+        signals = bot_signals(dependencies_resolved: false)
         result = strategy.evaluate(build_context(signals: signals))
 
         expect(result.decisions.map(&:type)).to eq([ "noop" ])

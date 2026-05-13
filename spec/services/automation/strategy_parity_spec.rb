@@ -284,10 +284,10 @@ RSpec.describe Automation::Strategy do
     let(:all_human_preconditions) do
       { issue_id: 42, pr_number: 10, owner_approved: true, checks_green: true,
         mergeable: true, review_feedback_clear: true, blocking_reviews_complete: true,
-        reviews_fresh: true }
+        reviews_fresh: true, dependencies_resolved: true }
     end
 
-    it "merges a human PR when all six preconditions are met" do
+    it "merges a human PR when all preconditions are met" do
       signals = Automation::Strategies::AutoMerge::Signals.build(**all_human_preconditions)
       result = evaluate_auto_merge(signals: signals)
 
@@ -295,7 +295,8 @@ RSpec.describe Automation::Strategy do
     end
 
     %i[owner_approved checks_green mergeable
-       review_feedback_clear blocking_reviews_complete reviews_fresh].each do |field|
+       review_feedback_clear blocking_reviews_complete reviews_fresh
+       dependencies_resolved].each do |field|
       it "returns noop for human PR when #{field} is false" do
         signals = Automation::Strategies::AutoMerge::Signals.build(
           **all_human_preconditions.merge(field => false)
@@ -306,11 +307,11 @@ RSpec.describe Automation::Strategy do
       end
     end
 
-    it "bot PR requires only dependabot_eligible, checks_green, mergeable" do
+    it "bot PR requires only dependabot_eligible, checks_green, mergeable, and resolved dependencies" do
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: 42, pr_number: 10,
         bot_authored: true, dependabot_eligible: true,
-        checks_green: true, mergeable: true,
+        checks_green: true, mergeable: true, dependencies_resolved: true,
         owner_approved: false, review_feedback_clear: false
       )
 

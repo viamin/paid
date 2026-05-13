@@ -93,6 +93,55 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "#dependencies_resolved?" do
+    let(:pr_issue) do
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 42,
+        body: body)
+    end
+    let(:body) { "Depends on #41" }
+
+    before do
+      allow(github_client).to receive(:issue_comments)
+        .with(project.full_name, 42)
+        .and_return(issue_comments)
+    end
+
+    context "when a same-repo dependency PR is not merged" do
+      let(:issue_comments) { [] }
+
+      before do
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 41)
+          .and_return(OpenStruct.new(number: 41, merged: false, merged_at: nil))
+      end
+
+      it "returns false" do
+        expect(activity.send(:dependencies_resolved?, github_client, project, pr_issue)).to be(false)
+      end
+    end
+
+    context "when a dependency was removed in comments" do
+      let(:issue_comments) { [ OpenStruct.new(body: "No longer depends on #41") ] }
+
+      it "returns true without checking the removed PR" do
+        expect(github_client).not_to receive(:pull_request).with(project.full_name, 41)
+
+        expect(activity.send(:dependencies_resolved?, github_client, project, pr_issue)).to be(true)
+      end
+    end
+
+    context "when a dependency references another repo" do
+      let(:body) { "Depends on other/repo#41" }
+      let(:issue_comments) { [] }
+
+      it "returns false conservatively" do
+        expect(activity.send(:dependencies_resolved?, github_client, project, pr_issue)).to be(false)
+      end
+    end
+  end
+
   describe "#execute" do
     context "when project is missing" do
       it "returns empty result with project_missing flag" do
@@ -4915,6 +4964,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not emit owner_approved when auto_merge is disabled" do
         project.update!(auto_merge_mode: "off")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "does not emit owner_approved when a dependency PR is not merged" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(body: "Depends on #41")
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 41)
+          .and_return(OpenStruct.new(number: 41, merged: false, merged_at: nil))
 
         result = activity.execute(project_id: project.id)
 
