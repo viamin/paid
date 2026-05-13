@@ -24,10 +24,11 @@ module Prompts
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
-                :lint_command, :test_command, :issue, :prompt_version
+                :lint_command, :test_command, :issue, :prompt_version, :focus
 
     def initialize(project:, pr_number:, github_client:, rebase_succeeded:,
-                   lint_command: nil, test_command: nil, issue: nil, prompt_version: nil)
+                   lint_command: nil, test_command: nil, issue: nil, prompt_version: nil,
+                   focus: "general")
       @project = project
       @pr_number = pr_number
       @github_client = github_client
@@ -36,6 +37,7 @@ module Prompts
       @test_command = test_command || detected_test_command
       @issue = issue
       @prompt_version = prompt_version
+      @focus = focus
     end
 
     def self.call(...)
@@ -43,10 +45,12 @@ module Prompts
     end
 
     def includes_review_threads?
-      unresolved_threads.any?
+      include_section?(:code_review) && unresolved_threads.any?
     end
 
     def unresolved_review_thread_ids
+      return [] unless includes_review_threads?
+
       unresolved_threads.filter_map { |thread| thread[:id] }
     end
 
@@ -95,11 +99,12 @@ module Prompts
     def build
       sections = []
       sections << task_section
-      sections << issue_requirements_section if linked_issue?
-      sections << merge_conflicts_section unless rebase_succeeded
-      sections << ci_failures_section if ci_failure_context.failing?
+      sections << issue_requirements_section if include_issue_requirements_section?
+      sections << merge_conflicts_section if include_merge_conflicts_section?
+      sections << ci_failures_section if include_ci_failures_section?
       sections << code_review_section if includes_review_threads?
-      sections << conversation_section if trusted_comments.any?
+      sections << conversation_section if include_conversation_section?
+      sections << other_issues_section if other_issues_section.present?
       sections << instructions_and_rules_shell
       sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
@@ -130,6 +135,8 @@ module Prompts
     end
 
     def priority_list
+      return focused_priority_list if focused?
+
       priorities = []
       priorities << "Resolve merge conflicts" unless rebase_succeeded
       priorities << "Fix CI failures" if ci_failure_context.failing?
@@ -137,6 +144,10 @@ module Prompts
       priorities << "Address code review comments" if includes_review_threads?
       priorities << "Address conversation comments" if trusted_comments.any?
       priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
+    end
+
+    def focused?
+      focus != "general"
     end
 
     # Returns true when a separate issue is linked (not the PR's own Issue record).
@@ -318,6 +329,23 @@ module Prompts
       SECTION
     end
 
+    def other_issues_section
+      return "" unless focused?
+
+      issues = deferred_issue_descriptions
+      return "" if issues.empty?
+
+      <<~SECTION
+        # Other Issues on This PR (Deferred)
+
+        This PR also has the following issues that are **not** your responsibility this run:
+        #{issues.map { |issue| "- #{issue}" }.join("\n")}
+
+        Ignore the "fix forward" directive for these unrelated problems. Follow-up runs will address them.
+        Do not attempt to fix these issues. Focus solely on the task described above.
+      SECTION
+    end
+
     # When reviewers have flagged specific issues, tell the agent to scan for
     # the same class of problem across the whole diff — not just the flagged lines.
     def review_scan_instruction
@@ -335,6 +363,71 @@ module Prompts
         "addressed on the current branch and no code changes are needed, do not " \
         "make a no-op commit. End your final response with a standalone line " \
         "containing exactly `#{ALREADY_ADDRESSED_MARKER}`."
+    end
+
+    def include_section?(section)
+      return true if general_or_label_action_focus?
+
+      scoped_section_for_focus == section
+    end
+
+    def general_or_label_action_focus?
+      focus.in?([ "general", "label_action" ])
+    end
+
+    def scoped_section_for_focus
+      {
+        "ci_fix" => :ci_failures,
+        "review_feedback" => :code_review,
+        "merge_conflict" => :merge_conflicts,
+        "conversation" => :conversation,
+        "issue_implementation" => :issue_requirements
+      }[focus]
+    end
+
+    def include_issue_requirements_section?
+      include_section?(:issue_requirements) && linked_issue?
+    end
+
+    def include_merge_conflicts_section?
+      include_section?(:merge_conflicts) && !rebase_succeeded
+    end
+
+    def include_ci_failures_section?
+      include_section?(:ci_failures) && ci_failure_context.failing?
+    end
+
+    def include_conversation_section?
+      include_section?(:conversation) && trusted_comments.any?
+    end
+
+    def focused_priority_list
+      "1. #{focused_priority_item}"
+    end
+
+    def focused_priority_item
+      {
+        "ci_fix" => "Fix the failing CI checks on this PR",
+        "review_feedback" => "Address the unresolved code review comments on this PR",
+        "merge_conflict" => "Resolve the merge conflicts on this PR",
+        "conversation" => "Address the actionable conversation comments on this PR",
+        "issue_implementation" => "Close implementation gaps against the linked issue for this PR",
+        "label_action" => "Handle the actionable labels on this PR"
+      }.fetch(focus, "Complete the scoped task for this PR")
+    end
+
+    def deferred_issue_descriptions
+      descriptions = []
+      descriptions << "merge conflicts with the base branch" if defer_issue?(:merge_conflicts) && !rebase_succeeded
+      descriptions << "failing CI checks" if defer_issue?(:ci_failures) && ci_failure_context.failing?
+      descriptions << "implementation gaps against the linked issue" if defer_issue?(:issue_requirements) && linked_issue?
+      descriptions << "unresolved code review comments" if defer_issue?(:code_review) && unresolved_threads.any?
+      descriptions << "actionable conversation comments" if defer_issue?(:conversation) && trusted_comments.any?
+      descriptions
+    end
+
+    def defer_issue?(section)
+      focused? && !include_section?(section)
     end
 
     # Memoized data fetchers

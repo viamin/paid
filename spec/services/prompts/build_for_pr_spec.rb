@@ -31,9 +31,24 @@ RSpec.describe Prompts::BuildForPr do
     OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: body)
   end
 
+  def expect_prompt_to_exclude_sections(prompt, *section_names)
+    section_names.each do |section_name|
+      expect(prompt).not_to include(section_name)
+    end
+  end
+
+  def expect_deferred_issues_section(prompt, *issues)
+    expect(prompt).to include("# Other Issues on This PR (Deferred)")
+    issues.each do |issue|
+      expect(prompt).to include("- #{issue}")
+    end
+    expect(prompt).to include("Ignore the \"fix forward\" directive")
+    expect(prompt).to include("Focus solely on the task described above.")
+  end
+
   let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
-  let(:user_settings) { instance_double(UserSetting, max_prompt_comments: 20, max_comment_length: 2000) }
+  let(:user_settings) { OpenStruct.new(max_prompt_comments: 20, max_comment_length: 2000) }
 
   let(:pr_data) do
     OpenStruct.new(
@@ -774,6 +789,223 @@ RSpec.describe Prompts::BuildForPr do
       expect(ci_pos).to be < issue_pos
       expect(issue_pos).to be < review_pos
       expect(review_pos).to be < comments_pos
+    end
+  end
+
+  describe "focused prompt scoping" do
+    let(:issue) do
+      create(:issue,
+        project: project,
+        title: "Add dark mode",
+        github_number: 99,
+        body: "Implement dark mode toggle in settings.")
+    end
+
+    before do
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([
+          { id: 1, name: "rspec", conclusion: "failure", output_text: "failed" }
+        ])
+      allow(github_client).to receive(:check_run_log).and_return("")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+        ])
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 1)
+        .and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Please also fix the tests")
+        ])
+    end
+
+    it "keeps explicit general focus identical to the default prompt" do
+      default_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue
+      )
+
+      general_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: "general"
+      )
+
+      expect(general_prompt).to eq(default_prompt)
+    end
+
+    context "with ci_fix focus" do
+      subject(:prompt) do
+        described_class.call(
+          project: project,
+          pr_number: 42,
+          github_client: github_client,
+          rebase_succeeded: false,
+          issue: issue,
+          focus: "ci_fix"
+        )
+      end
+
+      it "scopes prompts to CI failures and deferred context" do
+        expect(prompt).to include("CI Status: FAILING")
+        expect_prompt_to_exclude_sections(prompt, "Merge Conflicts", "Code Review Comments", "Conversation Comments", "Issue Requirements")
+        expect_deferred_issues_section(
+          prompt,
+          "merge conflicts with the base branch",
+          "implementation gaps against the linked issue",
+          "unresolved code review comments",
+          "actionable conversation comments"
+        )
+      end
+
+      it "uses a single focused priority without review-only instructions" do
+        expect(prompt).to include("1. Fix the failing CI checks on this PR")
+        expect(prompt).not_to include("2.")
+        expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+        expect(prompt).not_to include("same classes of issues the reviewers")
+      end
+    end
+
+    context "with review_feedback focus" do
+      subject(:prompt) do
+        described_class.call(
+          project: project,
+          pr_number: 42,
+          github_client: github_client,
+          rebase_succeeded: false,
+          issue: issue,
+          focus: "review_feedback"
+        )
+      end
+
+      it "scopes prompts to code review only" do
+        expect(prompt).to include("Code Review Comments")
+        expect_prompt_to_exclude_sections(prompt, "CI Status: FAILING", "Merge Conflicts", "Conversation Comments", "Issue Requirements")
+        expect_deferred_issues_section(
+          prompt,
+          "failing CI checks",
+          "merge conflicts with the base branch",
+          "implementation gaps against the linked issue",
+          "actionable conversation comments"
+        )
+      end
+
+      it "keeps review-specific instructions and a single focused priority" do
+        expect(prompt).to include("1. Address the unresolved code review comments on this PR")
+        expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+        expect(prompt).to include("same classes of issues the reviewers")
+      end
+    end
+
+    context "with merge_conflict focus" do
+      subject(:prompt) do
+        described_class.call(
+          project: project,
+          pr_number: 42,
+          github_client: github_client,
+          rebase_succeeded: false,
+          issue: issue,
+          focus: "merge_conflict"
+        )
+      end
+
+      it "scopes prompts to merge conflicts only" do
+        expect(prompt).to include("Merge Conflicts")
+        expect_prompt_to_exclude_sections(prompt, "CI Status: FAILING", "Code Review Comments", "Conversation Comments", "Issue Requirements")
+        expect_deferred_issues_section(
+          prompt,
+          "failing CI checks",
+          "implementation gaps against the linked issue",
+          "unresolved code review comments",
+          "actionable conversation comments"
+        )
+        expect(prompt).to include("1. Resolve the merge conflicts on this PR")
+      end
+    end
+  end
+
+  describe "focused prompt scoping without a database", :no_db do
+    let(:project) do
+      OpenStruct.new(full_name: "owner/repo", service_containers: [], detected_language: "ruby").tap do |proj|
+        proj.define_singleton_method(:trusted_github_user?) { |login| login == "trusteduser" }
+      end
+    end
+    let(:issue) do
+      OpenStruct.new(
+        title: "Add dark mode",
+        github_number: 99,
+        body: "Implement dark mode toggle in settings.",
+        is_pull_request?: false
+      )
+    end
+
+    before do
+      allow(StyleGuides::InjectIntoPrompt).to receive(:call) { |prompt:, project:| prompt }
+      allow(Prompts::Render).to receive(:call) do |slug:, project:, variables:, fallback:|
+        fallback.call
+      end
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([
+          { id: 1, name: "rspec", conclusion: "failure", output_text: "failed" }
+        ])
+      allow(github_client).to receive(:check_run_log).and_return("")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+        ])
+      allow(github_client).to receive(:recent_issue_comments)
+        .with(project.full_name, 42, pages: 1)
+        .and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: "Please also fix the tests")
+        ])
+    end
+
+    it "builds a scoped ci_fix prompt with deferred issues" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: "ci_fix"
+      )
+
+      expect(prompt).to include("CI Status: FAILING")
+      expect_prompt_to_exclude_sections(prompt, "Merge Conflicts", "Code Review Comments", "Conversation Comments", "Issue Requirements")
+      expect_deferred_issues_section(
+        prompt,
+        "merge conflicts with the base branch",
+        "implementation gaps against the linked issue",
+        "unresolved code review comments",
+        "actionable conversation comments"
+      )
+      expect(prompt).to include("1. Fix the failing CI checks on this PR")
+    end
+
+    it "builds a scoped review_feedback prompt with review-only instructions" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: "review_feedback"
+      )
+
+      expect(prompt).to include("Code Review Comments")
+      expect_prompt_to_exclude_sections(prompt, "CI Status: FAILING", "Merge Conflicts", "Conversation Comments", "Issue Requirements")
+      expect(prompt).to include("1. Address the unresolved code review comments on this PR")
+      expect(prompt).to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
+      expect(prompt).to include("same classes of issues the reviewers")
     end
   end
 

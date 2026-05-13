@@ -28,7 +28,8 @@ module Activities
           github_client: client,
           rebase_succeeded: rebase_succeeded,
           issue: agent_run.issue,
-          prompt_version: prompt_version
+          prompt_version: prompt_version,
+          focus: focus
         )
         prompt = prompt_builder.build
         includes_review_threads = prompt_builder.includes_review_threads?
