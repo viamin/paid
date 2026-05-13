@@ -13,7 +13,7 @@ module Activities
       agent_run_id = input[:agent_run_id]
       rebase_succeeded = input.fetch(:rebase_succeeded, true)
       agent_run = AgentRun.find(agent_run_id)
-      focus = input[:focus] || agent_run.focus
+      focus = input[:focus].presence || agent_run.focus.presence || "general"
       track_phase(agent_run_id: agent_run_id, phase_key: "prepare_pr_prompt", phase_group: "prompt", agent_run: agent_run) do
         project = agent_run.project
         client = project.github_token.client

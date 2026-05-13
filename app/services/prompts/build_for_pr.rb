@@ -37,7 +37,7 @@ module Prompts
       @test_command = test_command || detected_test_command
       @issue = issue
       @prompt_version = prompt_version
-      @focus = focus
+      @focus = focus.presence || "general"
     end
 
     def self.call(...)

@@ -1113,6 +1113,28 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include(Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER)
       expect(prompt).not_to include("same classes of issues the reviewers")
     end
+
+    it "treats a nil focus like general for backward compatibility" do
+      general_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: "general"
+      )
+
+      nil_focus_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: false,
+        issue: issue,
+        focus: nil
+      )
+
+      expect(nil_focus_prompt).to eq(general_prompt)
+    end
   end
 
   describe "error resilience" do
