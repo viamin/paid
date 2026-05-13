@@ -675,7 +675,7 @@ module Activities
       log_triggers(issue.project, issue, triggers)
 
       {
-        focus: focus_for(project, triggers),
+        focus: focus_for(issue.project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
