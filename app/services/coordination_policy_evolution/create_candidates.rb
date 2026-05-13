@@ -7,6 +7,7 @@ module CoordinationPolicyEvolution
       "status" => "pending_review",
       "auto_promote" => false
     }.freeze
+    SUPPORTED_POLICY_TYPES = %w[decomposition recovery escalation].freeze
 
     def self.call(...)
       new(...).call
@@ -16,6 +17,8 @@ module CoordinationPolicyEvolution
       @policy_snapshot = policy_snapshot.deep_symbolize_keys
       @account = account
       @mutations = Array(mutations)
+
+      validate_policy_type!
     end
 
     def call
@@ -46,6 +49,12 @@ module CoordinationPolicyEvolution
     private
 
     attr_reader :policy_snapshot, :account, :mutations
+
+    def validate_policy_type!
+      return if SUPPORTED_POLICY_TYPES.include?(policy_type)
+
+      raise ArgumentError, "unsupported coordination policy type: #{policy_type.inspect}"
+    end
 
     def coordination_policy
       @coordination_policy ||= begin

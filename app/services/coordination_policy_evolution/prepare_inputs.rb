@@ -5,6 +5,7 @@ module CoordinationPolicyEvolution
     DEFAULT_LOOKBACK_DAYS = 60
     DEFAULT_MIN_DECISIONS = 10
     DEFAULT_SAMPLE_LIMIT = 5
+    SUPPORTED_POLICY_TYPES = %w[decomposition recovery escalation].freeze
     POLICY_TYPE = DecompositionService::POLICY_TYPE
     POLICY_KEY = DecompositionService::POLICY_KEY
     POLICY_KEYS = {
@@ -47,6 +48,8 @@ module CoordinationPolicyEvolution
       @lookback_days = lookback_days
       @min_decisions = min_decisions
       @sample_limit = sample_limit
+
+      validate_policy_type!
     end
 
     def call
@@ -62,6 +65,12 @@ module CoordinationPolicyEvolution
     private
 
     attr_reader :account, :policy_type, :lookback_days, :min_decisions, :sample_limit
+
+    def validate_policy_type!
+      return if SUPPORTED_POLICY_TYPES.include?(policy_type)
+
+      raise ArgumentError, "unsupported coordination policy type: #{policy_type.inspect}"
+    end
 
     def serialize_policy_snapshot
       if coordination_policy&.current_version

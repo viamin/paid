@@ -126,4 +126,12 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
       )
     end
   end
+
+  describe "unsupported policy types" do
+    it "fails fast instead of falling back to decomposition inputs" do
+      expect {
+        described_class.new(account: account, policy_type: "lifecycle_state")
+      }.to raise_error(ArgumentError, 'unsupported coordination policy type: "lifecycle_state"')
+    end
+  end
 end

@@ -79,5 +79,11 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates, :no_db do
         "max_tasks" => 10
       )
     end
+
+    it "fails fast for unsupported policy types" do
+      expect {
+        build_service("lifecycle_state")
+      }.to raise_error(ArgumentError, 'unsupported coordination policy type: "lifecycle_state"')
+    end
   end
 end
