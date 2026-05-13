@@ -104,7 +104,8 @@ module Prompts
       sections << ci_failures_section if include_ci_failures_section?
       sections << code_review_section if includes_review_threads?
       sections << conversation_section if include_conversation_section?
-      sections << other_issues_section if other_issues_section.present?
+      other_issues = other_issues_section
+      sections << other_issues if other_issues.present?
       sections << instructions_and_rules_shell
       sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
