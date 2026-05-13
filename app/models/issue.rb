@@ -193,7 +193,7 @@ class Issue < ApplicationRecord
   end
 
   def needs_input?
-    paid_state == "needs_input"
+    paid_state == "needs_input" && has_label?(project.enhance_issue_needs_input_label_name)
   end
 
   def draft_phase?
