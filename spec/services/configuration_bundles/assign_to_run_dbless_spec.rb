@@ -113,6 +113,11 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "cleans up newly created optimizer assignments before falling back" do
+      setup_optimizer_assignment_cleanup_fallback
+      expect(service.call).to eq(bundle)
+    end
+
     it "falls back to rebuilding the bundle payload when persisted assignments disagree with the optimizer definition" do
       setup_assignment_mismatch_fallback
 
@@ -456,6 +461,37 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       variant: variant_record
     ).and_return(assignment)
     expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+    expect(agent_run).to receive(:update!).with(expected_update_arguments)
+  end
+
+  def setup_optimizer_assignment_cleanup_fallback
+    optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+    selection = optimizer_selection(definition: optimized_definition)
+    variant_record = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+    assignment = Struct.new(:configuration_experiment_variant) do
+      def previously_new_record? = true
+
+      def destroy! = nil
+    end.new(variant_record)
+    fallback_definition = selection_definition
+
+    allow(service).to receive_messages(
+      optimizer_selection: selection,
+      active_experiments: [ experiment ],
+      optimizer_assignment_inputs_from_definition: [ [ experiment, variant_record ] ],
+      optimizer_payload_matches_resolved_assignments?: false
+    )
+    expect(ConfigurationExperiments::Assign).to receive(:call).with(
+      configuration_experiment: experiment,
+      agent_run: agent_run,
+      variant: variant_record
+    ).and_return(assignment)
+    expect(assignment).to receive(:destroy!)
+    allow(service).to receive(:bundle_definition).with(selection.variant_by_experiment_id).and_return(fallback_definition)
+    expect_bundle_lookup(
+      definition: fallback_definition,
+      fingerprint: bundle_fingerprint(fallback_definition)
+    )
     expect(agent_run).to receive(:update!).with(expected_update_arguments)
   end
 

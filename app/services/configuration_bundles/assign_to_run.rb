@@ -155,12 +155,14 @@ module ConfigurationBundles
       definition = selection&.definition
       fingerprint = selection&.fingerprint
       computed_fingerprint = bundle_fingerprint(definition) if definition.is_a?(Hash)
+      created_assignments = []
 
       if optimizer_payload_usable?(selection, definition, fingerprint, computed_fingerprint) &&
-          optimizer_payload_matches_resolved_assignments?(definition, persist_optimizer_assignments(selection))
+          optimizer_payload_matches_resolved_assignments?(definition, persist_optimizer_assignments(selection, created_assignments:))
         return [ definition, computed_fingerprint ]
       end
 
+      cleanup_created_optimizer_assignments(created_assignments)
       fallback_definition = rebuild_bundle_definition(selection)
       [ fallback_definition, bundle_fingerprint(fallback_definition) ]
     end
@@ -178,16 +180,18 @@ module ConfigurationBundles
       bundle_definition
     end
 
-    def persist_optimizer_assignments(selection)
+    def persist_optimizer_assignments(selection, created_assignments:)
       optimizer_assignment_inputs(selection).each_with_object({}) do |(experiment, variant), resolved_variants|
         assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
           agent_run: agent_run,
           variant: variant
         )
+        created_assignments << assignment if optimizer_assignment_created?(assignment)
         resolved_variants[experiment.id] = assignment.configuration_experiment_variant
       end
     rescue StandardError => e
+      cleanup_created_optimizer_assignments(created_assignments)
       Rails.logger.warn(
         message: "configuration_bundles.optimizer_assignment_persistence_failed",
         agent_run_id: agent_run.id,
@@ -195,6 +199,24 @@ module ConfigurationBundles
         error: e.message
       )
       false
+    end
+
+    def optimizer_assignment_created?(assignment)
+      return assignment.previously_new_record? if assignment.respond_to?(:previously_new_record?)
+      return assignment.saved_change_to_id? if assignment.respond_to?(:saved_change_to_id?)
+
+      false
+    end
+
+    def cleanup_created_optimizer_assignments(assignments)
+      assignments.each { |assignment| assignment.destroy! if assignment.respond_to?(:destroy!) }
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "configuration_bundles.optimizer_assignment_cleanup_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def optimizer_payload_matches_resolved_assignments?(definition, resolved_variants)
