@@ -45,6 +45,7 @@ module ClarifyingQuestions
       latest_answer_comment = latest_answer_comment()
       return false unless latest_answer_comment
       return true if body_questions.any? && enhancement_comment.blank?
+      return false if enhancement_comment.blank?
 
       comment_timestamp(latest_answer_comment) > comment_timestamp(enhancement_comment)
     end

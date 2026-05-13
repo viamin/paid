@@ -117,6 +117,28 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
 
+    context "when only an answers comment remains" do
+      before do
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+      end
+
+      it "returns an empty array" do
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
     context "when no clarifying questions are available" do
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
