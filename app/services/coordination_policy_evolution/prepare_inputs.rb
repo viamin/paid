@@ -244,15 +244,17 @@ module CoordinationPolicyEvolution
     end
 
     def serialize_orchestration_decision(decision)
+      context = decision.context.to_h
+
       {
         id: decision.id,
         decision_type: decision.decision_type,
         created_at: decision.created_at.iso8601,
         actor: decision.actor,
-        decision_status: decision.context["decision_status"],
-        context: decision.context,
-        inputs: decision.inputs,
-        outputs: decision.outputs
+        decision_status: context["decision_status"],
+        context: context,
+        inputs: decision.inputs.to_h,
+        outputs: decision.outputs.to_h
       }
     end
 
@@ -391,6 +393,7 @@ module CoordinationPolicyEvolution
         end
 
         config["enabled"] = payload["enabled"] if payload.key?("enabled")
+        config["enabled"] = payload["decomposition_enabled"] if payload.key?("decomposition_enabled")
         config["min_components_to_decompose"] = payload["min_components_to_decompose"] if payload.key?("min_components_to_decompose")
         config["max_tasks"] = payload["max_tasks"] if payload.key?("max_tasks")
         config["layer_order"] = payload["layer_order"] if payload.key?("layer_order")

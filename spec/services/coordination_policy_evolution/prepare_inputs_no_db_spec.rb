@@ -91,4 +91,27 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
       )
     end
   end
+
+  describe "legacy decomposition config extraction" do
+    it "accepts flat decomposition_enabled fields from older strategy snapshots" do
+      decomposition_service = described_class.new(account: account, policy_type: "decomposition")
+
+      configuration = decomposition_service.send(
+        :effective_configuration,
+        {
+          "decomposition_enabled" => false,
+          "min_components_to_decompose" => 4
+        },
+        {
+          "max_tasks" => 10
+        }
+      )
+
+      expect(configuration.fetch("decomposition")).to include(
+        "enabled" => false,
+        "min_components_to_decompose" => 4,
+        "max_tasks" => 10
+      )
+    end
+  end
 end

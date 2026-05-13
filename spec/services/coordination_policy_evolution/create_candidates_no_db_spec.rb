@@ -58,5 +58,26 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates, :no_db do
         "interruption_cost" => { "base" => 0.2 }
       )
     end
+
+    it "accepts legacy flat decomposition flags and ignores nil nested policy sections" do
+      service = build_service("decomposition")
+      mutation = instance_double(
+        StrategyEvolution::Mutate::Mutation,
+        configuration: {
+          "decomposition" => nil,
+          "decomposition_enabled" => false,
+          "min_components_to_decompose" => 4,
+          "max_tasks" => 10
+        }
+      )
+
+      expect(service.send(:candidate_rules, mutation)).to eq(
+        "enabled" => false,
+        "min_components_to_decompose" => 4
+      )
+      expect(service.send(:candidate_parameters, mutation)).to eq(
+        "max_tasks" => 10
+      )
+    end
   end
 end
