@@ -12,11 +12,15 @@ RSpec.describe IncreaseCreatePrIdleTimeoutDefault, :aggregate_failures do
   let(:custom_user_setting) { create(:user_setting, create_pr_idle_timeout_seconds: 420) }
   let(:preexisting_360_user_setting) { create(:user_setting, create_pr_idle_timeout_seconds: 360) }
 
+  include MigrationSpecHelpers
+
   around do |example|
+    truncate_migration_test_data
     example.run
   ensure
     migration.migrate(:up)
     UserSetting.reset_column_information
+    truncate_migration_test_data
   end
 
   it "backfills legacy 300-second rows on up without clobbering 360-second rows on down" do
