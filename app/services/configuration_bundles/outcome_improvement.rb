@@ -51,109 +51,151 @@ module ConfigurationBundles
     end
 
     def call
-      rows = load_outcome_rows.map { |row| backfill_metrics(row) }
-      return empty_result(rows.size) if rows.size < MIN_OUTCOMES_FOR_TREND
+      count = outcome_count
+      return empty_result(count) if count < MIN_OUTCOMES_FOR_TREND
 
-      early, recent = split_rows(rows)
-      exploitative, exploratory = partition_by_selection_mode(rows)
+      aggregate_row = load_aggregate_row
+      period_rows = load_period_rows
 
       ImprovementResult.new(
-        early_objective_score: average(early, :objective_score),
-        recent_objective_score: average(recent, :objective_score),
-        objective_improvement: compute_improvement(early, recent, :objective_score),
-        early_quality_score: average(early, :quality_score),
-        recent_quality_score: average(recent, :quality_score),
-        quality_improvement: compute_improvement(early, recent, :quality_score),
-        early_cost_cents: average(early, :cost_cents),
-        recent_cost_cents: average(recent, :cost_cents),
-        cost_change_fraction: compute_cost_change(early, recent),
-        early_quality_per_dollar: average_quality_per_dollar(early),
-        recent_quality_per_dollar: average_quality_per_dollar(recent),
-        quality_per_dollar_improvement: compute_quality_per_dollar_improvement(early, recent),
-        exploitative_avg_objective: average(exploitative, :objective_score),
-        exploratory_avg_objective: average(exploratory, :objective_score),
-        exploitative_sample_count: exploitative.size,
-        exploratory_sample_count: exploratory.size,
-        optimizer_learning_ratio: compute_optimizer_learning_ratio(exploitative, exploratory),
-        outcome_count: rows.size,
+        early_objective_score: float_value(aggregate_row["early_objective_score"]),
+        recent_objective_score: float_value(aggregate_row["recent_objective_score"]),
+        objective_improvement: compute_improvement(
+          float_value(aggregate_row["early_objective_score"]),
+          float_value(aggregate_row["recent_objective_score"])
+        ),
+        early_quality_score: float_value(aggregate_row["early_quality_score"]),
+        recent_quality_score: float_value(aggregate_row["recent_quality_score"]),
+        quality_improvement: compute_improvement(
+          float_value(aggregate_row["early_quality_score"]),
+          float_value(aggregate_row["recent_quality_score"])
+        ),
+        early_cost_cents: float_value(aggregate_row["early_cost_cents"]),
+        recent_cost_cents: float_value(aggregate_row["recent_cost_cents"]),
+        cost_change_fraction: compute_improvement(
+          float_value(aggregate_row["early_cost_cents"]),
+          float_value(aggregate_row["recent_cost_cents"])
+        ),
+        early_quality_per_dollar: float_value(aggregate_row["early_quality_per_dollar"]),
+        recent_quality_per_dollar: float_value(aggregate_row["recent_quality_per_dollar"]),
+        quality_per_dollar_improvement: compute_improvement(
+          float_value(aggregate_row["early_quality_per_dollar"]),
+          float_value(aggregate_row["recent_quality_per_dollar"])
+        ),
+        exploitative_avg_objective: float_value(aggregate_row["exploitative_avg_objective"]),
+        exploratory_avg_objective: float_value(aggregate_row["exploratory_avg_objective"]),
+        exploitative_sample_count: integer_value(aggregate_row["exploitative_sample_count"]),
+        exploratory_sample_count: integer_value(aggregate_row["exploratory_sample_count"]),
+        optimizer_learning_ratio: compute_improvement(
+          float_value(aggregate_row["exploratory_avg_objective"]),
+          float_value(aggregate_row["exploitative_avg_objective"])
+        ),
+        outcome_count: count,
         sufficient_data: true,
-        periods: build_period_snapshots(rows)
+        periods: build_period_snapshots(period_rows)
       )
     end
 
     private
 
-    def load_outcome_rows
-      BundleOutcome
+    def outcome_count
+      @outcome_count ||= bundle_outcomes_scope.count
+    end
+
+    def load_aggregate_row
+      ActiveRecord::Base.connection.select_one(aggregate_sql)
+    end
+
+    def load_period_rows
+      ActiveRecord::Base.connection.select_all(period_snapshots_sql).to_a
+    end
+
+    def bundle_outcomes_scope
+      @bundle_outcomes_scope ||= BundleOutcome
         .joins(:agent_run)
         .where(agent_runs: { project_id: project.id })
         .where.not(quality_score: nil)
-        .order(:created_at)
-        .pluck(
-          Arel.sql(<<~SQL.squish)
-            bundle_outcomes.quality_score,
-            bundle_outcomes.cost_cents,
-            bundle_outcomes.success,
-            bundle_outcomes.metrics->>'objective_score',
-            bundle_outcomes.metrics->>'quality_per_dollar',
-            bundle_outcomes.metrics->>'selection_mode',
-            bundle_outcomes.created_at,
-            bundle_outcomes.duration_seconds
-          SQL
+    end
+
+    def aggregate_sql
+      <<~SQL.squish
+        WITH annotated_outcomes AS (#{annotated_outcomes_sql})
+        SELECT
+          AVG(objective_score) FILTER (WHERE period_index = 1) AS early_objective_score,
+          AVG(objective_score) FILTER (WHERE period_index = 2) AS recent_objective_score,
+          AVG(quality_score) FILTER (WHERE period_index = 1) AS early_quality_score,
+          AVG(quality_score) FILTER (WHERE period_index = 2) AS recent_quality_score,
+          AVG(cost_cents) FILTER (WHERE period_index = 1) AS early_cost_cents,
+          AVG(cost_cents) FILTER (WHERE period_index = 2) AS recent_cost_cents,
+          AVG(quality_per_dollar) FILTER (WHERE period_index = 1) AS early_quality_per_dollar,
+          AVG(quality_per_dollar) FILTER (WHERE period_index = 2) AS recent_quality_per_dollar,
+          AVG(objective_score) FILTER (WHERE selection_mode = 'exploitative') AS exploitative_avg_objective,
+          AVG(objective_score) FILTER (WHERE selection_mode = 'exploratory') AS exploratory_avg_objective,
+          COUNT(*) FILTER (WHERE selection_mode = 'exploitative') AS exploitative_sample_count,
+          COUNT(*) FILTER (WHERE selection_mode = 'exploratory') AS exploratory_sample_count
+        FROM annotated_outcomes
+      SQL
+    end
+
+    def period_snapshots_sql
+      <<~SQL.squish
+        WITH annotated_outcomes AS (#{annotated_outcomes_sql})
+        SELECT
+          period_index,
+          COUNT(*) AS outcome_count,
+          AVG(objective_score) AS avg_objective_score,
+          AVG(quality_score) AS avg_quality_score,
+          AVG(cost_cents) AS avg_cost_cents,
+          AVG(quality_per_dollar) AS avg_quality_per_dollar,
+          AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END) AS success_rate
+        FROM annotated_outcomes
+        GROUP BY period_index
+        ORDER BY period_index
+      SQL
+    end
+
+    def annotated_outcomes_sql
+      midpoint = midpoint_count
+
+      bundle_outcomes_scope
+        .select(Arel.sql(<<~SQL.squish))
+          bundle_outcomes.success,
+          bundle_outcomes.quality_score::double precision AS quality_score,
+          bundle_outcomes.cost_cents::double precision AS cost_cents,
+          #{objective_score_sql} AS objective_score,
+          #{quality_per_dollar_sql} AS quality_per_dollar,
+          bundle_outcomes.metrics ->> 'selection_mode' AS selection_mode,
+          CASE
+            WHEN ROW_NUMBER() OVER (ORDER BY bundle_outcomes.created_at, bundle_outcomes.id) <= #{midpoint} THEN 1
+            ELSE 2
+          END AS period_index
+        SQL
+        .to_sql
+    end
+
+    def midpoint_count
+      outcome_count / PERIODS_FOR_TREND
+    end
+
+    def objective_score_sql
+      <<~SQL.squish
+        COALESCE(
+          NULLIF(bundle_outcomes.metrics ->> 'objective_score', '')::double precision,
+          #{objective_score_fallback_sql}
         )
-        .map { |row| parse_row(row) }
+      SQL
     end
 
-    def parse_row(row)
-      quality_score, cost_cents, success, objective_raw, qpd_raw, selection_mode, created_at, duration_seconds = row
-
-      {
-        quality_score: quality_score.to_f,
-        cost_cents: cost_cents&.to_i,
-        success: success,
-        objective_score: objective_raw.present? ? objective_raw.to_f : nil,
-        quality_per_dollar: qpd_raw.present? ? qpd_raw.to_f : nil,
-        selection_mode: selection_mode,
-        created_at: created_at,
-        duration_seconds: duration_seconds&.to_f
-      }
-    end
-
-    # Backfills missing objective_score and quality_per_dollar using the same
-    # weighted formula that BundlePerformanceDashboardStats applies in SQL,
-    # so legacy outcomes without persisted metrics are not silently dropped.
-    def backfill_metrics(row)
-      row.merge(
-        objective_score: row[:objective_score] || fallback_objective_score(row[:quality_score], row[:cost_cents], row[:duration_seconds]),
-        quality_per_dollar: row[:quality_per_dollar] || fallback_quality_per_dollar(row[:quality_score], row[:cost_cents])
-      )
-    end
-
-    # Mirrors BundlePerformanceDashboardStats#objective_score_fallback_sql:
-    # weighted combination of quality, normalized-inverse cost, and
-    # normalized-inverse speed using the same reference values.
-    def fallback_objective_score(quality_score, cost_cents, duration_seconds)
-      weights = optimizer_weights
-      quality_component = weights[:quality] * quality_score.clamp(0.0, 1.0)
-      cost_component    = weights[:cost] * normalized_inverse(cost_cents, reference_cost_cents)
-      speed_component   = weights[:speed] * normalized_inverse(duration_seconds, reference_duration_seconds)
-
-      (quality_component + cost_component + speed_component).round(4)
-    end
-
-    # Mirrors BundlePerformanceDashboardStats#average_quality_per_dollar_sql:
-    # floors the denominator with GREATEST(cost_cents / 100.0, 0.01) so
-    # zero-cost outcomes are included rather than silently dropped.
-    def fallback_quality_per_dollar(quality_score, cost_cents)
-      return nil if cost_cents.nil? || quality_score.nil?
-
-      quality_score.to_f / [ cost_cents.to_f / 100.0, 0.01 ].max
-    end
-
-    def normalized_inverse(value, reference)
-      return 0.0 if value.nil?
-
-      reference / ([ value, 0.0 ].max + reference)
+    def quality_per_dollar_sql
+      <<~SQL.squish
+        COALESCE(
+          NULLIF(bundle_outcomes.metrics ->> 'quality_per_dollar', '')::double precision,
+          CASE
+            WHEN bundle_outcomes.quality_score IS NULL OR bundle_outcomes.cost_cents IS NULL THEN NULL
+            ELSE bundle_outcomes.quality_score / GREATEST(bundle_outcomes.cost_cents / 100.0, 0.01)
+          END
+        )
+      SQL
     end
 
     def optimizer_weights
@@ -189,101 +231,59 @@ module ConfigurationBundles
       numeric&.positive? ? numeric : fallback.to_f
     end
 
-    def split_rows(rows)
-      partition_period_rows(rows)
-    end
-
-    def partition_by_selection_mode(rows)
-      exploitative = rows.select { |r| r[:selection_mode] == "exploitative" }
-      exploratory = rows.select { |r| r[:selection_mode] == "exploratory" }
-      [ exploitative, exploratory ]
-    end
-
-    def average(rows, key)
-      values = rows.filter_map { |r| r[key] }
-      return nil if values.empty?
-
-      values.sum.to_f / values.size
-    end
-
-    def compute_improvement(early, recent, key)
-      early_avg = average(early, key)
-      recent_avg = average(recent, key)
+    def compute_improvement(early_avg, recent_avg)
       return nil if early_avg.nil? || recent_avg.nil?
       return 0.0 if early_avg.zero?
 
       ((recent_avg - early_avg) / early_avg.abs).round(4)
     end
 
-    def compute_cost_change(early, recent)
-      early_cost = average(early, :cost_cents)
-      recent_cost = average(recent, :cost_cents)
-      return nil if early_cost.nil? || recent_cost.nil?
-      return 0.0 if early_cost.zero?
-
-      ((recent_cost - early_cost) / early_cost.abs).round(4)
-    end
-
-    def average_quality_per_dollar(rows)
-      values = rows.filter_map { |r| compute_quality_per_dollar(r) }
-      return nil if values.empty?
-
-      values.sum.to_f / values.size
-    end
-
-    # Mirrors BundlePerformanceDashboardStats#average_quality_per_dollar_sql:
-    # floors the denominator with GREATEST(cost_cents / 100.0, 0.01) so
-    # zero-cost outcomes are included rather than silently dropped.
-    def compute_quality_per_dollar(row)
-      return row[:quality_per_dollar] if row[:quality_per_dollar].present?
-      return nil if row[:cost_cents].nil? || row[:quality_score].nil?
-
-      row[:quality_score].to_f / [ row[:cost_cents].to_f / 100.0, 0.01 ].max
-    end
-
-    def compute_quality_per_dollar_improvement(early, recent)
-      early_qpd = average_quality_per_dollar(early)
-      recent_qpd = average_quality_per_dollar(recent)
-      return nil if early_qpd.nil? || recent_qpd.nil?
-      return 0.0 if early_qpd.zero?
-
-      ((recent_qpd - early_qpd) / early_qpd.abs).round(4)
-    end
-
-    def compute_optimizer_learning_ratio(exploitative, exploratory)
-      return nil if exploitative.empty? || exploratory.empty?
-
-      exp_avg = average(exploitative, :objective_score)
-      expl_avg = average(exploratory, :objective_score)
-      return nil if exp_avg.nil? || expl_avg.nil?
-      return 0.0 if expl_avg.zero?
-
-      ((exp_avg - expl_avg) / expl_avg.abs).round(4)
-    end
-
     def build_period_snapshots(rows)
-      partition_period_rows(rows).each_with_index.map do |period_rows, index|
+      rows.map do |row|
         PeriodSnapshot.new(
-          label: "Period #{index + 1}",
-          outcome_count: period_rows.size,
-          avg_objective_score: average(period_rows, :objective_score),
-          avg_quality_score: average(period_rows, :quality_score),
-          avg_cost_cents: average(period_rows, :cost_cents),
-          avg_quality_per_dollar: average_quality_per_dollar(period_rows),
-          success_rate: success_rate_for(period_rows)
+          label: "Period #{integer_value(row["period_index"])}",
+          outcome_count: integer_value(row["outcome_count"]),
+          avg_objective_score: float_value(row["avg_objective_score"]),
+          avg_quality_score: float_value(row["avg_quality_score"]),
+          avg_cost_cents: float_value(row["avg_cost_cents"]),
+          avg_quality_per_dollar: float_value(row["avg_quality_per_dollar"]),
+          success_rate: float_value(row["success_rate"])
         )
       end
     end
 
-    def success_rate_for(rows)
-      return nil if rows.empty?
-
-      rows.count { |r| r[:success] }.to_f / rows.size
+    def objective_score_fallback_sql
+      <<~SQL.squish
+        ROUND(
+          (
+            (#{optimizer_weights[:quality]} * COALESCE(LEAST(GREATEST(bundle_outcomes.quality_score, 0.0), 1.0), 0.0)) +
+            (#{optimizer_weights[:cost]} * #{normalized_inverse_sql("bundle_outcomes.cost_cents", reference_cost_cents)}) +
+            (#{optimizer_weights[:speed]} * #{normalized_inverse_sql("bundle_outcomes.duration_seconds", reference_duration_seconds)})
+          )::numeric,
+          4
+        )::double precision
+      SQL
     end
 
-    def partition_period_rows(rows)
-      midpoint = rows.size / PERIODS_FOR_TREND
-      [ rows[0...midpoint], rows[midpoint..] ]
+    def normalized_inverse_sql(column_name, reference)
+      <<~SQL.squish
+        CASE
+          WHEN #{column_name} IS NULL THEN 0.0
+          ELSE #{reference} / (GREATEST(#{column_name}, 0.0) + #{reference})
+        END
+      SQL
+    end
+
+    def float_value(value)
+      return nil if value.nil?
+
+      value.to_f
+    end
+
+    def integer_value(value)
+      return 0 if value.nil?
+
+      value.to_i
     end
 
     def empty_result(count)

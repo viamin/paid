@@ -4,28 +4,55 @@ require "rails_helper"
 
 RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
   let(:project) { double(id: 42) }
+  let(:service) { described_class.new(project: project) }
 
-  def make_row(quality_score:, cost_cents:, success:, objective_score:, quality_per_dollar: nil, selection_mode: nil, duration_seconds: nil)
+  def aggregate_row(overrides = {})
     {
-      quality_score: quality_score,
-      cost_cents: cost_cents,
-      success: success,
-      objective_score: objective_score,
-      quality_per_dollar: quality_per_dollar,
-      selection_mode: selection_mode,
-      created_at: Time.current,
-      duration_seconds: duration_seconds
+      "early_objective_score" => 0.5,
+      "recent_objective_score" => 0.75,
+      "early_quality_score" => 0.55,
+      "recent_quality_score" => 0.8,
+      "early_cost_cents" => 180.0,
+      "recent_cost_cents" => 120.0,
+      "early_quality_per_dollar" => 0.3,
+      "recent_quality_per_dollar" => 0.68,
+      "exploitative_avg_objective" => 0.65,
+      "exploratory_avg_objective" => 0.5,
+      "exploitative_sample_count" => 5,
+      "exploratory_sample_count" => 1
+    }.merge(overrides)
+  end
+
+  def period_row(period_index:, outcome_count:, avg_objective_score:, avg_quality_score:, avg_cost_cents:, avg_quality_per_dollar:, success_rate:)
+    {
+      "period_index" => period_index,
+      "outcome_count" => outcome_count,
+      "avg_objective_score" => avg_objective_score,
+      "avg_quality_score" => avg_quality_score,
+      "avg_cost_cents" => avg_cost_cents,
+      "avg_quality_per_dollar" => avg_quality_per_dollar,
+      "success_rate" => success_rate
     }
+  end
+
+  def default_periods
+    [
+      period_row(period_index: 1, outcome_count: 3, avg_objective_score: 0.5, avg_quality_score: 0.55, avg_cost_cents: 180.0, avg_quality_per_dollar: 0.3, success_rate: 1.0),
+      period_row(period_index: 2, outcome_count: 3, avg_objective_score: 0.75, avg_quality_score: 0.8, avg_cost_cents: 120.0, avg_quality_per_dollar: 0.68, success_rate: 1.0)
+    ]
+  end
+
+  def stub_result(count:, aggregate: aggregate_row, periods: default_periods)
+    allow(service).to receive_messages(
+      outcome_count: count,
+      load_aggregate_row: aggregate,
+      load_period_rows: periods
+    )
   end
 
   describe "with insufficient data" do
     it "returns insufficient data result when there are fewer than 4 outcomes" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return([
-        make_row(quality_score: 0.8, cost_cents: 100, success: true, objective_score: 0.7, selection_mode: "exploitative"),
-        make_row(quality_score: 0.7, cost_cents: 80, success: true, objective_score: 0.65, selection_mode: "exploitative"),
-        make_row(quality_score: 0.75, cost_cents: 90, success: true, objective_score: 0.68, selection_mode: "exploratory")
-      ])
+      allow(service).to receive(:outcome_count).and_return(3)
 
       result = service.call
 
@@ -36,8 +63,7 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "returns insufficient data result when there are no outcomes" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return([])
+      allow(service).to receive(:outcome_count).and_return(0)
 
       result = service.call
 
@@ -47,21 +73,11 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
   end
 
   describe "with sufficient data" do
-    let(:improving_rows) do
-      [
-        make_row(quality_score: 0.5, cost_cents: 200, success: true, objective_score: 0.45, quality_per_dollar: 0.25, selection_mode: "exploitative"),
-        make_row(quality_score: 0.55, cost_cents: 180, success: true, objective_score: 0.50, quality_per_dollar: 0.306, selection_mode: "exploratory"),
-        make_row(quality_score: 0.6, cost_cents: 160, success: true, objective_score: 0.55, quality_per_dollar: 0.375, selection_mode: "exploitative"),
-        make_row(quality_score: 0.75, cost_cents: 140, success: true, objective_score: 0.70, quality_per_dollar: 0.536, selection_mode: "exploitative"),
-        make_row(quality_score: 0.8, cost_cents: 120, success: true, objective_score: 0.75, quality_per_dollar: 0.667, selection_mode: "exploitative"),
-        make_row(quality_score: 0.85, cost_cents: 100, success: true, objective_score: 0.80, quality_per_dollar: 0.85, selection_mode: "exploitative")
-      ]
+    before do
+      stub_result(count: 6)
     end
 
     it "returns sufficient data result" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.sufficient_data).to be true
@@ -69,9 +85,6 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "computes objective improvement between early and recent periods" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.early_objective_score).to be_within(0.01).of(0.50)
@@ -80,9 +93,6 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "computes quality improvement between early and recent periods" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.early_quality_score).to be_within(0.01).of(0.55)
@@ -91,9 +101,6 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "computes cost change between early and recent periods" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.early_cost_cents).to be_within(1).of(180)
@@ -102,9 +109,6 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "computes quality-per-dollar improvement" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.recent_quality_per_dollar).to be > result.early_quality_per_dollar
@@ -112,9 +116,6 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "tracks exploitative vs exploratory outcomes" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.exploitative_sample_count).to eq(5)
@@ -122,21 +123,15 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "computes optimizer learning ratio" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
       expect(result.optimizer_learning_ratio).not_to be_nil
     end
 
     it "builds period snapshots" do
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(improving_rows)
-
       result = service.call
 
-      expect(result.periods.length).to be >= 2
+      expect(result.periods.length).to eq(2)
       expect(result.periods.first).to be_a(described_class::PeriodSnapshot)
       expect(result.periods.first.outcome_count).to be > 0
       expect(result.periods.first.avg_objective_score).not_to be_nil
@@ -144,15 +139,14 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
   end
 
   describe "quality-per-dollar fallback" do
-    it "computes quality-per-dollar from quality and cost when metrics lack it" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: 0.45),
-        make_row(quality_score: 0.6, cost_cents: 100, success: true, objective_score: 0.55),
-        make_row(quality_score: 0.8, cost_cents: 200, success: true, objective_score: 0.75),
-        make_row(quality_score: 0.9, cost_cents: 200, success: true, objective_score: 0.85)
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+    it "uses the aggregated quality-per-dollar averages from SQL" do
+      stub_result(
+        count: 4,
+        aggregate: aggregate_row(
+          "early_quality_per_dollar" => 0.55,
+          "recent_quality_per_dollar" => 0.425
+        )
+      )
 
       result = service.call
 
@@ -165,11 +159,14 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
 
   describe "optimizer learning ratio" do
     it "returns nil when there are no exploratory runs" do
-      rows = 6.times.map do |i|
-        make_row(quality_score: 0.7 + i * 0.05, cost_cents: 100, success: true, objective_score: 0.65 + i * 0.05, selection_mode: "exploitative")
-      end
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 6,
+        aggregate: aggregate_row(
+          "exploitative_sample_count" => 6,
+          "exploratory_sample_count" => 0,
+          "exploratory_avg_objective" => nil
+        )
+      )
 
       result = service.call
 
@@ -178,11 +175,14 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "returns nil when there are no exploitative runs" do
-      rows = 4.times.map do |i|
-        make_row(quality_score: 0.7 + i * 0.05, cost_cents: 100, success: true, objective_score: 0.65 + i * 0.05, selection_mode: "exploratory")
-      end
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 4,
+        aggregate: aggregate_row(
+          "exploitative_sample_count" => 0,
+          "exploitative_avg_objective" => nil,
+          "exploratory_sample_count" => 4
+        )
+      )
 
       result = service.call
 
@@ -191,14 +191,15 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "returns a positive ratio when exploitative outperforms exploratory" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: 0.45, selection_mode: "exploratory"),
-        make_row(quality_score: 0.55, cost_cents: 100, success: true, objective_score: 0.50, selection_mode: "exploratory"),
-        make_row(quality_score: 0.85, cost_cents: 100, success: true, objective_score: 0.80, selection_mode: "exploitative"),
-        make_row(quality_score: 0.9, cost_cents: 100, success: true, objective_score: 0.85, selection_mode: "exploitative")
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 4,
+        aggregate: aggregate_row(
+          "exploitative_avg_objective" => 0.825,
+          "exploratory_avg_objective" => 0.475,
+          "exploitative_sample_count" => 2,
+          "exploratory_sample_count" => 2
+        )
+      )
 
       result = service.call
 
@@ -206,14 +207,15 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "returns a negative ratio when exploratory outperforms exploitative" do
-      rows = [
-        make_row(quality_score: 0.9, cost_cents: 100, success: true, objective_score: 0.85, selection_mode: "exploratory"),
-        make_row(quality_score: 0.85, cost_cents: 100, success: true, objective_score: 0.80, selection_mode: "exploratory"),
-        make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: 0.45, selection_mode: "exploitative"),
-        make_row(quality_score: 0.55, cost_cents: 100, success: true, objective_score: 0.50, selection_mode: "exploitative")
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 4,
+        aggregate: aggregate_row(
+          "exploitative_avg_objective" => 0.475,
+          "exploratory_avg_objective" => 0.825,
+          "exploitative_sample_count" => 2,
+          "exploratory_sample_count" => 2
+        )
+      )
 
       result = service.call
 
@@ -223,11 +225,13 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
 
   describe "period snapshots" do
     it "divides outcomes into approximately equal periods" do
-      rows = 8.times.map do |i|
-        make_row(quality_score: 0.5 + i * 0.05, cost_cents: 200 - i * 20, success: true, objective_score: 0.45 + i * 0.05)
-      end
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 8,
+        periods: [
+          period_row(period_index: 1, outcome_count: 4, avg_objective_score: 0.525, avg_quality_score: 0.575, avg_cost_cents: 170.0, avg_quality_per_dollar: 0.35, success_rate: 1.0),
+          period_row(period_index: 2, outcome_count: 4, avg_objective_score: 0.725, avg_quality_score: 0.775, avg_cost_cents: 90.0, avg_quality_per_dollar: 0.8, success_rate: 1.0)
+        ]
+      )
 
       result = service.call
 
@@ -236,11 +240,13 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "does not create an extra runt period when rows are unevenly divisible" do
-      rows = 5.times.map do |i|
-        make_row(quality_score: 0.5 + i * 0.05, cost_cents: 200 - i * 20, success: true, objective_score: 0.45 + i * 0.05)
-      end
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 5,
+        periods: [
+          period_row(period_index: 1, outcome_count: 2, avg_objective_score: 0.475, avg_quality_score: 0.525, avg_cost_cents: 190.0, avg_quality_per_dollar: 0.28, success_rate: 1.0),
+          period_row(period_index: 2, outcome_count: 3, avg_objective_score: 0.6, avg_quality_score: 0.65, avg_cost_cents: 140.0, avg_quality_per_dollar: 0.52, success_rate: 1.0)
+        ]
+      )
 
       result = service.call
 
@@ -249,14 +255,13 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "computes success rate per period" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: 0.45),
-        make_row(quality_score: 0.5, cost_cents: 100, success: false, objective_score: 0.45),
-        make_row(quality_score: 0.9, cost_cents: 100, success: true, objective_score: 0.85),
-        make_row(quality_score: 0.9, cost_cents: 100, success: true, objective_score: 0.85)
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 4,
+        periods: [
+          period_row(period_index: 1, outcome_count: 2, avg_objective_score: 0.45, avg_quality_score: 0.5, avg_cost_cents: 100.0, avg_quality_per_dollar: 0.5, success_rate: 0.5),
+          period_row(period_index: 2, outcome_count: 2, avg_objective_score: 0.85, avg_quality_score: 0.9, avg_cost_cents: 100.0, avg_quality_per_dollar: 0.9, success_rate: 1.0)
+        ]
+      )
 
       result = service.call
 
@@ -265,14 +270,13 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     end
 
     it "shows improving trend across periods" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: 200, success: true, objective_score: 0.45),
-        make_row(quality_score: 0.5, cost_cents: 200, success: true, objective_score: 0.45),
-        make_row(quality_score: 0.9, cost_cents: 100, success: true, objective_score: 0.85),
-        make_row(quality_score: 0.9, cost_cents: 100, success: true, objective_score: 0.85)
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+      stub_result(
+        count: 4,
+        periods: [
+          period_row(period_index: 1, outcome_count: 2, avg_objective_score: 0.45, avg_quality_score: 0.5, avg_cost_cents: 200.0, avg_quality_per_dollar: 0.25, success_rate: 1.0),
+          period_row(period_index: 2, outcome_count: 2, avg_objective_score: 0.85, avg_quality_score: 0.9, avg_cost_cents: 100.0, avg_quality_per_dollar: 0.9, success_rate: 1.0)
+        ]
+      )
 
       result = service.call
 
@@ -282,59 +286,67 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
   end
 
   describe "edge cases" do
-    it "backfills objective scores from quality/cost/speed when metrics lack them" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: nil, selection_mode: "exploitative"),
-        make_row(quality_score: 0.6, cost_cents: 100, success: true, objective_score: nil, selection_mode: "exploitative"),
-        make_row(quality_score: 0.7, cost_cents: 100, success: true, objective_score: nil, selection_mode: "exploitative"),
-        make_row(quality_score: 0.8, cost_cents: 100, success: true, objective_score: nil, selection_mode: "exploitative")
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+    it "returns nil improvements when aggregated early values are missing" do
+      stub_result(
+        count: 4,
+        aggregate: aggregate_row(
+          "early_cost_cents" => nil,
+          "early_quality_per_dollar" => nil
+        )
+      )
 
       result = service.call
 
-      expect(result.sufficient_data).to be true
-      expect(result.objective_improvement).not_to be_nil
-      expect(result.objective_improvement).to be > 0
-      expect(result.quality_improvement).to be > 0
-    end
-
-    it "excludes nil cost from quality-per-dollar averages, preserving SQL parity" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: nil, success: true, objective_score: 0.45),
-        make_row(quality_score: 0.6, cost_cents: nil, success: true, objective_score: 0.55),
-        make_row(quality_score: 0.7, cost_cents: 100, success: true, objective_score: 0.65),
-        make_row(quality_score: 0.8, cost_cents: 100, success: true, objective_score: 0.75)
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
-
-      result = service.call
-
-      expect(result.sufficient_data).to be true
-      expect(result.early_cost_cents).to be_nil
       expect(result.cost_change_fraction).to be_nil
-      expect(result.early_quality_per_dollar).to be_nil
       expect(result.quality_per_dollar_improvement).to be_nil
     end
 
-    it "handles zero cost gracefully in quality-per-dollar using GREATEST floor" do
-      rows = [
-        make_row(quality_score: 0.5, cost_cents: 0, success: true, objective_score: 0.45),
-        make_row(quality_score: 0.6, cost_cents: 0, success: true, objective_score: 0.55),
-        make_row(quality_score: 0.7, cost_cents: 100, success: true, objective_score: 0.65),
-        make_row(quality_score: 0.8, cost_cents: 100, success: true, objective_score: 0.75)
-      ]
-      service = described_class.new(project: project)
-      allow(service).to receive(:load_outcome_rows).and_return(rows)
+    it "handles zero early values gracefully in aggregate comparisons" do
+      stub_result(
+        count: 4,
+        aggregate: aggregate_row(
+          "early_quality_per_dollar" => 0.0,
+          "recent_quality_per_dollar" => 10.0
+        )
+      )
 
       result = service.call
 
-      expect(result.sufficient_data).to be true
-      # Zero-cost rows use GREATEST(cost/100, 0.01) floor, matching dashboard SQL
-      expect(result.early_quality_per_dollar).not_to be_nil
-      expect(result.early_quality_per_dollar).to be > 0
+      expect(result.quality_per_dollar_improvement).to eq(0.0)
+    end
+  end
+
+  describe "query shape" do
+    let(:scope) { instance_double(ActiveRecord::Relation) }
+
+    before do
+      allow(service).to receive_messages(bundle_outcomes_scope: scope, outcome_count: 6)
+      allow(scope).to receive(:select) do |sql|
+        double(to_sql: sql.to_s)
+      end
+    end
+
+    it "builds the annotated outcome query with windowing instead of plucking all rows" do
+      sql = service.send(:annotated_outcomes_sql)
+
+      expect(sql).to include("ROW_NUMBER() OVER")
+      expect(sql).to include("period_index")
+      expect(sql).to include("quality_per_dollar")
+    end
+
+    it "preserves the SQL fallback for historical objective scores" do
+      sql = service.send(:annotated_outcomes_sql)
+
+      expect(sql).to include("NULLIF(bundle_outcomes.metrics ->> 'objective_score', '')::double precision")
+      expect(sql).to include("bundle_outcomes.duration_seconds")
+      expect(sql).to include("ROUND(")
+    end
+
+    it "preserves the zero-cost floor for quality per dollar" do
+      sql = service.send(:annotated_outcomes_sql)
+
+      expect(sql).to include("NULLIF(bundle_outcomes.metrics ->> 'quality_per_dollar', '')::double precision")
+      expect(sql).to include("GREATEST(bundle_outcomes.cost_cents / 100.0, 0.01)")
     end
   end
 end
