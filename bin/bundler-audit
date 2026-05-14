@@ -2,7 +2,5 @@
 require_relative "../config/boot"
 require "bundler/audit/cli"
 
-ARGV.replace(%w[ check --update ]) if ARGV.empty?
-ARGV << "--update" if ARGV.include?("check") && !ARGV.include?("--update")
-ARGV.concat %w[ --config config/bundler-audit.yml ] unless ARGV.include?("--config")
+ARGV.concat %w[ --config config/bundler-audit.yml ] if ARGV.empty? || ARGV.include?("check")
 Bundler::Audit::CLI.start

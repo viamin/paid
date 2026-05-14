@@ -510,6 +510,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Orchestration Decision Metrics")
       expect(response.body).to include("Decision Types by Context")
       expect(response.body).to include("Outcomes by Decision Type")
+      expect(response.body).to include("Recorded Decision Statuses")
       expect(response.body).to include("Decision Actors")
     end
 
