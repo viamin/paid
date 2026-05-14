@@ -41,6 +41,13 @@ module ScalingExperiments
     DIMINISHING_RETURNS_RATIO = 0.10
     MIN_EFFICIENCY_GAIN = 0.10
 
+    # Maps validated outcome_metrics keys to summary field names emitted by SummarizeResults.
+    METRIC_KEY_TO_SUMMARY_FIELD = {
+      "duration_seconds" => "avg_duration_seconds",
+      "total_cost_cents" => "avg_cost_cents",
+      "parallelism_observed" => "avg_parallelism_observed"
+    }.freeze
+
     def self.call(...)
       new(...).call
     end
@@ -185,7 +192,8 @@ module ScalingExperiments
     end
 
     def metric_value(summary, key)
-      summary.fetch(key.to_s, nil)&.to_f
+      field = METRIC_KEY_TO_SUMMARY_FIELD.fetch(key.to_s, key.to_s)
+      summary.fetch(field, nil)&.to_f
     end
 
     def transformed_primary_metric(value)
@@ -311,10 +319,7 @@ module ScalingExperiments
 
       case scaling_experiment.dimension
       when "agent_count"
-        decision.merge!(
-          "requested_agent_count" => value,
-          "max_batch_size" => value
-        )
+        decision["requested_agent_count"] = value
       when "parallelism"
         decision["max_batch_size"] = value
       when "iteration_count"

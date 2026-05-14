@@ -97,7 +97,7 @@ module Scaling
       requested_agent_count = summary_value(agent_decision || parallelism_decision || {}, :requested_agent_count,
         default: conservative_agent_count)
       agent_count = clamp_agents(requested_agent_count)
-      recommended_parallelism = summary_value(parallelism_decision || agent_decision || {}, :max_batch_size,
+      recommended_parallelism = summary_value(parallelism_decision || {}, :max_batch_size,
         default: parallelism_cap(agent_count))
       max_iterations = summary_value(iteration_decision || {}, :max_iterations,
         default: summary_value(iteration_decision || {}, :requested_iteration_count, default: 3))

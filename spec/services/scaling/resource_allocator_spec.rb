@@ -198,10 +198,10 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
 
       it "picks the strongest decision per dimension when duplicates exist" do
         low_confidence = build_experiment_decision_summary("agent_count",
-          recommended_value: 9, requested_agent_count: 9, max_batch_size: 9,
+          recommended_value: 9, requested_agent_count: 9,
           sample_count: 6, confidence: "low")
         high_confidence = build_experiment_decision_summary("agent_count",
-          recommended_value: 2, requested_agent_count: 2, max_batch_size: 2,
+          recommended_value: 2, requested_agent_count: 2,
           sample_count: 10, confidence: "high")
         parallelism = build_experiment_decision_summary("parallelism",
           recommended_value: 3, requested_agent_count: 2, max_batch_size: 3,
@@ -735,7 +735,6 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       build_experiment_decision_summary("agent_count",
         recommended_value: 3,
         requested_agent_count: 3,
-        max_batch_size: 3,
         sample_count: 6,
         confidence: "high"),
       build_experiment_decision_summary("parallelism",

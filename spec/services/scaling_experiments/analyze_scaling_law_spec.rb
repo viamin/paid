@@ -45,12 +45,32 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     )
   end
 
+  it "maps validated metric keys to summary field names (total_cost_cents -> avg_cost_cents)" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "total_cost_cents", "primary" => true, "objective" => "minimize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_summary(1, sample_count: 3, success_rate: 0.90, duration: 120, cost: 400),
+      build_summary(2, sample_count: 3, success_rate: 0.85, duration: 100, cost: 200)
+    )
+
+    # The primary metric value should be the avg_cost_cents from the summary, not nil
+    values = result.fetch("values")
+    expect(values.first["primary_metric_value"]).to eq(400.0)
+    expect(values.last["primary_metric_value"]).to eq(200.0)
+    expect(result["scaling_exponent"]).not_to be_nil
+  end
+
   it "ranks on transformed metric so minimize objectives pick lowest cost as leading value" do
     allow(experiment).to receive(:outcome_metrics).and_return(
       [
-        { "key" => "avg_cost_cents", "primary" => true, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => true, "objective" => "minimize" },
         { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
-        { "key" => "avg_duration_seconds", "primary" => false, "objective" => "minimize" }
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" }
       ]
     )
 
