@@ -351,11 +351,13 @@ module Activities
     end
 
     def application_error_with_policy_provenance(error, policy_context)
-      metadata = policy_context[:metadata].to_h
+      metadata = policy_context[:metadata].to_h.deep_symbolize_keys
       return error if metadata.empty?
 
       existing_details = Array(error.details)
-      provenance_details = existing_details.find { |detail| detail.is_a?(Hash) && detail.key?(:policy_metadata) }
+      provenance_details = existing_details.find do |detail|
+        detail.is_a?(Hash) && (detail.key?(:policy_metadata) || detail.key?("policy_metadata"))
+      end
       return error if provenance_details
 
       Temporalio::Error::ApplicationError.new(

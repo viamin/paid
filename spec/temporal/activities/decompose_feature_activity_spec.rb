@@ -100,6 +100,22 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         activity.send(:application_error_with_policy_provenance, error, { metadata: {} })
       ).to be(error)
     end
+
+    it "does not duplicate provenance when error details are string-keyed" do
+      error = Temporalio::Error::ApplicationError.new(
+        "LLM failed",
+        { "policy_metadata" => policy_metadata.deep_stringify_keys },
+        type: "DecompositionFailed"
+      )
+
+      expect(
+        activity.send(
+          :application_error_with_policy_provenance,
+          error,
+          { metadata: policy_metadata.deep_stringify_keys }
+        )
+      ).to be(error)
+    end
   end
 
   describe "#execute" do
