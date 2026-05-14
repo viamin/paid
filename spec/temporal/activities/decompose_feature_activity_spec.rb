@@ -28,6 +28,20 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(result[:policy_metadata]).to eq(policy_metadata)
       expect(result).to include(policy_metadata)
     end
+
+    it "normalizes fully string-keyed policy payloads" do
+      result = activity.send(
+        :with_policy_provenance,
+        {
+          "tasks" => [],
+          "policy_metadata" => policy_metadata.deep_stringify_keys
+        }
+      )
+
+      expect(result).to include(tasks: [])
+      expect(result[:policy_metadata]).to eq(policy_metadata)
+      expect(result).to include(policy_metadata)
+    end
   end
 
   describe "#result_policy_metadata", :no_db do

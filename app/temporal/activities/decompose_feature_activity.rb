@@ -336,12 +336,13 @@ module Activities
     end
 
     def with_policy_provenance(result)
-      metadata = result[:policy_metadata]
-      return result unless metadata.respond_to?(:to_h)
+      payload = result.to_h.deep_symbolize_keys
+      metadata = payload[:policy_metadata]
+      return payload unless metadata.respond_to?(:to_h)
 
       normalized_metadata = metadata.to_h.deep_symbolize_keys
 
-      result.merge(
+      payload.merge(
         policy_metadata: normalized_metadata,
         **normalized_metadata
       )
