@@ -252,6 +252,7 @@ record.diff_from(version: 2)             # diff between versions
 - Test behavior/interfaces, not implementation details
 - Mock external dependencies only, never application code
 - Pending specs require issue reference: `pending "supports feature (#45)"`
+- **Ephemeral PR tests** — One-off system/integration tests for the PR that don't need to persist in the permanent suite. Add `*_spec.rb` files to `.ephemeral-tests/` on the PR branch. CI runs them automatically (same-repo PRs only). Remove test files before merge; a CI guard rejects stray test files on `main`. See `.ephemeral-tests/README.md`.
 
 ## Logging
 
