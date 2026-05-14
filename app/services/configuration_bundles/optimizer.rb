@@ -13,6 +13,7 @@ module ConfigurationBundles
     }.freeze
     PRIMARY_SELECTION_CONTEXT = "project"
     TASK_BOOTSTRAP_CONTEXT = "task"
+    ACQUISITION_FUNCTION = "expected_improvement"
 
     Selection = Struct.new(
       :definition,
@@ -30,11 +31,11 @@ module ConfigurationBundles
       :predicted_quality_score,
       :uncertainty,
       :sample_count,
+      :best_observed_objective_score,
+      :acquisition_function,
       :acquisition_score,
       keyword_init: true
     )
-
-    EXPLORATION_WEIGHT = 0.4
 
     attr_reader :agent_run
 
@@ -82,7 +83,12 @@ module ConfigurationBundles
       definition = bundle_definition(variant_by_experiment_id)
       fingerprint = bundle_fingerprint(definition)
       prediction = surrogate_model.predict(bundle_definition: definition)
-      acquisition_score = prediction_objective_score(prediction) + (EXPLORATION_WEIGHT * prediction.uncertainty)
+      best_observed_objective_score = best_observed_objective_score_for
+      acquisition_score = acquisition_score_for(
+        mean: prediction_objective_score(prediction),
+        uncertainty: prediction.uncertainty,
+        best_observed_objective_score: best_observed_objective_score
+      )
 
       Selection.new(
         definition: definition,
@@ -93,6 +99,8 @@ module ConfigurationBundles
           predicted_quality_score: prediction_quality_score(prediction),
           uncertainty: prediction.uncertainty,
           sample_count: prediction.sample_count,
+          best_observed_objective_score: best_observed_objective_score,
+          acquisition_function: ACQUISITION_FUNCTION,
           acquisition_score: acquisition_score
         )
       )
@@ -129,6 +137,7 @@ module ConfigurationBundles
     def exploratory_selection(selections)
       selections.max_by do |selection|
         [
+          selection.score_inputs.uncertainty,
           selection.score_inputs.acquisition_score,
           selection.score_inputs.predicted_objective_score,
           selection.score_inputs.predicted_quality_score
@@ -268,11 +277,15 @@ module ConfigurationBundles
     end
 
     def prediction_objective_score(prediction)
-      prediction.predicted_objective_score
+      return prediction.predicted_objective_score if prediction.respond_to?(:predicted_objective_score)
+
+      prediction.mean_objective_score
     end
 
     def prediction_quality_score(prediction)
-      prediction.predicted_quality_score
+      return prediction.predicted_quality_score if prediction.respond_to?(:predicted_quality_score)
+
+      prediction.mean_quality_score
     end
 
     def bundle_definition(variant_by_experiment_id)
@@ -319,6 +332,57 @@ module ConfigurationBundles
       )
 
       @parsed_variant_values[variant.id] = INVALID_VARIANT_VALUE
+    end
+
+    def best_observed_objective_score_for
+      @best_observed_objective_score_for ||= prior_objective_score_for_goal || 0.0
+    end
+
+    def prior_objective_score_for_goal
+      @prior_objective_score_for_goal ||= prior_objective_outcomes_for_goal
+        .filter_map { |outcome| outcome_objective_score(outcome) }
+        .max
+    end
+
+    def prior_objective_outcomes_for_goal
+      BundleOutcome
+        .eager_load(agent_run: :project)
+        .where(agent_runs: { project_id: agent_run.project_id, goal: agent_run.goal })
+        .where.not(id: agent_run.bundle_outcomes.select(:id))
+        .where(objective_observation_sql)
+    end
+
+    def objective_observation_sql
+      <<~SQL.squish
+        bundle_outcomes.quality_score IS NOT NULL
+        OR NULLIF(bundle_outcomes.metrics ->> 'objective_score', '') IS NOT NULL
+      SQL
+    end
+
+    def outcome_objective_score(outcome)
+      ConfigurationBundles::ObjectiveScore.from_outcome(outcome)
+    end
+
+    def acquisition_score_for(mean:, uncertainty:, best_observed_objective_score:)
+      expected_improvement(
+        improvement: mean.to_f - best_observed_objective_score.to_f,
+        uncertainty: uncertainty.to_f
+      )
+    end
+
+    def expected_improvement(improvement:, uncertainty:)
+      return improvement.positive? ? improvement : 0.0 if uncertainty <= 0
+
+      z_score = improvement / uncertainty
+      (improvement * normal_cdf(z_score)) + (uncertainty * normal_pdf(z_score))
+    end
+
+    def normal_pdf(value)
+      Math.exp(-(value**2) / 2.0) / Math.sqrt(2.0 * Math::PI)
+    end
+
+    def normal_cdf(value)
+      0.5 * (1.0 + Math.erf(value / Math.sqrt(2.0)))
     end
   end
 end
