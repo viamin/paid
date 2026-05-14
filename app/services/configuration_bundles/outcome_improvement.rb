@@ -109,7 +109,7 @@ module ConfigurationBundles
 
       {
         quality_score: quality_score.to_f,
-        cost_cents: cost_cents.to_i,
+        cost_cents: cost_cents&.to_i,
         success: success,
         objective_score: objective_raw.present? ? objective_raw.to_f : nil,
         quality_per_dollar: qpd_raw.present? ? qpd_raw.to_f : nil,

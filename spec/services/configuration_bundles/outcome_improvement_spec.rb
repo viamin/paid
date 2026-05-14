@@ -300,6 +300,25 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       expect(result.quality_improvement).to be > 0
     end
 
+    it "excludes nil cost from quality-per-dollar averages, preserving SQL parity" do
+      rows = [
+        make_row(quality_score: 0.5, cost_cents: nil, success: true, objective_score: 0.45),
+        make_row(quality_score: 0.6, cost_cents: nil, success: true, objective_score: 0.55),
+        make_row(quality_score: 0.7, cost_cents: 100, success: true, objective_score: 0.65),
+        make_row(quality_score: 0.8, cost_cents: 100, success: true, objective_score: 0.75)
+      ]
+      service = described_class.new(project: project)
+      allow(service).to receive(:load_outcome_rows).and_return(rows)
+
+      result = service.call
+
+      expect(result.sufficient_data).to be true
+      expect(result.early_cost_cents).to be_nil
+      expect(result.cost_change_fraction).to be_nil
+      expect(result.early_quality_per_dollar).to be_nil
+      expect(result.quality_per_dollar_improvement).to be_nil
+    end
+
     it "handles zero cost gracefully in quality-per-dollar using GREATEST floor" do
       rows = [
         make_row(quality_score: 0.5, cost_cents: 0, success: true, objective_score: 0.45),
