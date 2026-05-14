@@ -43,7 +43,7 @@ jobs:
             echo "has_tests=true" >> "$GITHUB_OUTPUT"
             echo "Ephemeral test files found."
           elif find .ephemeral-tests \( -name '*_test.js' -o -name '*_test.ts' \) -print -quit | grep -q .; then
-            echo "has_tests=true" >> "$GITHUB_OUTPUT"
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
             echo "Ephemeral test files found (JS/TS only — not yet supported)."
             echo "::warning::JS/TS ephemeral tests are detected but not yet supported. Use *_spec.rb instead."
           else
