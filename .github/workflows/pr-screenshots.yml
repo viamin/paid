@@ -152,7 +152,7 @@ jobs:
 
       - name: Locate Chromium-family browser
         run: |
-          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
           if [ -n "$chrome_path" ]; then
             echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
             echo "Chrome found at ${chrome_path}"

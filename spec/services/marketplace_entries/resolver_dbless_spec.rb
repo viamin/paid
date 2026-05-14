@@ -37,7 +37,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results).to be_empty
   end
 
-  it "opts in to auto-attach when manual entries are present" do
+  it "opts in to lower-priority sources when manual entries are present" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries_with_manual
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -50,7 +50,30 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     results = resolver.call
 
-    expect(results.map(&:source)).to include("automatic")
+    expect(results.map(&:source)).to include("manual")
+  end
+
+  it "applies attachment precedence as automatic < team_default < manual" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    entry = build_entry(
+      rules: [
+        build_rule(mode: "automatic", enabled: true, position: 0, id: 3, rationale: "Matched automatically"),
+        build_rule(mode: "team_default", enabled: true, position: 1, id: 2, rationale: "Matched as team default")
+      ]
+    )
+
+    resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ entry.id ], auto_attach_enabled: true)
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ entry ])
+    expect(results.map(&:source)).to eq([ "manual" ])
+    expect(results.map(&:reason)).to eq([ "Selected manually for this run" ])
   end
 
   def agent_run_marketplace_entries
@@ -84,16 +107,9 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     end
   end
 
-  def build_entry
-    rule_struct = Struct.new(:mode, :enabled, :position, :id, :rationale, :conditions, keyword_init: true) do
-      def enabled? = enabled
-    end
+  def build_entry(rules: default_rules)
     version_struct = Struct.new(:compatibility_constraints, keyword_init: true)
     entry_struct = Struct.new(:id, :current_version, :marketplace_entry_rules, keyword_init: true)
-    rules = [
-      rule_struct.new(mode: "automatic", enabled: false, position: 0, id: 9, rationale: nil, conditions: {}),
-      rule_struct.new(mode: "automatic", enabled: true, position: 1, id: 2, rationale: "Matched automatically", conditions: {})
-    ]
 
     stub_const("ResolverDblessRuleAssociation", Class.new do
       def select(...)
@@ -116,5 +132,18 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       current_version: version_struct.new(compatibility_constraints: {}),
       marketplace_entry_rules: association
     )
+  end
+
+  def default_rules
+    [
+      build_rule(mode: "automatic", enabled: false, position: 0, id: 9, rationale: nil),
+      build_rule(mode: "automatic", enabled: true, position: 1, id: 2, rationale: "Matched automatically")
+    ]
+  end
+
+  def build_rule(mode:, enabled:, position:, id:, rationale:)
+    Struct.new(:mode, :enabled, :position, :id, :rationale, :conditions, keyword_init: true) do
+      def enabled? = enabled
+    end.new(mode:, enabled:, position:, id:, rationale:, conditions: {})
   end
 end

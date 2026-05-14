@@ -19,9 +19,9 @@ module MarketplaceEntries
 
     def call
       selections = {}
-      attach_manual_entries!(selections)
-      attach_team_default_entries!(selections)
       attach_automatic_entries!(selections)
+      attach_team_default_entries!(selections)
+      attach_manual_entries!(selections)
       selections.values
     end
 

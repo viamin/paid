@@ -21,7 +21,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     entry
   end
 
-  it "attaches manual, team default, and automatic entries with automatic taking precedence" do
+  it "attaches manual, team default, and automatic entries" do
     automatic = create_entry(
       name: "Automatic skill",
       rule_mode: "automatic",
@@ -41,6 +41,23 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments.map(&:marketplace_entry)).to contain_exactly(automatic, team_default, manual)
     expect(attachments.map(&:attachment_source)).to contain_exactly("automatic", "team_default", "manual")
     expect(attachments.last.rendered_format).to eq("claude_skill_v1")
+  end
+
+  it "preserves manual precedence over lower-priority attachment sources for the same entry" do
+    entry = create_entry(
+      name: "Shared skill",
+      rule_mode: "automatic",
+      conditions: { "goals" => [ "create_pr" ] },
+      content: "Automatic instructions"
+    )
+    create(:marketplace_entry_rule, marketplace_entry: entry, mode: "team_default", conditions: {})
+
+    attachments = described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
+
+    expect(attachments.size).to eq(1)
+    expect(attachments.first.marketplace_entry).to eq(entry)
+    expect(attachments.first.attachment_source).to eq("manual")
+    expect(attachments.first.selection_reason).to eq("Selected manually for this run")
   end
 
   it "does not attach automatic or team default entries without opt-in" do
