@@ -6,6 +6,15 @@ class UserSetting < ApplicationRecord
     provider_selection_mode provider_round_robin_state kb_chat_provider
     kb_chat_fallback_providers kb_embedding_provider kb_embedding_fallback_providers
   ]
+  alias_attribute :default_agent_provider, :default_agent_runner
+  alias_attribute :default_agent_providers_by_goal, :default_agent_runners_by_goal
+  alias_attribute :fallback_providers, :fallback_runners
+  alias_attribute :provider_selection_mode, :runner_selection_mode
+  alias_attribute :provider_round_robin_state, :runner_round_robin_state
+  alias_attribute :kb_chat_provider, :kb_chat_runner
+  alias_attribute :kb_chat_fallback_providers, :kb_chat_fallback_runners
+  alias_attribute :kb_embedding_provider, :kb_embedding_runner
+  alias_attribute :kb_embedding_fallback_providers, :kb_embedding_fallback_runners
 
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
@@ -179,6 +188,10 @@ class UserSetting < ApplicationRecord
     )
   end
 
+  class << self
+    alias_method :fallback_candidate_providers, :fallback_candidate_runners
+  end
+
   # Returns canonical runner keys that have API-key-based entries configured
   # as rate-limit fallbacks. These are only used when the subscription entry
   # for the same runner_key is rate-limited.
@@ -246,6 +259,8 @@ class UserSetting < ApplicationRecord
     map_identifiers_to_runner_keys(priorities)
   end
 
+  alias_method :provider_priority, :runner_priority
+
   def default_runner_identifier
     normalized_default_agent_runner || allowed_runner_identifiers_for_agent_runs.first
   end
@@ -299,6 +314,8 @@ class UserSetting < ApplicationRecord
 
     map_identifiers_to_runner_keys(priorities)
   end
+
+  alias_method :provider_priority_for_goal, :runner_priority_for_goal
 
   def sanitize_runner_tokens(tokens, candidates:)
     Array(tokens).flat_map do |token|
@@ -365,6 +382,8 @@ class UserSetting < ApplicationRecord
 
     map_identifiers_to_runner_keys(available)
   end
+
+  alias_method :available_providers, :available_runners
 
   # Returns the RunnerState for a given runner, creating one if it doesn't exist.
   #

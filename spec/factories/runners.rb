@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 FactoryBot.define do
-  factory :runner do
+  factory :runner, aliases: [ :provider ] do
     user
     runner_key { "cursor" }
     auth_type { "subscription" }

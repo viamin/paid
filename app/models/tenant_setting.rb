@@ -2,6 +2,8 @@
 
 class TenantSetting < ApplicationRecord
   self.ignored_columns = %w[provider_preferences allowed_provider_keys]
+  alias_attribute :provider_preferences, :runner_preferences
+  alias_attribute :allowed_provider_keys, :allowed_runner_keys
 
   has_logidze
   PG_INT_MAX = 2_147_483_647

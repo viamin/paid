@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 FactoryBot.define do
-  factory :runner_state do
+  factory :runner_state, aliases: [ :provider_state ] do
     user
     runner_name { "claude" }
     circuit_state { "closed" }

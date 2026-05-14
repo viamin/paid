@@ -2,6 +2,10 @@
 
 class AgentRun < ApplicationRecord
   self.ignored_columns = %w[provider_id provider_switches providers_attempted final_provider]
+  alias_attribute :provider_id, :runner_id
+  alias_attribute :provider_switches, :runner_switches
+  alias_attribute :providers_attempted, :runners_attempted
+  alias_attribute :final_provider, :final_runner
 
   attribute :focus, :string, default: "general"
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
@@ -126,6 +130,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
+  belongs_to :provider, -> { with_discarded }, class_name: "Runner", foreign_key: :runner_id, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
 
@@ -313,6 +318,24 @@ class AgentRun < ApplicationRecord
 
   def self.ransackable_associations(auth_object = nil)
     %w[project]
+  end
+
+  class << self
+    def distinct_effective_provider_options(...)
+      distinct_effective_runner_options(...)
+    end
+
+    def provider_options_cache_key_for(...)
+      runner_options_cache_key_for(...)
+    end
+
+    def invalidate_provider_options_cache(...)
+      invalidate_runner_options_cache(...)
+    end
+
+    def preload_final_provider_records(...)
+      preload_final_runner_records(...)
+    end
   end
 
   RUNNER_OPTIONS_CACHE_TTL = 5.minutes
@@ -1633,6 +1656,8 @@ class AgentRun < ApplicationRecord
     RunnerSupport.runner_key_for_agent_type(final_runner.presence || agent_type)
   end
 
+  alias_method :effective_provider, :effective_runner
+
   def final_runner_record
     return preloaded_final_runner_record if preloaded_final_runner_record_loaded
 
@@ -1655,6 +1680,8 @@ class AgentRun < ApplicationRecord
       runner ||
       Runner.with_discarded.find_by(id: runner_id)
   end
+
+  alias_method :effective_provider_record, :effective_runner_record
 
   def attempted_runners_by_routing_key
     owner = project&.effective_owner
@@ -1698,6 +1725,8 @@ class AgentRun < ApplicationRecord
     log!("system", "Runner fallback: #{from} -> #{to} (#{reason})")
     increment!(:runner_switches)
   end
+
+  alias_method :log_provider_switch!, :log_runner_switch!
 
   def sanitize_runner_attempt_diagnostics(diagnostics)
     return unless diagnostics.is_a?(Hash)
