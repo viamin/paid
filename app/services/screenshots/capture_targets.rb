@@ -177,6 +177,7 @@ module Screenshots
       "strategy_reviews_controller.rb" => %i[strategy_reviews_queue strategy_reviews strategy_review_show],
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
+      "runners_controller.rb" => %i[providers providers_new providers_edit],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
@@ -309,6 +310,7 @@ module Screenshots
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
+      when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
       when /\Aagent_runs\// then [ :agent_runs ]
