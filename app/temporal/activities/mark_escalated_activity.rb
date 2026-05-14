@@ -18,6 +18,11 @@ module Activities
       phase_before = issue.pr_review_phase
       issue.update!(pr_review_phase: "escalated")
 
+      # Escalation invalidates the prior "ready" claim. Strip the label
+      # before applying paid-escalated so human triage queues and any
+      # "merge when green" automation never see a window where both
+      # labels coexist on the same PR.
+      remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
       post_escalation_comment(client, project, issue, input[:reason])
 
@@ -48,6 +53,20 @@ module Activities
     end
 
     private
+
+    def remove_ready_label(client, project, issue)
+      label = MarkPrReadyActivity::PAID_READY_LABEL
+      return unless issue.has_label?(label)
+
+      client.remove_label_from_issue(project.full_name, issue.github_number, label)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.remove_ready_label_failed",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+    end
 
     # Best-effort dedupe: skips posting if COMMENT_MARKER is found in the most
     # recent 100 comments. On very long-lived PRs with 100+ comments after the

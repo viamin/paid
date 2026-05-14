@@ -20,6 +20,7 @@ module Activities
 
         post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
         remove_trigger_labels(client, project, issue, agent_run_id)
+        remove_stale_attention_labels(client, project, issue, agent_run_id)
 
         agent_run.log!("system", "Issue ##{issue.github_number} updated with PR link")
 
@@ -67,6 +68,31 @@ module Activities
         issue_number: issue.github_number,
         error: e.message
       )
+    end
+
+    # When an issue produces a PR, any prior attention labels
+    # (paid-needs-input, paid-recommend-close) are stale claims about
+    # the issue's state. Leaving them on a now-completed issue
+    # pollutes the human-review queues those labels exist to serve.
+    def remove_stale_attention_labels(client, project, issue, agent_run_id)
+      needs_input_label = project.label_for_stage("needs_input") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
+      recommend_close_label = project.label_for_stage("recommend_close") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
+
+      [ needs_input_label, recommend_close_label ].uniq.each do |label|
+        next unless issue.has_label?(label)
+
+        client.remove_label_from_issue(project.full_name, issue.github_number, label)
+      rescue GithubClient::Error => e
+        logger.warn(
+          message: "agent_execution.remove_attention_label_failed",
+          agent_run_id: agent_run_id,
+          issue_number: issue.github_number,
+          label: label,
+          error: e.message
+        )
+      end
     end
   end
 end

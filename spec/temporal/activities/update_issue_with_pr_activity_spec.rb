@@ -105,6 +105,50 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
       activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
     end
 
+    it "removes a stale paid-recommend-close label from a previously-stuck issue" do
+      issue.update!(labels: [ "paid-build", "paid-recommend-close", "bug" ])
+
+      expect(github_client).to receive(:remove_label_from_issue).with(
+        project.full_name, issue.github_number, "paid-recommend-close"
+      )
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+    end
+
+    it "removes a stale paid-needs-input label from a previously-stuck issue" do
+      issue.update!(labels: [ "paid-build", "paid-needs-input", "bug" ])
+
+      expect(github_client).to receive(:remove_label_from_issue).with(
+        project.full_name, issue.github_number, "paid-needs-input"
+      )
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+    end
+
+    it "does not remove attention labels when the issue does not carry them" do
+      expect(github_client).not_to receive(:remove_label_from_issue)
+        .with(anything, anything, "paid-recommend-close")
+      expect(github_client).not_to receive(:remove_label_from_issue)
+        .with(anything, anything, "paid-needs-input")
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+    end
+
+    it "does not abort when removing one attention label fails" do
+      issue.update!(labels: [ "paid-build", "paid-recommend-close", "paid-needs-input" ])
+      allow(github_client).to receive(:remove_label_from_issue)
+        .with(project.full_name, issue.github_number, "paid-recommend-close")
+        .and_raise(GithubClient::ApiError.new("transient 502"))
+
+      expect(github_client).to receive(:remove_label_from_issue).with(
+        project.full_name, issue.github_number, "paid-needs-input"
+      )
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+      }.not_to raise_error
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1, pull_request_url: pr_url)

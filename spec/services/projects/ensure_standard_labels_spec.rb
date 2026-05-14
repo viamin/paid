@@ -6,23 +6,30 @@ require "ostruct"
 RSpec.describe Projects::EnsureStandardLabels do
   let(:github_client) { instance_double(GithubClient) }
   let(:github_token_stub) { Struct.new(:client).new(github_client) }
-  let(:project) do
+  let(:project_class) do
     Struct.new(:id, :full_name, :owner, :repo, :github_token,
                :generated_label_name, :automation_label_name,
                :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
-               :effective_priority_labels, keyword_init: true)
-      .new(
-        id: 1,
-        full_name: "test-owner/test-repo",
-        owner: "test-owner",
-        repo: "test-repo",
-        github_token: github_token_stub,
-        generated_label_name: "paid-generated",
-        automation_label_name: "paid-automation",
-        enhance_issue_needs_input_label_name: "paid-needs-input",
-        enhance_issue_enhanced_label_name: "paid-enhanced",
-        effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" }
-      )
+               :effective_priority_labels, :label_mappings, keyword_init: true) do
+      def label_for_stage(stage)
+        (label_mappings || {})[stage.to_s]
+      end
+    end
+  end
+  let(:project) do
+    project_class.new(
+      id: 1,
+      full_name: "test-owner/test-repo",
+      owner: "test-owner",
+      repo: "test-repo",
+      github_token: github_token_stub,
+      generated_label_name: "paid-generated",
+      automation_label_name: "paid-automation",
+      enhance_issue_needs_input_label_name: "paid-needs-input",
+      enhance_issue_enhanced_label_name: "paid-enhanced",
+      effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
+      label_mappings: {}
+    )
   end
 
   def make_label(name, color: "000000", description: "")
@@ -40,7 +47,8 @@ RSpec.describe Projects::EnsureStandardLabels do
         result = described_class.call(project: project)
 
         expect(result.created).to contain_exactly("paid-generated", "paid-automation",
-          "paid-needs-input", "paid-enhanced", "P1", "P2", "P3")
+          "paid-needs-input", "paid-enhanced", "paid-recommend-close",
+          "P1", "P2", "P3")
         expect(result.existing).to be_empty
         expect(result.divergent).to be_empty
         expect(result.errors).to be_empty
@@ -54,6 +62,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           "paid-automation" => { color: "1d76db", description: "Triggers Paid automation" },
           "paid-needs-input" => { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
           "paid-enhanced" => { color: "0e8a16", description: "Paid has added implementation context to this issue" },
+          "paid-recommend-close" => { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
           "P1" => { color: "d93f0b", description: "High priority" },
           "P2" => { color: "ff9800", description: "Medium priority" },
           "P3" => { color: "fbca04", description: "Low priority" }
@@ -74,6 +83,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           make_label("paid-automation", color: "1d76db", description: "Triggers Paid automation"),
           make_label("paid-needs-input", color: "d876e3", description: "Paid needs answers before enhancing this issue again"),
           make_label("paid-enhanced", color: "0e8a16", description: "Paid has added implementation context to this issue"),
+          make_label("paid-recommend-close", color: "fbca04", description: "Paid ran but produced no PR — human review needed"),
           make_label("P1", color: "d93f0b", description: "High priority"),
           make_label("P2", color: "ff9800", description: "Medium priority"),
           make_label("P3", color: "fbca04", description: "Low priority")
@@ -85,7 +95,8 @@ RSpec.describe Projects::EnsureStandardLabels do
 
         expect(result.created).to be_empty
         expect(result.existing).to contain_exactly("paid-generated", "paid-automation",
-          "paid-needs-input", "paid-enhanced", "P1", "P2", "P3")
+          "paid-needs-input", "paid-enhanced", "paid-recommend-close",
+          "P1", "P2", "P3")
         expect(result.divergent).to be_empty
         expect(result.errors).to be_empty
       end
@@ -98,6 +109,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           make_label("paid-automation", color: "1d76db", description: "Triggers Paid automation"),
           make_label("paid-needs-input", color: "d876e3", description: "Paid needs answers before enhancing this issue again"),
           make_label("paid-enhanced", color: "0e8a16", description: "Paid has added implementation context to this issue"),
+          make_label("paid-recommend-close", color: "fbca04", description: "Paid ran but produced no PR — human review needed"),
           make_label("P1", color: "000000", description: "High priority"),
           make_label("P2", color: "ff9800", description: "Medium priority"),
           make_label("P3", color: "fbca04", description: "Low priority")
@@ -125,7 +137,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       it "records permission errors for each label" do
         result = described_class.call(project: project)
 
-        expect(result.errors.size).to eq(7)
+        expect(result.errors.size).to eq(8)
         result.errors.each do |err|
           expect(err[:error]).to include("Insufficient permissions")
         end
@@ -164,22 +176,19 @@ RSpec.describe Projects::EnsureStandardLabels do
 
     context "with custom priority label names" do
       let(:project) do
-        Struct.new(:id, :full_name, :owner, :repo, :github_token,
-                   :generated_label_name, :automation_label_name,
-                   :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
-                   :effective_priority_labels, keyword_init: true)
-          .new(
-            id: 1,
-            full_name: "test-owner/test-repo",
-            owner: "test-owner",
-            repo: "test-repo",
-            github_token: github_token_stub,
-            generated_label_name: "paid-generated",
-            automation_label_name: "paid-automation",
-            enhance_issue_needs_input_label_name: "paid-needs-input",
-            enhance_issue_enhanced_label_name: "paid-enhanced",
-            effective_priority_labels: { "P1" => "critical", "P2" => "medium", "P3" => "low" }
-          )
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "paid-generated",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "paid-enhanced",
+          effective_priority_labels: { "P1" => "critical", "P2" => "medium", "P3" => "low" },
+          label_mappings: {}
+        )
       end
 
       before do
@@ -201,6 +210,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           make_label("PAID-AUTOMATION", color: "1d76db", description: "Triggers Paid automation"),
           make_label("PAID-NEEDS-INPUT", color: "d876e3", description: "Paid needs answers before enhancing this issue again"),
           make_label("PAID-ENHANCED", color: "0e8a16", description: "Paid has added implementation context to this issue"),
+          make_label("PAID-RECOMMEND-CLOSE", color: "fbca04", description: "Paid ran but produced no PR — human review needed"),
           make_label("p1", color: "d93f0b", description: "High priority"),
           make_label("p2", color: "ff9800", description: "Medium priority"),
           make_label("p3", color: "fbca04", description: "Low priority")
@@ -211,7 +221,37 @@ RSpec.describe Projects::EnsureStandardLabels do
         result = described_class.call(project: project)
 
         expect(result.created).to be_empty
-        expect(result.existing.size).to eq(7)
+        expect(result.existing.size).to eq(8)
+      end
+    end
+
+    context "when the project configures a custom recommend_close label" do
+      let(:project) do
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "paid-generated",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "paid-enhanced",
+          effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
+          label_mappings: { "recommend_close" => "needs-review" }
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+      end
+
+      it "provisions the configured label name instead of the default" do
+        result = described_class.call(project: project)
+
+        expect(result.created).to include("needs-review")
+        expect(result.created).not_to include("paid-recommend-close")
       end
     end
   end
