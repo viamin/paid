@@ -346,7 +346,12 @@ module Activities
       metadata = result[:policy_metadata]
       return result unless metadata.respond_to?(:to_h)
 
-      result.merge(metadata.to_h.deep_symbolize_keys)
+      normalized_metadata = metadata.to_h.deep_symbolize_keys
+
+      result.merge(
+        policy_metadata: normalized_metadata,
+        **normalized_metadata
+      )
     end
 
     def log_decomposition_strategy_decision(project:, issue:, workflow_name:, workflow_id:, input_context:, tasks:,

@@ -7,6 +7,29 @@ RSpec.describe Activities::DecomposeFeatureActivity do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project, title: "Add OAuth", body: "Implement OAuth 2.0 login") }
 
+  describe "#with_policy_provenance", :no_db do
+    let(:policy_metadata) do
+      {
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      }
+    end
+
+    it "normalizes nested policy_metadata keys while exposing top-level provenance" do
+      result = activity.send(
+        :with_policy_provenance,
+        {
+          tasks: [],
+          policy_metadata: policy_metadata.deep_stringify_keys
+        }
+      )
+
+      expect(result[:policy_metadata]).to eq(policy_metadata)
+      expect(result).to include(policy_metadata)
+    end
+  end
+
   describe "#execute" do
     let(:logged_decision) { build_stubbed(:decomposition_decision, decision_type: "decomposition_strategy") }
     let(:llm_response) do
