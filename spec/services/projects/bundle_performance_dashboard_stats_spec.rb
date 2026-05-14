@@ -196,7 +196,7 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
     it "prefers the runtime-active experiment over assignment-backed history for the same config key" do
       global_experiment, = create_experiment(project:, account: nil, config_key: "knowledge.token_budget")
-      stale_experiment, stale_control, stale_variant = create_experiment(project:, config_key: "knowledge.token_budget")
+      stale_experiment, stale_control, stale_variant = create_experiment(project:, config_key: "knowledge.token_budget", traffic_percentage: 50)
       assigned_project, assigned_run = create_assignment_backed_project_for(stale_experiment)
 
       create(:configuration_experiment_assignment,
