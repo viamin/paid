@@ -73,9 +73,7 @@ module Activities
         {
         tasks: tasks,
         prompt_source: prompt_data[:prompt_source],
-        policy_source: policy_context[:source],
-        skip_reason: policy_context[:skip_reason],
-        policy_metadata: fallback_policy_metadata(policy_context)
+        policy_metadata: {}
       }
       )
     rescue Temporalio::Error::ApplicationError => e
@@ -332,13 +330,6 @@ module Activities
         coordination_policy_id: decomposition_result.policy_applied["coordination_policy_id"],
         coordination_policy_version_id: decomposition_result.policy_applied["coordination_policy_version_id"],
         coordination_policy_version: decomposition_result.policy_applied["coordination_policy_version"]
-      }.compact
-    end
-
-    def fallback_policy_metadata(policy_context)
-      {
-        policy_source: policy_context[:source],
-        skip_reason: policy_context[:skip_reason]
       }.compact
     end
 
