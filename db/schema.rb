@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_13_191311) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_14_193654) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2076,7 +2076,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_13_191311) do
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 3600, null: false
-    t.integer "create_pr_idle_timeout_seconds", default: 300, null: false
+    t.integer "create_pr_idle_timeout_seconds", default: 360, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_agent_providers_by_goal", default: {}, null: false

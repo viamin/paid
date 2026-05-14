@@ -58,6 +58,12 @@ RSpec.describe OrchestrationStrategies::Defaults do
       )
     end
 
+    it "preserves create_pr idle timeout" do
+      expect(config["create_pr_idle_timeout_seconds"]).to eq(
+        Activities::RunAgentActivity::DEFAULT_CREATE_PR_IDLE_TIMEOUT
+      )
+    end
+
     it "preserves feature orchestration timeout" do
       expect(config["feature_orchestration_timeout_seconds"]).to eq(
         Workflows::FeatureOrchestrationWorkflow::DEFAULT_TIMEOUT_SECONDS

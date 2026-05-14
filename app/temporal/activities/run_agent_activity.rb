@@ -79,8 +79,8 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
-    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
-    DEFAULT_AGENT_STARTUP_TIMEOUT = 300    # 5 minutes without first output = stuck
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
+    DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
     PREFLIGHT_TIMEOUT_SECONDS = 10
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
