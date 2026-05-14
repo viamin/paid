@@ -25,15 +25,23 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   let(:services) { capture_job.fetch("services") }
   let(:env) { capture_job.fetch("env") }
   let(:steps) { capture_job.fetch("steps") }
+  let(:install_browser_step) { steps.find { |step| step["name"] == "Install Chromium-family browser" } }
   let(:browser_step) { steps.find { |step| step["name"] == "Locate Chromium-family browser" } }
   let(:role_step) { steps.find { |step| step["name"] == "Create application database role" } }
   let(:resolve_publish_step) { publish_job.fetch("steps").find { |step| step["name"] == "Resolve PR capture run" } }
 
-  it "uses the runner's local Chromium-family browser when one is available" do
+  it "provisions a Chromium-family browser before capture" do
+    expect(install_browser_step).to be_present
+    expect(install_browser_step.fetch("run")).to include("google-chrome-stable")
+    expect(install_browser_step.fetch("run")).to include("https://dl.google.com/linux/chrome/deb/")
+  end
+
+  it "uses the runner's local Chromium-family browser for capture" do
     expect(env).not_to have_key("CHROME_URL")
     expect(browser_step).to be_present
     expect(browser_step.fetch("run")).to include('path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"')
     expect(browser_step.fetch("run")).to include('echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"')
+    expect(browser_step.fetch("run")).to include('Chromium-family browser is required for screenshot capture.')
   end
 
   it "does not define a remote Chrome service for screenshot capture" do

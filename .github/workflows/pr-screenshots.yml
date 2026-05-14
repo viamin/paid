@@ -132,6 +132,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
 
+      - name: Install Chromium-family browser
+        run: |
+          if command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+          printf 'deb [arch=%s signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main\n' "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/google-chrome.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
       - name: Locate Chromium-family browser
         run: |
           path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
@@ -139,7 +150,8 @@ jobs:
             echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
             "$path" --version
           else
-            echo "No Chromium-family browser found; falling back to rack_test."
+            echo "Chromium-family browser is required for screenshot capture." >&2
+            exit 1
           fi
 
       - name: Export changed UI files
