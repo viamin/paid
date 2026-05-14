@@ -14,8 +14,7 @@ name: Ephemeral PR Tests
 
 on:
   pull_request:
-    paths:
-      - '.ephemeral-tests/**'
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -157,15 +156,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          marker="<!-- ephemeral-tests-result -->"
           conclusion="${{ job.status }}"
           if [ "$conclusion" = "success" ]; then
-            body="## Ephemeral Tests: passed
+            body="${marker}
+          ## Ephemeral Tests: passed
 
           All one-off tests passed. These tests will not run on \`${{ github.base_ref }}\` after merge."
           else
-            body="## Ephemeral Tests: ${conclusion}
+            body="${marker}
+          ## Ephemeral Tests: ${conclusion}
 
           One or more ephemeral tests failed. Check the logs for details."
           fi
 
-          gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+          # Find existing marker comment and update it, or create a new one
+          existing_comment_id=$(gh api \
+            "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+            | head -n 1)
+
+          if [ -n "$existing_comment_id" ]; then
+            gh api \
+              "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
+              --method PATCH \
+              --field body="$body"
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+          fi
