@@ -5,7 +5,7 @@ require "set"
 class ProviderApiKey < ApplicationRecord
   has_logidze
   belongs_to :user
-  has_many :providers, -> { kept }, dependent: :restrict_with_error, class_name: "Runner"
+  has_many :runners, -> { kept }, dependent: :restrict_with_error
 
   encrypts :api_key
 
