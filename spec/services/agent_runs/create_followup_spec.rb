@@ -80,18 +80,18 @@ RSpec.describe AgentRuns::CreateFollowup do
           runner: nil)
       end
 
-      it "resolves a runner via ProviderResolver" do
-        resolved_provider = create(:runner, user: project.created_by)
-        allow(AgentRuns::ProviderResolver).to receive(:call)
-          .and_return([ resolved_provider.id, "claude_code" ])
+      it "resolves a runner via RunnerResolver" do
+        resolved_runner = create(:runner, user: project.created_by)
+        allow(AgentRuns::RunnerResolver).to receive(:call)
+          .and_return([ resolved_runner.id, "claude_code" ])
 
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
 
-        expect(followup.runner).to eq(resolved_provider)
+        expect(followup.runner).to eq(resolved_runner)
       end
 
       it "preserves the resolver agent_type when runner_id is nil" do
-        allow(AgentRuns::ProviderResolver).to receive(:call)
+        allow(AgentRuns::RunnerResolver).to receive(:call)
           .and_return([ nil, "codex" ])
 
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
