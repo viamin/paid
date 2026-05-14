@@ -148,6 +148,78 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
     end
 
+    it "excludes running experiments from other accounts even when rollout membership matches" do
+      selected_experiment, = create_experiment(project:)
+      other_account_project = create(:project)
+      create_experiment(project: other_account_project)
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
+    end
+
+    it "includes active project experiments before they have assignment data" do
+      experiment, = create_experiment(project:)
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
+      expect(stats[:experiment_confidence].first[:variants]).to all(include(sample_count: 0, sparse: true))
+      expect(stats[:sparse_details][:sparse_experiment_count]).to eq(1)
+    end
+
+    it "keeps assignment-backed active experiments visible when project rollout excludes the project" do
+      experiment, control, variant = create_experiment(project:, traffic_percentage: 50)
+      assigned_project, assigned_runs = create_assignment_backed_project_for(experiment, run_count: 2)
+      control_run, variant_run = assigned_runs
+
+      create(:configuration_experiment_assignment,
+        configuration_experiment: experiment,
+        configuration_experiment_variant: control,
+        agent_run: control_run,
+        quality_score: 0.4)
+      create(:configuration_experiment_assignment,
+        configuration_experiment: experiment,
+        configuration_experiment_variant: variant,
+        agent_run: variant_run,
+        quality_score: 0.8)
+
+      stats = described_class.call(project: assigned_project)
+
+      expect(experiment.includes_traffic?(project: assigned_project)).to be(false)
+      expect(assigned_runs).to all(satisfy { |run| experiment.includes_traffic?(agent_run: run) })
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
+      expect(stats[:experiment_confidence].first[:variants].map { |row| row[:sample_count] }).to eq([ 1, 1 ])
+    end
+
+    it "prefers the runtime-active experiment over assignment-backed history for the same config key" do
+      global_experiment, = create_experiment(project:, account: nil, config_key: "knowledge.token_budget")
+      stale_experiment, stale_control, stale_variant = create_experiment(project:, config_key: "knowledge.token_budget", traffic_percentage: 50)
+      assigned_project, assigned_runs = create_assignment_backed_project_for(stale_experiment, run_count: 2)
+      control_run, variant_run = assigned_runs
+
+      create(:configuration_experiment_assignment,
+        configuration_experiment: stale_experiment,
+        configuration_experiment_variant: stale_control,
+        agent_run: control_run,
+        quality_score: 0.4)
+      create(:configuration_experiment_assignment,
+        configuration_experiment: stale_experiment,
+        configuration_experiment_variant: stale_variant,
+        agent_run: variant_run,
+        quality_score: 0.8)
+
+      stats = described_class.call(project: assigned_project)
+
+      expect(stale_experiment.includes_traffic?(project: assigned_project)).to be(false)
+      expect(ConfigurationExperiment.active_for("knowledge.token_budget", project: assigned_project)).to eq(global_experiment)
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ global_experiment ])
+    end
+
     it "loads experiment variants once per experiment when building confidence stats" do
       experiment, control, variant = create_experiment(project:)
       create_bundle(project:, experiment:, variant:)
@@ -285,6 +357,27 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
   def shared_issue_for(project)
     shared_issues[project.id] ||= create(:issue, project: project)
+  end
+
+  def create_assignment_backed_project_for(experiment, run_count:)
+    50.times do
+      project = create(:project, account: experiment.account)
+      next if experiment.includes_traffic?(project: project)
+
+      runs = Array.new(run_count) do
+        create(:agent_run,
+          :completed,
+          project: project,
+          issue: create(:issue, project: project),
+          goal: "create_pr")
+      end
+
+      next unless runs.all? { |run| experiment.includes_traffic?(agent_run: run) }
+
+      return [ project, runs ]
+    end
+
+    raise "Could not create a project excluded from project rollout with included assigned runs"
   end
 
   def mock_optimizer_selection
