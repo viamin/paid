@@ -91,11 +91,6 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-      chrome:
-        image: ghcr.io/browserless/chromium:v2.48.2
-        ports:
-          - 9222:3000
-
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
@@ -105,7 +100,6 @@ jobs:
       DB_USERNAME: paid
       DB_PASSWORD: paid
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
-      CHROME_URL: ws://localhost:9222
 
     steps:
       - name: Checkout code
@@ -154,36 +148,21 @@ jobs:
           $$;
           SQL
 
-      - name: Verify Chrome service
+      - name: Locate Chromium-family browser
         run: |
-          for attempt in $(seq 1 30); do
-            if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
-              echo "Chrome service container is available via CHROME_URL"
-              exit 0
-            fi
-
-            sleep 1
-          done
-
-          echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
-          exit 1
+          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+          if [ -n "$path" ]; then
+            echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
+            "$path" --version
+          else
+            echo "No Chromium-family browser found; falling back to rack_test."
+          fi
 
       - name: Export changed UI files
         env:
           UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
         run: |
           printf 'CHANGED_FILES<<EOF\n%s\nEOF\n' "$(printf '%s' "$UI_FILES_B64" | base64 -d)" >> "$GITHUB_ENV"
-
-      - name: Configure remote Capybara host
-        run: |
-          # Service containers share the runner's Docker network; use the
-          # runner's primary IP so the remote browser can connect back to Puma.
-          host_ip="$(hostname -I | awk '{print $1}')"
-          if [ -z "$host_ip" ]; then
-            echo "::error::Could not determine the runner host IP for the Chrome service container."
-            exit 1
-          fi
-          echo "CAPYBARA_APP_HOST=$host_ip" >> "$GITHUB_ENV"
 
       - name: Build assets
         run: yarn build && yarn build:css
