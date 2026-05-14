@@ -44,8 +44,9 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(selection.score_inputs.predicted_objective_score).to be > 0
       expect(selection.score_inputs.predicted_quality_score).to be > 0
       expect(selection.score_inputs.uncertainty).to be > 0
-      expect(selection.score_inputs.acquisition_score).to be >
-        selection.score_inputs.predicted_objective_score
+      expect(selection.score_inputs.acquisition_function).to eq("expected_improvement")
+      expect(selection.score_inputs.best_observed_objective_score).to be > 0
+      expect(selection.score_inputs.acquisition_score).to be > 0
     end
 
     it "routes no-issue runs through the project exploration budget" do
@@ -121,7 +122,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
       expect(selection.selection_mode).to eq("exploratory")
-      expect(selection.selection_context).to eq("task")
+      expect(selection.selection_context).to eq("project")
       expect_budget_snapshot(selection, "task",
         budget: 0.1,
         total_runs: 0,
@@ -132,6 +133,20 @@ RSpec.describe ConfigurationBundles::Optimizer do
         bootstrap_minimum_runs: 9
       )
       expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
+    end
+
+    it "records project context when task routing is still bootstrapping and project budget blocks exploration" do
+      set_exploration_budgets(task: 10, project: 25)
+      seed_project_budget_history(project:, goal: agent_run.goal)
+      stub_predictions(agent_run, surrogate_model:)
+
+      selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.selection_mode).to eq("exploitative")
+      expect(selection.selection_context).to eq("project")
+      expect_task_bootstrap_snapshot(selection)
+      expect_project_budget_block(selection)
     end
 
     it "returns nil when there are no active tracked experiments" do
@@ -211,6 +226,46 @@ RSpec.describe ConfigurationBundles::Optimizer do
       expect(ranked.first.variant_by_experiment_id).to eq(experiment.id => challenger)
     end
 
+    it "scores candidates against the best observed objective for the goal" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.95 ]
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.7, 0.72, 0.74 ]
+      )
+
+      ranked = described_class.ranked_candidates(agent_run: agent_run)
+
+      expect(ranked).to all(have_attributes(score_inputs: have_attributes(acquisition_function: "expected_improvement")))
+      expect(ranked.first.score_inputs.best_observed_objective_score).to be > 0
+      expect(ranked.first.score_inputs.acquisition_score).to be <= ranked.first.score_inputs.uncertainty +
+        ranked.first.score_inputs.predicted_objective_score
+    end
+
+    it "keeps the incumbent from older outcomes outside the surrogate training window" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.4 ],
+        objective_scores: [ 1.25 ],
+        created_at: 2.years.ago
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: Array.new(ConfigurationBundles::SurrogateModel::MAX_OUTCOME_ROWS, 0.7),
+        objective_scores: Array.new(ConfigurationBundles::SurrogateModel::MAX_OUTCOME_ROWS, 0.7)
+      )
+
+      ranked = described_class.ranked_candidates(agent_run: agent_run)
+
+      expect(ranked).to all(have_attributes(score_inputs: have_attributes(best_observed_objective_score: 1.25)))
+    end
+
     it "loads experiment variants in a single query" do
       create_bundle_history(
         experiment: experiment,
@@ -226,6 +281,26 @@ RSpec.describe ConfigurationBundles::Optimizer do
       queries = capture_queries { described_class.ranked_candidates(agent_run: agent_run) }
 
       expect(queries.grep(/FROM "configuration_experiment_variants"/).size).to eq(1)
+    end
+
+    it "does not issue per-outcome agent_run or project queries when objective scores are computed" do
+      create_bundle_history(
+        experiment: experiment,
+        variant: control,
+        quality_scores: [ 0.65, 0.66, 0.67 ]
+      )
+      create_bundle_history(
+        experiment: experiment,
+        variant: challenger,
+        quality_scores: [ 0.9, 0.91 ]
+      )
+      BundleOutcome.update_all(metrics: {})
+
+      queries = capture_queries { described_class.ranked_candidates(agent_run: agent_run) }
+
+      expect(queries.grep(/FROM "bundle_outcomes"/).size).to be <= 2
+      expect(queries.grep(/FROM "agent_runs"/).size).to eq(0)
+      expect(queries.grep(/FROM "projects"/).size).to eq(0)
     end
   end
 
@@ -278,6 +353,29 @@ RSpec.describe ConfigurationBundles::Optimizer do
     expect(selection.budget_snapshot.fetch(context)).to include(expected_values)
   end
 
+  def expect_task_bootstrap_snapshot(selection)
+    expect_budget_snapshot(selection, "task",
+      budget: 0.1,
+      total_runs: 0,
+      exploratory_runs: 0,
+      projected_share: 1.0,
+      within_budget: true,
+      bootstrap_active: true,
+      bootstrap_minimum_runs: 9
+    )
+  end
+
+  def expect_project_budget_block(selection)
+    expect_budget_snapshot(selection, "project",
+      budget: 0.25,
+      exploratory_runs: 1,
+      total_runs: 4,
+      observed_share: 0.25,
+      projected_share: 0.4,
+      within_budget: false
+    )
+  end
+
   def prediction_for(mode)
     if mode == :exploitative
       ConfigurationBundles::SurrogateOutcomeModel::Prediction.new(
@@ -313,7 +411,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
   end
 
-  def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40)
+  def create_bundle_history(experiment:, variant:, quality_scores:, cost_cents: 40, objective_scores: nil, created_at: Time.current)
     definition = {
       "schema_version" => 1,
       "goal" => agent_run.goal,
@@ -330,18 +428,21 @@ RSpec.describe ConfigurationBundles::Optimizer do
     }
     bundle = create(:configuration_bundle, account: project.account, definition: definition)
 
-    quality_scores.each do |quality_score|
+    quality_scores.each_with_index do |quality_score, index|
       run = create(:agent_run,
         :completed,
         configuration_bundle: bundle,
         project: project,
         issue: create(:issue, project: project),
-        cost_cents: cost_cents)
+        cost_cents: cost_cents,
+        created_at: created_at)
       create(:bundle_outcome,
         configuration_bundle: bundle,
         agent_run: run,
         quality_score: quality_score,
-        cost_cents: cost_cents)
+        cost_cents: cost_cents,
+        metrics: objective_scores ? { "objective_score" => objective_scores.fetch(index) } : {},
+        created_at: created_at)
     end
   end
 end

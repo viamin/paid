@@ -13,11 +13,11 @@ RSpec.describe Activities::PreparePrPromptActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
   let(:activity) { described_class.new }
-  let!(:prompt) do
+  let(:prompt) do
     Prompt.find_by(slug: Prompts::BuildForPr::PROMPT_SLUG)&.destroy!
     create(:prompt, :global, slug: Prompts::BuildForPr::PROMPT_SLUG).tap do |record|
       record.create_version!(
-        template: "Priority order:\n{{priority_list}}\n# Code Review Comments",
+        template: "Priority order:\n{{priority_list}}\n# Instructions",
         variables: [
           { "name" => "priority_list", "required" => true, "description" => "Priority list" }
         ]
@@ -45,6 +45,8 @@ RSpec.describe Activities::PreparePrPromptActivity do
   end
 
   describe "#execute" do
+    before { prompt }
+
     it "stores the generated prompt in custom_prompt" do
       activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
 
@@ -93,10 +95,45 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
     end
 
-    it "accepts focus input without changing prompt generation" do
-      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true, focus: "ci_fix")
+    it "passes explicit focus through to the prompt builder" do
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([
+          { id: 1, name: "rspec", conclusion: "failure", output_text: "failed" }
+        ])
+      allow(github_client).to receive(:check_run_log).and_return("")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+        ])
 
-      expect(agent_run.reload.custom_prompt).to include("Fix the bug")
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true, focus: "ci_fix")
+
+      expect(agent_run.reload.custom_prompt).to include("CI Status: FAILING")
+      expect(agent_run.custom_prompt).not_to include("Code Review Comments")
+      expect(result[:includes_review_threads]).to be(false)
+      expect(result[:review_thread_ids]).to eq([])
+    end
+
+    it "uses the agent run focus when input focus is not provided" do
+      agent_run.update!(focus: "ci_fix")
+      allow(github_client).to receive(:check_runs_for_ref)
+        .with(project.full_name, "abc123")
+        .and_return([
+          { id: 1, name: "rspec", conclusion: "failure", output_text: "failed" }
+        ])
+      allow(github_client).to receive(:check_run_log).and_return("")
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return([
+          { id: "thread_1", is_resolved: false, comments: [ { body: "Needs a fix", path: "app/models/user.rb", line: 42, author: "reviewer" } ] }
+        ])
+
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(agent_run.reload.custom_prompt).to include("CI Status: FAILING")
+      expect(agent_run.custom_prompt).not_to include("Code Review Comments")
     end
 
     it "passes rebase_succeeded through to the prompt builder" do

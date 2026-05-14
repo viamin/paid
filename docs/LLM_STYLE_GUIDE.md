@@ -84,6 +84,15 @@ Analyzing meaning or making a judgment?
 - **No `sleep` in tests** -- use explicit timestamps or `travel_to`. `STYLE_GUIDE:809-844`
 - Target 85-100% coverage for business logic. `STYLE_GUIDE:846-862`
 
+### Ephemeral PR Tests
+
+- One-off system/integration tests that run in CI for a single PR but don't join the permanent suite.
+- **When to use**: new feature validation, complex multi-step scenarios, migration path tests, or any system test too specialized for every PR.
+- **How**: add `*_spec.rb` to `.ephemeral-tests/` on the PR branch. CI auto-detects and runs them.
+- **Security**: same-repo PRs only (trusted collaborators). Minimal CI permissions (`contents: read`).
+- **Cleanup**: remove test files before merge. A CI guard on `main` rejects stray test files.
+- If a test proves valuable long-term, move it to `spec/system/` or `spec/integration/` before merging.
+
 ### Pending Specs (Strict)
 
 | Case | Allowed? |

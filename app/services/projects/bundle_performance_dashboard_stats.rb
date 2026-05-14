@@ -21,10 +21,12 @@ module Projects
 
       {
         summary: summary,
+        sparse_details: sparse_details(insights),
         bundle_rankings: bundle_rankings,
         experiment_confidence: experiment_confidence,
         optimizer_insights: insights,
         tradeoff_frontier: tradeoff_frontier,
+        outcome_improvement: outcome_improvement,
         sparse: sparse?(insights)
       }
     end
@@ -58,6 +60,16 @@ module Projects
       return false unless summary[:outcome_count].zero? && summary[:active_experiment_count].zero?
 
       insights.none? { |insight| insight[:candidates].present? }
+    end
+
+    def sparse_details(insights)
+      {
+        sparse_bundle_count: summary[:sparse_bundle_count],
+        sparse_experiment_count: experiment_confidence.count do |experiment|
+          experiment[:variants].any? { |variant| variant[:sparse] }
+        end,
+        sparse_goal_count: insights.count { |insight| insight[:sparse] }
+      }
     end
 
     def bundle_rankings
@@ -113,7 +125,7 @@ module Projects
     end
 
     def experiment_confidence
-      active_experiments.map do |experiment|
+      @experiment_confidence ||= active_experiments.map do |experiment|
         variant_stats = project_scoped_variant_stats(experiment)
         variants = experiment_variants_by_experiment_id.fetch(experiment.id, [])
 
@@ -297,16 +309,38 @@ module Projects
     end
 
     def active_experiments
-      @active_experiments ||= ConfigurationExperiment
+      @active_experiments ||= begin
+        assignment_backed_by_key = assignment_backed_active_experiments.index_by(&:config_key)
+
+        ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+          ConfigurationExperiment.active_for(config_key, project: project) ||
+            assignment_backed_by_key[config_key]
+        end
+          .sort_by { |experiment| active_experiment_sort_key(experiment) }
+      end
+    end
+
+    def assignment_backed_active_experiments
+      experiment_scope_for_project
+        .joins(configuration_experiment_assignments: :agent_run)
+        .where(agent_runs: { project_id: project.id })
+        .distinct
+        .to_a
+    end
+
+    def experiment_scope_for_project
+      ConfigurationExperiment
         .running
         .where(config_key: ConfigurationExperiment::TRACKED_CONFIG_KEYS)
-        .where(
-          id: ConfigurationExperimentAssignment
-            .joins(:agent_run)
-            .where(agent_runs: { project_id: project.id })
-            .select(:configuration_experiment_id)
-        )
-        .to_a
+        .where(account_id: [ project.account_id, nil ])
+    end
+
+    def active_experiment_sort_key(experiment)
+      [
+        ConfigurationExperiment::TRACKED_CONFIG_KEYS.index(experiment.config_key) || ConfigurationExperiment::TRACKED_CONFIG_KEYS.length,
+        experiment.account_id == project.account_id ? 0 : 1,
+        experiment.id
+      ]
     end
 
     def experiment_variants_by_experiment_id
@@ -329,7 +363,9 @@ module Projects
       uncertainty = selection.score_inputs.uncertainty.to_f
 
       {
+        acquisition_function: selection.score_inputs.acquisition_function,
         acquisition_score: selection.score_inputs.acquisition_score.to_f,
+        best_observed_objective_score: selection.score_inputs.best_observed_objective_score.to_f,
         predicted_objective_score: selection.score_inputs.predicted_objective_score.to_f,
         predicted_quality_score: selection.score_inputs.predicted_quality_score.to_f,
         uncertainty: uncertainty,
@@ -443,6 +479,10 @@ module Projects
     def positive_optimizer_setting(value, fallback)
       numeric = Float(value, exception: false)
       numeric&.positive? ? numeric : fallback.to_f
+    end
+
+    def outcome_improvement
+      @outcome_improvement ||= ConfigurationBundles::OutcomeImprovement.call(project: project)
     end
   end
 end

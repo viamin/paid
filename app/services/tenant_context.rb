@@ -63,6 +63,8 @@ class TenantContext
       connection.select_value(
         ActiveRecord::Base.sanitize_sql_array([ "SELECT NULLIF(current_setting(?, true), '')", key ])
       )
+    rescue ActiveRecord::ConnectionNotEstablished
+      nil
     rescue ActiveRecord::StatementInvalid => e
       raise unless transaction_aborted?(e)
 
@@ -73,6 +75,8 @@ class TenantContext
       connection.execute(
         ActiveRecord::Base.sanitize_sql_array([ "SELECT set_config(?, ?, false)", key, value.to_s ])
       )
+    rescue ActiveRecord::ConnectionNotEstablished
+      nil
     rescue ActiveRecord::StatementInvalid => e
       raise unless transaction_aborted?(e)
 

@@ -889,6 +889,46 @@ pending "not working"
 
 **Rationale**: Pending specs without tracking accumulate and become noise. They represent technical debt that's not tracked anywhere. Requiring issue references ensures the work is visible and prioritized.
 
+### Ephemeral PR Tests
+
+One-off system/integration tests that run in CI for a single PR but are not part of the permanent test suite.
+
+**When to use**:
+
+- Validating a new feature end-to-end before it's had real-world exposure
+- Complex multi-step scenarios that are too specialized for every PR
+- Testing migration paths, data transformations, or orchestration flows
+- Exploratory integration tests that would be brittle as permanent fixtures
+
+**When NOT to use**:
+
+- Regression tests (add to `spec/` permanently)
+- Unit or service-level tests (add to the appropriate `spec/` subdirectory)
+- Tests that need to run on every future PR
+
+**How it works**:
+
+1. Add `*_spec.rb` files to `.ephemeral-tests/` on the PR branch.
+2. CI auto-detects the files and runs them as a separate job (`.github/workflows/ephemeral_tests.yml`).
+3. The job only runs for same-repo PRs (trusted collaborators). Fork PRs are excluded.
+4. Results are posted as a PR comment.
+5. Remove test files before merge. A CI guard on `main` (`ephemeral-tests-guard` job in `ci.yml`) rejects stray test files.
+
+**Promote valuable tests**: If an ephemeral test proves it would catch future regressions, move it to `spec/system/` or `spec/integration/` before merging.
+
+```ruby
+# .ephemeral-tests/multi_agent_handoff_spec.rb
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe "Multi-agent handoff", type: :system do
+  it "completes a full agent handoff workflow end-to-end" do
+    # ... one-off test specific to this PR's changes ...
+  end
+end
+```
+
 ---
 
 ## Error Handling

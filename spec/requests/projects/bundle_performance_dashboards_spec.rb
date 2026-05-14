@@ -39,6 +39,27 @@ RSpec.describe "Projects::BundlePerformanceDashboards" do
         expect(response.body).to include(bundle.name)
         expect(response.body).to include("knowledge.token_budget=8000")
       end
+
+      it "shows active experiments with sparse guidance before the project has assignments" do
+        experiment = create(:configuration_experiment,
+          account: account,
+          status: "running",
+          min_samples_per_variant: 2)
+        create(:configuration_experiment_variant,
+          configuration_experiment: experiment,
+          config_value: experiment.control_value,
+          is_control: true)
+        create(:configuration_experiment_variant,
+          configuration_experiment: experiment,
+          config_value: JSON.generate(8000))
+
+        get project_bundle_performance_dashboard_path(project)
+
+        expect(response.body).to include("Sparse Evidence Summary")
+        expect(response.body).to include("1 active experiment still needs more samples")
+        expect(response.body).to include("Knowledge Token Budget")
+        expect(response.body).to include("Needs more data")
+      end
     end
   end
 

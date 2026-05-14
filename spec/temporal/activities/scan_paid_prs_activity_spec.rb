@@ -1291,18 +1291,63 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     context "when followup limit is reached" do
-      before do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed",
-          pr_followup_count: 3)
-        stub_github_for_pr
+      context "without any actionable triggers present" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation" ], paid_state: "completed",
+            pr_followup_count: 3)
+          stub_github_for_pr
+        end
+
+        it "skips the PR (no work needed, even though the budget is exhausted)" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger]).to eq([])
+        end
       end
 
-      it "skips the PR" do
-        result = activity.execute(project_id: project.id)
+      context "when the PR still has failing CI" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation", "paid-ready" ],
+            pr_review_phase: "ready", paid_state: "completed",
+            pr_followup_count: 3)
+          stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
+        end
 
-        expect(result[:prs_to_trigger]).to eq([])
+        it "escalates rather than silently skipping" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger].size).to eq(1)
+          trigger = result[:prs_to_trigger].first[:triggers].first
+          expect(trigger[:type]).to eq("escalate_to_owner")
+          expect(trigger[:details]).to include("Follow-up run limit reached")
+        end
+      end
+
+      context "when a bot-authored PR still has failing CI" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            github_creator_login: "dependabot[bot]",
+            labels: [ "paid-generated", "paid-automation", "paid-ready" ],
+            pr_review_phase: "ready", paid_state: "completed",
+            pr_followup_count: 3)
+          stub_github_for_pr(
+            author_login: "dependabot[bot]",
+            checks: [ { name: "ci", conclusion: "failure" } ]
+          )
+        end
+
+        it "escalates the bot PR rather than silently skipping" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger].size).to eq(1)
+          trigger = result[:prs_to_trigger].first[:triggers].first
+          expect(trigger[:type]).to eq("escalate_to_owner")
+        end
       end
     end
 
