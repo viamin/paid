@@ -43,7 +43,7 @@ module Activities
           policy_context: policy_context,
           outcome: policy_strategy_outcome_for(policy_result)
         )
-        return policy_result
+        return with_policy_provenance(policy_result)
       end
 
       prompt_data = render_prompt(issue, knowledge_context)
@@ -69,13 +69,15 @@ module Activities
         outcome: llm_strategy_outcome_for(policy_context)
       )
 
-      {
+      with_policy_provenance(
+        {
         tasks: tasks,
         prompt_source: prompt_data[:prompt_source],
         policy_source: policy_context[:source],
         skip_reason: policy_context[:skip_reason],
         policy_metadata: fallback_policy_metadata(policy_context)
       }
+      )
     rescue Temporalio::Error::ApplicationError => e
       log_decomposition_strategy_decision(
         project: project,
@@ -338,6 +340,13 @@ module Activities
         policy_source: policy_context[:source],
         skip_reason: policy_context[:skip_reason]
       }.compact
+    end
+
+    def with_policy_provenance(result)
+      metadata = result[:policy_metadata]
+      return result unless metadata.respond_to?(:to_h)
+
+      result.merge(metadata.to_h.deep_symbolize_keys)
     end
 
     def log_decomposition_strategy_decision(project:, issue:, workflow_name:, workflow_id:, input_context:, tasks:,

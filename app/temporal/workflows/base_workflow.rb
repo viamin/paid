@@ -81,10 +81,14 @@ module Workflows
     end
 
     def decomposition_policy_metadata(decompose_result)
-      metadata = decompose_result[:policy_metadata]
-      return {} unless metadata.respond_to?(:to_h)
+      top_level_metadata = decompose_result.slice(*DECOMPOSITION_POLICY_METADATA_KEYS)
+      nested_metadata = decompose_result[:policy_metadata]
 
-      metadata.to_h.deep_symbolize_keys.slice(*DECOMPOSITION_POLICY_METADATA_KEYS)
+      return top_level_metadata.compact unless nested_metadata.respond_to?(:to_h)
+
+      top_level_metadata.merge(
+        nested_metadata.to_h.deep_symbolize_keys.slice(*DECOMPOSITION_POLICY_METADATA_KEYS)
+      ).compact
     end
   end
 end

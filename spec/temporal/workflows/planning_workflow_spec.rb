@@ -70,6 +70,29 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
       end
     end
 
+    def stub_top_level_policy_driven_decomposition(tasks)
+      allow(workflow).to receive(:run_activity) do |activity_class, _activity_input, **_opts|
+        case activity_class.name
+        when "Activities::FetchPlanningContextActivity"
+          { context: { issue_title: "Feature", knowledge_snippets: [] } }
+        when "Activities::DecomposeFeatureActivity"
+          {
+            tasks: tasks,
+            prompt_source: "policy_service",
+            **policy_metadata_payload
+          }
+        when "Activities::CreateSubIssuesActivity"
+          { created_issues: [ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ] }
+        when "Activities::UpdatePlanningLabelsActivity"
+          { success: true }
+        when "Activities::LogDecompositionDecisionActivity"
+          { decomposition_decision_id: 1 }
+        else
+          {}
+        end
+      end
+    end
+
     it "accepts a single input parameter" do
       params = workflow.method(:execute).parameters
       expect(params).to eq([ [ :req, :input ] ])
@@ -145,6 +168,22 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
 
       it "propagates decomposition policy metadata into planning outcome logs" do
         stub_policy_driven_decomposition(tasks)
+
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(
+            Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              metadata: hash_including(prompt_source: "policy_service", **policy_metadata_payload)
+            ),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY
+          )
+      end
+
+      it "propagates top-level provenance when policy_metadata is omitted" do
+        stub_top_level_policy_driven_decomposition(tasks)
 
         workflow.execute(input)
 

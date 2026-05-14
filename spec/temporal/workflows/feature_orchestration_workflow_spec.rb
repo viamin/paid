@@ -196,6 +196,17 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
 
+      it "propagates top-level provenance into planning and parallelization outcome logs" do
+        stub_top_level_planning_activities(tasks: tasks, created_issues: created_issues)
+        stub_parallel_execution(parallel_result)
+        stub_update_labels
+
+        workflow.execute(input)
+
+        expect_top_level_provenance_logged!("planning_outcome")
+        expect_top_level_provenance_logged!("parallelization_outcome")
+      end
+
       it "records a scaling observation after parallel execution" do
         workflow.execute(input)
 
@@ -745,6 +756,65 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
     end
   end
 
+  def stub_top_level_planning_activities(tasks:, created_issues:)
+    allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+      case activity_class.name
+      when "Activities::ResolveCoordinationExperimentActivity"
+        { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
+      when "Activities::ResolveScalingExperimentActivity"
+        {
+          assignments: [
+            {
+              assignment_id: 88,
+              dimension: "agent_count",
+              execution_plan: {
+                "dimension" => "agent_count",
+                "requested_agent_count" => 2,
+                "max_batch_size" => 2
+              }
+            },
+            {
+              assignment_id: 99,
+              dimension: "iteration_count",
+              execution_plan: {
+                "dimension" => "iteration_count",
+                "requested_iteration_count" => 3,
+                "application_mode" => "task_prompt_budget",
+                "prompt_suffix" => "Iteration budget: aim to complete this task within 3 agent iterations."
+              }
+            }
+          ]
+        }
+      when "Activities::FetchPlanningContextActivity"
+        { context: { issue_title: "Feature", knowledge_snippets: [] } }
+      when "Activities::DecomposeFeatureActivity"
+        {
+          tasks: tasks,
+          prompt_source: "policy_service",
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      when "Activities::CreateSubIssuesActivity"
+        { created_issues: created_issues }
+      when "Activities::UpdatePlanningLabelsActivity"
+        { success: true }
+      when "Activities::RecordCoordinationExperimentOutcomeActivity"
+        { assignment_id: 77, outcome_status: "recorded" }
+      when "Activities::RecordScalingExperimentResultActivity"
+        { assignment_id: 88, outcome_status: "recorded" }
+      when "Activities::LogDecompositionDecisionActivity"
+        { decomposition_decision_id: 1 }
+      when "Activities::RecordScalingObservationActivity"
+        { scaling_observation_id: 1 }
+      else
+        {}
+      end
+    end
+  end
+
   def stub_parallel_execution(result)
     allow(Temporalio::Workflow).to receive(:execute_child_workflow)
       .with(Workflows::ParallelAgentExecutionWorkflow, anything, anything)
@@ -823,6 +893,26 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
         hash_including(
           assignment_id: assignment_id,
           scaling_observation_id: 1
+        ),
+        timeout: 30,
+        retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
+      )
+  end
+
+  def expect_top_level_provenance_logged!(decision_type)
+    expect(workflow).to have_received(:run_activity)
+      .with(
+        Activities::LogDecompositionDecisionActivity,
+        hash_including(
+          decision_type: decision_type,
+          metadata: hash_including(
+            prompt_source: "policy_service",
+            policy_source: "coordination_policy",
+            policy_key: "feature_decomposition",
+            coordination_policy_id: 12,
+            coordination_policy_version_id: 34,
+            coordination_policy_version: 5
+          )
         ),
         timeout: 30,
         retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
