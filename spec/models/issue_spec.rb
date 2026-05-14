@@ -139,6 +139,14 @@ RSpec.describe Issue do
         expect(described_class.ready_for_work(project)).to include(issue)
       end
 
+      it "includes issues whose only open dep is paid_state recommend_close" do
+        dep = create(:issue, :recommend_close, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
       it "excludes closed issues" do
         issue = create(:issue, project: project, github_state: "closed")
 
@@ -1298,6 +1306,24 @@ RSpec.describe Issue do
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked for a parent with an open non-PR sub-issue" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when the only open sub-issue is paid_state recommend_close" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, :recommend_close, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:eligible)
     end
 
     it "returns :eligible for an issue with only completed agent runs" do

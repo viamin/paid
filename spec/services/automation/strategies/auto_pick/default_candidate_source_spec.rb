@@ -129,6 +129,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(scope.pluck(:id)).to contain_exactly(child.id, standalone.id)
     end
+
+    it "keeps a parent eligible when its only open sub-issue is recommend_close" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, :recommend_close, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to include(parent.id)
+    end
   end
 
   describe ".eligible_issue_ids" do
