@@ -39,6 +39,7 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     )
     expect(result["scaling_exponent"]).to be > 0
     expect(result.dig("allocator_decision", "requested_agent_count")).to eq(2)
+    expect(result.dig("allocator_decision", "max_batch_size")).to eq(2)
     expect(result.dig("allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
     expect(result.fetch("values")).to include(
       hash_including("assigned_value" => 4, "signals" => include("diminishing_returns"))

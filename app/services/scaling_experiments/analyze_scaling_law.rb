@@ -325,7 +325,10 @@ module ScalingExperiments
 
       case scaling_experiment.dimension
       when "agent_count"
-        decision["requested_agent_count"] = value
+        decision.merge!(
+          "requested_agent_count" => value,
+          "max_batch_size" => value
+        )
       when "parallelism"
         decision["max_batch_size"] = value
       when "iteration_count"
