@@ -170,6 +170,30 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:sparse_details][:sparse_experiment_count]).to eq(1)
     end
 
+    it "keeps assignment-backed active experiments visible when project rollout excludes the project" do
+      experiment, control, variant = create_experiment(project:, traffic_percentage: 50)
+      assigned_project, assigned_run = create_assignment_backed_project_for(experiment)
+
+      create(:configuration_experiment_assignment,
+        configuration_experiment: experiment,
+        configuration_experiment_variant: control,
+        agent_run: assigned_run,
+        quality_score: 0.4)
+      create(:configuration_experiment_assignment,
+        configuration_experiment: experiment,
+        configuration_experiment_variant: variant,
+        agent_run: assigned_run,
+        quality_score: 0.8)
+
+      stats = described_class.call(project: assigned_project)
+
+      expect(experiment.includes_traffic?(project: assigned_project)).to be(false)
+      expect(experiment.includes_traffic?(agent_run: assigned_run)).to be(true)
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
+      expect(stats[:experiment_confidence].first[:variants].map { |row| row[:sample_count] }).to eq([ 1, 1 ])
+    end
+
     it "loads experiment variants once per experiment when building confidence stats" do
       experiment, control, variant = create_experiment(project:)
       create_bundle(project:, experiment:, variant:)
@@ -307,6 +331,22 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
   def shared_issue_for(project)
     shared_issues[project.id] ||= create(:issue, project: project)
+  end
+
+  def create_assignment_backed_project_for(experiment)
+    50.times do
+      project = create(:project, account: experiment.account)
+      next if experiment.includes_traffic?(project: project)
+
+      run = create(:agent_run,
+        :completed,
+        project: project,
+        issue: create(:issue, project: project),
+        goal: "create_pr")
+      return [ project, run ] if experiment.includes_traffic?(agent_run: run)
+    end
+
+    raise "Could not create a project excluded from project rollout with an included assigned run"
   end
 
   def mock_optimizer_selection

@@ -308,9 +308,38 @@ module Projects
     end
 
     def active_experiments
-      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
-        ConfigurationExperiment.active_for(config_key, project: project)
+      @active_experiments ||= begin
+        project_relevant = ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+          ConfigurationExperiment.active_for(config_key, project: project)
+        end
+
+        (project_relevant + assignment_backed_active_experiments)
+          .uniq(&:id)
+          .sort_by { |experiment| active_experiment_sort_key(experiment) }
       end
+    end
+
+    def assignment_backed_active_experiments
+      experiment_scope_for_project
+        .joins(configuration_experiment_assignments: :agent_run)
+        .where(agent_runs: { project_id: project.id })
+        .distinct
+        .to_a
+    end
+
+    def experiment_scope_for_project
+      ConfigurationExperiment
+        .running
+        .where(config_key: ConfigurationExperiment::TRACKED_CONFIG_KEYS)
+        .where(account_id: [ project.account_id, nil ])
+    end
+
+    def active_experiment_sort_key(experiment)
+      [
+        ConfigurationExperiment::TRACKED_CONFIG_KEYS.index(experiment.config_key) || ConfigurationExperiment::TRACKED_CONFIG_KEYS.length,
+        experiment.account_id == project.account_id ? 0 : 1,
+        experiment.id
+      ]
     end
 
     def experiment_variants_by_experiment_id
