@@ -173,7 +173,14 @@ module ScalingExperiments
         "efficiency_gain_vs_control" => efficiency_gain_vs_control(efficiency_score),
         "marginal_primary_gain" => marginal_gain,
         "scaling_exponent_vs_control" => exponent_for(summary:, transformed:, control_transformed: control_transformed),
-        "signals" => build_signals(summary:, previous:, marginal_gain:)
+        "signals" => build_signals(
+          summary:,
+          previous:,
+          marginal_gain:,
+          primary_value:,
+          transformed:,
+          control_transformed:
+        )
       )
     end
 
@@ -277,25 +284,24 @@ module ScalingExperiments
       end&.fetch("assigned_value", nil)
     end
 
-    def build_signals(summary:, previous:, marginal_gain:)
+    def build_signals(summary:, previous:, marginal_gain:, primary_value:, transformed:, control_transformed:)
       [].tap do |signals|
         if previous && marginal_gain && marginal_gain <= DIMINISHING_RETURNS_RATIO
           signals << "diminishing_returns"
         end
 
-        if previous && regression?(summary, previous)
+        if previous && regression?(primary_value:, previous:)
           signals << "primary_metric_regression"
         end
 
-        if efficiency_score(summary, transformed_primary_metric(summary["primary_metric_value"]),
-          transformed_primary_metric(metric_value(control_summary, primary_metric_key))) < 0
+        if efficiency_score(summary, transformed, control_transformed) < 0
           signals << "efficiency_regression"
         end
       end
     end
 
-    def regression?(summary, previous)
-      current = transformed_primary_metric(summary["primary_metric_value"])
+    def regression?(primary_value:, previous:)
+      current = transformed_primary_metric(primary_value)
       prior = transformed_primary_metric(previous["primary_metric_value"])
       return false unless current && prior
 

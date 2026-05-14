@@ -96,6 +96,21 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     expect(result.dig("allocator_decision", "max_iterations")).to eq(2)
   end
 
+  it "emits regression signals when the primary metric and efficiency fall below the prior value" do
+    result = analyze(
+      build_summary(1, sample_count: 3, success_rate: 0.80, duration: 200, cost: 100),
+      build_summary(2, sample_count: 3, success_rate: 0.95, duration: 150, cost: 120),
+      build_summary(4, sample_count: 3, success_rate: 0.70, duration: 260, cost: 180)
+    )
+
+    expect(result.fetch("values")).to include(
+      hash_including(
+        "assigned_value" => 4,
+        "signals" => include("primary_metric_regression", "efficiency_regression")
+      )
+    )
+  end
+
   def analyze(*value_summaries)
     described_class.call(
       scaling_experiment: experiment,
