@@ -2729,8 +2729,8 @@ module Activities
         numbers << number
       end
 
-      (local_deps.keys.to_set | same_repo_numbers).all? do |pr_number|
-        dependency_pull_request_merged?(client, project, pr_number)
+      (local_deps.keys.to_set | same_repo_numbers).all? do |number|
+        dependency_resolved?(client, project, number)
       end
     rescue GithubClient::Error => e
       log_signal_error("dependencies_resolved", project, issue, e)
@@ -2743,9 +2743,22 @@ module Activities
       end
     end
 
-    def dependency_pull_request_merged?(client, project, pr_number)
-      pr_data = client.pull_request(project.full_name, pr_number)
-      pull_request_merged?(pr_data)
+    # A "Depends on #N" ref can point to either a PR or an issue. Treat
+    # the dep as satisfied when #N is a merged PR OR a closed issue —
+    # both mean the upstream work is done. Without the issue fallback,
+    # depending on a tracking issue would silently block auto-merge
+    # forever because the pull_request endpoint 404s for issue numbers.
+    def dependency_resolved?(client, project, number)
+      pr_data = begin
+        client.pull_request(project.full_name, number)
+      rescue GithubClient::NotFoundError
+        nil
+      end
+
+      return pull_request_merged?(pr_data) if pr_data
+
+      issue_data = client.issue(project.full_name, number)
+      dependency_value(issue_data, :state) == "closed"
     rescue GithubClient::NotFoundError
       false
     end

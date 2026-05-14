@@ -105,6 +105,47 @@ RSpec.describe Activities::ScanPaidPrsActivity, :no_db do
 
       expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(true)
     end
+
+    context "when a dependency ref points to an issue rather than a PR" do
+      before do
+        # GitHub's pull_request endpoint 404s when N is an issue.
+        allow(client).to receive(:pull_request)
+          .with(project.full_name, 41)
+          .and_raise(GithubClient::NotFoundError.new("Not Found"))
+      end
+
+      it "returns true when the issue is closed (upstream work is done)" do
+        allow(client).to receive(:issue)
+          .with(project.full_name, 41)
+          .and_return(OpenStruct.new(number: 41, state: "closed"))
+
+        expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(true)
+      end
+
+      it "returns false when the issue is open" do
+        allow(client).to receive(:issue)
+          .with(project.full_name, 41)
+          .and_return(OpenStruct.new(number: 41, state: "open"))
+
+        expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(false)
+      end
+
+      it "returns false when the ref does not exist as either PR or issue" do
+        allow(client).to receive(:issue)
+          .with(project.full_name, 41)
+          .and_raise(GithubClient::NotFoundError.new("Not Found"))
+
+        expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(false)
+      end
+
+      it "accepts hash-shaped issue payloads" do
+        allow(client).to receive(:issue)
+          .with(project.full_name, 41)
+          .and_return({ "number" => 41, "state" => "closed" })
+
+        expect(activity.send(:dependencies_resolved?, client, project, issue)).to be(true)
+      end
+    end
   end
 
   describe "#human_dependency_check_required?" do
