@@ -309,12 +309,12 @@ module Projects
 
     def active_experiments
       @active_experiments ||= begin
-        project_relevant = ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
-          ConfigurationExperiment.active_for(config_key, project: project)
-        end
+        assignment_backed_by_key = assignment_backed_active_experiments.index_by(&:config_key)
 
-        (project_relevant + assignment_backed_active_experiments)
-          .uniq(&:id)
+        ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+          ConfigurationExperiment.active_for(config_key, project: project) ||
+            assignment_backed_by_key[config_key]
+        end
           .sort_by { |experiment| active_experiment_sort_key(experiment) }
       end
     end

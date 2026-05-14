@@ -194,6 +194,30 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:experiment_confidence].first[:variants].map { |row| row[:sample_count] }).to eq([ 1, 1 ])
     end
 
+    it "prefers the runtime-active experiment over assignment-backed history for the same config key" do
+      global_experiment, = create_experiment(project:, account: nil, config_key: "knowledge.token_budget")
+      stale_experiment, stale_control, stale_variant = create_experiment(project:, config_key: "knowledge.token_budget")
+      assigned_project, assigned_run = create_assignment_backed_project_for(stale_experiment)
+
+      create(:configuration_experiment_assignment,
+        configuration_experiment: stale_experiment,
+        configuration_experiment_variant: stale_control,
+        agent_run: assigned_run,
+        quality_score: 0.4)
+      create(:configuration_experiment_assignment,
+        configuration_experiment: stale_experiment,
+        configuration_experiment_variant: stale_variant,
+        agent_run: assigned_run,
+        quality_score: 0.8)
+
+      stats = described_class.call(project: assigned_project)
+
+      expect(stale_experiment.includes_traffic?(project: assigned_project)).to be(false)
+      expect(ConfigurationExperiment.active_for("knowledge.token_budget", project: assigned_project)).to eq(global_experiment)
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ global_experiment ])
+    end
+
     it "loads experiment variants once per experiment when building confidence stats" do
       experiment, control, variant = create_experiment(project:)
       create_bundle(project:, experiment:, variant:)
