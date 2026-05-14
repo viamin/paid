@@ -16,6 +16,10 @@ module Scaling
     STALE_THRESHOLD = 7.days
     MIN_SUCCESS_RATE_FOR_LEARNING = 0.3
     DIMINISHING_RETURNS_THRESHOLD = 0.05
+    BLOCKED_RATE_THRESHOLD = 0.20
+    LAUNCH_RATE_THRESHOLD = 0.85
+    MIN_DURATION_IMPROVEMENT_RATIO = 0.10
+    SUCCESS_RATE_DROP_THRESHOLD = 0.15
     CONFIDENCE_RANK = { "high" => 3, "medium" => 2, "low" => 1 }.freeze
 
     attr_reader :inputs, :observations, :experiment_summaries
@@ -31,20 +35,14 @@ module Scaling
     end
 
     def call
-      if observations_fresh_and_sufficient?
-        allocate_from_observations
-      elsif experiment_summaries_usable?
-        allocate_from_experiments
-      else
-        allocate_fallback
-      end
+      allocation = allocate_from_observations if observations_fresh_and_sufficient? && grouped.any?
+      allocation ||= allocate_from_experiments if experiment_guidance_available?
+      allocation || allocate_fallback
     end
 
     private
 
     def allocate_from_observations
-      return allocate_fallback if grouped.empty?
-
       best_value = find_optimal_agent_count(grouped)
       iterations = recommend_iterations(grouped, best_value)
       parallelism = recommend_parallelism(grouped, best_value)
@@ -60,28 +58,24 @@ module Scaling
     end
 
     def allocate_from_experiments
+      decision = measured_experiment_decision
+      return allocation_from_measured_decision(decision) if decision
+
       if experiment_allocator_decisions.any?
         return allocate_from_experiment_decisions
       end
 
-      best_summary = usable_experiment_summaries.max_by do |summary|
-        [
-          summary_value(summary, :success_rate, default: 0.0),
-          -summary_value(summary, :avg_duration_seconds, default: Float::INFINITY)
-        ]
-      end
-      return allocate_fallback unless best_summary
+      return nil if experiment_grouped.empty?
+      best_value = find_optimal_agent_count(experiment_grouped)
 
-      value = summary_value(best_summary, :assigned_value) || summary_value(best_summary, :value)
-      return allocate_fallback unless value
-
-      agent_count = clamp_agents(value)
+      stats = experiment_grouped[best_value]
+      agent_count = clamp_agents(best_value)
       build_allocation(
         agent_count: agent_count,
         max_iterations: 3,
         parallelism_level: parallelism_cap(agent_count),
         source: :experiment,
-        reason: "experiment leading value=#{value} success_rate=#{format_rate(summary_value(best_summary, :success_rate, default: 0.0))}"
+        reason: experiment_reason(best_value, stats)
       )
     end
 
@@ -94,13 +88,13 @@ module Scaling
       iteration_decision = decisions_by_dimension["max_iterations"]&.fetch(:decision, nil) ||
         decisions_by_dimension["iteration_count"]&.fetch(:decision, nil)
 
-      requested_agent_count = summary_value(agent_decision || parallelism_decision || {}, :requested_agent_count,
+      requested_agent_count = positive_integer_summary_value(agent_decision || parallelism_decision || {}, :requested_agent_count,
         default: conservative_agent_count)
       agent_count = clamp_agents(requested_agent_count)
-      recommended_parallelism = summary_value(parallelism_decision || {}, :max_batch_size,
+      recommended_parallelism = positive_integer_summary_value(parallelism_decision || {}, :max_batch_size,
         default: parallelism_cap(agent_count))
-      max_iterations = summary_value(iteration_decision || {}, :max_iterations,
-        default: summary_value(iteration_decision || {}, :requested_iteration_count, default: 3))
+      max_iterations = positive_integer_summary_value(iteration_decision || {}, :max_iterations,
+        default: positive_integer_summary_value(iteration_decision || {}, :requested_iteration_count, default: 3))
 
       build_allocation(
         agent_count: agent_count,
@@ -130,23 +124,39 @@ module Scaling
       @fresh_observations ||= observations.select { |obs| obs.created_at > STALE_THRESHOLD.ago }
     end
 
-    def experiment_summaries_usable?
-      usable_experiment_summaries.any? || experiment_allocator_decisions.any?
+    def experiment_guidance_available?
+      measured_experiment_decision.present? ||
+        experiment_allocator_decisions.any? ||
+        usable_experiment_summaries.any?
     end
 
     def group_by_agent_count
-      fresh_observations
-        .select { |obs| obs.agent_count_launched.to_i.positive? }
-        .group_by { |obs| obs.agent_count_launched.to_i }
-        .transform_values { |group| compute_group_stats(group) }
-        .select { |_value, stats| stats[:count] >= 2 }
+      supported_groups = fresh_observations.select { |obs| planned_agent_count_for(obs).positive? }
+        .group_by { |obs| planned_agent_count_for(obs) }
+        .select { |_value, entries| entries.size >= 2 }
+
+      summarize_values(supported_groups)
     end
 
-    def compute_group_stats(group)
+    def compute_group_stats(group, previous: nil)
       success_rate = group.count(&:success).to_f / group.size
       avg_duration = group.sum { |obs| obs.duration_seconds.to_i }.to_f / group.size
       avg_cost = group.sum(&:total_cost_cents).to_f / group.size
       avg_iterations = group.sum { |obs| obs.total_iterations.to_i }.to_f / group.size
+      avg_parallelism = group.sum { |obs| obs.parallelism_observed.to_i }.to_f / group.size
+      total_planned = group.sum { |obs| planned_agent_count_for(obs) }
+      total_launched = group.sum { |obs| obs.agent_count_launched.to_i }
+      total_blocked = group.sum { |obs| obs.agent_count_blocked.to_i }
+      launch_rate = ratio(total_launched, total_planned)
+      blocked_rate = ratio(total_blocked, total_planned)
+      marginal_duration_improvement_ratio = duration_improvement_ratio(previous, avg_duration)
+      signals = build_signals(
+        previous: previous,
+        success_rate: success_rate,
+        blocked_rate: blocked_rate,
+        launch_rate: launch_rate,
+        marginal_duration_improvement_ratio: marginal_duration_improvement_ratio
+      )
 
       {
         count: group.size,
@@ -154,17 +164,23 @@ module Scaling
         avg_duration_seconds: avg_duration,
         avg_cost_cents: avg_cost,
         avg_iterations: avg_iterations,
+        avg_parallelism_observed: avg_parallelism,
+        launch_rate: launch_rate,
+        blocked_rate: blocked_rate,
+        marginal_duration_improvement_ratio: marginal_duration_improvement_ratio,
+        signals: signals,
         observations: group
       }
     end
 
-    def find_optimal_agent_count(grouped)
-      sorted_values = grouped.keys.sort
+    def find_optimal_agent_count(grouped_values)
+      sorted_values = grouped_values.keys.sort
       return sorted_values.first if sorted_values.size == 1
 
-      scored = sorted_values.map do |value|
-        stats = grouped[value]
-        score = compute_allocation_score(stats, value, sorted_values)
+      safe_candidates = candidate_values(grouped_values)
+      scored = safe_candidates.map do |value|
+        stats = grouped_values[value]
+        score = compute_allocation_score(stats, value, sorted_values, grouped_values)
         { value: value, score: score }
       end
 
@@ -172,43 +188,36 @@ module Scaling
       best[:value]
     end
 
-    def compute_allocation_score(stats, value, sorted_values)
+    def compute_allocation_score(stats, value, sorted_values, grouped_values)
       success_weight = 0.5
       cost_weight = 0.3
       duration_weight = 0.2
 
-      max_cost = sorted_values.map { |v| grouped[v][:avg_cost_cents] }.max.to_f
-      max_duration = sorted_values.map { |v| grouped[v][:avg_duration_seconds] }.max.to_f
+      max_cost = sorted_values.map { |candidate| grouped_values[candidate][:avg_cost_cents] }.max.to_f
+      max_duration = sorted_values.map { |candidate| grouped_values[candidate][:avg_duration_seconds] }.max.to_f
 
       cost_efficiency = max_cost.positive? ? 1.0 - (stats[:avg_cost_cents] / max_cost) : 0.5
       duration_efficiency = max_duration.positive? ? 1.0 - (stats[:avg_duration_seconds] / max_duration) : 0.5
 
-      diminishing_penalty = compute_diminishing_penalty(value, sorted_values)
+      diminishing_penalty = compute_diminishing_penalty(stats)
+      threshold_penalty = threshold_penalty(stats)
+      parallelism_bonus = parallelism_bonus(stats, value)
 
       raw_score = (stats[:success_rate] * success_weight) +
                   (cost_efficiency * cost_weight) +
-                  (duration_efficiency * duration_weight) -
-                  diminishing_penalty
+                  (duration_efficiency * duration_weight) +
+                  parallelism_bonus -
+                  diminishing_penalty -
+                  threshold_penalty
 
       [ raw_score, 0.0 ].max
     end
 
-    def compute_diminishing_penalty(value, sorted_values)
-      return 0.0 if sorted_values.size < 2
-      return 0.0 unless sorted_values.include?(value)
+    def compute_diminishing_penalty(stats)
+      return 0.0 unless stats[:signals]&.include?("diminishing_returns")
 
-      idx = sorted_values.index(value)
-      return 0.0 if idx.zero?
-
-      prev_value = sorted_values[idx - 1]
-      prev_stats = grouped[prev_value]
-      curr_stats = grouped[value]
-      return 0.0 unless prev_stats && curr_stats
-
-      marginal_improvement = curr_stats[:success_rate] - prev_stats[:success_rate]
-      return 0.0 unless marginal_improvement < DIMINISHING_RETURNS_THRESHOLD
-
-      marginal_improvement.abs * 2.0
+      improvement = stats[:marginal_duration_improvement_ratio].to_f
+      [ DIMINISHING_RETURNS_THRESHOLD - improvement, 0.0 ].max
     end
 
     def recommend_iterations(grouped, best_value)
@@ -250,7 +259,7 @@ module Scaling
     end
 
     def avg_cost_per_agent_from_observations
-      observations_with_cost = observations.select { |obs| obs.total_cost_cents.to_i.positive? }
+      observations_with_cost = fresh_observations.select { |obs| obs.total_cost_cents.to_i.positive? }
       return nil unless observations_with_cost.any?
 
       total_cost = observations_with_cost.sum(&:total_cost_cents).to_f
@@ -258,6 +267,13 @@ module Scaling
       return nil unless total_agents.positive?
 
       total_cost / total_agents
+    end
+
+    def planned_agent_count_for(observation)
+      planned = observation.agent_count_planned.to_i
+      return planned if planned.positive?
+
+      observation.agent_count_launched.to_i
     end
 
     def avg_cost_per_agent_from_experiments
@@ -281,9 +297,18 @@ module Scaling
       @grouped ||= group_by_agent_count
     end
 
+    def experiment_grouped
+      @experiment_grouped ||= summarize_values(
+        usable_experiment_summaries.group_by do |summary|
+          positive_integer_summary_value(summary, :assigned_value) ||
+            positive_integer_summary_value(summary, :value)
+        end
+      )
+    end
+
     def usable_experiment_summaries
       @usable_experiment_summaries ||= normalized_experiment_values.select do |summary|
-        summary_value(summary, :sample_count, default: 0) >= MIN_OBSERVATIONS_FOR_CONFIDENCE &&
+        sample_count_for(summary) >= MIN_OBSERVATIONS_FOR_CONFIDENCE &&
           summary_value(summary, :success_rate, default: 0.0) > MIN_SUCCESS_RATE_FOR_LEARNING
       end
     end
@@ -304,14 +329,14 @@ module Scaling
         next unless decision.is_a?(Hash)
         dimension = summary_value(summary, :dimension).to_s
         next unless ALLOCATOR_DECISION_DIMENSIONS.include?(dimension)
-        decision_sample_count = summary_value(decision, :sample_count, default: 0)
+        decision_sample_count = sample_count_for(decision)
         next unless decision_sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
 
         {
           summary: summary,
           decision: decision,
           dimension: summary_value(summary, :dimension),
-          sample_count: summary_value(summary, :sample_count, default: 0),
+          sample_count: sample_count_for(summary),
           decision_sample_count: decision_sample_count
         }
       end
@@ -323,6 +348,9 @@ module Scaling
     # which wraps per-value data in a top-level hash with a "values" array.
     def normalized_experiment_values
       @normalized_experiment_values ||= experiment_summaries.flat_map do |summary|
+        status = summary_value(summary, :status)
+        next [] if status && status.to_s != "ready_for_analysis"
+
         values = summary_value(summary, :values)
         if values.is_a?(Array)
           values
@@ -332,13 +360,245 @@ module Scaling
       end
     end
 
+    def measured_experiment_decision
+      @measured_experiment_decision ||= experiment_summaries.filter_map do |summary|
+        summary_status = summary_value(summary, :status)
+        next if summary_status && summary_status.to_s != "ready_for_analysis"
+        dimension = summary_value(summary, :dimension).to_s
+        next unless dimension == "parallelism"
+
+        analysis = summary_value(summary, :parallelism_analysis, default: {})
+        decision = summary_value(analysis, :allocator_decision, default: nil) ||
+          summary_value(summary, :allocator_decision, default: nil)
+        next unless decision
+        next unless summary_value(analysis, :status, default: nil) == "ready"
+
+        sample_count = sample_count_for(analysis, default: sample_count_for(summary))
+        decision_sample_count = sample_count_for(decision, default: sample_count)
+        # Require the same confidence threshold used for observation cohorts so
+        # sparse parallelism analyses (min_samples: 2) cannot override fallback.
+        next unless sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
+        next unless decision_sample_count >= MIN_OBSERVATIONS_FOR_CONFIDENCE
+
+        { decision: decision, sample_count: sample_count, decision_sample_count: decision_sample_count }
+      end.max_by { |entry| [ entry[:decision_sample_count], entry[:sample_count] ] }&.fetch(:decision, nil)
+    end
+
+    def allocation_from_measured_decision(decision)
+      requested_agent_count = positive_integer_summary_value(decision, :requested_agent_count)
+      return nil unless requested_agent_count
+
+      agent_count = clamp_agents(requested_agent_count)
+      max_batch_size = positive_integer_summary_value(decision, :max_batch_size, default: requested_agent_count)
+
+      build_allocation(
+        agent_count: agent_count,
+        max_iterations: 3,
+        parallelism_level: parallelism_cap([ max_batch_size.to_i, agent_count ].min),
+        source: :experiment,
+        reason: "experiment measured returns recommended agent_count=#{requested_agent_count} reason=#{summary_value(decision, :reason, default: 'measured_returns')}"
+      )
+    end
+
     def summary_value(summary, key, default: nil)
+      return default unless summary.respond_to?(:fetch)
+
       val = summary.fetch(key) { summary.fetch(key.to_s, default) }
       val.nil? ? default : val
     end
 
+    def integer_summary_value(summary, key, default: nil)
+      normalize_integer_value(summary_value(summary, key, default:))
+    end
+
+    def positive_integer_summary_value(summary, key, default: nil)
+      value = integer_summary_value(summary, key, default:)
+      return default unless value&.positive?
+
+      value
+    end
+
+    def sample_count_for(summary, default: 0)
+      integer_summary_value(summary, :sample_count, default:) || default
+    end
+
     def parallelism_cap(agent_count)
       [ agent_count, inputs.parallelism_limit ].min
+    end
+
+    def summarize_values(grouped_values)
+      summaries = {}
+      previous = nil
+
+      grouped_values.keys.compact.sort.each do |value|
+        stats = compute_stats_for_value(value, grouped_values.fetch(value), previous:)
+        summaries[value] = stats
+        previous = stats
+      end
+
+      summaries
+    end
+
+    def compute_stats_for_value(value, entries, previous:)
+      if observation_entry?(entries.first)
+        compute_group_stats(entries, previous:)
+      else
+        compute_experiment_stats(value, entries, previous:)
+      end
+    end
+
+    def observation_entry?(entry)
+      entry.respond_to?(:agent_count_planned) &&
+        entry.respond_to?(:agent_count_launched) &&
+        !entry.respond_to?(:fetch)
+    end
+
+    def compute_experiment_stats(value, entries, previous:)
+      sample_count = entries.sum { |entry| summary_value(entry, :sample_count, default: 0).to_i }
+      success_rate = average_metric(entries, :success_rate)
+      avg_duration = average_metric(entries, :avg_duration_seconds)
+      avg_cost = average_metric(entries, :avg_cost_cents)
+      avg_parallelism = average_metric(entries, :avg_parallelism_observed)
+      launch_rate = experiment_launch_rate(entries, assigned_value: value)
+      blocked_rate = experiment_blocked_rate(entries, assigned_value: value)
+      marginal_duration_improvement_ratio = duration_improvement_ratio(previous, avg_duration)
+      signals = build_signals(
+        previous: previous,
+        success_rate: success_rate,
+        blocked_rate: blocked_rate,
+        launch_rate: launch_rate,
+        marginal_duration_improvement_ratio: marginal_duration_improvement_ratio
+      )
+
+      {
+        count: sample_count,
+        success_rate: success_rate,
+        avg_duration_seconds: avg_duration,
+        avg_cost_cents: avg_cost,
+        avg_iterations: 3.0,
+        avg_parallelism_observed: avg_parallelism,
+        launch_rate: launch_rate,
+        blocked_rate: blocked_rate,
+        marginal_duration_improvement_ratio: marginal_duration_improvement_ratio,
+        signals: signals,
+        values: entries,
+        assigned_value: value
+      }
+    end
+
+    def experiment_launch_rate(entries, assigned_value:)
+      if metric_present_for_all_entries?(entries, :avg_agent_count_launched)
+        launched = average_metric(entries, :avg_agent_count_launched)
+        planned = experiment_planned_agent_count(entries, fallback: assigned_value)
+        return ratio(launched, planned) if planned.to_f.positive?
+      end
+
+      average_metric(entries, :agent_launch_success_rate, fallback: 1.0, ignore_missing: true)
+    end
+
+    def experiment_blocked_rate(entries, assigned_value:)
+      if metric_present_for_all_entries?(entries, :avg_agent_count_blocked)
+        blocked = average_metric(entries, :avg_agent_count_blocked)
+        planned = experiment_planned_agent_count(entries, fallback: assigned_value)
+        return ratio(blocked, planned) if planned.to_f.positive?
+      end
+
+      average_metric(entries, :blocked_task_rate, ignore_missing: true)
+    end
+
+    def experiment_planned_agent_count(entries, fallback:)
+      return fallback unless metric_present_for_all_entries?(entries, :avg_agent_count_planned)
+
+      planned = average_metric(entries, :avg_agent_count_planned, fallback: fallback)
+      planned.to_f.positive? ? planned : fallback
+    end
+
+    def build_signals(previous:, success_rate:, blocked_rate:, launch_rate:, marginal_duration_improvement_ratio:)
+      [].tap do |signals|
+        if previous && marginal_duration_improvement_ratio && marginal_duration_improvement_ratio <= MIN_DURATION_IMPROVEMENT_RATIO
+          signals << "diminishing_returns"
+        end
+        if previous && success_rate <= previous[:success_rate] - SUCCESS_RATE_DROP_THRESHOLD
+          signals << "success_rate_regression"
+        end
+        signals << "blocked_capacity" if blocked_rate >= BLOCKED_RATE_THRESHOLD
+        signals << "launch_shortfall" if launch_rate < LAUNCH_RATE_THRESHOLD
+      end
+    end
+
+    def candidate_values(grouped)
+      values_without_threshold_signals = grouped.filter_map do |value, stats|
+        value unless threshold_signals?(stats)
+      end
+      safe_values = values_without_threshold_signals.reject { |value| grouped[value][:signals].include?("diminishing_returns") }
+
+      safe_values.presence || values_without_threshold_signals.presence || grouped.keys.sort
+    end
+
+    def threshold_signals?(stats)
+      stats[:signals].any? { |signal| signal != "diminishing_returns" }
+    end
+
+    def threshold_penalty(stats)
+      penalty = 0.0
+      penalty += 0.2 if stats[:signals].include?("success_rate_regression")
+      penalty += 0.15 if stats[:signals].include?("blocked_capacity")
+      penalty += 0.15 if stats[:signals].include?("launch_shortfall")
+      penalty
+    end
+
+    def parallelism_bonus(stats, value)
+      return 0.0 unless value.to_i.positive?
+
+      observed = stats[:avg_parallelism_observed].to_f
+      [ observed / value.to_f, 1.0 ].min * 0.05
+    end
+
+    def duration_improvement_ratio(previous, avg_duration_seconds)
+      return unless previous
+      return 0.0 if previous[:avg_duration_seconds].to_f.zero?
+
+      ((previous[:avg_duration_seconds].to_f - avg_duration_seconds.to_f) / previous[:avg_duration_seconds].to_f).round(4)
+    end
+
+    def average_metric(entries, key, fallback: 0.0, ignore_missing: false)
+      weighted_sum = 0.0
+      total_weight = 0
+
+      entries.each do |entry|
+        weight = summary_value(entry, :sample_count, default: 0).to_i
+        next if weight <= 0
+
+        if ignore_missing && !metric_present?(entry, key)
+          next
+        end
+
+        weighted_sum += summary_value(entry, key, default: fallback).to_f * weight
+        total_weight += weight
+      end
+
+      return fallback if total_weight.zero?
+
+      weighted_sum / total_weight
+    end
+
+    def ratio(numerator, denominator)
+      return 0.0 if denominator.to_f <= 0.0
+
+      numerator.to_f / denominator.to_f
+    end
+
+    def normalize_integer_value(value)
+      case value
+      when Integer
+        value
+      when Float
+        value.finite? && value == value.to_i ? value.to_i : nil
+      when String
+        /\A\d+\z/.match?(value) ? value.to_i : nil
+      else
+        nil
+      end
     end
 
     def experiment_decisions_reason(decisions_by_dimension)
@@ -355,10 +615,22 @@ module Scaling
       end.join("; ")
     end
 
+    def metric_present_for_all_entries?(entries, key)
+      return false if entries.empty?
+
+      entries.all? { |entry| metric_present?(entry, key) }
+    end
+
+    def metric_present?(entry, key)
+      return false unless entry.respond_to?(:fetch)
+
+      entry.key?(key) || entry.key?(key.to_s)
+    end
+
     def fallback_reason
       reasons = []
-      reasons << "insufficient observations (#{observations.size}/#{MIN_OBSERVATIONS_FOR_CONFIDENCE})"
-      reasons << "no usable experiment data" unless experiment_summaries_usable?
+      reasons << "insufficient fresh observations (#{fresh_observations.size}/#{MIN_OBSERVATIONS_FOR_CONFIDENCE})"
+      reasons << "no usable experiment data" unless experiment_guidance_available?
       reasons.join("; ")
     end
 
@@ -366,6 +638,14 @@ module Scaling
       stats = grouped[best_value]
       "best observed agent_count=#{best_value} " \
         "success_rate=#{format_rate(stats[:success_rate])} " \
+        "signals=#{stats[:signals].join(',').presence || 'none'} " \
+        "n=#{stats[:count]}"
+    end
+
+    def experiment_reason(best_value, stats)
+      "experiment leading value=#{best_value} " \
+        "success_rate=#{format_rate(stats[:success_rate])} " \
+        "signals=#{stats[:signals].join(',').presence || 'none'} " \
         "n=#{stats[:count]}"
     end
 
