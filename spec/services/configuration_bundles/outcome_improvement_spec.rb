@@ -234,6 +234,19 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       expect(result.periods.map(&:outcome_count).sum).to eq(8)
     end
 
+    it "does not create an extra runt period when rows are unevenly divisible" do
+      rows = 5.times.map do |i|
+        make_row(quality_score: 0.5 + i * 0.05, cost_cents: 200 - i * 20, success: true, objective_score: 0.45 + i * 0.05)
+      end
+      service = described_class.new(project: project)
+      allow(service).to receive(:load_outcome_rows).and_return(rows)
+
+      result = service.call
+
+      expect(result.periods.length).to eq(2)
+      expect(result.periods.map(&:outcome_count)).to eq([ 3, 2 ])
+    end
+
     it "computes success rate per period" do
       rows = [
         make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: 0.45),

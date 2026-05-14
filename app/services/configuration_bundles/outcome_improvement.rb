@@ -187,7 +187,7 @@ module ConfigurationBundles
     end
 
     def build_period_snapshots(rows)
-      period_size = [ rows.size / PERIODS_FOR_TREND, 1 ].max
+      period_size = (rows.size.to_f / PERIODS_FOR_TREND).ceil
       rows.each_slice(period_size).each_with_index.map do |period_rows, index|
         PeriodSnapshot.new(
           label: "Period #{index + 1}",
