@@ -56,6 +56,30 @@ RSpec.describe ConfigurationBundles::Optimizer, :no_db do
     expect(selection.selection_context).to eq("project")
   end
 
+  it "preserves task context when only one candidate exists and bootstrap is inactive" do
+    single_candidate = described_class::Selection.new(
+      fingerprint: "only_one",
+      score_inputs: described_class::ScoreInputs.new(
+        predicted_objective_score: 0.82,
+        predicted_quality_score: 0.82,
+        uncertainty: 0.01,
+        sample_count: 4,
+        acquisition_score: 0.824
+      )
+    )
+    snapshot = {
+      "task" => budget_snapshot(budget: 0.1, total_runs: 12, exploratory_runs: 1, observed_share: 0.083, projected_share: 0.154, within_budget: false, bootstrap_active: false, bootstrap_minimum_runs: 9),
+      "project" => budget_snapshot(budget: 0.25, total_runs: 50, exploratory_runs: 5, observed_share: 0.1, projected_share: 0.118, within_budget: true)
+    }
+    allow(service).to receive_messages(ranked_candidates: [ single_candidate ], exploration_budget_snapshot: snapshot)
+
+    selection = service.select_bundle
+
+    expect(selection.selection_mode).to eq("exploitative")
+    expect(selection.selection_context).to eq("task")
+    expect(selection.budget_snapshot).to be_nil
+  end
+
   it "keeps task context once task routing has enough history to enforce its own budget" do
     allow(service).to receive(:exploration_budget_snapshot).and_return(
       "task" => budget_snapshot(budget: 0.1, total_runs: 10, exploratory_runs: 1, observed_share: 0.1, projected_share: 0.1818, within_budget: false, bootstrap_active: false, bootstrap_minimum_runs: 9),
