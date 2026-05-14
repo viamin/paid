@@ -4,9 +4,11 @@ module Activities
   # Handles issue-based agent runs that complete without producing a PR or commit.
   #
   # Classifies the outcome as either:
-  # - `recommend_close`: agent produced output but no code changes (issue may be
-  #   already satisfied, obsolete, or not actionable)
-  # - `needs_input`: agent produced no output and no changes (issue is likely
+  # - `recommend_close`: agent performed real work (iterations/cost > 0) but
+  #   produced no code changes (issue may be already satisfied, obsolete, or
+  #   not actionable)
+  # - `needs_input`: agent produced no output, or produced output with zero
+  #   iterations and zero cost (no evidence of real work; issue is likely
   #   underspecified or ambiguous)
   # - `provider_error`: provider returned an error (e.g. credit/quota exhaustion)
   #   before the agent actually ran. The run is failed so retry / provider
@@ -117,11 +119,15 @@ module Activities
 
       # Guard: if the agent produced output but shows no evidence of having
       # actually run (zero iterations AND zero cost), the "output" is likely
-      # a provider-level error (e.g. credit exhaustion) rather than a real
-      # agent response. Confirm by checking the output for error patterns.
+      # a provider-level error (e.g. credit exhaustion) or trivial CLI
+      # boilerplate rather than a real agent response. Confirm by checking
+      # the output for error patterns; if neither matches, classify as
+      # needs_input since the agent did not perform meaningful work.
       if agent_run.iterations.to_i.zero? && agent_run.cost_cents.to_i.zero?
         return "provider_error" if provider_error_output?(agent_summary)
         return "infrastructure_error" if infrastructure_error_output?(agent_summary)
+
+        return "needs_input"
       end
 
       "recommend_close"
