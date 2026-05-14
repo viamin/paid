@@ -25,7 +25,8 @@ module Screenshots
         %r{\Aapp/views/layouts/mailer(?:\.(?:html|text))?\.erb\z},
         %r{\Aapp/views/pwa/},
         %r{\Aconfig/locales/devise\.},
-        %r{\Aapp/controllers/health_controller\.rb\z}
+        %r{\Aapp/controllers/health_controller\.rb\z},
+        %r{\Aapp/controllers/operator_console_access_controller\.rb\z}
       ].freeze
     }.freeze
 
