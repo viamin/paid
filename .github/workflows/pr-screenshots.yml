@@ -91,6 +91,16 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
+      chrome:
+        image: ghcr.io/browserless/chromium:v2.48.2
+        ports:
+          - 9222:3000
+        options: >-
+          --health-cmd="curl -sf http://localhost:3000/json/version || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
@@ -100,6 +110,7 @@ jobs:
       DB_USERNAME: paid
       DB_PASSWORD: paid
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
+      CHROME_URL: ws://localhost:9222
 
     steps:
       - name: Checkout code
@@ -148,22 +159,12 @@ jobs:
           $$;
           SQL
 
-      - name: Verify Chrome binary
+      - name: Verify Chrome service
         run: |
-          chrome_path="${CHROMIUM_PATH:-}"
-          if [ -z "$chrome_path" ]; then
-            for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
-              if [ -x "$candidate" ]; then
-                chrome_path="$candidate"
-                break
-              fi
-            done
-          fi
-          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
-            echo "Chrome found at ${chrome_path}"
-            "$chrome_path" --version
+          if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
+            echo "Chrome service container is available via CHROME_URL"
           else
-            echo "::error::No Chrome/Chromium binary found"
+            echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
             exit 1
           fi
 
@@ -172,6 +173,17 @@ jobs:
           UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
         run: |
           printf 'CHANGED_FILES<<EOF\n%s\nEOF\n' "$(printf '%s' "$UI_FILES_B64" | base64 -d)" >> "$GITHUB_ENV"
+
+      - name: Configure remote Capybara host
+        run: |
+          # Service containers share the runner's Docker network; use the
+          # runner's primary IP so the remote browser can connect back to Puma.
+          host_ip="$(hostname -I | awk '{print $1}')"
+          if [ -z "$host_ip" ]; then
+            echo "::error::Could not determine the runner host IP for the Chrome service container."
+            exit 1
+          fi
+          echo "CAPYBARA_APP_HOST=$host_ip" >> "$GITHUB_ENV"
 
       - name: Build assets
         run: yarn build && yarn build:css
