@@ -805,7 +805,7 @@ module Projects
       owner = settings_owner
       return unless owner
 
-      configured_identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
+      configured_identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
       priority_identifiers = owner.settings.provider_priority_for_goal(goal, identifiers: true)
       default_identifier = priority_identifiers.first
 
@@ -842,7 +842,7 @@ module Projects
         unless owner
           []
         else
-          identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
+          identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
 
           routing_ids = []
           plain_keys = []
