@@ -172,23 +172,24 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
     it "keeps assignment-backed active experiments visible when project rollout excludes the project" do
       experiment, control, variant = create_experiment(project:, traffic_percentage: 50)
-      assigned_project, assigned_run = create_assignment_backed_project_for(experiment)
+      assigned_project, assigned_runs = create_assignment_backed_project_for(experiment, run_count: 2)
+      control_run, variant_run = assigned_runs
 
       create(:configuration_experiment_assignment,
         configuration_experiment: experiment,
         configuration_experiment_variant: control,
-        agent_run: assigned_run,
+        agent_run: control_run,
         quality_score: 0.4)
       create(:configuration_experiment_assignment,
         configuration_experiment: experiment,
         configuration_experiment_variant: variant,
-        agent_run: assigned_run,
+        agent_run: variant_run,
         quality_score: 0.8)
 
       stats = described_class.call(project: assigned_project)
 
       expect(experiment.includes_traffic?(project: assigned_project)).to be(false)
-      expect(experiment.includes_traffic?(agent_run: assigned_run)).to be(true)
+      expect(assigned_runs).to all(satisfy { |run| experiment.includes_traffic?(agent_run: run) })
       expect(stats[:summary][:active_experiment_count]).to eq(1)
       expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
       expect(stats[:experiment_confidence].first[:variants].map { |row| row[:sample_count] }).to eq([ 1, 1 ])
@@ -197,17 +198,18 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     it "prefers the runtime-active experiment over assignment-backed history for the same config key" do
       global_experiment, = create_experiment(project:, account: nil, config_key: "knowledge.token_budget")
       stale_experiment, stale_control, stale_variant = create_experiment(project:, config_key: "knowledge.token_budget", traffic_percentage: 50)
-      assigned_project, assigned_run = create_assignment_backed_project_for(stale_experiment)
+      assigned_project, assigned_runs = create_assignment_backed_project_for(stale_experiment, run_count: 2)
+      control_run, variant_run = assigned_runs
 
       create(:configuration_experiment_assignment,
         configuration_experiment: stale_experiment,
         configuration_experiment_variant: stale_control,
-        agent_run: assigned_run,
+        agent_run: control_run,
         quality_score: 0.4)
       create(:configuration_experiment_assignment,
         configuration_experiment: stale_experiment,
         configuration_experiment_variant: stale_variant,
-        agent_run: assigned_run,
+        agent_run: variant_run,
         quality_score: 0.8)
 
       stats = described_class.call(project: assigned_project)
@@ -357,20 +359,25 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     shared_issues[project.id] ||= create(:issue, project: project)
   end
 
-  def create_assignment_backed_project_for(experiment)
+  def create_assignment_backed_project_for(experiment, run_count:)
     50.times do
       project = create(:project, account: experiment.account)
       next if experiment.includes_traffic?(project: project)
 
-      run = create(:agent_run,
-        :completed,
-        project: project,
-        issue: create(:issue, project: project),
-        goal: "create_pr")
-      return [ project, run ] if experiment.includes_traffic?(agent_run: run)
+      runs = Array.new(run_count) do
+        create(:agent_run,
+          :completed,
+          project: project,
+          issue: create(:issue, project: project),
+          goal: "create_pr")
+      end
+
+      next unless runs.all? { |run| experiment.includes_traffic?(agent_run: run) }
+
+      return [ project, runs ]
     end
 
-    raise "Could not create a project excluded from project rollout with an included assigned run"
+    raise "Could not create a project excluded from project rollout with included assigned runs"
   end
 
   def mock_optimizer_selection
