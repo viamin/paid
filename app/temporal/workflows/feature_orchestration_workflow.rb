@@ -105,7 +105,7 @@ module Workflows
       created_issues = planning_result[:created_issues]
       planning_context = planning_result[:context] || {}
       prompt_source = planning_result[:prompt_source]
-      planning_policy_metadata = planning_result[:policy_metadata] || {}
+      planning_policy_metadata = decomposition_policy_metadata(planning_result)
 
       scaling_experiment_context = safely_resolve_scaling_experiment(
         project_id: project_id,

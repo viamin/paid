@@ -13,6 +13,14 @@ module Activities
     POLICY_PROMPT_SOURCE = "policy_service"
     TIMEOUT = 60
     MAX_TASKS = 20
+    POLICY_METADATA_KEYS = %i[
+      policy_source
+      skip_reason
+      policy_key
+      coordination_policy_id
+      coordination_policy_version_id
+      coordination_policy_version
+    ].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -339,10 +347,8 @@ module Activities
 
     def with_policy_provenance(result)
       payload = result.to_h.deep_symbolize_keys
-      metadata = payload[:policy_metadata]
-      return payload unless metadata.respond_to?(:to_h)
-
-      normalized_metadata = metadata.to_h.deep_symbolize_keys
+      normalized_metadata = normalized_policy_metadata(payload)
+      return payload if normalized_metadata.empty?
 
       payload.merge(
         policy_metadata: normalized_metadata,
@@ -369,6 +375,18 @@ module Activities
         next_retry_delay: error.next_retry_delay,
         category: error.category
       )
+    end
+
+    def normalized_policy_metadata(payload)
+      payload = payload.to_h.deep_symbolize_keys
+      top_level_metadata = payload.slice(*POLICY_METADATA_KEYS)
+      nested_metadata = payload[:policy_metadata]
+
+      return top_level_metadata.compact unless nested_metadata.respond_to?(:to_h)
+
+      top_level_metadata.merge(
+        nested_metadata.to_h.deep_symbolize_keys.slice(*POLICY_METADATA_KEYS)
+      ).compact
     end
 
     def log_decomposition_strategy_decision(project:, issue:, workflow_name:, workflow_id:, input_context:, tasks:,

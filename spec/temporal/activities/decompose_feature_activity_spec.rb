@@ -42,6 +42,30 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(result[:policy_metadata]).to eq(policy_metadata)
       expect(result).to include(policy_metadata)
     end
+
+    it "backfills nested policy_metadata from top-level provenance" do
+      result = activity.send(
+        :with_policy_provenance,
+        {
+          "tasks" => [],
+          "policy_source" => "coordination_policy",
+          "policy_key" => DecompositionService::POLICY_KEY,
+          "coordination_policy_version" => 5
+        }
+      )
+
+      expect(result).to include(
+        tasks: [],
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      )
+      expect(result[:policy_metadata]).to eq(
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      )
+    end
   end
 
   describe "#result_policy_metadata", :no_db do
