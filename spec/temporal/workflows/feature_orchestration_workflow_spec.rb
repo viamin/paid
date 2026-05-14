@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::FeatureOrchestrationWorkflow do
+RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
   let(:workflow) { described_class.new }
 
   describe "class" do

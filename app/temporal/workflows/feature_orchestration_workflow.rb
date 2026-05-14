@@ -547,20 +547,6 @@ module Workflows
       )
     end
 
-    def decomposition_policy_metadata(decompose_result)
-      metadata = decompose_result[:policy_metadata]
-      return {} unless metadata.respond_to?(:to_h)
-
-      metadata.to_h.deep_symbolize_keys.slice(
-        :policy_source,
-        :skip_reason,
-        :policy_key,
-        :coordination_policy_id,
-        :coordination_policy_version_id,
-        :coordination_policy_version
-      )
-    end
-
     def safe_record_scaling_observation(payload)
       run_activity(
         Activities::RecordScalingObservationActivity,

@@ -14,6 +14,15 @@ module Workflows
   # Use `run_activity` instead of `Temporalio::Workflow.execute_activity` to
   # automatically normalize activity return values as well.
   class BaseWorkflow < Temporalio::Workflow::Definition
+    DECOMPOSITION_POLICY_METADATA_KEYS = %i[
+      policy_source
+      skip_reason
+      policy_key
+      coordination_policy_id
+      coordination_policy_version_id
+      coordination_policy_version
+    ].freeze
+
     module InputNormalizer
       def execute(input)
         super(input.is_a?(Hash) ? input.deep_symbolize_keys : input)
@@ -69,6 +78,13 @@ module Workflows
       when Array then obj.map { |item| deep_symbolize(item) }
       else obj
       end
+    end
+
+    def decomposition_policy_metadata(decompose_result)
+      metadata = decompose_result[:policy_metadata]
+      return {} unless metadata.respond_to?(:to_h)
+
+      metadata.to_h.deep_symbolize_keys.slice(*DECOMPOSITION_POLICY_METADATA_KEYS)
     end
   end
 end

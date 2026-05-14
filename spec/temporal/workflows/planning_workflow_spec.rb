@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::PlanningWorkflow do
+RSpec.describe Workflows::PlanningWorkflow, :no_db do
   let(:workflow) { described_class.new }
 
   describe "class" do
