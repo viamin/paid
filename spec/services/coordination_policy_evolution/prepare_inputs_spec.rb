@@ -35,7 +35,13 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
         decision_type: "planning_outcome",
         outcome: "sub_issues_created",
         hints: { "task_count" => 3 },
-        metadata: { "policy_source" => "feature_orchestration" }
+        metadata: {
+          "policy_source" => "feature_orchestration",
+          "policy_key" => described_class::POLICY_KEY,
+          "coordination_policy_id" => policy.id,
+          "coordination_policy_version_id" => policy.current_version.id,
+          "coordination_policy_version" => policy.current_version.version
+        }
       )
       create(
         :decomposition_decision,
@@ -96,6 +102,19 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs do
       expect(result.dig(:performance, :average_task_count)).to eq(1.67)
       expect(result[:sample_successes].size).to eq(1)
       expect(result[:sample_failures].size).to eq(1)
+    end
+
+    it "surfaces policy provenance on sampled outcome decisions" do
+      expect(result[:sample_successes].first).to include(
+        policy_source: "feature_orchestration",
+        policy_key: described_class::POLICY_KEY,
+        coordination_policy_id: policy.id,
+        coordination_policy_version_id: policy.current_version.id,
+        coordination_policy_version: policy.current_version.version
+      )
+      expect(result[:sample_failures].first).to include(
+        policy_source: "defaults"
+      )
     end
 
     it "includes effective policy configuration for mutation" do

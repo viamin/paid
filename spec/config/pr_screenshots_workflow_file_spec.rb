@@ -30,6 +30,13 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   let(:role_step) { steps.find { |step| step["name"] == "Create application database role" } }
   let(:resolve_publish_step) { publish_job.fetch("steps").find { |step| step["name"] == "Resolve PR capture run" } }
 
+  it "scopes concurrency by PR number and action to avoid cross-event self-cancellation" do
+    expect(workflow.fetch("concurrency")).to include(
+      "group" => "pr-screenshots-${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.action }}",
+      "cancel-in-progress" => true
+    )
+  end
+
   it "provisions a Chromium-family browser before capture" do
     expect(install_browser_step).to be_present
     expect(install_browser_step.fetch("run")).to include("google-chrome-stable")

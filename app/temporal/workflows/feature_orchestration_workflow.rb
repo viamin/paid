@@ -81,6 +81,7 @@ module Workflows
       parallel_result = nil
       planning_context = {}
       prompt_source = nil
+      planning_policy_metadata = {}
       coordination_policy = nil
       coordination_assignment_id = nil
       scaling_assignments = []
@@ -104,6 +105,7 @@ module Workflows
       created_issues = planning_result[:created_issues]
       planning_context = planning_result[:context] || {}
       prompt_source = planning_result[:prompt_source]
+      planning_policy_metadata = decomposition_policy_metadata(planning_result)
 
       scaling_experiment_context = safely_resolve_scaling_experiment(
         project_id: project_id,
@@ -147,6 +149,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: nil,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity
@@ -175,6 +178,7 @@ module Workflows
           },
           metadata: {
             prompt_source: prompt_source,
+            **planning_policy_metadata,
             failed_step: nil,
             activity_boundaries: [ "Workflows::ParallelAgentExecutionWorkflow" ]
           }
@@ -246,6 +250,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: nil,
           activity_boundaries: [ "Workflows::ParallelAgentExecutionWorkflow" ]
         }
@@ -309,6 +314,7 @@ module Workflows
         aggregated_pr: parallel_result[:aggregated_pr]
       }
     rescue => e
+      planning_policy_metadata = planning_policy_metadata.presence || decomposition_policy_metadata_from_error(e)
       failed_step = @decision_step || decision_step
 
       safe_log_decomposition_decision(
@@ -330,6 +336,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: failed_step
         }
       )
@@ -414,6 +421,7 @@ module Workflows
 
       tasks = decompose_result[:tasks]
       prompt_source = decompose_result[:prompt_source]
+      policy_metadata = decomposition_policy_metadata(decompose_result)
       created_issues = []
 
       # Step 3: Create sub-issues if multiple tasks
@@ -440,7 +448,13 @@ module Workflows
         created_issues = create_result[:created_issues]
       end
 
-      { tasks: tasks, created_issues: created_issues, context: context_result[:context], prompt_source: prompt_source }
+      {
+        tasks: tasks,
+        created_issues: created_issues,
+        context: context_result[:context],
+        prompt_source: prompt_source,
+        policy_metadata: policy_metadata
+      }
     end
 
     def build_sub_tasks(tasks, created_issues, scaling_assignments:, learned_scaling_allocation:)
