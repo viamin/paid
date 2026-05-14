@@ -47,6 +47,13 @@ class QualityMetric < ApplicationRecord
       "iterations" => 0.20,
       "lint_clean" => 0.10,
       "tests_pass" => 0.10
+    },
+    "issue_implementation" => {
+      "focus_resolved" => 0.50,
+      "ci_passed" => 0.15,
+      "iterations" => 0.15,
+      "lint_clean" => 0.10,
+      "tests_pass" => 0.10
     }
   }.freeze
 

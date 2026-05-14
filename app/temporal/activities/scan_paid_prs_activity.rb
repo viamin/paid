@@ -1175,10 +1175,9 @@ module Activities
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
-    # issue_implementation focus uses the general create_pr scoring path until
-    # a concrete implementation-gap detector is built. See FOCUS_WEIGHTS in
-    # QualityMetric — issue_implementation is intentionally absent so it falls
-    # back to SCORE_WEIGHTS.
+    # issue_implementation uses focused collection weights, but scanner-side
+    # focus_resolved attribution remains deferred until a concrete
+    # implementation-gap detector exists.
 
     def fetch_pr_data(client, project, issue)
       client.pull_request(project.full_name, issue.github_number)

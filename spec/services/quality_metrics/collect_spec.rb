@@ -180,10 +180,16 @@ RSpec.describe QualityMetrics::Collect do
     context "with issue_implementation focus" do
       let(:agent_run) { create(:agent_run, :completed, focus: "issue_implementation", iterations: 3) }
 
-      it "uses general create_pr scoring until focus attribution exists" do
+      it "uses focused scoring for issue_implementation runs" do
         metric = described_class.call(agent_run: agent_run)
 
-        expect(metric.scores).to include("pr_created", "iterations")
+        expect(metric.scores).to include("iterations", "lint_clean")
+        expect(metric.scores).not_to include(
+          "pr_created",
+          "pr_merged",
+          "review_comment_count",
+          "agent_rerun_count"
+        )
       end
     end
 
