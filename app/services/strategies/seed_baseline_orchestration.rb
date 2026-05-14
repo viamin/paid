@@ -36,6 +36,10 @@ module Strategies
         return strategy if current_version_matches_definition?(current_version, definition)
 
         promoted_at = Time.current
+        current_version&.update!(
+          promotion_state: "retired",
+          retired_at: promoted_at
+        )
         version = strategy.create_version!(
           content: definition.fetch(:content),
           provenance: baseline_provenance(definition),
@@ -44,10 +48,6 @@ module Strategies
           reasoning: SEED_CHANGE_REASONING,
           change_notes: SEED_CHANGE_NOTES,
           promoted_at: promoted_at
-        )
-        current_version&.update!(
-          promotion_state: "retired",
-          retired_at: promoted_at
         )
         strategy.update!(current_version: version)
       end
