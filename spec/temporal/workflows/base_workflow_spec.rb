@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::BaseWorkflow do
+RSpec.describe Workflows::BaseWorkflow, :no_db do
   let(:workflow_class) do
     Class.new(described_class) do
       def execute(input)
@@ -15,6 +15,32 @@ RSpec.describe Workflows::BaseWorkflow do
   end
 
   let(:workflow) { workflow_class.new }
+
+  describe "#decomposition_policy_metadata" do
+    it "normalizes string-keyed top-level and nested provenance payloads" do
+      result = workflow.send(
+        :decomposition_policy_metadata,
+        {
+          "policy_source" => "top_level_source",
+          "policy_metadata" => {
+            "policy_source" => "coordination_policy",
+            "policy_key" => "feature_decomposition",
+            "coordination_policy_id" => 12,
+            "coordination_policy_version_id" => 34,
+            "coordination_policy_version" => 5
+          }
+        }
+      )
+
+      expect(result).to eq(
+        policy_source: "coordination_policy",
+        policy_key: "feature_decomposition",
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+    end
+  end
 
   describe "#feature_flag_enabled?" do
     it "loads the workflow flag snapshot through an activity and memoizes it per project" do
