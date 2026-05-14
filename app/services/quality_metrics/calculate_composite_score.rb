@@ -21,14 +21,14 @@ module QualityMetrics
     #
     # @return [Float, nil] The composite score (0.0..1.0), or nil if no metrics exist
     def calculate
-      metrics = agent_run.quality_metrics.to_a
+      metrics = QualityMetric.where(agent_run_id: agent_run.id).to_a
       return nil if metrics.empty?
 
       merged_scores = metrics.each_with_object({}) do |metric, combined|
         metric.scores.each { |key, value| combined[key] = value.to_f }
       end
 
-      weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
+      weights = QualityMetric.weights_for(goal: agent_run.goal, focus: agent_run.focus)
       QualityMetric.weighted_average(merged_scores, weights: weights)
     end
   end

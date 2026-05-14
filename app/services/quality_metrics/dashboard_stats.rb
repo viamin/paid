@@ -49,6 +49,7 @@ module QualityMetrics
       "pr_created" => { name: "PR Created", description: "Whether the agent successfully created a pull request.", signal_type: "automated", collected_for: %w[create_pr] },
       "pr_merged" => { name: "PR Merged", description: "Whether the pull request was merged.", signal_type: "human", collected_for: %w[create_pr] },
       "ci_passed" => { name: "CI Passed", description: "Whether CI checks passed on the pull request.", signal_type: "automated", collected_for: %w[create_pr] },
+      "focus_resolved" => { name: "Focus Resolved", description: "Whether the focused run resolved the specific PR problem it was targeting on the next scan cycle.", signal_type: "automated", collected_for: %w[create_pr] },
       "iterations" => { name: "Iterations", description: "Fewer iterations to complete = higher quality. Degrades by 0.1 per extra iteration.", signal_type: "automated", collected_for: %w[create_pr] },
       "lint_clean" => { name: "Lint Clean", description: "Whether the agent produced code with no lint offenses.", signal_type: "automated", collected_for: %w[create_pr] },
       "tests_pass" => { name: "Tests Pass", description: "Whether tests pass on the agent's output.", signal_type: "automated", collected_for: %w[create_pr] },
@@ -76,11 +77,17 @@ module QualityMetrics
           weights_by_goal[goal] = weights[key] if weights.key?(key)
         end
 
+        weights_by_focus = {}
+        QualityMetric::FOCUS_WEIGHTS.each do |focus, weights|
+          weights_by_focus[focus] = weights[key] if weights.key?(key)
+        end
+
         {
           key: key,
           name: display[:name],
           description: display[:description],
           weights_by_goal: weights_by_goal,
+          weights_by_focus: weights_by_focus,
           goal_types: display[:collected_for],
           signal_type: display[:signal_type]
         }
@@ -194,7 +201,10 @@ module QualityMetrics
     end
 
     def score_breakdown
-      valid_keys = QualityMetric::GOAL_WEIGHTS.values.flat_map(&:keys).uniq
+      valid_keys = (
+        QualityMetric::GOAL_WEIGHTS.values.flat_map(&:keys) +
+        QualityMetric::FOCUS_WEIGHTS.values.flat_map(&:keys)
+      ).uniq
       rows = QualityMetric.by_project(project.id).automated.with_composite_score
         .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
         .where("scores <> '{}'::jsonb")
