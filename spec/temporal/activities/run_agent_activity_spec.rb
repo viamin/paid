@@ -2175,8 +2175,8 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["diagnostics"]).to include(
           "timeout_type" => "idle",
           "effective_timeout_seconds" => 3600,
-          "startup_timeout_seconds" => 300,
-          "idle_timeout_seconds" => 300,
+          "startup_timeout_seconds" => 360,
+          "idle_timeout_seconds" => 360,
           "heartbeat_supported" => true
         )
       end

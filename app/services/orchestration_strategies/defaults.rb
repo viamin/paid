@@ -100,7 +100,7 @@ module OrchestrationStrategies
         "issue_goal_timeout_seconds" => 600,
         "issue_goal_idle_timeout_seconds" => 120,
         "review_goal_idle_timeout_seconds" => 300,
-        "create_pr_idle_timeout_seconds" => 300,
+        "create_pr_idle_timeout_seconds" => 360,
         "preflight_timeout_seconds" => 10,
         "feature_orchestration_timeout_seconds" => 7200
       }
