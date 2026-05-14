@@ -32,7 +32,7 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   it "uses the runner's local Chromium-family browser when one is available" do
     expect(env).not_to have_key("CHROME_URL")
     expect(browser_step).to be_present
-    expect(browser_step.fetch("run")).to include('path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"')
+    expect(browser_step.fetch("run")).to include('path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"')
     expect(browser_step.fetch("run")).to include('echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"')
   end
 
