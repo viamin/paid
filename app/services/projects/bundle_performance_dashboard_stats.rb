@@ -26,6 +26,7 @@ module Projects
         experiment_confidence: experiment_confidence,
         optimizer_insights: insights,
         tradeoff_frontier: tradeoff_frontier,
+        outcome_improvement: outcome_improvement,
         sparse: sparse?(insights)
       }
     end
@@ -478,6 +479,10 @@ module Projects
     def positive_optimizer_setting(value, fallback)
       numeric = Float(value, exception: false)
       numeric&.positive? ? numeric : fallback.to_f
+    end
+
+    def outcome_improvement
+      @outcome_improvement ||= ConfigurationBundles::OutcomeImprovement.call(project: project)
     end
   end
 end
