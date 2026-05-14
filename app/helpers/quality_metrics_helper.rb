@@ -33,4 +33,24 @@ module QualityMetricsHelper
       "bg-red-500"
     end
   end
+
+  def improvement_delta_color(delta, invert: false)
+    return "text-gray-400" if delta.nil?
+
+    positive = invert ? delta.negative? : delta.positive?
+    if positive
+      "text-green-600"
+    elsif delta.negative?
+      "text-red-600"
+    else
+      "text-gray-400"
+    end
+  end
+
+  def improvement_delta_label(delta)
+    return "--" if delta.nil?
+
+    sign = delta.positive? ? "+" : ""
+    "#{sign}#{number_to_percentage(delta * 100, precision: 1)}"
+  end
 end
