@@ -314,6 +314,7 @@ module Workflows
         aggregated_pr: parallel_result[:aggregated_pr]
       }
     rescue => e
+      planning_policy_metadata = planning_policy_metadata.presence || decomposition_policy_metadata_from_error(e)
       failed_step = @decision_step || decision_step
 
       safe_log_decomposition_decision(

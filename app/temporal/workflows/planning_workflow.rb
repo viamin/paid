@@ -158,6 +158,8 @@ module Workflows
       }
 
     rescue => e
+      policy_metadata = policy_metadata.presence || decomposition_policy_metadata_from_error(e)
+
       safe_log_decomposition_decision(
         project_id: project_id,
         issue_id: issue_id,

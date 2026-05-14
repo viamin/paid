@@ -91,5 +91,18 @@ module Workflows
         nested_metadata.to_h.deep_symbolize_keys.slice(*DECOMPOSITION_POLICY_METADATA_KEYS)
       ).compact
     end
+
+    def decomposition_policy_metadata_from_error(error)
+      return {} unless error.is_a?(Temporalio::Error::ApplicationError)
+
+      Array(error.details).each do |detail|
+        next unless detail.respond_to?(:to_h)
+
+        metadata = decomposition_policy_metadata(detail)
+        return metadata if metadata.present?
+      end
+
+      {}
+    end
   end
 end

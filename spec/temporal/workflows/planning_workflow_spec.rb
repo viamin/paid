@@ -279,13 +279,27 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
     end
 
     context "when an activity raises an error" do
+      let(:failure_policy_metadata) do
+        {
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      end
+
       before do
         allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
           case activity_class.name
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
-            raise Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+            raise Temporalio::Error::ApplicationError.new(
+              "LLM failed",
+              { policy_metadata: failure_policy_metadata },
+              type: "DecompositionFailed"
+            )
           when "Activities::LogDecompositionDecisionActivity"
             { decomposition_decision_id: 4 }
           else
@@ -301,7 +315,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             hash_including(
               decision_type: "planning_outcome",
               outcome: "decomposition_failed",
-              error_details: hash_including(error_message: "LLM failed")
+              error_details: hash_including(error_message: "LLM failed"),
+              metadata: hash_including(**failure_policy_metadata)
             ),
             timeout: 30,
             retry_policy: Workflows::PlanningWorkflow::NO_RETRY)

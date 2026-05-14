@@ -42,6 +42,32 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
     end
   end
 
+  describe "#decomposition_policy_metadata_from_error" do
+    it "extracts nested provenance from Temporal application error details" do
+      error = Temporalio::Error::ApplicationError.new(
+        "LLM failed",
+        {
+          policy_metadata: {
+            policy_source: "coordination_policy",
+            policy_key: "feature_decomposition",
+            coordination_policy_id: 12,
+            coordination_policy_version_id: 34,
+            coordination_policy_version: 5
+          }
+        },
+        type: "DecompositionFailed"
+      )
+
+      expect(workflow.send(:decomposition_policy_metadata_from_error, error)).to eq(
+        policy_source: "coordination_policy",
+        policy_key: "feature_decomposition",
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+    end
+  end
+
   describe "#feature_flag_enabled?" do
     it "loads the workflow flag snapshot through an activity and memoizes it per project" do
       allow(workflow).to receive(:run_activity)

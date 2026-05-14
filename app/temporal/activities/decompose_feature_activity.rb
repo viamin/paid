@@ -92,7 +92,7 @@ module Activities
           error_message: e.message
         }
       )
-      raise
+      raise application_error_with_policy_provenance(e, policy_context)
     end
 
     private
@@ -116,6 +116,7 @@ module Activities
       context[:source] = decomposition_result.policy_source
       context[:present] = policy_source_present?(decomposition_result.policy_source)
       context[:skip_reason] = decomposition_result.skip_reason
+      context[:metadata] = result_policy_metadata(decomposition_result)
 
       return [ nil, context ] unless use_policy_service_result?(decomposition_result)
 
@@ -317,6 +318,7 @@ module Activities
         present: false,
         source: nil,
         skip_reason: nil,
+        metadata: {},
         error_details: {},
         scope_analysis: {}
       }
@@ -345,6 +347,25 @@ module Activities
       payload.merge(
         policy_metadata: normalized_metadata,
         **normalized_metadata
+      )
+    end
+
+    def application_error_with_policy_provenance(error, policy_context)
+      metadata = policy_context[:metadata].to_h
+      return error if metadata.empty?
+
+      existing_details = Array(error.details)
+      provenance_details = existing_details.find { |detail| detail.is_a?(Hash) && detail.key?(:policy_metadata) }
+      return error if provenance_details
+
+      Temporalio::Error::ApplicationError.new(
+        error.message,
+        *existing_details,
+        { policy_metadata: metadata },
+        type: error.type,
+        non_retryable: error.non_retryable,
+        next_retry_delay: error.next_retry_delay,
+        category: error.category
       )
     end
 

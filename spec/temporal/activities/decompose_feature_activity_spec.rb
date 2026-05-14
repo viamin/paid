@@ -70,6 +70,38 @@ RSpec.describe Activities::DecomposeFeatureActivity do
     end
   end
 
+  describe "#application_error_with_policy_provenance", :no_db do
+    let(:policy_metadata) do
+      {
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      }
+    end
+
+    it "appends policy provenance to Temporal application error details" do
+      error = Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+
+      enriched_error = activity.send(
+        :application_error_with_policy_provenance,
+        error,
+        { metadata: policy_metadata }
+      )
+
+      expect(enriched_error).not_to be(error)
+      expect(enriched_error.details).to include(policy_metadata:)
+      expect(enriched_error.type).to eq("DecompositionFailed")
+    end
+
+    it "leaves errors untouched when no policy metadata is available" do
+      error = Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+
+      expect(
+        activity.send(:application_error_with_policy_provenance, error, { metadata: {} })
+      ).to be(error)
+    end
+  end
+
   describe "#execute" do
     let(:logged_decision) { build_stubbed(:decomposition_decision, decision_type: "decomposition_strategy") }
     let(:llm_response) do
