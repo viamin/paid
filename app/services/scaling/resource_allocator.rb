@@ -20,6 +20,7 @@ module Scaling
     LAUNCH_RATE_THRESHOLD = 0.85
     MIN_DURATION_IMPROVEMENT_RATIO = 0.10
     SUCCESS_RATE_DROP_THRESHOLD = 0.15
+    CONFIDENCE_RANK = { "high" => 3, "medium" => 2, "low" => 1 }.freeze
 
     attr_reader :inputs, :observations, :experiment_summaries
 
@@ -60,8 +61,8 @@ module Scaling
       decision = measured_experiment_decision
       return allocation_from_measured_decision(decision) if decision
 
-      if (decision_summary = selected_experiment_allocator_decision)
-        return allocate_from_experiment_decision(decision_summary)
+      if experiment_allocator_decisions.any?
+        return allocate_from_experiment_decisions
       end
 
       return nil if experiment_grouped.empty?
@@ -78,18 +79,29 @@ module Scaling
       )
     end
 
-    def allocate_from_experiment_decision(decision_summary)
-      decision = decision_summary[:decision]
-      requested_agent_count = positive_integer_summary_value(decision, :requested_agent_count, default: conservative_agent_count)
+    def allocate_from_experiment_decisions
+      decisions_by_dimension = experiment_allocator_decisions
+        .group_by { |entry| entry[:dimension].to_s }
+        .transform_values { |entries| pick_strongest_decision(entries) }
+      agent_decision = decisions_by_dimension["agent_count"]&.fetch(:decision, nil)
+      parallelism_decision = decisions_by_dimension["parallelism"]&.fetch(:decision, nil)
+      iteration_decision = decisions_by_dimension["max_iterations"]&.fetch(:decision, nil) ||
+        decisions_by_dimension["iteration_count"]&.fetch(:decision, nil)
+
+      requested_agent_count = positive_integer_summary_value(agent_decision || parallelism_decision || {}, :requested_agent_count,
+        default: conservative_agent_count)
       agent_count = clamp_agents(requested_agent_count)
-      recommended_parallelism = positive_integer_summary_value(decision, :max_batch_size, default: parallelism_cap(agent_count))
+      recommended_parallelism = positive_integer_summary_value(parallelism_decision || {}, :max_batch_size,
+        default: parallelism_cap(agent_count))
+      max_iterations = positive_integer_summary_value(iteration_decision || {}, :max_iterations,
+        default: positive_integer_summary_value(iteration_decision || {}, :requested_iteration_count, default: 3))
 
       build_allocation(
         agent_count: agent_count,
-        max_iterations: 3,
+        max_iterations: max_iterations.to_i.clamp(1, 10),
         parallelism_level: parallelism_cap([ recommended_parallelism.to_i, agent_count ].min),
         source: :experiment,
-        reason: experiment_decision_reason(decision_summary)
+        reason: experiment_decisions_reason(decisions_by_dimension)
       )
     end
 
@@ -114,7 +126,7 @@ module Scaling
 
     def experiment_guidance_available?
       measured_experiment_decision.present? ||
-        selected_experiment_allocator_decision.present? ||
+        experiment_allocator_decisions.any? ||
         usable_experiment_summaries.any?
     end
 
@@ -301,20 +313,14 @@ module Scaling
       end
     end
 
-    def selected_experiment_allocator_decision
-      @selected_experiment_allocator_decision ||= experiment_allocator_decisions.max_by do |entry|
-        [
-          confidence_rank(summary_value(entry[:decision], :confidence)),
-          entry[:decision_sample_count]
-        ]
+    ALLOCATOR_DECISION_DIMENSIONS = %w[agent_count iteration_count max_iterations parallelism].freeze
+
+    def pick_strongest_decision(entries)
+      entries.max_by do |entry|
+        confidence_rank = CONFIDENCE_RANK.fetch(summary_value(entry[:decision], :confidence, default: "low"), 0)
+        [ confidence_rank, entry[:decision_sample_count] ]
       end
     end
-
-    # Only parallelism-dimension summaries carry allocator decisions that
-    # should steer agent_count / parallelism_level.  Other dimensions
-    # (e.g. iteration_count, max_iterations) may have allocator_decision
-    # hashes but their values are not compatible with this code path.
-    ALLOCATOR_DECISION_DIMENSIONS = %w[parallelism].freeze
 
     def experiment_allocator_decisions
       @experiment_allocator_decisions ||= experiment_summaries.filter_map do |summary|
@@ -359,7 +365,7 @@ module Scaling
         summary_status = summary_value(summary, :status)
         next if summary_status && summary_status.to_s != "ready_for_analysis"
         dimension = summary_value(summary, :dimension).to_s
-        next unless ALLOCATOR_DECISION_DIMENSIONS.include?(dimension)
+        next unless dimension == "parallelism"
 
         analysis = summary_value(summary, :parallelism_analysis, default: {})
         decision = summary_value(analysis, :allocator_decision, default: nil) ||
@@ -595,14 +601,18 @@ module Scaling
       end
     end
 
-    def experiment_decision_reason(decision_summary)
-      decision = decision_summary[:decision]
+    def experiment_decisions_reason(decisions_by_dimension)
+      decisions_by_dimension.sort.map do |dimension, entry|
+        decision = entry[:decision]
 
-      "#{decision_summary[:dimension]} allocator decision " \
-        "agents=#{summary_value(decision, :requested_agent_count, default: conservative_agent_count)} " \
-        "parallelism=#{summary_value(decision, :max_batch_size, default: nil)} " \
-        "n=#{decision_summary[:decision_sample_count]} " \
-        "confidence=#{summary_value(decision, :confidence, default: "unknown")}"
+        "#{dimension} decision " \
+          "value=#{summary_value(decision, :recommended_value, default: nil)} " \
+          "agents=#{summary_value(decision, :requested_agent_count, default: nil)} " \
+          "parallelism=#{summary_value(decision, :max_batch_size, default: nil)} " \
+          "iterations=#{summary_value(decision, :max_iterations, default: summary_value(decision, :requested_iteration_count, default: nil))} " \
+          "n=#{entry[:decision_sample_count]} " \
+          "confidence=#{summary_value(decision, :confidence, default: "unknown")}"
+      end.join("; ")
     end
 
     def metric_present_for_all_entries?(entries, key)
@@ -658,14 +668,6 @@ module Scaling
 
     def format_rate(value)
       format("%.2f%%", (value || 0.0) * 100)
-    end
-
-    def confidence_rank(value)
-      case value
-      when "high" then 2
-      when "medium" then 1
-      else 0
-      end
     end
   end
 end

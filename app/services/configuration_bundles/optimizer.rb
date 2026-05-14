@@ -148,9 +148,16 @@ module ConfigurationBundles
         variant_by_experiment_id: selection.variant_by_experiment_id,
         score_inputs: selection.score_inputs,
         selection_mode: selection_mode,
-        selection_context: primary_selection_context,
+        selection_context: resolved_selection_context,
         budget_snapshot: budget_snapshot
       )
+    end
+
+    def resolved_selection_context
+      return PRIMARY_SELECTION_CONTEXT unless agent_run.issue_id.present?
+      return "task" unless exploration_budget_snapshot.dig("task", :bootstrap_active)
+
+      PRIMARY_SELECTION_CONTEXT
     end
 
     def exploration_allowed?
@@ -188,10 +195,6 @@ module ConfigurationBundles
       contexts = [ PRIMARY_SELECTION_CONTEXT ]
       contexts.unshift("task") if agent_run.issue_id.present?
       contexts
-    end
-
-    def primary_selection_context
-      agent_run.issue_id.present? ? "task" : PRIMARY_SELECTION_CONTEXT
     end
 
     def prior_runs_for(context)
