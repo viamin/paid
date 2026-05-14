@@ -40,7 +40,7 @@ module QualityMetricsHelper
     positive = invert ? delta.negative? : delta.positive?
     if positive
       "text-green-600"
-    elsif delta.negative?
+    elsif invert ? delta.positive? : delta.negative?
       "text-red-600"
     else
       "text-gray-400"
