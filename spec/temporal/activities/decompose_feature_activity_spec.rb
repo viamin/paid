@@ -270,7 +270,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       )
     end
 
-    context "when policy-based decomposition applies" do
+    context "when default policy-based decomposition applies" do
       let(:issue) do
         create(
           :issue,
@@ -288,10 +288,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
-        expect(result[:policy_metadata]).to include(
-          policy_source: "feature_orchestration",
-          policy_key: DecompositionService::POLICY_KEY
-        )
+        expect(result[:policy_metadata]).to include(policy_source: "defaults")
         expect(AgentHarness).not_to have_received(:send_message)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
