@@ -95,11 +95,6 @@ jobs:
         image: ghcr.io/browserless/chromium:v2.48.2
         ports:
           - 9222:3000
-        options: >-
-          --health-cmd="curl -sf http://localhost:3000/json/version || exit 1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
 
     env:
       BUNDLE_FROZEN: "true"
@@ -161,12 +156,17 @@ jobs:
 
       - name: Verify Chrome service
         run: |
-          if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
-            echo "Chrome service container is available via CHROME_URL"
-          else
-            echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
-            exit 1
-          fi
+          for attempt in $(seq 1 30); do
+            if curl -sf http://localhost:9222/json/version > /dev/null 2>&1; then
+              echo "Chrome service container is available via CHROME_URL"
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo "::error::Chrome service container is not reachable at http://localhost:9222/json/version"
+          exit 1
 
       - name: Export changed UI files
         env:

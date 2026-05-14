@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  self.ignored_columns = %w[provider_id provider_switches providers_attempted final_provider]
+
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   attribute :focus, :string, default: "general"
