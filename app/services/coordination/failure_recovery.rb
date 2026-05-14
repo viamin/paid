@@ -187,6 +187,7 @@ module Coordination
     def preferred_provider_identifier
       attempted_provider_identifiers.last || current_final_runner || agent_run.effective_runner
     end
+
     def current_status
       snapshot_value(:status)
     end
@@ -210,6 +211,7 @@ module Coordination
     def current_runner_switches
       snapshot_value(:runner_switches, :provider_switches)
     end
+
     def current_parent_workflow_id
       snapshot_value(:parent_workflow_id)
     end

@@ -1937,7 +1937,7 @@ class AgentRun < ApplicationRecord
   end
 
   def structured_stdout_parser_for(runner_key)
-    harness_key = RunnerSupport.harness_provider_key_for(runner_key).to_sym
+    harness_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym
     AgentHarness.provider(harness_key)
   rescue AgentHarness::ConfigurationError
     nil

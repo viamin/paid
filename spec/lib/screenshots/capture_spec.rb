@@ -20,6 +20,25 @@ RSpec.describe Screenshots::Capture do
       failures: []
     )
   end
+  let(:legacy_fallback_config_matcher) do
+    have_attributes(
+      driver: "cuprite",
+      auth: have_attributes(
+        strategy: "form",
+        login_path: "/users/sign_in",
+        credentials: {
+          "email" => "%{user_email}",
+          "password" => "%{user_password}"
+        }
+      ),
+      seed: contain_exactly(
+        have_attributes(
+          key: "__all__",
+          runner: "Screenshots::SeedData::Paid.call"
+        )
+      )
+    )
+  end
 
   after do
     FileUtils.rm_rf(output_dir)
@@ -52,5 +71,20 @@ RSpec.describe Screenshots::Capture do
     expect {
       described_class.call(output_dir: output_dir, changed_files: [])
     }.to raise_error(RuntimeError, /project_show .* boom/)
+  end
+
+  it "uses the legacy seeded auth fallback when repo screenshot config is missing" do
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_raise(Screenshots::ConfigError, "missing")
+    allow(Screenshots::CaptureTargets).to receive(:call).and_return([ target ])
+    allow(Screenshots::CaptureOrchestrator).to receive(:call).and_return(run_result)
+
+    described_class.call(
+      output_dir: output_dir,
+      changed_files: [ "app/views/runners/index.html.erb" ]
+    )
+
+    expect(Screenshots::CaptureOrchestrator).to have_received(:call).with(
+      hash_including(config: legacy_fallback_config_matcher)
+    )
   end
 end

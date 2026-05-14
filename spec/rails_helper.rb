@@ -83,6 +83,7 @@ RSpec.configure do |config|
     RunnerSupport.reset_supported_runner_keys!
   end
 
+  config.filter_run_excluding :runner_smoke unless ENV["RUN_RUNNER_SMOKE"] == "true"
   config.filter_run_excluding :provider_smoke unless ENV["RUN_PROVIDER_SMOKE"] == "true"
   config.filter_run_excluding :chat_e2e unless ENV["RUN_CHAT_E2E"] == "true"
 
