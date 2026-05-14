@@ -1131,7 +1131,7 @@ module Activities
       when "ci_fix"
         ci_focus_resolution_scores(project, client, issue)
       when "review_feedback"
-        review_feedback_resolution_scores(project, client, issue)
+        review_feedback_resolution_scores(project, client, issue, focused_run)
       when "merge_conflict"
         merge_conflict_resolution_scores(project, client, issue)
       when "conversation"
@@ -1154,11 +1154,30 @@ module Activities
       { "focus_resolved" => score, "ci_passed" => score }
     end
 
-    def review_feedback_resolution_scores(project, client, issue)
+    def review_feedback_resolution_scores(project, client, issue, focused_run)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      return nil if checks.nil?
+
+      reviews = fetch_reviews(client, project, issue)
+      return nil if reviews.nil?
+
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
       return nil if unresolved_threads.nil?
 
-      { "focus_resolved" => unresolved_threads.empty? ? 1.0 : 0.0 }
+      triggers = []
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: focused_run, client: client, issue: issue))
+      triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
+        project: project, last_run: focused_run, client: client, issue: issue))
+      triggers.concat(changes_requested_from_reviews(project, reviews, focused_run))
+      triggers.concat(check_conversation_comments(client, project, issue, focused_run))
+      triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
+
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
     def merge_conflict_resolution_scores(project, client, issue)
