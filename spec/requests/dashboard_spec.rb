@@ -187,14 +187,14 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Embedding")
       end
 
-      it "shows unavailable helper copy when both provider groups are down" do
+      it "shows unavailable helper copy when both runner groups are down" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, :circuit_open, user: user, runner_name: user.settings.kb_chat_runner)
 
         get dashboard_knowledge_stats_path
 
-        expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
-        expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
+        expect(response.body).to include("Knowledge capabilities are unavailable because both runner groups are down.")
+        expect(response.body).not_to include("Knowledge capabilities are degraded while one runner group remains available.")
       end
 
       it "shows the runner column in the active runs table" do
@@ -582,7 +582,7 @@ RSpec.describe "Dashboard" do
     end
   end
 
-  describe "GET /dashboard/provider_health" do
+  describe "GET /dashboard/runner_health" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
 
@@ -602,7 +602,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Configured")
     end
 
-    it "uses plural grammar for multiple recovering providers" do
+    it "uses plural grammar for multiple recovering runners" do
       create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
       first_provider = user.runners.find_by!(runner_key: Runner.default_runner_key, auth_type: "subscription")
       second_provider_key = (RunnerSupport.container_executable_runner_keys - [ first_provider.runner_key ]).first || "cursor"
@@ -620,7 +620,7 @@ RSpec.describe "Dashboard" do
 
       get dashboard_runner_health_path
 
-      expect(response.body).to include("2 providers are recovering in half-open mode.")
+      expect(response.body).to include("2 runners are recovering in half-open mode.")
     end
   end
 
