@@ -584,6 +584,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(metric.reload.scores["focus_resolved"]).to eq(0.0)
       end
+
+      it "does not backfill an older focused run once a newer focused run exists" do
+        older_metric = metric
+        newer_run = create(:agent_run, :completed,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          focus: "ci_fix",
+          completed_at: 5.minutes.ago)
+        create(:quality_metric, :automated,
+          agent_run: newer_run,
+          scores: { "iterations" => 1.0 },
+          composite_score: 1.0)
+
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ])
+
+        activity.execute(project_id: project.id)
+
+        expect(older_metric.reload.scores).not_to include("focus_resolved")
+      end
     end
 
     context "when attributing focus resolution for a merge_conflict run" do

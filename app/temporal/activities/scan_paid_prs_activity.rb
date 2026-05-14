@@ -1084,10 +1084,10 @@ module Activities
         .order(completed_at: :desc)
     end
 
-    def last_unattributed_focused_run(project, issue)
+    def latest_completed_focused_run(project, issue)
       completed_focused_runs_for(project, issue)
         .includes(:quality_metrics)
-        .detect { |run| focus_resolution_pending?(run) }
+        .first
     end
 
     def focus_resolution_pending?(focused_run)
@@ -1102,8 +1102,8 @@ module Activities
     end
 
     def record_focus_resolution(project, client, issue)
-      focused_run = last_unattributed_focused_run(project, issue)
-      return unless focused_run
+      focused_run = latest_completed_focused_run(project, issue)
+      return unless focused_run && focus_resolution_pending?(focused_run)
 
       score_updates = focus_resolution_scores(project, client, issue, focused_run)
       return if score_updates.nil?
