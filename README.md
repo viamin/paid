@@ -2,7 +2,7 @@
 
 Paid is a Rails 8 application that orchestrates AI agents to build software. Users add GitHub projects, and Paid watches for labeled issues, plans implementations, and runs agents in isolated Docker containers to create pull requests.
 
-Phase 3.5 (Completion & Hardening) is substantially complete as of 2026-05-05. The app now includes MCP server support, screenshot visual regression, interactive chat with streaming UI, self-healing exception handling, knowledge provider resilience, enhanced agent runs (decomposition plans, streaming events, pre-flight health checks), notification subscriptions, and comprehensive dashboard improvements in addition to all previous features.
+Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. The app now logs orchestration decisions for analysis, evolves orchestration strategies and coordination policies through experiments, optimizes end-to-end configuration bundles, and applies measured orchestration scaling laws in addition to the Phase 3 and 3.5 platform work.
 
 ## Philosophy
 
@@ -374,7 +374,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-Phase 2 (Intelligence) is complete. Phase 3.5 (Completion & Hardening) is substantially complete. Security, core features, fair queueing, quality recovery, interactive chat, knowledge evolution, MCP server support, screenshot visual regression, self-healing exception handling, and dashboard enhancements are done. Performance fundamentals and provider quota polling remain. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
+Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. Phase 5 (Account Administration) is next. Paid now includes orchestration decision logging, learned strategy evolution, end-to-end bundle optimization, self-improving coordination policies, and orchestration scaling-law analysis on top of the completed Phase 1-3.5 platform capabilities. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
 
 ## License
 
