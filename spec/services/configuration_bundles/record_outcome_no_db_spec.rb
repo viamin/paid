@@ -89,4 +89,45 @@ RSpec.describe ConfigurationBundles::RecordOutcome, :no_db do
       )
     )
   end
+
+  context "when selection_mode is nil (optimizer skipped)" do
+    let(:agent_run) do
+      Struct.new(
+        :configuration_bundle,
+        :project,
+        :tokens_input,
+        :tokens_output,
+        :created_at,
+        :started_at,
+        :completed_at,
+        :cost_cents,
+        :duration_seconds,
+        :status,
+        :configuration_bundle_selection_mode,
+        :configuration_bundle_selection_context
+      ).new(
+        configuration_bundle,
+        project,
+        100,
+        50,
+        Time.utc(2026, 5, 14, 12, 0, 0),
+        Time.utc(2026, 5, 14, 12, 1, 0),
+        Time.utc(2026, 5, 14, 12, 3, 30),
+        150,
+        150,
+        "completed",
+        nil,
+        nil
+      )
+    end
+
+    it "leaves exploratory nil instead of defaulting to false" do
+      described_class.call(agent_run: agent_run, quality_metric: quality_metric)
+
+      metrics = outcome.attributes[:metrics]
+      expect(metrics).not_to have_key("exploratory")
+      expect(metrics).not_to have_key("selection_mode")
+      expect(metrics).not_to have_key("selection_context")
+    end
+  end
 end
