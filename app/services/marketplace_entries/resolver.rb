@@ -28,7 +28,7 @@ module MarketplaceEntries
 
     def attach_automatic_entries!(selections)
       compatible_entries.each do |entry|
-        matching_rule = entry.marketplace_entry_rules.enabled.ordered.find do |rule|
+        matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "automatic" && rule_matches?(rule, entry)
         end
         next unless matching_rule
@@ -44,7 +44,7 @@ module MarketplaceEntries
 
     def attach_team_default_entries!(selections)
       compatible_entries.each do |entry|
-        matching_rule = entry.marketplace_entry_rules.enabled.ordered.find do |rule|
+        matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "team_default" && rule_matches?(rule, entry)
         end
         next unless matching_rule
@@ -82,6 +82,10 @@ module MarketplaceEntries
         .includes(:current_version, :marketplace_entry_rules)
         .where(account: project.account, status: "active")
         .where.not(current_version_id: nil)
+    end
+
+    def ordered_enabled_rules(entry)
+      entry.marketplace_entry_rules.select(&:enabled?).sort_by { |rule| [ rule.position, rule.id ] }
     end
 
     def compatible_entries

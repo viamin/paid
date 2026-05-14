@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
-  def change
+  def up
     create_table :marketplace_entries, comment: "Team-shareable agent enhancements that can be attached to agent runs" do |t|
       t.references :account, null: false, foreign_key: true
       t.string :name, null: false, limit: 255
@@ -67,5 +67,108 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
       name: "index_agent_run_marketplace_entries_unique_attachment"
     add_index :agent_run_marketplace_entries, [ :agent_run_id, :attachment_source, :position ],
       name: "index_agent_run_marketplace_entries_on_run_source_position"
+
+    enable_row_level_security
+  end
+
+  def down
+    %w[
+      agent_run_marketplace_entries
+      marketplace_entry_rules
+      marketplace_entry_versions
+      marketplace_entries
+    ].each do |table|
+      next unless table_exists?(table)
+
+      execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
+      execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
+      execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
+    end
+
+    if column_exists?(:marketplace_entries, :current_version_id)
+      remove_foreign_key :marketplace_entries, column: :current_version_id
+      remove_reference :marketplace_entries, :current_version
+    end
+
+    drop_table :agent_run_marketplace_entries, if_exists: true
+    drop_table :marketplace_entry_rules, if_exists: true
+    drop_table :marketplace_entry_versions, if_exists: true
+    drop_table :marketplace_entries, if_exists: true
+  end
+
+  private
+
+  def enable_row_level_security
+    execute <<~SQL
+      ALTER TABLE marketplace_entries ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE marketplace_entries FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON marketplace_entries
+        AS PERMISSIVE FOR ALL
+        USING (paid_tenant_bypass() OR marketplace_entries.account_id = paid_current_account_id())
+        WITH CHECK (paid_tenant_bypass() OR marketplace_entries.account_id = paid_current_account_id());
+    SQL
+
+    execute <<~SQL
+      ALTER TABLE marketplace_entry_versions ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE marketplace_entry_versions FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON marketplace_entry_versions
+        AS PERMISSIVE FOR ALL
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM marketplace_entries
+            WHERE marketplace_entries.id = marketplace_entry_versions.marketplace_entry_id
+              AND marketplace_entries.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM marketplace_entries
+            WHERE marketplace_entries.id = marketplace_entry_versions.marketplace_entry_id
+              AND marketplace_entries.account_id = paid_current_account_id()
+          )
+        );
+    SQL
+
+    execute <<~SQL
+      ALTER TABLE marketplace_entry_rules ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE marketplace_entry_rules FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON marketplace_entry_rules
+        AS PERMISSIVE FOR ALL
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM marketplace_entries
+            WHERE marketplace_entries.id = marketplace_entry_rules.marketplace_entry_id
+              AND marketplace_entries.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM marketplace_entries
+            WHERE marketplace_entries.id = marketplace_entry_rules.marketplace_entry_id
+              AND marketplace_entries.account_id = paid_current_account_id()
+          )
+        );
+    SQL
+
+    execute <<~SQL
+      ALTER TABLE agent_run_marketplace_entries ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE agent_run_marketplace_entries FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON agent_run_marketplace_entries
+        AS PERMISSIVE FOR ALL
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM agent_runs
+            WHERE agent_runs.id = agent_run_marketplace_entries.agent_run_id
+              AND agent_runs.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM agent_runs
+            WHERE agent_runs.id = agent_run_marketplace_entries.agent_run_id
+              AND agent_runs.account_id = paid_current_account_id()
+          )
+        );
+    SQL
   end
 end

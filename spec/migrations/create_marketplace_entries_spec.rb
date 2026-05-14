@@ -39,6 +39,25 @@ RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
     expect(connection.index_exists?(:agent_run_marketplace_entries, [ :agent_run_id, :marketplace_entry_id ], unique: true)).to be(true)
   end
 
+  it "enables tenant row-level security on marketplace tables" do
+    migration.up
+
+    %w[
+      marketplace_entries
+      marketplace_entry_versions
+      marketplace_entry_rules
+      agent_run_marketplace_entries
+    ].each do |table_name|
+      expect(tenant_policy_present?(table_name)).to be(true)
+      expect(row_level_security_enabled?(table_name)).to be(true)
+      expect(row_level_security_forced?(table_name)).to be(true)
+    end
+
+    expect(policy_for("marketplace_entry_versions").fetch("qual")).to include("marketplace_entries.account_id = paid_current_account_id()")
+    expect(policy_for("marketplace_entry_rules").fetch("qual")).to include("marketplace_entries.account_id = paid_current_account_id()")
+    expect(policy_for("agent_run_marketplace_entries").fetch("qual")).to include("agent_runs.account_id = paid_current_account_id()")
+  end
+
   private
 
   def teardown_schema
@@ -46,5 +65,37 @@ RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
       connection.table_exists?(:marketplace_entry_rules) ||
       connection.table_exists?(:marketplace_entry_versions) ||
       connection.table_exists?(:marketplace_entries)
+  end
+
+  def tenant_policy_present?(table_name)
+    connection.select_value(<<~SQL.squish).to_i.positive?
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = '#{table_name}'
+        AND policyname = 'tenant_isolation'
+    SQL
+  end
+
+  def row_level_security_enabled?(table_name)
+    truthy?(connection.select_value("SELECT relrowsecurity FROM pg_class WHERE oid = 'public.#{table_name}'::regclass"))
+  end
+
+  def row_level_security_forced?(table_name)
+    truthy?(connection.select_value("SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.#{table_name}'::regclass"))
+  end
+
+  def policy_for(table_name)
+    connection.select_one(<<~SQL.squish)
+      SELECT qual, with_check
+      FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = '#{table_name}'
+        AND policyname = 'tenant_isolation'
+    SQL
+  end
+
+  def truthy?(value)
+    value == true || value == "t"
   end
 end

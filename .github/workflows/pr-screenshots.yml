@@ -150,23 +150,15 @@ jobs:
           $$;
           SQL
 
-      - name: Verify Chrome binary
+      - name: Locate Chromium-family browser
         run: |
-          chrome_path="${CHROMIUM_PATH:-}"
-          if [ -z "$chrome_path" ]; then
-            for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
-              if [ -x "$candidate" ]; then
-                chrome_path="$candidate"
-                break
-              fi
-            done
-          fi
-          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
+          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+          if [ -n "$chrome_path" ]; then
+            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
             echo "Chrome found at ${chrome_path}"
             "$chrome_path" --version
           else
-            echo "::error::No Chrome/Chromium binary found"
-            exit 1
+            echo "No Chromium-family browser found; continuing because Playwright capture uses browserless over CHROME_URL."
           fi
 
       - name: Export changed UI files
