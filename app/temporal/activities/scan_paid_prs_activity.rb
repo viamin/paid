@@ -58,6 +58,7 @@ module Activities
       review_feedback
       merge_conflict
       conversation
+      issue_implementation
       label_action
     ].freeze
     FOCUS_PRIORITY = %w[
@@ -1135,6 +1136,8 @@ module Activities
         merge_conflict_resolution_scores(project, client, issue)
       when "conversation"
         conversation_resolution_scores(project, client, issue, focused_run)
+      when "issue_implementation"
+        issue_implementation_resolution_scores(project, client, issue, focused_run)
       when "label_action"
         label_action_resolution_scores(project, issue)
       end
@@ -1170,14 +1173,37 @@ module Activities
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
+    def issue_implementation_resolution_scores(project, client, issue, focused_run)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil? || pr_data.mergeable.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      return nil if checks.nil? || checks_pending?(checks)
+
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return nil if unresolved_threads.nil?
+
+      reviews = fetch_reviews(client, project, issue)
+      return nil if reviews.nil?
+
+      ci_passed = all_checks_green?(checks) ? 1.0 : 0.0
+      resolved = ci_passed == 1.0 &&
+        human_review_thread_triggers(project, unresolved_threads).empty? &&
+        changes_requested_from_reviews(project, reviews, focused_run).empty? &&
+        check_conversation_comments(client, project, issue, focused_run).empty? &&
+        check_actionable_labels(project, issue).empty? &&
+        check_merge_conflicts(project, pr_data).empty?
+
+      {
+        "focus_resolved" => resolved ? 1.0 : 0.0,
+        "ci_passed" => ci_passed
+      }
+    end
+
     def label_action_resolution_scores(project, issue)
       triggers = check_actionable_labels(project, issue)
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
-
-    # issue_implementation uses focused collection weights, but scanner-side
-    # focus_resolved attribution remains deferred until a concrete
-    # implementation-gap detector exists.
 
     def fetch_pr_data(client, project, issue)
       client.pull_request(project.full_name, issue.github_number)

@@ -690,12 +690,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           composite_score: 1.0)
       end
 
-      it "skips focus attribution — issue_implementation uses general scoring" do
+      it "records focus_resolved once follow-up signals are cleared" do
         stub_github_for_pr
 
         activity.execute(project_id: project.id)
 
-        expect(metric.reload.scores).not_to include("focus_resolved")
+        expect(metric.reload.scores).to include(
+          "focus_resolved" => 1.0,
+          "ci_passed" => 1.0
+        )
         expect(metric.composite_score).to eq(1.0)
       end
     end
