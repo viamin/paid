@@ -180,6 +180,51 @@ module Screenshots
             record.active = true
           end
 
+          marketplace_entry = account.marketplace_entries.find_or_create_by!(name: "Screenshot Repo Skill") do |record|
+            record.entry_type = "skill"
+            record.description = "Reusable marketplace skill for screenshot coverage."
+            record.provider = "claude"
+            record.provider_format = "canonical_v1"
+            record.usage_guidance = "Attach to implementation runs."
+            record.added_by_name = user.name.presence || user.email
+            record.added_by_email = user.email
+            record.tags = [ "screenshots", "marketplace" ]
+            record.team_scope = "account"
+            record.status = "active"
+          end
+          marketplace_version = marketplace_entry.current_version || marketplace_entry.create_version!(
+            changelog: "Initial screenshot seed",
+            canonical_artifact: {
+              "attachment_strategy" => "prompt_append",
+              "content" => "Follow the screenshot marketplace workflow."
+            },
+            renderers: {
+              "claude" => {
+                "attachment_strategy" => "prompt_append",
+                "provider_format" => "claude_skill_v1",
+                "content" => "Use the screenshot marketplace skill."
+              }
+            },
+            compatibility_constraints: {},
+            review_metadata: {}
+          )
+          marketplace_entry.update!(current_version: marketplace_version) unless marketplace_entry.current_version == marketplace_version
+          attachment = agent_run.agent_run_marketplace_entries.find_or_initialize_by(
+            marketplace_entry: marketplace_entry
+          )
+          attachment.assign_attributes(
+            marketplace_entry_version: marketplace_version,
+            attachment_source: "manual",
+            selection_reason: "Manually attached for screenshot coverage",
+            position: 0,
+            rendered_format: "claude_skill_v1",
+            rendered_payload: {
+              "attachment_strategy" => "prompt_append",
+              "content" => "Use the screenshot marketplace skill."
+            }
+          )
+          attachment.save!
+
           chat_session = ChatSession.where(account: account, title: "Screenshot Chat").first_or_create!(
             created_by: user,
             project: project,
@@ -264,6 +309,7 @@ module Screenshots
             "pending_strategy_version" => { "id" => pending_strategy_version.id },
             "ab_test" => { "id" => ab_test.id },
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
+            "marketplace_entry" => { "id" => marketplace_entry.id, "name" => marketplace_entry.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
             "knowledge_artifact" => { "id" => knowledge_artifact.id }
           }

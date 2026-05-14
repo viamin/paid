@@ -22,6 +22,17 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "service_container_edit" ])
     end
 
+    it "maps marketplace entry views to their specific screenshot targets" do
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/index.html.erb" ]).map(&:slug))
+        .to eq([ "marketplace_entries" ])
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/show.html.erb" ]).map(&:slug))
+        .to eq([ "marketplace_entry_show" ])
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/edit.html.erb" ]).map(&:slug))
+        .to eq([ "marketplace_entry_edit" ])
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/_form.html.erb" ]).map(&:slug))
+        .to contain_exactly("marketplace_entry_new", "marketplace_entry_edit")
+    end
+
     it "maps existing prompt review screens instead of treating them as unmapped UI" do
       targets = described_class.call(changed_files: [ "app/views/prompt_reviews/show.html.erb" ])
 
@@ -68,6 +79,17 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/controllers/dashboard_controller.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
+    it "maps marketplace entry controllers to representative marketplace routes" do
+      targets = described_class.call(changed_files: [ "app/controllers/marketplace_entries_controller.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly(
+        "marketplace_entries",
+        "marketplace_entry_new",
+        "marketplace_entry_show",
+        "marketplace_entry_edit"
+      )
     end
 
     it "maps nested controller files to their corresponding page targets" do

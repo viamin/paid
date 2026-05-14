@@ -15,6 +15,23 @@ RSpec.describe "MarketplaceEntries" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Marketplace Entries")
     end
+
+    it "paginates entries" do
+      21.times do |index|
+        create(:marketplace_entry, account: account, name: format("Entry %03d", index + 1))
+      end
+
+      get marketplace_entries_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Entry 021")
+      expect(response.body).not_to include("Entry 001")
+
+      get marketplace_entries_path(page: 2)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Entry 001")
+    end
   end
 
   describe "POST /marketplace_entries" do
