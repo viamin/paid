@@ -30,6 +30,32 @@ RSpec.describe Activities::DecomposeFeatureActivity do
     end
   end
 
+  describe "#result_policy_metadata", :no_db do
+    it "extracts provenance from symbol-keyed policy payloads" do
+      decomposition_result = instance_double(
+        DecompositionService::Result,
+        policy_source: "coordination_policy",
+        skip_reason: nil,
+        policy_applied: {
+          policy_key: DecompositionService::POLICY_KEY,
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      )
+
+      result = activity.send(:result_policy_metadata, decomposition_result)
+
+      expect(result).to eq(
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+    end
+  end
+
   describe "#execute" do
     let(:logged_decision) { build_stubbed(:decomposition_decision, decision_type: "decomposition_strategy") }
     let(:llm_response) do

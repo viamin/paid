@@ -323,13 +323,15 @@ module Activities
     end
 
     def result_policy_metadata(decomposition_result)
+      policy_applied = decomposition_result.policy_applied.to_h.deep_stringify_keys
+
       {
         policy_source: decomposition_result.policy_source,
         skip_reason: decomposition_result.skip_reason,
-        policy_key: decomposition_result.policy_applied["policy_key"],
-        coordination_policy_id: decomposition_result.policy_applied["coordination_policy_id"],
-        coordination_policy_version_id: decomposition_result.policy_applied["coordination_policy_version_id"],
-        coordination_policy_version: decomposition_result.policy_applied["coordination_policy_version"]
+        policy_key: policy_applied["policy_key"],
+        coordination_policy_id: policy_applied["coordination_policy_id"],
+        coordination_policy_version_id: policy_applied["coordination_policy_version_id"],
+        coordination_policy_version: policy_applied["coordination_policy_version"]
       }.compact
     end
 

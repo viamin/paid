@@ -158,6 +158,27 @@ RSpec.describe DecompositionService, :no_db do
     expect(OrchestrationStrategies::Resolve).not_to have_received(:call)
   end
 
+  it "accepts symbol-keyed policy overrides from workflow/activity boundaries" do
+    service = build_service(policy_override: {
+      decomposition: {
+        enabled: false,
+        max_tasks: 1
+      }
+    })
+    allow(OrchestrationStrategies::Resolve).to receive(:call)
+
+    result = service.call
+
+    expect(result).to be_skipped
+    expect(result.skip_reason).to eq("decomposition_disabled_by_policy")
+    expect(result.policy_source).to eq("experiment")
+    expect(result.policy_applied).to include(
+      "enabled" => false,
+      "max_tasks" => 1
+    )
+    expect(OrchestrationStrategies::Resolve).not_to have_received(:call)
+  end
+
   it "supports nested coordination policy payloads" do
     service = build_service
     allow(service).to receive(:coordination_policy).and_return(build_nested_coordination_policy)
