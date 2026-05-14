@@ -85,7 +85,7 @@
             <%= improvement_delta_label(improvement.quality_per_dollar_improvement) %>
           </dd>
           <p class="mt-1 text-xs text-gray-500">
-            <%= format_quality_score(improvement.early_quality_per_dollar) %> &rarr; <%= format_quality_score(improvement.recent_quality_per_dollar) %>
+            <%= improvement.early_quality_per_dollar ? number_with_precision(improvement.early_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %> &rarr; <%= improvement.recent_quality_per_dollar ? number_with_precision(improvement.recent_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %>
           </p>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
