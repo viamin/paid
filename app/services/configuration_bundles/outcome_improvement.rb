@@ -141,10 +141,13 @@ module ConfigurationBundles
       (quality_component + cost_component + speed_component).round(4)
     end
 
+    # Mirrors BundlePerformanceDashboardStats#average_quality_per_dollar_sql:
+    # floors the denominator with GREATEST(cost_cents / 100.0, 0.01) so
+    # zero-cost outcomes are included rather than silently dropped.
     def fallback_quality_per_dollar(quality_score, cost_cents)
-      return nil if cost_cents.nil? || cost_cents.zero?
+      return nil if cost_cents.nil? || quality_score.nil?
 
-      quality_score.to_f / (cost_cents.to_f / 100.0)
+      quality_score.to_f / [ cost_cents.to_f / 100.0, 0.01 ].max
     end
 
     def normalized_inverse(value, reference)
@@ -229,11 +232,14 @@ module ConfigurationBundles
       values.sum.to_f / values.size
     end
 
+    # Mirrors BundlePerformanceDashboardStats#average_quality_per_dollar_sql:
+    # floors the denominator with GREATEST(cost_cents / 100.0, 0.01) so
+    # zero-cost outcomes are included rather than silently dropped.
     def compute_quality_per_dollar(row)
       return row[:quality_per_dollar] if row[:quality_per_dollar].present?
-      return nil if row[:cost_cents].nil? || row[:cost_cents].zero?
+      return nil if row[:cost_cents].nil? || row[:quality_score].nil?
 
-      row[:quality_score].to_f / (row[:cost_cents].to_f / 100.0)
+      row[:quality_score].to_f / [ row[:cost_cents].to_f / 100.0, 0.01 ].max
     end
 
     def compute_quality_per_dollar_improvement(early, recent)
@@ -257,8 +263,8 @@ module ConfigurationBundles
     end
 
     def build_period_snapshots(rows)
-      period_size = (rows.size.to_f / PERIODS_FOR_TREND).ceil
-      rows.each_slice(period_size).each_with_index.map do |period_rows, index|
+      midpoint = rows.size / 2
+      [ rows[0...midpoint], rows[midpoint..] ].each_with_index.map do |period_rows, index|
         PeriodSnapshot.new(
           label: "Period #{index + 1}",
           outcome_count: period_rows.size,

@@ -245,7 +245,7 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       result = service.call
 
       expect(result.periods.length).to eq(2)
-      expect(result.periods.map(&:outcome_count)).to eq([ 3, 2 ])
+      expect(result.periods.map(&:outcome_count)).to eq([ 2, 3 ])
     end
 
     it "computes success rate per period" do
@@ -300,7 +300,7 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       expect(result.quality_improvement).to be > 0
     end
 
-    it "handles zero cost gracefully in quality-per-dollar" do
+    it "handles zero cost gracefully in quality-per-dollar using GREATEST floor" do
       rows = [
         make_row(quality_score: 0.5, cost_cents: 0, success: true, objective_score: 0.45),
         make_row(quality_score: 0.6, cost_cents: 0, success: true, objective_score: 0.55),
@@ -313,7 +313,9 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       result = service.call
 
       expect(result.sufficient_data).to be true
-      expect(result.early_quality_per_dollar).to be_nil
+      # Zero-cost rows use GREATEST(cost/100, 0.01) floor, matching dashboard SQL
+      expect(result.early_quality_per_dollar).not_to be_nil
+      expect(result.early_quality_per_dollar).to be > 0
     end
   end
 end
