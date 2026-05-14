@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_13_191311) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -191,6 +191,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
     t.text "error_message"
     t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
+    t.string "focus", limit: 50, default: "general", null: false, comment: "Focused run intent derived from the highest-priority PR trigger or assigned workflow context."
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
@@ -235,6 +236,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
     t.string "worktree_path", limit: 500
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["focus"], name: "index_agent_runs_on_focus"
     t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
@@ -1492,7 +1494,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
     t.boolean "auto_scan_security", default: false, null: false
     t.string "automation_label_name", default: "paid-automation", null: false
     t.boolean "automation_on_label_enabled", default: true, null: false
-    t.integer "code_scanning_interval_hours", default: 72, null: false
+    t.integer "code_scanning_interval_hours", default: 24, null: false
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -3193,36 +3195,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
       CREATE TRIGGER logidze_on_integration_credentials BEFORE INSERT OR UPDATE ON public.integration_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{secret}')
   SQL
 
-  create_trigger :logidze_on_llm_models, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_llm_models BEFORE INSERT OR UPDATE ON public.llm_models FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
   create_trigger :knowledge_chunks_tsvector_update, sql_definition: <<-SQL
       CREATE TRIGGER knowledge_chunks_tsvector_update BEFORE INSERT OR UPDATE OF content ON public.knowledge_chunks FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('content_tsvector', 'pg_catalog.english', 'content')
+  SQL
+
+  create_trigger :logidze_on_llm_models, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_llm_models BEFORE INSERT OR UPDATE ON public.llm_models FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
-  create_trigger :logidze_on_pre_commit_requirements, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
+  create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_pr_templates, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_pr_templates BEFORE INSERT OR UPDATE ON public.pr_templates FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_project_memberships BEFORE INSERT OR UPDATE ON public.project_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  create_trigger :logidze_on_pre_commit_requirements, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_project_memberships BEFORE INSERT OR UPDATE ON public.project_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_projects, sql_definition: <<-SQL
@@ -3265,11 +3267,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_12_120010) do
       CREATE TRIGGER logidze_on_tracker_configurations BEFORE INSERT OR UPDATE ON public.tracker_configurations FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :logidze_on_users, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
   create_trigger :logidze_on_user_settings, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_user_settings BEFORE INSERT OR UPDATE ON public.user_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_users, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
   SQL
 end
