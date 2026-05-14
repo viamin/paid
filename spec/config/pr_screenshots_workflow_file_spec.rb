@@ -48,6 +48,10 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     expect(services).not_to have_key("chrome")
   end
 
+  it "does not install a separate PostgreSQL client for screenshot capture" do
+    expect(steps.find { |step| step["name"] == "Install PostgreSQL client" }).to be_nil
+  end
+
   it "uploads screenshot artifacts only when capture produced PNGs" do
     upload_step = steps.find { |step| step["name"] == "Upload screenshots to artifacts" }
 
