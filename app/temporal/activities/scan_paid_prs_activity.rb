@@ -588,7 +588,20 @@ module Activities
                   "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
       end
 
-      return nil if followup_limit_reached?(project, issue)
+      # Follow-up budget exhausted: escalate if cheap signals (CI,
+      # merge conflicts, actionable labels — all derivable from data
+      # already fetched above) show unresolved work. Otherwise
+      # short-circuit BEFORE the expensive review-thread / comment
+      # fetches that detect_ready_triggers would issue. This preserves
+      # the historical "silent skip when nothing visibly wrong"
+      # behavior on budget-exhausted PRs while ensuring failing CI no
+      # longer leaves a PR wedged in `paid-ready` with no signal.
+      if followup_limit_reached?(project, issue)
+        cheap_triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
+        return followup_limit_escalation(issue, cheap_triggers) if cheap_triggers.any?
+
+        return nil
+      end
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews)
@@ -612,14 +625,11 @@ module Activities
     # Auto-merge is handled by EvaluateDependabotAutoMergeActivity + DependabotAutoMergeJob.
     # This method only detects follow-up triggers (CI failures, merge conflicts, labels).
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
-      return nil if followup_limit_reached?(project, issue)
-
-      ci_triggers = ci_failure_triggers(checks || [])
-      merge_conflict_triggers = check_merge_conflicts(project, pr_data)
-      label_triggers = check_actionable_labels(project, issue)
-      triggers = ci_triggers + merge_conflict_triggers + label_triggers
+      triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
 
       return nil if triggers.empty?
+
+      return followup_limit_escalation(issue, triggers) if followup_limit_reached?(project, issue)
 
       log_triggers(project, issue, triggers)
 
@@ -632,6 +642,24 @@ module Activities
         labels_to_remove: extract_actionable_labels(triggers),
         current_followup_count: issue.pr_followup_count
       }
+    end
+
+    # Triggers detectable without additional GitHub API calls when checks
+    # and pr_data are already in hand. Used as a cheap pre-gate before
+    # the more expensive review-thread / comment-fetch path.
+    def cheap_ready_triggers(project, issue, pr_data:, checks:)
+      ci_failure_triggers(checks || []) +
+        check_merge_conflicts(project, pr_data) +
+        check_actionable_labels(project, issue)
+    end
+
+    def followup_limit_escalation(issue, triggers)
+      project = issue.project
+      types_summary = triggers.map { |t| t[:type] }.uniq.join(", ")
+      escalate_trigger(issue,
+        reason: "Follow-up run limit reached " \
+                "(#{issue.pr_followup_count}/#{project.max_pr_followup_runs}); " \
+                "unresolved: #{types_summary}")
     end
 
     # --- Escalated phase scanning ---

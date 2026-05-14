@@ -19,6 +19,7 @@ module Activities
     activity_name "HandleNoOutputIssueRun"
 
     PAID_NEEDS_INPUT_LABEL = "paid-needs-input"
+    PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
 
@@ -45,7 +46,17 @@ module Activities
       /failed to create container/i,
       /sandbox.*error/i,
       /docker.*permission denied/i,
-      /exec format error/i
+      /exec format error/i,
+      # Agent CLI misconfiguration: the agent process started but its
+      # configured model is not resolvable (e.g. opencode's
+      # ProviderModelNotFoundError when the configured provider/model
+      # pair is missing). The agent does no work, so this must not be
+      # misclassified as recommend_close. The trailing colon in the
+      # `Model not found:` pattern matches opencode's actual output
+      # (`Error: Model not found: glm-5.1/.`) and avoids false-positives
+      # on agents that simply quote that phrase from an issue body.
+      /ProviderModelNotFoundError/,
+      /Model not found:/i
     ].freeze
 
     def execute(input)
@@ -161,6 +172,7 @@ module Activities
       issue = agent_run.issue
       issue.update!(paid_state: "needs_input")
       add_needs_input_label(client, project, issue)
+      remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
       post_needs_input_comment(client, project, issue, agent_summary)
     end
@@ -171,6 +183,7 @@ module Activities
       issue.update!(paid_state: "recommend_close")
       remove_trigger_labels(client, project, issue, agent_run.id)
       remove_needs_input_label(client, project, issue, agent_run.id)
+      add_recommend_close_label(client, project, issue)
       post_recommend_close_comment(client, project, issue, agent_summary)
     end
 
@@ -194,6 +207,11 @@ module Activities
       add_phase_label(client, project, issue.github_number, label)
     end
 
+    def add_recommend_close_label(client, project, issue)
+      label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
+      add_phase_label(client, project, issue.github_number, label)
+    end
+
     def remove_needs_input_label(client, project, issue, agent_run_id)
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       return unless issue.has_label?(label)
@@ -202,6 +220,21 @@ module Activities
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.remove_needs_input_label_failed",
+        agent_run_id: agent_run_id,
+        issue_number: issue.github_number,
+        label: label,
+        error: e.message
+      )
+    end
+
+    def remove_recommend_close_label(client, project, issue, agent_run_id)
+      label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
+      return unless issue.has_label?(label)
+
+      client.remove_label_from_issue(project.full_name, issue.github_number, label)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.remove_recommend_close_label_failed",
         agent_run_id: agent_run_id,
         issue_number: issue.github_number,
         label: label,
