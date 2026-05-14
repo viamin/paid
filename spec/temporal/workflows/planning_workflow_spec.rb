@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::PlanningWorkflow do
+RSpec.describe Workflows::PlanningWorkflow, :no_db do
   let(:workflow) { described_class.new }
 
   describe "class" do
@@ -35,6 +35,62 @@ RSpec.describe Workflows::PlanningWorkflow do
           ),
           timeout: 120
         )
+    end
+
+    def policy_metadata_payload
+      {
+        policy_source: "coordination_policy",
+        policy_key: "feature_decomposition",
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      }
+    end
+
+    def stub_policy_driven_decomposition(tasks)
+      allow(workflow).to receive(:run_activity) do |activity_class, _activity_input, **_opts|
+        case activity_class.name
+        when "Activities::FetchPlanningContextActivity"
+          { context: { issue_title: "Feature", knowledge_snippets: [] } }
+        when "Activities::DecomposeFeatureActivity"
+          {
+            tasks: tasks,
+            prompt_source: "policy_service",
+            policy_metadata: policy_metadata_payload
+          }
+        when "Activities::CreateSubIssuesActivity"
+          { created_issues: [ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ] }
+        when "Activities::UpdatePlanningLabelsActivity"
+          { success: true }
+        when "Activities::LogDecompositionDecisionActivity"
+          { decomposition_decision_id: 1 }
+        else
+          {}
+        end
+      end
+    end
+
+    def stub_top_level_policy_driven_decomposition(tasks)
+      allow(workflow).to receive(:run_activity) do |activity_class, _activity_input, **_opts|
+        case activity_class.name
+        when "Activities::FetchPlanningContextActivity"
+          { context: { issue_title: "Feature", knowledge_snippets: [] } }
+        when "Activities::DecomposeFeatureActivity"
+          {
+            tasks: tasks,
+            prompt_source: "policy_service",
+            **policy_metadata_payload
+          }
+        when "Activities::CreateSubIssuesActivity"
+          { created_issues: [ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ] }
+        when "Activities::UpdatePlanningLabelsActivity"
+          { success: true }
+        when "Activities::LogDecompositionDecisionActivity"
+          { decomposition_decision_id: 1 }
+        else
+          {}
+        end
+      end
     end
 
     it "accepts a single input parameter" do
@@ -103,10 +159,43 @@ RSpec.describe Workflows::PlanningWorkflow do
               workflow_name: "Workflows::PlanningWorkflow",
               decision_type: "planning_outcome",
               outcome: "sub_issues_created",
-              plan_data: hash_including(tasks: tasks)
+              plan_data: hash_including(tasks: tasks),
+              metadata: hash_including(prompt_source: nil)
             ),
             timeout: 30,
             retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+      end
+
+      it "propagates decomposition policy metadata into planning outcome logs" do
+        stub_policy_driven_decomposition(tasks)
+
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(
+            Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              metadata: hash_including(prompt_source: "policy_service", **policy_metadata_payload)
+            ),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY
+          )
+      end
+
+      it "propagates top-level provenance when policy_metadata is omitted" do
+        stub_top_level_policy_driven_decomposition(tasks)
+
+        workflow.execute(input)
+
+        expect(workflow).to have_received(:run_activity)
+          .with(
+            Activities::LogDecompositionDecisionActivity,
+            hash_including(
+              metadata: hash_including(prompt_source: "policy_service", **policy_metadata_payload)
+            ),
+            timeout: 30,
+            retry_policy: Workflows::PlanningWorkflow::NO_RETRY
+          )
       end
     end
 
@@ -121,7 +210,7 @@ RSpec.describe Workflows::PlanningWorkflow do
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
-            { tasks: tasks, prompt_source: "fallback_prompt" }
+            { tasks: tasks, prompt_source: "fallback_prompt", policy_metadata: { policy_source: "defaults" } }
           when "Activities::UpdatePlanningLabelsActivity"
             { success: true }
           when "Activities::LogDecompositionDecisionActivity"
@@ -144,7 +233,7 @@ RSpec.describe Workflows::PlanningWorkflow do
           .with(Activities::LogDecompositionDecisionActivity,
             hash_including(
               outcome: "single_task_plan",
-              metadata: hash_including(prompt_source: "fallback_prompt")
+              metadata: hash_including(prompt_source: "fallback_prompt", policy_source: "defaults")
             ),
             timeout: 30,
             retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
@@ -158,7 +247,7 @@ RSpec.describe Workflows::PlanningWorkflow do
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
-            { tasks: [] }
+            { tasks: [], policy_metadata: { policy_source: "feature_orchestration", skip_reason: "below_complexity_threshold" } }
           when "Activities::UpdatePlanningLabelsActivity"
             { success: true }
           when "Activities::LogDecompositionDecisionActivity"
@@ -177,20 +266,40 @@ RSpec.describe Workflows::PlanningWorkflow do
         expect(result[:created_issues]).to eq([])
         expect(workflow).to have_received(:run_activity)
           .with(Activities::LogDecompositionDecisionActivity,
-            hash_including(outcome: "empty_plan"),
+            hash_including(
+              outcome: "empty_plan",
+              metadata: hash_including(
+                policy_source: "feature_orchestration",
+                skip_reason: "below_complexity_threshold"
+              )
+            ),
             timeout: 30,
             retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
       end
     end
 
     context "when an activity raises an error" do
+      let(:failure_policy_metadata) do
+        {
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      end
+
       before do
         allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
           case activity_class.name
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
-            raise Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+            raise Temporalio::Error::ApplicationError.new(
+              "LLM failed",
+              { policy_metadata: failure_policy_metadata },
+              type: "DecompositionFailed"
+            )
           when "Activities::LogDecompositionDecisionActivity"
             { decomposition_decision_id: 4 }
           else
@@ -206,7 +315,8 @@ RSpec.describe Workflows::PlanningWorkflow do
             hash_including(
               decision_type: "planning_outcome",
               outcome: "decomposition_failed",
-              error_details: hash_including(error_message: "LLM failed")
+              error_details: hash_including(error_message: "LLM failed"),
+              metadata: hash_including(**failure_policy_metadata)
             ),
             timeout: 30,
             retry_policy: Workflows::PlanningWorkflow::NO_RETRY)

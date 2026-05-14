@@ -127,6 +127,51 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
     end
   end
 
+  describe "policy provenance serialization" do
+    it "symbolizes provenance keys from persisted metadata" do
+      provenance = service.send(
+        :policy_provenance,
+        {
+          "policy_source" => "coordination_policy",
+          "policy_key" => "feature_decomposition",
+          "coordination_policy_id" => 12,
+          "coordination_policy_version_id" => 34,
+          "coordination_policy_version" => 5
+        }
+      )
+
+      expect(provenance).to include(
+        policy_source: "coordination_policy",
+        policy_key: "feature_decomposition",
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+      expect(provenance.keys).to all(be_a(Symbol))
+    end
+
+    it "extracts provenance from symbol-keyed metadata" do
+      provenance = service.send(
+        :policy_provenance,
+        {
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      )
+
+      expect(provenance).to include(
+        policy_source: "coordination_policy",
+        policy_key: "feature_decomposition",
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+    end
+  end
+
   describe "unsupported policy types" do
     it "fails fast instead of falling back to decomposition inputs" do
       expect {

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::FeatureOrchestrationWorkflow do
+RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
   let(:workflow) { described_class.new }
 
   describe "class" do
@@ -39,6 +39,22 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           timeout: 120,
           retry_policy: anything
         )
+    end
+
+    def expect_feature_planning_decision_logged
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::LogDecompositionDecisionActivity,
+          hash_including(
+            decision_type: "planning_outcome",
+            outcome: "sub_issues_created",
+            metadata: hash_including(
+              policy_source: "coordination_policy",
+              policy_key: "feature_decomposition",
+              coordination_policy_id: 12
+            )
+          ),
+          timeout: 30,
+          retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
     end
 
     it "accepts a single input parameter" do
@@ -107,11 +123,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             timeout: 120
           )
         expect_orchestration_sub_issue_creation!
-        expect(workflow).to have_received(:run_activity)
-          .with(Activities::LogDecompositionDecisionActivity,
-            hash_including(decision_type: "planning_outcome", outcome: "sub_issues_created"),
-            timeout: 30,
-            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+        expect_feature_planning_decision_logged
       end
 
       it "launches ParallelAgentExecutionWorkflow as child workflow" do
@@ -173,10 +185,26 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             hash_including(
               decision_type: "parallelization_outcome",
               outcome: "parallel_execution_planned",
-              plan_data: hash_including(sub_tasks: array_including(hash_including(issue_id: 10)))
+              plan_data: hash_including(sub_tasks: array_including(hash_including(issue_id: 10))),
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition",
+                coordination_policy_id: 12
+              )
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+      end
+
+      it "propagates top-level provenance into planning and parallelization outcome logs" do
+        stub_top_level_planning_activities(tasks: tasks, created_issues: created_issues)
+        stub_parallel_execution(parallel_result)
+        stub_update_labels
+
+        workflow.execute(input)
+
+        expect_top_level_provenance_logged!("planning_outcome")
+        expect_top_level_provenance_logged!("parallelization_outcome")
       end
 
       it "records a scaling observation after parallel execution" do
@@ -244,7 +272,11 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           .with(Activities::LogDecompositionDecisionActivity,
             hash_including(
               decision_type: "parallelization_outcome",
-              outcome: "parallel_execution_skipped_single_task"
+              outcome: "parallel_execution_skipped_single_task",
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition"
+              )
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
@@ -283,7 +315,13 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(Temporalio::Workflow).not_to have_received(:execute_child_workflow)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::LogDecompositionDecisionActivity,
-            hash_including(outcome: "parallel_execution_skipped_empty_plan"),
+            hash_including(
+              outcome: "parallel_execution_skipped_empty_plan",
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition"
+              )
+            ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
@@ -380,7 +418,15 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           .with(Activities::LogDecompositionDecisionActivity,
             hash_including(
               decision_type: "parallelization_outcome",
-              outcome: "parallelization_planning_failed"
+              outcome: "parallelization_planning_failed",
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition",
+                coordination_policy_id: 12,
+                coordination_policy_version_id: 34,
+                coordination_policy_version: 5,
+                failed_step: "build_sub_tasks"
+              )
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
@@ -403,6 +449,16 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
     end
 
     context "when an activity raises an error" do
+      let(:failure_policy_metadata) do
+        {
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      end
+
       before do
         allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
           case activity_class.name
@@ -435,7 +491,11 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           when "Activities::FetchPlanningContextActivity"
             { context: {} }
           when "Activities::DecomposeFeatureActivity"
-            raise Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+            raise Temporalio::Error::ApplicationError.new(
+              "LLM failed",
+              { policy_metadata: failure_policy_metadata },
+              type: "DecompositionFailed"
+            )
           when "Activities::RecordCoordinationExperimentOutcomeActivity"
             { assignment_id: 77, outcome_status: "recorded" }
           when "Activities::RecordScalingExperimentResultActivity"
@@ -454,7 +514,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           .with(Activities::LogDecompositionDecisionActivity,
             hash_including(
               decision_type: "planning_outcome",
-              outcome: "decomposition_failed"
+              outcome: "decomposition_failed",
+              metadata: hash_including(**failure_policy_metadata)
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
@@ -682,7 +743,75 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
       when "Activities::FetchPlanningContextActivity"
         { context: { issue_title: "Feature", knowledge_snippets: [] } }
       when "Activities::DecomposeFeatureActivity"
-        { tasks: tasks }
+        {
+          tasks: tasks,
+          policy_metadata: {
+            policy_source: "coordination_policy",
+            policy_key: "feature_decomposition",
+            coordination_policy_id: 12,
+            coordination_policy_version_id: 34,
+            coordination_policy_version: 5
+          }
+        }
+      when "Activities::CreateSubIssuesActivity"
+        { created_issues: created_issues }
+      when "Activities::UpdatePlanningLabelsActivity"
+        { success: true }
+      when "Activities::RecordCoordinationExperimentOutcomeActivity"
+        { assignment_id: 77, outcome_status: "recorded" }
+      when "Activities::RecordScalingExperimentResultActivity"
+        { assignment_id: 88, outcome_status: "recorded" }
+      when "Activities::LogDecompositionDecisionActivity"
+        { decomposition_decision_id: 1 }
+      when "Activities::RecordScalingObservationActivity"
+        { scaling_observation_id: 1 }
+      else
+        {}
+      end
+    end
+  end
+
+  def stub_top_level_planning_activities(tasks:, created_issues:)
+    allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+      case activity_class.name
+      when "Activities::ResolveCoordinationExperimentActivity"
+        { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
+      when "Activities::ResolveScalingExperimentActivity"
+        {
+          assignments: [
+            {
+              assignment_id: 88,
+              dimension: "agent_count",
+              execution_plan: {
+                "dimension" => "agent_count",
+                "requested_agent_count" => 2,
+                "max_batch_size" => 2
+              }
+            },
+            {
+              assignment_id: 99,
+              dimension: "iteration_count",
+              execution_plan: {
+                "dimension" => "iteration_count",
+                "requested_iteration_count" => 3,
+                "application_mode" => "task_prompt_budget",
+                "prompt_suffix" => "Iteration budget: aim to complete this task within 3 agent iterations."
+              }
+            }
+          ]
+        }
+      when "Activities::FetchPlanningContextActivity"
+        { context: { issue_title: "Feature", knowledge_snippets: [] } }
+      when "Activities::DecomposeFeatureActivity"
+        {
+          tasks: tasks,
+          prompt_source: "policy_service",
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
       when "Activities::CreateSubIssuesActivity"
         { created_issues: created_issues }
       when "Activities::UpdatePlanningLabelsActivity"
@@ -779,6 +908,26 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         hash_including(
           assignment_id: assignment_id,
           scaling_observation_id: 1
+        ),
+        timeout: 30,
+        retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
+      )
+  end
+
+  def expect_top_level_provenance_logged!(decision_type)
+    expect(workflow).to have_received(:run_activity)
+      .with(
+        Activities::LogDecompositionDecisionActivity,
+        hash_including(
+          decision_type: decision_type,
+          metadata: hash_including(
+            prompt_source: "policy_service",
+            policy_source: "coordination_policy",
+            policy_key: "feature_decomposition",
+            coordination_policy_id: 12,
+            coordination_policy_version_id: 34,
+            coordination_policy_version: 5
+          )
         ),
         timeout: 30,
         retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY

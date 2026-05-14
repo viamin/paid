@@ -7,6 +7,141 @@ RSpec.describe Activities::DecomposeFeatureActivity do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project, title: "Add OAuth", body: "Implement OAuth 2.0 login") }
 
+  describe "#with_policy_provenance", :no_db do
+    let(:policy_metadata) do
+      {
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      }
+    end
+
+    it "normalizes nested policy_metadata keys while exposing top-level provenance" do
+      result = activity.send(
+        :with_policy_provenance,
+        {
+          tasks: [],
+          policy_metadata: policy_metadata.deep_stringify_keys
+        }
+      )
+
+      expect(result[:policy_metadata]).to eq(policy_metadata)
+      expect(result).to include(policy_metadata)
+    end
+
+    it "normalizes fully string-keyed policy payloads" do
+      result = activity.send(
+        :with_policy_provenance,
+        {
+          "tasks" => [],
+          "policy_metadata" => policy_metadata.deep_stringify_keys
+        }
+      )
+
+      expect(result).to include(tasks: [])
+      expect(result[:policy_metadata]).to eq(policy_metadata)
+      expect(result).to include(policy_metadata)
+    end
+
+    it "backfills nested policy_metadata from top-level provenance" do
+      result = activity.send(
+        :with_policy_provenance,
+        {
+          "tasks" => [],
+          "policy_source" => "coordination_policy",
+          "policy_key" => DecompositionService::POLICY_KEY,
+          "coordination_policy_version" => 5
+        }
+      )
+
+      expect(result).to include(
+        tasks: [],
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      )
+      expect(result[:policy_metadata]).to eq(
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      )
+    end
+  end
+
+  describe "#result_policy_metadata", :no_db do
+    it "extracts provenance from symbol-keyed policy payloads" do
+      decomposition_result = instance_double(
+        DecompositionService::Result,
+        policy_source: "coordination_policy",
+        skip_reason: nil,
+        policy_applied: {
+          policy_key: DecompositionService::POLICY_KEY,
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      )
+
+      result = activity.send(:result_policy_metadata, decomposition_result)
+
+      expect(result).to eq(
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+    end
+  end
+
+  describe "#application_error_with_policy_provenance", :no_db do
+    let(:policy_metadata) do
+      {
+        policy_source: "coordination_policy",
+        policy_key: DecompositionService::POLICY_KEY,
+        coordination_policy_version: 5
+      }
+    end
+
+    it "appends policy provenance to Temporal application error details" do
+      error = Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+
+      enriched_error = activity.send(
+        :application_error_with_policy_provenance,
+        error,
+        { metadata: policy_metadata }
+      )
+
+      expect(enriched_error).not_to be(error)
+      expect(enriched_error.details).to include(policy_metadata:)
+      expect(enriched_error.type).to eq("DecompositionFailed")
+    end
+
+    it "leaves errors untouched when no policy metadata is available" do
+      error = Temporalio::Error::ApplicationError.new("LLM failed", type: "DecompositionFailed")
+
+      expect(
+        activity.send(:application_error_with_policy_provenance, error, { metadata: {} })
+      ).to be(error)
+    end
+
+    it "does not duplicate provenance when error details are string-keyed" do
+      error = Temporalio::Error::ApplicationError.new(
+        "LLM failed",
+        { "policy_metadata" => policy_metadata.deep_stringify_keys },
+        type: "DecompositionFailed"
+      )
+
+      expect(
+        activity.send(
+          :application_error_with_policy_provenance,
+          error,
+          { metadata: policy_metadata.deep_stringify_keys }
+        )
+      ).to be(error)
+    end
+  end
+
   describe "#execute" do
     let(:logged_decision) { build_stubbed(:decomposition_decision, decision_type: "decomposition_strategy") }
     let(:llm_response) do
@@ -96,6 +231,23 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(tasks[2][:dependencies]).to eq([ 1 ])
     end
 
+    def expect_policy_skip_result(result)
+      expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+      expect(result[:tasks]).to eq([])
+      expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
+      expect(result[:policy_metadata]).to include(policy_source: "feature_orchestration")
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+        hash_including(
+          outcome: "policy_skipped",
+          input_context: hash_including(
+            coordination_policy_present: true
+          ),
+          plan_data: hash_including(tasks: [])
+        )
+      )
+    end
+
     it "returns parsed tasks from LLM output" do
       result = execute_with_workflow_context(
         workflow_name: "Workflows::PlanningWorkflow",
@@ -104,6 +256,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
       expect_oauth_tasks(result[:tasks])
       expect(result[:prompt_source]).to eq("fallback_prompt")
+      expect(result[:policy_metadata]).to include(policy_source: "defaults")
       expect_llm_strategy_decision_logged(
         workflow_name: "Workflows::PlanningWorkflow",
         workflow_id: "planning-wf-1",
@@ -117,7 +270,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       )
     end
 
-    context "when policy-based decomposition applies" do
+    context "when default policy-based decomposition applies" do
       let(:issue) do
         create(
           :issue,
@@ -135,6 +288,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
+        expect(result[:policy_metadata]).to include(policy_source: "defaults")
         expect(AgentHarness).not_to have_received(:send_message)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
@@ -195,19 +349,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           workflow_id: "orchestration-wf-2"
         )
 
-        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
-        expect(result[:tasks]).to eq([])
-        expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
-        expect(AgentHarness).not_to have_received(:send_message)
-        expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
-          hash_including(
-            outcome: "policy_skipped",
-            input_context: hash_including(
-              coordination_policy_present: true
-            ),
-            plan_data: hash_including(tasks: [])
-          )
-        )
+        expect_policy_skip_result(result)
       end
     end
 
@@ -247,6 +389,10 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks].size).to eq(2)
+        expect(result[:policy_metadata]).to include(
+          policy_source: "coordination_policy",
+          policy_key: DecompositionService::POLICY_KEY
+        )
         expect(AgentHarness).not_to have_received(:send_message)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",

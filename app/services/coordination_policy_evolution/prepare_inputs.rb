@@ -36,6 +36,13 @@ module CoordinationPolicyEvolution
     ORCHESTRATION_FAILURE_STATUSES = %w[failed].freeze
     ORCHESTRATION_NOOP_STATUSES = %w[noop].freeze
     DEFAULT_ORCHESTRATION_DECISION_STATUS = "applied"
+    POLICY_PROVENANCE_KEYS = %w[
+      policy_source
+      policy_key
+      coordination_policy_id
+      coordination_policy_version_id
+      coordination_policy_version
+    ].freeze
 
     def self.call(...)
       new(...).call
@@ -251,7 +258,7 @@ module CoordinationPolicyEvolution
           hints: decision.hints,
           error_details: decision.error_details,
           metadata: decision.metadata
-        }
+        }.merge(policy_provenance(decision.metadata))
       end
     end
 
@@ -480,6 +487,10 @@ module CoordinationPolicyEvolution
 
     def policy_description
       POLICY_DESCRIPTIONS.fetch(policy_type, "Account-level coordination policy.")
+    end
+
+    def policy_provenance(metadata)
+      metadata.to_h.deep_stringify_keys.slice(*POLICY_PROVENANCE_KEYS).deep_symbolize_keys
     end
   end
 end

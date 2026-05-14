@@ -13,6 +13,14 @@ module Activities
     POLICY_PROMPT_SOURCE = "policy_service"
     TIMEOUT = 60
     MAX_TASKS = 20
+    POLICY_METADATA_KEYS = %i[
+      policy_source
+      skip_reason
+      policy_key
+      coordination_policy_id
+      coordination_policy_version_id
+      coordination_policy_version
+    ].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -43,7 +51,7 @@ module Activities
           policy_context: policy_context,
           outcome: policy_strategy_outcome_for(policy_result)
         )
-        return policy_result
+        return with_policy_provenance(policy_result)
       end
 
       prompt_data = render_prompt(issue, knowledge_context)
@@ -69,7 +77,13 @@ module Activities
         outcome: llm_strategy_outcome_for(policy_context)
       )
 
-      { tasks: tasks, prompt_source: prompt_data[:prompt_source] }
+      with_policy_provenance(
+        {
+        tasks: tasks,
+        prompt_source: prompt_data[:prompt_source],
+        policy_metadata: policy_context[:metadata]
+      }
+      )
     rescue Temporalio::Error::ApplicationError => e
       log_decomposition_strategy_decision(
         project: project,
@@ -86,7 +100,7 @@ module Activities
           error_message: e.message
         }
       )
-      raise
+      raise application_error_with_policy_provenance(e, policy_context)
     end
 
     private
@@ -110,6 +124,7 @@ module Activities
       context[:source] = decomposition_result.policy_source
       context[:present] = policy_source_present?(decomposition_result.policy_source)
       context[:skip_reason] = decomposition_result.skip_reason
+      context[:metadata] = result_policy_metadata(decomposition_result)
 
       return [ nil, context ] unless use_policy_service_result?(decomposition_result)
 
@@ -128,7 +143,8 @@ module Activities
         tasks: tasks,
         prompt_source: POLICY_PROMPT_SOURCE,
         policy_source: decomposition_result.policy_source,
-        skip_reason: decomposition_result.skip_reason
+        skip_reason: decomposition_result.skip_reason,
+        policy_metadata: result_policy_metadata(decomposition_result)
       }, context ]
     rescue StandardError => e
       context[:error_details] = {
@@ -310,9 +326,67 @@ module Activities
         present: false,
         source: nil,
         skip_reason: nil,
+        metadata: {},
         error_details: {},
         scope_analysis: {}
       }
+    end
+
+    def result_policy_metadata(decomposition_result)
+      policy_applied = decomposition_result.policy_applied.to_h.deep_stringify_keys
+
+      {
+        policy_source: decomposition_result.policy_source,
+        skip_reason: decomposition_result.skip_reason,
+        policy_key: policy_applied["policy_key"],
+        coordination_policy_id: policy_applied["coordination_policy_id"],
+        coordination_policy_version_id: policy_applied["coordination_policy_version_id"],
+        coordination_policy_version: policy_applied["coordination_policy_version"]
+      }.compact
+    end
+
+    def with_policy_provenance(result)
+      payload = result.to_h.deep_symbolize_keys
+      normalized_metadata = normalized_policy_metadata(payload)
+      return payload if normalized_metadata.empty?
+
+      payload.merge(
+        policy_metadata: normalized_metadata,
+        **normalized_metadata
+      )
+    end
+
+    def application_error_with_policy_provenance(error, policy_context)
+      metadata = policy_context[:metadata].to_h.deep_symbolize_keys
+      return error if metadata.empty?
+
+      existing_details = Array(error.details)
+      provenance_details = existing_details.find do |detail|
+        detail.is_a?(Hash) && (detail.key?(:policy_metadata) || detail.key?("policy_metadata"))
+      end
+      return error if provenance_details
+
+      Temporalio::Error::ApplicationError.new(
+        error.message,
+        *existing_details,
+        { policy_metadata: metadata },
+        type: error.type,
+        non_retryable: error.non_retryable,
+        next_retry_delay: error.next_retry_delay,
+        category: error.category
+      )
+    end
+
+    def normalized_policy_metadata(payload)
+      payload = payload.to_h.deep_symbolize_keys
+      top_level_metadata = payload.slice(*POLICY_METADATA_KEYS)
+      nested_metadata = payload[:policy_metadata]
+
+      return top_level_metadata.compact unless nested_metadata.respond_to?(:to_h)
+
+      top_level_metadata.merge(
+        nested_metadata.to_h.deep_symbolize_keys.slice(*POLICY_METADATA_KEYS)
+      ).compact
     end
 
     def log_decomposition_strategy_decision(project:, issue:, workflow_name:, workflow_id:, input_context:, tasks:,

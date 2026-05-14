@@ -12,11 +12,13 @@ on:
 # trusted publish/comment work runs from `pr-screenshots-publish.yml` on
 # `pull_request_target` using base-branch code.
 
-# Cancel in-progress screenshot runs on the same PR when a new commit is pushed.
-# Uses PR number instead of github.ref so pull_request_target events (which resolve
-# to the base branch) don't collide across PRs.
+# Cancel in-progress screenshot runs when the same PR event type is retriggered.
+# Including the action avoids "synchronize" and "ready_for_review" runs for the
+# same SHA canceling each other and leaving duplicate cancelled checks behind.
+# Uses PR number instead of github.ref so pull_request_target events (which
+# resolve to the base branch) don't collide across PRs.
 concurrency:
-  group: pr-screenshots-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: pr-screenshots-${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.action }}
   cancel-in-progress: true
 
 jobs:

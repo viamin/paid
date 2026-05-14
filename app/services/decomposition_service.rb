@@ -146,7 +146,8 @@ class DecompositionService
   end
 
   def extract_decomposition_config_from_hash(config, ignore_default_nested_values: false)
-    return {} unless config.is_a?(Hash)
+    config = normalize_json_object(config)
+    return {} if config.empty?
 
     {}.tap do |result|
       decomposition = config.fetch("decomposition", {})
@@ -241,7 +242,7 @@ class DecompositionService
   end
 
   def normalize_json_object(value)
-    value.is_a?(Hash) ? value : {}
+    value.is_a?(Hash) ? value.deep_stringify_keys : {}
   end
 
   def normalize_max_tasks(value)

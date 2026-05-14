@@ -18,6 +18,13 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   let(:resolve_step) { job.fetch("steps").find { |step| step["name"] == "Resolve PR capture run" } }
   let(:resolve_env) { resolve_step.fetch("env") }
 
+  it "scopes concurrency by PR number and action to avoid cross-event self-cancellation" do
+    expect(workflow.fetch("concurrency")).to include(
+      "group" => "pr-screenshots-publish-${{ github.event.pull_request.number }}-${{ github.event.action }}",
+      "cancel-in-progress" => true
+    )
+  end
+
   it "queries screenshot capture runs by the PR head sha" do
     expect(resolve_step.fetch("run")).to include('head_sha=#{head_sha}&per_page=100')
   end
