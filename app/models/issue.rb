@@ -70,12 +70,16 @@ class Issue < ApplicationRecord
   scope :pull_requests_only, -> { where(is_pull_request: true) }
   scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
+    # Match blocking_issues / lifecycle_statuses semantics: open dependencies
+    # excluding recommend_close (treated as effectively resolved pending
+    # human confirmation, so they should not gate downstream work).
     blocked_by_local_open = IssueDependency
       .joins(:issue, :depends_on_issue)
       .where(
         depends_on_issue: { github_state: "open" },
         issues: { project_id: project.id }
       )
+      .where.not(depends_on_issue: { paid_state: "recommend_close" })
       .select(:issue_id)
 
     # Deployment-blocked deps: target PR has merged/closed, but has not
@@ -320,7 +324,18 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
-    blocked_ids = blocked_by_local | blocked_by_deployment_pending | blocked_by_external
+    # Match auto-pick's without_open_non_pr_subissues semantics: a parent is
+    # blocked while it still has open non-PR sub-issues. Mirrors the
+    # dependency rule above by exempting recommend_close sub-issues.
+    blocked_by_open_subissues = where(
+      parent_issue_id: issue_ids,
+      is_pull_request: false,
+      github_state: "open"
+    ).where.not(paid_state: "recommend_close")
+      .pluck(:parent_issue_id)
+      .to_set
+
+    blocked_ids = blocked_by_local | blocked_by_deployment_pending | blocked_by_external | blocked_by_open_subissues
 
     active_run_ids = AgentRun
       .where(issue_id: issue_ids, status: AgentRun::UNFINISHED_STATUSES)
