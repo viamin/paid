@@ -806,7 +806,7 @@ module Projects
       return unless owner
 
       configured_identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
-      priority_identifiers = owner.settings.provider_priority_for_goal(goal, identifiers: true)
+      priority_identifiers = owner.settings.runner_priority_for_goal(goal, identifiers: true)
       default_identifier = priority_identifiers.first
 
       if requested_runner_identifier.present?
