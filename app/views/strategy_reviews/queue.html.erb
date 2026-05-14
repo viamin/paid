@@ -1,0 +1,46 @@
+<% content_for :title do %>Strategy Review Queue - Paid<% end %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold text-gray-900">Strategy Review Queue</h1>
+    <p class="mt-1 text-sm text-gray-500">Pending strategy candidates that require human approval before promotion.</p>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="overflow-x-auto">
+      <% if @strategy_versions.any? %>
+        <table class="min-w-full divide-y divide-gray-300">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Strategy</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Version</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created By</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created At</th>
+              <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6"><span class="sr-only">Review</span></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @strategy_versions.each do |strategy_version| %>
+              <tr>
+                <td class="py-4 pl-4 pr-3 text-sm sm:pl-6">
+                  <div class="font-medium text-gray-900"><%= strategy_version.strategy.name %></div>
+                  <div class="text-xs font-mono text-gray-500"><%= strategy_version.strategy.slug %></div>
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">v<%= strategy_version.version %></td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= strategy_version.created_by_user&.email || strategy_version.created_by || "-" %></td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= local_time(strategy_version.created_at, format: :short) %></td>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                  <%= link_to "Review", strategy_review_path(strategy_version.strategy, strategy_version), class: "text-indigo-600 hover:text-indigo-900" %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <div class="px-4 py-8 text-center text-sm text-gray-500">
+          No pending strategy reviews.
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

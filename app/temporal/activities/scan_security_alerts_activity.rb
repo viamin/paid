@@ -7,8 +7,8 @@ module Activities
   #
   # Runs after ScanPaidPrsActivity in the GitHubPollWorkflow poll cycle.
   #
-  # CodeQL alerts are checked on a configurable interval (default 72h ≈
-  # 2-3x/week) and only create issues — they are picked up naturally by
+  # CodeQL alerts are checked on a configurable interval (default 24h) and
+  # only create issues — they are picked up naturally by
   # AutoPick.
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"

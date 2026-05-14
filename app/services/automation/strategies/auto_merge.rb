@@ -22,12 +22,14 @@ module Automation
     # - No outstanding review feedback
     # - All blocking review methods complete
     # - Reviews not stale for HEAD
+    # - Dependency PRs already merged
     #
     # *Bot-authored PRs* (Dependabot, Renovate) have a simpler path:
     # - Auto-merge enabled on the project
     # - Dependabot auto-merge enabled
     # - All CI checks green
     # - PR mergeable
+    # - Dependency PRs already merged
     #
     # Bot-authored PRs skip owner-approval and review-feedback gates
     # because bot dependency updates are treated as trusted.
@@ -66,13 +68,15 @@ module Automation
           signals.mergeable? &&
           signals.review_feedback_clear? &&
           signals.blocking_reviews_complete? &&
-          signals.reviews_fresh?
+          signals.reviews_fresh? &&
+          signals.dependencies_resolved?
       end
 
       def bot_eligible?(signals)
         signals.dependabot_eligible? &&
           signals.checks_green? &&
-          signals.mergeable?
+          signals.mergeable? &&
+          signals.dependencies_resolved?
       end
     end
   end

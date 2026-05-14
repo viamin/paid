@@ -18,6 +18,7 @@ module Activities
       custom_prompt = input[:custom_prompt]
       provider_id = input[:runner_id]
       goal = input[:goal]
+      focus = input[:focus] || "general"
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
@@ -81,6 +82,7 @@ module Activities
         source_pull_request_number: source_pull_request_number,
         count_toward_draft_review_round: count_toward_draft_review_round,
         expected_draft_review_count: expected_draft_review_count,
+        focus: focus,
         prompt_version: prompt_version,
         status: "queued",
         temporal_workflow_id: input[:workflow_id] || AgentRun::CLAIMED_SENTINEL
@@ -122,6 +124,7 @@ module Activities
 
         {
           agent_run_id: agent_run.id,
+          focus: agent_run.focus,
           runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
           agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
           issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
@@ -223,6 +226,7 @@ module Activities
       user_settings = resolve_user_settings(agent_run.project)
       {
         agent_run_id: agent_run.id,
+        focus: agent_run.focus,
         provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,

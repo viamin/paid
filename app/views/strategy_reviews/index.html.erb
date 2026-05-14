@@ -1,0 +1,52 @@
+<% content_for :title do %>Pending Strategy Reviews - <%= @strategy.name %> - Paid<% end %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(strategy_reviews_queue_path), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Strategy Review Queue
+    <% end %>
+  </div>
+
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold text-gray-900">Pending Reviews</h1>
+    <p class="mt-1 text-sm text-gray-500"><%= @strategy.name %> candidates waiting for approval.</p>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="overflow-x-auto">
+      <% if @strategy_versions.any? %>
+        <table class="min-w-full divide-y divide-gray-300">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Version</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Change Notes</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created By</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created At</th>
+              <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6"><span class="sr-only">Review</span></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @strategy_versions.each do |strategy_version| %>
+              <tr>
+                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">v<%= strategy_version.version %></td>
+                <td class="px-3 py-4 text-sm text-gray-500"><%= strategy_version.change_notes.presence || "-" %></td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= strategy_version.created_by_user&.email || strategy_version.created_by || "-" %></td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= local_time(strategy_version.created_at, format: :short) %></td>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                  <%= link_to "Review", strategy_review_path(@strategy, strategy_version), class: "text-indigo-600 hover:text-indigo-900" %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <div class="px-4 py-8 text-center text-sm text-gray-500">
+          No pending versions for this strategy.
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

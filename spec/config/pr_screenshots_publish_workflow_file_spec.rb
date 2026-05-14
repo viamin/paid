@@ -6,7 +6,7 @@ require "psych"
 class PrScreenshotsPublishWorkflowFile < Pathname
 end
 
-RSpec.describe PrScreenshotsPublishWorkflowFile do
+RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   subject(:workflow) do
     Psych.safe_load_file(
       Rails.root.join(".github/workflows/pr-screenshots-publish.yml"),
@@ -25,5 +25,10 @@ RSpec.describe PrScreenshotsPublishWorkflowFile do
   it "passes the PR head ref to the resolver for branch-based fallback matching" do
     expect(resolve_env).to include("HEAD_REF" => "${{ github.event.pull_request.head.ref }}")
     expect(resolve_step.fetch("run")).to include('candidate["head_branch"] == head_ref')
+  end
+
+  it "treats missing capture jobs as skipped only when detect completed cleanly" do
+    expect(resolve_step.fetch("run")).to include('elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])')
+    expect(resolve_step.fetch("run")).to include('"Could not find a successful capture job, and detect did not complete cleanly')
   end
 end
