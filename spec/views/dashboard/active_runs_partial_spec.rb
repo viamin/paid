@@ -39,10 +39,12 @@ RSpec.describe "dashboard/_active_runs", :no_db, type: :view do
     allow(view).to receive(:dashboard_cancel_run_path).with(run).and_return("/dashboard/runs/123/cancel")
     allow(view).to receive(:agent_run_status_badge).with("running").and_return('<span>Running</span>'.html_safe)
     allow(view).to receive(:agent_run_priority_badge).with(run).and_return('<span>2 - P1</span>'.html_safe)
+    allow(view).to receive(:agent_run_context_display).with(run).and_return('<span class="context-label">Issue #42</span>'.html_safe)
+    allow(view).to receive(:agent_run_goal_display).with(run).and_return('<span class="goal-label">PR Creation</span>'.html_safe)
     allow(view).to receive(:agent_run_provider_display).with(run).and_return("Codex")
   end
 
-  it "renders the priority column and active run priority value" do
+  it "renders the priority column and shared helper output" do
     render partial: "dashboard/active_runs", locals: { active_runs: [ run ] }
 
     fragment = Nokogiri::HTML.fragment(rendered)
@@ -52,5 +54,7 @@ RSpec.describe "dashboard/_active_runs", :no_db, type: :view do
     expect(headers).to include("Priority")
     expect(row).to be_present
     expect(row.text).to include("2 - P1")
+    expect(row.text).to include("Issue #42")
+    expect(row.text).to include("PR Creation")
   end
 end
