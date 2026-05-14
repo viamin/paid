@@ -124,7 +124,7 @@ module Projects
     end
 
     def experiment_confidence
-      active_experiments.map do |experiment|
+      @experiment_confidence ||= active_experiments.map do |experiment|
         variant_stats = project_scoped_variant_stats(experiment)
         variants = experiment_variants_by_experiment_id.fetch(experiment.id, [])
 
@@ -311,7 +311,6 @@ module Projects
       @active_experiments ||= ConfigurationExperiment
         .running
         .where(config_key: ConfigurationExperiment::TRACKED_CONFIG_KEYS)
-        .includes(:configuration_experiment_variants)
         .select { |experiment| experiment.includes_traffic?(project: project) }
         .sort_by(&:id)
     end
