@@ -31,11 +31,11 @@ module CoordinationPolicyEvolution
       parallelization_planning_failed
       parallelization_failed
     ].freeze
-    ORCHESTRATION_SUCCESS_STATUSES = %w[applied].freeze
-    ESCALATION_SUCCESS_STATUSES = %w[applied deferred resolved].freeze
-    ORCHESTRATION_FAILURE_STATUSES = %w[failed].freeze
-    ORCHESTRATION_NOOP_STATUSES = %w[noop].freeze
-    DEFAULT_ORCHESTRATION_DECISION_STATUS = "applied"
+    ORCHESTRATION_SUCCESS_STATUSES = [ OrchestrationDecision::DEFAULT_DECISION_STATUS ].freeze
+    ESCALATION_SUCCESS_STATUSES = OrchestrationDecision::SUCCESS_STATUSES
+    ORCHESTRATION_FAILURE_STATUSES = OrchestrationDecision::FAILURE_STATUSES
+    ORCHESTRATION_NOOP_STATUSES = OrchestrationDecision::NOOP_STATUSES
+    DEFAULT_ORCHESTRATION_DECISION_STATUS = OrchestrationDecision::DEFAULT_DECISION_STATUS
     POLICY_PROVENANCE_KEYS = %w[
       policy_source
       policy_key
