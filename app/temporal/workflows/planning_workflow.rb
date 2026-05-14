@@ -64,6 +64,7 @@ module Workflows
       tasks = []
       created_issues = []
       prompt_source = nil
+      policy_metadata = {}
       decision_step = "fetch_planning_context"
 
       # Step 1: Fetch knowledge base context for informed decomposition
@@ -89,6 +90,7 @@ module Workflows
 
       tasks = Array(decompose_result[:tasks])
       prompt_source = decompose_result[:prompt_source]
+      policy_metadata = decomposition_policy_metadata(decompose_result)
 
       # Step 3: Create sub-issues from the plan (skip if single-task or empty)
       if tasks.present? && tasks.size > 1
@@ -136,6 +138,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **policy_metadata,
           failed_step: nil,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity
@@ -174,6 +177,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **policy_metadata,
           failed_step: decision_step,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity
@@ -217,6 +221,20 @@ module Workflows
         workflow_id: Temporalio::Workflow.info.workflow_id,
         error_class: log_error.class.to_s,
         error: log_error.message
+      )
+    end
+
+    def decomposition_policy_metadata(decompose_result)
+      metadata = decompose_result[:policy_metadata]
+      return {} unless metadata.respond_to?(:to_h)
+
+      metadata.to_h.deep_symbolize_keys.slice(
+        :policy_source,
+        :skip_reason,
+        :policy_key,
+        :coordination_policy_id,
+        :coordination_policy_version_id,
+        :coordination_policy_version
       )
     end
   end

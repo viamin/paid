@@ -96,6 +96,23 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(tasks[2][:dependencies]).to eq([ 1 ])
     end
 
+    def expect_policy_skip_result(result)
+      expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
+      expect(result[:tasks]).to eq([])
+      expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
+      expect(result[:policy_metadata]).to include(policy_source: "feature_orchestration")
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
+        hash_including(
+          outcome: "policy_skipped",
+          input_context: hash_including(
+            coordination_policy_present: true
+          ),
+          plan_data: hash_including(tasks: [])
+        )
+      )
+    end
+
     it "returns parsed tasks from LLM output" do
       result = execute_with_workflow_context(
         workflow_name: "Workflows::PlanningWorkflow",
@@ -104,6 +121,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
       expect_oauth_tasks(result[:tasks])
       expect(result[:prompt_source]).to eq("fallback_prompt")
+      expect(result[:policy_metadata]).to eq({})
       expect_llm_strategy_decision_logged(
         workflow_name: "Workflows::PlanningWorkflow",
         workflow_id: "planning-wf-1",
@@ -135,6 +153,10 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
+        expect(result[:policy_metadata]).to include(
+          policy_source: "feature_orchestration",
+          policy_key: DecompositionService::POLICY_KEY
+        )
         expect(AgentHarness).not_to have_received(:send_message)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
@@ -195,19 +217,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           workflow_id: "orchestration-wf-2"
         )
 
-        expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
-        expect(result[:tasks]).to eq([])
-        expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
-        expect(AgentHarness).not_to have_received(:send_message)
-        expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
-          hash_including(
-            outcome: "policy_skipped",
-            input_context: hash_including(
-              coordination_policy_present: true
-            ),
-            plan_data: hash_including(tasks: [])
-          )
-        )
+        expect_policy_skip_result(result)
       end
     end
 
@@ -247,6 +257,10 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks].size).to eq(2)
+        expect(result[:policy_metadata]).to include(
+          policy_source: "coordination_policy",
+          policy_key: DecompositionService::POLICY_KEY
+        )
         expect(AgentHarness).not_to have_received(:send_message)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",

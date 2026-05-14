@@ -69,7 +69,13 @@ module Activities
         outcome: llm_strategy_outcome_for(policy_context)
       )
 
-      { tasks: tasks, prompt_source: prompt_data[:prompt_source] }
+      {
+        tasks: tasks,
+        prompt_source: prompt_data[:prompt_source],
+        policy_source: policy_context[:source],
+        skip_reason: policy_context[:skip_reason],
+        policy_metadata: fallback_policy_metadata(policy_context)
+      }
     rescue Temporalio::Error::ApplicationError => e
       log_decomposition_strategy_decision(
         project: project,
@@ -128,7 +134,8 @@ module Activities
         tasks: tasks,
         prompt_source: POLICY_PROMPT_SOURCE,
         policy_source: decomposition_result.policy_source,
-        skip_reason: decomposition_result.skip_reason
+        skip_reason: decomposition_result.skip_reason,
+        policy_metadata: result_policy_metadata(decomposition_result)
       }, context ]
     rescue StandardError => e
       context[:error_details] = {
@@ -313,6 +320,24 @@ module Activities
         error_details: {},
         scope_analysis: {}
       }
+    end
+
+    def result_policy_metadata(decomposition_result)
+      {
+        policy_source: decomposition_result.policy_source,
+        skip_reason: decomposition_result.skip_reason,
+        policy_key: decomposition_result.policy_applied["policy_key"],
+        coordination_policy_id: decomposition_result.policy_applied["coordination_policy_id"],
+        coordination_policy_version_id: decomposition_result.policy_applied["coordination_policy_version_id"],
+        coordination_policy_version: decomposition_result.policy_applied["coordination_policy_version"]
+      }.compact
+    end
+
+    def fallback_policy_metadata(policy_context)
+      {
+        policy_source: policy_context[:source],
+        skip_reason: policy_context[:skip_reason]
+      }.compact
     end
 
     def log_decomposition_strategy_decision(project:, issue:, workflow_name:, workflow_id:, input_context:, tasks:,

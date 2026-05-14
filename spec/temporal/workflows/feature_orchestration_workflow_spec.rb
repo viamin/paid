@@ -41,6 +41,22 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         )
     end
 
+    def expect_feature_planning_decision_logged
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::LogDecompositionDecisionActivity,
+          hash_including(
+            decision_type: "planning_outcome",
+            outcome: "sub_issues_created",
+            metadata: hash_including(
+              policy_source: "coordination_policy",
+              policy_key: "feature_decomposition",
+              coordination_policy_id: 12
+            )
+          ),
+          timeout: 30,
+          retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+    end
+
     it "accepts a single input parameter" do
       params = workflow.method(:execute).parameters
       expect(params).to eq([ [ :req, :input ] ])
@@ -107,11 +123,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             timeout: 120
           )
         expect_orchestration_sub_issue_creation!
-        expect(workflow).to have_received(:run_activity)
-          .with(Activities::LogDecompositionDecisionActivity,
-            hash_including(decision_type: "planning_outcome", outcome: "sub_issues_created"),
-            timeout: 30,
-            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+        expect_feature_planning_decision_logged
       end
 
       it "launches ParallelAgentExecutionWorkflow as child workflow" do
@@ -173,7 +185,12 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             hash_including(
               decision_type: "parallelization_outcome",
               outcome: "parallel_execution_planned",
-              plan_data: hash_including(sub_tasks: array_including(hash_including(issue_id: 10)))
+              plan_data: hash_including(sub_tasks: array_including(hash_including(issue_id: 10))),
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition",
+                coordination_policy_id: 12
+              )
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
@@ -244,7 +261,11 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           .with(Activities::LogDecompositionDecisionActivity,
             hash_including(
               decision_type: "parallelization_outcome",
-              outcome: "parallel_execution_skipped_single_task"
+              outcome: "parallel_execution_skipped_single_task",
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition"
+              )
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
@@ -283,7 +304,13 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         expect(Temporalio::Workflow).not_to have_received(:execute_child_workflow)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::LogDecompositionDecisionActivity,
-            hash_including(outcome: "parallel_execution_skipped_empty_plan"),
+            hash_including(
+              outcome: "parallel_execution_skipped_empty_plan",
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition"
+              )
+            ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
       end
@@ -682,7 +709,16 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
       when "Activities::FetchPlanningContextActivity"
         { context: { issue_title: "Feature", knowledge_snippets: [] } }
       when "Activities::DecomposeFeatureActivity"
-        { tasks: tasks }
+        {
+          tasks: tasks,
+          policy_metadata: {
+            policy_source: "coordination_policy",
+            policy_key: "feature_decomposition",
+            coordination_policy_id: 12,
+            coordination_policy_version_id: 34,
+            coordination_policy_version: 5
+          }
+        }
       when "Activities::CreateSubIssuesActivity"
         { created_issues: created_issues }
       when "Activities::UpdatePlanningLabelsActivity"
