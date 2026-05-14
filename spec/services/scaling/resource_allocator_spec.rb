@@ -196,6 +196,25 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.reason).to include("iteration_count decision")
       end
 
+      it "picks the strongest decision per dimension when duplicates exist" do
+        low_confidence = build_experiment_decision_summary("agent_count",
+          recommended_value: 9, requested_agent_count: 9, max_batch_size: 9,
+          sample_count: 6, confidence: "low")
+        high_confidence = build_experiment_decision_summary("agent_count",
+          recommended_value: 2, requested_agent_count: 2, max_batch_size: 2,
+          sample_count: 10, confidence: "high")
+        parallelism = build_experiment_decision_summary("parallelism",
+          recommended_value: 3, requested_agent_count: 2, max_batch_size: 3,
+          sample_count: 6, confidence: "medium")
+
+        result = described_class.call(
+          inputs: default_inputs,
+          experiment_summaries: [ low_confidence, high_confidence, parallelism ]
+        )
+
+        expect(result.agent_count).to eq(2)
+      end
+
       it "allocates based on the experiment's leading value" do
         summaries = [
           { assigned_value: 1, success_rate: 0.4, avg_duration_seconds: 300, sample_count: 10 },

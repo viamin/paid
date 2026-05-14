@@ -124,7 +124,7 @@ module ScalingExperiments
     def leading_summary
       @leading_summary ||= viable_values.max_by do |summary|
         [
-          summary["primary_metric_value"].to_f,
+          summary["transformed_primary_metric"].to_f,
           summary["efficiency_score"].to_f,
           summary["sample_count"].to_i
         ]
@@ -140,7 +140,7 @@ module ScalingExperiments
         candidates.max_by do |summary|
           [
             summary["efficiency_score"].to_f,
-            summary["primary_metric_value"].to_f,
+            summary["transformed_primary_metric"].to_f,
             summary["sample_count"].to_i
           ]
         end
@@ -161,6 +161,7 @@ module ScalingExperiments
 
       summary.merge(
         "primary_metric_value" => primary_value,
+        "transformed_primary_metric" => transformed,
         "efficiency_score" => efficiency_score,
         "efficiency_gain_vs_control" => efficiency_gain_vs_control(efficiency_score),
         "marginal_primary_gain" => marginal_gain,

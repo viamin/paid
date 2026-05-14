@@ -45,6 +45,24 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     )
   end
 
+  it "ranks on transformed metric so minimize objectives pick lowest cost as leading value" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "avg_cost_cents", "primary" => true, "objective" => "minimize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "avg_duration_seconds", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_summary(1, sample_count: 3, success_rate: 0.90, duration: 120, cost: 500),
+      build_summary(2, sample_count: 3, success_rate: 0.85, duration: 150, cost: 200),
+      build_summary(4, sample_count: 3, success_rate: 0.80, duration: 200, cost: 100)
+    )
+
+    expect(result["leading_value"]).to eq(4)
+  end
+
   it "emits iteration allocation guidance for iteration-count experiments" do
     allow(experiment).to receive(:dimension).and_return("iteration_count")
 

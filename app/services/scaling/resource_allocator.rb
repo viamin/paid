@@ -16,6 +16,7 @@ module Scaling
     STALE_THRESHOLD = 7.days
     MIN_SUCCESS_RATE_FOR_LEARNING = 0.3
     DIMINISHING_RETURNS_THRESHOLD = 0.05
+    CONFIDENCE_RANK = { "high" => 3, "medium" => 2, "low" => 1 }.freeze
 
     attr_reader :inputs, :observations, :experiment_summaries
 
@@ -85,7 +86,9 @@ module Scaling
     end
 
     def allocate_from_experiment_decisions
-      decisions_by_dimension = experiment_allocator_decisions.index_by { |entry| entry[:dimension].to_s }
+      decisions_by_dimension = experiment_allocator_decisions
+        .group_by { |entry| entry[:dimension].to_s }
+        .transform_values { |entries| pick_strongest_decision(entries) }
       agent_decision = decisions_by_dimension["agent_count"]&.fetch(:decision, nil)
       parallelism_decision = decisions_by_dimension["parallelism"]&.fetch(:decision, nil)
       iteration_decision = decisions_by_dimension["max_iterations"]&.fetch(:decision, nil) ||
@@ -286,6 +289,13 @@ module Scaling
     end
 
     ALLOCATOR_DECISION_DIMENSIONS = %w[agent_count iteration_count max_iterations parallelism].freeze
+
+    def pick_strongest_decision(entries)
+      entries.max_by do |entry|
+        confidence_rank = CONFIDENCE_RANK.fetch(summary_value(entry[:decision], :confidence, default: "low"), 0)
+        [ confidence_rank, entry[:decision_sample_count] ]
+      end
+    end
 
     def experiment_allocator_decisions
       @experiment_allocator_decisions ||= experiment_summaries.filter_map do |summary|
