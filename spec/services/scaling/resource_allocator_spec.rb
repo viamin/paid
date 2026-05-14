@@ -181,6 +181,21 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
     end
 
     context "with experiment summaries but no observations" do
+      it "combines agent-count, parallelism, and iteration experiment decisions" do
+        result = described_class.call(
+          inputs: default_inputs,
+          experiment_summaries: experiment_decision_summaries
+        )
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(3)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.max_iterations).to eq(4)
+        expect(result.reason).to include("agent_count decision")
+        expect(result.reason).to include("parallelism decision")
+        expect(result.reason).to include("iteration_count decision")
+      end
+
       it "allocates based on the experiment's leading value" do
         summaries = [
           { assigned_value: 1, success_rate: 0.4, avg_duration_seconds: 300, sample_count: 10 },
@@ -287,7 +302,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.source).to eq(:experiment)
         expect(result.agent_count).to eq(4)
         expect(result.parallelism_level).to eq(2)
-        expect(result.reason).to include("parallelism allocator decision")
+        expect(result.reason).to include("parallelism decision")
       end
 
       it "ignores allocator decisions whose winning candidate is under-supported even when the summary total is sufficient" do
@@ -693,6 +708,37 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       "values" => [
         { "assigned_value" => value }.merge(attributes.transform_keys(&:to_s))
       ]
+    }
+  end
+
+  def experiment_decision_summaries
+    [
+      build_experiment_decision_summary("agent_count",
+        recommended_value: 3,
+        requested_agent_count: 3,
+        max_batch_size: 3,
+        sample_count: 6,
+        confidence: "high"),
+      build_experiment_decision_summary("parallelism",
+        recommended_value: 2,
+        requested_agent_count: 3,
+        max_batch_size: 2,
+        sample_count: 6,
+        confidence: "high"),
+      build_experiment_decision_summary("iteration_count",
+        recommended_value: 4,
+        requested_iteration_count: 4,
+        max_iterations: 4,
+        sample_count: 6,
+        confidence: "medium")
+    ]
+  end
+
+  def build_experiment_decision_summary(dimension, **decision)
+    {
+      dimension: dimension,
+      status: "ready_for_analysis",
+      allocator_decision: decision
     }
   end
 end

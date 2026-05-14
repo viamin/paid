@@ -13,6 +13,7 @@ module ScalingExperiments
     def call
       summaries = value_summaries
       analysis = parallelism_analysis
+      scaling_law = scaling_law_analysis(summaries)
       control = summaries.find { |summary| summary["assigned_value"] == scaling_experiment.control_value }
       leader = summaries.max_by { |summary| leader_sort_key(summary) }
 
@@ -25,8 +26,9 @@ module ScalingExperiments
         "cohort_strategy" => scaling_experiment.cohort_settings.slice("assignment_strategy", "cadence", "label_template"),
         "sample_count" => summaries.sum { |summary| summary["sample_count"] },
         "values" => summaries,
+        "scaling_law" => scaling_law,
         "parallelism_analysis" => analysis,
-        "allocator_decision" => analysis["allocator_decision"],
+        "allocator_decision" => allocator_decision_for(scaling_law, analysis),
         "leading_value" => leader&.fetch("assigned_value", nil),
         "improvement_over_control" => (comparison = improvement_over_control(control:, leader:)),
         "initial_results" => initial_results(control:, leader:, comparison:)
@@ -81,6 +83,21 @@ module ScalingExperiments
 
     def parallelism_analysis
       ScalingObservations::AnalyzeParallelism.call(observations: recorded_observations).to_h
+    end
+
+    def scaling_law_analysis(summaries)
+      ScalingExperiments::AnalyzeScalingLaw.call(
+        scaling_experiment: scaling_experiment,
+        value_summaries: summaries
+      ).to_h
+    end
+
+    def allocator_decision_for(scaling_law, parallelism_analysis)
+      if scaling_experiment.dimension == "parallelism"
+        parallelism_analysis["allocator_decision"] || scaling_law["allocator_decision"]
+      else
+        scaling_law["allocator_decision"]
+      end
     end
 
     def improvement_over_control(control:, leader:)
