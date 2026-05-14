@@ -148,6 +148,17 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
     end
 
+    it "includes active project experiments before they have assignment data" do
+      experiment, = create_experiment(project:)
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
+      expect(stats[:experiment_confidence].first[:variants]).to all(include(sample_count: 0, sparse: true))
+      expect(stats[:sparse_details][:sparse_experiment_count]).to eq(1)
+    end
+
     it "loads experiment variants once per experiment when building confidence stats" do
       experiment, control, variant = create_experiment(project:)
       create_bundle(project:, experiment:, variant:)

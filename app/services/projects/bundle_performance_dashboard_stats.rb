@@ -21,6 +21,7 @@ module Projects
 
       {
         summary: summary,
+        sparse_details: sparse_details(insights),
         bundle_rankings: bundle_rankings,
         experiment_confidence: experiment_confidence,
         optimizer_insights: insights,
@@ -58,6 +59,16 @@ module Projects
       return false unless summary[:outcome_count].zero? && summary[:active_experiment_count].zero?
 
       insights.none? { |insight| insight[:candidates].present? }
+    end
+
+    def sparse_details(insights)
+      {
+        sparse_bundle_count: summary[:sparse_bundle_count],
+        sparse_experiment_count: experiment_confidence.count do |experiment|
+          experiment[:variants].any? { |variant| variant[:sparse] }
+        end,
+        sparse_goal_count: insights.count { |insight| insight[:sparse] }
+      }
     end
 
     def bundle_rankings
@@ -300,13 +311,9 @@ module Projects
       @active_experiments ||= ConfigurationExperiment
         .running
         .where(config_key: ConfigurationExperiment::TRACKED_CONFIG_KEYS)
-        .where(
-          id: ConfigurationExperimentAssignment
-            .joins(:agent_run)
-            .where(agent_runs: { project_id: project.id })
-            .select(:configuration_experiment_id)
-        )
-        .to_a
+        .includes(:configuration_experiment_variants)
+        .select { |experiment| experiment.includes_traffic?(project: project) }
+        .sort_by(&:id)
     end
 
     def experiment_variants_by_experiment_id

@@ -44,6 +44,26 @@
       </div>
     </div>
 
+    <% sparse_details = @stats[:sparse_details] %>
+    <% if sparse_details[:sparse_bundle_count].positive? || sparse_details[:sparse_experiment_count].positive? || sparse_details[:sparse_goal_count].positive? %>
+      <div class="mt-6 rounded-lg bg-yellow-50 p-4 ring-1 ring-inset ring-yellow-200">
+        <h2 class="text-sm font-semibold text-yellow-900">Sparse Evidence Summary</h2>
+        <p class="mt-1 text-sm text-yellow-800">
+          <% sparse_notes = [] %>
+          <% if sparse_details[:sparse_bundle_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_bundle_count], 'bundle')} below the 3-sample review threshold" %>
+          <% end %>
+          <% if sparse_details[:sparse_experiment_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_experiment_count], 'active experiment')} still needs more samples" %>
+          <% end %>
+          <% if sparse_details[:sparse_goal_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_goal_count], 'optimizer goal')} currently relies on sparse predictions" %>
+          <% end %>
+          <%= sparse_notes.join(". ") %>.
+        </p>
+      </div>
+    <% end %>
+
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Bundle Performance</h2>
       <p class="mt-1 text-sm text-gray-500">Top bundles ranked by the observed outcome-cost objective, with raw quality and efficiency shown alongside sparse evidence warnings.</p>
