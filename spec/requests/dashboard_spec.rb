@@ -510,6 +510,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Orchestration Decision Metrics")
       expect(response.body).to include("Decision Types by Context")
       expect(response.body).to include("Outcomes by Decision Type")
+      expect(response.body).to include("Recorded Decision Statuses")
       expect(response.body).to include("Decision Actors")
     end
 
@@ -546,7 +547,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Alpha")
       expect(response.body).to include("timeout_auto_retry")
       expect(actor_headers).to include("Actor")
-      expect(actor_headers).to include("Applied")
+      expect(actor_headers).to include("Successful")
       expect(actor_headers).to include("Failed")
       expect(response.body).not_to include("Ignored")
       expect(response.body).not_to include("Planning Outcome")

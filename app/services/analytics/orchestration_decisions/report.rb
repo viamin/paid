@@ -17,6 +17,7 @@ module Analytics
           questions: QuestionSet.all,
           filters: serialized_filters,
           summary: SummaryQuery.new(relation: relation, filters: filters).call,
+          status_breakdown: StatusBreakdownQuery.new(relation: relation, filters: filters).call,
           by_project: ByProjectQuery.new(relation: relation, filters: filters).call,
           by_decision_type: ByDecisionTypeQuery.new(relation: relation, filters: filters).call,
           outcome_by_decision_type: OutcomeByDecisionTypeQuery.new(relation: relation, filters: filters).call,

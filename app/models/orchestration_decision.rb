@@ -1,6 +1,17 @@
 # frozen_string_literal: true
 
 class OrchestrationDecision < ApplicationRecord
+  DEFAULT_DECISION_STATUS = "applied"
+  OTHER_STATUS_GROUP = "other"
+  SUCCESS_STATUSES = %w[applied deferred resolved].freeze
+  NOOP_STATUSES = %w[noop].freeze
+  FAILURE_STATUSES = %w[failed].freeze
+  ANALYTICS_STATUS_GROUPS = {
+    "successful" => SUCCESS_STATUSES,
+    "noop" => NOOP_STATUSES,
+    "failed" => FAILURE_STATUSES
+  }.freeze
+
   belongs_to :project
   belongs_to :agent_run, optional: true
   belongs_to :strategy_version, optional: true
@@ -21,6 +32,20 @@ class OrchestrationDecision < ApplicationRecord
   scope :by_decision_type, ->(decision_type) { where(decision_type: decision_type) }
   scope :by_actor, ->(actor) { where(actor: actor) }
   scope :recent, -> { order(created_at: :desc, id: :desc) }
+
+  def self.normalized_decision_status(status)
+    status.to_s.presence || DEFAULT_DECISION_STATUS
+  end
+
+  def self.analytics_status_group(status)
+    normalized_status = normalized_decision_status(status)
+
+    ANALYTICS_STATUS_GROUPS.each do |group, statuses|
+      return group if statuses.include?(normalized_status)
+    end
+
+    OTHER_STATUS_GROUP
+  end
 
   # Convenience factory for retry/escalation decision logging. Maps the
   # action/decision_point/signals/result interface used by orchestration

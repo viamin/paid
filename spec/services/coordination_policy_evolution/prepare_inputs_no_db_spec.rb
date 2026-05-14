@@ -58,7 +58,11 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
 
       allow(service).to receive(:scoped_decisions).and_return(scoped)
       allow(scoped).to receive(:where)
-        .with("COALESCE(context->>'decision_status', ?) IN (?)", "applied", %w[applied deferred resolved])
+        .with(
+          "COALESCE(context->>'decision_status', ?) IN (?)",
+          "applied",
+          OrchestrationDecision::SUCCESS_STATUSES
+        )
         .and_return(successful)
       allow(successful).to receive(:order).with(created_at: :desc, id: :desc).and_return(successful)
       allow(successful).to receive(:limit).with(5).and_return(sampled)
@@ -72,7 +76,11 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
 
       allow(service).to receive(:scoped_decisions).and_return(scoped)
       allow(scoped).to receive(:where)
-        .with("COALESCE(context->>'decision_status', ?) IN (?)", "applied", %w[applied deferred resolved])
+        .with(
+          "COALESCE(context->>'decision_status', ?) IN (?)",
+          "applied",
+          OrchestrationDecision::SUCCESS_STATUSES
+        )
         .and_return(successful)
 
       expect(service.send(:successful_decisions)).to eq(successful)

@@ -82,12 +82,14 @@ module DashboardHelper
   }.freeze
 
   DECISION_STATUS_BADGE_CLASSES = {
+    "successful" => "bg-emerald-100 text-emerald-700",
     "applied" => "bg-emerald-100 text-emerald-700",
     "noop" => "bg-amber-100 text-amber-700",
     "failed" => "bg-rose-100 text-rose-700"
   }.freeze
 
   DECISION_STATUS_BAR_CLASSES = {
+    "successful" => "bg-emerald-500",
     "applied" => "bg-emerald-500",
     "noop" => "bg-amber-500",
     "failed" => "bg-rose-500"
@@ -109,6 +111,14 @@ module DashboardHelper
 
   def decision_status_bar_classes(status)
     DECISION_STATUS_BAR_CLASSES.fetch(status.to_s, "bg-slate-400")
+  end
+
+  def decision_status_group(status)
+    OrchestrationDecision.analytics_status_group(status)
+  end
+
+  def decision_status_label(status)
+    OrchestrationDecision.normalized_decision_status(status).tr("_", " ").titleize
   end
 
   # Dark-mode colors for these badges are handled by the global unlayered
