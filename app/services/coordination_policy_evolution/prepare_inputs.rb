@@ -490,7 +490,7 @@ module CoordinationPolicyEvolution
     end
 
     def policy_provenance(metadata)
-      metadata.to_h.slice(*POLICY_PROVENANCE_KEYS).deep_symbolize_keys
+      metadata.to_h.deep_stringify_keys.slice(*POLICY_PROVENANCE_KEYS).deep_symbolize_keys
     end
   end
 end

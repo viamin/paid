@@ -149,6 +149,27 @@ RSpec.describe CoordinationPolicyEvolution::PrepareInputs, :no_db do
       )
       expect(provenance.keys).to all(be_a(Symbol))
     end
+
+    it "extracts provenance from symbol-keyed metadata" do
+      provenance = service.send(
+        :policy_provenance,
+        {
+          policy_source: "coordination_policy",
+          policy_key: "feature_decomposition",
+          coordination_policy_id: 12,
+          coordination_policy_version_id: 34,
+          coordination_policy_version: 5
+        }
+      )
+
+      expect(provenance).to include(
+        policy_source: "coordination_policy",
+        policy_key: "feature_decomposition",
+        coordination_policy_id: 12,
+        coordination_policy_version_id: 34,
+        coordination_policy_version: 5
+      )
+    end
   end
 
   describe "unsupported policy types" do
