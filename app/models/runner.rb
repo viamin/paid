@@ -81,6 +81,7 @@ class Runner < ApplicationRecord
   scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :sync_provider_key_bridge
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
   before_discard :prevent_destroying_last_agent_run_runner
@@ -568,6 +569,18 @@ class Runner < ApplicationRecord
   def normalize_agent_co_author_trailer
     stripped = agent_co_author_trailer.to_s.strip
     self.agent_co_author_trailer = stripped.present? ? stripped : nil
+  end
+
+  def sync_provider_key_bridge
+    if will_save_change_to_runner_key?
+      self[:provider_key] = runner_key
+    elsif will_save_change_to_provider_key?
+      self[:runner_key] = self[:provider_key]
+    elsif self[:runner_key].blank? && self[:provider_key].present?
+      self[:runner_key] = self[:provider_key]
+    elsif self[:provider_key].blank? && self[:runner_key].present?
+      self[:provider_key] = self[:runner_key]
+    end
   end
 
   def agent_co_author_trailer_is_single_line

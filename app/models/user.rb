@@ -13,9 +13,9 @@ class User < ApplicationRecord
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_one :user_setting, dependent: :destroy
   has_many :runner_states, dependent: :destroy
-  has_many :provider_states, class_name: "RunnerState", dependent: :destroy
+  has_many :provider_states, class_name: "ProviderState", dependent: :destroy
   has_many :runners, dependent: :destroy
-  has_many :providers, class_name: "Runner", dependent: :destroy
+  has_many :providers, class_name: "Provider", dependent: :destroy
   has_many :provider_api_keys, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy

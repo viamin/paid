@@ -9,11 +9,11 @@ RSpec.describe Provider, :no_db do
   end
 
   it "keeps provider-named associations available on bridged models" do
-    expect(User.reflect_on_association(:providers)&.klass).to eq(Runner)
-    expect(User.reflect_on_association(:provider_states)&.klass).to eq(RunnerState)
-    expect(ProviderApiKey.reflect_on_association(:providers)&.klass).to eq(Runner)
-    expect(AgentRun.reflect_on_association(:provider)&.klass).to eq(Runner)
-    expect(ChatSession.reflect_on_association(:provider)&.klass).to eq(Runner)
+    expect(User.reflect_on_association(:providers)&.klass).to eq(described_class)
+    expect(User.reflect_on_association(:provider_states)&.klass).to eq(ProviderState)
+    expect(ProviderApiKey.reflect_on_association(:providers)&.klass).to eq(described_class)
+    expect(AgentRun.reflect_on_association(:provider)&.klass).to eq(described_class)
+    expect(ChatSession.reflect_on_association(:provider)&.klass).to eq(described_class)
   end
 
   it "keeps provider-named compatibility methods available" do

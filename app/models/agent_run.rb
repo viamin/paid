@@ -130,7 +130,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
-  belongs_to :provider, -> { with_discarded }, class_name: "Runner", foreign_key: :runner_id, optional: true
+  belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
 

@@ -52,11 +52,14 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
     backfill "UPDATE providers SET runner_key = provider_key"
 
     safety_assured { change_column_null :providers, :runner_key, false }
+    safety_assured { change_column_null :providers, :provider_key, true }
     add_runner_unique_indexes
   end
 
   def down_providers_columns
     remove_runner_unique_indexes
+    backfill "UPDATE providers SET provider_key = runner_key WHERE provider_key IS NULL"
+    safety_assured { change_column_null :providers, :provider_key, false }
     safety_assured { remove_column :providers, :runner_key }
 
     rename_constraint(:providers,
@@ -75,6 +78,7 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
     backfill "UPDATE provider_states SET runner_name = provider_name"
 
     safety_assured { change_column_null :provider_states, :runner_name, false }
+    safety_assured { change_column_null :provider_states, :provider_name, true }
     safety_assured do
       add_index :provider_states, [ :user_id, :runner_name ],
         unique: true, name: "index_provider_states_on_user_id_and_runner_name"
@@ -83,6 +87,8 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
 
   def down_provider_states_columns
     safety_assured { remove_index :provider_states, name: "index_provider_states_on_user_id_and_runner_name" }
+    backfill "UPDATE provider_states SET provider_name = runner_name WHERE provider_name IS NULL"
+    safety_assured { change_column_null :provider_states, :provider_name, false }
     safety_assured { remove_column :provider_states, :runner_name }
   end
 

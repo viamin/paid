@@ -6,6 +6,8 @@ class RunnerState < ApplicationRecord
 
   belongs_to :user
 
+  before_validation :sync_provider_name_bridge
+
   validates :runner_name, presence: true, length: { maximum: 50 }
   validates :circuit_state, presence: true, inclusion: { in: CIRCUIT_STATES }
   validates :failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -90,5 +92,19 @@ class RunnerState < ApplicationRecord
   # Returns true if the runner is currently unavailable (rate limited or circuit open).
   def unavailable?
     rate_limited? || circuit_open?
+  end
+
+  private
+
+  def sync_provider_name_bridge
+    if will_save_change_to_runner_name?
+      self[:provider_name] = runner_name
+    elsif will_save_change_to_provider_name?
+      self[:runner_name] = self[:provider_name]
+    elsif self[:runner_name].blank? && self[:provider_name].present?
+      self[:runner_name] = self[:provider_name]
+    elsif self[:provider_name].blank? && self[:runner_name].present?
+      self[:provider_name] = self[:runner_name]
+    end
   end
 end

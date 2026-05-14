@@ -6,7 +6,7 @@ class ProviderApiKey < ApplicationRecord
   has_logidze
   belongs_to :user
   has_many :runners, -> { kept }, dependent: :restrict_with_error
-  has_many :providers, -> { kept }, class_name: "Runner", dependent: :restrict_with_error
+  has_many :providers, -> { kept }, class_name: "Provider", dependent: :restrict_with_error
 
   encrypts :api_key
 
