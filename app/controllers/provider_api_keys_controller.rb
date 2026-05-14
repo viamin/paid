@@ -5,7 +5,7 @@ class ProviderApiKeysController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    @provider_api_keys = policy_scope(ProviderApiKey).includes(:providers).ordered
+    @provider_api_keys = policy_scope(ProviderApiKey).includes(:runners).ordered
   end
 
   def show
