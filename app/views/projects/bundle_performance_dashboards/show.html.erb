@@ -54,10 +54,10 @@
             <% sparse_notes << "#{pluralize(sparse_details[:sparse_bundle_count], 'bundle')} below the 3-sample review threshold" %>
           <% end %>
           <% if sparse_details[:sparse_experiment_count].positive? %>
-            <% sparse_notes << "#{pluralize(sparse_details[:sparse_experiment_count], 'active experiment')} still need more samples" %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_experiment_count], 'active experiment')} still #{sparse_details[:sparse_experiment_count] == 1 ? 'needs' : 'need'} more samples" %>
           <% end %>
           <% if sparse_details[:sparse_goal_count].positive? %>
-            <% sparse_notes << "#{pluralize(sparse_details[:sparse_goal_count], 'optimizer goal')} currently rely on sparse predictions" %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_goal_count], 'optimizer goal')} currently #{sparse_details[:sparse_goal_count] == 1 ? 'relies' : 'rely'} on sparse predictions" %>
           <% end %>
           <%= sparse_notes.join(". ") %>.
         </p>
