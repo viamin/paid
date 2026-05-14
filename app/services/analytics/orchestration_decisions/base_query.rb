@@ -54,18 +54,22 @@ module Analytics
       end
 
       def distinct_status_count(status)
-        statuses = Array(status).map { |value| ActiveRecord::Base.connection.quote(value) }
-        predicate =
-          if statuses.one?
-            "#{decision_status_sql} = #{statuses.first}"
-          else
-            "#{decision_status_sql} IN (#{statuses.join(', ')})"
-          end
+        distinct_count(
+          Arel::Nodes::Case.new
+            .when(status_predicate(status))
+            .then(orchestration_decisions_table[:id])
+        )
+      end
 
-        Arel.sql(
-          "COUNT(DISTINCT CASE " \
-          "WHEN #{predicate} " \
-          "THEN orchestration_decisions.id END)"
+      def status_count(status)
+        Arel::Nodes::NamedFunction.new(
+          "SUM",
+          [
+            Arel::Nodes::Case.new
+              .when(status_predicate(status))
+              .then(Arel::Nodes.build_quoted(1))
+              .else(Arel::Nodes.build_quoted(0))
+          ]
         )
       end
 
@@ -75,6 +79,24 @@ module Analytics
 
       def decision_status_sql
         "COALESCE(orchestration_decisions.context ->> 'decision_status', '#{DEFAULT_DECISION_STATUS}')"
+      end
+
+      def decision_status_node
+        Arel::Nodes::NamedFunction.new(
+          "COALESCE",
+          [
+            Arel::Nodes::InfixOperation.new(
+              "->>",
+              orchestration_decisions_table[:context],
+              Arel::Nodes.build_quoted("decision_status")
+            ),
+            Arel::Nodes.build_quoted(DEFAULT_DECISION_STATUS)
+          ]
+        )
+      end
+
+      def status_predicate(status)
+        decision_status_node.in(Array(status))
       end
 
       def total_count

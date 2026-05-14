@@ -8,9 +8,9 @@ module Analytics
           .left_joins(:agent_run)
           .select(
             "COUNT(*) AS total_count",
-            "COUNT(*) FILTER (WHERE #{decision_status_sql} IN ('applied', 'deferred', 'resolved')) AS successful_count",
-            "COUNT(*) FILTER (WHERE #{decision_status_sql} = 'noop') AS noop_count",
-            "COUNT(*) FILTER (WHERE #{decision_status_sql} = 'failed') AS failed_count",
+            status_count(grouped_statuses("successful")).as("successful_count"),
+            status_count("noop").as("noop_count"),
+            status_count("failed").as("failed_count"),
             "COUNT(DISTINCT orchestration_decisions.agent_run_id) AS linked_agent_run_count",
             "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status = 'completed') AS completed_run_count",
             "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status IN ('failed', 'timeout', 'auth_expired', 'rate_limited', 'cancelled')) AS failed_run_count",

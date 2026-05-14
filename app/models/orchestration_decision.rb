@@ -2,6 +2,7 @@
 
 class OrchestrationDecision < ApplicationRecord
   DEFAULT_DECISION_STATUS = "applied"
+  OTHER_STATUS_GROUP = "other"
   SUCCESS_STATUSES = %w[applied deferred resolved].freeze
   NOOP_STATUSES = %w[noop].freeze
   FAILURE_STATUSES = %w[failed].freeze
@@ -43,7 +44,7 @@ class OrchestrationDecision < ApplicationRecord
       return group if statuses.include?(normalized_status)
     end
 
-    "successful"
+    OTHER_STATUS_GROUP
   end
 
   # Convenience factory for retry/escalation decision logging. Maps the
