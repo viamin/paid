@@ -148,6 +148,17 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
     end
 
+    it "excludes running experiments from other accounts even when rollout membership matches" do
+      selected_experiment, = create_experiment(project:)
+      other_account_project = create(:project)
+      create_experiment(project: other_account_project)
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
+    end
+
     it "includes active project experiments before they have assignment data" do
       experiment, = create_experiment(project:)
 
