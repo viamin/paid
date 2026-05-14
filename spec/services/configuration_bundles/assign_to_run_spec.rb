@@ -52,7 +52,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     ]
   end
 
-  it "assigns a deterministic configuration bundle including active experiments" do
+  it "assigns a deterministic configuration bundle and records project context during task bootstrap" do
     model_selection
     project_services
 
@@ -60,7 +60,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
     expect(agent_run.reload.configuration_bundle).to eq(bundle)
     expect(agent_run.configuration_bundle_selection_mode).to eq("exploitative")
-    expect(agent_run.configuration_bundle_selection_context).to eq("task")
+    expect(agent_run.configuration_bundle_selection_context).to eq("project")
     expect_bundle_definition(bundle)
     expect_bundle_identity(bundle)
     expect(ConfigurationExperimentAssignment.find_by(configuration_experiment: experiment, agent_run: agent_run)).to be_present
