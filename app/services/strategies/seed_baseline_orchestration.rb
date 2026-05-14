@@ -2,6 +2,10 @@
 
 module Strategies
   class SeedBaselineOrchestration
+    BASELINE_PROVENANCE_SOURCE = "baseline_workflow_extraction"
+    SEED_CHANGE_REASONING = "Extracted from current hardcoded workflow defaults without semantic changes."
+    SEED_CHANGE_NOTES = "Baseline strategy version seeded from runtime behavior."
+
     def self.call
       new.call
     end
@@ -27,22 +31,41 @@ module Strategies
       )
       strategy.save! if strategy.changed?
 
-      return strategy if strategy.current_version.present?
+      strategy.with_lock do
+        current_version = strategy.reload.current_version
+        return strategy if current_version_matches_definition?(current_version, definition)
 
-      version = strategy.create_version!(
-        content: definition.fetch(:content),
-        provenance: {
-          "source" => "baseline_workflow_extraction",
-          "decision_type" => definition.fetch(:decision_type)
-        },
-        promotion_state: "active",
-        created_by: "seed",
-        reasoning: "Extracted from current hardcoded workflow defaults without semantic changes.",
-        change_notes: "Initial baseline strategy version seeded from runtime behavior.",
-        promoted_at: Time.current
-      )
-      strategy.update!(current_version: version)
+        promoted_at = Time.current
+        version = strategy.create_version!(
+          content: definition.fetch(:content),
+          provenance: baseline_provenance(definition),
+          promotion_state: "active",
+          created_by: "seed",
+          reasoning: SEED_CHANGE_REASONING,
+          change_notes: SEED_CHANGE_NOTES,
+          promoted_at: promoted_at
+        )
+        current_version&.update!(
+          promotion_state: "retired",
+          retired_at: promoted_at
+        )
+        strategy.update!(current_version: version)
+      end
+
       strategy
+    end
+
+    def current_version_matches_definition?(current_version, definition)
+      current_version&.active? &&
+        current_version.content == definition.fetch(:content) &&
+        current_version.provenance == baseline_provenance(definition)
+    end
+
+    def baseline_provenance(definition)
+      {
+        "source" => BASELINE_PROVENANCE_SOURCE,
+        "decision_type" => definition.fetch(:decision_type)
+      }
     end
   end
 end
