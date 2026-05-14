@@ -51,7 +51,7 @@ module ConfigurationBundles
     end
 
     def call
-      rows = load_outcome_rows
+      rows = load_outcome_rows.map { |row| backfill_metrics(row) }
       return empty_result(rows.size) if rows.size < MIN_OUTCOMES_FOR_TREND
 
       early, recent = split_rows(rows)
@@ -97,14 +97,16 @@ module ConfigurationBundles
             bundle_outcomes.metrics->>'objective_score',
             bundle_outcomes.metrics->>'quality_per_dollar',
             bundle_outcomes.metrics->>'selection_mode',
-            bundle_outcomes.created_at
+            bundle_outcomes.created_at,
+            bundle_outcomes.duration_seconds
           SQL
         )
         .map { |row| parse_row(row) }
     end
 
     def parse_row(row)
-      quality_score, cost_cents, success, objective_raw, qpd_raw, selection_mode, created_at = row
+      quality_score, cost_cents, success, objective_raw, qpd_raw, selection_mode, created_at, duration_seconds = row
+
       {
         quality_score: quality_score.to_f,
         cost_cents: cost_cents.to_i,
@@ -112,8 +114,76 @@ module ConfigurationBundles
         objective_score: objective_raw.present? ? objective_raw.to_f : nil,
         quality_per_dollar: qpd_raw.present? ? qpd_raw.to_f : nil,
         selection_mode: selection_mode,
-        created_at: created_at
+        created_at: created_at,
+        duration_seconds: duration_seconds&.to_f
       }
+    end
+
+    # Backfills missing objective_score and quality_per_dollar using the same
+    # weighted formula that BundlePerformanceDashboardStats applies in SQL,
+    # so legacy outcomes without persisted metrics are not silently dropped.
+    def backfill_metrics(row)
+      row.merge(
+        objective_score: row[:objective_score] || fallback_objective_score(row[:quality_score], row[:cost_cents], row[:duration_seconds]),
+        quality_per_dollar: row[:quality_per_dollar] || fallback_quality_per_dollar(row[:quality_score], row[:cost_cents])
+      )
+    end
+
+    # Mirrors BundlePerformanceDashboardStats#objective_score_fallback_sql:
+    # weighted combination of quality, normalized-inverse cost, and
+    # normalized-inverse speed using the same reference values.
+    def fallback_objective_score(quality_score, cost_cents, duration_seconds)
+      weights = optimizer_weights
+      quality_component = weights[:quality] * quality_score.clamp(0.0, 1.0)
+      cost_component    = weights[:cost] * normalized_inverse(cost_cents, reference_cost_cents)
+      speed_component   = weights[:speed] * normalized_inverse(duration_seconds, reference_duration_seconds)
+
+      (quality_component + cost_component + speed_component).round(4)
+    end
+
+    def fallback_quality_per_dollar(quality_score, cost_cents)
+      return nil if cost_cents.nil? || cost_cents.zero?
+
+      quality_score.to_f / (cost_cents.to_f / 100.0)
+    end
+
+    def normalized_inverse(value, reference)
+      return 0.0 if value.nil?
+
+      reference / ([ value, 0.0 ].max + reference)
+    end
+
+    def optimizer_weights
+      @optimizer_weights ||= begin
+        configured = project_optimizer_setting("weights")
+        PromptEvolution::FitnessFunction.new(samples: [], weights: configured).score.weights
+      end
+    end
+
+    def reference_cost_cents
+      @reference_cost_cents ||= positive_setting(
+        project_optimizer_setting("reference_cost_cents"),
+        PromptEvolution::FitnessFunction::DEFAULT_REFERENCE_COST_CENTS
+      )
+    end
+
+    def reference_duration_seconds
+      @reference_duration_seconds ||= positive_setting(
+        project_optimizer_setting("reference_duration_seconds"),
+        PromptEvolution::FitnessFunction::DEFAULT_REFERENCE_DURATION_SECONDS
+      )
+    end
+
+    def project_optimizer_setting(*path)
+      settings = project.try(:fitness_settings)
+      return unless settings.is_a?(Hash)
+
+      settings.deep_stringify_keys.dig("configuration_bundle_optimizer", *path)
+    end
+
+    def positive_setting(value, fallback)
+      numeric = Float(value, exception: false)
+      numeric&.positive? ? numeric : fallback.to_f
     end
 
     def split_rows(rows)

@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
   let(:project) { double(id: 42) }
 
-  def make_row(quality_score:, cost_cents:, success:, objective_score:, quality_per_dollar: nil, selection_mode: nil)
+  def make_row(quality_score:, cost_cents:, success:, objective_score:, quality_per_dollar: nil, selection_mode: nil, duration_seconds: nil)
     {
       quality_score: quality_score,
       cost_cents: cost_cents,
@@ -13,7 +13,8 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       objective_score: objective_score,
       quality_per_dollar: quality_per_dollar,
       selection_mode: selection_mode,
-      created_at: Time.current
+      created_at: Time.current,
+      duration_seconds: duration_seconds
     }
   end
 
@@ -281,7 +282,7 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
   end
 
   describe "edge cases" do
-    it "handles nil objective scores gracefully" do
+    it "backfills objective scores from quality/cost/speed when metrics lack them" do
       rows = [
         make_row(quality_score: 0.5, cost_cents: 100, success: true, objective_score: nil, selection_mode: "exploitative"),
         make_row(quality_score: 0.6, cost_cents: 100, success: true, objective_score: nil, selection_mode: "exploitative"),
@@ -294,7 +295,8 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       result = service.call
 
       expect(result.sufficient_data).to be true
-      expect(result.objective_improvement).to be_nil
+      expect(result.objective_improvement).not_to be_nil
+      expect(result.objective_improvement).to be > 0
       expect(result.quality_improvement).to be > 0
     end
 
