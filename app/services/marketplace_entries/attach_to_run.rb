@@ -2,11 +2,12 @@
 
 module MarketplaceEntries
   class AttachToRun
-    attr_reader :agent_run, :manual_entry_ids
+    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled
 
-    def initialize(agent_run:, manual_entry_ids: nil)
+    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
       @agent_run = agent_run
       @manual_entry_ids = manual_entry_ids
+      @auto_attach_enabled = auto_attach_enabled
     end
 
     def self.call(...)
@@ -14,7 +15,7 @@ module MarketplaceEntries
     end
 
     def call
-      results = Resolver.call(project: agent_run.project, agent_run:, manual_entry_ids:)
+      results = Resolver.call(project: agent_run.project, agent_run:, manual_entry_ids:, auto_attach_enabled:)
 
       AgentRunMarketplaceEntry.transaction do
         agent_run.agent_run_marketplace_entries.delete_all

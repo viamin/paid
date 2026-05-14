@@ -36,5 +36,11 @@ module MarketplaceEntries
 
       "prompt_append"
     end
+
+    STRATEGIES_PROMPT_ONLY = Set.new(%w[prompt_append]).freeze
+
+    def self.prompt_only?(strategy)
+      STRATEGIES_PROMPT_ONLY.include?(strategy)
+    end
   end
 end

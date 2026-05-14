@@ -4,12 +4,13 @@ module MarketplaceEntries
   class Resolver
     Result = Struct.new(:entry, :version, :source, :reason, keyword_init: true)
 
-    attr_reader :project, :agent_run, :manual_entry_ids
+    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled
 
-    def initialize(project:, agent_run:, manual_entry_ids: nil)
+    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
       @project = project
       @agent_run = agent_run
       @manual_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
+      @auto_attach_enabled = auto_attach_enabled
     end
 
     def self.call(...)
@@ -18,15 +19,17 @@ module MarketplaceEntries
 
     def call
       selections = {}
-      attach_automatic_entries!(selections)
-      attach_team_default_entries!(selections)
       attach_manual_entries!(selections)
+      attach_team_default_entries!(selections)
+      attach_automatic_entries!(selections)
       selections.values
     end
 
     private
 
     def attach_automatic_entries!(selections)
+      return unless auto_attach_enabled?
+
       compatible_entries.each do |entry|
         matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "automatic" && rule_matches?(rule, entry)
@@ -43,6 +46,8 @@ module MarketplaceEntries
     end
 
     def attach_team_default_entries!(selections)
+      return unless auto_attach_enabled?
+
       compatible_entries.each do |entry|
         matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "team_default" && rule_matches?(rule, entry)
@@ -134,6 +139,10 @@ module MarketplaceEntries
 
     def provider_key
       @provider_key ||= agent_run.provider&.provider_key || ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
+    end
+
+    def auto_attach_enabled?
+      auto_attach_enabled || effective_manual_entry_ids.any?
     end
   end
 end

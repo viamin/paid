@@ -53,7 +53,7 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
 
     add_reference :marketplace_entries,
       :current_version,
-      foreign_key: { to_table: :marketplace_entry_versions },
+      foreign_key: { to_table: :marketplace_entry_versions, on_delete: :nullify },
       comment: "Current active content snapshot for this marketplace entry."
 
     add_index :marketplace_entries, [ :account_id, :entry_type, :status ]

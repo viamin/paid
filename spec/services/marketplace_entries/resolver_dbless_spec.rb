@@ -11,7 +11,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     entry = build_entry
 
-    resolver = described_class.new(project:, agent_run:)
+    resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
     allow(resolver).to receive(:candidate_entries).and_return([ entry ])
 
     results = resolver.call
@@ -19,6 +19,38 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:entry)).to eq([ entry ])
     expect(results.map(&:source)).to eq([ "automatic" ])
     expect(results.map(&:reason)).to eq([ "Matched automatically" ])
+  end
+
+  it "does not auto-attach without opt-in" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    entry = build_entry
+
+    resolver = described_class.new(project:, agent_run:)
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+    results = resolver.call
+
+    expect(results).to be_empty
+  end
+
+  it "opts in to auto-attach when manual entries are present" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries_with_manual
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    entry = build_entry
+
+    resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ entry.id ])
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:source)).to include("automatic")
   end
 
   def agent_run_marketplace_entries
@@ -33,6 +65,22 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     instance_double(ResolverDblessAttachments).tap do |attachments|
       allow(attachments).to receive(:where).with(attachment_source: "manual").and_return(attachments)
       allow(attachments).to receive(:pluck).with(:marketplace_entry_id).and_return([])
+    end
+  end
+
+  def agent_run_marketplace_entries_with_manual
+    stub_const("ResolverDblessManualAttachments", Class.new do
+      def where(...)
+      end
+
+      def pluck(...)
+      end
+    end)
+
+    manual_relation = instance_double(ResolverDblessManualAttachments)
+    allow(manual_relation).to receive(:pluck).with(:marketplace_entry_id).and_return([ 7 ])
+    instance_double(ResolverDblessManualAttachments).tap do |attachments|
+      allow(attachments).to receive(:where).with(attachment_source: "manual").and_return(manual_relation)
     end
   end
 

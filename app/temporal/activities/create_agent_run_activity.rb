@@ -219,7 +219,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      MarketplaceEntries::AttachToRun.call(agent_run: agent_run)
+      MarketplaceEntries::AttachToRun.call(agent_run: agent_run, auto_attach_enabled: true)
       assign_configuration_bundle(agent_run)
 
       logger.info(
