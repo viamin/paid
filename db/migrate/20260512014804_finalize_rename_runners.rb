@@ -57,6 +57,37 @@ class FinalizeRenameRunners < ActiveRecord::Migration[8.1]
     add_column :agent_runs, :provider_switches, :integer, default: 0, null: false
     add_column :agent_runs, :provider_id, :bigint
 
+    safety_assured do
+      execute <<~SQL.squish
+        UPDATE agent_runs
+        SET provider_id = runner_id,
+            provider_switches = runner_switches,
+            providers_attempted = runners_attempted,
+            final_provider = final_runner
+      SQL
+      execute <<~SQL.squish
+        UPDATE chat_sessions
+        SET provider_id = runner_id
+      SQL
+      execute <<~SQL.squish
+        UPDATE user_settings
+        SET default_agent_provider = default_agent_runner,
+            default_agent_providers_by_goal = default_agent_runners_by_goal,
+            fallback_providers = fallback_runners,
+            provider_selection_mode = runner_selection_mode,
+            provider_round_robin_state = runner_round_robin_state,
+            kb_chat_provider = kb_chat_runner,
+            kb_chat_fallback_providers = kb_chat_fallback_runners,
+            kb_embedding_provider = kb_embedding_runner,
+            kb_embedding_fallback_providers = kb_embedding_fallback_runners
+      SQL
+      execute <<~SQL.squish
+        UPDATE tenant_settings
+        SET provider_preferences = runner_preferences,
+            allowed_provider_keys = allowed_runner_keys
+      SQL
+    end
+
     add_index :chat_sessions, :provider_id, name: "index_chat_sessions_on_provider_id"
     add_foreign_key :chat_sessions, :providers, on_delete: :nullify
 

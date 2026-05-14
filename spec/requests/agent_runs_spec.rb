@@ -70,6 +70,20 @@ RSpec.describe "AgentRuns" do
         expect(runner_cell.text.squish).to eq(configured_runner.display_name)
       end
 
+      it "renders exactly one Runner column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr")
+
+        get agent_runs_path
+
+        document = parsed_html
+        runner_headers = document.css("thead th").select { |header| header.text.squish == "Runner" }
+        runner_cells = document.css("tbody tr##{ActionView::RecordIdentifier.dom_id(run)} td")
+          .select { |cell| cell.text.squish == Runner.display_name_for(run.effective_runner) }
+
+        expect(runner_headers.size).to eq(1)
+        expect(runner_cells.size).to eq(1)
+      end
+
       it "shows a deleted-runner fallback label in the Runner column" do
         run = create(:agent_run, :with_custom_prompt, project: project, runner: nil,
           final_runner: "runner:999999")

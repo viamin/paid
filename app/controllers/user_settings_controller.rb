@@ -81,7 +81,7 @@ class UserSettingsController < ApplicationController
     ].each do |key|
       next unless raw_params.key?(key)
 
-      permitted[key] = UserSetting.parse_provider_array_param(raw_params[key])
+      permitted[key] = UserSetting.parse_runner_array_param(raw_params[key])
     end
 
     permitted

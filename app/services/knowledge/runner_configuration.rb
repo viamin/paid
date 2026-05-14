@@ -54,7 +54,7 @@ module Knowledge
     end
 
     def configured_embedding_runners
-      return [ UserSetting::KB_EMBEDDING_PROVIDER_DEFAULT ] unless user_setting
+      return [ UserSetting::KB_EMBEDDING_RUNNER_DEFAULT ] unless user_setting
 
       Knowledge::RunnerSelector.for_embedding(user_setting: user_setting)
     end

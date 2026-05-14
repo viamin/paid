@@ -38,6 +38,7 @@ Rails.application.routes.draw do
   get "dashboard/decision_metrics", to: "dashboard#decision_metrics", as: :dashboard_decision_metrics
   get "dashboard/runner_health", to: "dashboard#runner_health", as: :dashboard_runner_health
   get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
+  get "dashboard/knowledge_stats", to: "dashboard#knowledge_stats", as: :dashboard_knowledge_stats
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub
