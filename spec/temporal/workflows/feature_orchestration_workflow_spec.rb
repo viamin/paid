@@ -407,7 +407,15 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           .with(Activities::LogDecompositionDecisionActivity,
             hash_including(
               decision_type: "parallelization_outcome",
-              outcome: "parallelization_planning_failed"
+              outcome: "parallelization_planning_failed",
+              metadata: hash_including(
+                policy_source: "coordination_policy",
+                policy_key: "feature_decomposition",
+                coordination_policy_id: 12,
+                coordination_policy_version_id: 34,
+                coordination_policy_version: 5,
+                failed_step: "build_sub_tasks"
+              )
             ),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)

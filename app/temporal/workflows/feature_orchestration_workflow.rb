@@ -335,6 +335,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: failed_step
         }
       )
