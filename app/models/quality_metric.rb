@@ -18,6 +18,45 @@ class QualityMetric < ApplicationRecord
     "agent_rerun_count" => 0.10
   }.freeze
 
+  FOCUS_WEIGHTS = {
+    "ci_fix" => {
+      "ci_passed" => 0.50,
+      "lint_clean" => 0.20,
+      "tests_pass" => 0.20,
+      "iterations" => 0.10
+    },
+    "review_feedback" => {
+      "focus_resolved" => 0.60,
+      "iterations" => 0.20,
+      "lint_clean" => 0.10,
+      "tests_pass" => 0.10
+    },
+    "merge_conflict" => {
+      "focus_resolved" => 0.70,
+      "ci_passed" => 0.15,
+      "iterations" => 0.15
+    },
+    "conversation" => {
+      "focus_resolved" => 0.60,
+      "iterations" => 0.20,
+      "lint_clean" => 0.10,
+      "tests_pass" => 0.10
+    },
+    "label_action" => {
+      "focus_resolved" => 0.60,
+      "iterations" => 0.20,
+      "lint_clean" => 0.10,
+      "tests_pass" => 0.10
+    },
+    "issue_implementation" => {
+      "focus_resolved" => 0.50,
+      "ci_passed" => 0.15,
+      "iterations" => 0.15,
+      "lint_clean" => 0.10,
+      "tests_pass" => 0.10
+    }
+  }.freeze
+
   # Goal-specific weights for composite quality scoring.
   # Each goal type has different signals relevant to its output quality.
   GOAL_WEIGHTS = {
@@ -103,12 +142,20 @@ class QualityMetric < ApplicationRecord
     (weighted_sum / total_weight).round(4)
   end
 
+  def self.weights_for(goal: "create_pr", focus: "general")
+    goal_weights = GOAL_WEIGHTS.fetch(goal, SCORE_WEIGHTS)
+    return goal_weights unless goal == "create_pr"
+
+    FOCUS_WEIGHTS.fetch(focus.to_s, SCORE_WEIGHTS)
+  end
+
   # Calculates composite score from individual scores using goal-specific weights.
   #
   # @return [Float, nil] Score between 0.0 and 1.0, or nil if no scores
   def calculate_composite_score
-    goal = agent_run&.goal
-    weights = GOAL_WEIGHTS.fetch(goal, SCORE_WEIGHTS)
+    goal = agent_run&.goal || "create_pr"
+    focus = agent_run&.focus || "general"
+    weights = self.class.weights_for(goal:, focus:)
     self.class.weighted_average(scores, weights: weights)
   end
 
