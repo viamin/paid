@@ -10,6 +10,8 @@ module Projects
   # - automation_label_name (e.g. "paid-automation")
   # - enhance_issue_needs_input_label_name (e.g. "paid-needs-input")
   # - enhance_issue_enhanced_label_name    (e.g. "paid-enhanced")
+  # - recommend_close                      (e.g. "paid-recommend-close"; overridable via
+  #                                         Project#label_for_stage("recommend_close"))
   # - Priority labels       (P1, P2, P3 by default)
   #
   # @example
@@ -24,6 +26,7 @@ module Projects
       automation: { color: "1d76db", description: "Triggers Paid automation" },
       enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue" },
+      recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
       priority: {
         "P1" => { color: "d93f0b", description: "High priority" },
         "P2" => { color: "ff9800", description: "Medium priority" },
@@ -98,6 +101,17 @@ module Projects
         name: project.enhance_issue_enhanced_label_name,
         color: LABEL_DEFINITIONS[:enhance_issue_enhanced][:color],
         description: LABEL_DEFINITIONS[:enhance_issue_enhanced][:description]
+      }
+
+      # No dedicated column for the recommend_close label; the runtime
+      # resolves it via Project#label_for_stage with a constant fallback,
+      # so mirror that resolution here.
+      recommend_close_name = project.label_for_stage("recommend_close") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
+      labels << {
+        name: recommend_close_name,
+        color: LABEL_DEFINITIONS[:recommend_close][:color],
+        description: LABEL_DEFINITIONS[:recommend_close][:description]
       }
 
       project.effective_priority_labels.each do |tier, label_name|
