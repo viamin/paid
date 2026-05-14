@@ -26,6 +26,7 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   let(:env) { capture_job.fetch("env") }
   let(:steps) { capture_job.fetch("steps") }
   let(:browser_step) { steps.find { |step| step["name"] == "Locate Chromium-family browser" } }
+  let(:role_step) { steps.find { |step| step["name"] == "Create application database role" } }
   let(:resolve_publish_step) { publish_job.fetch("steps").find { |step| step["name"] == "Resolve PR capture run" } }
 
   it "uses the runner's local Chromium-family browser when one is available" do
@@ -37,6 +38,14 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
 
   it "does not define a remote Chrome service for screenshot capture" do
     expect(services).not_to have_key("chrome")
+  end
+
+  it "uses the default postgres service credentials instead of a custom application role" do
+    expect(env).to include(
+      "DB_USERNAME" => "postgres",
+      "DB_PASSWORD" => "postgres"
+    )
+    expect(role_step).to be_nil
   end
 
   it "falls back to a capture_failed publish status when capture run resolution fails" do
