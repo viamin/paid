@@ -48,6 +48,14 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     expect(services).not_to have_key("chrome")
   end
 
+  it "uploads screenshot artifacts only when capture produced PNGs" do
+    upload_step = steps.find { |step| step["name"] == "Upload screenshots to artifacts" }
+
+    expect(upload_step).to be_present
+    expect(upload_step.fetch("if")).to include("hashFiles('tmp/screenshots/*.png') != ''")
+    expect(upload_step.fetch("with")).to include("if-no-files-found" => "error")
+  end
+
   it "uses the default postgres service credentials instead of a custom application role" do
     expect(env).to include(
       "DB_USERNAME" => "postgres",
