@@ -48,8 +48,12 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     expect(services).not_to have_key("chrome")
   end
 
-  it "does not install a separate PostgreSQL client for screenshot capture" do
-    expect(steps.find { |step| step["name"] == "Install PostgreSQL client" }).to be_nil
+  it "installs the pinned PostgreSQL client for screenshot capture" do
+    pg_client_step = steps.find { |step| step["name"] == "Install PostgreSQL client" }
+
+    expect(pg_client_step).to be_present
+    expect(pg_client_step.fetch("run")).to include("apt.postgresql.org/pub/repos/apt")
+    expect(pg_client_step.fetch("run")).to include("postgresql-client-16=16.13-1.pgdg24.04+1")
   end
 
   it "uploads screenshot artifacts only when capture produced PNGs" do
