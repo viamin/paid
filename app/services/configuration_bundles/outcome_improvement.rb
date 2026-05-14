@@ -99,7 +99,7 @@ module ConfigurationBundles
     private
 
     def outcome_count
-      @outcome_count ||= bundle_outcomes_scope.count
+      @outcome_count ||= all_bundle_outcomes_scope.count
     end
 
     def load_aggregate_row
@@ -110,11 +110,10 @@ module ConfigurationBundles
       ActiveRecord::Base.connection.select_all(period_snapshots_sql).to_a
     end
 
-    def bundle_outcomes_scope
-      @bundle_outcomes_scope ||= BundleOutcome
+    def all_bundle_outcomes_scope
+      @all_bundle_outcomes_scope ||= BundleOutcome
         .joins(:agent_run)
         .where(agent_runs: { project_id: project.id })
-        .where.not(quality_score: nil)
     end
 
     def aggregate_sql
@@ -157,7 +156,7 @@ module ConfigurationBundles
     def annotated_outcomes_sql
       midpoint = midpoint_count
 
-      bundle_outcomes_scope
+      all_bundle_outcomes_scope
         .select(Arel.sql(<<~SQL.squish))
           bundle_outcomes.success,
           bundle_outcomes.quality_score::double precision AS quality_score,

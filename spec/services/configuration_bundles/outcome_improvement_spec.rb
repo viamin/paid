@@ -136,6 +136,27 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
       expect(result.periods.first.outcome_count).to be > 0
       expect(result.periods.first.avg_objective_score).not_to be_nil
     end
+
+    it "counts unscored outcomes while preserving scored aggregates" do
+      stub_result(
+        count: 6,
+        aggregate: aggregate_row(
+          "early_quality_score" => nil,
+          "recent_quality_score" => 0.8
+        ),
+        periods: [
+          period_row(period_index: 1, outcome_count: 3, avg_objective_score: 0.5, avg_quality_score: nil, avg_cost_cents: 180.0, avg_quality_per_dollar: nil, success_rate: 0.3333),
+          period_row(period_index: 2, outcome_count: 3, avg_objective_score: 0.75, avg_quality_score: 0.8, avg_cost_cents: 120.0, avg_quality_per_dollar: 0.68, success_rate: 1.0)
+        ]
+      )
+
+      result = service.call
+
+      expect(result.outcome_count).to eq(6)
+      expect(result.early_quality_score).to be_nil
+      expect(result.periods.first.outcome_count).to eq(3)
+      expect(result.periods.first.success_rate).to eq(0.3333)
+    end
   end
 
   describe "quality-per-dollar fallback" do
@@ -320,7 +341,7 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
     let(:scope) { instance_double(ActiveRecord::Relation) }
 
     before do
-      allow(service).to receive_messages(bundle_outcomes_scope: scope, outcome_count: 6)
+      allow(service).to receive_messages(all_bundle_outcomes_scope: scope, outcome_count: 6)
       allow(scope).to receive(:select) do |sql|
         double(to_sql: sql.to_s)
       end
@@ -347,6 +368,12 @@ RSpec.describe ConfigurationBundles::OutcomeImprovement, :no_db do
 
       expect(sql).to include("NULLIF(bundle_outcomes.metrics ->> 'quality_per_dollar', '')::double precision")
       expect(sql).to include("GREATEST(bundle_outcomes.cost_cents / 100.0, 0.01)")
+    end
+
+    it "keeps unscored outcomes in the annotated dataset for counts and success rate" do
+      sql = service.send(:annotated_outcomes_sql)
+
+      expect(sql).not_to include("quality_score IS NOT NULL")
     end
   end
 end
