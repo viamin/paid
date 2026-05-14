@@ -2,6 +2,8 @@
 
 module Knowledge
   class ContextIntakeController < ApplicationController
+    WIZARD_FRAME_ID = "context_intake_wizard"
+
     before_action :authenticate_user!
     before_action :set_project
     before_action :set_session, only: [ :show, :update, :complete ]
@@ -10,7 +12,10 @@ module Knowledge
     def show
       authorize @project, :show?
       @session ||= latest_session
-      load_wizard_state(active_section_key: params[:section]) if @session&.in_progress?
+      return unless @session&.in_progress?
+
+      load_wizard_state(active_question_key: params[:question])
+      render_wizard_response if turbo_frame_request?
     end
 
     def create
@@ -24,21 +29,23 @@ module Knowledge
     def update
       authorize @project, :update?
 
-      question_key = params[:question_key]
-      skipped = params[:skipped] == "true"
-      answer_text = params[:answer_text]
+      save_current_response!
+      @session.reload
 
-      ContextIntake::SaveResponse.call(
-        session: @session,
-        question_key: question_key,
-        answer_text: answer_text,
-        skipped: skipped
+      if finish_navigation?
+        complete_session!
+      else
+        load_wizard_state(active_question_key: navigation_question_key)
+        render_wizard_response
+      end
+    rescue ArgumentError, ActiveRecord::RecordInvalid => e
+      @wizard_error = e.message
+      target_question_key = error_question_key
+      load_wizard_state(
+        active_question_key: target_question_key,
+        submitted_answer_text: submitted_answer_text_for(target_question_key)
       )
-
-      load_wizard_state(active_section_key: preferred_section_after_update(question_key))
-      render :show
-    rescue ArgumentError => e
-      redirect_to project_context_intake_path(@project), alert: e.message
+      render_wizard_response(status: :unprocessable_entity)
     end
 
     def complete
@@ -46,6 +53,7 @@ module Knowledge
 
       ContextIntake::CompleteSession.call(session: @session)
       redirect_to project_context_intake_path(@project),
+        status: :see_other,
         notice: "Business context saved and synthesized into project knowledge."
     rescue ActiveRecord::RecordInvalid => e
       redirect_to project_context_intake_path(@project), alert: e.message
@@ -74,52 +82,133 @@ module Knowledge
       @project.context_intake_sessions.latest_first.first
     end
 
-    def load_wizard_state(active_section_key: nil)
-      @sections = ContextIntake::QuestionnaireSchema.sections
+    def load_wizard_state(active_question_key: nil, submitted_answer_text: nil)
       @responses = @session.context_intake_responses.ordered.index_by(&:question_key)
       @progress = @session.progress
-      @active_section_key = resolve_active_section_key(active_section_key)
+      @wizard_state = ContextIntake::WizardState.new(
+        responses: @responses,
+        active_question_key: active_question_key
+      )
+      @current_question_index = @wizard_state.current_question_index
+      @current_question = @wizard_state.current_question
+      @current_response = @responses[@current_question[:key]]
+      @current_answer_text = submitted_answer_text.nil? ? @current_response&.answer_text : submitted_answer_text
+      @previous_question = @wizard_state.previous_question
+      @next_question = @wizard_state.next_question
     end
 
-    def resolve_active_section_key(active_section_key)
-      valid_section_keys = @sections.map { |section| section[:key] }
-      requested_section = active_section_key.presence_in(valid_section_keys)
+    def save_current_response!
+      validate_required_answer!
 
-      requested_section || next_incomplete_section_key || @sections.first&.fetch(:key, nil)
+      ContextIntake::SaveResponse.call(
+        session: @session,
+        question_key: params[:question_key],
+        answer_text: normalized_answer_text,
+        skipped: skip_navigation?
+      )
     end
 
-    def next_incomplete_section_key
-      @sections.find do |section|
-        section[:questions].any? { |question| !@responses[question[:key]]&.answered? }
-      end&.fetch(:key, nil)
+    def complete_session!
+      ContextIntake::CompleteSession.call(session: @session)
+      redirect_to project_context_intake_path(@project),
+        status: :see_other,
+        notice: "Business context saved and synthesized into project knowledge."
     end
 
-    def preferred_section_after_update(question_key)
-      section_key = ContextIntake::QuestionnaireSchema.find_question(question_key)&.dig(:section, :key)
-      return unless section_key
-
-      responses = @session.context_intake_responses.index_by(&:question_key)
-
-      return section_key if section_has_unanswered_questions?(section_key, responses)
-
-      next_incomplete_section_key_for_session(responses) || section_key
-    end
-
-    def section_has_unanswered_questions?(section_key, responses)
-      section = ContextIntake::QuestionnaireSchema.sections.find { |entry| entry[:key] == section_key }
-      return false unless section
-
-      section[:questions].any? do |question|
-        !responses[question[:key]]&.answered?
+    def render_wizard_response(status: :ok)
+      if turbo_frame_request?
+        render partial: "knowledge/context_intake/wizard_frame",
+          locals: wizard_locals, status: status
+      else
+        render :show, status: status
       end
     end
 
-    def next_incomplete_section_key_for_session(responses)
-      ContextIntake::QuestionnaireSchema.sections.find do |section|
-        section[:questions].any? do |question|
-          !responses[question[:key]]&.answered?
-        end
-      end&.fetch(:key, nil)
+    def wizard_locals
+      {
+        project: @project,
+        wizard_state: @wizard_state,
+        current_question: @current_question,
+        current_answer_text: @current_answer_text,
+        current_response: @current_response,
+        previous_question: @previous_question,
+        next_question: @next_question,
+        progress: @progress,
+        wizard_error: @wizard_error
+      }
+    end
+
+    def navigation_action
+      params[:navigation_action].presence || "next"
+    end
+
+    def skip_navigation?
+      navigation_action.start_with?("skip_")
+    end
+
+    def normalized_navigation_action
+      navigation_action.delete_prefix("skip_")
+    end
+
+    def finish_navigation?
+      normalized_navigation_action == "finish"
+    end
+
+    def navigation_question_key
+      wizard_state.navigation_question_key(
+        current_question_key: params[:question_key],
+        direction: normalized_navigation_action
+      )
+    end
+
+    def validate_required_answer!
+      return unless answer_required_for_navigation?
+      return if normalized_answer_text.present?
+
+      raise ActiveRecord::RecordInvalid.new(@session),
+        "Please answer this required question before continuing."
+    end
+
+    def answer_required_for_navigation?
+      current_question_required? && !skip_navigation? && !previous_navigation?
+    end
+
+    def current_question_required?
+      ContextIntake::QuestionnaireSchema.find_question(params[:question_key])&.dig(:question, :required)
+    end
+
+    def previous_navigation?
+      normalized_navigation_action == "previous"
+    end
+
+    def error_question_key
+      return first_unanswered_required_question_key if finish_navigation?
+
+      params[:question_key]
+    end
+
+    def submitted_answer_text_for(target_question_key)
+      normalized_answer_text if target_question_key == params[:question_key]
+    end
+
+    def first_unanswered_required_question_key
+      responses = @session.context_intake_responses.ordered.index_by(&:question_key)
+
+      ContextIntake::WizardState.new(
+        responses: responses,
+        active_question_key: params[:question_key]
+      ).first_unanswered_required_question_key
+    end
+
+    def wizard_state
+      @wizard_state ||= ContextIntake::WizardState.new(responses: @responses)
+    end
+
+    def normalized_answer_text
+      answer_text = params[:answer_text].to_s
+      return if answer_text.strip.empty?
+
+      answer_text
     end
 
     def abort_if_in_progress!

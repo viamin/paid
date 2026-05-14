@@ -51,4 +51,44 @@ RSpec.describe CoordinationPolicyVersion do
       expect(next_version.reload.status).to eq("active")
     end
   end
+
+  describe "review state" do
+    it "treats versions without review metadata as activatable" do
+      version = build(:coordination_policy_version, metadata: {})
+
+      expect(version).to be_activatable
+      expect(version).not_to be_review_required
+    end
+
+    it "requires approval when metadata marks the version pending review" do
+      version = build(:coordination_policy_version, metadata: {
+        "evolution" => {
+          "approval" => {
+            "required" => true,
+            "status" => "pending_review"
+          }
+        }
+      })
+
+      expect(version).to be_review_required
+      expect(version.review_status).to eq("pending_review")
+      expect(version).not_to be_approved
+      expect(version).not_to be_activatable
+    end
+
+    it "allows activation once the required review is approved" do
+      version = build(:coordination_policy_version, metadata: {
+        "evolution" => {
+          "approval" => {
+            "required" => true,
+            "status" => "approved"
+          }
+        }
+      })
+
+      expect(version).to be_review_required
+      expect(version).to be_approved
+      expect(version).to be_activatable
+    end
+  end
 end

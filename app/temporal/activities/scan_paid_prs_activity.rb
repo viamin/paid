@@ -40,6 +40,35 @@ module Activities
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
     PAID_ESCALATED_LABEL = "paid-escalated"
+    TRIGGER_TO_FOCUS = {
+      "actionable_labels" => "label_action",
+      "changes_requested" => "review_feedback",
+      "ci_failure" => "ci_fix",
+      "conversation_comments" => "conversation",
+      "merge_conflicts" => "merge_conflict",
+      "paid_agent_review_pending" => "review_feedback",
+      "review_bot_comments" => "review_feedback",
+      "review_bot_review_pending" => "review_feedback",
+      "review_bot_threads" => "review_feedback",
+      "review_goal_retry" => "review_feedback",
+      "review_threads" => "review_feedback"
+    }.freeze
+    FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES = %w[
+      ci_fix
+      review_feedback
+      merge_conflict
+      conversation
+      issue_implementation
+      label_action
+    ].freeze
+    FOCUS_PRIORITY = %w[
+      merge_conflict
+      ci_fix
+      review_feedback
+      conversation
+      issue_implementation
+      label_action
+    ].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -197,6 +226,7 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
+      record_focus_resolution(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
       # Escalate PRs that are repeatedly failing due to operational issues
@@ -297,6 +327,7 @@ module Activities
         result
       else
         {
+          focus: focus_for(issue.project, [ retry_trigger ]),
           issue_id: issue.id,
           pr_number: issue.github_number,
           triggers: [ retry_trigger ],
@@ -557,7 +588,20 @@ module Activities
                   "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
       end
 
-      return nil if followup_limit_reached?(project, issue)
+      # Follow-up budget exhausted: escalate if cheap signals (CI,
+      # merge conflicts, actionable labels — all derivable from data
+      # already fetched above) show unresolved work. Otherwise
+      # short-circuit BEFORE the expensive review-thread / comment
+      # fetches that detect_ready_triggers would issue. This preserves
+      # the historical "silent skip when nothing visibly wrong"
+      # behavior on budget-exhausted PRs while ensuring failing CI no
+      # longer leaves a PR wedged in `paid-ready` with no signal.
+      if followup_limit_reached?(project, issue)
+        cheap_triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
+        return followup_limit_escalation(issue, cheap_triggers) if cheap_triggers.any?
+
+        return nil
+      end
 
       triggers = detect_ready_triggers(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews)
@@ -567,6 +611,7 @@ module Activities
       log_triggers(project, issue, triggers)
 
       {
+        focus: focus_for(issue.project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -580,18 +625,16 @@ module Activities
     # Auto-merge is handled by EvaluateDependabotAutoMergeActivity + DependabotAutoMergeJob.
     # This method only detects follow-up triggers (CI failures, merge conflicts, labels).
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
-      return nil if followup_limit_reached?(project, issue)
-
-      ci_triggers = ci_failure_triggers(checks || [])
-      merge_conflict_triggers = check_merge_conflicts(project, pr_data)
-      label_triggers = check_actionable_labels(project, issue)
-      triggers = ci_triggers + merge_conflict_triggers + label_triggers
+      triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
 
       return nil if triggers.empty?
+
+      return followup_limit_escalation(issue, triggers) if followup_limit_reached?(project, issue)
 
       log_triggers(project, issue, triggers)
 
       {
+        focus: focus_for(project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -599,6 +642,24 @@ module Activities
         labels_to_remove: extract_actionable_labels(triggers),
         current_followup_count: issue.pr_followup_count
       }
+    end
+
+    # Triggers detectable without additional GitHub API calls when checks
+    # and pr_data are already in hand. Used as a cheap pre-gate before
+    # the more expensive review-thread / comment-fetch path.
+    def cheap_ready_triggers(project, issue, pr_data:, checks:)
+      ci_failure_triggers(checks || []) +
+        check_merge_conflicts(project, pr_data) +
+        check_actionable_labels(project, issue)
+    end
+
+    def followup_limit_escalation(issue, triggers)
+      project = issue.project
+      types_summary = triggers.map { |t| t[:type] }.uniq.join(", ")
+      escalate_trigger(issue,
+        reason: "Follow-up run limit reached " \
+                "(#{issue.pr_followup_count}/#{project.max_pr_followup_runs}); " \
+                "unresolved: #{types_summary}")
     end
 
     # --- Escalated phase scanning ---
@@ -611,7 +672,7 @@ module Activities
         checks = fetch_check_runs(client, project, pr_data)
 
         if bot_user?(issue.github_creator_login)
-          if auto_merge_eligible_bot?(project, issue,
+          if auto_merge_eligible_bot?(project, client, issue,
                checks: checks, mergeable: pr_data[:mergeable])
             return owner_approved_trigger(issue)
           end
@@ -634,6 +695,7 @@ module Activities
       log_triggers(project, issue, triggers)
 
       {
+        focus: focus_for(project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -650,6 +712,7 @@ module Activities
       log_triggers(issue.project, issue, triggers)
 
       {
+        focus: focus_for(issue.project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -662,6 +725,7 @@ module Activities
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
+        focus: focus_for(issue.project, [ { type: "escalate_to_owner", details: reason } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "escalate_to_owner", details: reason } ],
@@ -675,6 +739,7 @@ module Activities
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
       {
+        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ],
@@ -688,6 +753,7 @@ module Activities
       log_triggers(issue.project, issue, [ { type: "owner_approved" } ])
 
       {
+        focus: focus_for(issue.project, [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ],
@@ -697,6 +763,7 @@ module Activities
 
     def draft_trigger_payload(issue, triggers)
       {
+        focus: focus_for(issue.project, triggers),
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
@@ -757,6 +824,20 @@ module Activities
       end
 
       triggers
+    end
+
+    def resolve_focus(triggers)
+      candidate_focuses = Array(triggers)
+        .filter_map { |trigger| TRIGGER_TO_FOCUS[trigger[:type].to_s] }
+        .uniq
+
+      FOCUS_PRIORITY.find { |focus| candidate_focuses.include?(focus) } || "general"
+    end
+
+    def focus_for(project, triggers)
+      return "general" unless FeatureFlags.focused_agent_runs?(project:)
+
+      resolve_focus(triggers)
     end
 
     # Detect when a user converts a ready/escalated PR back to draft on GitHub.
@@ -1020,6 +1101,157 @@ module Activities
         .first
     end
 
+    def completed_focused_runs_for(project, issue)
+      project.agent_runs
+        .where(
+          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          pr_num: issue.github_number
+        )
+        .where(goal: "create_pr")
+        .where.not(focus: "general")
+        .completed
+        .order(completed_at: :desc)
+    end
+
+    def latest_completed_focused_run(project, issue)
+      completed_focused_runs_for(project, issue)
+        .includes(:quality_metrics)
+        .first
+    end
+
+    def focus_resolution_pending?(focused_run)
+      return false unless focus_resolution_attribution_enabled?(focused_run.focus)
+
+      metric = focused_run.quality_metrics.find { |quality_metric| quality_metric.metric_type == "automated" }
+      metric.blank? || !metric.scores.to_h.key?("focus_resolved")
+    end
+
+    def focus_resolution_attribution_enabled?(focus)
+      FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES.include?(focus.to_s)
+    end
+
+    def record_focus_resolution(project, client, issue)
+      focused_run = latest_completed_focused_run(project, issue)
+      return unless focused_run && focus_resolution_pending?(focused_run)
+
+      score_updates = focus_resolution_scores(project, client, issue, focused_run)
+      return if score_updates.nil?
+
+      metric = QualityMetric.find_or_initialize_by(
+        agent_run: focused_run,
+        metric_type: "automated"
+      )
+      metric.assign_attributes(
+        prompt_version: focused_run.prompt_version,
+        feedback_source: "system",
+        scores: (metric.scores || {}).merge(score_updates)
+      )
+      metric.save! if metric.changed?
+
+      composite_score = QualityMetrics::CalculateCompositeScore.call(agent_run: focused_run)
+      return unless metric.composite_score != composite_score
+
+      metric.update!(composite_score:)
+    end
+
+    def focus_resolution_scores(project, client, issue, focused_run)
+      case focused_run.focus
+      when "ci_fix"
+        ci_focus_resolution_scores(project, client, issue)
+      when "review_feedback"
+        review_feedback_resolution_scores(project, client, issue, focused_run)
+      when "merge_conflict"
+        merge_conflict_resolution_scores(project, client, issue)
+      when "conversation"
+        conversation_resolution_scores(project, client, issue, focused_run)
+      when "issue_implementation"
+        issue_implementation_resolution_scores(project, client, issue, focused_run)
+      when "label_action"
+        label_action_resolution_scores(project, issue)
+      end
+    end
+
+    def ci_focus_resolution_scores(project, client, issue)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      return nil if checks.nil? || checks_pending?(checks)
+
+      score = all_checks_green?(checks) ? 1.0 : 0.0
+      { "focus_resolved" => score, "ci_passed" => score }
+    end
+
+    def review_feedback_resolution_scores(project, client, issue, focused_run)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      return nil if checks.nil?
+
+      reviews = fetch_reviews(client, project, issue)
+      return nil if reviews.nil?
+
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return nil if unresolved_threads.nil?
+
+      triggers = []
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: focused_run, client: client, issue: issue))
+      triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
+        project: project, last_run: focused_run, client: client, issue: issue))
+      triggers.concat(changes_requested_from_reviews(project, reviews, focused_run))
+      triggers.concat(check_conversation_comments(client, project, issue, focused_run))
+      triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
+
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
+    end
+
+    def merge_conflict_resolution_scores(project, client, issue)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil? || pr_data.mergeable.nil?
+
+      { "focus_resolved" => pr_data.mergeable ? 1.0 : 0.0 }
+    end
+
+    def conversation_resolution_scores(project, client, issue, focused_run)
+      triggers = check_conversation_comments(client, project, issue, focused_run)
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
+    end
+
+    def issue_implementation_resolution_scores(project, client, issue, focused_run)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil? || pr_data.mergeable.nil?
+
+      checks = fetch_check_runs(client, project, pr_data)
+      return nil if checks.nil? || checks_pending?(checks)
+
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return nil if unresolved_threads.nil?
+
+      reviews = fetch_reviews(client, project, issue)
+      return nil if reviews.nil?
+
+      ci_passed = all_checks_green?(checks) ? 1.0 : 0.0
+      resolved = ci_passed == 1.0 &&
+        human_review_thread_triggers(project, unresolved_threads).empty? &&
+        changes_requested_from_reviews(project, reviews, focused_run).empty? &&
+        check_conversation_comments(client, project, issue, focused_run).empty? &&
+        check_actionable_labels(project, issue).empty? &&
+        check_merge_conflicts(project, pr_data).empty?
+
+      {
+        "focus_resolved" => resolved ? 1.0 : 0.0,
+        "ci_passed" => ci_passed
+      }
+    end
+
+    def label_action_resolution_scores(project, issue)
+      triggers = check_actionable_labels(project, issue)
+      { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
+    end
+
     def fetch_pr_data(client, project, issue)
       client.pull_request(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
@@ -1124,6 +1356,13 @@ module Activities
       return true if checks.empty?
 
       checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+    end
+
+    def checks_pending?(checks)
+      Array(checks).any? do |check|
+        %w[queued in_progress pending requested waiting].include?(check[:status]) ||
+          check[:conclusion].blank?
+      end
     end
 
     # Returns pending-style triggers when an enabled non-bot review method
@@ -2392,19 +2631,39 @@ module Activities
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:)
       return false unless project.auto_merge_enabled? && pr_data.present?
 
+      owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
+      checks_green = !checks.nil? && all_checks_green?(checks)
+      mergeable = pr_data[:mergeable] == true
+      review_feedback_clear = no_outstanding_review_feedback?(
+        project, client, issue, reviews, checks: checks, pr_data: pr_data
+      )
+      blocking_reviews_complete = all_blocking_review_methods_complete?(
+        project, reviews, checks, pr_data: pr_data
+      )
+      reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
+      dependencies_resolved = if human_dependency_check_required?(
+        owner_approved: owner_approved,
+        checks_green: checks_green,
+        mergeable: mergeable,
+        review_feedback_clear: review_feedback_clear,
+        blocking_reviews_complete: blocking_reviews_complete,
+        reviews_fresh: reviews_fresh
+      )
+        dependencies_resolved?(client, project, issue)
+      else
+        false
+      end
+
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
-        owner_approved: owner_approved_or_self_authored?(project, reviews, pr_data),
-        checks_green: !checks.nil? && all_checks_green?(checks),
-        mergeable: pr_data[:mergeable] == true,
-        review_feedback_clear: no_outstanding_review_feedback?(
-          project, client, issue, reviews, checks: checks, pr_data: pr_data
-        ),
-        blocking_reviews_complete: all_blocking_review_methods_complete?(
-          project, reviews, checks, pr_data: pr_data
-        ),
-        reviews_fresh: !review_stale_for_head?(client, project, issue, pr_data, reviews)
+        owner_approved: owner_approved,
+        checks_green: checks_green,
+        mergeable: mergeable,
+        review_feedback_clear: review_feedback_clear,
+        blocking_reviews_complete: blocking_reviews_complete,
+        reviews_fresh: reviews_fresh,
+        dependencies_resolved: dependencies_resolved
       )
 
       evaluate_auto_merge(project, signals)
@@ -2412,17 +2671,99 @@ module Activities
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
     # strategy. Bot PRs skip owner-approval and review-feedback gates.
-    def auto_merge_eligible_bot?(project, issue, checks:, mergeable:)
+    def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
+      dependabot_eligible = project.auto_merge_dependabot?
+      checks_green = !checks.nil? && checks.any? && all_checks_green?(checks)
+      mergeable_signal = mergeable == true
+      dependencies_resolved = if bot_dependency_check_required?(
+        dependabot_eligible: dependabot_eligible,
+        checks_green: checks_green,
+        mergeable: mergeable_signal
+      )
+        dependencies_resolved?(client, project, issue)
+      else
+        false
+      end
+
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
         bot_authored: true,
-        dependabot_eligible: project.auto_merge_dependabot?,
-        checks_green: !checks.nil? && checks.any? && all_checks_green?(checks),
-        mergeable: mergeable == true
+        dependabot_eligible: dependabot_eligible,
+        checks_green: checks_green,
+        mergeable: mergeable_signal,
+        dependencies_resolved: dependencies_resolved
       )
 
       evaluate_auto_merge(project, signals)
+    end
+
+    def human_dependency_check_required?(owner_approved:, checks_green:, mergeable:,
+      review_feedback_clear:, blocking_reviews_complete:, reviews_fresh:)
+      owner_approved &&
+        checks_green &&
+        mergeable &&
+        review_feedback_clear &&
+        blocking_reviews_complete &&
+        reviews_fresh
+    end
+
+    def bot_dependency_check_required?(dependabot_eligible:, checks_green:, mergeable:)
+      dependabot_eligible &&
+        checks_green &&
+        mergeable
+    end
+
+    def dependencies_resolved?(client, project, issue)
+      local_deps, cross_deps = Issues::ParseDependencies.extract(
+        body: issue.body,
+        comments: dependency_comment_bodies(client, project, issue)
+      )
+
+      return true if local_deps.empty? && cross_deps.empty?
+
+      same_repo = [ project.owner.downcase, project.repo.downcase ]
+      same_repo_numbers = cross_deps.each_with_object(Set.new) do |((owner, repo, number), _), numbers|
+        return false if [ owner, repo ] != same_repo
+
+        numbers << number
+      end
+
+      (local_deps.keys.to_set | same_repo_numbers).all? do |pr_number|
+        dependency_pull_request_merged?(client, project, pr_number)
+      end
+    rescue GithubClient::Error => e
+      log_signal_error("dependencies_resolved", project, issue, e)
+      false
+    end
+
+    def dependency_comment_bodies(client, project, issue)
+      Array(client.issue_comments(project.full_name, issue.github_number)).filter_map do |comment|
+        dependency_value(comment, :body)
+      end
+    end
+
+    def dependency_pull_request_merged?(client, project, pr_number)
+      pr_data = client.pull_request(project.full_name, pr_number)
+      pull_request_merged?(pr_data)
+    rescue GithubClient::NotFoundError
+      false
+    end
+
+    def pull_request_merged?(pr_data)
+      dependency_value(pr_data, :merged) == true || dependency_value(pr_data, :merged_at).present?
+    end
+
+    def dependency_value(source, key)
+      return nil if source.nil?
+
+      if source.respond_to?(key)
+        source.public_send(key)
+      elsif source.respond_to?(:key?) && source.key?(key)
+        source[key]
+      elsif source.respond_to?(:[])
+        source[key.to_s]
+      end
     end
 
     def evaluate_auto_merge(project, signals)

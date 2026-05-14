@@ -16,7 +16,7 @@ RSpec.describe CoordinationExperiments::Assign do
   let!(:variant) do
     create(:coordination_experiment_variant,
       coordination_experiment: experiment,
-      policy_config: experiment.control_policy.merge("parallel_execution" => { "max_batch_size" => 1 }))
+      policy_config: { "parallel_execution" => { "max_batch_size" => 1 } })
   end
 
   it "creates a workflow-scoped assignment" do
@@ -53,5 +53,17 @@ RSpec.describe CoordinationExperiments::Assign do
 
     expect(counts.keys.size).to eq(2)
     counts.each_value { |count| expect(count).to be_between(2, 4) }
+  end
+
+  it "rejects assignments for experiments that are not running" do
+    experiment.update!(status: "draft")
+
+    expect {
+      described_class.call(
+        coordination_experiment: experiment,
+        project: project,
+        workflow_id: "wf-123"
+      )
+    }.to raise_error(ArgumentError, /not running/)
   end
 end

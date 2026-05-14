@@ -5,6 +5,8 @@ require "rails_helper"
 RSpec.describe Projects::BundlePerformanceDashboardStats do
   describe ".call" do
     let(:project) { create(:project) }
+    let(:project_issue) { create(:issue, project: project) }
+    let(:shared_issues) { {} }
 
     it "returns a sparse payload with no outcomes or experiments" do
       stats = described_class.call(project: project)
@@ -16,7 +18,9 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
 
     it "computes summary counts from all bundles, not just the displayed rows" do
-      Array.new(12) do
+      bundle_count = described_class::MAX_BUNDLE_ROWS + 1
+
+      Array.new(bundle_count) do
         bundle = create(:configuration_bundle, account: project.account, definition: {
           "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
         })
@@ -26,8 +30,8 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
 
       stats = described_class.call(project: project)
 
-      expect(stats[:summary][:bundle_count]).to eq(12)
-      expect(stats[:summary][:reviewable_bundle_count]).to eq(12)
+      expect(stats[:summary][:bundle_count]).to eq(bundle_count)
+      expect(stats[:summary][:reviewable_bundle_count]).to eq(bundle_count)
       expect(stats[:bundle_rankings].size).to eq(described_class::MAX_BUNDLE_ROWS)
     end
 
@@ -84,7 +88,7 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
 
     it "is not sparse when optimizer insights have candidates despite no outcomes or experiments" do
-      run = create(:agent_run, project: project, issue: create(:issue, project: project), goal: "create_pr")
+      run = create(:agent_run, project: project, issue: project_issue, goal: "create_pr")
 
       allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates).and_return([])
       allow(ConfigurationBundles::Optimizer).to receive(:ranked_candidates)
@@ -144,6 +148,78 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
     end
 
+    it "excludes running experiments from other accounts even when rollout membership matches" do
+      selected_experiment, = create_experiment(project:)
+      other_account_project = create(:project)
+      create_experiment(project: other_account_project)
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ selected_experiment ])
+    end
+
+    it "includes active project experiments before they have assignment data" do
+      experiment, = create_experiment(project:)
+
+      stats = described_class.call(project: project)
+
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
+      expect(stats[:experiment_confidence].first[:variants]).to all(include(sample_count: 0, sparse: true))
+      expect(stats[:sparse_details][:sparse_experiment_count]).to eq(1)
+    end
+
+    it "keeps assignment-backed active experiments visible when project rollout excludes the project" do
+      experiment, control, variant = create_experiment(project:, traffic_percentage: 50)
+      assigned_project, assigned_runs = create_assignment_backed_project_for(experiment, run_count: 2)
+      control_run, variant_run = assigned_runs
+
+      create(:configuration_experiment_assignment,
+        configuration_experiment: experiment,
+        configuration_experiment_variant: control,
+        agent_run: control_run,
+        quality_score: 0.4)
+      create(:configuration_experiment_assignment,
+        configuration_experiment: experiment,
+        configuration_experiment_variant: variant,
+        agent_run: variant_run,
+        quality_score: 0.8)
+
+      stats = described_class.call(project: assigned_project)
+
+      expect(experiment.includes_traffic?(project: assigned_project)).to be(false)
+      expect(assigned_runs).to all(satisfy { |run| experiment.includes_traffic?(agent_run: run) })
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ experiment ])
+      expect(stats[:experiment_confidence].first[:variants].map { |row| row[:sample_count] }).to eq([ 1, 1 ])
+    end
+
+    it "prefers the runtime-active experiment over assignment-backed history for the same config key" do
+      global_experiment, = create_experiment(project:, account: nil, config_key: "knowledge.token_budget")
+      stale_experiment, stale_control, stale_variant = create_experiment(project:, config_key: "knowledge.token_budget", traffic_percentage: 50)
+      assigned_project, assigned_runs = create_assignment_backed_project_for(stale_experiment, run_count: 2)
+      control_run, variant_run = assigned_runs
+
+      create(:configuration_experiment_assignment,
+        configuration_experiment: stale_experiment,
+        configuration_experiment_variant: stale_control,
+        agent_run: control_run,
+        quality_score: 0.4)
+      create(:configuration_experiment_assignment,
+        configuration_experiment: stale_experiment,
+        configuration_experiment_variant: stale_variant,
+        agent_run: variant_run,
+        quality_score: 0.8)
+
+      stats = described_class.call(project: assigned_project)
+
+      expect(stale_experiment.includes_traffic?(project: assigned_project)).to be(false)
+      expect(ConfigurationExperiment.active_for("knowledge.token_budget", project: assigned_project)).to eq(global_experiment)
+      expect(stats[:summary][:active_experiment_count]).to eq(1)
+      expect(stats[:experiment_confidence].map { |row| row[:experiment] }).to eq([ global_experiment ])
+    end
+
     it "loads experiment variants once per experiment when building confidence stats" do
       experiment, control, variant = create_experiment(project:)
       create_bundle(project:, experiment:, variant:)
@@ -171,7 +247,14 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:bundle_rankings].first[:avg_quality_score]).to be_within(0.001).of(0.85)
       expect(stats[:experiment_confidence].first[:variants].size).to eq(2)
       expect(stats[:tradeoff_frontier].first[:bundle]).to eq(bundle)
-      expect(stats[:optimizer_insights].find { |row| row[:goal] == "create_pr" }[:candidates]).not_to be_empty
+      candidate = optimizer_candidate_for(stats, goal: "create_pr")
+
+      expect(candidate).to include(
+        acquisition_function: "expected_improvement"
+      )
+      expect(candidate[:best_observed_objective_score]).to eq(
+        expected_best_observed_objective_score_for(stats, goal: "create_pr")
+      )
     end
   end
 
@@ -232,10 +315,13 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
   end
 
   def create_assignment(project:, experiment:, variant:, quality_scores:)
+    issue = shared_issue_for(project)
+
     quality_scores.each do |score|
       run = create(:agent_run,
+        :completed,
         project: project,
-        issue: create(:issue, project: project),
+        issue: issue,
         goal: "create_pr")
       create(:configuration_experiment_assignment,
         configuration_experiment: experiment,
@@ -246,10 +332,12 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
   end
 
   def create_bundle_outcome(project:, bundle:, quality_score:, cost_cents:, metrics: nil)
+    issue = shared_issue_for(project)
+
     run = create(:agent_run,
       :completed,
       project: project,
-      issue: create(:issue, project: project),
+      issue: issue,
       goal: "create_pr",
       configuration_bundle: bundle,
       cost_cents: cost_cents)
@@ -274,12 +362,53 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       success: true)
   end
 
+  def optimizer_candidate_for(stats, goal:)
+    stats[:optimizer_insights].find { |row| row[:goal] == goal }.fetch(:candidates).first
+  end
+
+  def expected_best_observed_objective_score_for(stats, goal:)
+    representative_run = stats[:optimizer_insights].find { |row| row[:goal] == goal }.fetch(:representative_run)
+
+    BundleOutcome
+      .where(agent_run: project.agent_runs.where(goal: goal))
+      .where.not(id: representative_run.bundle_outcomes.select(:id))
+      .filter_map { |outcome| ConfigurationBundles::ObjectiveScore.from_outcome(outcome) }
+      .max
+  end
+
+  def shared_issue_for(project)
+    shared_issues[project.id] ||= create(:issue, project: project)
+  end
+
+  def create_assignment_backed_project_for(experiment, run_count:)
+    50.times do
+      project = create(:project, account: experiment.account)
+      next if experiment.includes_traffic?(project: project)
+
+      runs = Array.new(run_count) do
+        create(:agent_run,
+          :completed,
+          project: project,
+          issue: create(:issue, project: project),
+          goal: "create_pr")
+      end
+
+      next unless runs.all? { |run| experiment.includes_traffic?(agent_run: run) }
+
+      return [ project, runs ]
+    end
+
+    raise "Could not create a project excluded from project rollout with included assigned runs"
+  end
+
   def mock_optimizer_selection
     score_inputs = ConfigurationBundles::Optimizer::ScoreInputs.new(
       predicted_objective_score: 0.76,
       predicted_quality_score: 0.8,
       uncertainty: 0.1,
       sample_count: 5,
+      best_observed_objective_score: 0.71,
+      acquisition_function: "expected_improvement",
       acquisition_score: 0.84
     )
 

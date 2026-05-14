@@ -32,9 +32,11 @@ class StrategyVersion < ApplicationRecord
   validate :single_active_version_per_strategy
   validate :immutable_content_after_creation, on: :update
   validate :parent_version_belongs_to_strategy
+  validate :activation_requires_promotion_metadata
 
   scope :draft, -> { where(promotion_state: "draft") }
   scope :candidate, -> { where(promotion_state: "candidate") }
+  scope :pending_review, -> { candidate }
   scope :active, -> { where(promotion_state: "active", retired_at: nil) }
   scope :retired, -> { where.not(retired_at: nil) }
   scope :rejected, -> { where(promotion_state: "rejected") }
@@ -45,6 +47,14 @@ class StrategyVersion < ApplicationRecord
 
   def active?
     promotion_state == "active" && !retired?
+  end
+
+  def pending_review?
+    promotion_state == "candidate"
+  end
+
+  def rejected?
+    promotion_state == "rejected"
   end
 
   private
@@ -86,5 +96,25 @@ class StrategyVersion < ApplicationRecord
     return unless existing_active_versions.exists?
 
     errors.add(:promotion_state, "allows only one active version per strategy")
+  end
+
+  def activation_requires_promotion_metadata
+    return unless promotion_state == "active"
+    return unless retired_at.nil?
+    return if new_record? && initial_seed_activation?
+    return if seeded_global_activation?
+    return if promoted_at.present? && promoted_by_user.present?
+
+    errors.add(:promotion_state, "requires explicit review metadata before activation")
+  end
+
+  def initial_seed_activation?
+    return true unless strategy&.persisted?
+
+    strategy.strategy_versions.where.not(id: id).none?
+  end
+
+  def seeded_global_activation?
+    strategy&.global? && created_by == "seed" && promoted_at.present?
   end
 end

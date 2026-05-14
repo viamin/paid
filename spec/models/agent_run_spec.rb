@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "docker-api"
 
 RSpec.describe AgentRun do
+  around do |example|
+    Rails.cache.clear
+    example.run
+    Rails.cache.clear
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:issue).optional }
@@ -20,6 +27,8 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_presence_of(:goal) }
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
+    it { is_expected.to validate_presence_of(:focus) }
+    it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
     it { is_expected.to validate_presence_of(:trigger_type) }
     it { is_expected.to validate_inclusion_of(:trigger_type).in_array(described_class::TRIGGER_TYPES) }
     it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
@@ -146,6 +155,20 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#focused?" do
+    it "defaults new runs to general focus" do
+      expect(described_class.new.focus).to eq("general")
+    end
+
+    it "is false for general runs" do
+      expect(build(:agent_run, focus: "general")).not_to be_focused
+    end
+
+    it "is true for non-general runs" do
+      expect(build(:agent_run, focus: "ci_fix")).to be_focused
+    end
+  end
+
   describe "scopes" do
     describe ".by_status" do
       it "returns agent runs with the specified status" do
@@ -185,6 +208,55 @@ RSpec.describe AgentRun do
         create(:agent_run, :queued, started_at: described_class.stale_running_cutoff - 1.minute)
 
         expect(described_class.stale_running).to contain_exactly(stale_run)
+      end
+
+      it "uses goal-specific adaptive cutoffs when healthy runtime history exists" do
+        stub_const("AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE", 3)
+
+        create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+          :completed,
+          :review_goal,
+          duration_seconds: 120,
+          completed_at: 1.day.ago)
+        create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+          :completed,
+          duration_seconds: 900,
+          completed_at: 1.day.ago)
+
+        stale_review = create(:agent_run, :running, :review_goal,
+          started_at: described_class.stale_running_cutoff(goal: "review") - 1.minute)
+        fresh_create_pr = create(:agent_run, :running,
+          started_at: described_class.stale_running_cutoff(goal: "create_pr") + 5.minutes)
+
+        expect(described_class.stale_running).to contain_exactly(stale_review)
+        expect(described_class.stale_running).not_to include(fresh_create_pr)
+        expect(described_class.stale_running_timeout(goal: "review"))
+          .to be < described_class.stale_running_timeout(goal: "create_pr")
+      end
+
+      it "does not treat completed healthy-history runs as stale running" do
+        create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+          :completed,
+          :review_goal,
+          duration_seconds: 120,
+          completed_at: 1.day.ago)
+
+        stale_review = create(:agent_run, :running, :review_goal,
+          started_at: described_class.stale_running_cutoff(goal: "review") - 1.minute)
+
+        expect(described_class.stale_running).to contain_exactly(stale_review)
+      end
+
+      it "falls back to the legacy cutoff for unexpected goal values" do
+        stale_unknown_goal = create(:agent_run, :running,
+          started_at: described_class.stale_running_cutoff - 1.minute)
+        stale_unknown_goal.update_column(:goal, "legacy_goal")
+        fresh_unknown_goal = create(:agent_run, :running,
+          started_at: described_class.stale_running_cutoff + 1.minute)
+        fresh_unknown_goal.update_column(:goal, "legacy_goal")
+
+        expect(described_class.stale_running).to include(stale_unknown_goal)
+        expect(described_class.stale_running).not_to include(fresh_unknown_goal)
       end
     end
 
@@ -371,6 +443,31 @@ RSpec.describe AgentRun do
         expect(described_class.recent.first).to eq(newer_run)
         expect(described_class.recent.last).to eq(older_run)
       end
+    end
+  end
+
+  describe ".stale_running_timeout" do
+    it "falls back to the legacy timeout when healthy history is insufficient" do
+      create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE - 1,
+        :completed,
+        :review_goal,
+        duration_seconds: 120,
+        completed_at: 1.day.ago)
+
+      expect(described_class.stale_running_timeout(goal: "review"))
+        .to eq(described_class.default_stale_running_timeout)
+    end
+
+    it "uses no_output runs in the healthy baseline" do
+      create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+        :no_output,
+        :review_goal,
+        duration_seconds: 120,
+        completed_at: 1.day.ago,
+        error_message: "no_changes")
+
+      expect(described_class.stale_running_timeout(goal: "review"))
+        .to eq(20.minutes)
     end
   end
 
@@ -2194,7 +2291,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid AGENT_TYPES" do
-      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode api])
+      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode pi api])
     end
 
     it "defines valid GOALS" do

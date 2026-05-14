@@ -178,6 +178,10 @@ module OrchestrationStrategies
             "escalated_phase_discount" => 0.1
           }
         },
+        "recovery" => {
+          "actions" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTIONS.deep_dup,
+          "default_action" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTION
+        },
         "decomposition" => {
           "enabled" => true,
           "max_tasks" => 20,
@@ -228,7 +232,7 @@ module OrchestrationStrategies
           "copilot" => "copilot",
           "codex" => "chatgpt-codex-connector"
         },
-        "agent_types" => %w[claude_code cursor codex copilot aider gemini opencode kilocode api],
+        "agent_types" => AgentRun::AGENT_TYPES,
         "goals" => %w[create_pr create_issue review enhance_issue analyze_issue],
         "non_container_goals" => %w[enhance_issue analyze_issue]
       }

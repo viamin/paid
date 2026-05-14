@@ -3,8 +3,14 @@
 require "rails_helper"
 
 RSpec.describe StaleRunDetectorJob do
-  # Running runs: agent_timeout + GRACE_PERIOD
-  let(:running_threshold) { AGENT_TIMEOUT_DEFAULT + described_class::GRACE_PERIOD.to_i }
+  around do |example|
+    Rails.cache.clear
+    example.run
+    Rails.cache.clear
+  end
+
+  # Running runs: legacy fallback used by the generic timeout examples
+  let(:running_threshold) { AgentRun.default_stale_running_timeout.to_i }
   # Claimed queued runs: shorter dedicated threshold
   let(:claimed_threshold) { described_class::CLAIMED_TIMEOUT.to_i }
   # Paused runs: guardrail pauses should not block auto-pick indefinitely
@@ -82,6 +88,24 @@ RSpec.describe StaleRunDetectorJob do
 
       expect(stale_run1.reload.status).to eq("timeout")
       expect(stale_run2.reload.status).to eq("timeout")
+    end
+
+    it "uses shorter adaptive thresholds for fast healthy goals" do
+      create_list(:agent_run, AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+        :completed,
+        :review_goal,
+        duration_seconds: 120,
+        completed_at: 1.day.ago)
+
+      stale_review = create(:agent_run, :running, :review_goal,
+        started_at: (AgentRun.stale_running_timeout(goal: "review") + 60).seconds.ago)
+      fresh_create_pr = create(:agent_run, :running,
+        started_at: (AgentRun.stale_running_timeout(goal: "create_pr") - 60).seconds.ago)
+
+      described_class.perform_now
+
+      expect(stale_review.reload.status).to eq("timeout")
+      expect(fresh_create_pr.reload.status).to eq("running")
     end
 
     it "calls cleanup_container when a run is timed out" do
@@ -590,9 +614,19 @@ RSpec.describe StaleRunDetectorJob do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
-      it "does not reset an in_progress pull request with no active run" do
+      it "resets an orphaned in_progress PR to completed when no active run exists" do
         pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
           updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        described_class.perform_now
+
+        expect(pull_request.reload.paid_state).to eq("completed")
+      end
+
+      it "does not reset an in_progress PR that has an active run" do
+        pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :running, project: project, issue: pull_request)
 
         described_class.perform_now
 

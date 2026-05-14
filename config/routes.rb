@@ -112,6 +112,15 @@ Rails.application.routes.draw do
   # Account-wide pending prompt review queue
   get "prompt_reviews", to: "prompt_reviews#queue", as: :prompt_reviews_queue
 
+  resources :strategies, only: [] do
+    resources :reviews, only: [ :index, :show, :update ], controller: "strategy_reviews" do
+      post :approve, on: :member
+      post :reject, on: :member
+    end
+  end
+
+  get "strategy_reviews", to: "strategy_reviews#queue", as: :strategy_reviews_queue
+
   # Style guide management
   resources :style_guides do
     post :compress, on: :member
@@ -168,6 +177,8 @@ Rails.application.routes.draw do
     resources :issues, only: [] do
       resource :merge_subscription, only: [ :show, :create, :destroy ],
         controller: "projects/issue_merge_subscriptions"
+      resource :clarifying_questions, only: [ :show, :create ],
+        controller: "projects/clarifying_questions"
     end
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],

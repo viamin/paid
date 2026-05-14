@@ -3,6 +3,7 @@
 require "set"
 
 class ProviderApiKey < ApplicationRecord
+  has_logidze
   belongs_to :user
   has_many :providers, -> { kept }, dependent: :restrict_with_error
 

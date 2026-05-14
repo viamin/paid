@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class PrTemplate < ApplicationRecord
+  has_logidze
   PR_TYPES = %w[default feature bugfix hotfix].freeze
 
   belongs_to :account

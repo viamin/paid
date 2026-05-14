@@ -125,6 +125,30 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).not_to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-needs-input" ])
+      end
+
+      it "adds the paid-recommend-close label so the issue surfaces for human review" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      it "uses the project-configured recommend_close label when set" do
+        custom_project = create(:project,
+          label_mappings: { "recommend_close" => "needs-review" },
+          automation_on_label_enabled: false)
+        issue = create(:issue, :in_progress, project: custom_project)
+        agent_run = create(:agent_run, :running, project: custom_project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_labels_to_issue)
+          .with(custom_project.full_name, issue.github_number, [ "needs-review" ])
       end
 
       it "returns outcome recommend_close" do
@@ -402,6 +426,78 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(result[:outcome]).to eq("recommend_close")
+      end
+
+      it "detects opencode ProviderModelNotFoundError as infrastructure error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Error: Model not found: glm-5.1/.\nProviderModelNotFoundError: ProviderModelNotFoundError")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+      end
+
+      it "transitions misconfigured opencode runs to failed for auto-pick retry" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Error: Model not found: glm-5.1/.")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "does not match a bare 'model not found' phrase quoted in agent output" do
+        # The colon in /Model not found:/ guards against false-positives on
+        # natural-language mentions of the phrase that the agent might quote
+        # back from issue bodies or web fetches.
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "The user reported a model not found bug last week")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+    end
+
+    context "when an issue cycles through outcomes (label hygiene)" do
+      it "clears a stale paid-recommend-close label when the next outcome is needs_input" do
+        issue = create(:issue, :in_progress, project: project,
+          labels: [ "paid-build", "paid-recommend-close" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-recommend-close")
+      end
+
+      it "skips remove_label_from_issue for paid-recommend-close when not present" do
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-build" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).not_to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-recommend-close")
+      end
+
+      it "is re-applied (idempotent) when a re-run produces the same recommend_close outcome" do
+        issue = create(:issue, :in_progress, project: project,
+          labels: [ "paid-build", "paid-recommend-close" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        # Same label is re-added; GitHub's add_labels_to_issue is idempotent.
+        expect(client).to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
       end
     end
 

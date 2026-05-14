@@ -12,11 +12,20 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
     )
   end
 
-  let(:project) { instance_double(Project, id: 1, github_token: github_token) }
+  let(:project) { instance_double(FakeProject, id: 1, github_token: github_token) }
   let(:project_version) { Struct.new(:id, :commit_sha).new(1, "a" * 40) }
   let(:collector_run) { Struct.new(:id).new(1) }
   let(:fixture_file) { Rails.root.join("spec/fixtures/knowledge/routes_expanded.txt").to_s }
   let(:github_token) { nil }
+
+  before do
+    stub_const("FakeProject", Struct.new(:id, :github_token))
+    stub_const("FakeGithubToken", Class.new do
+      def active? = true
+      def token = "github_pat_test_token"
+      def touch_last_used!; end
+    end)
+  end
 
   describe "#collector_type" do
     it "returns routes" do
@@ -150,14 +159,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
 
       let(:fixture_output) { File.read(fixture_file) }
-      let(:active_github_token) do
-        instance_double(
-          GithubToken,
-          active?: true,
-          token: "github_pat_test_token",
-          touch_last_used!: true
-        )
-      end
+      let(:active_github_token) { instance_double(FakeGithubToken, active?: true, token: "github_pat_test_token", touch_last_used!: true) }
 
       before do
         allow(command_collector).to receive(:repo_file_exists?)
@@ -166,6 +168,10 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("bin/rails").and_return(true)
         allow(command_collector).to receive(:repo_file_exists?)
           .with("Gemfile").and_return(true)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("Gemfile.lock").and_return(false)
+        allow(command_collector).to receive(:read_repo_file)
+          .with("Gemfile").and_return("gem \"sqlite3\"")
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
           .and_return("")
@@ -191,6 +197,93 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .and_return(fixture_output)
 
         expect(command_collector.collect.length).to eq(11)
+      end
+
+      it "skips before bundle install when sqlite3 support is unavailable" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(true)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile.lock").and_return(<<~LOCKFILE)
+          GEM
+            specs:
+              pg (1.6.3)
+        LOCKFILE
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile").and_return(true)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)
+          source "https://rubygems.org"
+
+          gem "rails"
+          gem "pg"
+        GEMFILE
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.reason).to match(/sqlite3 support/)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
+      end
+
+      it "accepts sqlite3 declared in Gemfile.lock" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(true)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile.lock").and_return(<<~LOCKFILE)
+          GEM
+            specs:
+              sqlite3 (2.2.0)
+        LOCKFILE
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        expect(command_collector.collect.length).to eq(11)
+      end
+
+      it "accepts sqlite3 declared in Gemfile when lockfile is absent" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(false)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)
+          source "https://rubygems.org"
+
+          gem "rails"
+          gem "sqlite3"
+        GEMFILE
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        expect(command_collector.collect.length).to eq(11)
+      end
+
+      it "accepts sqlite3 declared with parenthesized Gemfile syntax" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(false)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)
+          source "https://rubygems.org"
+
+          gem("sqlite3", "~> 2.2")
+        GEMFILE
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_return(fixture_output)
+
+        expect(command_collector.collect.length).to eq(11)
+      end
+
+      it "does not treat commented Gemfile mentions as sqlite3 support" do
+        allow(command_collector).to receive(:repo_file_exists?).with("Gemfile.lock").and_return(false)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile").and_return(<<~GEMFILE)
+          source "https://rubygems.org"
+
+          # gem "sqlite3"
+          gem "pg" # gem "sqlite3"
+        GEMFILE
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.reason).to match(/sqlite3 support/)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+
+        expect(command_collector).not_to have_received(:run_command)
+          .with("sh", "-c", /bundle install/, timeout: 300, env: kind_of(Hash))
       end
 
       it "passes bundle configuration and DATABASE_URL to bin/rails routes" do
@@ -389,6 +482,36 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         end
       end
 
+      it "skips on database.yml YAML syntax errors" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): /tmp/bundle/ruby/3.4.0/gems/activesupport-8.1.3/lib/active_support/configuration_file.rb:38:in 'ActiveSupport::ConfigurationFile#parse': Cannot load database configuration: (RuntimeError) YAML syntax error occurred while parsing /workspace/config/database.yml. Please note that YAML must be consistently indented using spaces. Tabs are not allowed."
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
+      it "skips when the sqlite3 adapter gem is missing from the bundle" do
+        allow(command_collector).to receive(:run_command)
+          .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
+          .and_raise(
+            Knowledge::ContainerizedRunner::ContainerError,
+            "Command failed (exit 1): Error loading the 'sqlite3' Active Record adapter. " \
+            "Missing a gem it depends on? sqlite3 is not part of the bundle. " \
+            "Add it to your Gemfile. (LoadError)"
+          )
+
+        expect { command_collector.collect }.to raise_error do |error|
+          expect(error).to be_a(Knowledge::SkipCollector)
+          expect(error.preserve_existing_artifacts?).to be(true)
+        end
+      end
+
       it "cleans up credentials and disconnects network before running routes" do
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
@@ -473,6 +596,13 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       it "skips bundle install when Gemfile is absent" do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("Gemfile").and_return(false)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("Gemfile.lock").and_return(true)
+        allow(command_collector).to receive(:read_repo_file).with("Gemfile.lock").and_return(<<~LOCKFILE)
+          GEM
+            specs:
+              sqlite3 (2.2.0)
+        LOCKFILE
         allow(command_collector).to receive(:run_command)
           .with("sh", "-c", /bin\/rails routes --expanded/, timeout: 120, env: kind_of(Hash))
           .and_return(fixture_output)

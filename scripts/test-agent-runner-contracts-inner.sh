@@ -41,6 +41,7 @@ RUNNER_CLI_BINARY=(
     [gemini]=gemini
     [kilocode]=kilo
     [opencode]=opencode
+    [pi]=pi
 )
 
 echo "=== Runner-contract smoke test ==="
