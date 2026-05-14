@@ -43,10 +43,16 @@ module ConfigurationBundles
           "created_at" => agent_run.created_at&.iso8601,
           "cost_score" => objective_result.cost_score,
           "execution_duration_seconds" => agent_run.duration_seconds,
+          "exploratory" => case agent_run.configuration_bundle_selection_mode
+                           when "exploratory" then true
+                           when "exploitative" then false
+                           end,
           "outcome" => agent_run.status,
           "objective_score" => objective_result.objective_score,
           "quality_per_dollar" => objective_result.quality_per_dollar,
           "queue_duration_seconds" => queue_duration_seconds,
+          "selection_context" => agent_run.configuration_bundle_selection_context,
+          "selection_mode" => agent_run.configuration_bundle_selection_mode,
           "speed_score" => objective_result.speed_score,
           "started_at" => agent_run.started_at&.iso8601,
           "status" => agent_run.status,
