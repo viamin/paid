@@ -308,12 +308,9 @@ module Projects
     end
 
     def active_experiments
-      @active_experiments ||= ConfigurationExperiment
-        .running
-        .where(config_key: ConfigurationExperiment::TRACKED_CONFIG_KEYS)
-        .where(account_id: [ project.account_id, nil ])
-        .select { |experiment| experiment.includes_traffic?(project: project) }
-        .sort_by { |experiment| [ experiment.account_id == project.account_id ? 0 : 1, experiment.id ] }
+      @active_experiments ||= ConfigurationExperiment::TRACKED_CONFIG_KEYS.filter_map do |config_key|
+        ConfigurationExperiment.active_for(config_key, project: project)
+      end
     end
 
     def experiment_variants_by_experiment_id
