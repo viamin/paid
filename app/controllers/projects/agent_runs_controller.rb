@@ -45,6 +45,7 @@ module Projects
       end.compact
       @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
+      @marketplace_entries = current_account.marketplace_entries.active.ordered.includes(:current_version)
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -629,7 +630,7 @@ module Projects
 
       resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
 
-      AgentRun.create!(
+      agent_run = AgentRun.create!(
         project: @project,
         issue: issue,
         provider: resolved_provider,
@@ -641,6 +642,11 @@ module Projects
         status: "queued",
         priority_tier: priority_tier
       )
+      MarketplaceEntries::AttachToRun.call(
+        agent_run:,
+        manual_entry_ids: params[:marketplace_entry_ids]
+      )
+      agent_run
     end
 
     def enqueue_resume_run(pr)

@@ -1,0 +1,43 @@
+<% content_for(:title) { "Marketplace Entries - Paid" } %>
+
+<div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Marketplace Entries</h1>
+      <p class="mt-1 text-sm text-gray-500">Shared skills, plugins, prompts, MCP descriptors, and other run enhancements for your team.</p>
+    </div>
+    <%= link_to "New Entry", new_marketplace_entry_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+  </div>
+
+  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Provider</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Version</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white">
+        <% @marketplace_entries.each do |entry| %>
+          <tr>
+            <td class="px-4 py-3 text-sm text-gray-900">
+              <%= link_to entry.name, marketplace_entry_path(entry), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <% if entry.tags.any? %>
+                <div class="mt-1 text-xs text-gray-500"><%= entry.tags.join(", ") %></div>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.entry_type.humanize %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.status.humanize %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.provider.presence || "-" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.current_version&.version || "-" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= local_time(entry.updated_at, format: :short) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

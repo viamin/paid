@@ -108,9 +108,22 @@ module ConfigurationBundles
           model_selection: model_selection_definition,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
+          marketplace_entries: normalized_marketplace_entries,
           experiments: experiment_definitions(selected_variants)
         }.compact
       )
+    end
+
+    def normalized_marketplace_entries
+      agent_run.agent_run_marketplace_entries.ordered.map do |attachment|
+        {
+          entry_id: attachment.marketplace_entry_id,
+          version_id: attachment.marketplace_entry_version_id,
+          source: attachment.attachment_source,
+          rendered_format: attachment.rendered_format,
+          rendered_payload: attachment.rendered_payload
+        }
+      end
     end
 
     def experiment_definitions(selected_variants = nil)

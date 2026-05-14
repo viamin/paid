@@ -22,6 +22,7 @@ module Activities
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
+      manual_marketplace_entry_ids = input[:marketplace_entry_ids]
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
@@ -90,6 +91,10 @@ module Activities
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
       agent_run = AgentRun.create!(**attrs)
+      MarketplaceEntries::AttachToRun.call(
+        agent_run: agent_run,
+        manual_entry_ids: manual_marketplace_entry_ids
+      )
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
       track_phase(
@@ -214,6 +219,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
+      MarketplaceEntries::AttachToRun.call(agent_run: agent_run)
       assign_configuration_bundle(agent_run)
 
       logger.info(

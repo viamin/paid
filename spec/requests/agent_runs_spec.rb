@@ -1146,6 +1146,25 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.status).to eq("queued")
       end
 
+      it "attaches selected marketplace entries to the queued run" do
+        entry = create(:marketplace_entry, account: account, name: "Repo skill")
+        version = create(:marketplace_entry_version,
+          marketplace_entry: entry,
+          canonical_artifact: {
+            "attachment_strategy" => "prompt_append",
+            "content" => "Use the repo coding workflow."
+          })
+        entry.update!(current_version: version)
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ entry.id ] }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(entry)
+        expect(attachment.attachment_source).to eq("manual")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }

@@ -144,6 +144,8 @@ class AgentRun < ApplicationRecord
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
+  has_many :agent_run_marketplace_entries, -> { order(:position, :id) }, dependent: :destroy
+  has_many :marketplace_entries, through: :agent_run_marketplace_entries
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -1609,7 +1611,10 @@ class AgentRun < ApplicationRecord
   #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
-    custom_prompt.presence || prompt_for_goal
+    MarketplaceEntries::InjectIntoPrompt.call(
+      agent_run: self,
+      prompt: custom_prompt.presence || prompt_for_goal
+    )
   end
 
   # Returns the base prompt for the review goal.
