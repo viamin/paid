@@ -151,13 +151,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Comment results on PR
-        if: always()
+  comment-results:
+    name: Reconcile ephemeral test PR comment
+    needs: [detect, run-tests]
+    if: >-
+      always()
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update PR comment
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          HAS_TESTS: ${{ needs.detect.outputs.has_tests }}
+          RUN_TESTS_RESULT: ${{ needs.run-tests.result }}
         run: |
           marker="<!-- ephemeral-tests-result -->"
-          conclusion="${{ job.status }}"
+          existing_comment_id=$(gh api \
+            --paginate \
+            "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+            | head -n 1)
+
+          if [ "$HAS_TESTS" != "true" ]; then
+            if [ -n "$existing_comment_id" ]; then
+              gh api \
+                "repos/${{ github.repository }}/issues/comments/${existing_comment_id}" \
+                --method DELETE
+            fi
+            exit 0
+          fi
+
+          conclusion="$RUN_TESTS_RESULT"
           if [ "$conclusion" = "success" ]; then
             body="${marker}
           ## Ephemeral Tests: passed
@@ -167,14 +191,8 @@ jobs:
             body="${marker}
           ## Ephemeral Tests: ${conclusion}
 
-          One or more ephemeral tests failed. Check the logs for details."
+          Ephemeral tests did not complete successfully. Check the logs for details."
           fi
-
-          # Find existing marker comment and update it, or create a new one
-          existing_comment_id=$(gh api \
-            "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
-            | head -n 1)
 
           if [ -n "$existing_comment_id" ]; then
             gh api \
