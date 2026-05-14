@@ -9,12 +9,12 @@ module Notifications
     good_job_control_concurrency_with(
       total_limit: 1,
       enqueue_limit: 1,
-      key: "notifications_check_provider_quotas"
+      key: "notifications_check_runner_quotas"
     )
 
     def perform
       runners = Runner.includes(user: :runner_states).to_a
-      Rules::ProviderQuotaExhausted.call(scope: runners)
+      Rules::RunnerQuotaExhausted.call(scope: runners)
     end
   end
 end
