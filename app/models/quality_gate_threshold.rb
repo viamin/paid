@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class QualityGateThreshold < ApplicationRecord
+  has_logidze
   SEVERITIES = %w[info warning critical].freeze
   METRIC_KEYS = %w[composite_score pr_created ci_passed pr_merged iterations lint_clean
                    tests_pass review_comment_count agent_rerun_count issue_created

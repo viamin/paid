@@ -119,6 +119,18 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "persists the focus when provided" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        focus: "ci_fix"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.focus).to eq("ci_fix")
+      expect(result[:focus]).to eq("ci_fix")
+    end
+
     it "uses the configured primary runner when agent type is omitted" do
       codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
       project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
@@ -190,16 +202,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
         trigger_type: "automatic",
         goal: "review"
       )
-      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+      project.created_by.settings.update!(default_agent_runners_by_goal: { "review" => codex_runner.routing_key })
 
       result = activity.execute(agent_run_id: queued_run.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
       expect(agent_run.status).to eq("queued")
       expect(agent_run.configuration_bundle.definition).to include(
-        "provider_id" => codex_provider.id,
+        "provider_id" => codex_runner.id,
         "agent_type" => "codex"
       )
     end
@@ -246,7 +258,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         :queued,
         project: project,
         issue: issue,
-        provider: claude_provider,
+        runner: claude_runner,
         agent_type: "claude_code",
         configuration_bundle: existing_bundle)
       llm_model = create(:llm_model, provider: "openai", model_id: "gpt-5.4")
@@ -287,7 +299,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         issue: issue,
         source_pull_request_number: 42,
         goal: "review",
-        provider: claude_provider,
+        runner: claude_runner,
         agent_type: "claude_code",
         configuration_bundle: bundle)
     end
@@ -339,7 +351,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       queued_run = create(:agent_run, :queued, :automatic,
         project: project, issue: issue, provider: claude_provider, agent_type: "claude_code")
       codex_provider.update!(enabled_for_agent_runs: false)
-      allow(activity).to receive(:resolve_provider_selection).and_return([ codex_provider.id, "codex" ])
+      allow(activity).to receive(:resolve_runner_selection).and_return([ codex_provider.id, "codex" ])
 
       expect {
         activity.execute(agent_run_id: queued_run.id)

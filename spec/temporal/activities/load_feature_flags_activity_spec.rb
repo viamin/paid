@@ -22,7 +22,10 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
       FeatureFlags.enable!(:explicit_pr_automation_decisions, project:)
 
       expect(activity.execute(project_id: project.id)).to eq(
-        flags: { explicit_pr_automation_decisions: true },
+        flags: {
+          explicit_pr_automation_decisions: true,
+          focused_agent_runs: false
+        },
         project_missing: false
       )
     end

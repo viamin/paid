@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -91,7 +91,15 @@ jobs:
 
           jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
           capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
-          raise "Could not find capture job for workflow run #{run.fetch("id")}" unless capture_job
+          detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
+          capture_conclusion =
+            if capture_job
+              capture_job["conclusion"]
+            elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
+              "skipped"
+            else
+              raise "Could not find a successful capture job, and detect did not complete cleanly, for workflow run #{run.fetch("id")}"
+            end
 
           artifacts = get_json(
             "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
@@ -100,7 +108,7 @@ jobs:
           artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
 
           comment_status =
-            case capture_job["conclusion"]
+            case capture_conclusion
             when "success"
               "success"
             when "skipped"
@@ -132,6 +140,7 @@ jobs:
         env:
           BUNDLE_FROZEN: "true"
           RAILS_ENV: test
+          SECRET_KEY_BASE: test-secret-key-base
           SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
           SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
           SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}

@@ -21,4 +21,8 @@ FactoryBot.define do
       fallback_role { "rate_limit_fallback" }
     end
   end
+
+  factory :provider, parent: :runner do
+    provider_key { runner_key }
+  end
 end

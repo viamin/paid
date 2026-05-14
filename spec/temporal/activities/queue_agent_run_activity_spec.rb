@@ -171,6 +171,17 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "stores the focus parameter on the created agent run" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        focus: "review_feedback"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.focus).to eq("review_feedback")
+    end
+
     it "defaults goal to create_pr when not specified" do
       result = activity.execute(
         project_id: project.id,

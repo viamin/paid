@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class LlmModel < ApplicationRecord
+  has_logidze
   CATEGORIES = %w[general coding planning review].freeze
   PROVIDERS = %w[anthropic openai google mistral meta cohere].freeze
   TIERS = %w[low mid high].freeze

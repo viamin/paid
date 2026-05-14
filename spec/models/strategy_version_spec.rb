@@ -92,6 +92,57 @@ RSpec.describe StrategyVersion do
       version.promotion_state = "candidate"
       expect(version).to be_valid
     end
+
+    it "requires promotion metadata when activating an existing candidate" do
+      version = create(:strategy_version, :candidate)
+
+      version.promotion_state = "active"
+
+      expect(version).not_to be_valid
+      expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
+    end
+
+    it "requires promotion metadata when activating an existing draft" do
+      version = create(:strategy_version)
+
+      version.promotion_state = "active"
+
+      expect(version).not_to be_valid
+      expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
+    end
+
+    it "allows creating an active seed version without review metadata for a new strategy" do
+      version = build(:strategy_version, promotion_state: "active", promoted_at: nil, promoted_by_user: nil)
+
+      expect(version).to be_valid
+    end
+
+    it "rejects creating a later active version without promotion metadata" do
+      strategy = create(:strategy, :global)
+      create(:strategy_version, :active, strategy: strategy, version: 1)
+
+      version = build(:strategy_version, strategy: strategy, version: 2, promotion_state: "active", promoted_at: nil, promoted_by_user: nil)
+
+      expect(version).not_to be_valid
+      expect(version.errors[:promotion_state]).to include("requires explicit review metadata before activation")
+    end
+
+    it "allows a later seeded global activation without reviewer metadata" do
+      strategy = create(:strategy, :global)
+      create(:strategy_version, :retired, strategy: strategy, version: 1)
+
+      version = build(
+        :strategy_version,
+        strategy: strategy,
+        version: 2,
+        promotion_state: "active",
+        created_by: "seed",
+        promoted_at: Time.current,
+        promoted_by_user: nil
+      )
+
+      expect(version).to be_valid
+    end
   end
 
   describe "promotion state" do
@@ -117,6 +168,14 @@ RSpec.describe StrategyVersion do
       expect(described_class.active).not_to include(retired)
       expect(described_class.retired).to include(retired)
       expect(described_class.retired).not_to include(active)
+    end
+
+    it "#pending_review? is true for candidate versions" do
+      expect(create(:strategy_version, :candidate)).to be_pending_review
+    end
+
+    it "#rejected? is true for rejected versions" do
+      expect(create(:strategy_version, :rejected)).to be_rejected
     end
   end
 end

@@ -66,7 +66,8 @@ RSpec.describe Automation::PullRequestEvaluator do
           {
             type: "queue_review_run",
             issue_id: pull_request.id,
-            source_pull_request_number: 42
+            source_pull_request_number: 42,
+            focus: "general"
           }
         ]
       )
@@ -188,7 +189,7 @@ RSpec.describe Automation::PullRequestEvaluator do
 
         decisions = result.to_h[:decisions]
         create_decision = decisions.find { |d| d[:type] == "queue_create_pr_run" }
-        expect(create_decision).to include(issue_id: pr.id, source_pull_request_number: 42)
+        expect(create_decision).to include(issue_id: pr.id, source_pull_request_number: 42, focus: "general")
         expect(decisions.map { |d| d[:type] }).to include("record_pr_followup")
       end
 
@@ -206,6 +207,7 @@ RSpec.describe Automation::PullRequestEvaluator do
         expect(create_decision).to include(
           issue_id: pr.id,
           source_pull_request_number: 42,
+          focus: "general",
           count_toward_draft_review_round: true,
           expected_draft_review_count: 1
         )

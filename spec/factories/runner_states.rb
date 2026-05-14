@@ -23,4 +23,8 @@ FactoryBot.define do
       circuit_opened_at { 10.minutes.ago }
     end
   end
+
+  factory :provider_state, parent: :runner_state do
+    provider_name { runner_name }
+  end
 end

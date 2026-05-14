@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow do
+RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow, :no_db do
   let(:workflow) { described_class.new }
   let(:input) { { account_id: 9 } }
   let(:mutation) do
@@ -18,11 +18,12 @@ RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow do
   let(:prepared_inputs) do
     {
       account_id: 9,
-      policy_type: "feature_orchestration",
-      strategy: {
+      policy_type: "decomposition",
+      policy: {
         id: 3,
-        strategy_type: "feature_orchestration",
-        name: "Feature Orchestration",
+        policy_type: "decomposition",
+        policy_key: "feature_decomposition",
+        name: "Feature Decomposition",
         version: 2,
         configuration: OrchestrationStrategies::Defaults.feature_orchestration
       },
@@ -59,9 +60,9 @@ RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow do
       when "Activities::PrepareCoordinationPolicyEvolutionInputsActivity"
         prepared_inputs
       when "Activities::GenerateCoordinationPolicyCandidatesActivity"
-        { policy_type: "feature_orchestration", mutations: [ mutation ] }
+        { policy_type: "decomposition", mutations: [ mutation ] }
       when "Activities::PersistCoordinationPolicyCandidatesActivity"
-        { policy_type: "feature_orchestration", candidate_ids: [ 101 ], candidate_count: 1 }
+        { policy_type: "decomposition", candidate_ids: [ 101 ], candidate_count: 1 }
       end
     end
 
@@ -69,7 +70,7 @@ RSpec.describe Workflows::CoordinationPolicyEvolutionWorkflow do
 
     expect(result).to include(
       status: :candidates_created,
-      policy_type: "feature_orchestration",
+      policy_type: "decomposition",
       candidate_ids: [ 101 ],
       candidate_count: 1
     )

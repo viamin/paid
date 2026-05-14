@@ -557,7 +557,7 @@ RSpec.describe "Projects" do
       it "shows the provider column for recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
         provider = create(:runner, user: user, runner_key: "codex")
-        run = create(:agent_run, project: project, provider: provider, final_runner: provider.routing_key)
+        run = create(:agent_run, project: project, runner: provider, final_runner: provider.routing_key)
 
         get project_path(project)
 
@@ -576,7 +576,7 @@ RSpec.describe "Projects" do
       it "shows the final provider label for legacy fallback runs in recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
         initial_provider = create(:runner, user: user, runner_key: "codex")
-        run = create(:agent_run, project: project, provider: initial_provider, final_runner: "cursor")
+        run = create(:agent_run, project: project, runner: initial_provider, final_runner: "cursor")
 
         get project_path(project)
 
@@ -590,7 +590,7 @@ RSpec.describe "Projects" do
 
       it "renders unsupported provider identifiers in recent agent runs without error" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        run = create(:agent_run, project: project, provider: nil, final_runner: "api", agent_type: "api")
+        run = create(:agent_run, project: project, runner: nil, final_runner: "api", agent_type: "api")
 
         get project_path(project)
 
@@ -669,20 +669,30 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Clean Up Stale Runs")
       end
 
-      it "shows the Goal column with PR label for create_pr runs" do
+      it "shows the Goal column with the PR Creation label for create_pr runs" do
         project = create(:project, account: account, github_token: github_token)
         agent_run = create(:agent_run, project: project, status: "completed", goal: "create_pr")
         get project_path(project)
-        expect(response.body).to include(">Goal</th>")
-        expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*PR\s*<\/td>/m)
+        document = Nokogiri::HTML(response.body)
+        goal_index = document.css("table thead th").find_index { |header| header.text.squish == "Goal" }
+        row = document.at_css(%(tr#agent_run_#{agent_run.id}))
+
+        expect(goal_index).not_to be_nil
+        expect(row).to be_present
+        expect(row.css("td")[goal_index].text).to include("PR Creation")
       end
 
-      it "shows the Goal column with Issue label for create_issue runs" do
+      it "shows the Goal column with the Issue Creation label for create_issue runs" do
         project = create(:project, account: account, github_token: github_token)
         agent_run = create(:agent_run, :create_issue_goal, project: project, status: "completed")
         get project_path(project)
-        expect(response.body).to include(">Goal</th>")
-        expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*Issue\s*<\/td>/m)
+        document = Nokogiri::HTML(response.body)
+        goal_index = document.css("table thead th").find_index { |header| header.text.squish == "Goal" }
+        row = document.at_css(%(tr#agent_run_#{agent_run.id}))
+
+        expect(goal_index).not_to be_nil
+        expect(row).to be_present
+        expect(row.css("td")[goal_index].text).to include("Issue Creation")
       end
 
       it "shows issue link when created_issue_url is present" do

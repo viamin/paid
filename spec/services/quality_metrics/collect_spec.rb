@@ -155,6 +155,44 @@ RSpec.describe QualityMetrics::Collect do
       end
     end
 
+    context "with focused create_pr goal" do
+      let(:agent_run) { create(:agent_run, :completed, focus: "ci_fix", iterations: 3) }
+
+      it "uses focus-specific weights for the composite score" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.composite_score).to eq(0.9333)
+      end
+
+      it "skips irrelevant general PR metrics" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).to include("iterations", "lint_clean")
+        expect(metric.scores).not_to include(
+          "pr_created",
+          "pr_merged",
+          "review_comment_count",
+          "agent_rerun_count"
+        )
+      end
+    end
+
+    context "with issue_implementation focus" do
+      let(:agent_run) { create(:agent_run, :completed, focus: "issue_implementation", iterations: 3) }
+
+      it "uses focused scoring for issue_implementation runs" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).to include("iterations", "lint_clean")
+        expect(metric.scores).not_to include(
+          "pr_created",
+          "pr_merged",
+          "review_comment_count",
+          "agent_rerun_count"
+        )
+      end
+    end
+
     context "with create_issue goal" do
       let(:agent_run) do
         create(:agent_run, :with_created_issue, status: "completed",

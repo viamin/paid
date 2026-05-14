@@ -3,6 +3,28 @@
 require "rails_helper"
 
 RSpec.describe QualityMetrics::DashboardStats do
+  describe ".metrics_reference", :no_db do
+    it "includes focus-specific weights for create_pr metrics" do
+      result = described_class.metrics_reference
+
+      ci_passed = result.find { |metric| metric[:key] == "ci_passed" }
+      focus_resolved = result.find { |metric| metric[:key] == "focus_resolved" }
+
+      expect(ci_passed[:weights_by_focus]).to eq(
+        "ci_fix" => 0.50,
+        "merge_conflict" => 0.15,
+        "issue_implementation" => 0.15
+      )
+      expect(focus_resolved[:weights_by_focus]).to eq(
+        "review_feedback" => 0.60,
+        "merge_conflict" => 0.70,
+        "conversation" => 0.60,
+        "label_action" => 0.60,
+        "issue_implementation" => 0.50
+      )
+    end
+  end
+
   describe ".overview" do
     let(:project) { create(:project) }
 
@@ -142,26 +164,49 @@ RSpec.describe QualityMetrics::DashboardStats do
       end
     end
 
-    it "includes metrics reference in response" do
+    it "includes the metrics reference collection in the response" do
       result = described_class.call(project: project)
 
       expect(result[:metrics_reference]).to be_an(Array)
       expect(result[:metrics_reference].size).to be > 0
+    end
+
+    it "includes goal and focus weight metadata for create_pr metrics" do
+      result = described_class.call(project: project)
 
       pr_created = result[:metrics_reference].find { |m| m[:key] == "pr_created" }
+      ci_passed = result[:metrics_reference].find { |m| m[:key] == "ci_passed" }
+      focus_resolved = result[:metrics_reference].find { |m| m[:key] == "focus_resolved" }
+
       expect(pr_created[:name]).to eq("PR Created")
       expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.25)
+      expect(pr_created[:weights_by_focus]).to eq({})
       expect(pr_created[:goal_types]).to include("create_pr")
+      expect(ci_passed[:weights_by_focus]).to eq(
+        "ci_fix" => 0.50,
+        "merge_conflict" => 0.15,
+        "issue_implementation" => 0.15
+      )
+      expect(focus_resolved[:weights_by_focus]).to eq(
+        "review_feedback" => 0.60,
+        "merge_conflict" => 0.70,
+        "conversation" => 0.60,
+        "label_action" => 0.60,
+        "issue_implementation" => 0.50
+      )
+    end
+
+    it "includes goal metadata for non-create_pr metrics" do
+      result = described_class.call(project: project)
 
       issue_created = result[:metrics_reference].find { |m| m[:key] == "issue_created" }
-      expect(issue_created[:goal_types]).to include("create_issue")
-
       review_posted = result[:metrics_reference].find { |m| m[:key] == "review_posted" }
-      expect(review_posted[:goal_types]).to include("review")
-
-      # reaction_score is collected for all goals but is not weighted for create_pr
       reaction = result[:metrics_reference].find { |m| m[:key] == "reaction_score" }
+
+      expect(issue_created[:goal_types]).to include("create_issue")
+      expect(review_posted[:goal_types]).to include("review")
       expect(reaction[:weights_by_goal]).to eq("create_issue" => 0.60, "review" => 0.60, "enhance_issue" => 0.35)
+      expect(reaction[:weights_by_focus]).to eq({})
       expect(reaction[:goal_types]).to contain_exactly("create_pr", "create_issue", "review", "enhance_issue")
     end
 

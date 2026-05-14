@@ -9,6 +9,7 @@ require Rails.root.join("db/migrate/20260426011810_enable_rls_on_llm_output_metr
 require Rails.root.join("db/migrate/20260426231639_enable_rls_on_chat_tables")
 require Rails.root.join("db/migrate/20260427225726_enable_rls_on_knowledge_recommendations")
 require Rails.root.join("db/migrate/20260428140000_create_exception_incidents")
+require Rails.root.join("db/migrate/20260512120010_add_logidze_to_exception_incidents")
 require Rails.root.join("db/migrate/20260503093418_enable_rls_on_issue_merge_subscriptions")
 require Rails.root.join("db/migrate/20260508120219_create_failure_classifications")
 require Rails.root.join("db/migrate/20260507125050_create_decomposition_decisions")
@@ -74,6 +75,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
       issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
       exception_incidents_migration.up unless exception_incidents_table_exists?
+      restore_exception_incidents_logidze!
       failure_classifications_migration.up unless failure_classifications_table_exists?
       orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
       add_strategy_version_to_orchestration_decisions_migration.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
@@ -336,6 +338,17 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
   def exception_incidents_migration
     @exception_incidents_migration ||= CreateExceptionIncidents.new
+  end
+
+  def exception_incidents_logidze_migration
+    @exception_incidents_logidze_migration ||= AddLogidzeToExceptionIncidents.new
+  end
+
+  def restore_exception_incidents_logidze!
+    return unless exception_incidents_table_exists?
+    return if ActiveRecord::Base.connection.column_exists?(:exception_incidents, :log_data)
+
+    exception_incidents_logidze_migration.migrate(:up)
   end
 
   def failure_classifications_migration

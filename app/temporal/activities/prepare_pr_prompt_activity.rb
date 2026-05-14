@@ -13,6 +13,7 @@ module Activities
       agent_run_id = input[:agent_run_id]
       rebase_succeeded = input.fetch(:rebase_succeeded, true)
       agent_run = AgentRun.find(agent_run_id)
+      focus = input[:focus].presence || agent_run.focus.presence || "general"
       track_phase(agent_run_id: agent_run_id, phase_key: "prepare_pr_prompt", phase_group: "prompt", agent_run: agent_run) do
         project = agent_run.project
         client = project.github_token.client
@@ -27,7 +28,8 @@ module Activities
           github_client: client,
           rebase_succeeded: rebase_succeeded,
           issue: agent_run.issue,
-          prompt_version: prompt_version
+          prompt_version: prompt_version,
+          focus: focus
         )
         prompt = prompt_builder.build
         includes_review_threads = prompt_builder.includes_review_threads?
@@ -38,6 +40,7 @@ module Activities
         logger.info(
           message: "agent_execution.prepare_pr_prompt",
           agent_run_id: agent_run_id,
+          focus: focus,
           prompt_length: prompt.length,
           includes_review_threads: includes_review_threads,
           review_thread_count: review_thread_ids.size,

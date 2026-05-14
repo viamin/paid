@@ -52,6 +52,26 @@ module Knowledge
     PROJECT_NAME_PATTERN = %r{\A[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+\z}
     ALLOWED_NETWORK_MODES = %w[none bridge].freeze
 
+    # Minimal database.yml stub written over the repo's copy so the routes
+    # collector can boot the target Rails app regardless of the original
+    # file's content.  Rails parses config/database.yml during boot even
+    # when DATABASE_URL is set, so a broken YAML file (invalid syntax, ERB
+    # referencing undefined variables, tabs instead of spaces, etc.)
+    # prevents `bin/rails routes` from running.  The stub provides valid
+    # YAML for all standard environments; DATABASE_URL=sqlite3::memory:
+    # overrides the actual connection at runtime.
+    DATABASE_YML_STUB = <<~YAML.freeze
+      test:
+        adapter: sqlite3
+        database: ":memory:"
+      development:
+        adapter: sqlite3
+        database: ":memory:"
+      production:
+        adapter: sqlite3
+        database: ":memory:"
+    YAML
+
     attr_reader :project, :commit_sha, :branch, :committed_at, :options, :host_repo_dir
 
     def initialize(project:, commit_sha:, branch: "main", committed_at: nil, options: {})
@@ -268,6 +288,14 @@ module Knowledge
       # CAP_DAC_OVERRIDE so even root cannot create new entries there.
       exec_setup!([ "mkdir", "-p", *writable_paths ], "create Rails writable directories")
 
+      # Overwrite config/database.yml with a minimal stub so the routes
+      # collector can boot the target Rails app regardless of the original
+      # file's content.  Must happen BEFORE chmod — after `chmod -R a=rX`,
+      # CapDrop: ALL strips CAP_DAC_OVERRIDE so even root cannot write.
+      # Only overwrites when the repo already has a config/database.yml;
+      # non-Rails repos are unaffected.
+      write_database_yml_stub!(workspace)
+
       # Set read + execute (for directories) for all users so the agent can
       # read the codebase for analysis. Collectors should write only to
       # the size-limited tmpfs locations (/tmp, /home/agent/.cache) and
@@ -296,6 +324,18 @@ module Knowledge
       return if status.to_i.zero?
 
       raise ContainerError, "Failed to #{failing_action} (exit #{status})"
+    end
+
+    def write_database_yml_stub!(workspace)
+      stub_content = DATABASE_YML_STUB.chomp
+      exec_setup!(
+        [
+          "sh", "-c",
+          "if [ -f '#{workspace}/config/database.yml' ] && [ ! -L '#{workspace}/config/database.yml' ]; then " \
+          "cat > '#{workspace}/config/database.yml' <<'STUB'\n#{stub_content}\nSTUB\nfi"
+        ],
+        "write database.yml stub"
+      )
     end
 
     def stream_repo_tar_to_container!

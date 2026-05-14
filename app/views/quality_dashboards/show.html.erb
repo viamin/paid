@@ -149,9 +149,12 @@
                 <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= metric[:name] %></td>
                 <td class="px-4 py-3 text-sm text-gray-500"><%= metric[:description] %></td>
                 <td class="px-4 py-3 text-sm text-gray-500 text-right">
-                  <% if metric[:weights_by_goal].any? %>
+                  <% if metric[:weights_by_goal].any? || metric[:weights_by_focus].any? %>
                     <% metric[:weights_by_goal].each do |goal, weight| %>
                       <div class="whitespace-nowrap"><%= goal.titleize %>: <%= format("%.0f%%", weight * 100) %></div>
+                    <% end %>
+                    <% metric[:weights_by_focus].each do |focus, weight| %>
+                      <div class="whitespace-nowrap">Create Pr / <%= focus.titleize %>: <%= format("%.0f%%", weight * 100) %></div>
                     <% end %>
                   <% else %>
                     —

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class PreCommitRequirement < ApplicationRecord
+  has_logidze
   CHECK_TYPES = %w[shell_command test_suite coverage security_scan].freeze
   FAILURE_BEHAVIORS = %w[block warn auto_fix].freeze
 

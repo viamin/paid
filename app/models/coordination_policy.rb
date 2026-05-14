@@ -19,6 +19,7 @@ class CoordinationPolicy < ApplicationRecord
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validate :current_version_belongs_to_policy
+  validate :current_version_must_be_activatable
   validate :status_matches_current_version
   validate :project_belongs_to_account
   validate :context_selector_is_object
@@ -47,6 +48,7 @@ class CoordinationPolicy < ApplicationRecord
 
   def activate_version!(policy_version)
     raise ArgumentError, "policy_version must belong to this coordination policy" unless policy_version.coordination_policy_id == id
+    raise CoordinationPolicyVersion::InvalidTransitionError, "cannot activate version pending review approval" unless policy_version.activatable?
 
     transaction do
       now = Time.current
@@ -70,6 +72,13 @@ class CoordinationPolicy < ApplicationRecord
     return if current_version.coordination_policy_id == id
 
     errors.add(:current_version, "must belong to this coordination policy")
+  end
+
+  def current_version_must_be_activatable
+    return if current_version.nil?
+    return if current_version.activatable?
+
+    errors.add(:current_version, "must be approved before it can become active")
   end
 
   def status_matches_current_version

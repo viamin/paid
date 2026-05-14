@@ -3,6 +3,12 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::CleanupStale do
+  around do |example|
+    Rails.cache.clear
+    example.run
+    Rails.cache.clear
+  end
+
   describe ".call" do
     let(:project) { create(:project) }
 
@@ -193,6 +199,28 @@ RSpec.describe AgentRuns::CleanupStale do
       stale_claimed.update_column(:updated_at, AgentRun.stale_claimed_cutoff - 1.minute)
 
       expect(described_class.call(project: project)).to eq(2)
+    end
+
+    it "uses adaptive goal-aware stale thresholds for running runs" do
+      create_list(:agent_run, AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+        :completed,
+        :review_goal,
+        duration_seconds: 120,
+        completed_at: 1.day.ago)
+
+      stale_review = create(:agent_run, :running, :review_goal, project: project,
+        started_at: AgentRun.stale_running_cutoff(goal: "review") - 1.minute)
+      fresh_create_pr = create(:agent_run, :running, project: project,
+        started_at: AgentRun.stale_running_cutoff(goal: "create_pr") + 1.minute)
+      relation = instance_double(ActiveRecord::Relation)
+
+      allow(project.agent_runs).to receive(:stale_for_cleanup).and_return(relation)
+      allow(relation).to receive(:find_each).and_yield(stale_review).and_yield(fresh_create_pr)
+
+      described_class.call(project: project)
+
+      expect(stale_review.reload.status).to eq("timeout")
+      expect(fresh_create_pr.reload.status).to eq("running")
     end
   end
 end

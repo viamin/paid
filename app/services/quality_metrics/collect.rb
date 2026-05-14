@@ -54,7 +54,7 @@ module QualityMetrics
 
     def record_quality_metric
       scores = build_scores
-      weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
+      weights = QualityMetric.weights_for(goal: agent_run.goal, focus: agent_run.focus)
       automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
@@ -87,12 +87,25 @@ module QualityMetrics
     # the completion-time agent run does not carry finalized CI/test/merge
     # outcomes, and weighted_average renormalizes over present keys.
     def build_scores
+      return build_focused_scores if agent_run.create_pr_goal? && agent_run.focused?
+
       case agent_run.goal
       when "create_pr" then build_pr_scores
       when "create_issue" then build_issue_scores
       when "review" then build_review_scores
       when "enhance_issue" then build_enhance_issue_scores
       else build_pr_scores
+      end
+    end
+
+    def build_focused_scores
+      case agent_run.focus
+      when "merge_conflict"
+        build_merge_conflict_scores
+      when "ci_fix", "review_feedback", "conversation", "label_action", "issue_implementation"
+        build_iteration_and_lint_scores
+      else
+        build_pr_scores
       end
     end
 
@@ -107,6 +120,20 @@ module QualityMetrics
         scores["review_comment_count"] = comment_score unless comment_score.nil?
         scores["agent_rerun_count"] = agent_rerun_count_score
       end
+      scores
+    end
+
+    def build_iteration_and_lint_scores
+      scores = {}
+      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
+      lint = lint_clean_score
+      scores["lint_clean"] = lint unless lint.nil?
+      scores
+    end
+
+    def build_merge_conflict_scores
+      scores = {}
+      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
       scores
     end
 

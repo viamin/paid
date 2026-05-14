@@ -88,6 +88,9 @@ module Screenshots
       prompt_reviews_queue: Target.new(slug: "prompt_reviews_queue", path_builder: "/prompt_reviews", requires_auth: true),
       prompt_reviews: Target.new(slug: "prompt_reviews", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews" }, requires_auth: true),
       prompt_review_show: Target.new(slug: "prompt_review_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews/#{seed_data.fetch(:pending_prompt_version).id}" }, requires_auth: true),
+      strategy_reviews_queue: Target.new(slug: "strategy_reviews_queue", path_builder: "/strategy_reviews", requires_auth: true),
+      strategy_reviews: Target.new(slug: "strategy_reviews", path_builder: ->(seed_data) { "/strategies/#{seed_data.fetch(:strategy).id}/reviews" }, requires_auth: true),
+      strategy_review_show: Target.new(slug: "strategy_review_show", path_builder: ->(seed_data) { "/strategies/#{seed_data.fetch(:strategy).id}/reviews/#{seed_data.fetch(:pending_strategy_version).id}" }, requires_auth: true),
       ab_tests: Target.new(slug: "ab_tests", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/ab_tests" }, requires_auth: true),
       ab_test_new: Target.new(slug: "ab_test_new", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/ab_tests/new" }, requires_auth: true),
       ab_test_show: Target.new(slug: "ab_test_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/ab_tests/#{seed_data.fetch(:ab_test).id}" }, requires_auth: true),
@@ -109,6 +112,13 @@ module Screenshots
       projects: Target.new(slug: "projects", path_builder: "/projects", requires_auth: true),
       project_new: Target.new(slug: "project_new", path_builder: "/projects/new", requires_auth: true),
       project_show: Target.new(slug: "project_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}" }, requires_auth: true),
+      project_issue_clarifying_questions: Target.new(
+        slug: "project_issue_clarifying_questions",
+        path_builder: ->(seed_data) {
+          "/projects/#{seed_data.fetch(:project).id}/issues/#{seed_data.fetch(:clarifying_issue).id}/clarifying_questions"
+        },
+        requires_auth: true
+      ),
       project_edit: Target.new(slug: "project_edit", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/edit" }, requires_auth: true),
       project_agent_runs: Target.new(slug: "project_agent_runs", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs" }, requires_auth: true),
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
@@ -164,6 +174,7 @@ module Screenshots
       "agent_runs_controller.rb" => [ :agent_runs ],
       "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
+      "strategy_reviews_controller.rb" => %i[strategy_reviews_queue strategy_reviews strategy_review_show],
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
@@ -203,6 +214,7 @@ module Screenshots
       "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
       "knowledge/context_intake_controller.rb" => [ :project_context_intake ],
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
+      "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
       "projects/issue_merge_subscriptions_controller.rb" => [ :project_show ],
       "projects/pr_templates_controller.rb" => [ :project_edit ],
       "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
@@ -214,6 +226,13 @@ module Screenshots
     }.freeze
 
     def targets_for(path)
+      return targets_for_javascript_registry if path == "app/javascript/controllers/index.js"
+
+      if path.start_with?("app/javascript/controllers/")
+        explicit_targets = targets_for_javascript_controller(path.delete_prefix("app/javascript/controllers/"))
+        return explicit_targets if explicit_targets.any?
+      end
+
       return SHARED_TARGET_KEYS if shared_ui_file?(path)
 
       if path.start_with?("app/views/")
@@ -240,6 +259,25 @@ module Screenshots
         path == "app/views/layouts/application.html.erb" ||
         path.start_with?("app/views/shared/") ||
         path == "app/helpers/application_helper.rb"
+    end
+
+    def targets_for_javascript_controller(relative_path)
+      case relative_path
+      when "clarifying_questions_controller.js" then [ :project_issue_clarifying_questions ]
+      else
+        []
+      end
+    end
+
+    def targets_for_javascript_registry
+      explicit_targets = @changed_files
+        .grep(%r{\Aapp/javascript/controllers/(?!index\.js\z)})
+        .flat_map { |file| targets_for_javascript_controller(file.delete_prefix("app/javascript/controllers/")) }
+        .uniq
+
+      return explicit_targets if explicit_targets.any?
+
+      SHARED_TARGET_KEYS
     end
 
     def targets_for_helper(path)
@@ -275,6 +313,7 @@ module Screenshots
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
+      when /\Astrategy_reviews\// then strategy_review_targets(relative_path.delete_prefix("strategy_reviews/"))
       when /\Aab_tests\// then ab_test_targets(relative_path.delete_prefix("ab_tests/"))
       when /\Aprompts\// then prompts_targets(relative_path.delete_prefix("prompts/"))
       when /\Astyle_guides\// then rest_resource_targets(relative_path, "style_guides", index: :style_guides, new: :style_guide_new, show: :style_guide_show, edit: :style_guide_edit)
@@ -304,6 +343,15 @@ module Screenshots
       when "index.html.erb" then [ :prompt_reviews ]
       else
         [ :prompt_review_show ]
+      end
+    end
+
+    def strategy_review_targets(leaf)
+      case leaf
+      when "queue.html.erb" then [ :strategy_reviews_queue ]
+      when "index.html.erb" then [ :strategy_reviews ]
+      else
+        [ :strategy_review_show ]
       end
     end
 
@@ -378,6 +426,7 @@ module Screenshots
       when "new.html.erb" then [ :project_new ]
       when "show.html.erb" then [ :project_show ]
       when "edit.html.erb" then [ :project_edit ]
+      when "clarifying_questions/show.html.erb" then [ :project_issue_clarifying_questions ]
       when /\A_/
         base = File.basename(leaf, ".html.erb")
         if PROJECT_SHOW_PARTIALS.include?(base)

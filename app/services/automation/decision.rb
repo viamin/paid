@@ -7,21 +7,23 @@ module Automation
         new(type: "noop", payload: {})
       end
 
-      def queue_create_pr_run(issue_id:, source_pull_request_number: nil,
+      def queue_create_pr_run(issue_id:, source_pull_request_number: nil, focus: nil,
         count_toward_draft_review_round: false, expected_draft_review_count: nil)
         new(type: "queue_create_pr_run", payload: {
           issue_id: issue_id,
           source_pull_request_number: source_pull_request_number,
+          focus: focus,
           count_toward_draft_review_round: count_toward_draft_review_round,
           expected_draft_review_count: expected_draft_review_count
         }.compact)
       end
 
-      def queue_review_run(issue_id:, source_pull_request_number:)
+      def queue_review_run(issue_id:, source_pull_request_number:, focus: nil)
         new(type: "queue_review_run", payload: {
           issue_id: issue_id,
-          source_pull_request_number: source_pull_request_number
-        })
+          source_pull_request_number: source_pull_request_number,
+          focus: focus
+        }.compact)
       end
 
       def start_planning(issue_id:)

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class User < ApplicationRecord
+  has_logidze
   belongs_to :account
   has_many :account_memberships, dependent: :destroy
   has_many :member_accounts, through: :account_memberships, source: :account
@@ -12,7 +13,9 @@ class User < ApplicationRecord
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_one :user_setting, dependent: :destroy
   has_many :runner_states, dependent: :destroy
+  has_many :provider_states, class_name: "RunnerState", inverse_of: :user
   has_many :runners, dependent: :destroy
+  has_many :providers, class_name: "Runner", inverse_of: :user
   has_many :provider_api_keys, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy

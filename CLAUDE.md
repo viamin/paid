@@ -16,7 +16,7 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 - **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
 - **Never commit build artifacts or tool caches** - Do not `git add` directories created by setup/install commands (e.g., `.corepack/`, `.pg-install/`, `.apt-cache/`, `.cache-pkg/`, `vendor/bundle/`, `.tmp-build/`, `.venv/`, `__pycache__/`, `.bundle-pr-*/`, `.cache-yarn/`). If `bin/setup`, `bundle install`, `yarn install`, or similar commands create new dotfile directories in the workspace root, those are build artifacts — not source code. Check `.gitignore` and `.git/info/exclude` before staging. **Always use `git add <specific files>`** — never use `git add -A` or `git add .` as these can stage artifact files that bypass exclude rules. The pre-commit hook rejects commits with more than 100 staged files.
 - **Conventional Commits are required** - Commits must use Conventional Commit format so release automation can generate semantic release notes correctly.
-- **Use git worktrees for concurrent branch work** - When working on multiple branches (e.g., making a PR while another branch has uncommitted changes), use `git worktree add` instead of stashing and switching branches. This avoids lost edits, stash conflicts, and accidental branch mix-ups. Remove worktrees when done with `git worktree remove`.
+- **Always use git worktrees when switching branches** — Never `git stash` + `git checkout` to switch branches. Always `git worktree add <path> <branch>` and work in the worktree instead. Stashing and switching risks losing uncommitted changes, stash conflicts, and accidental branch mix-ups. Remove worktrees when done with `git worktree remove <path>`.
 
 ## GitHub Issues
 
@@ -207,6 +207,16 @@ The [logidze gem](https://github.com/palkan/logidze) tracks ActiveRecord changes
 **Tables with logidze enabled** (`has_logidze` in model):
 
 - `projects`, `accounts`, `account_memberships` — configuration and access control
+- `project_memberships`, `users` — access control and identity
+- `mcp_server_definitions`, `pre_commit_requirements` — agent tooling config
+- `pr_templates`, `style_guides`, `prompts` — templates and prompt config
+- `tracker_configurations` — external integrations
+- `service_containers` — service container config
+- `exception_incidents` — incident management
+- `providers`, `provider_api_keys` — model provider config and credentials
+- `orchestration_strategies`, `configuration_bundles` — orchestration config
+- `quality_gate_thresholds`, `quality_thresholds` — evaluation thresholds
+- `llm_models`, `integration_credentials`, `github_tokens` — model catalog and integration credentials
 - `user_settings`, `tenant_settings` — user/tenant configuration
 - `cost_budgets`, `billing_plans`, `billing_invoices` — financial controls and audit trail
 
@@ -242,6 +252,7 @@ record.diff_from(version: 2)             # diff between versions
 - Test behavior/interfaces, not implementation details
 - Mock external dependencies only, never application code
 - Pending specs require issue reference: `pending "supports feature (#45)"`
+- **Ephemeral PR tests** — One-off system/integration tests for the PR that don't need to persist in the permanent suite. Add `*_spec.rb` files to `.ephemeral-tests/` on the PR branch. CI runs them automatically (same-repo PRs only). Remove test files before merge; a CI guard rejects stray test files on `main`. See `.ephemeral-tests/README.md`.
 
 ## Logging
 

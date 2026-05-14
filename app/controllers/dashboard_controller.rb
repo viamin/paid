@@ -16,11 +16,13 @@ class DashboardController < ApplicationController
       .order("agent_runs.created_at DESC")
       .limit(20)
     AgentRun.preload_final_runner_records(@active_runs)
+    AgentRun.preload_source_pull_requests(@active_runs)
     @paused_runs = live_agent_runs.paused.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order(paused_at: :desc, created_at: :desc)
       .limit(20)
       .to_a
     AgentRun.preload_final_runner_records(@paused_runs)
+    AgentRun.preload_source_pull_requests(@paused_runs)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)

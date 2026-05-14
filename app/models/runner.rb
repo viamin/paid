@@ -5,6 +5,7 @@ require "set"
 require "shellwords"
 
 class Runner < ApplicationRecord
+  has_logidze
   include Discard::Model
 
   AUTH_TYPES = %w[subscription api_key].freeze

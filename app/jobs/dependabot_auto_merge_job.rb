@@ -32,55 +32,95 @@ class DependabotAutoMergeJob < ApplicationJob
 
     client = project.github_token.client
 
-    dependabot_pr = find_dependabot_pr(client, project, pr_number)
-    return unless dependabot_pr
+    if pr_number
+      evaluate_single_pr(client, project, pr_number)
+    else
+      evaluate_all_prs(client, project)
+    end
+  end
 
-    pr_num = dependabot_pr.respond_to?(:number) ? dependabot_pr.number : dependabot_pr[:number]
+  private
 
-    unless mergeable?(dependabot_pr)
+  def evaluate_single_pr(client, project, pr_number)
+    pr_data = fetch_pr(client, project, pr_number)
+    return unless pr_data
+
+    return if skip_unmergeable?(client, project, pr_data)
+
+    merge_dependabot_pr(client, project, pr_data)
+  end
+
+  def evaluate_all_prs(client, project)
+    candidates = find_dependabot_candidates(client, project)
+    return if candidates.empty?
+
+    candidates.each do |pr_summary|
+      pr_num = pr_number_from(pr_summary)
+      pr_data = fetch_pr(client, project, pr_num)
+      next unless pr_data
+
+      next if skip_unmergeable?(client, project, pr_data)
+
+      merged = merge_dependabot_pr(client, project, pr_data)
+      break if merged
+    end
+  end
+
+  def pr_number_from(pr_data)
+    pr_data.respond_to?(:number) ? pr_data.number : pr_data[:number]
+  end
+
+  def skip_unmergeable?(client, project, pr_data)
+    pr_num = pr_number_from(pr_data)
+
+    unless mergeable?(pr_data)
       Rails.logger.info(
         message: "dependabot_auto_merge.skipped",
         project_id: project.id,
         pr_number: pr_num,
         reason: "not_mergeable"
       )
-      return
+      return true
     end
 
-    unless all_checks_green?(client, project, dependabot_pr)
+    unless all_checks_green?(client, project, pr_data)
       Rails.logger.info(
         message: "dependabot_auto_merge.skipped",
         project_id: project.id,
         pr_number: pr_num,
         reason: "checks_not_green"
       )
-      return
+      return true
     end
 
-    merge_dependabot_pr(client, project, dependabot_pr)
+    false
   end
 
-  private
+  def fetch_pr(client, project, pr_number)
+    pr_data = client.pull_request(project.full_name, pr_number)
+    return nil unless pr_data && dependabot_pr?(pr_data) && !merged?(pr_data)
 
-  def find_dependabot_pr(client, project, pr_number)
-    if pr_number
-      pr_data = client.pull_request(project.full_name, pr_number)
-      return pr_data if pr_data && dependabot_pr?(pr_data) && !merged?(pr_data)
-      return nil
-    end
+    pr_data
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "dependabot_auto_merge.fetch_pr_failed",
+      project_id: project.id,
+      pr_number: pr_number,
+      error: e.message
+    )
+    nil
+  end
 
+  def find_dependabot_candidates(client, project)
     prs = client.pull_requests(project.full_name, state: "open")
-    match = prs.find { |pr| dependabot_pr?(pr) && !merged?(pr) }
-    return nil unless match
-
-    client.pull_request(project.full_name, match.number)
+    prs.select { |pr| dependabot_pr?(pr) && !merged?(pr) }
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "dependabot_auto_merge.find_pr_failed",
       project_id: project.id,
       error: e.message
     )
-    nil
+    []
   end
 
   def dependabot_pr?(pr_data)
@@ -101,7 +141,7 @@ class DependabotAutoMergeJob < ApplicationJob
   end
 
   def merge_dependabot_pr(client, project, pr_data)
-    pr_number = pr_data.respond_to?(:number) ? pr_data.number : pr_data[:number]
+    pr_number = pr_number_from(pr_data)
 
     client.merge_pull_request(
       project.full_name, pr_number,
@@ -116,16 +156,18 @@ class DependabotAutoMergeJob < ApplicationJob
       project_id: project.id,
       pr_number: pr_number
     )
+    true
   rescue GithubClient::ApiError => e
     raise unless EXPECTED_MERGE_STATUSES.include?(e.status)
 
     Rails.logger.warn(
       message: "dependabot_auto_merge.merge_failed_expected",
       project_id: project.id,
-      pr_number: pr_data.respond_to?(:number) ? pr_data.number : pr_data[:number],
+      pr_number: pr_number,
       status: e.status,
       error: e.message
     )
+    false
   end
 
   def add_label(client, project, pr_number)

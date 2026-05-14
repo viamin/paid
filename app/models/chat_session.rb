@@ -17,6 +17,7 @@ class ChatSession < ApplicationRecord
 
   belongs_to :project, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
+  belongs_to :provider, -> { with_discarded }, class_name: "Runner", foreign_key: :runner_id, optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy

@@ -3,7 +3,8 @@
 # Detects agent runs stuck in "running", claimed-queued, or "paused" status
 # beyond the configured timeout thresholds.
 #
-# Running runs use the full agent timeout plus a grace period.
+# Running runs use adaptive goal-aware thresholds derived from recent healthy
+# successful runs, capped by the legacy global timeout.
 # Claimed queued runs (temporal_workflow_id set but status still "queued") use
 # a shorter threshold since the workflow should progress past the provisioning
 # phase within minutes.
@@ -27,9 +28,9 @@ class StaleRunDetectorJob < ApplicationJob
     key: "stale_run_detector"
   )
 
-  # Extra buffer beyond agent_timeout before declaring a running run stale.
+  # Extra buffer beyond healthy runtime before declaring a running run stale.
   # Accounts for container provisioning, git clone, push, and PR creation.
-  GRACE_PERIOD = 10.minutes
+  GRACE_PERIOD = AgentRun::STALE_RUNNING_GRACE_PERIOD
 
   # Shorter threshold for claimed queued runs. Container provisioning + clone
   # should complete well within this window. Using the full agent timeout
@@ -54,7 +55,6 @@ class StaleRunDetectorJob < ApplicationJob
 
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    running_threshold = agent_timeout_with_grace.ago
     claimed_threshold = CLAIMED_TIMEOUT.ago
     paused_threshold = PAUSED_TIMEOUT.ago
     resolved = 0
@@ -63,7 +63,7 @@ class StaleRunDetectorJob < ApplicationJob
     skipped = 0
     recovered_orphans = 0
 
-    stale_running_runs(running_threshold).find_each do |agent_run|
+    stale_running_runs.find_each do |agent_run|
       resolved += 1 if resolve_stale_run(agent_run)
     rescue => e
       Rails.logger.error(
@@ -136,23 +136,26 @@ class StaleRunDetectorJob < ApplicationJob
       .where.not(issue_id: nil)
       .select(:issue_id)
 
-    orphans = Issue.where(paid_state: "in_progress", is_pull_request: false)
+    count = 0
+
+    Issue.where(paid_state: "in_progress")
       .where.not(id: active_issue_ids)
       .where("updated_at < ?", ORPHANED_IN_PROGRESS_AGE.ago)
-
-    count = 0
-    orphans.find_each do |issue|
+      .find_each do |issue|
       issue.with_lock do
         issue.reload
         next unless recoverable_orphaned_issue?(issue)
 
-        issue.update!(paid_state: "new")
+        target_state = issue.is_pull_request? ? "completed" : "new"
+        issue.update!(paid_state: target_state)
         count += 1
         Rails.logger.info(
           message: "stale_run_detector.recovered_orphaned_in_progress",
           issue_id: issue.id,
           issue_number: issue.github_number,
-          project_id: issue.project_id
+          project_id: issue.project_id,
+          is_pull_request: issue.is_pull_request?,
+          new_paid_state: target_state
         )
       end
     rescue => e
@@ -191,18 +194,11 @@ class StaleRunDetectorJob < ApplicationJob
     issue.agent_runs.order(created_at: :desc, id: :desc).limit(1).pick(:goal)
   end
 
-  # Uses the default timeout rather than per-user maximums. Individual run
-  # timeouts are enforced by the Temporal workflow; this job is a safety net
-  # for orphaned runs where the workflow died. Using UserSetting.maximum
-  # would let a single user's large timeout delay stale-run detection for
-  # every other user's runs.
-  def agent_timeout_with_grace
-    AGENT_TIMEOUT_DEFAULT.seconds + GRACE_PERIOD
-  end
-
-  # Runs stuck in "running" that started before the threshold.
-  def stale_running_runs(threshold)
-    AgentRun.running.where("started_at < ?", threshold)
+  # Runs stuck in "running" whose age exceeds the adaptive stale cutoff for
+  # their goal. Individual run timeouts are enforced by Temporal; this job is
+  # a safety net for orphaned runs where the workflow died.
+  def stale_running_runs
+    AgentRun.stale_running
   end
 
   # Claimed queued runs (temporal_workflow_id set, status "queued") whose

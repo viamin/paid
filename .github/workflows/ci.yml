@@ -8,7 +8,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  ephemeral-tests-guard:
+    name: No ephemeral tests on main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check for stray ephemeral test files
+        run: |
+          stray=$(find .ephemeral-tests -type f \( -name '*_spec.rb' -o -name '*_test.js' -o -name '*_test.ts' \) 2>/dev/null || true)
+          if [ -n "$stray" ]; then
+            echo "::error::Ephemeral test files found on main (should only exist on PR branches):"
+            echo "$stray"
+            echo "::group::Files found"
+            echo "$stray"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "No stray ephemeral test files."
+
   lint:
     runs-on: ubuntu-latest
     env:
@@ -19,7 +44,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -70,6 +95,7 @@ jobs:
           systest=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/system_tests.yml | head -1 | awk '{print $NF}')
           test_prof=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/test_prof.yml | head -1 | awk '{print $NF}')
           screenshots=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/pr-screenshots.yml | head -1 | awk '{print $NF}')
+          ephemeral=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ephemeral_tests.yml | head -1 | awk '{print $NF}')
           version=${compose#postgres:}
           major=${version%%.*}
           bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
@@ -82,14 +108,15 @@ jobs:
           echo ".github/workflows/system_tests:  ${systest:-<none>}"
           echo ".github/workflows/test_prof.yml: ${test_prof:-<none>}"
           echo ".github/workflows/pr-screenshots:${screenshots:-<none>}"
+          echo ".github/workflows/ephemeral:     ${ephemeral:-<none>}"
           echo "expected Bookworm client:        ${bookworm_client}"
           echo "expected Trixie client:          ${trixie_client}"
           echo "expected Noble client:           ${noble_client}"
-          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ]; then
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$ephemeral" ]; then
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ]; then
+          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ] || [ "$screenshots" != "$ephemeral" ]; then
             echo "::error::Postgres image pins are out of sync. Update all workflow and compose references together."
             exit 1
           fi
@@ -102,9 +129,11 @@ jobs:
           check_contains .github/workflows/system_tests.yml "$noble_client" ".github/workflows/system_tests.yml is not pinned to $noble_client"
           check_contains .github/workflows/test_prof.yml "$noble_client" ".github/workflows/test_prof.yml is not pinned to $noble_client"
           check_contains .github/workflows/pr-screenshots.yml "$noble_client" ".github/workflows/pr-screenshots.yml is not pinned to $noble_client"
+          check_contains .github/workflows/ephemeral_tests.yml "$noble_client" ".github/workflows/ephemeral_tests.yml is not pinned to $noble_client"
 
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     services:
       postgres:
@@ -127,6 +156,7 @@ jobs:
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
       DB_HOST: localhost
       DB_USERNAME: postgres
@@ -138,7 +168,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -194,7 +224,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -204,6 +234,7 @@ jobs:
 
   performance:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     services:
       postgres:
@@ -226,6 +257,7 @@ jobs:
     env:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
       DB_HOST: localhost
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
@@ -236,7 +268,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f
+        uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
         with:
           ruby-version: .tool-versions
           bundler-cache: true

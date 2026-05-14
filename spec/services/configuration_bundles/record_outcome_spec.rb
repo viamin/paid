@@ -11,7 +11,9 @@ RSpec.describe ConfigurationBundles::RecordOutcome do
       :with_metrics,
       project: project,
       issue: create(:issue, project: project),
-      configuration_bundle: bundle)
+      configuration_bundle: bundle,
+      configuration_bundle_selection_mode: "exploratory",
+      configuration_bundle_selection_context: "project")
   end
   let(:quality_metric) do
     create(:quality_metric,
@@ -52,10 +54,13 @@ RSpec.describe ConfigurationBundles::RecordOutcome do
     expect(outcome.metrics).to include(
       "component_scores" => { "pr_created" => 1.0 },
       "execution_duration_seconds" => agent_run.duration_seconds,
+      "exploratory" => true,
       "objective_score" => be_within(0.001).of(0.684),
       "outcome" => "completed",
       "quality_per_dollar" => be_within(0.001).of(0.56),
       "queue_duration_seconds" => be_a(Integer),
+      "selection_context" => "project",
+      "selection_mode" => "exploratory",
       "status" => "completed",
       "success" => true,
       "tokens_input" => agent_run.tokens_input,
