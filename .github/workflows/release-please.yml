@@ -10,6 +10,9 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: release-please
+
 jobs:
   release-please:
     runs-on: ubuntu-latest

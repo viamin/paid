@@ -72,6 +72,19 @@ RSpec.describe Screenshots::SeedRunner do
     expect(result[:project].id).to eq(2)
   end
 
+  it "preserves scalar runner output values" do
+    stdout = JSON.generate(
+      "user" => { "id" => 1, "email" => "screenshot@example.com" },
+      "password" => "secret"
+    )
+    allow(Open3).to receive(:capture3).and_return([ stdout, "", instance_double(Process::Status, success?: true) ])
+
+    result = described_class.new.call(config:, repo_path: Rails.root.to_s, driver_name: "cuprite")
+
+    expect(result[:user].email).to eq("screenshot@example.com")
+    expect(result[:password]).to eq("secret")
+  end
+
   it "skips seed execution for non-cuprite drivers" do
     result = described_class.new.call(config:, repo_path: Rails.root.to_s, driver_name: "playwright")
 

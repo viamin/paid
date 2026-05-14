@@ -13,6 +13,11 @@
           Paused by <%= guardrail_violation_label_for(paused_run).downcase %>
         </span>
       <% end %>
+      <% if issue.needs_input? && policy(project).update? %>
+        <%= link_to "Answer Questions",
+              project_issue_clarifying_questions_path(project, issue),
+              class: "inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200" %>
+      <% end %>
     </div>
     <% if issue.labels.any? %>
       <div class="mt-1 flex flex-wrap gap-1">

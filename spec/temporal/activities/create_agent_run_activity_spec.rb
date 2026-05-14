@@ -119,6 +119,18 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "persists the focus when provided" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        focus: "ci_fix"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.focus).to eq("ci_fix")
+      expect(result[:focus]).to eq("ci_fix")
+    end
+
     it "uses the configured primary runner when agent type is omitted" do
       codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
       project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)

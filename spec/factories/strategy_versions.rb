@@ -22,6 +22,7 @@ FactoryBot.define do
     trait :active do
       promotion_state { "active" }
       promoted_at { Time.current }
+      association :promoted_by_user, factory: :user
     end
 
     trait :retired do

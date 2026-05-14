@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Automation::Strategies::AutoMerge::Signals do
+RSpec.describe Automation::Strategies::AutoMerge::Signals, :no_db do
   describe ".build" do
     it "defaults boolean fields to false" do
       signals = described_class.build(issue_id: 1, pr_number: 42)
@@ -13,6 +13,7 @@ RSpec.describe Automation::Strategies::AutoMerge::Signals do
       expect(signals.review_feedback_clear?).to be false
       expect(signals.blocking_reviews_complete?).to be false
       expect(signals.reviews_fresh?).to be false
+      expect(signals.dependencies_resolved?).to be false
       expect(signals.bot_authored?).to be false
       expect(signals.dependabot_eligible?).to be false
     end
@@ -33,7 +34,8 @@ RSpec.describe Automation::Strategies::AutoMerge::Signals do
         mergeable: true,
         review_feedback_clear: true,
         blocking_reviews_complete: true,
-        reviews_fresh: true
+        reviews_fresh: true,
+        dependencies_resolved: true
       )
 
       expect(signals.owner_approved?).to be true
@@ -42,6 +44,7 @@ RSpec.describe Automation::Strategies::AutoMerge::Signals do
       expect(signals.review_feedback_clear?).to be true
       expect(signals.blocking_reviews_complete?).to be true
       expect(signals.reviews_fresh?).to be true
+      expect(signals.dependencies_resolved?).to be true
     end
 
     it "accepts bot-authored fields" do

@@ -48,13 +48,19 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
     end
   end
 
+  def persisted_project
+    TenantContext.with_system_access { Project.find(project.id) }
+  end
+
   def expect_committed_screenshot_settings(project)
-    expect(project.reload.screenshot_settings).to include(
-      "config_path" => ".paid/custom-screenshots.yml",
-      "driver" => "cuprite",
-      "auto_capture" => false,
-      "setup_commands" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
-    )
+    visit edit_project_path(project)
+
+    expect(page).to have_checked_field("Enable screenshots for this project")
+    expect(page).to have_checked_field("Cuprite")
+    expect(page).to have_field("Config Path", with: ".paid/custom-screenshots.yml")
+    expect(page).to have_unchecked_field("Capture on every agent-created PR")
+    expect(find_field("Setup Commands").value)
+      .to eq("bin/setup --skip-server\nbin/rails db:prepare")
   end
 
   it "toggles screenshot settings and saves the selected driver" do
@@ -66,11 +72,16 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
     click_button "Save Changes"
 
     expect(page).to have_content("Project was successfully updated.")
-    expect(project.reload.screenshot_settings).to include(
+    expect(persisted_project.screenshot_settings).to include(
       "enabled" => true,
       "driver" => "cuprite",
       "setup_commands" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
     )
+    visit edit_project_path(project)
+    expect(page).to have_checked_field("Enable screenshots for this project")
+    expect(page).to have_checked_field("Cuprite")
+    expect(find_field("Setup Commands").value)
+      .to eq("bin/setup --skip-server\nbin/rails db:prepare")
   end
 
   it "runs framework detection from the settings page" do
@@ -92,7 +103,9 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
 
     expect(page).to have_content("Detected Rails with high confidence.")
     expect(page).to have_content("Suggested .paid/screenshots.yml")
-    expect(project.reload.screenshot_settings.dig("detection", "framework")).to eq("Rails")
+    expect(persisted_project.screenshot_settings.dig("detection", "framework")).to eq("Rails")
+    expect(page).to have_checked_field("Cuprite")
+    expect(find_field("Setup Commands").value).to eq("bin/setup --skip-server")
   end
 
   it "commits repo config from the current form values" do
@@ -111,6 +124,12 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
     expect(captured_args).to include(
       config_path: ".paid/custom-screenshots.yml",
       content: generated_yaml
+    )
+    expect(persisted_project.screenshot_settings).to include(
+      "config_path" => ".paid/custom-screenshots.yml",
+      "driver" => "cuprite",
+      "auto_capture" => false,
+      "setup_commands" => [ "bin/setup --skip-server", "bin/rails db:prepare" ]
     )
     expect_committed_screenshot_settings(project)
   end

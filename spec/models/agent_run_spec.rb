@@ -27,6 +27,8 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_presence_of(:goal) }
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
+    it { is_expected.to validate_presence_of(:focus) }
+    it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
     it { is_expected.to validate_presence_of(:trigger_type) }
     it { is_expected.to validate_inclusion_of(:trigger_type).in_array(described_class::TRIGGER_TYPES) }
     it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
@@ -153,6 +155,20 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#focused?" do
+    it "defaults new runs to general focus" do
+      expect(described_class.new.focus).to eq("general")
+    end
+
+    it "is false for general runs" do
+      expect(build(:agent_run, focus: "general")).not_to be_focused
+    end
+
+    it "is true for non-general runs" do
+      expect(build(:agent_run, focus: "ci_fix")).to be_focused
+    end
+  end
+
   describe "scopes" do
     describe ".by_status" do
       it "returns agent runs with the specified status" do
@@ -195,6 +211,8 @@ RSpec.describe AgentRun do
       end
 
       it "uses goal-specific adaptive cutoffs when healthy runtime history exists" do
+        stub_const("AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE", 3)
+
         create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
           :completed,
           :review_goal,

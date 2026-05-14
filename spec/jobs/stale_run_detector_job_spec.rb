@@ -614,9 +614,19 @@ RSpec.describe StaleRunDetectorJob do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
-      it "does not reset an in_progress pull request with no active run" do
+      it "resets an orphaned in_progress PR to completed when no active run exists" do
         pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
           updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        described_class.perform_now
+
+        expect(pull_request.reload.paid_state).to eq("completed")
+      end
+
+      it "does not reset an in_progress PR that has an active run" do
+        pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :running, project: project, issue: pull_request)
 
         described_class.perform_now
 

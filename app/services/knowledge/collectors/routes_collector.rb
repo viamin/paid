@@ -5,6 +5,8 @@ module Knowledge
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
+      SQLITE3_GEMFILE_PATTERN = /^\s*gem(?:\s+|\s*\()\s*["']sqlite3["']/.freeze
+      SQLITE3_LOCKFILE_PATTERN = /^\s{2,4}sqlite3(?:\s|\(|$)/.freeze
       # Exception class names that indicate database issues preventing
       # `bin/rails routes` from booting. Checked against both
       # error.class.name (local execution) and error.message (containerized
@@ -105,6 +107,13 @@ module Knowledge
           raise "routes collector requires containerized mode — failing on host for security"
         end
 
+        unless sqlite3_available_for_in_memory_routes?
+          skip!(
+            "routes require sqlite3 support for in-memory boot fallback",
+            preserve_existing_artifacts: true
+          )
+        end
+
         # Install gems so `bin/rails routes` can boot the application.
         # The container workspace is read-only, so gems are installed to
         # /tmp/bundle (a writable tmpfs mount).
@@ -173,6 +182,22 @@ module Knowledge
           "git config --global --add url.\\\"https://github.com/\\\".insteadOf ssh://git@github.com/ && " \
           "git config --global --add url.\\\"https://github.com/\\\".insteadOf git@github.com: && " \
           "bundle install --jobs 4 --retry 3"
+      end
+
+      def sqlite3_available_for_in_memory_routes?
+        gemfile_lock_includes_sqlite3? || gemfile_declares_sqlite3?
+      end
+
+      def gemfile_lock_includes_sqlite3?
+        return false unless repo_file_exists?("Gemfile.lock")
+
+        read_repo_file("Gemfile.lock").match?(SQLITE3_LOCKFILE_PATTERN)
+      end
+
+      def gemfile_declares_sqlite3?
+        return false unless repo_file_exists?("Gemfile")
+
+        read_repo_file("Gemfile").match?(SQLITE3_GEMFILE_PATTERN)
       end
 
       def install_bundle_env

@@ -13,4 +13,30 @@ RSpec.describe Screenshots::SeedData::Paid do
       "name" => "Screenshot Style Guide"
     )
   end
+
+  it "returns the seeded clarifying issue metadata" do
+    result = described_class.call
+
+    issue = Issue.find(result.dig("clarifying_issue", "id"))
+
+    expect(result.fetch("clarifying_issue")).to eq(
+      "id" => issue.id,
+      "github_number" => 1964
+    )
+    expect(issue).to be_needs_input
+  end
+
+  it "returns seeded strategy review metadata" do
+    result = described_class.call
+
+    strategy = Strategy.find(result.dig("strategy", "id"))
+    pending_strategy_version = StrategyVersion.find(result.dig("pending_strategy_version", "id"))
+
+    expect(result.fetch("strategy")).to eq(
+      "id" => strategy.id,
+      "name" => "Screenshot Strategy"
+    )
+    expect(pending_strategy_version).to be_pending_review
+    expect(pending_strategy_version.strategy).to eq(strategy)
+  end
 end
