@@ -46,6 +46,9 @@ class FinalizeRenameRunners < ActiveRecord::Migration[8.1]
     add_column :user_settings, :kb_chat_provider, :string, default: "claude", null: false
     add_column :user_settings, :provider_round_robin_state, :jsonb, default: {}, null: false
     add_column :user_settings, :provider_selection_mode, :string, limit: 20, default: "single", null: false
+    add_check_constraint :user_settings,
+      "provider_selection_mode IN ('single', 'round_robin', 'random')",
+      name: "chk_provider_selection_mode"
     add_column :user_settings, :fallback_providers, :jsonb, default: [], null: false
     add_column :user_settings, :default_agent_providers_by_goal, :jsonb, default: {}, null: false
     add_column :user_settings, :default_agent_provider, :string, default: "claude", null: false
