@@ -425,6 +425,7 @@ module ConfigurationBundles
 
     def normalize_optimizer_definition_attributes(definition)
       canonicalize(definition).tap do |attributes|
+        attributes.delete_if { |_key, value| value.nil? }
         OPTIONAL_EMPTY_DEFINITION_KEYS.each do |key|
           attributes.delete(key) if attributes[key].blank?
         end

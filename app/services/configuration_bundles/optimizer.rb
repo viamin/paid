@@ -137,6 +137,7 @@ module ConfigurationBundles
     def exploratory_selection(selections)
       selections.max_by do |selection|
         [
+          selection.score_inputs.uncertainty,
           selection.score_inputs.acquisition_score,
           selection.score_inputs.predicted_objective_score,
           selection.score_inputs.predicted_quality_score

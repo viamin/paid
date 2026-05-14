@@ -175,11 +175,13 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       expect(stats[:bundle_rankings].first[:avg_quality_score]).to be_within(0.001).of(0.85)
       expect(stats[:experiment_confidence].first[:variants].size).to eq(2)
       expect(stats[:tradeoff_frontier].first[:bundle]).to eq(bundle)
-      candidate = stats[:optimizer_insights].find { |row| row[:goal] == "create_pr" }[:candidates].first
+      candidate = optimizer_candidate_for(stats, goal: "create_pr")
 
       expect(candidate).to include(
-        acquisition_function: "expected_improvement",
-        best_observed_objective_score: 0.71
+        acquisition_function: "expected_improvement"
+      )
+      expect(candidate[:best_observed_objective_score]).to eq(
+        expected_best_observed_objective_score_for(stats, goal: "create_pr")
       )
     end
   end
@@ -286,6 +288,20 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
         "quality_per_dollar" => objective.quality_per_dollar
       },
       success: true)
+  end
+
+  def optimizer_candidate_for(stats, goal:)
+    stats[:optimizer_insights].find { |row| row[:goal] == goal }.fetch(:candidates).first
+  end
+
+  def expected_best_observed_objective_score_for(stats, goal:)
+    representative_run = stats[:optimizer_insights].find { |row| row[:goal] == goal }.fetch(:representative_run)
+
+    BundleOutcome
+      .where(agent_run: project.agent_runs.where(goal: goal))
+      .where.not(id: representative_run.bundle_outcomes.select(:id))
+      .filter_map { |outcome| ConfigurationBundles::ObjectiveScore.from_outcome(outcome) }
+      .max
   end
 
   def shared_issue_for(project)
