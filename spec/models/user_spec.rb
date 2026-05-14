@@ -10,6 +10,17 @@ RSpec.describe User do
     it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
     it { is_expected.to have_many(:member_projects).through(:project_memberships).source(:project) }
     it { is_expected.to have_many(:providers).dependent(:destroy) }
+
+    it "preserves the legacy provider compatibility API" do
+      user = create(:user)
+      provider = create(:provider, user: user, provider_key: "claude")
+      provider_state = create(:provider_state, user: user, provider_name: "claude")
+
+      expect(user.providers.find_by!(provider_key: "claude")).to be_a(Provider)
+      expect(user.providers.find(provider.id)).to be_a(Provider)
+      expect(user.provider_states.find_by!(provider_name: "claude")).to be_a(ProviderState)
+      expect(user.provider_states.find(provider_state.id)).to be_a(ProviderState)
+    end
   end
 
   describe "validations" do
