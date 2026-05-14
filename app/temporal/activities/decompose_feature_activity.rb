@@ -73,7 +73,7 @@ module Activities
         {
         tasks: tasks,
         prompt_source: prompt_data[:prompt_source],
-        policy_metadata: {}
+        policy_metadata: policy_context[:metadata]
       }
       )
     rescue Temporalio::Error::ApplicationError => e

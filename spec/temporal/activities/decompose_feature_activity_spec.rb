@@ -232,7 +232,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
       expect_oauth_tasks(result[:tasks])
       expect(result[:prompt_source]).to eq("fallback_prompt")
-      expect(result[:policy_metadata]).to eq({})
+      expect(result[:policy_metadata]).to include(policy_source: "defaults")
       expect_llm_strategy_decision_logged(
         workflow_name: "Workflows::PlanningWorkflow",
         workflow_id: "planning-wf-1",
