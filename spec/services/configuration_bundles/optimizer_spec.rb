@@ -122,7 +122,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
       expect(selection.variant_by_experiment_id).to eq(experiment.id => challenger)
       expect(selection.selection_mode).to eq("exploratory")
-      expect(selection.selection_context).to eq("task")
+      expect(selection.selection_context).to eq("project")
       expect_budget_snapshot(selection, "task",
         budget: 0.1,
         total_runs: 0,
@@ -133,6 +133,20 @@ RSpec.describe ConfigurationBundles::Optimizer do
         bootstrap_minimum_runs: 9
       )
       expect_budget_snapshot(selection, "project", projected_share: 1.0, within_budget: true)
+    end
+
+    it "records project context when task routing is still bootstrapping and project budget blocks exploration" do
+      set_exploration_budgets(task: 10, project: 25)
+      seed_project_budget_history(project:, goal: agent_run.goal)
+      stub_predictions(agent_run, surrogate_model:)
+
+      selection = described_class.call(agent_run: agent_run, surrogate_model: surrogate_model)
+
+      expect(selection.variant_by_experiment_id).to eq(experiment.id => control)
+      expect(selection.selection_mode).to eq("exploitative")
+      expect(selection.selection_context).to eq("project")
+      expect_task_bootstrap_snapshot(selection)
+      expect_project_budget_block(selection)
     end
 
     it "returns nil when there are no active tracked experiments" do
@@ -337,6 +351,29 @@ RSpec.describe ConfigurationBundles::Optimizer do
 
   def expect_budget_snapshot(selection, context, expected_values)
     expect(selection.budget_snapshot.fetch(context)).to include(expected_values)
+  end
+
+  def expect_task_bootstrap_snapshot(selection)
+    expect_budget_snapshot(selection, "task",
+      budget: 0.1,
+      total_runs: 0,
+      exploratory_runs: 0,
+      projected_share: 1.0,
+      within_budget: true,
+      bootstrap_active: true,
+      bootstrap_minimum_runs: 9
+    )
+  end
+
+  def expect_project_budget_block(selection)
+    expect_budget_snapshot(selection, "project",
+      budget: 0.25,
+      exploratory_runs: 1,
+      total_runs: 4,
+      observed_share: 0.25,
+      projected_share: 0.4,
+      within_budget: false
+    )
   end
 
   def prediction_for(mode)
