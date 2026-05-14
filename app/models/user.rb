@@ -159,6 +159,10 @@ class User < ApplicationRecord
     super
   end
 
+  def operator?
+    OperatorConsole::Access.allowed?(self)
+  end
+
   private
 
   def assign_owner_role_if_first_user
