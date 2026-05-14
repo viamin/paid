@@ -16,8 +16,8 @@ in CI for the PR but are not merged to `main`.
    of your PR. (Playwright/JS support may be added later.)
 2. CI detects the files and runs the ephemeral test job automatically.
 3. Results are posted as a PR comment.
-4. When the PR merges, the test files don't land on `main` — they exist only
-   on the PR branch.
+4. Remove the test files from `.ephemeral-tests/` before merging — a CI
+   guard on `main` rejects stray test files.
 
 ## Security
 
@@ -44,6 +44,7 @@ end
 
 ## Cleanup
 
-No cleanup is needed. Tests live on the PR branch and are discarded when the
-branch is deleted after merge. If you want to keep a test permanently, move it
+Remove test files from `.ephemeral-tests/` before merging. A CI guard
+job on `main` (`ephemeral-tests-guard` in `ci.yml`) will reject the push
+if stray test files are found. If you want to keep a test permanently, move it
 to `spec/system/` or `spec/integration/` before merging.
