@@ -190,8 +190,7 @@ module ConfigurationBundles
     end
 
     def split_rows(rows)
-      midpoint = rows.size / 2
-      [ rows[0...midpoint], rows[midpoint..] ]
+      partition_period_rows(rows)
     end
 
     def partition_by_selection_mode(rows)
@@ -263,8 +262,7 @@ module ConfigurationBundles
     end
 
     def build_period_snapshots(rows)
-      midpoint = rows.size / 2
-      [ rows[0...midpoint], rows[midpoint..] ].each_with_index.map do |period_rows, index|
+      partition_period_rows(rows).each_with_index.map do |period_rows, index|
         PeriodSnapshot.new(
           label: "Period #{index + 1}",
           outcome_count: period_rows.size,
@@ -281,6 +279,11 @@ module ConfigurationBundles
       return nil if rows.empty?
 
       rows.count { |r| r[:success] }.to_f / rows.size
+    end
+
+    def partition_period_rows(rows)
+      midpoint = rows.size / PERIODS_FOR_TREND
+      [ rows[0...midpoint], rows[midpoint..] ]
     end
 
     def empty_result(count)
