@@ -587,6 +587,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not backfill an older focused run once a newer focused run exists" do
         older_metric = metric
+        focused_run.update!(
+          started_at: 15.minutes.ago,
+          completed_at: 10.minutes.ago
+        )
         newer_run = create(:agent_run, :completed,
           project: project,
           issue: pr_issue,
