@@ -3,7 +3,7 @@
 module Analytics
   module OrchestrationDecisions
     class BaseQuery
-      DEFAULT_DECISION_STATUS = "applied"
+      DEFAULT_DECISION_STATUS = OrchestrationDecision::DEFAULT_DECISION_STATUS
 
       def initialize(relation: OrchestrationDecision.all, filters: {})
         @relation = relation
@@ -54,12 +54,27 @@ module Analytics
       end
 
       def distinct_status_count(status)
-        quoted_status = ActiveRecord::Base.connection.quote(status)
+        statuses = Array(status).map { |value| ActiveRecord::Base.connection.quote(value) }
+        predicate =
+          if statuses.one?
+            "#{decision_status_sql} = #{statuses.first}"
+          else
+            "#{decision_status_sql} IN (#{statuses.join(', ')})"
+          end
+
         Arel.sql(
           "COUNT(DISTINCT CASE " \
-          "WHEN COALESCE(orchestration_decisions.context ->> 'decision_status', '#{DEFAULT_DECISION_STATUS}') = #{quoted_status} " \
+          "WHEN #{predicate} " \
           "THEN orchestration_decisions.id END)"
         )
+      end
+
+      def grouped_statuses(group)
+        OrchestrationDecision::ANALYTICS_STATUS_GROUPS.fetch(group)
+      end
+
+      def decision_status_sql
+        "COALESCE(orchestration_decisions.context ->> 'decision_status', '#{DEFAULT_DECISION_STATUS}')"
       end
 
       def total_count

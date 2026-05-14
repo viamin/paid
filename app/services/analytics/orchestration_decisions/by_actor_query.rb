@@ -12,18 +12,18 @@ module Analytics
             total_count,
             project_count,
             decision_type_count,
-            distinct_status_count("applied"),
+            distinct_status_count(grouped_statuses("successful")),
             distinct_status_count("noop"),
             distinct_status_count("failed")
           )
 
-        rows.map do |actor, total_count, project_count, decision_type_count, applied_count, noop_count, failed_count|
+        rows.map do |actor, total_count, project_count, decision_type_count, successful_count, noop_count, failed_count|
           {
             actor: actor,
             total_count: total_count,
             project_count: project_count,
             decision_type_count: decision_type_count,
-            applied_count: applied_count,
+            successful_count: successful_count,
             noop_count: noop_count,
             failed_count: failed_count
           }

@@ -10,16 +10,16 @@ module Analytics
           .pluck(
             Arel.sql("DATE(orchestration_decisions.created_at)"),
             Arel.sql("COUNT(*)"),
-            Arel.sql("COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'applied')"),
-            Arel.sql("COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'noop')"),
-            Arel.sql("COUNT(*) FILTER (WHERE COALESCE(orchestration_decisions.context ->> 'decision_status', 'applied') = 'failed')")
+            Arel.sql("COUNT(*) FILTER (WHERE #{decision_status_sql} IN ('applied', 'deferred', 'resolved'))"),
+            Arel.sql("COUNT(*) FILTER (WHERE #{decision_status_sql} = 'noop')"),
+            Arel.sql("COUNT(*) FILTER (WHERE #{decision_status_sql} = 'failed')")
           )
 
-        rows.map do |day, total_count, applied_count, noop_count, failed_count|
+        rows.map do |day, total_count, successful_count, noop_count, failed_count|
           {
             day: day,
             total_count: total_count,
-            applied_count: applied_count,
+            successful_count: successful_count,
             noop_count: noop_count,
             failed_count: failed_count
           }
