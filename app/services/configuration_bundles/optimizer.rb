@@ -197,10 +197,6 @@ module ConfigurationBundles
       contexts
     end
 
-    def primary_selection_context
-      agent_run.issue_id.present? ? "task" : PRIMARY_SELECTION_CONTEXT
-    end
-
     def prior_runs_for(context)
       scope = AgentRun
         .where(project_id: agent_run.project_id, goal: agent_run.goal)
