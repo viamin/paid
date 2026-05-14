@@ -541,6 +541,94 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
           )
       end
     end
+
+    context "when learned allocation is available without an iteration experiment" do
+      let(:tasks) do
+        [
+          { index: 0, title: "Task A", description: "Do A", dependencies: [], parallel_group: 0 },
+          { index: 1, title: "Task B", description: "Do B", dependencies: [], parallel_group: 0 }
+        ]
+      end
+
+      let(:parallel_result) do
+        {
+          success: true,
+          total: 2,
+          completed: 2,
+          failed: 0,
+          results: [],
+          conflicts: { has_conflicts: false, conflicting_pairs: [] }
+        }
+      end
+
+      before do
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::ResolveCoordinationExperimentActivity"
+            { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
+          when "Activities::ResolveScalingExperimentActivity"
+            {
+              learned_allocation: {
+                agent_count: 3,
+                max_iterations: 4,
+                parallelism_level: 2,
+                source: :observations,
+                reason: "best observed agent_count=3"
+              },
+              assignments: [
+                {
+                  assignment_id: 88,
+                  dimension: "agent_count",
+                  execution_plan: {
+                    "dimension" => "agent_count",
+                    "requested_agent_count" => 3,
+                    "max_batch_size" => 3
+                  }
+                }
+              ]
+            }
+          when "Activities::FetchPlanningContextActivity"
+            { context: { issue_title: "Feature", knowledge_snippets: [] } }
+          when "Activities::DecomposeFeatureActivity"
+            { tasks: tasks }
+          when "Activities::CreateSubIssuesActivity"
+            { created_issues: [ { issue_id: 10 }, { issue_id: 11 } ] }
+          when "Activities::UpdatePlanningLabelsActivity"
+            { success: true }
+          when "Activities::RecordCoordinationExperimentOutcomeActivity"
+            { assignment_id: 77, outcome_status: "recorded" }
+          when "Activities::RecordScalingExperimentResultActivity"
+            { assignment_id: 88, outcome_status: "recorded" }
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 1 }
+          when "Activities::RecordScalingObservationActivity"
+            { scaling_observation_id: 1 }
+          else
+            {}
+          end
+        end
+
+        stub_parallel_execution(parallel_result)
+      end
+
+      it "uses learned iteration guidance and applies learned parallelism before experiment overrides" do
+        workflow.execute(input)
+
+        expect(Temporalio::Workflow).to have_received(:execute_child_workflow)
+          .with(
+            Workflows::ParallelAgentExecutionWorkflow,
+            hash_including(
+              coordination_policy: hash_including(
+                "parallel_execution" => hash_including("max_batch_size" => 3)
+              ),
+              sub_tasks: array_including(
+                hash_including(custom_prompt: include("within 4 agent iterations"))
+              )
+            ),
+            anything
+          )
+      end
+    end
   end
 
   private
@@ -562,6 +650,13 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
         { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
       when "Activities::ResolveScalingExperimentActivity"
         {
+          learned_allocation: {
+            agent_count: 2,
+            max_iterations: 4,
+            parallelism_level: 2,
+            source: :observations,
+            reason: "best observed agent_count=2"
+          },
           assignments: [
             {
               assignment_id: 88,
@@ -650,6 +745,12 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow do
             execution_summary: hash_including(max_parallelism_observed: 1)
           ),
           metadata: hash_including(
+            learned_allocation: hash_including(
+              agent_count: 2,
+              max_iterations: 4,
+              parallelism_level: 2,
+              source: :observations
+            ),
             scaling_experiments: array_including(
               hash_including(
                 assignment_id: 88,
