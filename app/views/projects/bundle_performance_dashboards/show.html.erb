@@ -94,7 +94,7 @@
             <%= improvement_delta_label(improvement.cost_change_fraction) %>
           </dd>
           <p class="mt-1 text-xs text-gray-500">
-            <%= format_cost_cents(improvement.early_cost_cents) %> &rarr; <%= format_cost_cents(improvement.recent_cost_cents) %>
+            <%= improvement.early_cost_cents ? format_cost_cents(improvement.early_cost_cents) : "--" %> &rarr; <%= improvement.recent_cost_cents ? format_cost_cents(improvement.recent_cost_cents) : "--" %>
           </p>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
@@ -130,7 +130,7 @@
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(period.avg_objective_score) %>"><%= format_quality_score(period.avg_objective_score) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(period.avg_quality_score) %>"><%= format_quality_score(period.avg_quality_score) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.avg_quality_per_dollar ? number_with_precision(period.avg_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= format_cost_cents(period.avg_cost_cents) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.avg_cost_cents ? format_cost_cents(period.avg_cost_cents) : "--" %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage((period.success_rate || 0) * 100, precision: 0) %></td>
                 </tr>
               <% end %>
@@ -287,7 +287,7 @@
                   <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= bundle[:bundle].name %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_objective_score]) %>"><%= format_quality_score(bundle[:avg_objective_score]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_quality_score]) %>"><%= format_quality_score(bundle[:avg_quality_score]) %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= format_cost_cents(bundle[:avg_cost_cents]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= bundle[:avg_cost_cents] ? format_cost_cents(bundle[:avg_cost_cents]) : "--" %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_delimiter(bundle[:avg_tokens_used]) %></td>
                 </tr>
               <% end %>
