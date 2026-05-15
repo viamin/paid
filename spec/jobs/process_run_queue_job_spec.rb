@@ -19,6 +19,24 @@ RSpec.describe ProcessRunQueueJob do
       auto_pick_enabled: true)
   end
 
+  def stub_single_seeded_run(project:, issue:)
+    created_run = nil
+    call_count = 0
+
+    allow(Issues::BulkEnqueueEligible).to receive(:call)
+      .with(project: having_attributes(id: project.id), limit: 1) do
+        call_count += 1
+        if call_count == 1
+          created_run = create(:agent_run, :queued, project: project, issue: issue)
+          [ created_run ]
+        else
+          []
+        end
+      end
+
+    -> { created_run }
+  end
+
   describe "#perform" do
     it "starts the oldest queued run when capacity is available" do
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
@@ -289,24 +307,13 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project, auto_pick_enabled: true)
         issue = create(:issue, project: project)
 
-        created_run = nil
-        call_count = 0
-        allow(Issues::BulkEnqueueEligible).to receive(:call)
-          .with(project: having_attributes(id: project.id), limit: 1) do
-            call_count += 1
-            if call_count == 1
-              created_run = create(:agent_run, :queued, project: project, issue: issue)
-              [ created_run ]
-            else
-              []
-            end
-          end
+        created_run = stub_single_seeded_run(project:, issue:)
 
         described_class.new.perform
 
         expect(Issues::BulkEnqueueEligible).to have_received(:call)
           .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
-        expect(created_run.reload.status).to eq("queued")
+        expect(created_run.call.reload.status).to eq("queued")
       end
 
       it "stops seeding when no new runs are created" do
@@ -380,18 +387,13 @@ RSpec.describe ProcessRunQueueJob do
           pr_review_phase: "ready")
         issue = create(:issue, project: project)
 
-        created_run = nil
-        allow(Issues::BulkEnqueueEligible).to receive(:call)
-          .with(project: having_attributes(id: project.id), limit: 1) do
-            created_run = create(:agent_run, :queued, project: project, issue: issue)
-            [ created_run ]
-          end
+        created_run = stub_single_seeded_run(project:, issue:)
 
         described_class.new.perform
 
         expect(Issues::BulkEnqueueEligible).to have_received(:call)
           .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
-        expect(created_run.reload.status).to eq("queued")
+        expect(created_run.call.reload.status).to eq("queued")
       end
 
       it "fills idle capacity from one project when no others have pickable work" do
