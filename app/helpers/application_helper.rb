@@ -228,6 +228,10 @@ module ApplicationHelper
     app_route_path(:new_project_agent_run_path, project)
   end
 
+  def cleanup_stale_runs_project_member_path(project)
+    app_route_path(:cleanup_stale_runs_project_path, project)
+  end
+
   def dashboard_cancel_agent_run_member_path(agent_run)
     app_route_path(:dashboard_cancel_run_path, agent_run)
   end

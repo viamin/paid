@@ -26,8 +26,9 @@ RSpec.describe "projects/_agent_runs", :no_db, type: :view do
       def to_param
         id.to_s
       end
-    end)
+  end)
     allow(view).to receive(:project_agent_runs_collection_path).with(instance_of(AgentRunsPartialRendererFakeProject)).and_return("/projects/1/agent_runs")
+    allow(view).to receive(:cleanup_stale_runs_project_member_path).with(instance_of(AgentRunsPartialRendererFakeProject)).and_return("/projects/1/cleanup_stale_runs")
   end
 
   let(:project) { AgentRunsPartialRendererFakeProject.new(id: 1, name: "Platform") }
@@ -42,5 +43,17 @@ RSpec.describe "projects/_agent_runs", :no_db, type: :view do
 
     expect(rendered).to include("Recent Agent Runs")
     expect(rendered).to include("/projects/1/agent_runs")
+  end
+
+  it "renders the stale cleanup action without relying on route helper availability" do
+    render partial: "projects/agent_runs", locals: {
+      project: project,
+      recent_agent_runs: [],
+      stale_agent_runs_count: 2,
+      show_stale_cleanup_action: true
+    }
+
+    expect(rendered).to include("/projects/1/cleanup_stale_runs")
+    expect(rendered).to include("Clean Up Stale Runs")
   end
 end

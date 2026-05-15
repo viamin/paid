@@ -7,7 +7,7 @@
     </h2>
     <% if show_stale_cleanup_action %>
       <%= button_to "Clean Up Stale Runs",
-                    cleanup_stale_runs_project_path(project),
+                    cleanup_stale_runs_project_member_path(project),
                     method: :post,
                     class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
                     form: { data: { turbo_confirm: "Clean up #{pluralize(stale_agent_runs_count, "stale agent run")} for this project?" } } %>
