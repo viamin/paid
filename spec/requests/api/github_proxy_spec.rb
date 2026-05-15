@@ -582,8 +582,8 @@ RSpec.describe "Api::GithubProxy" do
           expect(WebMock).not_to have_requested(:put, dismiss_url)
         end
 
-        it "does not dismiss stale change requests when enabled review bot logins resolve empty" do
-          allow(project).to receive(:enabled_review_bot_logins).and_return(Set.new)
+        it "does not dismiss stale change requests when paid_agent bot logins resolve empty" do
+          allow(ProviderSupport).to receive(:provider_bot_usernames_for).with("paid_agent").and_return(Set.new)
           stub_review_list_response([
             { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
             { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
