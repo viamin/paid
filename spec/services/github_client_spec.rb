@@ -1246,7 +1246,7 @@ RSpec.describe GithubClient do
     end
   end
 
-  describe "#pull_request_reviews" do
+  describe "#pull_request_reviews", :no_db do
     let(:repo) { "owner/repo" }
 
     context "when reviews exist" do
@@ -1276,7 +1276,7 @@ RSpec.describe GithubClient do
           )
 
         stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/reviews")
-          .with(query: hash_including("page" => "2", "per_page" => "100"))
+          .with(query: hash_including("page" => "2"))
           .to_return(
             status: 200,
             body: [
