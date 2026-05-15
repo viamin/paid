@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Containers::CollectServiceMetrics do
   let(:service_container) { create(:service_container, :running, docker_container_id: "container123") }
+  let(:backend) { instance_double(Containers::Backends::Base) }
 
   let(:docker_stats) do
     {
@@ -29,8 +30,9 @@ RSpec.describe Containers::CollectServiceMetrics do
   let(:mock_container) { instance_double(Docker::Container, stats: docker_stats) }
 
   before do
-    allow(Docker::Container).to receive(:get).with("container123").and_return(mock_container)
-    allow(mock_container).to receive(:stats).with(stream: false).and_return(docker_stats)
+    allow(Containers).to receive(:backend).and_return(backend)
+    allow(backend).to receive(:get_container).with("container123").and_return(mock_container)
+    allow(backend).to receive(:container_stats).with(mock_container, stream: false).and_return(docker_stats)
   end
 
   it "creates a service container metric record" do
@@ -55,7 +57,7 @@ RSpec.describe Containers::CollectServiceMetrics do
   end
 
   it "handles missing containers gracefully" do
-    allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+    allow(backend).to receive(:get_container).and_raise(Docker::Error::NotFoundError)
     allow(Rails.logger).to receive(:warn)
 
     expect(described_class.call(service_container: service_container)).to eq(:not_found)

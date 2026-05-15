@@ -3874,5 +3874,23 @@ RSpec.describe AgentRun do
         expect(agent_run.project.completed_agent_runs_count).to eq(1)
       end
     end
+
+    describe "#cleanup_orphaned_workspace_volume" do
+      let(:agent_run) { create(:agent_run, container_host: "remote", worktree_path: nil) }
+      let(:backend) { instance_double(Containers::Backends::Base) }
+      let(:volume) { instance_double(Docker::Volume) }
+
+      it "uses the persisted container host backend for volume cleanup" do
+        allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+        allow(backend).to receive(:get_volume).with("paid-workspace-#{agent_run.id}").and_return(volume)
+        allow(backend).to receive(:delete_volume).with(volume)
+
+        agent_run.send(:cleanup_orphaned_workspace_volume)
+
+        expect(Containers).to have_received(:backend_for).with("remote")
+        expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}")
+        expect(backend).to have_received(:delete_volume).with(volume)
+      end
+    end
   end
 end
