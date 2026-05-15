@@ -32,11 +32,11 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     )
 
     expect(attachments.map(&:marketplace_entry)).to eq([ automatic, team_default, manual ])
-    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default", "manual" ])
+    expect(attachments.map(&:attachment_source)).to eq([ "manual", "team_default", "manual" ])
     expect(attachments.last.rendered_format).to eq("claude_skill_v1")
   end
 
-  it "preserves automatic precedence over later team-default and manual matches for the same entry" do
+  it "upgrades to manual when the user explicitly selects an entry that also matches automatic rules" do
     entry = create_entry(
       name: "Shared skill",
       rule_mode: "automatic",
@@ -49,8 +49,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
-    expect(attachments.first.attachment_source).to eq("automatic")
-    expect(attachments.first.selection_reason).to eq("Matched automatic marketplace rule")
+    expect(attachments.first.attachment_source).to eq("manual")
+    expect(attachments.first.selection_reason).to eq("Selected manually for this run")
   end
 
   it "attaches runtime-config marketplace entries and preserves the rendered payload" do

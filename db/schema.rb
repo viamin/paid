@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_14_223539) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_15_011327) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2166,6 +2166,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_223539) do
     t.jsonb "kb_embedding_fallback_providers", default: [], null: false
     t.string "kb_embedding_provider", default: "openai", null: false
     t.jsonb "log_data"
+    t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
     t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false

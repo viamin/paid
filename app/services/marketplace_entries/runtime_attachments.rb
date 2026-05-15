@@ -6,7 +6,7 @@ module MarketplaceEntries
   class RuntimeAttachments
     RUNTIME_PREPARATION_ROOT = Rails.root.to_s.freeze
     RUNTIME_HOME_ROOT = "/home/agent".freeze
-    ALLOWED_ENV_KEY_PATTERN = /\AMARKETPLACE_[A-Z0-9_]+\z/.freeze
+    ALLOWED_ENV_KEY_PATTERN = /\A[A-Z][A-Z0-9_]*\z/.freeze
     RESTRICTED_ENV_KEYS = %w[
       PATH
       LD_PRELOAD
@@ -15,6 +15,13 @@ module MarketplaceEntries
       SHELL
       USER
       LOGNAME
+      DISPLAY
+      TERM
+      LANG
+      LC_ALL
+      TMPDIR
+      EDITOR
+      VISUAL
     ].to_set.freeze
 
     def initialize(agent_run, provider_key: nil)

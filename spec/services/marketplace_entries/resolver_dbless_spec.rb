@@ -58,7 +58,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
   end
 
-  it "preserves automatic precedence when an explicitly selected entry also matches an automatic rule" do
+  it "upgrades to manual when the user explicitly selects an automatically matched entry" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -72,7 +72,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     results = resolver.call
 
     expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "automatic" ])
+    expect(results.map(&:source)).to eq([ "manual" ])
   end
 
   it "attaches an automatic entry without manual selection when auto-attach is enabled" do
@@ -129,7 +129,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "manual" ])
   end
 
-  it "preserves the first matching attachment source as automatic > team_default > manual" do
+  it "upgrades to manual when the user explicitly selects an entry that also matches automatic and team_default rules" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -148,8 +148,8 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     results = resolver.call
 
     expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "automatic" ])
-    expect(results.map(&:reason)).to eq([ "Matched automatically" ])
+    expect(results.map(&:source)).to eq([ "manual" ])
+    expect(results.map(&:reason)).to eq([ "Selected manually for this run" ])
   end
 
   it "memoizes persisted manual attachment ids when no manual ids were passed" do

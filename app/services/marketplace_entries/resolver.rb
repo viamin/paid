@@ -53,7 +53,6 @@ module MarketplaceEntries
 
       compatible_entries.each do |entry|
         next unless effective_manual_entry_ids.include?(entry.id)
-        next if selections.key?(entry.id)
 
         selections[entry.id] = Result.new(
           entry:,

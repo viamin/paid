@@ -98,22 +98,21 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     FileUtils.rm_rf(outside_dir) if outside_dir
   end
 
-  it "keeps only marketplace-prefixed runtime env keys" do
+  it "allows provider-native env keys but blocks restricted and malformed keys" do
+    env = {
+      "MARKETPLACE_PLUGIN_FLAG" => "enabled", "OPENAI_BASE_URL" => "https://api.openai.com",
+      "AWS_REGION" => "us-east-1", "path" => "/tmp/override",
+      "PATH" => "/tmp/override", "LD_PRELOAD" => "/tmp/evil.so", "HOME" => "/tmp/evil"
+    }
     agent_run = build_agent_run([
-      build_attachment(
-        strategy: "runtime_config",
-        payload: {
-          "env" => {
-            "MARKETPLACE_PLUGIN_FLAG" => "enabled",
-            "path" => "/tmp/override",
-            "AWS_SECRET_ACCESS_KEY" => "leak",
-            "PAID_PLUGIN_FLAG" => "legacy"
-          }
-        }
-      )
+      build_attachment(strategy: "runtime_config", payload: { "env" => env })
     ])
 
-    expect(described_class.runtime_env(agent_run)).to eq("MARKETPLACE_PLUGIN_FLAG" => "enabled")
+    expect(described_class.runtime_env(agent_run)).to eq(
+      "MARKETPLACE_PLUGIN_FLAG" => "enabled",
+      "OPENAI_BASE_URL" => "https://api.openai.com",
+      "AWS_REGION" => "us-east-1"
+    )
   end
 
   it "re-renders runtime attachments for the executing provider" do
