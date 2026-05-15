@@ -82,11 +82,11 @@ RSpec.describe PullRequests::ProgressState, :no_db do
   let(:issue) { issue_double }
 
   def build_run(goal:, status:, at:, review_posted_at: nil, operational_failure: false,
-    base_commit_sha: nil, result_commit_sha: nil)
+    base_commit_sha: nil, result_commit_sha: nil, trigger_type: "automatic")
     run_class.new(
       goal: goal,
       status: status,
-      trigger_type: "automatic",
+      trigger_type: trigger_type,
       created_at: at,
       updated_at: at,
       completed_at: at,
@@ -159,6 +159,34 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     runs = [
       build_run(goal: "create_pr", status: "failed", at: now),
       build_run(goal: "review", status: "failed", at: now - 5.minutes, review_posted_at: now - 5.minutes),
+      build_run(goal: "create_pr", status: "failed", at: now - 10.minutes)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.last_meaningful_progress_at).to eq(now - 5.minutes)
+  end
+
+  it "resets the unified streak after a completed clean review" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now),
+      build_run(goal: "review", status: "completed", at: now - 5.minutes),
+      build_run(goal: "create_pr", status: "failed", at: now - 10.minutes)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.last_meaningful_progress_at).to eq(now - 5.minutes)
+  end
+
+  it "resets the unified streak after a successful manual review run" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now),
+      build_run(goal: "review", status: "completed", at: now - 5.minutes, trigger_type: "manual"),
       build_run(goal: "create_pr", status: "failed", at: now - 10.minutes)
     ]
 

@@ -11,11 +11,12 @@ Automatic PR retries now use one PR-level progress model for both `create_pr` an
   - The operational-failure subset of that same streak.
 - `last_meaningful_progress_at`
   - The last time the PR made progress that should clear the failure streak.
+  - Successful manual PR runs also count as progress, even though only automatic runs contribute to the failure streak itself.
 
 ## What resets the streak
 
-- A completed automatic `create_pr` run
-- An automatic `review` run that posted a review
+- A completed `create_pr` run
+- A completed `review` run or any `review` run that posted a review
 - A new PR head commit
 - `issues.review_goal_retry_reset_at`
 - `issues.operational_failure_reset_at`

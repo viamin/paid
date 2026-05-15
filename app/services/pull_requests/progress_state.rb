@@ -6,8 +6,8 @@ module PullRequests
   # progress or when an explicit reset marker is recorded on the issue.
   #
   # Reset conditions:
-  # - a completed automatic create_pr run
-  # - an automatic review run that posted a review
+  # - a completed create_pr run
+  # - a completed review run or a review run that posted a review
   # - a new PR HEAD commit (when the current head SHA is supplied, and
   #   head-commit time is known for failed runs without result_commit_sha)
   # - issue.review_goal_retry_reset_at
@@ -164,7 +164,7 @@ module PullRequests
 
     def load_runs
       project.agent_runs
-        .where(goal: GOALS, trigger_type: "automatic")
+        .where(goal: GOALS)
         .where(
           "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
           pr_num: issue.github_number
@@ -206,7 +206,7 @@ module PullRequests
     end
 
     def meaningful_progress?(run)
-      return false unless automatic_pr_run?(run)
+      return false unless pr_run?(run)
 
       create_pr_progress?(run) || review_progress?(run)
     end
@@ -219,12 +219,16 @@ module PullRequests
       run.trigger_type == "automatic" && run.goal.in?(GOALS)
     end
 
+    def pr_run?(run)
+      run.goal.in?(GOALS)
+    end
+
     def create_pr_progress?(run)
       run.goal == "create_pr" && run.status == "completed"
     end
 
     def review_progress?(run)
-      run.goal == "review" && run.review_posted_at.present?
+      run.goal == "review" && (run.status == "completed" || run.review_posted_at.present?)
     end
 
     def progress_timestamp(run)
