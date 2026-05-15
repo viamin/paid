@@ -234,10 +234,6 @@ module Activities
                   "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
       end
 
-      if failure_streak_limit_reached?(project, issue, progress_state)
-        return escalate_trigger(issue, reason: failure_streak_reason(project, issue, progress_state))
-      end
-
       backfill_review_goal_retry_reset_at!(issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)

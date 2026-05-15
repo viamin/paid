@@ -6040,6 +6040,46 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a ready PR with a unified failure streak is converted back to draft on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 5,
+          pr_followup_count: 3)
+      end
+
+      before do
+        3.times do |index|
+          create(:agent_run, :automatic,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "create_pr", status: "failed",
+            created_at: (3.hours.ago + index.minutes),
+            started_at: (3.hours.ago + index.minutes),
+            completed_at: (3.hours.ago + index.minutes))
+        end
+
+        stub_github_for_pr(draft: true,
+          checks: [ { name: "rspec", conclusion: "failure" } ])
+      end
+
+      it "restarts the draft cycle before enforcing the ready-phase streak gate" do
+        result = activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(pr_issue.draft_review_count).to eq(0)
+        expect(pr_issue.pr_followup_count).to eq(0)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger[:triggers].map { |entry| entry[:type] }).to eq([ "ci_failure" ])
+      end
+    end
+
     context "when a ready PR at review-goal retry limit is converted back to draft" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
