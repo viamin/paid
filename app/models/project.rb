@@ -278,7 +278,7 @@ class Project < ApplicationRecord
   def effective_auto_pick_skip_labels
     return auto_pick_skip_labels unless auto_pick_skip_labels.nil?
 
-    owner_labels = effective_owner&.settings&.auto_pick_skip_labels
+    owner_labels = effective_owner&.user_setting&.auto_pick_skip_labels
     return owner_labels unless owner_labels.nil?
 
     tenant_labels = account&.tenant_setting&.auto_pick_skip_labels

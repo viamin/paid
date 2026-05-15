@@ -970,6 +970,14 @@ RSpec.describe Project do
 
         expect(project.effective_auto_pick_skip_labels).to eq([])
       end
+
+      it "does not create a user setting record while resolving fallback labels" do
+        project = create(:project)
+
+        expect(project.created_by.user_setting).to be_nil
+        expect { project.effective_auto_pick_skip_labels }.not_to change(UserSetting, :count)
+        expect(project.effective_auto_pick_skip_labels).to eq(AutoPickSkipLabels::DEFAULTS)
+      end
     end
 
     describe "#effective_screenshot_settings" do

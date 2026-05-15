@@ -141,6 +141,13 @@ RSpec.describe TenantSetting do
       expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
     end
 
+    it "normalizes labels to lowercase before deduplicating" do
+      setting = build(:tenant_setting)
+      setting.auto_pick_skip_labels_csv = " Planning, research, PLANNING "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
     it "allows configuring an empty skip-label list" do
       setting = build(:tenant_setting)
       setting.auto_pick_skip_labels_csv = ""

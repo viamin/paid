@@ -24,7 +24,7 @@ module AutoPickSkipLabels
   def self.normalize(value)
     return nil if value.nil?
 
-    Array(value).map(&:to_s).map(&:strip).reject(&:blank?).uniq
+    Array(value).map(&:to_s).map(&:strip).reject(&:blank?).map(&:downcase).uniq
   end
 
   def self.parse_csv(value)
