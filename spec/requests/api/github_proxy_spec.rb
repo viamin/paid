@@ -617,6 +617,24 @@ RSpec.describe "Api::GithubProxy" do
         expect(WebMock).not_to have_requested(:put, dismiss_url)
       end
 
+      it "does not query or dismiss stale reviews when the review response lacks an id" do
+        no_id_response = {
+          body: "Looks good",
+          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+          state: "commented"
+        }.to_json
+        review_list_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews"
+
+        stub_request(:post, target_url)
+          .to_return(status: 200, body: no_id_response, headers: { "Content-Type" => "application/json" })
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).not_to have_requested(:get, review_list_url)
+      end
+
       it "returns 503 when the review bot is not configured" do
         allow(review_bot_token_provider)
           .to receive(:fetch)

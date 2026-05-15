@@ -239,6 +239,7 @@ module Api
       bot_logins = project.enabled_review_bot_logins &
         ProviderSupport.provider_bot_usernames_for("paid_agent")
       return if bot_logins.empty?
+      return if path_match[:number].blank? || new_review["id"].blank?
       pr_number = path_match[:number].to_i
       new_review_id = new_review["id"].to_i
 
@@ -248,7 +249,7 @@ module Api
         ).fetch
       )
 
-      reviews = bot_client.pull_request_reviews(project.full_name, pr_number)
+      reviews = Array(bot_client.pull_request_reviews(project.full_name, pr_number))
       stale = reviews.select do |r|
         review_state(r[:state]) == "CHANGES_REQUESTED" &&
           bot_logins.include?(r[:user_login].to_s.downcase) &&
