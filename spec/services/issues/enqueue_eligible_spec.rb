@@ -27,7 +27,8 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   let(:issue) { instance_double(issue_class, id: 11, github_number: 42) }
   let(:eligible_scope) { instance_double(ActiveRecord::Relation) }
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
-  let(:blocking_runs) { instance_double(ActiveRecord::Relation) }
+  let(:create_pr_blocking_runs) { instance_double(ActiveRecord::Relation) }
+  let(:analyze_issue_blocking_runs) { instance_double(ActiveRecord::Relation) }
   let(:provider) { instance_double(provider_class, id: 5, provider_key: "claude") }
   let(:service) { described_class.new(issue, project: project) }
 
@@ -36,7 +37,9 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
       .with(project)
       .and_return(eligible_scope)
     allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
-    allow(service).to receive_messages(blocking_runs: blocking_runs, resolve_provider: provider)
+    allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)
+    allow(service).to receive(:blocking_runs).with("analyze_issue").and_return(analyze_issue_blocking_runs)
+    allow(service).to receive(:resolve_provider).and_return(provider)
   end
 
   def build_run(id:, previously_new_record:)
@@ -46,8 +49,8 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   it "creates a queued automatic auto-pick run for an eligible issue" do
     run = build_run(id: 99, previously_new_record: true)
 
-    allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue)
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      expect(attrs).to eq(project: project, issue: issue, goal: "create_pr")
       block.call(run)
       run
     end
@@ -56,13 +59,14 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     result = service.call
 
     expect(result).to eq(run)
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
+    expect(create_pr_blocking_runs).to have_received(:find_or_create_by!).with(
+      project: project, issue: issue, goal: "create_pr"
+    )
     expect(run.provider).to eq(provider)
     expect(run.agent_type).to eq("claude_code")
     expect(run.status).to eq("queued")
     expect(run.trigger_type).to eq("automatic")
     expect(run.auto_pick).to be(true)
-    expect(run.goal).to eq("create_pr")
     expect(Rails.logger).to have_received(:info).with(
       hash_including(message: "enqueue_eligible.created", issue_id: issue.id, agent_run_id: run.id)
     )
@@ -71,7 +75,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   it "resolves the provider for analyze_issue when auto_enhance is enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     allow(service).to receive(:resolve_provider).with("analyze_issue").and_return(provider)
-    allow(blocking_runs).to receive(:find_or_create_by!).and_return(
+    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!).and_return(
       instance_double(run_class, id: 99, previously_new_record?: true)
     )
     allow(Rails.logger).to receive(:info)
@@ -103,10 +107,12 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
   it "returns the existing run when a unique-index race occurs" do
     existing_run = instance_double(run_class, id: 123, previously_new_record?: false)
-    allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
+    allow(create_pr_blocking_runs).to receive(:find_by)
+      .with(project: project, issue: issue, goal: "create_pr")
+      .and_return(existing_run)
     allow(Rails.logger).to receive(:info)
 
     result = service.call
@@ -118,7 +124,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   it "re-raises unrelated unique-index errors" do
-    allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("some_other_index")
     )
 
@@ -141,8 +147,8 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     run = build_run(id: 99, previously_new_record: true)
 
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
-    allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue)
+    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")
       block.call(run)
       run
     end
@@ -150,39 +156,38 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     service.call
 
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
-    expect(run.goal).to eq("analyze_issue")
+    expect(analyze_issue_blocking_runs).to have_received(:find_or_create_by!).with(
+      project: project, issue: issue, goal: "analyze_issue"
+    )
   end
 
   it "looks up the existing blocking run after a unique-index race" do
     existing_run = instance_double(run_class, id: 123, previously_new_record?: false)
 
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
-    allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
+    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
+    allow(analyze_issue_blocking_runs).to receive(:find_by)
+      .with(project: project, issue: issue, goal: "analyze_issue")
+      .and_return(existing_run)
 
     result = service.call
 
     expect(result).to eq(existing_run)
   end
 
-  it "returns an existing blocking run even when it was created with a different goal" do
-    existing_run = instance_double(run_class, id: 123, previously_new_record?: false)
-
+  it "does not return a blocking run created for a different goal after a unique-index race" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
-    allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
+    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
-    allow(Rails.logger).to receive(:info)
+    allow(analyze_issue_blocking_runs).to receive(:find_by)
+      .with(project: project, issue: issue, goal: "analyze_issue")
+      .and_return(nil)
 
     result = service.call
 
-    expect(result).to eq(existing_run)
-    expect(Rails.logger).to have_received(:info).with(
-      hash_including(message: "enqueue_eligible.existing", issue_id: issue.id, agent_run_id: existing_run.id)
-    )
+    expect(result).to be_nil
   end
 end
