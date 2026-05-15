@@ -20,6 +20,7 @@ module Activities
   class HandleNoOutputIssueRunActivity < BaseActivity
     activity_name "HandleNoOutputIssueRun"
 
+    CLASSIFICATION_LOG_LIMIT = 500
     PAID_NEEDS_INPUT_LABEL = "paid-needs-input"
     PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
@@ -79,7 +80,8 @@ module Activities
       project = agent_run.project
       client = project.github_token.client
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
-      outcome = classify_outcome(agent_run, output_present, agent_summary)
+      diagnostic_output = classification_text_for(agent_run)
+      outcome = classify_outcome(agent_run, output_present, diagnostic_output)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
         case outcome
@@ -116,10 +118,10 @@ module Activities
     # and evidence that the agent actually performed work. Defense in depth:
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
-    def classify_outcome(agent_run, output_present, agent_summary)
+    def classify_outcome(agent_run, output_present, diagnostic_output)
       unless output_present
-        return "provider_error" if provider_error_output?(agent_summary)
-        return "infrastructure_error" if infrastructure_error_output?(agent_summary)
+        return "provider_error" if provider_error_output?(diagnostic_output)
+        return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
 
         return "needs_input"
       end
@@ -131,8 +133,8 @@ module Activities
       # the output for error patterns; if neither matches, classify as
       # needs_input since the agent did not perform meaningful work.
       if agent_run.iterations.to_i.zero? && agent_run.cost_cents.to_i.zero?
-        return "provider_error" if provider_error_output?(agent_summary)
-        return "infrastructure_error" if infrastructure_error_output?(agent_summary)
+        return "provider_error" if provider_error_output?(diagnostic_output)
+        return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
 
         return "needs_input"
       end
@@ -152,9 +154,24 @@ module Activities
       INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| text.match?(pattern) }
     end
 
+    def classification_text_for(agent_run)
+      raw_output = agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .order(:created_at)
+        .limit(CLASSIFICATION_LOG_LIMIT)
+        .pluck(:content)
+        .join("\n")
+
+      normalized_text(raw_output)
+    end
+
     def provider_error_patterns
       @provider_error_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
         SUPPLEMENTARY_ERROR_PATTERNS
+    end
+
+    def normalized_text(text)
+      text.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "\uFFFD").strip
     end
 
     def handle_provider_error(agent_run, agent_summary)

@@ -410,6 +410,18 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("provider_error")
       end
 
+      it "detects provider errors from stderr even when stdout contains trivial output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "OK.")
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
       it "detects weekly limit wording as a provider error" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,

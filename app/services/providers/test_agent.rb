@@ -285,22 +285,24 @@ module Providers
 
     def process_harness_result(result)
       status = result[:status].to_s
-      message = normalize_output_text(result[:message]).presence || "Provider health check returned no message"
+      message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
+      display_message = message || output || "Provider health check returned no message"
 
       if status == "ok" || smoke_test_output_success?(output || message)
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
-        translated_message = translate_and_extract_error(message)
+        classification_message = [ message, output ].compact.uniq.join("\n")
+        translated_message = translate_and_extract_error(classification_message.presence || display_message)
         error_type = resolve_error_type(
           harness_error_type: map_harness_error_category(result[:error_category]),
-          message: translated_message.presence || message
+          message: translated_message.presence || classification_message.presence || display_message
         )
 
         Result.new(
           success: false,
           error_type: error_type,
-          message: translated_message.presence || message
+          message: translated_message.presence || display_message
         )
       end
     end
