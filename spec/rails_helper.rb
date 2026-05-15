@@ -128,15 +128,15 @@ RSpec.configure do |config|
   # examples that need a database connection. This lets the non-DB specs run and
   # report results while DB-dependent specs are marked as pending.
   unless database_available
-    config.before do |example|
-      # Only run specs under spec/lib/ or those tagged :no_db which don't need
-      # a database. Specs can opt back into DB-backed behavior with :db.
-      # All other specs are skipped to avoid connection errors.
-      spec_file = example.metadata[:file_path].to_s
-      allows_dbless = (spec_file.start_with?("./spec/lib/", "spec/lib/") && !example.metadata[:db]) || example.metadata[:no_db]
-      unless allows_dbless
-        skip "Database not available (ALLOW_DBLESS_SPECS=true)"
-      end
+    config.define_derived_metadata do |metadata|
+      spec_file = metadata[:file_path].to_s
+      allows_dbless = (spec_file.start_with?("./spec/lib/", "spec/lib/") && !metadata[:db]) || metadata[:no_db]
+      metadata[:requires_database] = true unless allows_dbless
     end
+
+    # Exclude DB-backed groups before any before(:context) hooks fire. A
+    # per-example skip is too late for suites that allocate records in context
+    # setup helpers such as fixture_kit.
+    config.filter_run_excluding requires_database: true
   end
 end
