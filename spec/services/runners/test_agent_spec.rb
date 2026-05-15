@@ -1102,7 +1102,7 @@ RSpec.describe Runners::TestAgent do
 
   describe "smoke test timeout forwarding (issue #1538)" do
     let(:provider_class) do
-      Class.new(AgentHarness::Runners::Base) do
+      Class.new(AgentHarness::Providers::Base) do
         class << self
           attr_accessor :contract_timeout, :provider_instance
 
@@ -1149,10 +1149,10 @@ RSpec.describe Runners::TestAgent do
     end
 
     def run_health_check(provider_instance:, contract_timeout:, caller_timeout:)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:get).with(:kilocode).and_return(provider_class)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: contract_timeout })
+      allow(AgentHarness::Providers::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:get).with(:kilocode).and_return(provider_class)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: contract_timeout })
       provider_class.contract_timeout = contract_timeout
       provider_class.provider_instance = provider_instance
 

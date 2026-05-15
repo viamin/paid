@@ -490,7 +490,7 @@ module Runners
     end
 
     def translate_and_extract_error(error_message)
-      translated = translate_known_provider_errors(error_message)
+      translated = translate_known_runner_errors(error_message)
       return translated if translated
 
       extract_user_facing_error(error_message)
