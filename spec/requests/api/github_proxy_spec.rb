@@ -203,7 +203,34 @@ RSpec.describe "Api::GithubProxy" do
     before do
       stub_request(:post, target_url)
         .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
+      stub_request(:get, target_url)
+        .to_return(status: 200, body: [].to_json, headers: { "Content-Type" => "application/json" })
       allow(Rails.logger).to receive(:warn).and_call_original
+    end
+
+    def stub_stale_review_dismissal(review_id: 101)
+      dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/#{review_id}/dismissals"
+
+      stub_request(:get, target_url)
+        .with(headers: hash_including("Authorization" => "token ghs_review_bot_token"))
+        .to_return(
+          status: 200,
+          body: [
+            { id: review_id, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 102, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Looks good" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" },
+            { id: 103, user: { login: "human-reviewer" }, state: "CHANGES_REQUESTED", body: "Human request" }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      stub_request(:put, dismiss_url)
+        .with(
+          headers: hash_including("Authorization" => "token ghs_review_bot_token"),
+          body: { message: "Subsequent review found no remaining actionable issues." }.to_json
+        )
+        .to_return(status: 200, body: {}.to_json, headers: { "Content-Type" => "application/json" })
+
+      dismiss_url
     end
 
     it "proxies review creation" do
@@ -465,6 +492,39 @@ RSpec.describe "Api::GithubProxy" do
               headers: valid_headers
           }.not_to change { github_token.reload.last_used_at }
         end
+      end
+
+      it "dismisses older paid-code-reviewer change requests after a non-blocking review" do
+        dismiss_url = stub_stale_review_dismissal
+        allow(Rails.logger).to receive(:info)
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).to have_requested(:put, dismiss_url).once
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(message: "github_proxy.dismissed_stale_review", review_id: 101, pr_number: 10)
+        )
+      end
+
+      it "does not dismiss reviews when the latest review requests changes" do
+        changes_requested_response = {
+          id: 999,
+          body: "Needs fixes",
+          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+          state: "CHANGES_REQUESTED"
+        }.to_json
+        dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/101/dismissals"
+
+        stub_request(:post, target_url)
+          .to_return(status: 200, body: changes_requested_response, headers: { "Content-Type" => "application/json" })
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Needs fixes", event: "REQUEST_CHANGES" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).not_to have_requested(:put, dismiss_url)
       end
 
       it "returns 503 when the review bot is not configured" do

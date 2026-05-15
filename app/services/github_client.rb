@@ -760,7 +760,7 @@ class GithubClient
   # @raise [NotFoundError] if the pull request does not exist
   def pull_request_reviews(repo, number)
     handle_errors do
-      reviews = client.pull_request_reviews(repo, number)
+      reviews = with_auto_paginate { client.pull_request_reviews(repo, number) }
       reviews.map do |r|
         {
           id: r.id,

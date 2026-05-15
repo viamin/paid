@@ -1252,6 +1252,7 @@ RSpec.describe GithubClient do
     context "when reviews exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/reviews")
+          .with(query: hash_excluding("page" => "2"))
           .to_return(
             status: 200,
             body: [
@@ -1268,26 +1269,54 @@ RSpec.describe GithubClient do
                 submitted_at: "2026-02-21T10:00:00Z"
               }
             ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => "<#{api_base}/repos/#{repo}/pulls/42/reviews?page=2>; rel=\"next\""
+            }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/reviews")
+          .with(query: hash_including("page" => "2"))
+          .to_return(
+            status: 200,
+            body: [
+              {
+                id: 3,
+                user: { login: "commenter" },
+                state: "COMMENTED",
+                submitted_at: "2026-02-22T10:00:00Z"
+              }
+            ].to_json,
             headers: { "Content-Type" => "application/json" }
           )
       end
 
-      it "returns reviews with user, state, and submitted_at parsed as Time" do
+      it "returns reviews from all pages with user, state, and submitted_at parsed as Time" do
         result = client.pull_request_reviews(repo, 42)
 
-        expect(result.size).to eq(2)
+        expect(result.size).to eq(3)
         expect(result.first[:id]).to eq(1)
         expect(result.first[:user_login]).to eq("reviewer")
         expect(result.first[:state]).to eq("CHANGES_REQUESTED")
         expect(result.first[:submitted_at]).to be_a(Time)
         expect(result.first[:submitted_at]).to eq(Time.parse("2026-02-20T10:00:00Z"))
-        expect(result.last[:state]).to eq("APPROVED")
+        expect(result.last[:state]).to eq("COMMENTED")
+        expect(result.last[:user_login]).to eq("commenter")
+      end
+
+      it "temporarily enables auto_paginate and restores it" do
+        expect(client.client.auto_paginate).to be false
+
+        client.pull_request_reviews(repo, 42)
+
+        expect(client.client.auto_paginate).to be false
       end
     end
 
     context "when pull request does not exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/pulls/999/reviews")
+          .with(query: hash_excluding("page" => "2"))
           .to_return(status: 404, body: { message: "Not Found" }.to_json)
       end
 
