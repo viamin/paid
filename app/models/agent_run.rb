@@ -784,7 +784,7 @@ class AgentRun < ApplicationRecord
   end
   private :compute_label_priority_tier
 
-  attr_writer :source_pull_request_record
+  attr_writer :source_pull_request_record, :created_issue_record
 
   # The Issue row representing this run's source pull request, used by
   # label_priority_tier. Falls back to a per-row find_by, but callers
@@ -822,6 +822,42 @@ class AgentRun < ApplicationRecord
 
     targets.each do |run|
       run.source_pull_request_record = records[[ run.project_id, run.source_pull_request_number ]]
+    end
+  end
+
+  # The Issue row representing this run's created issue, used for tooltip
+  # display. Falls back to a per-row find_by, but callers rendering many
+  # runs should call AgentRun.preload_created_issue_records first to
+  # avoid an N+1.
+  def created_issue_record
+    return @created_issue_record if defined?(@created_issue_record)
+    return nil if created_issue_number.blank? || project.nil?
+
+    @created_issue_record = project.issues.find_by(
+      github_number: created_issue_number, is_pull_request: false
+    )
+  end
+
+  # Batch-loads created-issue Issue rows for a collection of runs, mirroring
+  # preload_source_pull_requests. Call from controllers rendering context
+  # tooltips for many runs.
+  def self.preload_created_issue_records(runs)
+    targets = Array(runs).select do |r|
+      r.created_issue_number.present? && r.project_id.present? &&
+        !r.instance_variable_defined?(:@created_issue_record)
+    end
+    return if targets.empty?
+
+    records = {}
+    targets.group_by(&:project_id).each do |project_id, group|
+      numbers = group.map(&:created_issue_number).uniq
+      Issue.where(is_pull_request: false, project_id: project_id, github_number: numbers).each do |issue|
+        records[[ issue.project_id, issue.github_number ]] = issue
+      end
+    end
+
+    targets.each do |run|
+      run.created_issue_record = records[[ run.project_id, run.created_issue_number ]]
     end
   end
 

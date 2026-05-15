@@ -493,6 +493,7 @@ class Project < ApplicationRecord
     runs = agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
     AgentRun.preload_final_runner_records(runs)
     AgentRun.preload_source_pull_requests(runs)
+    AgentRun.preload_created_issue_records(runs)
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
@@ -505,6 +506,7 @@ class Project < ApplicationRecord
     runs = agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(50).to_a
     AgentRun.preload_final_runner_records(runs)
     AgentRun.preload_source_pull_requests(runs)
+    AgentRun.preload_created_issue_records(runs)
     broadcast_replace_to(
       self, :agent_runs_list,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
