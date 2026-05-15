@@ -29,13 +29,11 @@ RSpec.describe ApplicationHelper, :no_db, type: :helper do
       expect(helper.project_agent_runs_collection_path(project)).to eq("/projects/1/agent_runs")
     end
 
-    it "falls back to global url helpers when the helper context is not route-aware" do
-      route_helpers = Rails.application.routes.url_helpers
-
+    it "uses the active helper route context even when _routes_context is unavailable" do
       allow(helper).to receive(:respond_to?).and_call_original
       allow(helper).to receive(:respond_to?).with(:project_agent_runs_path).and_return(true)
       allow(helper).to receive(:respond_to?).with(:_routes_context, true).and_return(false)
-      allow(route_helpers).to receive(:public_send)
+      allow(helper).to receive(:public_send)
         .with(:project_agent_runs_path, project)
         .and_return("/projects/1/agent_runs")
 
