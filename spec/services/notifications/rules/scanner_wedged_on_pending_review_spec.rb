@@ -18,6 +18,43 @@ RSpec.describe Notifications::Rules::ScannerWedgedOnPendingReview do
     [ { issue_id: issue.id, pending_review: true, requested_bot: "copilot", pr_phase: issue.pr_review_phase } ]
   end
 
+  describe "#detect", :no_db do
+    before do
+      stub_const("PendingReviewIssueModel", Class.new do
+        def self.where(*); end
+      end)
+      stub_const("PendingReviewStateStub", Struct.new(:metadata, keyword_init: true))
+      stub_const("Issue", PendingReviewIssueModel)
+    end
+
+    let(:rule) { described_class.new }
+    let(:issue) do
+      double(
+        id: 42,
+        github_state: "open",
+        pr_review_phase: "draft",
+        auto_continue_paused?: false
+      )
+    end
+
+    it "accepts string issue ids from serialized workflow payloads" do
+      allow(Issue).to receive(:where).with(id: [ "42" ]).and_return([ issue ])
+      allow(rule).to receive(:update_state!).with(
+        issue,
+        hash_including(issue_id: "42", pending_review: true, requested_bot: "copilot", pr_phase: "draft")
+      ).and_return(PendingReviewStateStub.new(metadata: { "consecutive_polls" => 4 }))
+
+      result = rule.send(:detect, [ {
+        "issue_id" => "42",
+        "pending_review" => true,
+        "requested_bot" => "copilot",
+        "pr_phase" => "draft"
+      } ])
+
+      expect(result).to eq([ issue ])
+    end
+  end
+
   it "publishes on the fourth consecutive pending poll" do
     freeze_time do
       3.times do |index|
