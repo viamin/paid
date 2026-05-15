@@ -149,6 +149,10 @@ module Coordination
       trigger_types.any? { |type| policy["auto_resolve_trigger_types"].include?(type) }
     end
 
+    # Only defer for an active run. Unlike the old followup_limit_reached
+    # deferral, failure_streak_limit_reached is deliberately not deferred —
+    # when the unified failure limit is hit the PR should be evaluated for
+    # escalation immediately so it surfaces to the owner for attention.
     def defer_signal?
       signals["active_run_exists"] == true
     end

@@ -189,7 +189,6 @@ module Activities
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
         failure_streak_limit_reached: failure_limit,
-        review_goal_retry_limit_requires_escalation: retry_escalation,
         escalation_dismissed: escalation_dismissed?(issue),
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
