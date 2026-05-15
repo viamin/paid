@@ -1158,12 +1158,30 @@ RSpec.describe "AgentRuns" do
         expect(attachment.attachment_source).to eq("manual")
       end
 
-      it "rolls back the agent run when marketplace attachment fails" do
+      it "logs and continues when optional marketplace attachment fails" do
+        allow(Rails.logger).to receive(:warn)
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "agent_execution.marketplace_attachment_failed",
+            error_class: "RuntimeError",
+            error: "boom"
+          )
+        )
+      end
+
+      it "rolls back the agent run when a selected marketplace attachment fails" do
         allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
 
         expect {
           expect {
-            post project_agent_runs_path(project), params: { issue_id: issue.id }
+            post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ "123" ] }
           }.to raise_error(RuntimeError, "boom")
         }.not_to change(AgentRun, :count)
       end

@@ -12,6 +12,7 @@ class MarketplaceEntryVersion < ApplicationRecord
   validates :canonical_artifact, presence: true
   validate :canonical_artifact_is_object
   validate :renderers_is_object
+  validate :renderer_payloads_are_objects
   validate :compatibility_constraints_is_object
   validate :review_metadata_is_object
 
@@ -34,6 +35,17 @@ class MarketplaceEntryVersion < ApplicationRecord
 
   def renderers_is_object
     errors.add(:renderers, "must be an object") unless renderers.is_a?(Hash)
+  end
+
+  def renderer_payloads_are_objects
+    return unless renderers.is_a?(Hash)
+
+    invalid_provider_keys = renderers.each_with_object([]) do |(provider_key, payload), keys|
+      keys << provider_key unless payload.is_a?(Hash)
+    end
+    return if invalid_provider_keys.empty?
+
+    errors.add(:renderers, "must map provider keys to objects (invalid: #{invalid_provider_keys.join(', ')})")
   end
 
   def compatibility_constraints_is_object

@@ -72,6 +72,7 @@ module MarketplaceEntries
     def parsed_artifact_payloads
       @canonical_artifact = parse_required_object(:canonical_artifact_json, :canonical_artifact)
       @renderers = parse_optional_object(:renderers_json, :renderers)
+      validate_renderer_payloads if @renderers
       @compatibility_constraints = parse_optional_object(:compatibility_constraints_json, :compatibility_constraints)
       @review_metadata = parse_optional_object(:review_metadata_json, :review_metadata)
       @automatic_conditions = parse_optional_object(:automatic_conditions_json, :automatic_conditions)
@@ -173,6 +174,18 @@ module MarketplaceEntries
       end
 
       parsed
+    end
+
+    def validate_renderer_payloads
+      invalid_provider_keys = @renderers.each_with_object([]) do |(provider_key, payload), keys|
+        keys << provider_key unless payload.is_a?(Hash)
+      end
+      return if invalid_provider_keys.empty?
+
+      entry.errors.add(
+        :renderers,
+        "must map provider keys to JSON objects (invalid: #{invalid_provider_keys.join(', ')})"
+      )
     end
   end
 end

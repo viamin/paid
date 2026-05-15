@@ -124,6 +124,20 @@ RSpec.describe "MarketplaceEntries" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("Team scope is not included in the list")
     end
+
+    it "rejects renderer payloads that are not JSON objects per provider" do
+      invalid_params = params.deep_dup
+      invalid_params[:marketplace_entry][:renderers_json] = JSON.generate(
+        claude: "oops"
+      )
+
+      expect {
+        post marketplace_entries_path, params: invalid_params
+      }.not_to change(MarketplaceEntry, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("Renderers must map provider keys to JSON objects")
+    end
   end
 
   describe "PATCH /marketplace_entries/:id" do

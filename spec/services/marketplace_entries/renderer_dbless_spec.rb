@@ -28,6 +28,23 @@ RSpec.describe MarketplaceEntries::Renderer, :no_db do
     expect(rendered).to eq(expected_codex_render)
   end
 
+  it "rejects malformed provider renderer payloads" do
+    entry = Struct.new(:provider_format, :entry_type, keyword_init: true)
+      .new(provider_format: "canonical_v1", entry_type: "skill")
+    version = Struct.new(:renderers, :canonical_artifact, keyword_init: true)
+      .new(
+        renderers: { "claude" => "oops" },
+        canonical_artifact: canonical_artifact
+      )
+
+    expect {
+      described_class.call(entry:, version:, provider_key: "claude")
+    }.to raise_error(
+      MarketplaceEntries::Renderer::InvalidRendererPayloadError,
+      /must be a JSON object/
+    )
+  end
+
   def provider_renderers
     {
       "claude" => {

@@ -645,14 +645,29 @@ module Projects
           status: "queued",
           priority_tier: priority_tier
         )
-        MarketplaceEntries::AttachToRun.call(
-          agent_run:,
-          manual_entry_ids: params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil),
-          auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
-          account_auto_attach_required: marketplace_auto_attach_required_for_current_account?
-        )
+        attach_marketplace_entries(agent_run:)
         agent_run
       end
+    end
+
+    def attach_marketplace_entries(agent_run:)
+      manual_entry_ids = params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil)
+      account_auto_attach_required = marketplace_auto_attach_required_for_current_account?
+
+      MarketplaceEntries::AttachToRun.call(
+        agent_run:,
+        manual_entry_ids: manual_entry_ids,
+        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
+        account_auto_attach_required: account_auto_attach_required
+      )
+    rescue => e
+      Rails.logger.warn(
+        message: "agent_execution.marketplace_attachment_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      raise if account_auto_attach_required || Array(manual_entry_ids).any?
     end
 
     def marketplace_auto_attach_enabled_for_current_user?

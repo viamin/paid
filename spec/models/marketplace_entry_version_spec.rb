@@ -3,6 +3,15 @@
 require "rails_helper"
 
 RSpec.describe MarketplaceEntryVersion do
+  describe "validations" do
+    it "rejects renderer payloads that are not objects" do
+      version = build(:marketplace_entry_version, renderers: { "claude" => "oops" })
+
+      expect(version).not_to be_valid
+      expect(version.errors[:renderers]).to include("must map provider keys to objects (invalid: claude)")
+    end
+  end
+
   describe "#destroy" do
     it "prevents deleting versions that have been attached to agent runs" do
       entry = create(:marketplace_entry)

@@ -82,4 +82,47 @@ RSpec.describe MarketplaceEntries::Upsert, :no_db do
       expect(rule_scope).not_to have_received(:find_or_initialize_by)
     end
   end
+
+  describe "#parsed_artifact_payloads" do
+    let(:errors) { ActiveModel::Errors.new(entry) }
+    let(:entry_class) do
+      stub_const("MarketplaceEntryUpsertNoDbRenderableEntry", Class.new do
+        attr_accessor :canonical_artifact_json, :renderers_json, :compatibility_constraints_json,
+          :review_metadata_json, :automatic_conditions_json, :team_default_conditions_json
+
+        def errors
+          @errors ||= ActiveModel::Errors.new(self)
+        end
+
+        def read_attribute_for_validation(attribute)
+          public_send(attribute)
+        end
+
+        def self.human_attribute_name(attribute, *)
+          attribute.to_s.humanize
+        end
+
+        def self.lookup_ancestors
+          [ self ]
+        end
+      end)
+    end
+    let(:entry) { entry_class.new }
+
+    before do
+      entry.canonical_artifact_json = JSON.generate(content: "Use the repo workflow.")
+      entry.renderers_json = JSON.generate(claude: "oops")
+      entry.compatibility_constraints_json = JSON.generate({})
+      entry.review_metadata_json = JSON.generate({})
+      entry.automatic_conditions_json = JSON.generate({})
+      entry.team_default_conditions_json = JSON.generate({})
+    end
+
+    it "rejects provider renderer payloads that are not JSON objects" do
+      result = described_class.new(entry:, params:, actor:).send(:parsed_artifact_payloads)
+
+      expect(result).to be(false)
+      expect(entry.errors[:renderers]).to include("must map provider keys to JSON objects (invalid: claude)")
+    end
+  end
 end

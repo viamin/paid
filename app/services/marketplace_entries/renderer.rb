@@ -4,6 +4,8 @@ require "set"
 
 module MarketplaceEntries
   class Renderer
+    InvalidRendererPayloadError = Class.new(ArgumentError)
+
     attr_reader :entry, :version, :provider_key
 
     def initialize(entry:, version:, provider_key:)
@@ -31,7 +33,13 @@ module MarketplaceEntries
     end
 
     def call
-      artifact = selected_renderer.deep_dup
+      artifact = selected_renderer
+      unless artifact.is_a?(Hash)
+        raise InvalidRendererPayloadError,
+          "Renderer payload for provider #{provider_key.inspect} must be a JSON object"
+      end
+
+      artifact = artifact.deep_dup
       {
         "provider" => provider_key,
         "provider_format" => artifact.delete("provider_format") || artifact.delete("format") || entry.provider_format,
