@@ -24,4 +24,14 @@ RSpec.describe Provider, :no_db do
     expect(UserSetting).to respond_to(:fallback_candidate_providers)
     expect(UserSetting.instance_methods).to include(:provider_priority, :provider_priority_for_goal, :available_providers)
   end
+
+  it "keeps provider-named controller, helper, policy, service, and job constants available" do
+    expect(ProvidersController < RunnersController).to be(true)
+    expect(ProvidersHelper.included_modules).to include(RunnersHelper)
+    expect(ProviderPolicy < RunnerPolicy).to be(true)
+    expect(AgentRuns::ProviderResolver < AgentRuns::RunnerResolver).to be(true)
+    expect(AgentRuns::ProviderSelectionLogger < AgentRuns::RunnerSelectionLogger).to be(true)
+    expect(Dashboard::ProviderHealth < Dashboard::RunnerHealth).to be(true)
+    expect(Notifications::CheckProviderQuotasJob < Notifications::CheckRunnerQuotasJob).to be(true)
+  end
 end
