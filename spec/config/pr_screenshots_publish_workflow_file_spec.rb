@@ -31,7 +31,13 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
 
   it "passes the PR head ref to the resolver for branch-based fallback matching" do
     expect(resolve_env).to include("HEAD_REF" => "${{ github.event.pull_request.head.ref }}")
+    expect(resolve_step.fetch("run")).to include('if pull_requests.any?')
     expect(resolve_step.fetch("run")).to include('candidate["head_branch"] == head_ref')
+  end
+
+  it "uses branch fallback matching only when the workflow run is not already attached to a PR" do
+    expect(resolve_step.fetch("run")).to include('pull_requests = candidate.fetch("pull_requests", [])')
+    expect(resolve_step.fetch("run")).to include('pull_requests.any? { |pr| pr["number"] == pr_number }')
   end
 
   it "treats missing capture jobs as skipped only when detect completed cleanly" do
