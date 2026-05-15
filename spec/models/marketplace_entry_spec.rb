@@ -39,4 +39,22 @@ RSpec.describe MarketplaceEntry do
       expect(described_class.ransackable_associations).to eq([ "current_version" ])
     end
   end
+
+  describe "#destroy" do
+    it "prevents deleting entries that have been attached to agent runs" do
+      entry = create(:marketplace_entry)
+      version = create(:marketplace_entry_version, marketplace_entry: entry)
+      entry.update!(current_version: version)
+      agent_run = create(:agent_run, project: create(:project, account: entry.account))
+      create(:agent_run_marketplace_entry,
+        agent_run: agent_run,
+        marketplace_entry: entry,
+        marketplace_entry_version: version)
+
+      expect(entry.destroy).to be(false)
+      expect(entry.errors[:base]).to include("cannot delete marketplace entries that have been attached to agent runs")
+      expect(described_class.exists?(entry.id)).to be(true)
+      expect(MarketplaceEntryVersion.exists?(version.id)).to be(true)
+    end
+  end
 end

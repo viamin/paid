@@ -25,9 +25,11 @@ class MarketplaceEntry < ApplicationRecord
   belongs_to :account
   belongs_to :current_version, class_name: "MarketplaceEntryVersion", optional: true
 
+  before_destroy :prevent_destroy_when_attached_to_runs
+
   has_many :marketplace_entry_versions, dependent: :destroy
   has_many :marketplace_entry_rules, -> { order(:mode, :position, :id) }, dependent: :destroy
-  has_many :agent_run_marketplace_entries, dependent: :destroy
+  has_many :agent_run_marketplace_entries, dependent: :restrict_with_error
   has_many :agent_runs, through: :agent_run_marketplace_entries
 
   validates :name, presence: true, length: { maximum: 255 }
@@ -88,6 +90,13 @@ class MarketplaceEntry < ApplicationRecord
   end
 
   private
+
+  def prevent_destroy_when_attached_to_runs
+    return true unless agent_run_marketplace_entries.exists?
+
+    errors.add(:base, "cannot delete marketplace entries that have been attached to agent runs")
+    throw(:abort)
+  end
 
   def tags_are_strings
     return if tags.is_a?(Array) && tags.all? { |tag| tag.is_a?(String) }

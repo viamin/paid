@@ -90,13 +90,16 @@ module Activities
       }
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
-      agent_run = AgentRun.create!(**attrs)
-      attach_marketplace_entries(
-        agent_run: agent_run,
-        manual_entry_ids: manual_marketplace_entry_ids,
-        auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
-        account_auto_attach_required: marketplace_auto_attach_required?(project)
-      )
+      agent_run = ActiveRecord::Base.transaction do
+        created_run = AgentRun.create!(**attrs)
+        attach_marketplace_entries(
+          agent_run: created_run,
+          manual_entry_ids: manual_marketplace_entry_ids,
+          auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
+          account_auto_attach_required: marketplace_auto_attach_required?(project)
+        )
+        created_run
+      end
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
       track_phase(

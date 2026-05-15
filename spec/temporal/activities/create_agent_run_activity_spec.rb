@@ -107,6 +107,17 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect {
         activity.execute(project_id: project.id, issue_id: issue.id, marketplace_entry_ids: [ 7 ])
       }.to raise_error(StandardError, "render failed")
+      expect(AgentRun.count).to eq(0)
+    end
+
+    it "fails closed without persisting a run when the account requires marketplace attachments during creation" do
+      project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id)
+      }.to raise_error(StandardError, "render failed")
+      expect(AgentRun.count).to eq(0)
     end
 
     it "returns the project max_execution_seconds in the result" do
