@@ -50,6 +50,8 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_parallel_agents_per_project,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 20 }
+  # Deprecated: retained only for migration safety. Auto-pick no longer
+  # uses this setting; max_concurrent_runs is the capacity control.
   validates :max_auto_pick_open_prs,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 

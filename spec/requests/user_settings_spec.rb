@@ -52,6 +52,13 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("Project Defaults")
         expect(response.body).to include("Advanced Settings")
       end
+
+      it "does not render the deprecated auto-pick PR limit setting" do
+        get edit_user_settings_path
+
+        expect(response.body).not_to include("Max Auto-Pick Open PRs")
+        expect(response.body).not_to include('name="user_setting[max_auto_pick_open_prs]"')
+      end
     end
   end
 
@@ -116,6 +123,22 @@ RSpec.describe "UserSettings" do
         expect(settings.container_memory_bytes).to eq(8 * 1024 * 1024 * 1024)
         expect(settings.max_concurrent_runs).to eq(4)
         expect(settings.container_timeout_seconds).to eq(3600)
+      end
+
+      it "ignores the deprecated auto-pick PR limit setting" do
+        original_limit = user.settings.max_auto_pick_open_prs
+
+        patch user_settings_path, params: {
+          user_setting: {
+            max_concurrent_runs: 4,
+            max_auto_pick_open_prs: 9
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        settings = user.reload.settings
+        expect(settings.max_concurrent_runs).to eq(4)
+        expect(settings.max_auto_pick_open_prs).to eq(original_limit)
       end
 
       it "updates allowed service images setting" do

@@ -10,8 +10,8 @@ RSpec.describe Automation::Strategies::AutoPick do
     class_double(Automation::Strategies::AutoPick::DefaultCandidateSource)
   end
 
-  def build_context(metadata: {})
-    Automation::Context.build(record: nil, project: project, metadata: metadata)
+  def build_context
+    Automation::Context.build(record: nil, project: project, metadata: {})
   end
 
   describe "#evaluate" do
@@ -65,47 +65,6 @@ RSpec.describe Automation::Strategies::AutoPick do
       result = strategy.evaluate(build_context)
 
       expect(result.decisions.map(&:type)).to eq([ "noop" ])
-    end
-
-    it "defers when the PR-attention count meets the configured limit" do
-      allow(candidate_source).to receive(:next_candidate)
-
-      context = build_context(metadata: { pr_attention_count: 2, pr_attention_limit: 2 })
-      result = strategy.evaluate(context)
-
-      expect(result.decisions.map(&:type)).to eq([ "noop" ])
-      expect(candidate_source).not_to have_received(:next_candidate)
-    end
-
-    it "defers when the PR-attention count exceeds the configured limit" do
-      allow(candidate_source).to receive(:next_candidate)
-
-      context = build_context(metadata: { pr_attention_count: 5, pr_attention_limit: 1 })
-      result = strategy.evaluate(context)
-
-      expect(result.decisions.map(&:type)).to eq([ "noop" ])
-      expect(candidate_source).not_to have_received(:next_candidate)
-    end
-
-    it "treats a zero limit as 'no limit' and still picks candidates" do
-      issue = instance_double(Issue, id: 7)
-      allow(candidate_source).to receive(:next_candidate).with(project).and_return(issue)
-
-      context = build_context(metadata: { pr_attention_count: 100, pr_attention_limit: 0 })
-      result = strategy.evaluate(context)
-
-      expect(result.decisions.first.type).to eq("queue_create_pr_run")
-      expect(result.decisions.first.payload[:issue_id]).to eq(7)
-    end
-
-    it "picks when the PR-attention count is below the configured limit" do
-      issue = instance_double(Issue, id: 11)
-      allow(candidate_source).to receive(:next_candidate).with(project).and_return(issue)
-
-      context = build_context(metadata: { pr_attention_count: 1, pr_attention_limit: 3 })
-      result = strategy.evaluate(context)
-
-      expect(result.decisions.first.payload[:issue_id]).to eq(11)
     end
 
     it "defaults the candidate source to the provider-backed DefaultCandidateSource" do
