@@ -168,10 +168,9 @@ class ProcessRunQueueJob < ApplicationJob
 
       ordered_auto_pick_projects.each do |project|
         break if seeded >= MAX_SEEDS_PER_PERFORM
-        next unless project.effective_owner
-        next if auto_pick_deferred_by_pr_attention?(project)
+        next unless Issues::AutoPickProjectGate.call(project)
 
-        runs = Issues::BulkEnqueueEligible.call(project: project, limit: 1)
+        runs = Issues::BulkEnqueueEligible.call(project: project, limit: 1, skip_project_gate: true)
         created = runs.count(&:previously_new_record?)
         next if created.zero?
 
@@ -224,32 +223,6 @@ class ProcessRunQueueJob < ApplicationJob
         ]
       end
     end
-  end
-
-  def auto_pick_deferred_by_pr_attention?(project)
-    prs_needing_attention_count(project) >= max_auto_pick_open_prs(project)
-  end
-
-  def prs_needing_attention_count(project)
-    base = Issue.where(
-      project: project,
-      is_pull_request: true,
-      github_state: "open",
-      paid_state: %w[in_progress failed]
-    )
-
-    handed_off = base
-      .where(paid_state: "in_progress")
-      .where("labels @> ?::jsonb", [ project.automation_label_name, Issues::AutoPick::PAID_READY_LABEL ].to_json)
-      .where.not(pr_review_phase: %w[draft restarted])
-
-    escalated = base.where(pr_review_phase: "escalated")
-
-    base.where.not(id: handed_off).where.not(id: escalated).count
-  end
-
-  def max_auto_pick_open_prs(project)
-    project.effective_owner&.settings&.max_auto_pick_open_prs || 1
   end
 
   def start_claimed_run(agent_run)

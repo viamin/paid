@@ -379,41 +379,57 @@ RSpec.describe Project do
     before do
       allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
       allow(temporal_client).to receive(:start_workflow)
+      allow(Issues::BulkEnqueueEligible).to receive(:call)
     end
 
-    it "enqueues ProcessRunQueueJob when auto_pick is enabled" do
+    it "bulk seeds eligible issues when auto_pick is enabled" do
       project = create(:project, auto_pick_enabled: false)
 
-      expect {
-        project.update!(auto_pick_enabled: true)
-      }.to have_enqueued_job(ProcessRunQueueJob)
+      project.update!(auto_pick_enabled: true)
+
+      expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
     end
 
-    it "does not enqueue ProcessRunQueueJob when auto_pick is disabled" do
-      project = create(:project, auto_pick_enabled: true)
-
-      expect {
-        project.update!(auto_pick_enabled: false)
-      }.not_to have_enqueued_job(ProcessRunQueueJob)
-    end
-
-    it "does not enqueue ProcessRunQueueJob when other attributes change" do
-      project = create(:project, auto_pick_enabled: true)
-
-      expect {
-        project.update!(name: "new-name")
-      }.not_to have_enqueued_job(ProcessRunQueueJob)
-    end
-
-    it "logs error when ProcessRunQueueJob fails to enqueue" do
+    it "does not bulk seed when the project is already at the PR-attention cap" do
       project = create(:project, auto_pick_enabled: false)
-      allow(ProcessRunQueueJob).to receive(:perform_later).and_raise(StandardError, "queue unavailable")
+      create(:issue,
+        project: project,
+        is_pull_request: true,
+        github_state: "open",
+        paid_state: "in_progress",
+        labels: [])
+      project.created_by.settings.update!(max_auto_pick_open_prs: 1)
+
+      project.update!(auto_pick_enabled: true)
+
+      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
+
+    it "does not bulk seed when auto_pick is disabled" do
+      project = create(:project, auto_pick_enabled: true)
+
+      project.update!(auto_pick_enabled: false)
+
+      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
+
+    it "does not bulk seed when other attributes change" do
+      project = create(:project, auto_pick_enabled: true)
+
+      project.update!(name: "new-name")
+
+      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
+
+    it "logs error when bulk seeding fails" do
+      project = create(:project, auto_pick_enabled: false)
+      allow(Issues::BulkEnqueueEligible).to receive(:call).and_raise(StandardError, "queue unavailable")
       allow(Rails.logger).to receive(:error)
 
       project.update!(auto_pick_enabled: true)
 
       expect(Rails.logger).to have_received(:error).with(
-        hash_including(message: "auto_pick.trigger_failed", project_id: project.id)
+        hash_including(message: "auto_pick.bulk_seed_failed", project_id: project.id)
       )
     end
   end
