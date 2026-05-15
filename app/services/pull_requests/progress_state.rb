@@ -88,6 +88,8 @@ module PullRequests
           break
         end
 
+        break if streak_boundary?(run)
+
         next unless unsuccessful?(run)
 
         latest_failure ||= run
@@ -213,6 +215,10 @@ module PullRequests
 
     def unsuccessful?(run)
       automatic_pr_run?(run) && run.finished? && !meaningful_progress?(run)
+    end
+
+    def streak_boundary?(run)
+      pr_run?(run) && run.finished? && !automatic_pr_run?(run)
     end
 
     def automatic_pr_run?(run)

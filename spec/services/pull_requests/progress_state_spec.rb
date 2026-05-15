@@ -293,6 +293,34 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(3)
   end
 
+  it "stops the automatic failure streak at an intervening failed manual PR run" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now),
+      build_run(goal: "review", status: "failed", at: now - 5.minutes, trigger_type: "manual"),
+      build_run(goal: "create_pr", status: "failed", at: now - 10.minutes)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.consecutive_operational_failures).to eq(0)
+  end
+
+  it "stops the operational failure streak at an intervening failed manual PR run" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now, operational_failure: true),
+      build_run(goal: "create_pr", status: "failed", at: now - 5.minutes, trigger_type: "manual"),
+      build_run(goal: "create_pr", status: "timeout", at: now - 10.minutes, operational_failure: true)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.consecutive_operational_failures).to eq(1)
+  end
+
   it "stuck? uses latest_unsuccessful_run_at as fallback instead of epoch when no progress recorded" do
     now = Time.zone.parse("2026-05-15 12:00:00")
     runs = [
