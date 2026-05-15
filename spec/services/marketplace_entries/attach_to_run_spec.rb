@@ -22,28 +22,21 @@ RSpec.describe MarketplaceEntries::AttachToRun do
   end
 
   it "attaches manual, team default, and automatic entries" do
-    automatic = create_entry(
-      name: "Automatic skill",
-      rule_mode: "automatic",
-      conditions: { "goals" => [ "create_pr" ] },
-      content: "Automatic instructions"
-    )
-    team_default = create_entry(
-      name: "Team default skill",
-      rule_mode: "team_default",
-      conditions: {},
-      content: "Team default instructions"
-    )
-    manual = create_manual_entry
+    automatic, team_default, manual = create_attachment_mix
 
-    attachments = described_class.call(agent_run:, manual_entry_ids: [ automatic.id, manual.id ], auto_attach_enabled: true, account_auto_attach_required: true)
+    attachments = described_class.call(
+      agent_run:,
+      manual_entry_ids: [ automatic.id, manual.id ],
+      auto_attach_enabled: true,
+      account_auto_attach_required: true
+    )
 
     expect(attachments.map(&:marketplace_entry)).to contain_exactly(automatic, team_default, manual)
     expect(attachments.map(&:attachment_source)).to contain_exactly("manual", "team_default", "automatic")
     expect(attachments.find { |attachment| attachment.marketplace_entry == manual }.rendered_format).to eq("claude_skill_v1")
   end
 
-  it "preserves manual precedence over later team-default and automatic matches for the same entry" do
+  it "preserves automatic precedence over later team-default and manual matches for the same entry" do
     entry = create_entry(
       name: "Shared skill",
       rule_mode: "automatic",
@@ -56,8 +49,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
-    expect(attachments.first.attachment_source).to eq("manual")
-    expect(attachments.first.selection_reason).to eq("Selected manually for this run")
+    expect(attachments.first.attachment_source).to eq("automatic")
+    expect(attachments.first.selection_reason).to eq("Matched automatic marketplace rule")
   end
 
   it "attaches runtime-config marketplace entries and preserves the rendered payload" do
@@ -114,10 +107,16 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, auto_attach_enabled: true)
 
-    expect(attachments.map(&:attachment_source)).to eq([ "team_default", "automatic" ])
+    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
   end
 
-  it "attaches account-required team-default entries without manual selection" do
+  it "attaches account-required automatic and team-default entries without manual selection" do
+    automatic = create_entry(
+      name: "Automatic skill",
+      rule_mode: "automatic",
+      conditions: { "goals" => [ "create_pr" ] },
+      content: "Automatic instructions"
+    )
     team_default = create_entry(
       name: "Team default skill",
       rule_mode: "team_default",
@@ -127,8 +126,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, account_auto_attach_required: true)
 
-    expect(attachments.map(&:marketplace_entry)).to eq([ team_default ])
-    expect(attachments.map(&:attachment_source)).to eq([ "team_default" ])
+    expect(attachments.map(&:marketplace_entry)).to eq([ automatic, team_default ])
+    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
   end
 
   it "does not treat a manual selection as consent for unrelated automatic or team-default entries" do
@@ -182,6 +181,23 @@ RSpec.describe MarketplaceEntries::AttachToRun do
         }
       }
     )
+  end
+
+  def create_attachment_mix
+    automatic = create_entry(
+      name: "Automatic skill",
+      rule_mode: "automatic",
+      conditions: { "goals" => [ "create_pr" ] },
+      content: "Automatic instructions"
+    )
+    team_default = create_entry(
+      name: "Team default skill",
+      rule_mode: "team_default",
+      conditions: {},
+      content: "Team default instructions"
+    )
+
+    [ automatic, team_default, create_manual_entry ]
   end
 
   def create_mcp_entry

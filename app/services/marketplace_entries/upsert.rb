@@ -96,18 +96,34 @@ module MarketplaceEntries
     end
 
     def upsert_rules!
-      upsert_rule!(
-        mode: "automatic",
-        enabled_param: params[:automatic_enabled],
-        conditions: @automatic_conditions || {},
-        rationale: params[:automatic_rationale]
-      )
-      upsert_rule!(
-        mode: "team_default",
-        enabled_param: params[:team_default_enabled],
-        conditions: @team_default_conditions || {},
-        rationale: params[:team_default_rationale]
-      )
+      if automatic_rule_params_submitted?
+        upsert_rule!(
+          mode: "automatic",
+          enabled_param: params[:automatic_enabled],
+          conditions: @automatic_conditions || {},
+          rationale: params[:automatic_rationale]
+        )
+      end
+      if team_default_rule_params_submitted?
+        upsert_rule!(
+          mode: "team_default",
+          enabled_param: params[:team_default_enabled],
+          conditions: @team_default_conditions || {},
+          rationale: params[:team_default_rationale]
+        )
+      end
+    end
+
+    def automatic_rule_params_submitted?
+      rule_params_submitted?(:automatic_enabled, :automatic_conditions_json, :automatic_rationale)
+    end
+
+    def team_default_rule_params_submitted?
+      rule_params_submitted?(:team_default_enabled, :team_default_conditions_json, :team_default_rationale)
+    end
+
+    def rule_params_submitted?(*keys)
+      keys.any? { |key| params.key?(key) || params.key?(key.to_s) }
     end
 
     def upsert_rule!(mode:, enabled_param:, conditions:, rationale:)

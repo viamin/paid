@@ -54,11 +54,11 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     results = resolver.call
 
-    expect(results.map(&:entry)).to eq([ team_default_entry, automatic_entry ])
-    expect(results.map(&:source)).to eq([ "team_default", "automatic" ])
+    expect(results.map(&:entry)).to eq([ automatic_entry, team_default_entry ])
+    expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
   end
 
-  it "preserves manual precedence when an explicitly selected entry also matches an automatic rule" do
+  it "preserves automatic precedence when an explicitly selected entry also matches an automatic rule" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -72,7 +72,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     results = resolver.call
 
     expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "manual" ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
   end
 
   it "attaches an automatic entry without manual selection when auto-attach is enabled" do
@@ -92,24 +92,25 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "automatic" ])
   end
 
-  it "attaches account-required team-default entries without per-entry manual selection" do
+  it "attaches account-required automatic and team-default entries without per-entry manual selection" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
 
+    automatic_entry = build_entry(id: 7)
     team_default_entry = build_entry(
       id: 8,
       rules: [ build_rule(mode: "team_default", enabled: true, position: 0, id: 4, rationale: "Required by the account") ]
     )
 
     resolver = described_class.new(project:, agent_run:, account_auto_attach_required: true)
-    allow(resolver).to receive(:candidate_entries).and_return([ team_default_entry ])
+    allow(resolver).to receive(:candidate_entries).and_return([ automatic_entry, team_default_entry ])
 
     results = resolver.call
 
-    expect(results.map(&:entry)).to eq([ team_default_entry ])
-    expect(results.map(&:source)).to eq([ "team_default" ])
+    expect(results.map(&:entry)).to eq([ automatic_entry, team_default_entry ])
+    expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
   end
 
   it "preserves manual attachments when auto-attach is disabled" do
@@ -128,7 +129,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "manual" ])
   end
 
-  it "preserves the first matching attachment source as manual > team_default > automatic" do
+  it "preserves the first matching attachment source as automatic > team_default > manual" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -147,8 +148,8 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     results = resolver.call
 
     expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "manual" ])
-    expect(results.map(&:reason)).to eq([ "Selected manually for this run" ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
+    expect(results.map(&:reason)).to eq([ "Matched automatically" ])
   end
 
   it "memoizes persisted manual attachment ids when no manual ids were passed" do

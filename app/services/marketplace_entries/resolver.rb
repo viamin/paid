@@ -20,16 +20,16 @@ module MarketplaceEntries
 
     def call
       selections = {}
-      attach_manual_entries!(selections)
-      attach_team_default_entries!(selections)
       attach_automatic_entries!(selections)
+      attach_team_default_entries!(selections)
+      attach_manual_entries!(selections)
       selections.values
     end
 
     private
 
     def attach_automatic_entries!(selections)
-      return unless auto_attach_enabled?
+      return unless auto_attach_enabled? || account_auto_attach_required?
 
       compatible_entries.each do |entry|
         next if selections.key?(entry.id)

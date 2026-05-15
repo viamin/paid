@@ -125,4 +125,62 @@ RSpec.describe "MarketplaceEntries" do
       expect(response.body).to include("Team scope is not included in the list")
     end
   end
+
+  describe "PATCH /marketplace_entries/:id" do
+    it "does not rewrite existing rules when a member edits metadata only" do
+      entry, version, automatic_rule = create_entry_with_automatic_rule
+
+      patch marketplace_entry_path(entry), params: metadata_only_update_params(entry:, version:)
+
+      expect(response).to redirect_to(marketplace_entry_path(entry))
+      expect(entry.reload.name).to eq("Updated repo coding skill")
+      expect(automatic_rule.reload).to have_attributes(
+        enabled: true,
+        conditions: { "goals" => [ "create_pr" ] },
+        rationale: "Attach on implementation runs"
+      )
+    end
+  end
+
+  def create_entry_with_automatic_rule
+    entry = create(:marketplace_entry, account: account, name: "Repo coding skill")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "attachment_strategy" => "prompt_append",
+        "content" => "Follow the repo conventions."
+      })
+    entry.update!(current_version: version)
+    automatic_rule = create(
+      :marketplace_entry_rule,
+      marketplace_entry: entry,
+      mode: "automatic",
+      enabled: true,
+      conditions: { "goals" => [ "create_pr" ] },
+      rationale: "Attach on implementation runs"
+    )
+
+    [ entry, version, automatic_rule ]
+  end
+
+  def metadata_only_update_params(entry:, version:)
+    {
+      marketplace_entry: {
+        name: "Updated repo coding skill",
+        entry_type: entry.entry_type,
+        description: entry.description,
+        provider: entry.provider,
+        provider_format: entry.provider_format,
+        usage_guidance: entry.usage_guidance,
+        tags_csv: entry.tags.join(", "),
+        team_scope: entry.team_scope,
+        status: entry.status,
+        changelog: "Rename",
+        canonical_artifact_json: JSON.generate(version.canonical_artifact),
+        renderers_json: JSON.generate(version.renderers),
+        compatibility_constraints_json: JSON.generate(version.compatibility_constraints),
+        review_metadata_json: JSON.generate(version.review_metadata)
+      }
+    }
+  end
 end

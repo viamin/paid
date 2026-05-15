@@ -1181,7 +1181,7 @@ RSpec.describe "AgentRuns" do
         }.to change(AgentRunMarketplaceEntry, :count).by(2)
 
         run = AgentRun.last
-        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "manual", "automatic" ])
+        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "automatic", "manual" ])
       end
 
       it "shows all active marketplace entries in the run form" do
@@ -1227,20 +1227,22 @@ RSpec.describe "AgentRuns" do
         expect(attachment.attachment_source).to eq("automatic")
       end
 
-      it "applies team-default marketplace entries when the account requires them" do
+      it "applies automatic and team-default marketplace entries when the account requires them" do
         account.tenant_setting.update!(
           agent_settings: account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true)
         )
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
         team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
         create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
 
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
-        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+        }.to change(AgentRunMarketplaceEntry, :count).by(2)
 
-        attachment = AgentRunMarketplaceEntry.last
-        expect(attachment.marketplace_entry).to eq(team_default_entry)
-        expect(attachment.attachment_source).to eq("team_default")
+        attachments = AgentRun.last.agent_run_marketplace_entries.order(:position)
+        expect(attachments.pluck(:marketplace_entry_id)).to eq([ automatic_entry.id, team_default_entry.id ])
+        expect(attachments.pluck(:attachment_source)).to eq([ "automatic", "team_default" ])
       end
 
       it "enqueues ProcessRunQueueJob" do
