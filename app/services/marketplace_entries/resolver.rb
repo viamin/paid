@@ -97,7 +97,6 @@ module MarketplaceEntries
       @candidate_entries ||= MarketplaceEntry
         .includes(:current_version, :marketplace_entry_rules)
         .where(account: project.account, status: "active")
-        .where(entry_type: MarketplaceEntry::PROMPT_COMPATIBLE_ENTRY_TYPES)
         .where.not(current_version_id: nil)
     end
 

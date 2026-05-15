@@ -1503,7 +1503,7 @@ module Activities
       end
       return marketplace_runtime_env unless provider_entry
 
-      env = marketplace_runtime_env
+      env = marketplace_runtime_env.dup
       env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
       env
