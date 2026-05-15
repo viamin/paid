@@ -41,18 +41,18 @@ export default class extends Controller {
   queryValue() {
     if (!this.hasQueryInputTarget) return ""
 
-    this.queryInputTarget.value.trim().toLowerCase()
+    return this.queryInputTarget.value.trim().toLowerCase()
   }
 
   typeValue() {
     if (!this.hasTypeSelectTarget) return ""
 
-    this.typeSelectTarget.value
+    return this.typeSelectTarget.value
   }
 
   tagValue() {
     if (!this.hasTagSelectTarget) return ""
 
-    this.tagSelectTarget.value
+    return this.tagSelectTarget.value
   }
 }

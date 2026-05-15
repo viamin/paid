@@ -110,6 +110,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
     end
 
+    it "maps the marketplace picker Stimulus controller to the project run form" do
+      targets = described_class.call(changed_files: [ "app/javascript/controllers/marketplace_picker_controller.js" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_agent_run_new" ])
+    end
+
     it "does not broaden screenshot capture when the controller registry changes alongside a mapped Stimulus controller" do
       targets = described_class.call(
         changed_files: [

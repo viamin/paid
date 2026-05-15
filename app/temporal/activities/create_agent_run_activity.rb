@@ -274,13 +274,6 @@ module Activities
       )
     end
 
-    def rerender_marketplace_entries(agent_run:, required: false)
-      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run)
-    rescue => e
-      log_marketplace_attachment_failure(agent_run:, error: e)
-      raise if required
-    end
-
     def attach_marketplace_entries(agent_run:, auto_attach_enabled:, manual_entry_ids: nil, account_auto_attach_required: false)
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,

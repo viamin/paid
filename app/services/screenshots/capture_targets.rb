@@ -269,6 +269,7 @@ module Screenshots
     def targets_for_javascript_controller(relative_path)
       case relative_path
       when "clarifying_questions_controller.js" then [ :project_issue_clarifying_questions ]
+      when "marketplace_picker_controller.js" then [ :project_agent_run_new ]
       else
         []
       end
