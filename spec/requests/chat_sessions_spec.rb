@@ -218,6 +218,21 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Rendered markdown")
       end
 
+      it "renders mobile archive controls without expanding the sidebar by default" do
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+        mobile_toggle = doc.at_css("button[data-chat-session-list-target='mobileButton']")
+        sidebar = doc.at_css("#chat-sessions-sidebar[data-chat-session-list-target='mobileMenu']")
+
+        expect(mobile_toggle).to be_present
+        expect(mobile_toggle.text).to include("Previous chats")
+        expect(sidebar).to be_present
+        expect(sidebar["aria-hidden"]).to eq("true")
+        expect(sidebar["class"].split).to include("hidden", "lg:block")
+      end
+
       it "defaults wildcard accept show requests to the existing json API" do
         create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
 

@@ -1,6 +1,6 @@
 <%= turbo_frame_tag frame_id do %>
-  <% sessions.each do |chat_session| %>
-    <%= render "session_card", chat_session: chat_session %>
+  <% sessions.each do |sidebar_session| %>
+    <%= render "session_card", chat_session: sidebar_session %>
   <% end %>
   <% if next_frame_id && next_params %>
     <%= turbo_frame_tag next_frame_id, src: sidebar_page_chat_sessions_path(next_params), loading: :lazy do %>
