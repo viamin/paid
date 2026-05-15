@@ -9,7 +9,7 @@ export default class extends Controller {
     this.boundCloseOnDesktop = this.closeOnDesktop.bind(this)
     this.boundCloseOnNavigate = this.closeSidebar.bind(this)
 
-    this.mediaQuery.addEventListener("change", this.boundCloseOnDesktop)
+    this.addMediaQueryListener(this.boundCloseOnDesktop)
     document.addEventListener("turbo:before-visit", this.boundCloseOnNavigate)
 
     this.observer = new window.MutationObserver(() => {
@@ -24,7 +24,7 @@ export default class extends Controller {
 
   disconnect() {
     this.observer?.disconnect()
-    this.mediaQuery.removeEventListener("change", this.boundCloseOnDesktop)
+    this.removeMediaQueryListener(this.boundCloseOnDesktop)
     document.removeEventListener("turbo:before-visit", this.boundCloseOnNavigate)
     document.body.classList.remove("overflow-hidden")
   }
@@ -51,6 +51,8 @@ export default class extends Controller {
   }
 
   toggleSidebar() {
+    if (!this.hasMobileMenuTarget) return
+
     this.setSidebarOpen(this.mobileMenuTarget.classList.contains("hidden"))
   }
 
@@ -78,6 +80,28 @@ export default class extends Controller {
 
   closeOnDesktop(event) {
     if (event.matches) this.closeSidebar()
+  }
+
+  addMediaQueryListener(listener) {
+    if (typeof this.mediaQuery.addEventListener === "function") {
+      this.mediaQuery.addEventListener("change", listener)
+      return
+    }
+
+    if (typeof this.mediaQuery.addListener === "function") {
+      this.mediaQuery.addListener(listener)
+    }
+  }
+
+  removeMediaQueryListener(listener) {
+    if (typeof this.mediaQuery.removeEventListener === "function") {
+      this.mediaQuery.removeEventListener("change", listener)
+      return
+    }
+
+    if (typeof this.mediaQuery.removeListener === "function") {
+      this.mediaQuery.removeListener(listener)
+    }
   }
 
   setSidebarOpen(open) {
