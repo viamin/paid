@@ -93,14 +93,17 @@ module Automation
             scope
           end
 
-          def next_candidate(project)
+          def ordered_scope(project)
             eligible_scope(project)
               .order(
                 Arel.sql("#{priority_label_order_sql(project)} ASC"),
                 Arel.sql("#{dependency_tree_order_sql} ASC"),
                 Arel.sql("issues.github_number ASC")
               )
-              .first
+          end
+
+          def next_candidate(project)
+            ordered_scope(project).first
           end
 
           # Identifies tracker issues whose body references other issues

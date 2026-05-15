@@ -34,7 +34,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     def run.previously_new_record? = true
 
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue)
+      expect(attrs).to eq(project: project, issue: issue, goal: "create_pr")
       block.call(run)
       run
     end
@@ -43,13 +43,12 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     result = service.call
 
     expect(result).to eq(run)
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
+    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue, goal: "create_pr")
     expect(run.provider).to eq(provider)
     expect(run.agent_type).to eq("claude_code")
     expect(run.status).to eq("queued")
     expect(run.trigger_type).to eq("automatic")
     expect(run.auto_pick).to be(true)
-    expect(run.goal).to eq("create_pr")
     expect(Rails.logger).to have_received(:info).with(
       hash_including(message: "enqueue_eligible.created", issue_id: issue.id, agent_run_id: run.id)
     )
@@ -91,7 +90,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
+    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue, goal: "create_pr").and_return(existing_run)
     allow(Rails.logger).to receive(:info)
 
     result = service.call
@@ -119,6 +118,27 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     expect(result).to be_nil
     expect(Rails.logger).to have_received(:warn).with(
       hash_including(message: "enqueue_eligible.no_provider", issue_id: issue.id, project_id: project.id)
+    )
+  end
+
+  it "scopes queued-run lookup by analyze_issue goal when auto_enhance is enabled" do
+    run = OpenStruct.new(id: 99)
+    def run.previously_new_record? = true
+
+    allow(project).to receive(:auto_enhance_enabled?).and_return(true)
+    allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")
+      block.call(run)
+      run
+    end
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(blocking_runs).to have_received(:find_or_create_by!).with(
+      project: project,
+      issue: issue,
+      goal: "analyze_issue"
     )
   end
 end

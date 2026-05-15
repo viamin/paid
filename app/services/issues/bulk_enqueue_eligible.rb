@@ -17,7 +17,7 @@ module Issues
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
 
-      eligible_scope.find_each do |issue|
+      each_eligible_issue do |issue|
         run = EnqueueEligible.call(issue, project: project)
 
         if run.nil?
@@ -47,8 +47,18 @@ module Issues
     attr_reader :project
     attr_reader :limit
 
+    def each_eligible_issue(&)
+      return ordered_eligible_scope.each(&) if limit.present?
+
+      eligible_scope.find_each(&)
+    end
+
     def eligible_scope
       Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project)
+    end
+
+    def ordered_eligible_scope
+      Automation::Strategies::AutoPick::DefaultCandidateSource.ordered_scope(project)
     end
 
     def limit_reached?(counts)

@@ -9,6 +9,7 @@ BulkTestRun = Struct.new(:issue, :previously_new_record?)
 RSpec.describe Issues::BulkEnqueueEligible, :no_db do
   let(:project) { instance_double(BulkTestProject, id: 7, auto_pick_enabled?: auto_pick_enabled) }
   let(:scope) { instance_double(ActiveRecord::Relation) }
+  let(:ordered_scope) { instance_double(ActiveRecord::Relation) }
   let(:service) { described_class.new(project: project) }
   let(:auto_pick_enabled) { true }
 
@@ -16,6 +17,9 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
       .and_return(scope)
+    allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:ordered_scope)
+      .with(project)
+      .and_return(ordered_scope)
   end
 
   it "queues all eligible issues for a project" do
@@ -97,7 +101,8 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     existing_run = instance_double(BulkTestRun, issue: first_issue, previously_new_record?: false)
     created_run = instance_double(BulkTestRun, issue: second_issue, previously_new_record?: true)
 
-    allow(scope).to receive(:find_each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
+    allow(scope).to receive(:find_each)
+    allow(ordered_scope).to receive(:each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
     allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(existing_run)
     allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(created_run)
     allow(Rails.logger).to receive(:info)
@@ -105,6 +110,8 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     result = limited_service.call
 
     expect(result).to eq([ existing_run, created_run ])
+    expect(Automation::Strategies::AutoPick::DefaultCandidateSource).to have_received(:ordered_scope).with(project)
+    expect(scope).not_to have_received(:find_each)
     expect(Issues::EnqueueEligible).not_to have_received(:call).with(third_issue, project: project)
   end
 end
