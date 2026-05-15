@@ -171,6 +171,18 @@ RSpec.describe UserSetting do
       )
     end
 
+    it "canonicalizes legacy provider goal defaults to runner identifiers" do
+      codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true)
+      setting = build(
+        :user_setting,
+        user: user,
+        default_agent_runners_by_goal: { "review" => codex.legacy_routing_key }
+      )
+
+      expect(setting).to be_valid
+      expect(setting.default_agent_runners_by_goal).to eq("review" => codex.routing_key)
+    end
+
     it "falls back to the global default when no goal-specific runner is set" do
       codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true)
       setting = create(:user_setting, user: user, default_agent_runner: codex.routing_key)
@@ -212,6 +224,14 @@ RSpec.describe UserSetting do
       expect(setting.provider_priority_for_goal("review", identifiers: true)).to eq(
         [ codex.routing_key, user.runners.find_by!(runner_key: "claude").routing_key, cursor.routing_key ]
       )
+    end
+
+    it "canonicalizes a legacy provider default runner to the runner identifier" do
+      codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true)
+      setting = build(:user_setting, user: user, default_agent_runner: codex.legacy_routing_key)
+
+      expect(setting).to be_valid
+      expect(setting.default_agent_runner).to eq(codex.routing_key)
     end
 
     it "rejects invalid goals" do

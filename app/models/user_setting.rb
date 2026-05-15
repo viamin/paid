@@ -620,6 +620,17 @@ class UserSetting < ApplicationRecord
     return exact if exact.any?
     return [] unless user
 
+    if Runner.routing_key?(token)
+      runner_id = Runner.id_from_routing_key(token)
+      return [] unless runner_id
+
+      canonical_identifier = "#{Runner::ROUTING_KEY_PREFIX}#{runner_id}"
+      return [ canonical_identifier ] if candidates.include?(canonical_identifier) &&
+        user.runners.kept_only.exists?(id: runner_id)
+
+      return [ token ] if candidates.include?(token) && user.runners.kept_only.exists?(id: runner_id)
+    end
+
     runner_index_by_id = {}
     routing_ids = candidates.filter_map.with_index do |candidate, index|
       runner_id = Runner.id_from_routing_key(candidate)
