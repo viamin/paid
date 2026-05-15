@@ -249,11 +249,24 @@ module Activities
     end
 
     def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false)
-      return if agent_run.agent_run_marketplace_entries.exists? && !force
+      attachments = agent_run.agent_run_marketplace_entries
+      return rerender_marketplace_entries(agent_run:) if attachments.exists? && force
+      return if attachments.exists?
 
       attach_marketplace_entries(
         agent_run: agent_run,
         auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
+      )
+    end
+
+    def rerender_marketplace_entries(agent_run:)
+      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.marketplace_attachment_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
       )
     end
 

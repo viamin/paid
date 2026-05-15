@@ -39,23 +39,16 @@ RSpec.describe MarketplaceEntries::InjectIntoPrompt, :no_db do
     expect(rendered).to include("Use the repository workflow.")
   end
 
+  it "re-renders prompt content when the executing provider changes" do
+    agent_run = build_agent_run(attachments: [ provider_switching_attachment ])
+
+    rendered = described_class.call(agent_run:, prompt: "Base prompt", provider_key: "codex")
+
+    expect(rendered).to include("Codex workflow.")
+    expect(rendered).not_to include("Claude workflow.")
+  end
+
   def build_agent_run(attachments: nil)
-    entry = Struct.new(:name, keyword_init: true).new(name: "Repo skill")
-    attachment = Struct.new(
-      :rendered_payload,
-      :marketplace_entry,
-      :attachment_source,
-      :selection_reason,
-      keyword_init: true
-    ).new(
-      rendered_payload: {
-        "attachment_strategy" => "prompt_append",
-        "payload" => { "content" => "Use the repository workflow." }
-      },
-      marketplace_entry: entry,
-      attachment_source: "manual",
-      selection_reason: "Selected manually"
-    )
     relation = Struct.new(:attachments, keyword_init: true) do
       def loaded?
         true
@@ -72,9 +65,55 @@ RSpec.describe MarketplaceEntries::InjectIntoPrompt, :no_db do
       def ordered
         attachments
       end
-    end.new(attachments: attachments || [ attachment ])
+    end.new(attachments: attachments || [ build_attachment ])
 
     Struct.new(:agent_run_marketplace_entries, keyword_init: true)
       .new(agent_run_marketplace_entries: relation)
+  end
+
+  def build_attachment(rendered_payload: nil, provider_renderers: {})
+    entry = Struct.new(:name, keyword_init: true).new(name: "Repo skill")
+    version = Struct.new(:renderers, :canonical_artifact, keyword_init: true).new(
+      renderers: provider_renderers,
+      canonical_artifact: {
+        "attachment_strategy" => "prompt_append",
+        "content" => "Canonical workflow."
+      }
+    )
+
+    Struct.new(
+      :rendered_payload,
+      :marketplace_entry,
+      :marketplace_entry_version,
+      :attachment_source,
+      :selection_reason,
+      keyword_init: true
+    ).new(
+      rendered_payload: rendered_payload || {
+        "attachment_strategy" => "prompt_append",
+        "payload" => { "content" => "Use the repository workflow." }
+      },
+      marketplace_entry: entry,
+      marketplace_entry_version: version,
+      attachment_source: "manual",
+      selection_reason: "Selected manually"
+    )
+  end
+
+  def provider_switching_attachment
+    build_attachment(
+      rendered_payload: {
+        "provider" => "claude",
+        "attachment_strategy" => "prompt_append",
+        "payload" => { "content" => "Claude workflow." }
+      },
+      provider_renderers: {
+        "codex" => {
+          "attachment_strategy" => "prompt_append",
+          "provider_format" => "codex_skill_v1",
+          "content" => "Codex workflow."
+        }
+      }
+    )
   end
 end

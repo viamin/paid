@@ -16,6 +16,20 @@ module MarketplaceEntries
       new(...).call
     end
 
+    def self.for_attachment(attachment, provider_key: nil)
+      requested_provider_key = provider_key.to_s
+      stored_payload = attachment.rendered_payload
+
+      return stored_payload if requested_provider_key.blank?
+      return stored_payload if stored_payload["provider"] == requested_provider_key
+
+      call(
+        entry: attachment.marketplace_entry,
+        version: attachment.marketplace_entry_version,
+        provider_key: requested_provider_key
+      )
+    end
+
     def call
       artifact = selected_renderer.deep_dup
       {

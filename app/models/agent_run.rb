@@ -1610,10 +1610,11 @@ class AgentRun < ApplicationRecord
   # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
-  def effective_prompt
+  def effective_prompt(provider_key: nil)
     MarketplaceEntries::InjectIntoPrompt.call(
       agent_run: self,
-      prompt: custom_prompt.presence || prompt_for_goal
+      prompt: custom_prompt.presence || prompt_for_goal,
+      provider_key: provider_key
     )
   end
 

@@ -34,6 +34,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
     before do
       allow(activity).to receive(:marketplace_auto_attach_enabled?).with(project, user_settings).and_return(true)
       allow(MarketplaceEntries::AttachToRun).to receive(:call)
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call)
     end
 
     context "when the queued run already has attachment snapshots" do
@@ -63,14 +64,11 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
     context "when the provider changed during resume" do
       let(:attachments_exist) { true }
 
-      it "re-renders marketplace attachments for the resolved provider" do
+      it "re-renders the stored marketplace snapshots for the resolved provider" do
         activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, force: true)
 
-        expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
-          agent_run: agent_run,
-          manual_entry_ids: nil,
-          auto_attach_enabled: true
-        )
+        expect(MarketplaceEntries::AttachToRun).not_to have_received(:call)
+        expect(MarketplaceEntries::RerenderForRun).to have_received(:call).with(agent_run: agent_run)
       end
     end
   end

@@ -2,9 +2,10 @@
 
 module MarketplaceEntries
   class InjectIntoPrompt
-    def initialize(agent_run:, prompt:)
+    def initialize(agent_run:, prompt:, provider_key: nil)
       @agent_run = agent_run
       @prompt = prompt
+      @provider_key = provider_key
     end
 
     def self.call(...)
@@ -17,11 +18,12 @@ module MarketplaceEntries
       sections = []
       non_prompt_strategies = []
 
-      attachments.includes(:marketplace_entry).ordered.each do |attachment|
-        strategy = attachment.rendered_payload["attachment_strategy"]
+      attachments.includes(:marketplace_entry, :marketplace_entry_version).ordered.each do |attachment|
+        rendered_payload = Renderer.for_attachment(attachment, provider_key: @provider_key)
+        strategy = rendered_payload["attachment_strategy"]
 
         if MarketplaceEntries::Renderer.prompt_only?(strategy)
-          payload = attachment.rendered_payload["payload"]
+          payload = rendered_payload["payload"]
           body = payload["content"] || payload["body"] || JSON.pretty_generate(payload)
           sections << <<~SECTION.strip
             ## Marketplace: #{attachment.marketplace_entry.name}

@@ -15,27 +15,29 @@ module MarketplaceEntries
       LOGNAME
     ].to_set.freeze
 
-    def initialize(agent_run)
+    def initialize(agent_run, provider_key: nil)
       @agent_run = agent_run
+      @provider_key = provider_key
     end
 
-    def self.mcp_server_snapshots(agent_run)
-      new(agent_run).mcp_server_snapshots
+    def self.mcp_server_snapshots(agent_run, provider_key: nil)
+      new(agent_run, provider_key: provider_key).mcp_server_snapshots
     end
 
-    def self.runtime_env(agent_run)
-      new(agent_run).runtime_env
+    def self.runtime_env(agent_run, provider_key: nil)
+      new(agent_run, provider_key: provider_key).runtime_env
     end
 
-    def self.runtime_preparation(agent_run)
-      new(agent_run).runtime_preparation
+    def self.runtime_preparation(agent_run, provider_key: nil)
+      new(agent_run, provider_key: provider_key).runtime_preparation
     end
 
     def mcp_server_snapshots
       attachments.filter_map do |attachment|
-        next unless attachment.rendered_payload["attachment_strategy"] == "mcp_server"
+        rendered_payload = rendered_payload_for(attachment)
+        next unless rendered_payload["attachment_strategy"] == "mcp_server"
 
-        payload = attachment.rendered_payload["payload"]
+        payload = rendered_payload["payload"]
         next unless payload.is_a?(Hash)
 
         payload.merge(
@@ -48,9 +50,10 @@ module MarketplaceEntries
 
     def runtime_env
       attachments.each_with_object({}) do |attachment, env|
-        next unless attachment.rendered_payload["attachment_strategy"] == "runtime_config"
+        rendered_payload = rendered_payload_for(attachment)
+        next unless rendered_payload["attachment_strategy"] == "runtime_config"
 
-        payload = attachment.rendered_payload["payload"]
+        payload = rendered_payload["payload"]
         next unless payload.is_a?(Hash)
 
         extract_env(payload).each do |key, value|
@@ -61,9 +64,10 @@ module MarketplaceEntries
 
     def runtime_preparation
       file_writes = attachments.flat_map do |attachment|
-        next [] unless attachment.rendered_payload["attachment_strategy"] == "runtime_config"
+        rendered_payload = rendered_payload_for(attachment)
+        next [] unless rendered_payload["attachment_strategy"] == "runtime_config"
 
-        payload = attachment.rendered_payload["payload"]
+        payload = rendered_payload["payload"]
         next [] unless payload.is_a?(Hash)
 
         extract_file_writes(payload)
@@ -77,7 +81,15 @@ module MarketplaceEntries
     private
 
     def attachments
-      @attachments ||= @agent_run.agent_run_marketplace_entries.ordered.to_a
+      @attachments ||= begin
+        relation = @agent_run.agent_run_marketplace_entries
+        relation = relation.includes(:marketplace_entry, :marketplace_entry_version) if relation.respond_to?(:includes)
+        relation.ordered.to_a
+      end
+    end
+
+    def rendered_payload_for(attachment)
+      Renderer.for_attachment(attachment, provider_key: @provider_key)
     end
 
     def extract_env(payload)

@@ -11,6 +11,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     let(:provider_entry) do
       double(
         agent_harness_runtime?: false,
+        provider_key: "codex",
         requires_direct_outbound?: requires_direct_outbound,
         direct_outbound_exec_env: direct_outbound_exec_env,
         api_key?: api_key
@@ -49,11 +50,17 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       first_provider = provider_entry
       second_provider = double(
         agent_harness_runtime?: false,
+        provider_key: "codex",
         requires_direct_outbound?: false,
         direct_outbound_exec_env: {},
         api_key?: false
       )
-      allow(activity).to receive(:provider_entry_for).and_return(first_provider, second_provider)
+      allow(activity).to receive(:provider_entry_for).and_return(
+        first_provider,
+        first_provider,
+        second_provider,
+        second_provider
+      )
 
       first_env = activity.send(:command_env_for, command_context, "ping")
       second_env = activity.send(:command_env_for, command_context, "ping")

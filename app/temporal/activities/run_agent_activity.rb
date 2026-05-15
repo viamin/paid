@@ -115,14 +115,11 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      @agent_run = agent_run
+      @marketplace_runtime_env = {}
+      @marketplace_runtime_preparation = {}
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
-        prompt = agent_run.effective_prompt
-        unless prompt
-          raise Temporalio::Error::ApplicationError.new(
-            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
-          )
-        end
-
+        base_prompt = base_prompt_for(agent_run)
         user_settings = resolve_user_settings(agent_run)
         providers = build_provider_order(agent_run, user_settings)
         provider_states = load_provider_state_cache(user_settings.user, providers)
@@ -185,6 +182,19 @@ module Activities
             )
             index += 1
             next
+          end
+
+          prompt = effective_prompt_for(
+            agent_run: agent_run,
+            provider_candidate: provider_candidate,
+            provider: provider,
+            user: user_settings.user,
+            base_prompt: base_prompt
+          )
+          unless prompt
+            raise Temporalio::Error::ApplicationError.new(
+              "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+            )
           end
 
           # Log provider switch when we have a previous actually-attempted provider.
@@ -1495,23 +1505,25 @@ module Activities
     end
 
     def command_env_for(command_context, prompt)
+      provider_key = marketplace_provider_key(command_context.provider_candidate, command_context.provider, command_context.user)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       if provider_entry&.agent_harness_runtime?
-        return marketplace_runtime_env.merge(
+        return marketplace_runtime_env(provider_key).merge(
           direct_outbound_execution_plan(provider_entry, prompt).env
         )
       end
-      return marketplace_runtime_env unless provider_entry
+      return marketplace_runtime_env(provider_key) unless provider_entry
 
-      env = marketplace_runtime_env.dup
+      env = marketplace_runtime_env(provider_key).dup
       env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
       env
     end
 
     def command_preparation_for(command_context, prompt)
+      provider_key = marketplace_provider_key(command_context.provider_candidate, command_context.provider, command_context.user)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      runtime_preparation = marketplace_runtime_preparation
+      runtime_preparation = marketplace_runtime_preparation(provider_key)
       return runtime_preparation unless provider_entry&.agent_harness_runtime?
 
       merge_preparations(
@@ -1571,12 +1583,39 @@ module Activities
       )
     end
 
-    def marketplace_runtime_env
-      @marketplace_runtime_env ||= MarketplaceEntries::RuntimeAttachments.runtime_env(agent_run)
+    def base_prompt_for(agent_run)
+      agent_run.custom_prompt.presence || agent_run.send(:prompt_for_goal)
     end
 
-    def marketplace_runtime_preparation
-      @marketplace_runtime_preparation ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(agent_run)
+    def effective_prompt_for(agent_run:, provider_candidate:, provider:, user:, base_prompt:)
+      MarketplaceEntries::InjectIntoPrompt.call(
+        agent_run: agent_run,
+        prompt: base_prompt,
+        provider_key: marketplace_provider_key(provider_candidate, provider, user)
+      )
+    end
+
+    def marketplace_provider_key(provider_candidate, provider, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.provider_key if provider_entry
+
+      ProviderSupport.provider_key_for_agent_type(provider)
+    end
+
+    def marketplace_runtime_env(provider_key)
+      @marketplace_runtime_env ||= {}
+      @marketplace_runtime_env[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
+        @agent_run,
+        provider_key: provider_key
+      )
+    end
+
+    def marketplace_runtime_preparation(provider_key)
+      @marketplace_runtime_preparation ||= {}
+      @marketplace_runtime_preparation[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
+        @agent_run,
+        provider_key: provider_key
+      )
     end
 
     # Builds an execution plan for providers that use the agent-harness
