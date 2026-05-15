@@ -170,7 +170,7 @@ module Coordination
       when "escalate_model"
         params[:current_provider] = preferred_provider_identifier
       when "retry_same_provider"
-        params[:provider] = preferred_provider_identifier
+        params[:runner] = preferred_provider_identifier
       end
 
       params

@@ -54,5 +54,19 @@ RSpec.describe Coordination::FailureRecoveryService do
         "policy_source" => "override"
       )
     end
+
+    it "emits runner params for retry_same_provider actions" do
+      agent_run = create(:agent_run, :timeout, project: project,
+        error_message: "Agent execution timed out",
+        providers_attempted: [ anthropic_attempt ])
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.chosen_action).to eq("retry_same_provider")
+      expect(result.action_params).to include(
+        "runner" => "anthropic",
+        "policy_source" => "defaults"
+      )
+    end
   end
 end

@@ -365,7 +365,7 @@ module Projects
       agent_type = retry_agent_type_for(@agent_run)
       if agent_type.nil?
         redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "The selected provider is not available for retries."
+          alert: "The selected runner is not available for retries."
         return
       end
 
