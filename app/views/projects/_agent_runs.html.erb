@@ -1,7 +1,7 @@
 <div id="<%= dom_id(project, :agent_runs) %>" class="mt-8">
   <% stale_agent_runs_count = local_assigns.fetch(:stale_agent_runs_count) { project.agent_runs.stale_for_cleanup.count } %>
   <% show_stale_cleanup_action = local_assigns.fetch(:show_stale_cleanup_action, false) %>
-  <% project_agent_runs_url = "/projects/#{project.to_param}/agent_runs" %>
+  <% project_agent_runs_url = Rails.application.routes.url_helpers.project_agent_runs_path(project) %>
   <div class="flex items-center justify-between gap-4">
     <h2 class="text-lg font-medium text-gray-900">
       <%= link_to "Recent Agent Runs", project_agent_runs_url, class: "hover:text-indigo-600" %>

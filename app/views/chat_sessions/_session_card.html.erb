@@ -1,7 +1,7 @@
 <% session_title = chat_session_title(chat_session) %>
 <% session_preview = chat_session_preview(chat_session) %>
 <% session_projects = chat_session_projects(chat_session) %>
-<% chat_session_url = "/chat/#{chat_session.to_param}" %>
+<% chat_session_url = Rails.application.routes.url_helpers.chat_session_path(chat_session) %>
 
 <%= link_to chat_session_url,
             id: dom_id(chat_session),
