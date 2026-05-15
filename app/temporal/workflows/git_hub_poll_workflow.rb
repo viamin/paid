@@ -300,6 +300,8 @@ module Workflows
     def run_notification_rules(project_id, issue_ids:, pr_scan_result:)
       return unless Temporalio::Workflow.patched("notification-rules-v1")
 
+      pr_scan_result = normalize_scan_result(pr_scan_result)
+
       run_activity(Activities::EvaluateNotificationRulesActivity, {
         project_id: project_id,
         issue_ids: issue_ids,
@@ -316,6 +318,12 @@ module Workflows
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    def normalize_scan_result(pr_scan_result)
+      return unless pr_scan_result.respond_to?(:with_indifferent_access)
+
+      pr_scan_result.with_indifferent_access
     end
 
     def handle_automation_result(result, project_id)

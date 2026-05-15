@@ -148,6 +148,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         timeout: 60
       )
     end
+
+    it "forwards string-keyed PR scan payloads from serialized activity results" do
+      workflow.send(:run_notification_rules, 1,
+        issue_ids: [ 10, 11 ],
+        pr_scan_result: {
+          "pr_issue_ids" => [ 11 ],
+          "pending_review_states" => [ { "issue_id" => "11", "pending_review" => true } ],
+          "pr_progress_states" => [ { "issue_id" => "11", "consecutive_unsuccessful_automatic_runs" => 2 } ]
+        })
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::EvaluateNotificationRulesActivity,
+        {
+          project_id: 1,
+          issue_ids: [ 10, 11 ],
+          pr_issue_ids: [ 11 ],
+          pending_review_states: [ { "issue_id" => "11", "pending_review" => true } ],
+          pr_progress_states: [ { "issue_id" => "11", "consecutive_unsuccessful_automatic_runs" => 2 } ]
+        },
+        timeout: 60
+      )
+    end
   end
 
   describe "rate limit budget coordination" do

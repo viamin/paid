@@ -5,6 +5,8 @@ module Activities
     activity_name "EvaluateNotificationRules"
 
     def execute(input)
+      input = normalize_input(input)
+
       project = Project.find_by(id: input[:project_id])
       return { evaluated: false } unless project
 
@@ -20,6 +22,14 @@ module Activities
       Notifications::Rules::ScannerWedgedOnPendingReview.call(scope: Array(input[:pending_review_states]))
 
       { evaluated: true }
+    end
+
+    private
+
+    def normalize_input(input)
+      return {} unless input.respond_to?(:with_indifferent_access)
+
+      input.with_indifferent_access
     end
   end
 end
