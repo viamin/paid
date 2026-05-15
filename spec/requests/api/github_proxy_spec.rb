@@ -209,7 +209,7 @@ RSpec.describe "Api::GithubProxy" do
     def stub_review_list_response(reviews = [])
       stub_request(:get, target_url)
         .with(
-          headers: hash_including("Authorization" => "token ghs_review_bot_token"),
+          headers: { "Authorization" => "token ghs_review_bot_token" },
           query: hash_including("per_page" => "100")
         )
         .to_return(
@@ -224,7 +224,7 @@ RSpec.describe "Api::GithubProxy" do
 
       stub_request(:put, dismiss_url)
         .with(
-          headers: hash_including("Authorization" => "token ghs_review_bot_token"),
+          headers: { "Authorization" => "token ghs_review_bot_token" },
           body: { message: "Subsequent review found no remaining actionable issues." }.to_json
         )
         .to_return(status: 200, body: {}.to_json, headers: { "Content-Type" => "application/json" })
