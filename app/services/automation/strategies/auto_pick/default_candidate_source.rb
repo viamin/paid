@@ -13,7 +13,7 @@ module Automation
       # - Open, non-PR issues with all structured dependencies satisfied
       # - No unfinished agent run already attached to the issue
       # - No open PR linked back to the issue via +parent_issue_id+
-      # - Not labeled with any of {EXCLUDED_LABELS}
+      # - Not labeled with any configured auto-pick skip labels
       # - Not a parent issue with still-open sub-issues, and not a tracker /
       #   meta issue whose body still references open work items
       # - Issue creator is in the project's trusted allowlist when one is
@@ -30,10 +30,6 @@ module Automation
       #   get starved by newer issues)
       module DefaultCandidateSource
         extend CandidateSource
-
-        # Each label here must also exist as a GitHub label in the repo so
-        # it can be applied to issues.
-        EXCLUDED_LABELS = %w[planning research waiting tracking epic needs-manual-setup].freeze
 
         # SQL ILIKE patterns used to pre-filter potential tracker issues
         # before applying the full Ruby-level +Issue#tracker_issue?+
@@ -193,7 +189,7 @@ module Automation
             trusted_usernames = Array(project.allowed_github_usernames).presence
             base = base.where(github_creator_login: trusted_usernames) if trusted_usernames
 
-            EXCLUDED_LABELS.reduce(base) do |scope, label|
+            project.effective_auto_pick_skip_labels.reduce(base) do |scope, label|
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
           end
