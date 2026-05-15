@@ -28,13 +28,13 @@ Specific limitations of the single-host model:
 
 The container management layer (`Containers::Provision`, `Containers::GitOperations`, `NetworkPolicy`) uses the `docker-api` Ruby gem, which communicates with the Docker Engine API. Today this targets the local Unix socket, but the Docker Engine API is a REST API that can be exposed over TCP with TLS mutual authentication.
 
-The secrets proxy (`SecretsProxyController`) runs inside the Rails process and is reachable by agent containers via Docker DNS (`paid-proxy:3000` on the `paid_internal` network). Workspace volumes are bind-mounted from a shared local path (`/var/paid/workspaces`).
+The secrets proxy (`SecretsProxyController`) runs inside the Rails process and is reachable by agent containers via Docker DNS (`paid-proxy:3000` on the `paid_internal` network). Workspace volumes are Docker named volumes (`paid-workspace-#{agent_run_id}`) with git clone happening inside the container — the codebase has already moved away from host-side bind mounts for new runs.
 
 ### Technical Environment
 
 - **Container API**: `docker-api` gem → Docker Engine REST API
 - **Networking**: Two Docker bridge networks (`paid_internal`, `paid_agent`) with iptables egress filtering
-- **Storage**: Local bind mounts from `/var/paid/workspaces` (bare repos + worktrees)
+- **Storage**: Docker named volumes (`paid-workspace-#{agent_run_id}`) with in-container git clone (bind mounts legacy-only)
 - **Proxy**: Rails on port 3000, accessible as `paid-proxy` via Docker DNS alias
 
 ### Constraints
@@ -83,12 +83,13 @@ On a remote host, Docker DNS (`paid-proxy:3000`) does not resolve. The proxy mus
 
 **Workspace Storage**
 
-Current model: bare git clone on the host, worktree created per agent run, bind-mounted into container. For remote hosts:
+Current model: Docker named volumes (`paid-workspace-#{agent_run_id}`) are created per agent run. Git clone happens inside the container, not on the host. Bind mounts from `/var/paid/workspaces` remain as a legacy path for runs that explicitly pass a `worktree_path`, but new runs use named volumes by default. This is already compatible with remote execution — the volume lifecycle is managed entirely through the Docker API, and git operations run inside the container.
 
-1. **Fresh clone per run** — Clone directly inside the container. Slower (~30-60s for large repos) but eliminates shared storage dependency.
-2. **NFS/SMB mount** — Share `/var/paid/workspaces` across hosts. Adds latency and an infrastructure dependency.
-3. **Container volume with git init** — Create a Docker volume on the remote host, clone into it from within a setup container, then mount into the agent container.
-4. **Object storage cache** — Cache bare repos in S3/MinIO; pull to remote host on demand.
+Remaining considerations for remote hosts:
+
+1. **Volume placement** — Docker named volumes are local to the Docker host. Each remote host manages its own volumes. No cross-host volume sharing is needed since each run gets its own volume.
+2. **Image availability** — The agent container image must be present on each remote host (via registry pull or manual load).
+3. **Object storage cache** (optional) — For large repos, a bare-repo cache in S3/MinIO can reduce clone times by serving as a fetch source inside the container.
 
 **Docker Swarm**
 
@@ -174,9 +175,9 @@ end
 │  └──────────────┘              │  │  └──────────────┘              │  │
 │                                │  │                                │  │
 │  ┌──────────────┐              │  │  ┌──────────────┐              │  │
-│  │ /var/paid/   │              │  │  │ Docker Volume │              │  │
-│  │ workspaces   │              │  │  │ (clone per   │              │  │
-│  │ (bind mount) │              │  │  │  run)        │              │  │
+│  │ Docker Volume│              │  │  │ Docker Volume │              │  │
+│  │ (clone per   │              │  │  │ (clone per   │              │  │
+│  │  run)        │              │  │  │  run)        │              │  │
 │  └──────────────┘              │  │  └──────────────┘              │  │
 └────────────────────────────────┘  └────────────────────────────────────┘
 ```
@@ -208,21 +209,19 @@ end
 
 #### Secrets Proxy for Remote Hosts
 
-For remote backends, the secrets proxy must be reachable from the remote network. The recommended approach is a **secure tunnel**:
+For remote backends, the secrets proxy must be reachable from the remote network. The current proxy URL is hardcoded to Docker DNS names (`paid-proxy` on the restricted network, `web` on the unrestricted network). The recommended approach is a **configurable proxy URL**:
 
 ```ruby
-# Remote Docker backend injects the proxy address as a routable URL
-# instead of relying on Docker DNS
-module Containers
-  module Backends
-    class RemoteDocker < Base
-      def proxy_address
-        # Routable address configured by operator
-        ENV.fetch("PAID_PROXY_EXTERNAL_URL", "https://paid-proxy.internal:3000")
-      end
-    end
-  end
-end
+# Containers::Provision#proxy_base_url currently returns:
+#   "http://paid-proxy:3000" (restricted network)
+#   "http://web:3000" (unrestricted network)
+#
+# For remote backends, PAID_PROXY_EXTERNAL_URL overrides the hostname:
+#   "http://paid-proxy.internal:3000" (via tunnel)
+#   "https://paid-proxy.example.com:3000" (via load balancer + mTLS)
+#
+# The SecretsProxyController itself is backend-agnostic — it authenticates
+# via ContainerAuthentication headers, not Docker DNS.
 ```
 
 Operators choose their tunnel method:
@@ -237,37 +236,16 @@ Operators choose their tunnel method:
 
 #### Workspace Provisioning for Remote Hosts
 
-Remote backends use **clone-per-run** instead of bind-mounted bare repos:
+The current codebase already uses Docker named volumes with in-container git clone for new runs. Remote backends use the same pattern — no storage model change is needed. The only difference is that volume and container creation target the remote Docker API instead of the local socket:
 
 ```ruby
-module Containers
-  module Backends
-    class RemoteDocker < Base
-      def prepare_workspace(agent_run)
-        # 1. Create a Docker volume on the remote host
-        volume = Docker::Volume.create(
-          "Name" => "paid-workspace-#{agent_run.id}",
-          "Labels" => { "paid.agent_run_id" => agent_run.id.to_s }
-        )
+# All backends use the same workspace pattern:
+# 1. Create a Docker named volume on the target host
+# 2. Mount it into the agent container
+# 3. Git clone happens inside the container during setup
 
-        # 2. Run a setup container that clones the repo into the volume
-        setup = Docker::Container.create(
-          "Image" => "paid-agent:latest",
-          "Cmd" => ["git", "clone", "--branch", agent_run.branch,
-                    agent_run.project.clone_url, "/workspace"],
-          "HostConfig" => {
-            "Binds" => ["#{volume.id}:/workspace:rw"]
-          }
-        )
-        setup.start
-        setup.wait(timeout: 300)
-        setup.delete
-
-        volume
-      end
-    end
-  end
-end
+# The backend abstraction handles targeting the correct Docker host.
+# LocalDocker uses the unix socket; RemoteDocker uses TCP+TLS.
 ```
 
 #### Network Policy Adaptation
@@ -292,7 +270,7 @@ end
 2. **Remote Docker first** — Lowest-effort path to running on a second host. Reuses all existing `docker-api` code. Ideal for self-hosted scenarios (NAS, spare server).
 3. **Swarm as scaling tier** — Adds multi-host scheduling without leaving the Docker ecosystem. Overlay networks solve proxy DNS resolution automatically.
 4. **Kubernetes deferred** — Highest capability ceiling but requires the most rework. The abstraction makes it addable later without changing calling code.
-5. **Clone-per-run for remote storage** — Eliminates shared filesystem dependency. Slower for large repos but operationally simpler than NFS.
+5. **Docker named volumes already in use** — The codebase already uses clone-per-run with Docker named volumes, eliminating the largest storage concern for remote execution. No storage model change is needed.
 6. **Tunnel-based proxy access** — Avoids exposing the secrets proxy to the public internet while keeping configuration flexible.
 
 ## Alternatives Considered
@@ -361,12 +339,12 @@ end
 
 ### Alternative 4: NFS Shared Storage
 
-**Description**: Share `/var/paid/workspaces` across all hosts via NFS instead of clone-per-run.
+**Description**: Share workspace volumes across all hosts via NFS instead of using per-host Docker volumes.
 
 **Pros**:
 
-- Preserves current bare-repo + worktree model
-- No clone latency per run
+- Preserves existing run data across host failures
+- No clone latency when moving runs between hosts
 - Single source of truth for workspace state
 
 **Cons**:
@@ -376,8 +354,9 @@ end
 - Git operations over NFS can cause lock contention
 - Additional infrastructure to manage and secure
 - Performance degrades significantly over WAN
+- Undermines the isolation benefits of per-run volumes
 
-**Reason for rejection**: NFS works on a fast LAN but is fragile and slow at scale. Clone-per-run is self-contained and works identically on LAN and cloud hosts. For large repos, a registry cache (MinIO/S3) can reduce clone times without NFS complexity.
+**Reason for rejection**: The codebase already uses per-run Docker named volumes with in-container cloning, which is naturally compatible with remote execution. NFS would be a step backward — adding a shared dependency where none exists. For large repos, an object storage cache (MinIO/S3) is a better optimization path.
 
 ## Trade-offs and Consequences
 
@@ -424,7 +403,7 @@ end
 
 #### Phase 1: Backend Abstraction (Extract)
 
-Refactor `Containers::Provision` to delegate container operations through a backend interface. The `LocalDocker` backend wraps current behavior with no functional changes.
+Refactor `Containers::Provision` and related services to delegate container operations through a backend interface. The `LocalDocker` backend wraps current behavior with no functional changes.
 
 **Files to create:**
 
@@ -432,11 +411,23 @@ Refactor `Containers::Provision` to delegate container operations through a back
 - `app/services/containers/backends/local_docker.rb` — Current behavior extracted
 - `config/initializers/container_backend.rb` — Backend selection
 
-**Files to modify:**
+**Files to modify** (all have direct `Docker::Container` / `Docker::Volume` coupling):
 
-- `app/services/containers/provision.rb` — Delegate to backend instead of calling `Docker::Container` directly
+- `app/services/containers/provision.rb` (~30 direct Docker API calls) — Delegate to backend instead of calling `Docker::Container` directly
+- `app/services/containers/pool_manager.rb` — Use backend for container listing, health checks, volume cleanup; add `host` field to `ContainerPoolEntry` for backend routing
+- `app/services/containers/service_provisioner.rb` (15+ Docker API calls) — Backend delegation for service container provisioning
+- `app/services/containers/mcp_provisioner.rb` — Backend delegation for MCP sidecar containers
+- `app/services/containers/chat_session_manager.rb` — Backend delegation for chat session containers
 - `app/services/containers/collect_metrics.rb` — Use backend for stats
+- `app/services/knowledge/containerized_runner.rb` — Backend delegation for knowledge collection containers
+- `app/services/knowledge/analysis_runner.rb` — Backend delegation
+- `app/services/knowledge/embedding_runner.rb` — Backend delegation
 - `app/jobs/docker_orphan_cleanup_job.rb` — Use backend for listing/cleanup
+
+**Database changes:**
+
+- Add `container_host` column to `agent_runs` — tracks which Docker host the container was created on
+- Add `container_host` column to `container_pool_entries` — enables pool manager to reconnect to the correct backend per entry
 
 #### Phase 2: Remote Docker Backend
 
@@ -450,9 +441,9 @@ Implement `RemoteDocker` backend targeting a single remote host via TCP+TLS.
 
 **New capabilities:**
 
-- Clone-per-run workspace provisioning
-- Configurable proxy address (not Docker DNS)
+- Configurable proxy address via `PAID_PROXY_EXTERNAL_URL` (replaces hardcoded Docker DNS `paid-proxy`)
 - TLS client certificate authentication
+- Workspace provisioning uses same Docker named volume + in-container clone pattern as local (no storage changes needed)
 
 #### Phase 3: Docker Swarm Backend
 
@@ -551,6 +542,18 @@ Out of scope for initial implementation. The backend interface is designed to ac
 
 - The backend abstraction is the critical first step — it enables all subsequent scaling work with zero risk to existing deployments.
 - For the QNAP/NAS use case, Remote Docker + WireGuard tunnel is the recommended path. Container Station exposes the Docker API and WireGuard runs natively on QNAP.
-- Clone-per-run latency can be improved with a bare-repo cache on remote hosts — fetch-only after initial clone.
-- Consider adding a `worker_id` or `host` field to `AgentRun` to track where each run executed, for debugging and capacity planning.
+- Clone latency for large repos can be improved with a bare-repo cache on remote hosts — fetch-only after initial clone.
+- Consider adding a `container_host` column to `AgentRun` and `ContainerPoolEntry` to track where each container was created, for debugging, capacity planning, and backend routing.
 - Swarm mode can be initialized on a single node first, then scaled out — making it a natural upgrade from Remote Docker.
+- The `Scaling::Orchestrator` module (adapters for K8s, Swarm, ECS, Compose) solves a different problem — scaling Paid's own worker processes, not provisioning agent containers. Its module + adapter + resolver pattern is a good template for the container backend abstraction.
+- Pool management (`PoolManager`) needs host tracking to reconnect to the correct Docker API for each pooled container. This was not in the original RDR scope but is required for Phase 1.
+
+### Audit Corrections (2026-05-15)
+
+This RDR was audited against the current codebase. Three corrections were applied:
+
+1. **Workspace model updated** — The RDR originally described the storage model as "bare git clone on the host, worktree created per agent run, bind-mounted into container." The codebase has since moved to Docker named volumes (`paid-workspace-#{agent_run_id}`) with in-container git clone. This is already compatible with remote execution and eliminates the storage concern.
+
+2. **Phase 1 scope expanded** — The original implementation plan listed 3-4 files to modify. The actual scope is 10+ files with direct `Docker::Container` / `Docker::Volume` coupling: `provision.rb`, `pool_manager.rb`, `service_provisioner.rb`, `mcp_provisioner.rb`, `chat_session_manager.rb`, `collect_metrics.rb`, `knowledge/containerized_runner.rb`, `knowledge/analysis_runner.rb`, `knowledge/embedding_runner.rb`, and `docker_orphan_cleanup_job.rb`.
+
+3. **Pool management gap addressed** — `PoolManager` assumes local Docker and `ContainerPoolEntry` has no host-tracking field. Added `container_host` column requirements to Phase 1.

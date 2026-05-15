@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-05-13
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: #1987 (foundation), #1988 (prompt scoping), #1989 (quality scoring)
