@@ -638,7 +638,7 @@ RSpec.describe Issues::AutoPick do
       )
     end
 
-    it "returns nil and warns when no runnable provider can be resolved" do
+    it "returns nil and warns when no runnable runner can be resolved" do
       create(:issue, project: project)
       allow(Runner).to receive_messages(ensure_default_for: nil, first_enabled_for_owner: nil)
       allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(nil)
@@ -648,7 +648,7 @@ RSpec.describe Issues::AutoPick do
 
       expect(result).to be_nil
       expect(Rails.logger).to have_received(:warn).with(
-        hash_including(message: "auto_pick.no_runnable_provider", project_id: project.id)
+        hash_including(message: "auto_pick.no_runnable_runner", project_id: project.id)
       )
     end
 
