@@ -288,6 +288,18 @@ RSpec.describe Issue do
       expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: dependent_project, skip_project_gate: true)
     end
 
+    it "does not enqueue dependents for paused projects" do
+      project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
     it "continues processing later dependents after one enqueue fails" do
       project = create(:project, auto_pick_enabled: true)
       blocker = create(:issue, project: project, github_state: "open")

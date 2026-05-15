@@ -492,6 +492,7 @@ class Issue < ApplicationRecord
 
   def enqueue_newly_unblocked_dependents
     auto_pick_enabled_dependents.find_each do |dependent|
+      next unless Issues::AutoPickProjectGate.call(dependent.project)
       next unless Issue.ready_for_work(dependent.project).where(id: dependent.id).exists?
 
       Rails.logger.info(
