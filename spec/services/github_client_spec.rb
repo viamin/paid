@@ -1562,6 +1562,29 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#dismiss_pull_request_review", :no_db do
+    let(:repo) { "owner/repo" }
+    let(:dismiss_url) { "#{api_base}/repos/#{repo}/pulls/42/reviews/100/dismissals" }
+    let(:message) { "Subsequent review found no remaining actionable issues." }
+
+    before do
+      stub_request(:put, dismiss_url)
+        .with(body: { message: message }.to_json)
+        .to_return(
+          status: 200,
+          body: { id: 100, state: "DISMISSED" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "sends the dismissal message in the request body" do
+      result = client.dismiss_pull_request_review(repo, 42, 100, message: message)
+
+      expect(result.state).to eq("DISMISSED")
+      expect(a_request(:put, dismiss_url).with(body: { message: message }.to_json)).to have_been_made.once
+    end
+  end
+
   describe "#request_bot_review" do
     let(:repo) { "owner/repo" }
     let(:pr_node_id) { "PR_kwDOTest123" }

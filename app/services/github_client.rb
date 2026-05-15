@@ -783,7 +783,7 @@ class GithubClient
   # @param message [String] Reason for dismissal
   def dismiss_pull_request_review(repo, pull_number, review_id, message:)
     handle_errors do
-      client.dismiss_pull_request_review(repo, pull_number, review_id, message: message)
+      client.dismiss_pull_request_review(repo, pull_number, review_id, message)
     end
   end
 
