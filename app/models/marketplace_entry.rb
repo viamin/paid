@@ -61,7 +61,7 @@ class MarketplaceEntry < ApplicationRecord
   end
 
   def self.ransackable_associations(_auth_object = nil)
-    %w[account current_version]
+    %w[current_version]
   end
 
   def create_version!(attributes = {})

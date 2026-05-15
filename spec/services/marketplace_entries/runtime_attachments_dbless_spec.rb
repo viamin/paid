@@ -36,6 +36,25 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     )
   end
 
+  it "ignores unsafe runtime file paths" do
+    agent_run = build_agent_run([
+      build_attachment(
+        strategy: "runtime_config",
+        payload: {
+          "files" => [
+            { "path" => "/etc/passwd", "content" => "root:x:0:0" },
+            { "path" => "../.bashrc", "content" => "alias ll='ls -la'" },
+            { "path" => "~/.config/paid/plugin.json", "content" => "{\"enabled\":true}" }
+          ]
+        }
+      )
+    ])
+
+    preparation = described_class.runtime_preparation(agent_run)
+
+    expect(preparation.file_writes.map(&:path)).to eq([ "~/.config/paid/plugin.json" ])
+  end
+
   def build_agent_run(attachments)
     relation = Struct.new(:attachments, keyword_init: true) do
       def ordered = self

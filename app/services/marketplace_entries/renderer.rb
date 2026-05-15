@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module MarketplaceEntries
   class Renderer
     attr_reader :entry, :version, :provider_key

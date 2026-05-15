@@ -54,6 +54,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
 
         expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
           agent_run: agent_run,
+          manual_entry_ids: nil,
           auto_attach_enabled: true
         )
       end
@@ -67,9 +68,39 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
 
         expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
           agent_run: agent_run,
+          manual_entry_ids: nil,
           auto_attach_enabled: true
         )
       end
+    end
+  end
+
+  describe "#attach_marketplace_entries" do
+    let(:activity) { described_class.new }
+    let(:agent_run) { Struct.new(:id).new(42) }
+    let(:logger) { instance_double(Logger, warn: nil) }
+
+    it "logs and swallows marketplace attachment errors" do
+      allow(activity).to receive(:logger).and_return(logger)
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+      expect {
+        activity.send(
+          :attach_marketplace_entries,
+          agent_run: agent_run,
+          manual_entry_ids: [ 7 ],
+          auto_attach_enabled: true
+        )
+      }.not_to raise_error
+
+      expect(logger).to have_received(:warn).with(
+        hash_including(
+          message: "agent_execution.marketplace_attachment_failed",
+          agent_run_id: 42,
+          error_class: "StandardError",
+          error: "render failed"
+        )
+      )
     end
   end
 end

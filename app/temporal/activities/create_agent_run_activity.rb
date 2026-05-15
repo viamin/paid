@@ -91,7 +91,7 @@ module Activities
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
       agent_run = AgentRun.create!(**attrs)
-      MarketplaceEntries::AttachToRun.call(
+      attach_marketplace_entries(
         agent_run: agent_run,
         manual_entry_ids: manual_marketplace_entry_ids,
         auto_attach_enabled: marketplace_auto_attach_enabled?(project, user_settings)
@@ -251,9 +251,24 @@ module Activities
     def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false)
       return if agent_run.agent_run_marketplace_entries.exists? && !force
 
-      MarketplaceEntries::AttachToRun.call(
+      attach_marketplace_entries(
         agent_run: agent_run,
         auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
+      )
+    end
+
+    def attach_marketplace_entries(agent_run:, auto_attach_enabled:, manual_entry_ids: nil)
+      MarketplaceEntries::AttachToRun.call(
+        agent_run: agent_run,
+        manual_entry_ids: manual_entry_ids,
+        auto_attach_enabled: auto_attach_enabled
+      )
+    rescue => e
+      logger.warn(
+        message: "agent_execution.marketplace_attachment_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
       )
     end
 

@@ -1158,6 +1158,16 @@ RSpec.describe "AgentRuns" do
         expect(attachment.attachment_source).to eq("manual")
       end
 
+      it "rolls back the agent run when marketplace attachment fails" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.to raise_error(RuntimeError, "boom")
+        }.not_to change(AgentRun, :count)
+      end
+
       it "also applies team-default marketplace entries when creating a queued run" do
         user.settings.update!(marketplace_auto_attach_enabled: true)
         manual_entry = create_prompt_append_marketplace_entry(name: "Manual skill", content: "Use the manual workflow.")

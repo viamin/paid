@@ -68,6 +68,23 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
+    it "logs and continues when marketplace attachment fails during creation" do
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+      allow(activity).to receive(:logger).and_return(Rails.logger)
+      allow(Rails.logger).to receive(:warn)
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(result[:agent_run_id]).to be_present
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "agent_execution.marketplace_attachment_failed",
+          error_class: "StandardError",
+          error: "render failed"
+        )
+      )
+    end
+
     it "returns the project max_execution_seconds in the result" do
       project.update!(max_execution_seconds: 900)
       result = activity.execute(project_id: project.id, issue_id: issue.id)
@@ -908,6 +925,25 @@ RSpec.describe Activities::CreateAgentRunActivity do
         activity.execute(agent_run_id: queued_run.id, project_id: project.id)
 
         expect(queued_run.reload.agent_run_marketplace_entries.pluck(:marketplace_entry_id)).to eq([ entry.id ])
+      end
+
+      it "logs and continues when marketplace attachment fails during resume" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "resume failed")
+        allow(activity).to receive(:logger).and_return(Rails.logger)
+        allow(Rails.logger).to receive(:warn)
+
+        result = activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        expect(result[:agent_run_id]).to eq(queued_run.id)
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "agent_execution.marketplace_attachment_failed",
+            agent_run_id: queued_run.id,
+            error_class: "StandardError",
+            error: "resume failed"
+          )
+        )
       end
     end
   end

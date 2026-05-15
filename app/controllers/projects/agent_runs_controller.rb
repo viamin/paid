@@ -632,24 +632,26 @@ module Projects
 
       resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
 
-      agent_run = AgentRun.create!(
-        project: @project,
-        issue: issue,
-        provider: resolved_provider,
-        agent_type: resolved_agent_type,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pull_request_number,
-        goal: goal,
-        trigger_type: trigger_type,
-        status: "queued",
-        priority_tier: priority_tier
-      )
-      MarketplaceEntries::AttachToRun.call(
-        agent_run:,
-        manual_entry_ids: params[:marketplace_entry_ids],
-        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?
-      )
-      agent_run
+      ActiveRecord::Base.transaction do
+        agent_run = AgentRun.create!(
+          project: @project,
+          issue: issue,
+          provider: resolved_provider,
+          agent_type: resolved_agent_type,
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pull_request_number,
+          goal: goal,
+          trigger_type: trigger_type,
+          status: "queued",
+          priority_tier: priority_tier
+        )
+        MarketplaceEntries::AttachToRun.call(
+          agent_run:,
+          manual_entry_ids: params[:marketplace_entry_ids],
+          auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?
+        )
+        agent_run
+      end
     end
 
     def marketplace_auto_attach_enabled_for_current_user?

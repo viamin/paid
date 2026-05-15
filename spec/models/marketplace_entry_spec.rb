@@ -33,4 +33,10 @@ RSpec.describe MarketplaceEntry do
       expect(entry.tags).to eq([ "rails", "internal-api" ])
     end
   end
+
+  describe ".ransackable_associations" do
+    it "does not expose account traversal" do
+      expect(described_class.ransackable_associations).to eq([ "current_version" ])
+    end
+  end
 end

@@ -85,6 +85,7 @@ module MarketplaceEntries
         path = file["path"].to_s.strip
         content = file["content"]
         next if path.blank? || content.nil?
+        next if path.start_with?("/") || path.include?("..")
 
         { path:, content: content.to_s }
       end
