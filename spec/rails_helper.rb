@@ -130,9 +130,11 @@ RSpec.configure do |config|
   unless database_available
     config.before do |example|
       # Only run specs under spec/lib/ or those tagged :no_db which don't need
-      # a database. All other specs are skipped to avoid connection errors.
+      # a database. Specs can opt back into DB-backed behavior with :db.
+      # All other specs are skipped to avoid connection errors.
       spec_file = example.metadata[:file_path].to_s
-      unless spec_file.start_with?("./spec/lib/", "spec/lib/") || example.metadata[:no_db]
+      allows_dbless = (spec_file.start_with?("./spec/lib/", "spec/lib/") && !example.metadata[:db]) || example.metadata[:no_db]
+      unless allows_dbless
         skip "Database not available (ALLOW_DBLESS_SPECS=true)"
       end
     end
