@@ -7,6 +7,7 @@ module Api
 
     REVIEW_COMMENT_MARKER = "<!-- paid:code-review -->"
     REVIEW_HEADER = "## Code Review"
+    STALE_REVIEW_DISMISSAL_MESSAGE = "Subsequent review found no remaining actionable issues."
 
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
@@ -230,14 +231,14 @@ module Api
     # Without this, stale change requests block PR merging even after the
     # issues have been addressed.
     def dismiss_stale_changes_requested_reviews(path_match, new_review)
-      return if new_review["state"].to_s.casecmp("CHANGES_REQUESTED").zero?
+      return if review_state(new_review["state"]) == "CHANGES_REQUESTED"
 
       project = authenticated_project
       return unless project&.review_method_enabled?("paid_agent")
       return unless Github::ReviewBotInstallationToken.configured?
-      bot_logins = Github::ReviewBotInstallationToken.bot_logins
+      bot_logins = Github::ReviewBotInstallationToken.bot_logins.map(&:downcase)
       pr_number = path_match[:number].to_i
-      new_review_id = new_review["id"]
+      new_review_id = new_review["id"].to_i
 
       bot_client = GithubClient.new(
         token: Github::ReviewBotInstallationToken.new(
@@ -247,15 +248,15 @@ module Api
 
       reviews = bot_client.pull_request_reviews(project.full_name, pr_number)
       stale = reviews.select do |r|
-        r[:state] == "CHANGES_REQUESTED" &&
-          bot_logins.include?(r[:user_login]) &&
-          r[:id] != new_review_id
+        review_state(r[:state]) == "CHANGES_REQUESTED" &&
+          bot_logins.include?(r[:user_login].to_s.downcase) &&
+          r[:id].to_i != new_review_id
       end
 
       stale.each do |review|
         bot_client.dismiss_pull_request_review(
           project.full_name, pr_number, review[:id],
-          message: "Subsequent review found no remaining actionable issues."
+          message: STALE_REVIEW_DISMISSAL_MESSAGE
         )
         log_info("github_proxy.dismissed_stale_review",
           review_id: review[:id],
@@ -299,6 +300,10 @@ module Api
 
     def clean_review_body?(body)
       body.to_s.include?("<!-- paid-review-clean -->")
+    end
+
+    def review_state(value)
+      value.to_s.upcase
     end
 
     def log_error(message, error)
