@@ -39,6 +39,12 @@ class ChatSession < ApplicationRecord
     self[:provider_id] = value
   end
 
+  def provider=(value)
+    return self.runner = value if value.is_a?(Runner) || value.nil?
+
+    super
+  end
+
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
   scope :with_preview_content, lambda {

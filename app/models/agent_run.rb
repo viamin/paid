@@ -234,6 +234,12 @@ class AgentRun < ApplicationRecord
     end
   end
 
+  def provider=(value)
+    return self.runner = value if value.is_a?(Runner) || value.nil?
+
+    super
+  end
+
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
   scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
