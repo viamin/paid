@@ -202,7 +202,7 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
 
       if agent_run.queued?
-        validate_and_sync_resumed_provider!(agent_run)
+        validate_and_sync_resumed_runner!(agent_run)
       else
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
@@ -227,7 +227,7 @@ module Activities
       {
         agent_run_id: agent_run.id,
         focus: agent_run.focus,
-        provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
+        runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
         max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings)

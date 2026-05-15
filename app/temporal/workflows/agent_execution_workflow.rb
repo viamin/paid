@@ -103,7 +103,7 @@ module Workflows
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
       focus = agent_run_result.fetch(:focus, "general")
-      provider_attempt_count = [ agent_run_result.fetch(:runner_attempt_count, 1), 1 ].max
+      runner_attempt_count = [ agent_run_result.fetch(:runner_attempt_count, 1), 1 ].max
       agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
       issue_goal_timeout_seconds = agent_run_result.fetch(
         :issue_goal_timeout_seconds,
@@ -209,20 +209,20 @@ module Workflows
         end
 
         # Step 4: Run the agent (long timeout, limited retry for worker recovery)
-        # Budget based on the expected provider attempts for this run
+        # Budget based on the expected runner attempts for this run
         # (from CreateAgentRunActivity), plus a small Temporal buffer.
         # Issue goals use a shorter timeout since they only need to create
         # a GitHub issue via curl, not write code.
-        per_provider_timeout = if goal.in?(%w[create_issue enhance_issue analyze_issue])
+        per_runner_timeout = if goal.in?(%w[create_issue enhance_issue analyze_issue])
           issue_goal_timeout_seconds
         else
           agent_timeout_seconds
         end
-        activity_timeout = (per_provider_timeout * provider_attempt_count) + 300
+        activity_timeout = (per_runner_timeout * runner_attempt_count) + 300
 
         # Cap the activity timeout by the project's max execution time limit
         # (plus a buffer for Temporal overhead). This ensures runs are terminated
-        # even when the per-provider timeout budget is larger.
+        # even when the per-runner timeout budget is larger.
         if max_execution_seconds
           execution_limit = max_execution_seconds + 300
           activity_timeout = [ activity_timeout, execution_limit ].min

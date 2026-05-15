@@ -22,7 +22,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       expect(result[:agent_run_id]).to be_present
-      expect(result[:provider_attempt_count]).to eq(1)
+      expect(result[:runner_attempt_count]).to eq(1)
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.project).to eq(project)
       expect(agent_run.issue).to eq(issue)
@@ -58,7 +58,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.agent_type).to eq("aider")
-      expect(result[:provider_attempt_count]).to eq(1)
+      expect(result[:runner_attempt_count]).to eq(1)
     end
 
     it "accepts copilot as a container-executable agent_type" do
@@ -66,7 +66,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.agent_type).to eq("copilot")
-      expect(result[:provider_attempt_count]).to eq(1)
+      expect(result[:runner_attempt_count]).to eq(1)
     end
 
     it "derives agent_type from runner_id when only a runner is supplied" do
@@ -202,16 +202,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
         trigger_type: "automatic",
         goal: "review"
       )
-      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+      project.created_by.settings.update!(default_agent_runners_by_goal: { "review" => codex_runner.routing_key })
 
       result = activity.execute(agent_run_id: queued_run.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
       expect(agent_run.status).to eq("queued")
       expect(agent_run.configuration_bundle.definition).to include(
-        "provider_id" => codex_provider.id,
+        "runner_id" => codex_runner.id,
         "agent_type" => "codex"
       )
     end
@@ -258,7 +258,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         :queued,
         project: project,
         issue: issue,
-        provider: claude_provider,
+        runner: claude_runner,
         agent_type: "claude_code",
         configuration_bundle: existing_bundle)
       llm_model = create(:llm_model, provider: "openai", model_id: "gpt-5.4")
@@ -299,7 +299,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         issue: issue,
         source_pull_request_number: 42,
         goal: "review",
-        provider: claude_provider,
+        runner: claude_runner,
         agent_type: "claude_code",
         configuration_bundle: bundle)
     end
@@ -345,13 +345,12 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
-    it "fails fast when a resumed queued run refreshes to a provider now disabled for agent runs" do
-      codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
-      claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
+    it "fails fast when a resumed queued run refreshes to a runner now disabled for agent runs" do
+      codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
       queued_run = create(:agent_run, :queued, :automatic,
-        project: project, issue: issue, provider: claude_provider, agent_type: "claude_code")
-      codex_provider.update!(enabled_for_agent_runs: false)
-      allow(activity).to receive(:resolve_provider_selection).and_return([ codex_provider.id, "codex" ])
+        project: project, issue: issue, runner: claude_runner, agent_type: "claude_code")
+      codex_runner.update!(enabled_for_agent_runs: false)
+      allow(activity).to receive(:resolve_runner_selection).and_return([ codex_runner.id, "codex" ])
 
       expect {
         activity.execute(agent_run_id: queued_run.id)
@@ -395,7 +394,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("create_pr")
     end
 
-    it "returns deduplicated provider_attempt_count when fallback is enabled" do
+    it "returns deduplicated runner_attempt_count when fallback is enabled" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
       project.created_by.runners.find_or_create_by!(runner_key: "cursor")
       project.created_by.runners.find_or_create_by!(runner_key: "aider")
@@ -403,7 +402,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
-      expect(result[:provider_attempt_count]).to eq(3)
+      expect(result[:runner_attempt_count]).to eq(3)
     end
 
     it "counts configured fallback-only providers even when not explicitly ordered yet" do
@@ -417,7 +416,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
-      expect(result[:provider_attempt_count]).to eq(2)
+      expect(result[:runner_attempt_count]).to eq(2)
     end
 
     it "returns one attempt for an explicitly selected runner when fallback is disabled" do
@@ -426,7 +425,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: runner.id, agent_type: "cursor")
 
-      expect(result[:provider_attempt_count]).to eq(1)
+      expect(result[:runner_attempt_count]).to eq(1)
     end
 
     it "counts fallbacks for an explicitly selected runner only when fallback is enabled" do
@@ -437,10 +436,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: primary_provider.id, agent_type: "cursor")
 
-      expect(result[:provider_attempt_count]).to eq(2)
+      expect(result[:runner_attempt_count]).to eq(2)
     end
 
-    it "includes rate-limit fallback entries in provider_attempt_count" do
+    it "includes rate-limit fallback entries in runner_attempt_count" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
       api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
       project.created_by.runners.create!(
@@ -456,7 +455,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
-      expect(result[:provider_attempt_count]).to eq(3)
+      expect(result[:runner_attempt_count]).to eq(3)
     end
 
     it "warns when the selected runner is already rate limited" do
@@ -474,10 +473,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       expect(logger).to have_received(:warn).with(
         hash_including(
-          message: "agent_execution.selected_provider_rate_limited",
+          message: "agent_execution.selected_runner_rate_limited",
           project_id: project.id,
           runner_key: "claude",
-          provider_state_name: "claude",
+          runner_state_name: "claude",
           agent_type: "claude_code",
           goal: "create_pr"
         )
@@ -814,10 +813,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
       "outcome" => "selected",
       "selection" => include(
         "runner_id" => runner_id,
-        "provider_key" => provider_key,
+        "provider_key" => runner_key,
         "agent_type" => agent_type,
         "candidates" => include(
-          include("rank" => 1, "selected" => true, "runner_id" => runner_id, "provider_key" => provider_key)
+          include("rank" => 1, "selected" => true, "runner_id" => runner_id, "provider_key" => runner_key)
         )
       )
     )

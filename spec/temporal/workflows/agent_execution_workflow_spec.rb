@@ -217,7 +217,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     it "uses shorter start_to_close_timeout for create_issue goals" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT, issue_goal_timeout_seconds: Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 3, agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT, issue_goal_timeout_seconds: Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT }
         when "Activities::RunAgentActivity"
           expected_timeout = (Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT * 3) + 300
           expect(opts[:start_to_close_timeout]).to eq(expected_timeout)
@@ -496,7 +496,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     it "uses default agent_timeout for create_pr goals" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 3 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 3 }
         when "Activities::RunAgentActivity"
           expect(opts[:start_to_close_timeout]).to eq(11_100) # (3600 * 3 attempts) + 300
           { success: true, has_changes: false }
@@ -512,7 +512,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 2 }
+          { agent_run_id: 42, runner_attempt_count: 2 }
         when "Activities::RunAgentActivity"
           expect(opts[:start_to_close_timeout]).to eq(7500) # (3600 * 2 attempts) + 300
           { success: true, has_changes: false }
@@ -536,7 +536,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: 7200, max_execution_seconds: 3600 }
+          { agent_run_id: 42, runner_attempt_count: 3, agent_timeout_seconds: 7200, max_execution_seconds: 3600 }
         when "Activities::RunAgentActivity"
           # Without cap: (7200 * 3) + 300 = 21_900
           # With cap: 3600 + 300 = 3900
@@ -554,7 +554,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 86_400 }
+          { agent_run_id: 42, runner_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 86_400 }
         when "Activities::RunAgentActivity"
           # Computed: (3600 * 1) + 300 = 3900
           # Cap: 86_400 + 300 = 86_700 (larger, so no cap)
@@ -572,7 +572,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: nil }
+          { agent_run_id: 42, runner_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: nil }
         when "Activities::RunAgentActivity"
           expect(opts[:start_to_close_timeout]).to eq(3900)
           { success: true, has_changes: false }
@@ -588,7 +588,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 7200 }
+          { agent_run_id: 42, runner_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 7200 }
         when "Activities::RunAgentActivity"
           expect(opts[:start_to_close_timeout]).to eq(3900)
           { success: true, has_changes: false }
@@ -612,7 +612,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_existing_pr_followup(pr_review_phase:, complete_result: nil)
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -634,7 +634,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_existing_pr_followup_without_review_threads
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -655,7 +655,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_existing_pr_followup_legacy_prompt_result
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -677,7 +677,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_existing_pr_followup_with_focus(expected_focus)
       allow(workflow).to receive(:run_activity) do |activity_class, input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1, focus: expected_focus }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1, focus: expected_focus }
         when "Activities::ProvisionServicesActivity",
           "Activities::ProvisionContainerActivity",
           "Activities::CloneRepoActivity",
@@ -703,7 +703,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
           expect(input[:focus]).to eq(expected_focus)
-          { agent_run_id: 42, provider_attempt_count: 1, focus: expected_focus }
+          { agent_run_id: 42, runner_attempt_count: 1, focus: expected_focus }
         when "Activities::ProvisionServicesActivity",
           "Activities::ProvisionContainerActivity",
           "Activities::CloneRepoActivity",
@@ -841,7 +841,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_no_changes_followup
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -861,7 +861,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_no_changes_followup_with_marker
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -882,7 +882,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_no_changes_followup_with_marker_without_review_thread_ids
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -902,7 +902,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_no_changes_followup_legacy_prompt_result
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
@@ -923,7 +923,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_rebase_only_followup
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CheckProxyHealthActivity" then {}
@@ -1040,7 +1040,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_new_pr_creation
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CheckProxyHealthActivity" then {}
@@ -1065,7 +1065,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     def stub_new_pr_creation_with_screenshot_failure
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::ProvisionServicesActivity" then {}
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CheckProxyHealthActivity" then {}
@@ -1141,7 +1141,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     it "does not request a review-bot review when the agent produces no changes" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
@@ -1157,7 +1157,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     it "skips PR post-processing when PR creation reports a finished run without a PR" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
         when "Activities::RunAgentActivity" then { success: true, has_changes: true }
         when "Activities::CreatePullRequestActivity"
           { agent_run_id: 42, pull_request_url: nil, pull_request_number: nil, skipped: true, cancelled: true }
