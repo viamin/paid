@@ -242,21 +242,15 @@ module Automation
           # same-account local graph, not just the current project, because
           # IssueDependency supports cross-project links within an account.
           def dependency_tree_order_node
-            issues = Issue.arel_table
-            dependencies = IssueDependency.arel_table.alias("id_dep")
-            dependent_issues = Issue.arel_table.alias("dep_issue")
-
-            dependency_exists = dependencies
-              .project(Arel.sql("1"))
-              .join(dependent_issues).on(dependent_issues[:id].eq(dependencies[:issue_id]))
-              .where(dependencies[:depends_on_issue_id].eq(issues[:id]))
-              .where(dependent_issues[:github_state].eq("open"))
-              .where(dependent_issues[:is_pull_request].eq(false))
-
-            Arel::Nodes::Case.new
-              .when(Arel::Nodes::Exists.new(dependency_exists))
-              .then(1)
-              .else(2)
+            Arel.sql(<<~SQL.squish)
+              CASE WHEN EXISTS (
+                SELECT 1 FROM issue_dependencies id_dep
+                JOIN issues dep_issue ON dep_issue.id = id_dep.issue_id
+                WHERE id_dep.depends_on_issue_id = issues.id
+                  AND dep_issue.github_state = 'open'
+                  AND dep_issue.is_pull_request = FALSE
+              ) THEN 1 ELSE 2 END
+            SQL
           end
         end
       end
