@@ -17,6 +17,7 @@ module Projects
       @pagy, @agent_runs = pagy(@q.result)
       AgentRun.preload_final_provider_records(@agent_runs)
       AgentRun.preload_source_pull_requests(@agent_runs)
+      AgentRun.preload_created_issue_records(@agent_runs)
       cache_key = AgentRun.provider_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
       @provider_options = base_scope.distinct_effective_provider_options(account_id: @project.account_id, cache_key: cache_key)
     end
