@@ -259,6 +259,7 @@ module Api
 
       stale.each do |review|
         review_id = review_attribute(review, :id).to_i
+        next if review_id.zero?
 
         bot_client.dismiss_pull_request_review(
           project.full_name, pr_number, review_id,

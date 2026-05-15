@@ -477,11 +477,10 @@ RSpec.describe "Api::GithubProxy" do
           "enabled" => true,
           "methods" => { "paid_agent" => { "enabled" => true } }
         })
+        stub_review_list_response
       end
 
       it "forwards review creation with the review bot token" do
-        stub_review_list_response
-
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: { body: "Looks good", event: "COMMENT" }.to_json,
           headers: valid_headers
@@ -496,7 +495,6 @@ RSpec.describe "Api::GithubProxy" do
       it "does not touch last_used_at on the project GitHub token" do
         freeze_time do
           github_token.update_column(:last_used_at, 2.days.ago)
-          stub_review_list_response
 
           expect {
             post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
@@ -650,7 +648,6 @@ RSpec.describe "Api::GithubProxy" do
 
       it "logs a warning when a non-clean review body is posted without inline comments" do
         allow(Rails.logger).to receive(:warn)
-        stub_review_list_response
 
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: { body: "Found two issues to fix before merge.", event: "COMMENT", comments: [] }.to_json,
@@ -668,7 +665,6 @@ RSpec.describe "Api::GithubProxy" do
 
       it "does not log a warning when the submitted review includes inline comments" do
         allow(Rails.logger).to receive(:warn)
-        stub_review_list_response
 
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: {
@@ -687,7 +683,6 @@ RSpec.describe "Api::GithubProxy" do
 
       it "does not log a warning for the clean review body-only format" do
         allow(Rails.logger).to receive(:warn)
-        stub_review_list_response
         stub_request(:post, target_url)
           .to_return(status: 200, body: clean_review_response_body, headers: { "Content-Type" => "application/json" })
 

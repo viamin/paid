@@ -116,5 +116,16 @@ RSpec.describe Api::GithubProxyController, :no_db, type: :controller do
       expect(client).not_to have_received(:pull_request_reviews)
       expect(client).not_to have_received(:dismiss_pull_request_review)
     end
+
+    it "skips malformed stale reviews without an id" do
+      allow(client).to receive(:pull_request_reviews).with("testowner/testrepo", 10).and_return([
+        { user_login: "paid-code-reviewer[bot]", state: "CHANGES_REQUESTED" },
+        { id: 999, user_login: "paid-code-reviewer[bot]", state: "COMMENTED" }
+      ])
+
+      dismiss_stale_reviews
+
+      expect(client).not_to have_received(:dismiss_pull_request_review)
+    end
   end
 end
