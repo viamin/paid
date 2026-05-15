@@ -2,12 +2,13 @@
 
 module MarketplaceEntries
   class AttachToRun
-    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled
+    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled, :consent_owner_id
 
-    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
+    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, consent_owner_id: nil)
       @agent_run = agent_run
       @manual_entry_ids = manual_entry_ids
       @auto_attach_enabled = auto_attach_enabled
+      @consent_owner_id = consent_owner_id
     end
 
     def self.call(...)
@@ -15,8 +16,13 @@ module MarketplaceEntries
     end
 
     def call
-      validate_manual_entry_ids!
-      results = Resolver.call(project: agent_run.project, agent_run:, manual_entry_ids:, auto_attach_enabled:)
+      results = Resolver.call(
+        project: agent_run.project,
+        agent_run:,
+        manual_entry_ids:,
+        auto_attach_enabled:,
+        consent_owner_id:
+      )
 
       AgentRunMarketplaceEntry.transaction do
         agent_run.agent_run_marketplace_entries.delete_all
@@ -37,6 +43,8 @@ module MarketplaceEntries
             rendered_payload: rendered
           )
         end
+
+        synchronize_mcp_snapshot!
       end
 
       agent_run.agent_run_marketplace_entries.ordered
@@ -44,24 +52,18 @@ module MarketplaceEntries
 
     private
 
-    def validate_manual_entry_ids!
-      selected_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
-      return if selected_entry_ids.empty?
-
-      unsupported_entries = agent_run.project.account.marketplace_entries
-        .where(id: selected_entry_ids)
-        .where.not(entry_type: MarketplaceEntry::PROMPT_COMPATIBLE_ENTRY_TYPES)
-      return if unsupported_entries.empty?
-
-      agent_run.errors.add(
-        :base,
-        "Only prompt-compatible marketplace entries can be attached to runs in this first pass: #{unsupported_entries.order(:name).pluck(:name).join(', ')}"
-      )
-      raise ActiveRecord::RecordInvalid, agent_run
-    end
-
     def provider_key
       @provider_key ||= agent_run.provider&.provider_key || ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
+    end
+
+    def synchronize_mcp_snapshot!
+      base_snapshot = Array(agent_run.mcp_server_snapshot).reject { |snapshot| snapshot["marketplace_attachment"] == true }
+      attachment_snapshots = RuntimeAttachments.mcp_server_snapshots(agent_run)
+      merged_snapshot = base_snapshot + attachment_snapshots
+      return if merged_snapshot == agent_run.mcp_server_snapshot
+
+      agent_run.update_columns(mcp_server_snapshot: merged_snapshot)
+      agent_run.mcp_server_snapshot = merged_snapshot
     end
   end
 end

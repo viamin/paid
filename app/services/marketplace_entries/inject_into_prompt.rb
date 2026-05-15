@@ -41,7 +41,7 @@ module MarketplaceEntries
           message: "marketplace_entries.non_prompt_strategies_skipped",
           agent_run_id: @agent_run.id,
           strategies: non_prompt_strategies,
-          note: "MCP server, plugin, and provider_config strategies are persisted but not yet wired into the runtime prompt path"
+          note: "Runtime-only marketplace attachments are applied outside the prompt path"
         )
       end
 

@@ -45,7 +45,7 @@ module Projects
       end.compact
       @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
-      @marketplace_entries = current_account.marketplace_entries.active.prompt_compatible.ordered.includes(:current_version)
+      @marketplace_entries = current_account.marketplace_entries.active.ordered.includes(:current_version)
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -645,7 +645,8 @@ module Projects
       MarketplaceEntries::AttachToRun.call(
         agent_run:,
         manual_entry_ids: params[:marketplace_entry_ids],
-        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?
+        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
+        consent_owner_id: marketplace_consent_owner_id
       )
       agent_run
     end
@@ -653,6 +654,10 @@ module Projects
     def marketplace_auto_attach_enabled_for_current_user?
       current_user.settings.marketplace_auto_attach_enabled? ||
         current_account.tenant_setting&.marketplace_auto_attach_required?
+    end
+
+    def marketplace_consent_owner_id
+      @project.created_by_id || current_account.fallback_owner_id
     end
 
     def enqueue_resume_run(pr)

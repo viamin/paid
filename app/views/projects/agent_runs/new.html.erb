@@ -167,6 +167,10 @@
                     <div>
                       <div class="text-sm font-medium text-gray-900"><%= entry.name %> <span class="font-normal text-gray-500">(<%= entry.entry_type.humanize %>)</span></div>
                       <p class="mt-1 text-sm text-gray-600"><%= entry.description.presence || entry.usage_guidance.to_s.truncate(140) %></p>
+                      <% if entry.current_version&.canonical_artifact.is_a?(Hash) %>
+                        <% strategy = entry.current_version.canonical_artifact["attachment_strategy"].presence || (entry.entry_type == "mcp_server" ? "mcp_server" : entry.entry_type.in?(%w[plugin provider_config]) ? "runtime_config" : "prompt_append") %>
+                        <p class="mt-1 text-xs text-gray-500">Delivery: <%= strategy.humanize %></p>
+                      <% end %>
                       <% if entry.tags.any? %>
                         <p class="mt-1 text-xs text-gray-500"><%= entry.tags.join(", ") %></p>
                       <% end %>

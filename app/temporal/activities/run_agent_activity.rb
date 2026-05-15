@@ -1496,10 +1496,14 @@ module Activities
 
     def command_env_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
-      return {} unless provider_entry
+      if provider_entry&.agent_harness_runtime?
+        return marketplace_runtime_env.merge(
+          direct_outbound_execution_plan(provider_entry, prompt).env
+        )
+      end
+      return marketplace_runtime_env unless provider_entry
 
-      env = {}
+      env = marketplace_runtime_env
       env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
       env
@@ -1507,9 +1511,13 @@ module Activities
 
     def command_preparation_for(command_context, prompt)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.agent_harness_runtime?
+      runtime_preparation = marketplace_runtime_preparation
+      return runtime_preparation unless provider_entry&.agent_harness_runtime?
 
-      direct_outbound_execution_plan(provider_entry, prompt).preparation
+      merge_preparations(
+        direct_outbound_execution_plan(provider_entry, prompt).preparation,
+        runtime_preparation
+      )
     end
 
     # Assembles the effective MCP server list from the agent run's
@@ -1561,6 +1569,14 @@ module Activities
       AgentHarness::ExecutionPreparation.new(
         file_writes: base.file_writes + additional.file_writes
       )
+    end
+
+    def marketplace_runtime_env
+      @marketplace_runtime_env ||= MarketplaceEntries::RuntimeAttachments.runtime_env(agent_run)
+    end
+
+    def marketplace_runtime_preparation
+      @marketplace_runtime_preparation ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(agent_run)
     end
 
     # Builds an execution plan for providers that use the agent-harness

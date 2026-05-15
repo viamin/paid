@@ -52,7 +52,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     )
     create(:marketplace_entry_rule, marketplace_entry: entry, mode: "team_default", conditions: {})
 
-    attachments = described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
+    attachments = described_class.call(agent_run:, manual_entry_ids: [ entry.id ], auto_attach_enabled: true)
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
@@ -60,20 +60,23 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments.first.selection_reason).to eq("Matched automatic marketplace rule")
   end
 
-  it "rejects manual selections for marketplace entries that are not prompt-compatible yet" do
+  it "attaches runtime-config marketplace entries and preserves the rendered payload" do
     entry = create(:marketplace_entry, account: project.account, name: "Build plugin", entry_type: "plugin")
     version = create(:marketplace_entry_version,
       marketplace_entry: entry,
       canonical_artifact: {
         "attachment_strategy" => "runtime_config",
-        "content" => "Plugin configuration"
+        "env" => { "PAID_PLUGIN_FLAG" => "enabled" },
+        "files" => [ { "path" => "~/.config/paid/plugin.json", "content" => "{\"enabled\":true}" } ]
       },
       compatibility_constraints: {})
     entry.update!(current_version: version)
 
-    expect {
-      described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
-    }.to raise_error(ActiveRecord::RecordInvalid, /Only prompt-compatible marketplace entries can be attached to runs in this first pass/)
+    attachments = described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
+
+    expect(attachments.size).to eq(1)
+    expect(attachments.first.marketplace_entry).to eq(entry)
+    expect(attachments.first.rendered_payload.dig("payload", "env")).to eq("PAID_PLUGIN_FLAG" => "enabled")
   end
 
   it "does not attach automatic or team default entries without opt-in" do
@@ -140,6 +143,21 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(agent_run.effective_prompt).to include("Always run bundle exec rubocop first.")
   end
 
+  it "merges attached marketplace MCP servers into the run snapshot" do
+    entry = create_mcp_entry
+
+    described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
+
+    expect(agent_run.reload.mcp_server_snapshot).to include(
+      include(
+        "name" => "repo-docs",
+        "install_type" => "npx",
+        "marketplace_attachment" => true,
+        "marketplace_entry_id" => entry.id
+      )
+    )
+  end
+
   def create_manual_entry
     create_entry(
       name: "Manual skill",
@@ -152,5 +170,21 @@ RSpec.describe MarketplaceEntries::AttachToRun do
         }
       }
     )
+  end
+
+  def create_mcp_entry
+    entry = create(:marketplace_entry, account: project.account, name: "Repo MCP", entry_type: "mcp_server")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "attachment_strategy" => "mcp_server",
+        "name" => "repo-docs",
+        "install_type" => "npx",
+        "command" => "npx",
+        "args" => [ "-y", "@acme/repo-docs-mcp" ]
+      },
+      compatibility_constraints: {})
+    entry.update!(current_version: version)
+    entry
   end
 end

@@ -94,7 +94,8 @@ module Activities
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,
         manual_entry_ids: manual_marketplace_entry_ids,
-        auto_attach_enabled: marketplace_auto_attach_enabled?(project, user_settings)
+        auto_attach_enabled: marketplace_auto_attach_enabled?(project, user_settings),
+        consent_owner_id: marketplace_consent_owner_id(project)
       )
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
@@ -253,7 +254,8 @@ module Activities
 
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,
-        auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
+        auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings),
+        consent_owner_id: marketplace_consent_owner_id(agent_run.project)
       )
     end
 
@@ -320,6 +322,10 @@ module Activities
     def marketplace_auto_attach_enabled?(project, user_settings)
       user_settings&.marketplace_auto_attach_enabled? ||
         project.account.tenant_setting&.marketplace_auto_attach_required?
+    end
+
+    def marketplace_consent_owner_id(project)
+      project.created_by_id || project.account.fallback_owner_id
     end
 
     def test_command_for(project)

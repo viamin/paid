@@ -6,13 +6,14 @@ module MarketplaceEntries
   class Resolver
     Result = Struct.new(:entry, :version, :source, :reason, keyword_init: true)
 
-    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled
+    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled, :consent_owner_id
 
-    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
+    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, consent_owner_id: nil)
       @project = project
       @agent_run = agent_run
       @manual_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
       @auto_attach_enabled = auto_attach_enabled
+      @consent_owner_id = consent_owner_id
     end
 
     def self.call(...)
@@ -114,19 +115,35 @@ module MarketplaceEntries
     end
 
     def persisted_opted_in_entry_ids
-      return Set.new unless project.respond_to?(:account_id) && project.account_id.present?
+      return Set.new if effective_consent_owner_id.blank?
 
-      # Agent runs do not currently persist the initiating user, so the durable
-      # opt-in signal we can enforce today is account-level: an entry must have
-      # been manually attached on a prior run in this account before automatic
-      # rules may start attaching it.
-      @persisted_opted_in_entry_ids ||= AgentRunMarketplaceEntry
-        .joins(:agent_run)
-        .where(agent_runs: { account_id: project.account_id })
+      # Agent runs do not currently persist the initiating user, so the
+      # tightest durable consent scope available today is the effective
+      # project owner/fallback owner rather than the whole account.
+      relation = AgentRunMarketplaceEntry
+        .joins(agent_run: :project)
         .where(attachment_source: "manual")
-        .distinct
-        .pluck(:marketplace_entry_id)
-        .to_set
+
+      relation = if fallback_owner_scope?
+        relation.where(projects: { account_id: project.account_id, created_by_id: [ nil, effective_consent_owner_id ] })
+      else
+        relation.where(projects: { created_by_id: effective_consent_owner_id })
+      end
+
+      @persisted_opted_in_entry_ids ||= relation.distinct.pluck(:marketplace_entry_id).to_set
+    end
+
+    def effective_consent_owner_id
+      return consent_owner_id if consent_owner_id.present?
+      return unless project.respond_to?(:created_by_id)
+
+      project.created_by_id || project.account&.fallback_owner_id
+    end
+
+    def fallback_owner_scope?
+      project.respond_to?(:created_by_id) &&
+        project.created_by_id.nil? &&
+        project.account&.fallback_owner_id == effective_consent_owner_id
     end
 
     def compatible_with_run?(version)
