@@ -48,7 +48,7 @@ module Issues
     attr_reader :limit
 
     def each_eligible_issue(&)
-      return ordered_eligible_scope.each(&) if limit.present?
+      return ordered_eligible_scope.limit(limit_query_cap).each(&) if limit.present?
 
       eligible_scope.find_each(&)
     end
@@ -63,6 +63,10 @@ module Issues
 
     def limit_reached?(counts)
       limit.present? && counts[:created] >= limit
+    end
+
+    def limit_query_cap
+      limit * 10
     end
   end
 end

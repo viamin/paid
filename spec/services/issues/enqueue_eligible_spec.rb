@@ -1,24 +1,34 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require "ostruct"
-
-TestProject = Struct.new(:id) do
-  def auto_enhance_enabled? = false
-end
-TestIssue = Struct.new(:id, :github_number)
-TestProvider = Struct.new(:id, :provider_key)
-TestRun = Struct.new(:id, :previously_new_record?) do
-  def issue = nil
-end
 
 RSpec.describe Issues::EnqueueEligible, :no_db do
-  let(:project) { instance_double(TestProject, id: 7, auto_enhance_enabled?: false) }
-  let(:issue) { instance_double(TestIssue, id: 11, github_number: 42) }
+  def project_class
+    @project_class ||= Struct.new(:id) do
+      def auto_enhance_enabled? = false
+    end
+  end
+
+  def issue_class
+    @issue_class ||= Struct.new(:id, :github_number)
+  end
+
+  def provider_class
+    @provider_class ||= Struct.new(:id, :provider_key)
+  end
+
+  def run_class
+    @run_class ||= Struct.new(:id, :previously_new_record?) do
+      attr_accessor :provider, :agent_type, :status, :trigger_type, :auto_pick
+    end
+  end
+
+  let(:project) { instance_double(project_class, id: 7, auto_enhance_enabled?: false) }
+  let(:issue) { instance_double(issue_class, id: 11, github_number: 42) }
   let(:eligible_scope) { instance_double(ActiveRecord::Relation) }
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
   let(:blocking_runs) { instance_double(ActiveRecord::Relation) }
-  let(:provider) { instance_double(TestProvider, id: 5, provider_key: "claude") }
+  let(:provider) { instance_double(provider_class, id: 5, provider_key: "claude") }
   let(:service) { described_class.new(issue, project: project) }
 
   before do
@@ -29,9 +39,12 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(service).to receive_messages(blocking_runs: blocking_runs, resolve_provider: provider)
   end
 
+  def build_run(id:, previously_new_record:)
+    run_class.new(id, previously_new_record)
+  end
+
   it "creates a queued automatic auto-pick run for an eligible issue" do
-    run = OpenStruct.new(id: 99)
-    def run.previously_new_record? = true
+    run = build_run(id: 99, previously_new_record: true)
 
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
       expect(attrs).to eq(project: project, issue: issue, goal: "create_pr")
@@ -57,7 +70,9 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   it "resolves the provider for analyze_issue when auto_enhance is enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     allow(service).to receive(:resolve_provider).with("analyze_issue").and_return(provider)
-    allow(blocking_runs).to receive(:find_or_create_by!).and_return(instance_double(TestRun, id: 99, previously_new_record?: true))
+    allow(blocking_runs).to receive(:find_or_create_by!).and_return(
+      instance_double(run_class, id: 99, previously_new_record?: true)
+    )
     allow(Rails.logger).to receive(:info)
 
     service.call
@@ -86,7 +101,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   it "returns the existing run when a unique-index race occurs" do
-    existing_run = instance_double(TestRun, id: 123, previously_new_record?: false)
+    existing_run = instance_double(run_class, id: 123, previously_new_record?: false)
     allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
@@ -122,8 +137,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   it "scopes queued-run lookup by analyze_issue goal when auto_enhance is enabled" do
-    run = OpenStruct.new(id: 99)
-    def run.previously_new_record? = true
+    run = build_run(id: 99, previously_new_record: true)
 
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
