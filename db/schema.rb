@@ -1268,6 +1268,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_223539) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["marketplace_entry_id", "mode", "position"], name: "index_marketplace_entry_rules_on_entry_mode_position"
+    t.index ["marketplace_entry_id", "mode"], name: "index_marketplace_entry_rules_unique_mode", unique: true
     t.index ["marketplace_entry_id"], name: "index_marketplace_entry_rules_on_marketplace_entry_id"
   end
 

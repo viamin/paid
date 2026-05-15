@@ -8,13 +8,13 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
       build_attachment(
         strategy: "runtime_config",
         payload: {
-          "env" => { "PAID_PLUGIN_FLAG" => "enabled" },
+          "env" => { "MARKETPLACE_PLUGIN_FLAG" => "enabled" },
           "files" => [ { "path" => "~/.config/paid/plugin.json", "content" => "{\"enabled\":true}" } ]
         }
       )
     ])
 
-    expect(described_class.runtime_env(agent_run)).to eq("PAID_PLUGIN_FLAG" => "enabled")
+    expect(described_class.runtime_env(agent_run)).to eq("MARKETPLACE_PLUGIN_FLAG" => "enabled")
 
     preparation = described_class.runtime_preparation(agent_run)
     expect(preparation.file_writes.map(&:path)).to eq([ "~/.config/paid/plugin.json" ])
@@ -53,6 +53,24 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     preparation = described_class.runtime_preparation(agent_run)
 
     expect(preparation.file_writes.map(&:path)).to eq([ "~/.config/paid/plugin.json" ])
+  end
+
+  it "keeps only marketplace-prefixed runtime env keys" do
+    agent_run = build_agent_run([
+      build_attachment(
+        strategy: "runtime_config",
+        payload: {
+          "env" => {
+            "MARKETPLACE_PLUGIN_FLAG" => "enabled",
+            "path" => "/tmp/override",
+            "AWS_SECRET_ACCESS_KEY" => "leak",
+            "PAID_PLUGIN_FLAG" => "legacy"
+          }
+        }
+      )
+    ])
+
+    expect(described_class.runtime_env(agent_run)).to eq("MARKETPLACE_PLUGIN_FLAG" => "enabled")
   end
 
   def build_agent_run(attachments)

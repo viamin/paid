@@ -63,6 +63,8 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
       name: "index_marketplace_entry_versions_unique_version"
     add_index :marketplace_entry_rules, [ :marketplace_entry_id, :mode, :position ],
       name: "index_marketplace_entry_rules_on_entry_mode_position"
+    add_index :marketplace_entry_rules, [ :marketplace_entry_id, :mode ], unique: true,
+      name: "index_marketplace_entry_rules_unique_mode"
     add_index :agent_run_marketplace_entries, [ :agent_run_id, :marketplace_entry_id ], unique: true,
       name: "index_agent_run_marketplace_entries_unique_attachment"
     add_index :agent_run_marketplace_entries, [ :agent_run_id, :attachment_source, :position ],

@@ -66,7 +66,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
       marketplace_entry: entry,
       canonical_artifact: {
         "attachment_strategy" => "runtime_config",
-        "env" => { "PAID_PLUGIN_FLAG" => "enabled" },
+        "env" => { "MARKETPLACE_PLUGIN_FLAG" => "enabled" },
         "files" => [ { "path" => "~/.config/paid/plugin.json", "content" => "{\"enabled\":true}" } ]
       },
       compatibility_constraints: {})
@@ -76,7 +76,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
-    expect(attachments.first.rendered_payload.dig("payload", "env")).to eq("PAID_PLUGIN_FLAG" => "enabled")
+    expect(attachments.first.rendered_payload.dig("payload", "env")).to eq("MARKETPLACE_PLUGIN_FLAG" => "enabled")
   end
 
   it "does not attach automatic or team default entries when automatic attachment is disabled" do

@@ -1,7 +1,20 @@
 # frozen_string_literal: true
 
+require "set"
+
 module MarketplaceEntries
   class RuntimeAttachments
+    ALLOWED_ENV_KEY_PATTERN = /\AMARKETPLACE_[A-Z0-9_]+\z/.freeze
+    RESTRICTED_ENV_KEYS = %w[
+      PATH
+      LD_PRELOAD
+      LD_LIBRARY_PATH
+      HOME
+      SHELL
+      USER
+      LOGNAME
+    ].to_set.freeze
+
     def initialize(agent_run)
       @agent_run = agent_run
     end
@@ -73,9 +86,17 @@ module MarketplaceEntries
 
       env_hash.each_with_object({}) do |(key, value), env|
         next if key.blank? || value.nil?
+        normalized_key = key.to_s.upcase
+        next unless allowed_env_key?(normalized_key)
 
-        env[key.to_s] = value.to_s
+        env[normalized_key] = value.to_s
       end
+    end
+
+    def allowed_env_key?(key)
+      return false if RESTRICTED_ENV_KEYS.include?(key)
+
+      key.match?(ALLOWED_ENV_KEY_PATTERN)
     end
 
     def extract_file_writes(payload)

@@ -36,6 +36,7 @@ RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
     expect(connection.column_exists?(:marketplace_entries, :current_version_id)).to be(true)
     expect(connection.foreign_key_exists?(:marketplace_entries, :marketplace_entry_versions, column: :current_version_id)).to be(true)
     expect(connection.index_exists?(:marketplace_entries, [ :account_id, :entry_type, :status ])).to be(true)
+    expect(connection.index_exists?(:marketplace_entry_rules, [ :marketplace_entry_id, :mode ], unique: true)).to be(true)
     expect(connection.index_exists?(:agent_run_marketplace_entries, [ :agent_run_id, :marketplace_entry_id ], unique: true)).to be(true)
   end
 

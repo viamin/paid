@@ -70,7 +70,8 @@ module MarketplaceEntries
     def attach_manual_entries!(selections)
       return if effective_manual_entry_ids.empty?
 
-      compatible_entries.select { |entry| effective_manual_entry_ids.include?(entry.id) }.each do |entry|
+      compatible_entries.each do |entry|
+        next unless effective_manual_entry_ids.include?(entry.id)
         next if selections.key?(entry.id)
 
         selections[entry.id] = Result.new(
@@ -92,6 +93,7 @@ module MarketplaceEntries
 
     def candidate_entries
       @candidate_entries ||= MarketplaceEntry
+        .joins(:current_version)
         .includes(:current_version, :marketplace_entry_rules)
         .where(account: project.account, status: "active")
         .where.not(current_version_id: nil)
@@ -102,11 +104,47 @@ module MarketplaceEntries
     end
 
     def compatible_entries
-      @compatible_entries ||= candidate_entries.select { |entry| compatible_with_run?(entry.current_version) }
+      @compatible_entries ||= prefiltered_candidate_entries.select { |entry| compatible_with_run?(entry.current_version) }
     end
 
     def automatic_compatible_entries
       @automatic_compatible_entries ||= compatible_entries
+    end
+
+    def prefiltered_candidate_entries
+      entries = candidate_entries
+      return entries unless entries.is_a?(ActiveRecord::Relation)
+
+      relation = filter_relation_by_constraint(entries, "provider_keys", provider_key)
+      relation = filter_relation_by_constraint(relation, "agent_types", agent_run.agent_type)
+      relation = filter_relation_by_constraint(relation, "goals", agent_run.goal)
+      relation = filter_relation_by_constraint(relation, "project_ids", project.id)
+      filter_relation_by_constraint(relation, "repository_full_names", project.full_name)
+    end
+
+    def filter_relation_by_constraint(relation, constraint_key, actual_value)
+      return relation if actual_value.blank?
+
+      json_path = "marketplace_entry_versions.compatibility_constraints -> '#{constraint_key}'"
+      candidate_values = jsonb_candidate_values(actual_value)
+      predicates = candidate_values.map.with_index do |_value, index|
+        "#{json_path} @> :value_#{index}::jsonb"
+      end
+
+      relation.where(
+        <<~SQL.squish,
+          #{json_path} IS NULL
+          OR #{json_path} = '[]'::jsonb
+          OR (#{predicates.join(' OR ')})
+        SQL
+        **candidate_values.each_with_index.to_h { |value, index| [ :"value_#{index}", [ value ].to_json ] }
+      )
+    end
+
+    def jsonb_candidate_values(actual_value)
+      values = [ actual_value.to_s ]
+      values << actual_value if actual_value.is_a?(Numeric)
+      values.uniq
     end
 
     def compatible_with_run?(version)

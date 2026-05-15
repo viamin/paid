@@ -5,7 +5,7 @@ class MarketplaceEntryRule < ApplicationRecord
 
   belongs_to :marketplace_entry
 
-  validates :mode, presence: true, inclusion: { in: MODES }
+  validates :mode, presence: true, inclusion: { in: MODES }, uniqueness: { scope: :marketplace_entry_id }
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :conditions_is_object
 
