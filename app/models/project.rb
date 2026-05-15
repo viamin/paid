@@ -128,6 +128,7 @@ class Project < ApplicationRecord
   ].freeze
 
   include TenantScoped
+  include AutoPickSkipLabels
 
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -180,7 +181,6 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
-  before_validation :normalize_auto_pick_skip_labels
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -273,18 +273,6 @@ class Project < ApplicationRecord
     overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
       .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
     DEFAULT_PRIORITY_LABELS.merge(overrides)
-  end
-
-  def auto_pick_skip_labels_configured?
-    !auto_pick_skip_labels.nil?
-  end
-
-  def auto_pick_skip_labels_csv
-    AutoPickSkipLabels.to_csv(auto_pick_skip_labels)
-  end
-
-  def auto_pick_skip_labels_csv=(value)
-    self.auto_pick_skip_labels = AutoPickSkipLabels.parse_csv(value)
   end
 
   def effective_auto_pick_skip_labels
@@ -853,10 +841,6 @@ class Project < ApplicationRecord
   def normalized_screenshot_driver(value)
     value = value.to_s
     SCREENSHOT_DRIVERS.key?(value) ? value : DEFAULT_SCREENSHOT_SETTINGS["driver"]
-  end
-
-  def normalize_auto_pick_skip_labels
-    self.auto_pick_skip_labels = AutoPickSkipLabels.normalize(auto_pick_skip_labels)
   end
 
   def normalize_string_array(value)
