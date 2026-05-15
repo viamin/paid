@@ -99,7 +99,8 @@
         <% end %>
       </div>
 
-      <%= form_with model: @project, url: project_path(@project), method: :patch, class: "mt-6" do |form| %>
+      <%= form_with model: @project, url: project_path(@project), method: :patch, class: "mt-6",
+        data: { controller: "project-settings-form", action: "keydown->project-settings-form#submitOnEnter" } do |form| %>
         <% if @project.errors.any? %>
           <div class="mb-6 rounded-md bg-red-50 p-4">
             <div class="flex">
@@ -693,7 +694,9 @@
 
         <div class="mt-6 flex items-center justify-end gap-x-4">
           <%= link_to "Cancel", project_path(@project), class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>
-          <%= form.submit "Save Changes", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
+          <%= form.submit "Save Changes",
+            class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer",
+            data: { project_settings_form_target: "saveButton" } %>
         </div>
       <% end %>
     </div>
