@@ -241,14 +241,58 @@ RSpec.describe "Dashboard" do
       end
 
       it "shows the final runner label for legacy fallback runs in the active runs table" do
-        initial_provider = create(:runner, user: user, runner_key: "codex")
-        run = create(:agent_run, :running, project: project, runner: initial_provider, final_runner: "cursor")
+        initial_runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :running, project: project, runner: initial_runner, final_runner: "cursor")
 
         get dashboard_path
 
         row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
         expect(row).to be_present
         expect(row.text).to include(Runner.display_name_for("cursor"))
+      end
+
+      it "shows review context tooltips in the active runs table" do
+        source_pull_request = create(:issue, :pull_request, project: project, github_number: 87,
+          title: "Tighten dashboard review context tooltips")
+        run = create(:agent_run, :running, :review_goal, project: project, issue: nil,
+          source_pull_request_number: source_pull_request.github_number)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        table = document.at_css("#active-runs table")
+        headers = table.css("thead th").map { |header| header.text.squish }
+        row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        context_cell = row.css("td")[headers.index("Context")]
+        context_tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        context_tooltip = context_tooltip_wrapper&.at_css('span[role="tooltip"]')
+
+        expect(row).to be_present
+        expect(context_cell.text).to include("PR ##{run.source_pull_request_number}")
+        expect(context_tooltip_wrapper).to be_present
+        expect(context_tooltip).to be_present
+        expect(context_tooltip.text).to include(source_pull_request.title)
+      end
+
+      it "does not add redundant goal tooltips in the active runs table" do
+        run = create(:agent_run, :running, :review_goal, project: project, issue: nil,
+          source_pull_request_number: 87)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        table = document.at_css("#active-runs table")
+        headers = table.css("thead th").map { |header| header.text.squish }
+        row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        goal_cell = row.css("td")[headers.index("Goal")]
+        goal_label = goal_cell.at_css("span.block.truncate")
+
+        expect(row).to be_present
+        expect(goal_cell.text).to include("Code Review")
+        expect(goal_label).to be_present
+        expect(goal_label["title"]).to be_nil
+        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
       it "renders unsupported runner identifiers in the active runs table without error" do
