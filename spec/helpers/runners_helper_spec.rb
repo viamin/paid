@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe RunnersHelper do
+RSpec.describe RunnersHelper, :no_db do
   describe "#runner_auth_instruction_blocks" do
     it "returns explicit copy for supported runners that define it" do
       allow(RunnerSupport).to receive(:supported_runner_keys).and_return(%w[claude codex])

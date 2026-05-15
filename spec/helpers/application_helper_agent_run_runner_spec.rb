@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationHelper do
+RSpec.describe ApplicationHelper, :db do
   describe "#agent_run_runner_display" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }

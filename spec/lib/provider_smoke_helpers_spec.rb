@@ -50,7 +50,7 @@ RSpec.describe ProviderSmokeHelpers do
     end
   end
 
-  describe ".build_direct_outbound_provider!" do
+  describe ".build_direct_outbound_provider!", :db do
     let(:account) { create(:account, slug: "provider-smoke-helpers-account") }
     let(:user) { create(:user, account: account, email: "provider-smoke-helpers@example.com") }
     let(:scenario) { described_class.scenario_for("opencode-openrouter") }
