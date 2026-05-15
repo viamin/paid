@@ -4,7 +4,7 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Providers::HarnessExecutionPlan do
-  describe ".for_provider_key" do
+  describe ".for_provider_key", :no_db do
     let(:copilot_plan_payload) do
       {
         command: %w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping],
@@ -41,6 +41,14 @@ RSpec.describe Providers::HarnessExecutionPlan do
   end
 
   describe ".call" do
+    let(:provider_double_class) do
+      Class.new do
+        def provider_key; end
+
+        def agent_harness_provider_runtime; end
+      end
+    end
+
     it "builds the OpenCode execution contract through agent-harness" do
       user = create(
         :user,
@@ -91,8 +99,8 @@ RSpec.describe Providers::HarnessExecutionPlan do
       expect(parsed).not_to have_key("baseURL")
     end
 
-    it "constructs the harness provider with external sandboxing enabled" do
-      provider = instance_double(Provider, provider_key: "claude", agent_harness_provider_runtime: nil)
+    it "constructs the harness provider with external sandboxing enabled", :no_db do
+      provider = instance_double(provider_double_class, provider_key: "claude", agent_harness_provider_runtime: nil)
       harness_provider = instance_double(
         AgentHarness::Providers::Anthropic,
         plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
