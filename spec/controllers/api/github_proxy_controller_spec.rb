@@ -62,6 +62,20 @@ RSpec.describe Api::GithubProxyController, :no_db, type: :controller do
       )
     end
 
+    it "matches bot logins from raw GitHub user payloads" do
+      allow(client).to receive(:pull_request_reviews).with("testowner/testrepo", 10).and_return([
+        { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED" },
+        { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED" }
+      ])
+
+      dismiss_stale_reviews
+
+      expect(client).to have_received(:dismiss_pull_request_review).with(
+        "testowner/testrepo", 10, 101,
+        message: Api::GithubProxyController::STALE_REVIEW_DISMISSAL_MESSAGE
+      ).once
+    end
+
     it "prefers submitted_at over review id when deciding staleness" do
       timed_review = {
         "id" => 500,

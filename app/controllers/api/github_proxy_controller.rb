@@ -313,7 +313,12 @@ module Api
     end
 
     def review_attribute(review, key)
-      review[key] || review[key.to_s]
+      direct_value = review[key] || review[key.to_s]
+      return direct_value if direct_value.present?
+      return unless key.to_sym == :user_login
+
+      user = review[:user] || review["user"]
+      user&.dig(:login) || user&.dig("login")
     end
 
     def stale_review?(review, new_review)
