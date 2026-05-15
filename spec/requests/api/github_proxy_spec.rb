@@ -208,7 +208,10 @@ RSpec.describe "Api::GithubProxy" do
 
     def stub_review_list_response(reviews = [])
       stub_request(:get, target_url)
-        .with(headers: hash_including("Authorization" => "token ghs_review_bot_token"))
+        .with(
+          headers: hash_including("Authorization" => "token ghs_review_bot_token"),
+          query: hash_including("per_page" => "100")
+        )
         .to_return(
           status: 200,
           body: reviews.to_json,
