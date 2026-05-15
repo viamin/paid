@@ -28,7 +28,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
       conditions: { "goals" => [ "create_pr" ] },
       content: "Automatic instructions"
     )
-    create_entry(
+    team_default = create_entry(
       name: "Team default skill",
       rule_mode: "team_default",
       conditions: {},
@@ -98,8 +98,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments).to be_empty
   end
 
-  it "attaches automatic entries and still skips team-default entries unless the account requires them" do
-    automatic = create_entry(
+  it "skips automatic entries until the user selects them and still skips team-default entries unless the account requires them" do
+    create_entry(
       name: "Automatic skill",
       rule_mode: "automatic",
       conditions: { "goals" => [ "create_pr" ] },
@@ -114,8 +114,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, auto_attach_enabled: true)
 
-    expect(attachments.map(&:marketplace_entry)).to eq([ automatic ])
-    expect(attachments.map(&:attachment_source)).to eq([ "automatic" ])
+    expect(attachments).to be_empty
   end
 
   it "attaches account-required team-default entries without manual selection" do

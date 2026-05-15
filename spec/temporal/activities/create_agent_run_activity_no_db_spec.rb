@@ -12,7 +12,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
     end
     let(:attachments_class) do
       Class.new do
-        def exists?; end
+        def exists?(*); end
       end
     end
     let(:user_settings) { instance_double(user_settings_class) }
@@ -27,7 +27,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
       it "reuses the stored snapshots instead of re-resolving marketplace entries" do
         agent_run = build_agent_run(attachments_exist: true)
 
-        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:)
+        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, account_auto_attach_required: false)
 
         expect(MarketplaceEntries::AttachToRun).not_to have_received(:call)
       end
@@ -37,7 +37,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
       it "resolves marketplace entries once during resume" do
         agent_run = build_agent_run(attachments_exist: false)
 
-        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:)
+        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, account_auto_attach_required: false)
 
         expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
           agent_run: agent_run,
@@ -52,7 +52,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
       it "re-renders the stored marketplace snapshots for the resolved provider" do
         agent_run = build_agent_run(attachments_exist: true)
 
-        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, force: true)
+        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, force: true, account_auto_attach_required: false)
 
         expect(MarketplaceEntries::AttachToRun).not_to have_received(:call)
         expect(MarketplaceEntries::RerenderForRun).to have_received(:call).with(agent_run: agent_run)
@@ -61,8 +61,9 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
 
     def build_agent_run(attachments_exist:)
       project = Struct.new(:account).new(:account)
-      attachments = instance_double(attachments_class, exists?: attachments_exist)
-      allow(activity).to receive(:marketplace_auto_attach_required?).with(project).and_return(false)
+      attachments = instance_double(attachments_class)
+      allow(attachments).to receive(:exists?).with(no_args).and_return(attachments_exist)
+      allow(attachments).to receive(:exists?).with(attachment_source: "team_default").and_return(attachments_exist)
 
       Struct.new(:agent_run_marketplace_entries, :project).new(attachments, project)
     end
@@ -95,6 +96,35 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
           error: "render failed"
         )
       )
+    end
+
+    it "re-raises marketplace attachment errors when the account requires marketplace defaults" do
+      allow(activity).to receive(:logger).and_return(logger)
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+      expect {
+        activity.send(
+          :attach_marketplace_entries,
+          agent_run: agent_run,
+          auto_attach_enabled: true,
+          account_auto_attach_required: true
+        )
+      }.to raise_error(StandardError, "render failed")
+    end
+  end
+
+  describe "#rerender_marketplace_entries" do
+    let(:activity) { described_class.new }
+    let(:agent_run) { Struct.new(:id).new(42) }
+    let(:logger) { instance_double(Logger, warn: nil) }
+
+    it "re-raises rerender errors when required marketplace attachments must be preserved" do
+      allow(activity).to receive(:logger).and_return(logger)
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call).and_raise(StandardError, "rerender failed")
+
+      expect {
+        activity.send(:rerender_marketplace_entries, agent_run: agent_run, required: true)
+      }.to raise_error(StandardError, "rerender failed")
     end
   end
 end

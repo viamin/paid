@@ -66,7 +66,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
-    it "applies automatic marketplace entries for opted-in users" do
+    it "does not apply automatic marketplace entries for opted-in users until that entry is explicitly selected" do
       project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
       entry = create(:marketplace_entry, account: project.account, name: "Automatic skill")
       version = create(:marketplace_entry_version,
@@ -81,8 +81,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.agent_run_marketplace_entries.pluck(:marketplace_entry_id)).to eq([ entry.id ])
-      expect(agent_run.agent_run_marketplace_entries.pluck(:attachment_source)).to eq([ "automatic" ])
+      expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
     it "logs and continues when marketplace attachment fails during creation" do
@@ -336,6 +335,18 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "provider" => "codex",
         "payload" => include("content" => "Codex instructions")
       )
+    end
+
+    it "fails closed when required marketplace attachments cannot be re-rendered during a provider-switch resume" do
+      project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+      queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
+      attach_required_provider_switching_entry_to(queued_run)
+      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call).and_raise(StandardError, "rerender failed")
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(StandardError, "rerender failed")
     end
 
     it "recomputes the configuration bundle on resume when model selection metadata becomes available" do
@@ -944,7 +955,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(queued_run.reload.agent_run_marketplace_entries.pluck(:marketplace_entry_id)).to eq([ entry.id ])
       end
 
-      it "logs and continues when marketplace attachment fails during resume" do
+      it "logs and continues when marketplace attachment fails during resume when the account does not require marketplace defaults" do
         queued_run = create(:agent_run, :queued, project: project, issue: issue)
         allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "resume failed")
         allow(activity).to receive(:logger).and_return(Rails.logger)
@@ -962,7 +973,42 @@ RSpec.describe Activities::CreateAgentRunActivity do
           )
         )
       end
+
+      it "fails when required marketplace attachment creation fails during resume" do
+        project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "resume failed")
+
+        expect {
+          activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+        }.to raise_error(StandardError, "resume failed")
+      end
     end
+  end
+
+  def attach_required_provider_switching_entry_to(agent_run)
+    entry = create(:marketplace_entry, account: project.account, name: "Required review skill")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "attachment_strategy" => "prompt_append",
+        "content" => "Required instructions"
+      },
+      renderers: {
+        "claude" => {
+          "attachment_strategy" => "prompt_append",
+          "provider_format" => "claude_skill_v1",
+          "content" => "Claude instructions"
+        },
+        "codex" => {
+          "attachment_strategy" => "prompt_append",
+          "provider_format" => "codex_skill_v1",
+          "content" => "Codex instructions"
+        }
+      })
+    entry.update!(current_version: version)
+    create(:marketplace_entry_rule, marketplace_entry: entry, mode: "team_default", conditions: {})
+    MarketplaceEntries::AttachToRun.call(agent_run:, account_auto_attach_required: true)
   end
 
   def expect_requested_provider_decision(decision:, provider_id:, provider_key:, agent_type:)

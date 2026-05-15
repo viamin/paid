@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe MarketplaceEntries::Resolver do
-  it "attaches automatic entries when automatic attachment is enabled" do
+  it "does not attach automatic entries unless the user selected that entry" do
     project = create(:project)
     entry = create_automatic_entry_for(project.account)
     agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
@@ -14,8 +14,7 @@ RSpec.describe MarketplaceEntries::Resolver do
       auto_attach_enabled: true
     )
 
-    expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "automatic" ])
+    expect(results).to be_empty
   end
 
   it "preserves automatic precedence when the user also explicitly selects that entry" do

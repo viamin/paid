@@ -31,7 +31,7 @@ module MarketplaceEntries
     def attach_automatic_entries!(selections)
       return unless auto_attach_enabled?
 
-      compatible_entries.each do |entry|
+      selected_compatible_entries.each do |entry|
         next if selections.key?(entry.id)
 
         matching_rule = ordered_enabled_rules(entry).find do |rule|

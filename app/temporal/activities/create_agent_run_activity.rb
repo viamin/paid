@@ -223,7 +223,12 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: provider_changed)
+      attach_marketplace_entries_for_resume(
+        agent_run:,
+        user_settings:,
+        force: provider_changed,
+        account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
+      )
       assign_configuration_bundle(agent_run)
 
       logger.info(
@@ -249,27 +254,23 @@ module Activities
       ScopeAnalysis::Analyze.call(text: issue.body)
     end
 
-    def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false)
+    def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false, account_auto_attach_required: false)
       attachments = agent_run.agent_run_marketplace_entries
-      return rerender_marketplace_entries(agent_run:) if attachments.exists? && force
+      return rerender_marketplace_entries(agent_run:, required: required_marketplace_rerender?(attachments, account_auto_attach_required)) if attachments.exists? && force
       return if attachments.exists?
 
       attach_marketplace_entries(
         agent_run: agent_run,
         auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
-        account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
+        account_auto_attach_required: account_auto_attach_required
       )
     end
 
-    def rerender_marketplace_entries(agent_run:)
+    def rerender_marketplace_entries(agent_run:, required: false)
       MarketplaceEntries::RerenderForRun.call(agent_run: agent_run)
     rescue => e
-      logger.warn(
-        message: "agent_execution.marketplace_attachment_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
+      log_marketplace_attachment_failure(agent_run:, error: e)
+      raise if required
     end
 
     def attach_marketplace_entries(agent_run:, auto_attach_enabled:, manual_entry_ids: nil, account_auto_attach_required: false)
@@ -280,11 +281,22 @@ module Activities
         account_auto_attach_required: account_auto_attach_required
       )
     rescue => e
+      log_marketplace_attachment_failure(agent_run:, error: e)
+      raise if account_auto_attach_required
+    end
+
+    def required_marketplace_rerender?(attachments, account_auto_attach_required)
+      return false unless account_auto_attach_required
+
+      attachments.exists?(attachment_source: "team_default")
+    end
+
+    def log_marketplace_attachment_failure(agent_run:, error:)
       logger.warn(
         message: "agent_execution.marketplace_attachment_failed",
         agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
+        error_class: error.class.name,
+        error: error.message
       )
     end
 
