@@ -47,7 +47,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     run = build_run(id: 99, previously_new_record: true)
 
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue)
+      expect(attrs).to eq(project: project, issue: issue, goal: "create_pr")
       block.call(run)
       run
     end
@@ -56,7 +56,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     result = service.call
 
     expect(result).to eq(run)
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
+    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue, goal: "create_pr")
     expect(run.provider).to eq(provider)
     expect(run.agent_type).to eq("claude_code")
     expect(run.status).to eq("queued")
@@ -106,7 +106,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
+    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue, goal: "create_pr").and_return(existing_run)
     allow(Rails.logger).to receive(:info)
 
     result = service.call
@@ -142,7 +142,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue)
+      expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")
       block.call(run)
       run
     end
@@ -150,18 +150,18 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     service.call
 
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
+    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue, goal: "analyze_issue")
     expect(run.goal).to eq("analyze_issue")
   end
 
-  it "returns the existing blocking run after a unique-index race even when goals differ" do
+  it "looks up the existing blocking run by goal after a unique-index race" do
     existing_run = instance_double(run_class, id: 123, previously_new_record?: false)
 
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
+    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue, goal: "analyze_issue").and_return(existing_run)
 
     result = service.call
 
