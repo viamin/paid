@@ -16,6 +16,10 @@ RSpec.describe OperatorConsole::RequestContext, :no_db, type: :controller do
       head :ok
     end
 
+    def explode
+      raise "boom"
+    end
+
     def current_user
       Struct.new(:id, :email).new(7, "operator@example.com")
     end
@@ -35,16 +39,19 @@ RSpec.describe OperatorConsole::RequestContext, :no_db, type: :controller do
       system_access_state[:enabled] = true
       Current.account = nil
     end
-    allow(TenantContext).to receive(:clear!) do
-      system_access_state[:enabled] = false
-      Current.account = nil
+    allow(TenantContext).to receive(:restore!) do |account:, bypass:|
+      Current.account = account
+      system_access_state[:enabled] = bypass
     end
     allow(TenantContext).to receive(:bypass_enabled?) { system_access_state[:enabled] }
 
-    routes.draw { get "index" => "anonymous#index" }
+    routes.draw do
+      get "index" => "anonymous#index"
+      get "explode" => "anonymous#explode"
+    end
   end
 
-  it "applies system access before downstream callbacks and clears request state afterward" do
+  it "applies system access before downstream callbacks and restores request state afterward" do
     get :index
 
     expect(response).to have_http_status(:ok)
@@ -53,5 +60,15 @@ RSpec.describe OperatorConsole::RequestContext, :no_db, type: :controller do
     expect(TenantContext.bypass_enabled?).to be(false)
     expect(Current.user).to be_nil
     expect(Current.account).to be_nil
+    expect(TenantContext).to have_received(:restore!).with(account: nil, bypass: false)
+  end
+
+  it "restores request state when the action raises" do
+    expect { get :explode }.to raise_error(RuntimeError, "boom")
+
+    expect(Current.user).to be_nil
+    expect(Current.account).to be_nil
+    expect(TenantContext.bypass_enabled?).to be(false)
+    expect(TenantContext).to have_received(:restore!).with(account: nil, bypass: false)
   end
 end
