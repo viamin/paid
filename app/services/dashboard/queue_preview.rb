@@ -60,6 +60,7 @@ module Dashboard
         associations: [ { issue: :project }, :project ]
       ).call
       AgentRun.preload_source_pull_requests(runs)
+      AgentRun.preload_created_issue_records(runs)
     end
 
     def cache_key
