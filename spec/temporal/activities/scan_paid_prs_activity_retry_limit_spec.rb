@@ -292,4 +292,40 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(count).to eq(1)
     end
   end
+
+  describe "#pr_progress_state", :no_db do
+    before do
+      stub_const("RetryLimitCacheIssueStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { Object.new }
+    let(:issue) { instance_double(RetryLimitCacheIssueStub, id: 123) }
+    let(:stale_state) { instance_double(PullRequests::ProgressState::Result) }
+    let(:head_aware_state) { instance_double(PullRequests::ProgressState::Result) }
+
+    it "promotes the head-aware state into the default cache entry" do
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+        .and_return(stale_state)
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: kind_of(Time))
+        .and_return(head_aware_state)
+
+      expect(activity.send(:pr_progress_state, project, issue)).to eq(stale_state)
+
+      fetched_at = Time.zone.parse("2026-05-15 12:00:00")
+      expect(
+        activity.send(
+          :pr_progress_state,
+          project,
+          issue,
+          current_head_sha: "abc123",
+          current_head_updated_at: fetched_at
+        )
+      ).to eq(head_aware_state)
+
+      expect(activity.send(:pr_progress_state, project, issue)).to eq(head_aware_state)
+    end
+  end
 end

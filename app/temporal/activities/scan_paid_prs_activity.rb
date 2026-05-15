@@ -1009,7 +1009,10 @@ module Activities
         current_head_sha:,
         current_head_updated_at:
       )
-      cache[:default] ||= cache[cache_key] if current_head_sha.present?
+      # Once we have live PR head data, promote that result to the default
+      # cache entry so later callers in the same scan don't reuse a stale
+      # pre-fetch snapshot.
+      cache[:default] = cache[cache_key] if current_head_sha.present?
       cache[cache_key]
     end
 
