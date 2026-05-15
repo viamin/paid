@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :agent_run_marketplace_entry do
     agent_run
-    marketplace_entry
+    marketplace_entry { association :marketplace_entry, account: agent_run.project.account }
     marketplace_entry_version { association :marketplace_entry_version, marketplace_entry: marketplace_entry }
     attachment_source { "manual" }
     position { 0 }
