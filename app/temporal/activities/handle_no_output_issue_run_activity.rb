@@ -30,6 +30,7 @@ module Activities
       /rate.?limit/i,
       /too many requests/i,
       /\b429\b/,
+      /free model usage limit reached/i,
       /add more credits/i,
       /not enough credits/i,
       /purchase (?:more )?credits/i,

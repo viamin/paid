@@ -37,6 +37,7 @@ module Activities
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -64,6 +65,7 @@ module Activities
       /\bstatus[:\s]*429\b/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
@@ -813,6 +815,11 @@ module Activities
             "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
         end
 
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if provider_model_not_found_error?(sanitized_output)
           raise ProviderExecutionError,
             "Provider model not found error from #{provider}: #{sanitized_output.truncate(500)}"
@@ -936,6 +943,12 @@ module Activities
           )
         end
 
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if provider_model_not_found_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
@@ -1033,6 +1046,7 @@ module Activities
     end
 
     QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
+    SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH = 500
 
     # Detects provider-level credit/quota exhaustion errors surfaced as
     # agent output. Used in the successful-exit-code path to catch cases
@@ -1050,6 +1064,18 @@ module Activities
 
       ProviderSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    # Detects short standalone rate-limit responses that some providers surface
+    # with exit code 0. We intentionally use the stricter timeout patterns here
+    # instead of the broader execution-failure matcher so substantial agent
+    # output that merely discusses rate limits is not reclassified as a
+    # provider failure.
+    def successful_exit_rate_limit_error?(output)
+      return false if output.blank?
+      return false if output.length > SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH
+
+      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000

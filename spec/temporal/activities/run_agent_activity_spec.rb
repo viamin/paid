@@ -2953,6 +2953,21 @@ expect(container_service).to receive(:execute).with(
         expect(result[:success]).to be true
       end
 
+      it "detects a short standalone rate limit error returned with exit code 0" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "Free model usage limit reached. Please try again later.", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
       it "detects ProviderModelNotFoundError returned with exit code 0" do
         model_not_found_stderr = <<~ERR
           Error: Model not found: glm-5.1/.
@@ -3051,6 +3066,22 @@ expect(container_service).to receive(:execute).with(
           error: "exit 1", stdout: "", stderr: "You have exhausted your capacity on this model.", exit_code: 1
         )
         allow(container_service).to receive(:execute).and_return(gemini_rate_limit)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
+      it "classifies kilocode glm free model usage limit wording as a rate limit" do
+        glm_rate_limit = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", stderr: "Free model usage limit reached. Please try again later.", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(glm_rate_limit)
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
