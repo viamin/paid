@@ -103,10 +103,7 @@ module Automation
 
       def escalation_candidate?(signals)
         signals.operational_failure_breaker ||
-          signals.draft_review_limit_reached ||
-          signals.consecutive_draft_failures_breaker ||
-          signals.review_goal_retry_limit_requires_escalation ||
-          signals.followup_limit_reached
+          signals.failure_streak_limit_reached
       end
 
       def escalation_service_result(signals, service_result)

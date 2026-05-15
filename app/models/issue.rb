@@ -181,6 +181,30 @@ class Issue < ApplicationRecord
     draft_review_count + pr_followup_count
   end
 
+  def pr_progress_state
+    PullRequests::ProgressState.call(project:, issue: self)
+  end
+
+  def consecutive_unsuccessful_pr_runs
+    pr_progress_state.consecutive_unsuccessful_automatic_runs
+  end
+
+  def last_pr_meaningful_progress_at
+    pr_progress_state.last_meaningful_progress_at
+  end
+
+  def pr_escalation_worthy?(limit:)
+    pr_progress_state.escalation_worthy?(limit:)
+  end
+
+  def pr_retryable?(limit:)
+    pr_progress_state.retryable?(limit:)
+  end
+
+  def pr_stuck?(limit:, stale_after:)
+    pr_progress_state.stuck?(limit:, stale_after:)
+  end
+
   def associated_pull_request
     if sub_issues.loaded?
       open_prs = sub_issues.select { |si| si.is_pull_request? && si.github_state == "open" }

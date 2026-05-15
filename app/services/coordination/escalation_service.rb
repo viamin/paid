@@ -150,13 +150,11 @@ module Coordination
     end
 
     def defer_signal?
-      signals["active_run_exists"] == true || signals["followup_limit_reached"] == true
+      signals["active_run_exists"] == true
     end
 
     def defer_reason
-      return "active_run_in_progress" if signals["active_run_exists"] == true
-
-      "followup_limit_reached"
+      "active_run_in_progress" if signals["active_run_exists"] == true
     end
 
     def predict_human_value(policy, prediction_signals)
@@ -196,15 +194,15 @@ module Coordination
     end
 
     def normalized_retry_pressure
-      normalize_counter(signals["review_goal_retry_count"], 3)
+      normalize_counter(unified_failure_count, 3)
     end
 
     def normalized_draft_pressure
-      normalize_counter(signals["draft_review_count"], 3)
+      normalize_counter(unified_failure_count, 3)
     end
 
     def normalized_followup_pressure
-      normalize_counter(signals["pr_followup_count"], 3)
+      normalize_counter(unified_failure_count, 3)
     end
 
     def normalized_blocking_trigger_pressure
@@ -216,6 +214,12 @@ module Coordination
       (numeric.to_f / ceiling).clamp(0.0, 1.0)
     rescue ArgumentError, TypeError
       0.0
+    end
+
+    def unified_failure_count
+      signals["consecutive_unsuccessful_automatic_runs"].presence ||
+        [ signals["review_goal_retry_count"], signals["draft_review_count"], signals["pr_followup_count"] ].compact.max ||
+        0
     end
 
     def trigger_types

@@ -154,9 +154,7 @@ module OrchestrationStrategies
           "human_value_threshold" => 0.65,
           "explicit_triggers" => %w[
             operational_failure_breaker
-            review_goal_retry_limit_requires_escalation
-            draft_review_limit_reached
-            consecutive_draft_failures_breaker
+            failure_streak_limit_reached
           ],
           "auto_resolve_trigger_types" => %w[
             owner_approved
