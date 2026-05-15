@@ -20,8 +20,17 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
     end
   end
 
-  let(:project_class) do
-    Class.new do
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
+  before do
+    stub_const("Project", Class.new do
       attr_reader :id
 
       def initialize(id)
@@ -30,21 +39,11 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
 
       def self.active; end
       def self.where(*); end
-    end
-  end
-
-  around do |example|
-    original_cache = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    Rails.cache.clear
-    stub_const("Project", project_class)
-    example.run
-  ensure
-    Rails.cache = original_cache
+    end)
   end
 
   it "bulk seeds already-enabled projects once" do
-    project = instance_double(Project, id: 101)
+    project = Project.new(101)
 
     stub_projects(project)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
@@ -60,7 +59,7 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
   end
 
   it "retries projects that failed in a previous pass" do
-    project = instance_double(Project, id: 202)
+    project = Project.new(202)
     calls = 0
 
     stub_projects(project)
@@ -80,7 +79,7 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
   end
 
   it "does not complete when only non-runnable projects remain" do
-    project = instance_double(Project, id: 303)
+    project = Project.new(303)
 
     stub_projects(project)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false)
@@ -94,7 +93,7 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
   end
 
   it "rechecks non-runnable projects until they become backfilled" do
-    project = instance_double(Project, id: 404)
+    project = Project.new(404)
 
     stub_projects(project)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false, true)
