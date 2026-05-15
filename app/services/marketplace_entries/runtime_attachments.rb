@@ -125,7 +125,7 @@ module MarketplaceEntries
         resolved_path = File.expand_path(normalized_path, RUNTIME_PREPARATION_ROOT)
         next unless allowed_runtime_path?(resolved_path)
 
-        { path:, content: content.to_s }
+        { path: normalized_path, content: content.to_s }
       end
     end
 

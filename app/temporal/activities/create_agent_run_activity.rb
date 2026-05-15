@@ -258,6 +258,7 @@ module Activities
       attachments = agent_run.agent_run_marketplace_entries
       return rerender_marketplace_entries(agent_run:, required: required_marketplace_rerender?(attachments, account_auto_attach_required)) if attachments.exists? && force
       return if attachments.exists?
+      return unless should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)
 
       attach_marketplace_entries(
         agent_run: agent_run,
@@ -289,6 +290,13 @@ module Activities
       return false unless account_auto_attach_required
 
       attachments.exists?(attachment_source: "team_default")
+    end
+
+    def should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)
+      return true if account_auto_attach_required
+      return false if agent_run.manual?
+
+      true
     end
 
     def log_marketplace_attachment_failure(agent_run:, error:)

@@ -17,7 +17,7 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     expect(described_class.runtime_env(agent_run)).to eq("MARKETPLACE_PLUGIN_FLAG" => "enabled")
 
     preparation = described_class.runtime_preparation(agent_run)
-    expect(preparation.file_writes.map(&:path)).to eq([ "~/.config/paid/plugin.json" ])
+    expect(preparation.file_writes.map(&:path)).to eq([ "/home/agent/.config/paid/plugin.json" ])
     expect(preparation.file_writes.map(&:content)).to eq([ "{\"enabled\":true}" ])
   end
 
@@ -52,7 +52,7 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
 
     preparation = described_class.runtime_preparation(agent_run)
 
-    expect(preparation.file_writes.map(&:path)).to eq([ "~/.config/paid/plugin.json" ])
+    expect(preparation.file_writes.map(&:path)).to eq([ "/home/agent/.config/paid/plugin.json" ])
   end
 
   it "ignores normalized traversal paths that escape the runtime preparation root" do

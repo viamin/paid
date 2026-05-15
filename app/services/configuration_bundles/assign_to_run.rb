@@ -116,6 +116,8 @@ module ConfigurationBundles
     end
 
     def normalized_marketplace_entries
+      return [] unless agent_run.respond_to?(:agent_run_marketplace_entries)
+
       agent_run.agent_run_marketplace_entries.ordered.map do |attachment|
         {
           entry_id: attachment.marketplace_entry_id,

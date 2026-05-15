@@ -121,39 +121,7 @@ module MarketplaceEntries
     end
 
     def prefiltered_candidate_entries
-      entries = candidate_entries
-      return entries unless entries.is_a?(ActiveRecord::Relation)
-
-      relation = filter_relation_by_constraint(entries, "provider_keys", provider_key)
-      relation = filter_relation_by_constraint(relation, "agent_types", agent_run.agent_type)
-      relation = filter_relation_by_constraint(relation, "goals", agent_run.goal)
-      relation = filter_relation_by_constraint(relation, "project_ids", project.id)
-      filter_relation_by_constraint(relation, "repository_full_names", project.full_name)
-    end
-
-    def filter_relation_by_constraint(relation, constraint_key, actual_value)
-      return relation if actual_value.blank?
-
-      json_path = "marketplace_entry_versions.compatibility_constraints -> '#{constraint_key}'"
-      candidate_values = jsonb_candidate_values(actual_value)
-      predicates = candidate_values.map.with_index do |_value, index|
-        "#{json_path} @> :value_#{index}::jsonb"
-      end
-
-      relation.where(
-        <<~SQL.squish,
-          #{json_path} IS NULL
-          OR #{json_path} = '[]'::jsonb
-          OR (#{predicates.join(' OR ')})
-        SQL
-        **candidate_values.each_with_index.to_h { |value, index| [ :"value_#{index}", [ value ].to_json ] }
-      )
-    end
-
-    def jsonb_candidate_values(actual_value)
-      values = [ actual_value.to_s ]
-      values << actual_value if actual_value.is_a?(Numeric)
-      values.uniq
+      candidate_entries.to_a
     end
 
     def compatible_with_run?(version)

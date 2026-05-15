@@ -974,6 +974,24 @@ RSpec.describe Activities::CreateAgentRunActivity do
         )
       end
 
+      it "does not re-resolve marketplace auto-attach for manual queued runs with no stored attachments" do
+        queued_run = create(:agent_run, :queued, :manual, project: project, issue: issue)
+        project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
+        entry = create(:marketplace_entry, account: project.account, name: "Resume opt-in skill")
+        version = create(:marketplace_entry_version,
+          marketplace_entry: entry,
+          canonical_artifact: {
+            "attachment_strategy" => "prompt_append",
+            "content" => "This should not be attached during manual resume."
+          })
+        entry.update!(current_version: version)
+        create(:marketplace_entry_rule, marketplace_entry: entry, mode: "automatic", conditions: {})
+
+        activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        expect(queued_run.reload.agent_run_marketplace_entries).to be_empty
+      end
+
       it "fails when required marketplace attachment creation fails during resume" do
         project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
         queued_run = create(:agent_run, :queued, project: project, issue: issue)

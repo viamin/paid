@@ -48,6 +48,16 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
       end
     end
 
+    context "when the queued run was created manually without attachments" do
+      it "preserves the queued snapshot instead of re-resolving from current owner settings" do
+        agent_run = build_agent_run(attachments_exist: false, trigger_type: "manual")
+
+        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, account_auto_attach_required: false)
+
+        expect(MarketplaceEntries::AttachToRun).not_to have_received(:call)
+      end
+    end
+
     context "when the provider changed during resume" do
       it "re-renders the stored marketplace snapshots for the resolved provider" do
         agent_run = build_agent_run(attachments_exist: true)
@@ -59,13 +69,17 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
       end
     end
 
-    def build_agent_run(attachments_exist:)
+    def build_agent_run(attachments_exist:, trigger_type: "automatic")
       project = Struct.new(:account).new(:account)
       attachments = instance_double(attachments_class)
       allow(attachments).to receive(:exists?).with(no_args).and_return(attachments_exist)
       allow(attachments).to receive(:exists?).with(attachment_source: "team_default").and_return(attachments_exist)
 
-      Struct.new(:agent_run_marketplace_entries, :project).new(attachments, project)
+      Struct.new(:agent_run_marketplace_entries, :project, :trigger_type) do
+        def manual?
+          trigger_type == "manual"
+        end
+      end.new(attachments, project, trigger_type)
     end
   end
 
