@@ -61,6 +61,7 @@ class Issue < ApplicationRecord
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
+  after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -483,5 +484,35 @@ class Issue < ApplicationRecord
     else
       project.broadcast_issues_update
     end
+  end
+
+  def github_just_closed?
+    saved_change_to_github_state? && github_state == "closed"
+  end
+
+  def enqueue_newly_unblocked_dependents
+    auto_pick_enabled_dependents.find_each do |dependent|
+      next unless Issue.ready_for_work(dependent.project).where(id: dependent.id).exists?
+
+      Rails.logger.info(
+        message: "enqueue_eligible.dependency_resolved",
+        blocker_issue_id: id,
+        blocker_issue_number: github_number,
+        dependent_issue_id: dependent.id,
+        dependent_issue_number: dependent.github_number,
+        project_id: dependent.project_id
+      )
+
+      Issues::EnqueueEligible.call(dependent, project: dependent.project, skip_project_gate: true)
+    end
+  rescue => e
+    Rails.logger.error(message: "enqueue_eligible.dependency_resolution_failed", issue_id: id, error: e.message)
+  end
+
+  def auto_pick_enabled_dependents
+    Issue
+      .includes(:project)
+      .joins(:project)
+      .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
   end
 end
