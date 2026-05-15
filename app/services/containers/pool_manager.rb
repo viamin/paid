@@ -237,8 +237,8 @@ module Containers
       return if container_id.blank?
 
       container = Containers.backend.get_container(container_id)
-      container.stop(timeout: force ? 0 : 10) if container.info.dig("State", "Running")
-      container.delete(force: force, v: true)
+      Containers.backend.stop_container(container, timeout: force ? 0 : 10) if container.info.dig("State", "Running")
+      Containers.backend.delete_container(container, force: force, v: true)
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e
