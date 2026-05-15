@@ -508,6 +508,43 @@ RSpec.describe Issue do
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
         expect(PullRequests::ProgressState).to have_received(:call).twice
       end
+
+      it "clears the memoized progress state when resetting the review-goal breaker" do
+        fresh_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, fresh_progress_state)
+        allow(issue).to receive(:update!).and_return(true)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+
+        issue.reset_review_goal_retry_breaker!
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
+        expect(PullRequests::ProgressState).to have_received(:call).twice
+      end
+
+      it "clears the memoized progress state when dismissing escalation" do
+        fresh_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, fresh_progress_state)
+        issue.define_singleton_method(:labels) { %w[paid-escalated paid-dismiss-escalation] }
+        allow(issue).to receive(:update!).and_return(true)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+
+        issue.dismiss_escalation!(draft: false)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
+        expect(PullRequests::ProgressState).to have_received(:call).twice
+      end
     end
 
     describe "#has_associated_pull_requests?" do
