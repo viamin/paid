@@ -250,7 +250,7 @@ module Api
       stale = reviews.select do |r|
         review_state(r[:state]) == "CHANGES_REQUESTED" &&
           bot_logins.include?(r[:user_login].to_s.downcase) &&
-          r[:id].to_i != new_review_id
+          r[:id].to_i < new_review_id
       end
 
       stale.each do |review|

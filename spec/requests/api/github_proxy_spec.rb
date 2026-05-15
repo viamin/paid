@@ -546,6 +546,20 @@ RSpec.describe "Api::GithubProxy" do
           expect(agent_run.reload.review_url)
             .to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-previous")
         end
+
+        it "does not dismiss newer bot change requests" do
+          stub_review_list_response([
+            { id: 1001, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
+          ])
+          dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/1001/dismissals"
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).not_to have_requested(:put, dismiss_url)
+        end
       end
 
       it "does not dismiss reviews when the latest review requests changes" do
