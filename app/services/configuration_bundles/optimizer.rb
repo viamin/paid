@@ -294,7 +294,7 @@ module ConfigurationBundles
           schema_version: 1,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
-          runner_id: agent_run.runner_id,
+          runner_id: agent_run_runner_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
@@ -303,6 +303,12 @@ module ConfigurationBundles
           experiments: experiment_definitions(variant_by_experiment_id)
         }.compact
       )
+    end
+
+    def agent_run_runner_id
+      return agent_run.runner_id if agent_run.respond_to?(:runner_id)
+
+      agent_run.provider_id if agent_run.respond_to?(:provider_id)
     end
 
     def experiment_definitions(variant_by_experiment_id)
