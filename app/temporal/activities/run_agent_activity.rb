@@ -840,8 +840,9 @@ module Activities
         }
       end
 
-      output = (stderr.presence || stdout).to_s.strip
-      rate_limit_output = strip_prompt_echo(output, prompt)
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
+      output = combined_output.presence || (stderr.presence || stdout).to_s.strip
+      rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
       if auth_expired_error?(provider, rate_limit_output)
         raise ProviderAuthExpiredError.new(output.truncate(500), provider: provider)
@@ -936,8 +937,9 @@ module Activities
       )
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
-      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
-      sanitized_output = strip_prompt_echo(output, prompt)
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
+      output = combined_output.presence || [ stderr.presence, stdout.presence ].compact.first.to_s.strip
+      sanitized_output = strip_prompt_echo(combined_output, prompt)
 
       if result.success?
         # Keep the same precedence as the main execution path so preflight

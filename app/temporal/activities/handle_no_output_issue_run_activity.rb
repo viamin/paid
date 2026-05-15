@@ -157,7 +157,7 @@ module Activities
     def classification_text_for(agent_run)
       recent_output = agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
-        .order(created_at: :desc)
+        .order(created_at: :desc, id: :desc)
         .limit(CLASSIFICATION_LOG_LIMIT)
         .pluck(:content)
         .reverse
