@@ -92,7 +92,7 @@ class TenantConfigurationsController < ApplicationController
         :enabled, :composite_score_threshold, :min_recent_runs, :lookback_window_hours,
         { metric_thresholds: {} }
       ],
-      agent_settings: %i[default_goal auto_continue],
+      agent_settings: %i[default_goal auto_continue marketplace_auto_attach_required],
       worker_settings: %i[
         temporal_workflow_slots temporal_activity_slots
         temporal_poll_workflow_slots temporal_poll_activity_slots

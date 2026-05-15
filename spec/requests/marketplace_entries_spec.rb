@@ -76,17 +76,29 @@ RSpec.describe "MarketplaceEntries" do
       }
     end
 
-    it "creates an entry, version, and rules" do
+    it "creates an entry and version for members without allowing rule changes" do
+      expect {
+        post marketplace_entries_path, params: params
+      }.to change(MarketplaceEntry, :count).by(1)
+        .and change(MarketplaceEntryVersion, :count).by(1)
+
+      entry = MarketplaceEntry.last
+      expect(MarketplaceEntryRule.count).to eq(0)
+      expect(entry.current_version).to be_present
+      expect(entry.current_version.renderers.fetch("claude").fetch("provider_format")).to eq("claude_skill_v1")
+      expect(response).to redirect_to(marketplace_entry_path(entry))
+    end
+
+    it "creates rules for admins" do
+      admin = create(:user, :admin, account: account)
+      sign_out user
+      sign_in admin
+
       expect {
         post marketplace_entries_path, params: params
       }.to change(MarketplaceEntry, :count).by(1)
         .and change(MarketplaceEntryVersion, :count).by(1)
         .and change(MarketplaceEntryRule, :count).by(2)
-
-      entry = MarketplaceEntry.last
-      expect(entry.current_version).to be_present
-      expect(entry.current_version.renderers.fetch("claude").fetch("provider_format")).to eq("claude_skill_v1")
-      expect(response).to redirect_to(marketplace_entry_path(entry))
     end
 
     it "rejects entry types that are not wired into the runtime in this iteration" do

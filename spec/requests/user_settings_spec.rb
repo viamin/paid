@@ -90,6 +90,17 @@ RSpec.describe "UserSettings" do
         expect(settings.default_agent_provider).to eq(cursor.routing_key)
       end
 
+      it "updates marketplace auto-attach consent" do
+        patch user_settings_path, params: {
+          user_setting: {
+            marketplace_auto_attach_enabled: "1"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.marketplace_auto_attach_enabled?).to be(true)
+      end
+
       it "allows clearing the max execution time override" do
         user.settings.update!(max_execution_seconds: 5400)
 

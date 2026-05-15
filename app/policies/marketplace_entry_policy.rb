@@ -9,6 +9,10 @@ class MarketplaceEntryPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member)
   end
 
+  def manage_rules?
+    has_any_account_role?(:owner, :admin)
+  end
+
   def destroy?
     has_any_account_role?(:owner, :admin)
   end

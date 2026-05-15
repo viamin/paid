@@ -32,6 +32,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "applies team-default marketplace entries when creating a fresh run" do
+      project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
       entry = create(:marketplace_entry, account: project.account, name: "Team default skill")
       version = create(:marketplace_entry_version,
         marketplace_entry: entry,
@@ -48,6 +49,23 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_run_marketplace_entries.count).to eq(1)
       expect(agent_run.agent_run_marketplace_entries.first.marketplace_entry).to eq(entry)
       expect(agent_run.agent_run_marketplace_entries.first.attachment_source).to eq("team_default")
+    end
+
+    it "does not apply team-default marketplace entries by default" do
+      entry = create(:marketplace_entry, account: project.account, name: "Team default skill")
+      version = create(:marketplace_entry_version,
+        marketplace_entry: entry,
+        canonical_artifact: {
+          "attachment_strategy" => "prompt_append",
+          "content" => "Always follow the team workflow."
+        })
+      entry.update!(current_version: version)
+      create(:marketplace_entry_rule, marketplace_entry: entry, mode: "team_default", conditions: {})
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
     it "returns the project max_execution_seconds in the result" do

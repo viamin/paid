@@ -94,7 +94,7 @@ module Activities
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,
         manual_entry_ids: manual_marketplace_entry_ids,
-        auto_attach_enabled: true
+        auto_attach_enabled: marketplace_auto_attach_enabled?(project, user_settings)
       )
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
@@ -220,7 +220,10 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      MarketplaceEntries::AttachToRun.call(agent_run: agent_run, auto_attach_enabled: true)
+      MarketplaceEntries::AttachToRun.call(
+        agent_run: agent_run,
+        auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
+      )
       assign_configuration_bundle(agent_run)
 
       logger.info(
@@ -305,6 +308,11 @@ module Activities
 
     def effective_max_execution_seconds(project, user_settings)
       user_settings&.max_execution_seconds || project.max_execution_seconds
+    end
+
+    def marketplace_auto_attach_enabled?(project, user_settings)
+      user_settings&.marketplace_auto_attach_enabled? ||
+        project.account.tenant_setting&.marketplace_auto_attach_required?
     end
 
     def test_command_for(project)

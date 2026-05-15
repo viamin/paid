@@ -645,9 +645,14 @@ module Projects
       MarketplaceEntries::AttachToRun.call(
         agent_run:,
         manual_entry_ids: params[:marketplace_entry_ids],
-        auto_attach_enabled: true
+        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?
       )
       agent_run
+    end
+
+    def marketplace_auto_attach_enabled_for_current_user?
+      current_user.settings.marketplace_auto_attach_enabled? ||
+        current_account.tenant_setting&.marketplace_auto_attach_required?
     end
 
     def enqueue_resume_run(pr)

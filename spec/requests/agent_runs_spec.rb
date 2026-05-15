@@ -1159,6 +1159,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "also applies team-default marketplace entries when creating a queued run" do
+        user.settings.update!(marketplace_auto_attach_enabled: true)
         manual_entry = create_prompt_append_marketplace_entry(name: "Manual skill", content: "Use the manual workflow.")
         team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
         create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
@@ -1169,6 +1170,15 @@ RSpec.describe "AgentRuns" do
 
         run = AgentRun.last
         expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to contain_exactly("manual", "team_default")
+      end
+
+      it "does not apply team-default marketplace entries unless the user opts in or the account requires it" do
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.not_to change(AgentRunMarketplaceEntry, :count)
       end
 
       it "enqueues ProcessRunQueueJob" do

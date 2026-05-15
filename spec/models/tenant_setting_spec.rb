@@ -95,6 +95,20 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "#marketplace_auto_attach_required?" do
+    it "reads the tenant-level marketplace auto-attach override from agent settings" do
+      setting = build(:tenant_setting, agent_settings: { "marketplace_auto_attach_required" => true })
+
+      expect(setting.marketplace_auto_attach_required?).to be(true)
+    end
+
+    it "falls back to false when the tenant does not require marketplace attachments" do
+      setting = build(:tenant_setting)
+
+      expect(setting.marketplace_auto_attach_required?).to be(false)
+    end
+  end
+
   describe "#default_cost_budget_attributes" do
     it "returns enabled tenant budget defaults" do
       setting = build(:tenant_setting, default_budgets: {

@@ -64,14 +64,22 @@ class MarketplaceEntriesController < ApplicationController
   end
 
   def marketplace_entry_params
-    params.require(:marketplace_entry).permit(
+    permitted = [
       :name, :entry_type, :description, :provider, :provider_format,
       :usage_guidance, :added_by_name, :added_by_email, :tags_csv,
       :team_scope, :status, :changelog, :canonical_artifact_json,
-      :renderers_json, :compatibility_constraints_json, :review_metadata_json,
-      :automatic_enabled, :automatic_conditions_json, :automatic_rationale,
-      :team_default_enabled, :team_default_conditions_json, :team_default_rationale
-    )
+      :renderers_json, :compatibility_constraints_json, :review_metadata_json
+    ]
+    if marketplace_rule_management_allowed?
+      permitted.concat(
+        %i[
+          automatic_enabled automatic_conditions_json automatic_rationale
+          team_default_enabled team_default_conditions_json team_default_rationale
+        ]
+      )
+    end
+
+    params.require(:marketplace_entry).permit(*permitted)
   end
 
   def preload_form_fields
@@ -89,5 +97,9 @@ class MarketplaceEntriesController < ApplicationController
     @marketplace_entry.team_default_enabled = team_default_rule&.enabled
     @marketplace_entry.team_default_conditions_json = JSON.pretty_generate(team_default_rule&.conditions || {})
     @marketplace_entry.team_default_rationale = team_default_rule&.rationale
+  end
+
+  def marketplace_rule_management_allowed?
+    policy(@marketplace_entry).manage_rules?
   end
 end
