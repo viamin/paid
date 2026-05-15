@@ -8,7 +8,8 @@ module PullRequests
   # Reset conditions:
   # - a completed automatic create_pr run
   # - an automatic review run that posted a review
-  # - a new PR HEAD commit (when the current head SHA is supplied)
+  # - a new PR HEAD commit (when the current head SHA is supplied, and
+  #   head-commit time is known for failed runs without result_commit_sha)
   # - issue.review_goal_retry_reset_at
   # - issue.operational_failure_reset_at
   class ProgressState
@@ -53,6 +54,10 @@ module PullRequests
       new(...).call
     end
 
+    # current_head_updated_at is the current PR head commit timestamp, not the
+    # pull request's generic updated_at. Failed runs without result_commit_sha
+    # need actual head-commit recency to decide whether a human push
+    # superseded them.
     def initialize(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil)
       @project = project
       @issue = issue
@@ -190,7 +195,7 @@ module PullRequests
       #
       # When result_commit_sha is present, compare it directly to current_head_sha.
       # When result_commit_sha is nil (e.g. a failed run that never pushed),
-      # fall back to checking whether the PR head was updated after the run
+      # fall back to checking whether the PR head commit happened after the run
       # completed — a human follow-up commit supersedes the stale failure.
       if run.result_commit_sha.present?
         return run.result_commit_sha != current_head_sha

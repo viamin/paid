@@ -182,9 +182,9 @@ class Issue < ApplicationRecord
   end
 
   # Returns the unified progress state for this PR. Pass +current_head_sha+
-  # and +current_head_updated_at+ (from live GitHub PR data) to enable the
-  # "new PR head commit" reset condition. Without those parameters, only
-  # explicit reset markers and successful-run resets apply.
+  # and +current_head_updated_at+ (the live PR head commit timestamp) to
+  # enable the "new PR head commit" reset condition. Without those
+  # parameters, only explicit reset markers and successful-run resets apply.
   def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
     if current_head_sha.present?
       return PullRequests::ProgressState.call(

@@ -29,13 +29,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:pr_progress_state).with(project, issue,
         current_head_sha: anything,
         current_head_updated_at: anything).and_return(progress_state)
+      allow(activity).to receive(:pr_head_commit_timestamp).with(client, project, issue, anything).and_return(Time.current)
       allow(activity).to receive(:record_focus_resolution).with(project, client, issue)
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
       allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
-      allow(activity).to receive(:review_goal_retry_needed?).with(project, issue).and_return(true)
-      allow(activity).to receive(:review_goal_retry_limit_reached?).with(project, issue).and_return(true)
-      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?).with(project, issue).and_return(true)
-      allow(activity).to receive(:review_goal_consecutive_failure_count).with(project, issue).and_return(3)
+      allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(true)
+      allow(activity).to receive(:review_goal_retry_limit_reached?).with(project, issue, progress_state:).and_return(true)
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?).with(project, issue, progress_state:).and_return(true)
+      allow(activity).to receive(:review_goal_consecutive_failure_count).with(project, issue, progress_state:).and_return(3)
       allow(activity).to receive(:check_rate_budget!).with(client)
       allow(activity).to receive(:fetch_pr_data)
       allow(activity).to receive(:escalate_trigger).and_return(:unexpected_escalation)
@@ -59,11 +60,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the PR is still in draft" do
       let(:phase) { "draft" }
+      let(:head_commit_timestamp) { 2.hours.ago }
       let(:pr_data) do
         instance_double(PrDataDouble,
           draft: true,
           head: instance_double(PrHeadDouble, sha: "abc123"),
           updated_at: Time.current)
+      end
+
+      before do
+        allow(activity).to receive(:pr_head_commit_timestamp)
+          .with(client, project, issue, pr_data)
+          .and_return(head_commit_timestamp)
       end
 
       it "fetches live PR state before escalating at the retry limit" do
@@ -75,6 +83,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result).to eq(:escalated)
         expect(activity).to have_received(:fetch_pr_data).with(client, project, issue)
+      end
+
+      it "passes head-commit time rather than PR updated_at into progress_state" do
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:pr_progress_state).with(
+          project,
+          issue,
+          current_head_sha: "abc123",
+          current_head_updated_at: head_commit_timestamp
+        ).and_return(progress_state)
+        allow(activity).to receive(:escalate_trigger).with(issue,
+          reason: "Review-goal retry limit reached (3 consecutive failures)").and_return(:escalated)
+
+        activity.send(:scan_pr, project, client, issue)
+
+        expect(activity).to have_received(:pr_progress_state).with(
+          project,
+          issue,
+          current_head_sha: "abc123",
+          current_head_updated_at: head_commit_timestamp
+        )
       end
     end
 
@@ -132,6 +161,96 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result).to eq(:dismissed)
         expect(activity).not_to have_received(:escalate_trigger)
       end
+    end
+  end
+
+  describe "#review_goal_consecutive_failure_count", :no_db do
+    before do
+      stub_const("RetryLimitProjectStub", Class.new)
+      stub_const("RetryLimitIssueStub", Class.new)
+      stub_const("RetryLimitProgressStateStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(RetryLimitProjectStub) }
+    let(:issue) { instance_double(RetryLimitIssueStub) }
+    let(:progress_state) { instance_double(RetryLimitProgressStateStub, last_meaningful_progress_at: progress_at) }
+    let(:progress_at) { nil }
+    let(:scope) { fake_scope(batches) }
+
+    let(:run_class) do
+      Struct.new(:status, :review_posted_at, :created_at, :updated_at, :completed_at, keyword_init: true)
+    end
+
+    let(:scope_class) do
+      Class.new do
+        def initialize(batches)
+          @batches = batches
+          @offset_value = 0
+        end
+
+        def finished
+          self
+        end
+
+        def order(*)
+          self
+        end
+
+        def limit(value)
+          @limit_value = value
+          self
+        end
+
+        def offset(value)
+          @offset_value = value
+          self
+        end
+
+        def to_a
+          @batches.fetch(@offset_value, [])
+        end
+      end
+    end
+
+    def build_run(status:, at:, review_posted_at: nil)
+      run_class.new(
+        status: status,
+        review_posted_at: review_posted_at,
+        created_at: at,
+        updated_at: at,
+        completed_at: at
+      )
+    end
+
+    def fake_scope(batches)
+      scope_class.new(batches)
+    end
+
+    it "drops stale review failures once unified progress advances past them" do
+      progress_at = Time.zone.parse("2026-05-15 12:00:00")
+      older_failure = build_run(status: "failed", at: progress_at - 30.minutes)
+
+      count = activity.send(
+        :consecutive_retryable_review_failures,
+        fake_scope(0 => [ older_failure ]),
+        progress_state: instance_double(RetryLimitProgressStateStub, last_meaningful_progress_at: progress_at)
+      )
+
+      expect(count).to eq(0)
+    end
+
+    it "still counts retryable failures when progress has not advanced past them" do
+      failure_time = Time.zone.parse("2026-05-15 12:00:00")
+      recent_failure = build_run(status: "failed", at: failure_time)
+
+      count = activity.send(
+        :consecutive_retryable_review_failures,
+        fake_scope(0 => [ recent_failure ]),
+        progress_state: instance_double(RetryLimitProgressStateStub, last_meaningful_progress_at: failure_time - 5.minutes)
+      )
+
+      expect(count).to eq(1)
     end
   end
 end

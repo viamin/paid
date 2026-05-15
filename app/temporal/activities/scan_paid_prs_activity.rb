@@ -166,14 +166,14 @@ module Activities
       progress_state = pr_progress_state(project, issue)
       op_breaker = operational_failure_breaker?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
-      retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue)
+      retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
       reason = if op_breaker
         "Consecutive operational failures " \
           "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)"
       elsif retry_escalation
         "Review-goal retry limit reached " \
-          "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)"
+          "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
       elsif failure_limit
         failure_streak_reason(project, issue, progress_state)
       end
@@ -238,7 +238,7 @@ module Activities
         project,
         issue,
         current_head_sha: pr_head_sha(pr_data),
-        current_head_updated_at: pr_head_updated_at(pr_data)
+        current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
       )
 
       # Escalate PRs that are repeatedly failing due to operational issues
@@ -250,10 +250,10 @@ module Activities
                   "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
       end
 
-      retry_needed = review_goal_retry_needed?(project, issue)
-      retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue)
+      retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
+      retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue, progress_state:)
       retry_limit_requires_escalation = retry_limit_reached &&
-        review_goal_retry_limit_requires_escalation?(project, issue)
+        review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
       # When the review-goal retry limit is exhausted and paid_agent is the
       # only review method, escalate immediately — the PR cannot make
@@ -263,7 +263,7 @@ module Activities
       if retry_limit_requires_escalation && issue.pr_review_phase.in?(%w[draft restarted])
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
-                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+                  "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)")
       end
 
       # When a review-goal run has failed but the retry limit hasn't been
@@ -272,7 +272,7 @@ module Activities
       # are still evaluated alongside the retry.
       retry_trigger = nil
       if retry_needed && !retry_limit_reached
-        failed_count = review_goal_consecutive_failure_count(project, issue)
+        failed_count = review_goal_consecutive_failure_count(project, issue, progress_state:)
         max_retries = review_goal_max_retries(project)
         retry_trigger = {
           type: "review_goal_retry",
@@ -558,7 +558,7 @@ module Activities
         project,
         issue,
         current_head_sha: pr_head_sha(pr_data),
-        current_head_updated_at: pr_head_updated_at(pr_data)
+        current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
       )
 
       if bot_user?(issue.github_creator_login)
@@ -580,10 +580,10 @@ module Activities
         return owner_approved_trigger(issue)
       end
 
-      if review_goal_retry_limit_requires_escalation?(project, issue)
+      if review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
-                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+                  "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)")
       end
 
       # Follow-up budget exhausted: inspect the full ready-phase trigger set
@@ -1023,8 +1023,8 @@ module Activities
       pr_data&.head&.sha
     end
 
-    def pr_head_updated_at(pr_data)
-      pr_data&.updated_at
+    def pr_head_commit_timestamp(client, project, issue, pr_data)
+      fetch_head_commit_date(client, project, issue, pr_data)
     end
 
     # Returns the failure-streak limit for the gate currently being enforced.
@@ -1093,14 +1093,14 @@ module Activities
     # current cycle ended in a retryable failure status. Only applies when the
     # paid_agent review method is enabled (review-goal runs are how paid_agent
     # posts reviews).
-    def review_goal_retry_needed?(project, issue)
+    def review_goal_retry_needed?(project, issue, progress_state: nil)
       return false unless project.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
       # Don't retry while a review-goal run is already queued or running.
       return false if review_run_in_progress?(project, issue)
 
-      latest_run = latest_finished_automatic_review_run(project, issue)
+      latest_run = latest_finished_automatic_review_run(project, issue, progress_state:)
       return false unless latest_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
 
       # Don't retry when the run already posted a review on the PR. The agent
@@ -1801,22 +1801,22 @@ module Activities
     end
 
     # Returns true when the number of consecutive unsuccessful automatic
-    # paid_agent review-goal runs in the current review cycle has reached the
-    # configurable retry limit. Any completed review or newer create_pr run
-    # resets the breaker so old failures do not cause permanent escalation
-    # (#1002).
-    def review_goal_retry_limit_reached?(project, issue)
+    # paid_agent review-goal runs since the last meaningful PR progress has
+    # reached the configurable retry limit. The reset boundary comes from the
+    # unified PR progress model, so successful review/create_pr runs, explicit
+    # human resets, and newer PR head commits all clear stale failures (#1002).
+    def review_goal_retry_limit_reached?(project, issue, progress_state: nil)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      review_goal_consecutive_failure_count(project, issue) >= review_goal_max_retries(project)
+      review_goal_consecutive_failure_count(project, issue, progress_state:) >= review_goal_max_retries(project)
     end
 
     # Escalate only when exhausting paid_agent retries leaves no other bot
     # review method that can continue gating the PR. Mixed bot projects should
     # stop retrying paid_agent but keep flowing through the remaining bot.
-    def review_goal_retry_limit_requires_escalation?(project, issue)
-      return false unless review_goal_retry_limit_reached?(project, issue)
+    def review_goal_retry_limit_requires_escalation?(project, issue, progress_state: nil)
+      return false unless review_goal_retry_limit_reached?(project, issue, progress_state:)
       return false if review_run_in_progress?(project, issue)
 
       (project.enabled_review_methods & %w[copilot codex]).empty?
@@ -1853,43 +1853,38 @@ module Activities
         .where.not(status: "retried")
     end
 
-    def attempted_automatic_review_runs_since_retry_reset(project, issue)
+    def attempted_automatic_review_runs_since_retry_reset(project, issue, progress_state: nil)
       scope = attempted_automatic_review_runs(project, issue)
-      reset_at = review_goal_failure_reset_at(project, issue)
+      reset_at = review_goal_failure_reset_at(project, issue, progress_state:)
       return scope unless reset_at
 
       scope.where(review_run_cycle_boundary.gt(reset_at))
     end
 
-    def latest_finished_automatic_review_run(project, issue)
-      attempted_automatic_review_runs_since_retry_reset(project, issue)
+    def latest_finished_automatic_review_run(project, issue, progress_state: nil)
+      attempted_automatic_review_runs_since_retry_reset(project, issue, progress_state:)
         .finished
         .order(Arel.sql("#{PullRequests::ProgressState::RUN_TIMESTAMP_SQL} DESC, created_at DESC, id DESC"))
         .first
     end
 
-    def review_goal_consecutive_failure_count(project, issue)
-      consecutive_retryable_review_failures(attempted_automatic_review_runs_since_retry_reset(project, issue))
+    def review_goal_consecutive_failure_count(project, issue, progress_state: nil)
+      consecutive_retryable_review_failures(
+        attempted_automatic_review_runs_since_retry_reset(project, issue, progress_state:),
+        progress_state: progress_state || pr_progress_state(project, issue)
+      )
     end
 
-    def review_goal_failure_reset_at(project, issue)
-      run_scope = project.agent_runs.where(source_pull_request_number: issue.github_number)
+    def review_goal_failure_reset_at(project, issue, progress_state: nil)
       retry_reset_at = issue.review_goal_retry_reset_at
-      if retry_reset_at
-        # After a dismissal/draft restart, only runs attempted in the new
-        # cycle should be able to reset the breaker. A stale pre-restart run
-        # may finish later, but it must not clear fresh-cycle failures.
-        run_scope = run_scope.where(review_run_cycle_boundary.gt(retry_reset_at))
-      end
 
       [
         retry_reset_at,
-        run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
-        run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
+        progress_state&.last_meaningful_progress_at
       ].compact.max
     end
 
-    def consecutive_retryable_review_failures(scope, batch_size: PullRequests::ProgressState::RUN_BATCH_SIZE)
+    def consecutive_retryable_review_failures(scope, progress_state:, batch_size: PullRequests::ProgressState::RUN_BATCH_SIZE)
       failure_count = 0
       offset = 0
       ordered_scope = scope.finished
@@ -1903,6 +1898,10 @@ module Activities
         break if batch.empty?
 
         batch.each do |run|
+          run_time = run.completed_at || run.updated_at || run.created_at
+          return failure_count if progress_state.last_meaningful_progress_at.present? &&
+            run_time.present? &&
+            run_time <= progress_state.last_meaningful_progress_at
           return failure_count unless run.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
           return failure_count if run.review_posted_at.present?
 

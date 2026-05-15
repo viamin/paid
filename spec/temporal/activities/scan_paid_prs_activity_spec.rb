@@ -9093,14 +9093,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     recent_issue_comments: nil,
     reviews: default_clean_copilot_review,
     recent_multi_page: false,
-    head_committed_at: 2.hours.ago
+    head_committed_at: 2.hours.ago,
+    pr_updated_at: nil
   )
     pr_data = OpenStruct.new(
       head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
       number: 42,
-      user: OpenStruct.new(login: author_login)
+      user: OpenStruct.new(login: author_login),
+      updated_at: pr_updated_at
     )
 
     commit_data = OpenStruct.new(
