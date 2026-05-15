@@ -16,24 +16,10 @@ module MarketplaceEntries
     end
 
     def call
-      AgentRunMarketplaceEntry.transaction do
-        attachments.each do |attachment|
-          rendered = Renderer.call(
-            entry: attachment.marketplace_entry,
-            version: attachment.marketplace_entry_version,
-            provider_key: provider_key
-          )
-
-          attachment.update!(
-            rendered_format: rendered.fetch("provider_format"),
-            rendered_payload: rendered
-          )
-        end
-
-        synchronize_mcp_snapshot!
-      end
-
-      agent_run.agent_run_marketplace_entries.ordered
+      # Keep attach-time rendered_payload snapshots immutable so
+      # configuration bundle identity remains reproducible across retries.
+      synchronize_mcp_snapshot!(provider_key: provider_key)
+      attachments
     end
 
     private

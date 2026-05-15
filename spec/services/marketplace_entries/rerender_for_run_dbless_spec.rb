@@ -3,24 +3,15 @@
 require "rails_helper"
 
 RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
-  it "re-renders stored attachments for the run provider and refreshes the MCP snapshot" do
-    stub_const("AgentRunMarketplaceEntry", transaction_class)
+  it "keeps stored attachments immutable and refreshes the MCP snapshot for the provider attempt" do
     attachment = build_attachment
     agent_run = build_agent_run([ attachment ])
 
     attachments = described_class.call(agent_run: agent_run)
 
     expect(attachments).to eq([ attachment ])
-    expect_rendered_attachment(attachment)
+    expect_stored_attachment_to_remain_unchanged(attachment)
     expect_updated_snapshot(agent_run)
-  end
-
-  def transaction_class
-    Class.new do
-      def self.transaction
-        yield
-      end
-    end
   end
 
   def build_attachment
@@ -53,14 +44,8 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
       :marketplace_entry_id,
       :marketplace_entry_version_id,
       :rendered_payload,
-      :updated_attributes,
       keyword_init: true
-    ) do
-      def update!(attributes)
-        self.updated_attributes = attributes
-        self.rendered_payload = attributes.fetch(:rendered_payload)
-      end
-    end.new(
+    ).new(
       marketplace_entry: entry,
       marketplace_entry_version: version,
       marketplace_entry_id: 9,
@@ -104,13 +89,14 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
     )
   end
 
-  def expect_rendered_attachment(attachment)
-    expect(attachment.updated_attributes).to include(
+  def expect_stored_attachment_to_remain_unchanged(attachment)
+    expect(attachment.rendered_payload).to include(
+      "provider" => "claude",
+      "payload" => include("name" => "repo-docs")
+    )
+    expect(attachment.to_h).not_to include(
       rendered_format: "codex_mcp_v1",
-      rendered_payload: include(
-        "provider" => "codex",
-        "payload" => include("name" => "repo-docs")
-      )
+      rendered_payload: include("provider" => "codex")
     )
   end
 
