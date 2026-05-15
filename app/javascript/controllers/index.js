@@ -73,6 +73,9 @@ application.register("notification-dropdown", NotificationDropdownController)
 import ProviderFormController from "./provider_form_controller"
 application.register("provider-form", ProviderFormController)
 
+import ProjectSettingsFormController from "./project_settings_form_controller"
+application.register("project-settings-form", ProjectSettingsFormController)
+
 import RunnerFormController from "./runner_form_controller"
 application.register("runner-form", RunnerFormController)
 
