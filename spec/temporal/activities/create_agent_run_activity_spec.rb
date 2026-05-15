@@ -836,6 +836,24 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(queued_run.provider).to eq(claude_provider)
         expect(queued_run.agent_type).to eq("claude_code")
       end
+
+      it "applies team-default marketplace entries when the resuming user has auto-attach enabled" do
+        project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
+        entry = create(:marketplace_entry, account: project.account, name: "Resume default skill")
+        version = create(:marketplace_entry_version,
+          marketplace_entry: entry,
+          canonical_artifact: {
+            "attachment_strategy" => "prompt_append",
+            "content" => "Apply this while resuming queued runs."
+          })
+        entry.update!(current_version: version)
+        create(:marketplace_entry_rule, marketplace_entry: entry, mode: "team_default", conditions: {})
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+
+        activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        expect(queued_run.reload.agent_run_marketplace_entries.pluck(:marketplace_entry_id)).to eq([ entry.id ])
+      end
     end
   end
 

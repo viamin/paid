@@ -206,6 +206,7 @@ module Activities
 
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
+      user_settings = resolve_user_settings(agent_run.project)
 
       if agent_run.queued?
         validate_and_sync_resumed_provider!(agent_run)
@@ -233,7 +234,6 @@ module Activities
         issue_id: agent_run.issue_id
       )
 
-      user_settings = resolve_user_settings(agent_run.project)
       {
         agent_run_id: agent_run.id,
         focus: agent_run.focus,

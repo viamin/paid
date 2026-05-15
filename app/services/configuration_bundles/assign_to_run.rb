@@ -12,6 +12,7 @@ module ConfigurationBundles
       custom_prompt_sha256
       model_selection
       mcp_servers
+      marketplace_entries
       service_container_ids
     ].freeze
 
@@ -427,7 +428,8 @@ module ConfigurationBundles
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
           service_container_ids: normalized_service_container_ids,
-          mcp_servers: normalized_mcp_servers
+          mcp_servers: normalized_mcp_servers,
+          marketplace_entries: normalized_marketplace_entries
         }.compact
       )
     end
