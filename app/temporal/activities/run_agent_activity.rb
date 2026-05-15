@@ -701,6 +701,13 @@ module Activities
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
 
+      synchronize_marketplace_mcp_for_provider!(
+        agent_run: agent_run,
+        provider_candidate: provider_candidate,
+        provider: provider,
+        user: user_settings.user
+      )
+
       # Assemble effective MCP servers from the run's provisioned state so
       # harness_execution_plan_for can pass them to agent-harness for
       # provider-specific translation. Stored as an instance variable so the
@@ -1616,6 +1623,27 @@ module Activities
         @agent_run,
         provider_key: provider_key
       )
+    end
+
+    def synchronize_marketplace_mcp_for_provider!(agent_run:, provider_candidate:, provider:, user:)
+      attachments = agent_run.agent_run_marketplace_entries
+      return unless attachments.exists?
+
+      provider_key = marketplace_provider_key(provider_candidate, provider, user)
+      previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
+
+      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider_key)
+
+      return if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
+
+      Containers::McpProvisioner.new.provision(
+        agent_run,
+        network: Containers::Provision.network_for(agent_run: agent_run)
+      )
+    rescue => e
+      raise e if e.is_a?(ProviderExecutionError)
+
+      raise ProviderExecutionError, "Failed to synchronize marketplace MCP servers for #{provider_key}: #{e.message}"
     end
 
     # Builds an execution plan for providers that use the agent-harness

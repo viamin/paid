@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe MarketplaceEntries::Resolver do
-  it "attaches automatic entries without requiring historical manual selections" do
+  it "does not attach automatic entries until the user explicitly selects that entry" do
     project = create(:project)
     entry = create_automatic_entry_for(project.account)
     agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
@@ -11,6 +11,21 @@ RSpec.describe MarketplaceEntries::Resolver do
     results = described_class.call(
       project: project,
       agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results).to be_empty
+  end
+
+  it "attaches automatic entries after the user explicitly selects that entry" do
+    project = create(:project)
+    entry = create_automatic_entry_for(project.account)
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      manual_entry_ids: [ entry.id ],
       auto_attach_enabled: true
     )
 

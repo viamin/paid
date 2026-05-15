@@ -2,12 +2,13 @@
 
 module MarketplaceEntries
   class AttachToRun
-    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled
+    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled, :account_auto_attach_required
 
-    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
+    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, account_auto_attach_required: false)
       @agent_run = agent_run
       @manual_entry_ids = manual_entry_ids
       @auto_attach_enabled = auto_attach_enabled
+      @account_auto_attach_required = account_auto_attach_required
     end
 
     def self.call(...)
@@ -19,7 +20,8 @@ module MarketplaceEntries
         project: agent_run.project,
         agent_run:,
         manual_entry_ids:,
-        auto_attach_enabled:
+        auto_attach_enabled:,
+        account_auto_attach_required:
       )
 
       AgentRunMarketplaceEntry.transaction do

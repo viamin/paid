@@ -3,6 +3,73 @@
 require "rails_helper"
 
 RSpec.describe Activities::RunAgentActivity, :no_db do
+  describe "#synchronize_marketplace_mcp_for_provider!" do
+    let(:activity) { described_class.new }
+    let(:attachments_relation) do
+      Class.new do
+        def exists?; end
+      end
+    end
+    let(:agent_run) do
+      Struct.new(
+        :agent_run_marketplace_entries,
+        :mcp_server_snapshot,
+        :mcp_provisioned_servers,
+        keyword_init: true
+      ).new(
+        agent_run_marketplace_entries: attachments,
+        mcp_server_snapshot: initial_snapshot,
+        mcp_provisioned_servers: initial_provisioned_servers
+      )
+    end
+    let(:attachments) { instance_double(attachments_relation, exists?: true) }
+    let(:initial_snapshot) { [ { "name" => "old-marketplace-server", "marketplace_attachment" => true } ] }
+    let(:initial_provisioned_servers) { { "stdio_servers" => [ { "name" => "old-marketplace-server" } ], "url_servers" => [] } }
+    let(:provisioner_class) do
+      Class.new do
+        def provision(*); end
+      end
+    end
+    let(:provisioner) { instance_double(provisioner_class) }
+
+    before do
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call) do |agent_run:, provider_key:|
+        agent_run.mcp_server_snapshot = [ { "name" => "#{provider_key}-server", "marketplace_attachment" => true } ]
+      end
+      allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+      allow(provisioner).to receive(:provision)
+      allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return("paid-network")
+      allow(activity).to receive(:provider_entry_for).and_return(nil)
+    end
+
+    it "re-renders and re-provisions marketplace MCP servers for the provider attempt" do
+      activity.send(
+        :synchronize_marketplace_mcp_for_provider!,
+        agent_run: agent_run,
+        provider_candidate: "codex",
+        provider: "codex",
+        user: nil
+      )
+
+      expect(MarketplaceEntries::RerenderForRun).to have_received(:call).with(agent_run: agent_run, provider_key: "codex")
+      expect(provisioner).to have_received(:provision).with(agent_run, network: "paid-network")
+    end
+
+    it "skips reprovision when the snapshot is unchanged and provisioned MCP state already exists" do
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call)
+
+      activity.send(
+        :synchronize_marketplace_mcp_for_provider!,
+        agent_run: agent_run,
+        provider_candidate: "codex",
+        provider: "codex",
+        user: nil
+      )
+
+      expect(provisioner).not_to have_received(:provision)
+    end
+  end
+
   describe "#command_env_for" do
     let(:activity) { described_class.new }
     let(:command_context_class) do

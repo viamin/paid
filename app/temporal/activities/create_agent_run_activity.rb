@@ -94,7 +94,8 @@ module Activities
       attach_marketplace_entries(
         agent_run: agent_run,
         manual_entry_ids: manual_marketplace_entry_ids,
-        auto_attach_enabled: marketplace_auto_attach_enabled?(project, user_settings)
+        auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
+        account_auto_attach_required: marketplace_auto_attach_required?(project)
       )
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
@@ -255,7 +256,8 @@ module Activities
 
       attach_marketplace_entries(
         agent_run: agent_run,
-        auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
+        auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
+        account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
       )
     end
 
@@ -270,11 +272,12 @@ module Activities
       )
     end
 
-    def attach_marketplace_entries(agent_run:, auto_attach_enabled:, manual_entry_ids: nil)
+    def attach_marketplace_entries(agent_run:, auto_attach_enabled:, manual_entry_ids: nil, account_auto_attach_required: false)
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,
         manual_entry_ids: manual_entry_ids,
-        auto_attach_enabled: auto_attach_enabled
+        auto_attach_enabled: auto_attach_enabled,
+        account_auto_attach_required: account_auto_attach_required
       )
     rescue => e
       logger.warn(
@@ -345,9 +348,12 @@ module Activities
       user_settings&.max_execution_seconds || project.max_execution_seconds
     end
 
-    def marketplace_auto_attach_enabled?(project, user_settings)
-      user_settings&.marketplace_auto_attach_enabled? ||
-        project.account.tenant_setting&.marketplace_auto_attach_required?
+    def marketplace_auto_attach_enabled?(user_settings)
+      user_settings&.marketplace_auto_attach_enabled?
+    end
+
+    def marketplace_auto_attach_required?(project)
+      project.account.tenant_setting&.marketplace_auto_attach_required?
     end
 
     def test_command_for(project)

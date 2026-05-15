@@ -49,13 +49,19 @@ module Containers
     # @return [Hash] with :stdio_servers and :url_servers arrays
     def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       snapshot = agent_run.mcp_server_snapshot
-      return { stdio_servers: [], url_servers: [] } if snapshot.blank?
-
       sidecar_ids = []
 
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
       stale_ids = agent_run.mcp_sidecar_container_ids
       cleanup_containers(stale_ids) if stale_ids.present?
+
+      if snapshot.blank?
+        agent_run.update!(
+          mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
+          mcp_sidecar_container_ids: []
+        )
+        return { stdio_servers: [], url_servers: [] }
+      end
 
       @network = network
       stdio_servers = []

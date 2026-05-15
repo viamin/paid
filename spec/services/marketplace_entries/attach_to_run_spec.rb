@@ -36,7 +36,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     )
     manual = create_manual_entry
 
-    attachments = described_class.call(agent_run:, manual_entry_ids: [ manual.id ], auto_attach_enabled: true)
+    attachments = described_class.call(agent_run:, manual_entry_ids: [ automatic.id, manual.id ], auto_attach_enabled: true, account_auto_attach_required: true)
 
     expect(attachments.map(&:marketplace_entry)).to contain_exactly(automatic, team_default, manual)
     expect(attachments.map(&:attachment_source)).to contain_exactly("automatic", "team_default", "manual")
@@ -98,7 +98,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments).to be_empty
   end
 
-  it "attaches both automatic and team-default entries when automatic attachment is enabled" do
+  it "does not attach unrelated automatic and team-default entries when automatic attachment is enabled" do
     automatic = create_entry(
       name: "Automatic skill",
       rule_mode: "automatic",
@@ -114,8 +114,21 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, auto_attach_enabled: true)
 
-    expect(attachments.map(&:marketplace_entry)).to eq([ automatic, team_default ])
-    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
+    expect(attachments).to be_empty
+  end
+
+  it "attaches account-required team-default entries without manual selection" do
+    team_default = create_entry(
+      name: "Team default skill",
+      rule_mode: "team_default",
+      conditions: {},
+      content: "Team default instructions"
+    )
+
+    attachments = described_class.call(agent_run:, account_auto_attach_required: true)
+
+    expect(attachments.map(&:marketplace_entry)).to eq([ team_default ])
+    expect(attachments.map(&:attachment_source)).to eq([ "team_default" ])
   end
 
   it "does not treat a manual selection as consent for unrelated automatic or team-default entries" do

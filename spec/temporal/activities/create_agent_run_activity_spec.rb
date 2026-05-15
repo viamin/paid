@@ -31,7 +31,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.configuration_bundle).to be_present
     end
 
-    it "applies team-default marketplace entries when creating a fresh run" do
+    it "does not apply team-default marketplace entries for opted-in users until that entry is explicitly selected" do
       project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
       entry = create(:marketplace_entry, account: project.account, name: "Team default skill")
       version = create(:marketplace_entry_version,
@@ -46,9 +46,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.agent_run_marketplace_entries.count).to eq(1)
-      expect(agent_run.agent_run_marketplace_entries.first.marketplace_entry).to eq(entry)
-      expect(agent_run.agent_run_marketplace_entries.first.attachment_source).to eq("team_default")
+      expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
     it "does not apply team-default marketplace entries by default" do
@@ -909,8 +907,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(queued_run.agent_type).to eq("claude_code")
       end
 
-      it "applies team-default marketplace entries when the resuming user has auto-attach enabled" do
-        project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
+      it "applies team-default marketplace entries when the account requires them during resume" do
+        project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
         entry = create(:marketplace_entry, account: project.account, name: "Resume default skill")
         version = create(:marketplace_entry_version,
           marketplace_entry: entry,

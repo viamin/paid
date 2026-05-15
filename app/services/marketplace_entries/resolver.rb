@@ -4,13 +4,14 @@ module MarketplaceEntries
   class Resolver
     Result = Struct.new(:entry, :version, :source, :reason, keyword_init: true)
 
-    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled
+    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled, :account_auto_attach_required
 
-    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
+    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, account_auto_attach_required: false)
       @project = project
       @agent_run = agent_run
       @manual_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
       @auto_attach_enabled = auto_attach_enabled
+      @account_auto_attach_required = account_auto_attach_required
     end
 
     def self.call(...)
@@ -30,7 +31,7 @@ module MarketplaceEntries
     def attach_automatic_entries!(selections)
       return unless auto_attach_enabled?
 
-      automatic_compatible_entries.each do |entry|
+      selected_compatible_entries.each do |entry|
         next if selections.key?(entry.id)
 
         matching_rule = ordered_enabled_rules(entry).find do |rule|
@@ -48,9 +49,9 @@ module MarketplaceEntries
     end
 
     def attach_team_default_entries!(selections)
-      return unless auto_attach_enabled?
+      return unless auto_attach_enabled? || account_auto_attach_required?
 
-      compatible_entries.each do |entry|
+      team_default_compatible_entries.each do |entry|
         next if selections.key?(entry.id)
 
         matching_rule = ordered_enabled_rules(entry).find do |rule|
@@ -107,8 +108,16 @@ module MarketplaceEntries
       @compatible_entries ||= prefiltered_candidate_entries.select { |entry| compatible_with_run?(entry.current_version) }
     end
 
-    def automatic_compatible_entries
-      @automatic_compatible_entries ||= compatible_entries
+    def selected_compatible_entries
+      @selected_compatible_entries ||= compatible_entries.select { |entry| effective_manual_entry_ids.include?(entry.id) }
+    end
+
+    def team_default_compatible_entries
+      @team_default_compatible_entries ||= if account_auto_attach_required?
+        compatible_entries
+      else
+        selected_compatible_entries
+      end
     end
 
     def prefiltered_candidate_entries
@@ -193,6 +202,10 @@ module MarketplaceEntries
 
     def auto_attach_enabled?
       auto_attach_enabled
+    end
+
+    def account_auto_attach_required?
+      account_auto_attach_required
     end
   end
 end
