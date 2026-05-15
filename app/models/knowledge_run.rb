@@ -55,7 +55,8 @@ class KnowledgeRun < ApplicationRecord
   end
 
   def effective_provider
-    final_provider.presence || provider_attempts.last&.fetch("provider", nil) || "unknown"
+    attempts = runner_attempts
+    final_runner.presence || attempts.last&.fetch("runner", nil) || attempts.last&.fetch("provider", nil) || "unknown"
   end
 
   alias_method :effective_runner, :effective_provider

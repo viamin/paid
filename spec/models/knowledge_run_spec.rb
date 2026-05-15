@@ -50,6 +50,67 @@ RSpec.describe KnowledgeRun do
 
       expect(knowledge_run.effective_provider).to eq("openai")
     end
+
+    it "accepts runner-key attempts through the phase-one alias bridge", :no_db do
+      knowledge_run = described_class.allocate
+      knowledge_run.define_singleton_method(:final_runner) { nil }
+      knowledge_run.define_singleton_method(:runner_attempts) { [ { "runner" => "claude" }, { "runner" => "openai" } ] }
+
+      expect(knowledge_run.effective_provider).to eq("openai")
+      expect(knowledge_run.effective_runner).to eq("openai")
+    end
+  end
+
+  describe "runner alias bridge", :no_db do
+    it "reads final_runner through the legacy final_provider column" do
+      knowledge_run = described_class.allocate
+      knowledge_run.define_singleton_method(:final_provider) { "openai" }
+
+      expect(knowledge_run.final_runner).to eq("openai")
+    end
+
+    it "writes final_runner back to the legacy final_provider column" do
+      knowledge_run = described_class.allocate
+      stored_final_provider = nil
+      knowledge_run.define_singleton_method(:final_provider=) { |value| stored_final_provider = value }
+
+      knowledge_run.final_runner = "claude"
+
+      expect(stored_final_provider).to eq("claude")
+    end
+
+    it "normalizes runner_attempts when reading the legacy provider_attempts column" do
+      knowledge_run = described_class.allocate
+      knowledge_run.define_singleton_method(:provider_attempts) { [ { "provider" => "claude" } ] }
+
+      expect(knowledge_run.runner_attempts).to eq([ { "provider" => "claude", "runner" => "claude" } ])
+    end
+
+    it "stores runner_attempts back into the legacy provider_attempts column" do
+      knowledge_run = described_class.allocate
+      stored_attempts = nil
+      knowledge_run.define_singleton_method(:provider_attempts=) { |value| stored_attempts = value }
+
+      knowledge_run.runner_attempts = [ { "runner" => "openai", "attempted_at" => "2026-05-15T07:00:00Z" } ]
+
+      expect(stored_attempts).to eq([ { "provider" => "openai", "attempted_at" => "2026-05-15T07:00:00Z" } ])
+    end
+
+    it "records runner attempts through the legacy writer" do
+      knowledge_run = described_class.allocate
+      stored_attempts = []
+      knowledge_run.define_singleton_method(:provider_attempts) { stored_attempts }
+      knowledge_run.define_singleton_method(:provider_attempts=) { |value| stored_attempts = value }
+
+      knowledge_run.define_singleton_method(:update!) do |attrs|
+        stored_attempts = attrs.fetch(:provider_attempts)
+      end
+
+      knowledge_run.record_runner_attempt("claude")
+
+      expect(stored_attempts.last).to include("provider" => "claude")
+      expect(knowledge_run.runner_attempts.last).to include("provider" => "claude", "runner" => "claude")
+    end
   end
 
   describe "#ensure_proxy_token!" do

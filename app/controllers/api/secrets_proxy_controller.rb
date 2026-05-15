@@ -247,7 +247,7 @@ module Api
       return unless @knowledge_run
 
       requested_runner_key = request.headers["X-Paid-Knowledge-Provider"].presence
-      return @knowledge_run.final_provider.presence unless requested_runner_key
+      return @knowledge_run.final_runner.presence unless requested_runner_key
 
       return requested_runner_key if allowed_knowledge_run_runner_keys.include?(requested_runner_key)
 
@@ -281,12 +281,14 @@ module Api
     end
 
     def allowed_knowledge_run_runner_keys
-      attempted = Array(@knowledge_run.provider_attempts).filter_map do |attempt|
-        attempt.is_a?(Hash) ? attempt["provider"].presence : attempt.presence
+      attempted = Array(@knowledge_run.runner_attempts).filter_map do |attempt|
+        next attempt.presence unless attempt.is_a?(Hash)
+
+        attempt["runner"].presence || attempt["provider"].presence
       end
 
       keys = attempted
-      keys << @knowledge_run.final_provider if @knowledge_run.final_provider.present?
+      keys << @knowledge_run.final_runner if @knowledge_run.final_runner.present?
       keys = keys.compact.uniq
       return keys if keys.any? || @knowledge_run.operation_type != "embedding"
 
