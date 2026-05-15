@@ -19,7 +19,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
   def run_class
     @run_class ||= Struct.new(:id, :previously_new_record?) do
-      attr_accessor :provider, :agent_type, :status, :trigger_type, :auto_pick
+      attr_accessor :provider, :agent_type, :status, :trigger_type, :auto_pick, :goal
     end
   end
 
@@ -47,7 +47,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     run = build_run(id: 99, previously_new_record: true)
 
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue, goal: "create_pr")
+      expect(attrs).to eq(project: project, issue: issue)
       block.call(run)
       run
     end
@@ -56,12 +56,13 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     result = service.call
 
     expect(result).to eq(run)
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue, goal: "create_pr")
+    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
     expect(run.provider).to eq(provider)
     expect(run.agent_type).to eq("claude_code")
     expect(run.status).to eq("queued")
     expect(run.trigger_type).to eq("automatic")
     expect(run.auto_pick).to be(true)
+    expect(run.goal).to eq("create_pr")
     expect(Rails.logger).to have_received(:info).with(
       hash_including(message: "enqueue_eligible.created", issue_id: issue.id, agent_run_id: run.id)
     )
@@ -105,7 +106,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
       ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
-    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue, goal: "create_pr").and_return(existing_run)
+    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
     allow(Rails.logger).to receive(:info)
 
     result = service.call
@@ -141,7 +142,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
-      expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")
+      expect(attrs).to eq(project: project, issue: issue)
       block.call(run)
       run
     end
@@ -149,10 +150,22 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     service.call
 
-    expect(blocking_runs).to have_received(:find_or_create_by!).with(
-      project: project,
-      issue: issue,
-      goal: "analyze_issue"
+    expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
+    expect(run.goal).to eq("analyze_issue")
+  end
+
+  it "returns an existing blocking run even when its goal differs from the current seed goal" do
+    existing_run = instance_double(run_class, id: 123, previously_new_record?: false)
+
+    allow(project).to receive(:auto_enhance_enabled?).and_return(true)
+    allow(blocking_runs).to receive(:find_or_create_by!).and_raise(
+      ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
     )
+    allow(blocking_runs).to receive(:find_by).with(project: project, issue: issue).and_return(existing_run)
+    allow(Rails.logger).to receive(:info)
+
+    result = service.call
+
+    expect(result).to eq(existing_run)
   end
 end

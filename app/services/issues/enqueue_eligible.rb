@@ -24,12 +24,13 @@ module Issues
         return nil
       end
 
-      run = blocking_runs.find_or_create_by!(project: project, issue: issue, goal: goal) do |agent_run|
+      run = blocking_runs.find_or_create_by!(project: project, issue: issue) do |agent_run|
         agent_run.provider = provider
         agent_run.agent_type = Provider.agent_type_for(provider.provider_key)
         agent_run.status = "queued"
         agent_run.trigger_type = "automatic"
         agent_run.auto_pick = true
+        agent_run.goal = goal
       end
 
       if run.previously_new_record?
@@ -43,7 +44,7 @@ module Issues
       message = e.cause&.message || e.message
       raise unless message&.include?("idx_agent_runs_unique_active_issue")
 
-      run = blocking_runs.find_by(project: project, issue: issue, goal: goal)
+      run = blocking_runs.find_by(project: project, issue: issue)
       if run
         log_existing(run)
         run
