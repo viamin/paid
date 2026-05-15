@@ -28,6 +28,7 @@ module Activities
 
       client = project.github_token.client
       incremental = project.last_issue_sync_at.present?
+      eager_queue_enabled = incremental && Issues::AutoPickProjectGate.call(project)
       sync_started_at = Time.current
 
       github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
@@ -40,7 +41,7 @@ module Activities
       enhance_issue_rechecks = []
 
       Project.suppress_broadcasts do
-        synced_issues = github_issues.map { |gi| sync_issue(project, gi, incremental: incremental) }
+        synced_issues = github_issues.map { |gi| sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled) }
         sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed ||= relationship_changes
@@ -255,7 +256,7 @@ module Activities
       [ issues, truncated ]
     end
 
-    def sync_issue(project, github_issue, incremental: true)
+    def sync_issue(project, github_issue, eager_queue_enabled: false)
       creator_login = github_issue.user&.login || "unknown"
       trusted = project.trusted_github_user?(creator_login)
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
@@ -275,7 +276,7 @@ module Activities
         github_issue: github_issue,
         body: trusted ? github_issue.body : nil
       )
-      enqueue_eligible_issue(project, issue) if incremental
+      enqueue_eligible_issue(project, issue) if eager_queue_enabled
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
@@ -287,7 +288,7 @@ module Activities
       return unless issue.github_state == "open"
       return if issue.is_pull_request?
 
-      Issues::EnqueueEligible.call(issue, project: project)
+      Issues::EnqueueEligible.call(issue, project: project, skip_project_gate: true)
     end
 
     def detect_enhance_issue_rechecks(project, synced_issues)

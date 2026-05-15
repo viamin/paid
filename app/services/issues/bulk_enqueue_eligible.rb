@@ -6,19 +6,20 @@ module Issues
       new(...).call
     end
 
-    def initialize(project:, limit: nil)
+    def initialize(project:, limit: nil, skip_project_gate: false)
       @project = project
       @limit = limit
+      @skip_project_gate = skip_project_gate
     end
 
     def call
-      return [] unless project.auto_pick_enabled?
+      return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
 
       each_eligible_issue do |issue|
-        run = EnqueueEligible.call(issue, project: project)
+        run = EnqueueEligible.call(issue, project: project, skip_project_gate: true)
 
         if run.nil?
           counts[:skipped] += 1
@@ -46,6 +47,7 @@ module Issues
 
     attr_reader :project
     attr_reader :limit
+    attr_reader :skip_project_gate
 
     def each_eligible_issue(&)
       return ordered_eligible_scope.each(&) if limit.present?

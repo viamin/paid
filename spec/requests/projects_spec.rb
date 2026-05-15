@@ -1595,7 +1595,7 @@ RSpec.describe "Projects" do
 
         post toggle_auto_pick_project_path(project)
 
-        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project)
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
       end
 
       it "does not bulk seed when disabling auto_pick" do

@@ -877,7 +877,9 @@ class Project < ApplicationRecord
   end
 
   def seed_eligible_issues
-    Issues::BulkEnqueueEligible.call(project: self)
+    return unless Issues::AutoPickProjectGate.call(self)
+
+    Issues::BulkEnqueueEligible.call(project: self, skip_project_gate: true)
   rescue => e
     Rails.logger.error(message: "auto_pick.bulk_seed_failed", project_id: id, error: e.message)
   end

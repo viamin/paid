@@ -101,7 +101,11 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       activity.send(:enqueue_eligible_issue, project, issue)
 
-      expect(Issues::EnqueueEligible).to have_received(:call).with(issue, project: project)
+      expect(Issues::EnqueueEligible).to have_received(:call).with(
+        issue,
+        project: project,
+        skip_project_gate: true
+      )
     end
 
     it "skips ineligible synced issues" do
@@ -258,11 +262,30 @@ RSpec.describe Activities::FetchIssuesActivity do
         activity.execute(project_id: project.id)
 
         synced_issue = project.issues.find_by!(github_issue_id: eligible_issue.id)
-        expect(Issues::EnqueueEligible).to have_received(:call).with(synced_issue, project: project)
+        expect(Issues::EnqueueEligible).to have_received(:call).with(
+          synced_issue,
+          project: project,
+          skip_project_gate: true
+        )
       end
 
       it "does not queue synced pull requests or closed issues" do
         stub_issues_by_label(nil => [ pull_request_issue, closed_issue ])
+
+        activity.execute(project_id: project.id)
+
+        expect(Issues::EnqueueEligible).not_to have_received(:call)
+      end
+
+      it "does not eagerly enqueue when the project is already at the PR-attention cap" do
+        create(:issue,
+          project: project,
+          is_pull_request: true,
+          github_state: "open",
+          paid_state: "in_progress",
+          labels: [])
+        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
+        stub_issues_by_label(nil => [ eligible_issue ])
 
         activity.execute(project_id: project.id)
 
