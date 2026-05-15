@@ -116,9 +116,9 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#seed_eligible_issues", :no_db do
-    let(:project_class) { Struct.new(:auto_pick_enabled?) }
+    let(:project_class) { Struct.new(:id, :auto_pick_enabled?) }
     let(:issue_class) { Struct.new(:github_state, :is_pull_request?) }
-    let(:project) { project_class.new(true) }
+    let(:project) { project_class.new(7, true) }
     let(:issue) { issue_class.new("open", false) }
 
     it "enqueues each collected issue during incremental sync" do
@@ -139,6 +139,44 @@ RSpec.describe Activities::FetchIssuesActivity do
       activity.send(:seed_eligible_issues, project, [], incremental: false)
 
       expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project)
+    end
+
+    it "logs and swallows incremental enqueue failures" do
+      allow(Issues::EnqueueEligible).to receive(:call).and_raise(StandardError, "queue unavailable")
+      allow(activity).to receive(:logger).and_return(Rails.logger)
+      allow(Rails.logger).to receive(:error)
+
+      expect {
+        activity.send(:seed_eligible_issues, project, [ issue ], incremental: true)
+      }.not_to raise_error
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "github_sync.seed_eligible_failed",
+          project_id: project.id,
+          incremental: true,
+          error: "queue unavailable"
+        )
+      )
+    end
+
+    it "logs and swallows initial bulk seed failures" do
+      allow(Issues::BulkEnqueueEligible).to receive(:call).and_raise(StandardError, "queue unavailable")
+      allow(activity).to receive(:logger).and_return(Rails.logger)
+      allow(Rails.logger).to receive(:error)
+
+      expect {
+        activity.send(:seed_eligible_issues, project, [], incremental: false)
+      }.not_to raise_error
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "github_sync.seed_eligible_failed",
+          project_id: project.id,
+          incremental: false,
+          error: "queue unavailable"
+        )
+      )
     end
   end
 

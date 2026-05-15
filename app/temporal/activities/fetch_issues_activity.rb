@@ -299,6 +299,13 @@ module Activities
       else
         Issues::BulkEnqueueEligible.call(project: project)
       end
+    rescue => e
+      logger.error(
+        message: "github_sync.seed_eligible_failed",
+        project_id: project.id,
+        incremental: incremental,
+        error: e.message
+      )
     end
 
     def detect_enhance_issue_rechecks(project, synced_issues)
