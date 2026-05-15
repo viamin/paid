@@ -841,7 +841,7 @@ module Activities
       end
 
       combined_output = [ stderr, stdout ].compact.join("\n").strip
-      output = combined_output.presence || (stderr.presence || stdout).to_s.strip
+      output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
       if auth_expired_error?(provider, rate_limit_output)
@@ -938,7 +938,7 @@ module Activities
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
       combined_output = [ stderr, stdout ].compact.join("\n").strip
-      output = combined_output.presence || [ stderr.presence, stdout.presence ].compact.first.to_s.strip
+      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
       sanitized_output = strip_prompt_echo(combined_output, prompt)
 
       if result.success?
