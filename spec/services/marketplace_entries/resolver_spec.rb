@@ -18,7 +18,7 @@ RSpec.describe MarketplaceEntries::Resolver do
     expect(results.map(&:source)).to eq([ "automatic" ])
   end
 
-  it "preserves manual precedence when the user also explicitly selects an automatically matched entry" do
+  it "preserves automatic precedence when the user also explicitly selects an automatically matched entry" do
     project = create(:project)
     entry = create_automatic_entry_for(project.account)
     agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
@@ -31,7 +31,7 @@ RSpec.describe MarketplaceEntries::Resolver do
     )
 
     expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "manual" ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
   end
 
   it "applies automatic entries when the account requires marketplace attachment" do
