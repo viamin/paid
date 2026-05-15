@@ -23,9 +23,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("ProgressStateDouble", Class.new)
       stub_const("IssueDouble", Class.new)
       stub_const("PrDataDouble", Class.new)
+      stub_const("PrHeadDouble", Class.new)
 
       allow(activity).to receive(:backfill_review_goal_retry_reset_at!).with(issue)
-      allow(activity).to receive(:pr_progress_state).with(project, issue).and_return(progress_state)
+      allow(activity).to receive(:pr_progress_state).with(project, issue,
+        current_head_sha: anything,
+        current_head_updated_at: anything).and_return(progress_state)
       allow(activity).to receive(:record_focus_resolution).with(project, client, issue)
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
       allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
@@ -41,21 +44,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the PR is still in draft" do
       let(:phase) { "draft" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: true,
+          head: instance_double(PrHeadDouble, sha: "abc123"),
+          updated_at: Time.current)
+      end
 
-      it "still escalates immediately without fetching live PR state" do
+      it "fetches live PR state before escalating at the retry limit" do
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
         allow(activity).to receive(:escalate_trigger).with(issue,
           reason: "Review-goal retry limit reached (3 consecutive failures)").and_return(:escalated)
 
         result = activity.send(:scan_pr, project, client, issue)
 
         expect(result).to eq(:escalated)
-        expect(activity).not_to have_received(:fetch_pr_data)
+        expect(activity).to have_received(:fetch_pr_data).with(client, project, issue)
       end
     end
 
     context "when the PR is ready and GitHub has converted it back to draft" do
       let(:phase) { "ready" }
-      let(:pr_data) { instance_double(PrDataDouble, draft: true) }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: true,
+          head: instance_double(PrHeadDouble, sha: "ready123"),
+          updated_at: Time.current)
+      end
 
       it "restarts the draft scan before considering escalation" do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
@@ -85,7 +100,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when the PR is escalated and the escalation was dismissed" do
       let(:phase) { "escalated" }
-      let(:pr_data) { instance_double(PrDataDouble, draft: false) }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: false,
+          head: instance_double(PrHeadDouble, sha: "escalated123"),
+          updated_at: Time.current)
+      end
 
       it "dismisses before any retry-limit escalation can fire" do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
