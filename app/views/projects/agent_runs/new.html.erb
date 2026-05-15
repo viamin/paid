@@ -160,23 +160,98 @@
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
             <% if @marketplace_entries.any? %>
-              <div class="space-y-3">
-                <% @marketplace_entries.each do |entry| %>
-                  <label class="flex items-start gap-3 rounded-md border border-gray-200 p-3 hover:border-indigo-300">
-                    <input type="checkbox" name="marketplace_entry_ids[]" value="<%= entry.id %>" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                    <div>
-                      <div class="text-sm font-medium text-gray-900"><%= entry.name %> <span class="font-normal text-gray-500">(<%= entry.entry_type.humanize %>)</span></div>
-                      <p class="mt-1 text-sm text-gray-600"><%= entry.description.presence || entry.usage_guidance.to_s.truncate(140) %></p>
-                      <% if entry.current_version&.canonical_artifact.is_a?(Hash) %>
-                        <% strategy = entry.current_version.canonical_artifact["attachment_strategy"].presence || (entry.entry_type == "mcp_server" ? "mcp_server" : entry.entry_type.in?(%w[plugin provider_config]) ? "runtime_config" : "prompt_append") %>
-                        <p class="mt-1 text-xs text-gray-500">Delivery: <%= strategy.humanize %></p>
+              <% selected_marketplace_entry_ids = Array(params[:marketplace_entry_ids]).map(&:to_s) %>
+              <% marketplace_tags = @marketplace_entries.flat_map(&:tags).compact_blank.uniq.sort %>
+              <div class="space-y-4" data-controller="marketplace-picker">
+                <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+                  <div>
+                    <label for="marketplace-entry-query" class="block text-sm font-medium text-gray-700">Search</label>
+                    <input id="marketplace-entry-query" type="search" placeholder="Search by name, description, guidance, or tag"
+                           autocomplete="off"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           data-marketplace-picker-target="queryInput"
+                           data-action="input->marketplace-picker#filter">
+                  </div>
+
+                  <div>
+                    <label for="marketplace-entry-type" class="block text-sm font-medium text-gray-700">Type</label>
+                    <select id="marketplace-entry-type"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            data-marketplace-picker-target="typeSelect"
+                            data-action="change->marketplace-picker#filter">
+                      <option value="">All types</option>
+                      <% MarketplaceEntry::ENTRY_TYPES.each do |entry_type| %>
+                        <option value="<%= entry_type %>"><%= entry_type.humanize %></option>
                       <% end %>
-                      <% if entry.tags.any? %>
-                        <p class="mt-1 text-xs text-gray-500"><%= entry.tags.join(", ") %></p>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="marketplace-entry-tag" class="block text-sm font-medium text-gray-700">Tag</label>
+                    <select id="marketplace-entry-tag"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            data-marketplace-picker-target="tagSelect"
+                            data-action="change->marketplace-picker#filter">
+                      <option value="">All tags</option>
+                      <% marketplace_tags.each do |tag| %>
+                        <% normalized_tag = tag.downcase %>
+                        <option value="<%= normalized_tag %>"><%= tag %></option>
                       <% end %>
-                    </div>
-                  </label>
-                <% end %>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-xs text-gray-500">Manual selections override team defaults and automatic matches for the same entry.</p>
+                  <p class="text-xs font-medium text-gray-500" data-marketplace-picker-target="resultsCount"><%= pluralize(@marketplace_entries.size, "entry") %> shown</p>
+                </div>
+
+                <div class="space-y-4">
+                  <% @marketplace_entries.group_by(&:entry_type).sort_by(&:first).each do |entry_type, entries| %>
+                    <section class="space-y-3" data-marketplace-picker-target="group">
+                      <div class="flex items-center justify-between gap-3">
+                        <h3 class="text-sm font-semibold text-gray-900"><%= entry_type.humanize.pluralize %></h3>
+                        <span class="text-xs text-gray-500"><%= pluralize(entries.size, "entry") %></span>
+                      </div>
+
+                      <div class="space-y-3">
+                        <% entries.each do |entry| %>
+                          <% search_text = [entry.name, entry.description, entry.usage_guidance, entry.tags.join(" ")].compact.join(" ").downcase %>
+                          <% normalized_tags = entry.tags.map(&:downcase) %>
+                          <label class="flex items-start gap-3 rounded-md border border-gray-200 p-3 hover:border-indigo-300"
+                                 data-marketplace-picker-target="entry"
+                                 data-search-text="<%= search_text %>"
+                                 data-entry-type="<%= entry.entry_type %>"
+                                 data-tags="<%= normalized_tags.join("|") %>">
+                            <input type="checkbox" name="marketplace_entry_ids[]" value="<%= entry.id %>" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                   <% if selected_marketplace_entry_ids.include?(entry.id.to_s) %>checked<% end %>>
+                            <div>
+                              <div class="text-sm font-medium text-gray-900"><%= entry.name %></div>
+                              <p class="mt-1 text-xs font-medium uppercase tracking-wide text-gray-500"><%= entry.entry_type.humanize %></p>
+                              <p class="mt-1 text-sm text-gray-600"><%= entry.description.presence || entry.usage_guidance.to_s.truncate(140) %></p>
+                              <% if entry.current_version&.canonical_artifact.is_a?(Hash) %>
+                                <% strategy = entry.current_version.canonical_artifact["attachment_strategy"].presence || (entry.entry_type == "mcp_server" ? "mcp_server" : entry.entry_type.in?(%w[plugin provider_config]) ? "runtime_config" : "prompt_append") %>
+                                <p class="mt-1 text-xs text-gray-500">Delivery: <%= strategy.humanize %></p>
+                              <% end %>
+                              <% if entry.tags.any? %>
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                  <% entry.tags.each do |tag| %>
+                                    <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= tag %></span>
+                                  <% end %>
+                                </div>
+                              <% end %>
+                            </div>
+                          </label>
+                        <% end %>
+                      </div>
+                    </section>
+                  <% end %>
+                </div>
+
+                <div class="hidden rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500"
+                     data-marketplace-picker-target="emptyState">
+                  No marketplace entries match the current filters.
+                </div>
               </div>
             <% else %>
               <p class="text-sm text-gray-500">No active marketplace entries yet.</p>

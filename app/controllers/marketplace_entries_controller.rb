@@ -53,8 +53,12 @@ class MarketplaceEntriesController < ApplicationController
 
   def destroy
     authorize @marketplace_entry
-    @marketplace_entry.destroy!
-    redirect_to marketplace_entries_path, notice: "Marketplace entry removed."
+
+    if @marketplace_entry.destroy
+      redirect_to marketplace_entries_path, notice: "Marketplace entry removed."
+    else
+      redirect_to marketplace_entry_path(@marketplace_entry), alert: @marketplace_entry.errors.full_messages.to_sentence
+    end
   end
 
   private

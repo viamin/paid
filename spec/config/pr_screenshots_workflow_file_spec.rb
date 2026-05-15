@@ -21,12 +21,12 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
-  it "does not fail the workflow when no screenshot files were generated" do
+  it "fails the workflow when UI changes were detected but no screenshot files were generated" do
     upload_step = workflow.fetch("jobs").fetch("capture").fetch("steps").find do |step|
       step["name"] == "Upload screenshots to artifacts"
     end
 
-    expect(upload_step.dig("with", "if-no-files-found")).to eq("ignore")
+    expect(upload_step.dig("with", "if-no-files-found")).to eq("error")
   end
 
   it "loads screenshot detection from the app services load path instead of require_relative in ruby -e" do

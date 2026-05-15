@@ -142,6 +142,24 @@ RSpec.describe "MarketplaceEntries" do
     end
   end
 
+  describe "DELETE /marketplace_entries/:id" do
+    it "redirects with an alert when the entry has historical run attachments" do
+      entry = create(:marketplace_entry, account: account, name: "Shared skill")
+      version = create(:marketplace_entry_version, marketplace_entry: entry)
+      entry.update!(current_version: version)
+      run = create(:agent_run, project: create(:project, account: account))
+      create(:agent_run_marketplace_entry, agent_run: run, marketplace_entry: entry, marketplace_entry_version: version)
+
+      expect {
+        delete marketplace_entry_path(entry)
+      }.not_to change(MarketplaceEntry, :count)
+
+      expect(response).to redirect_to(marketplace_entry_path(entry))
+      follow_redirect!
+      expect(response.body).to include("cannot delete marketplace entries that have been attached to agent runs")
+    end
+  end
+
   def create_entry_with_automatic_rule
     entry = create(:marketplace_entry, account: account, name: "Repo coding skill")
     version = create(:marketplace_entry_version,

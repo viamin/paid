@@ -1198,6 +1198,23 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Repo MCP")
       end
 
+      it "renders marketplace search and filter controls in the run form" do
+        create(:marketplace_entry, account: account, name: "Ruby skill", entry_type: "skill", tags: [ "ruby", "backend" ])
+        create(:marketplace_entry, account: account, name: "MCP helper", entry_type: "mcp_server", tags: [ "ops" ])
+
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+
+        expect(doc.at_css("[data-controller='marketplace-picker']")).to be_present
+        expect(doc.at_css("input#marketplace-entry-query")).to be_present
+        expect(doc.at_css("select#marketplace-entry-type option[value='skill']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-type option[value='mcp_server']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-tag option[value='ruby']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-tag option[value='ops']")).to be_present
+        expect(doc.css("[data-marketplace-picker-target='group']").size).to eq(2)
+      end
+
       it "does not apply team-default marketplace entries unless the account requires them" do
         team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
         create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
