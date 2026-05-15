@@ -79,7 +79,7 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
     )
   end
 
-  it "completes when only non-runnable projects remain" do
+  it "does not complete when only non-runnable projects remain" do
     project = instance_double(Project, id: 303)
 
     stub_projects(project)
@@ -93,15 +93,20 @@ RSpec.describe AutoPickQueueBackfillJob, :no_db do
     expect(Issues::AutoPickProjectGate).to have_received(:call).twice.with(project)
   end
 
-  it "does not recheck non-runnable projects after completion" do
+  it "rechecks non-runnable projects until they become backfilled" do
     project = instance_double(Project, id: 404)
 
-    stub_projects(project, find_each: :once)
-    allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false)
+    stub_projects(project)
+    allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false, true)
+    allow(Issues::BulkEnqueueEligible).to receive(:call)
 
     described_class.perform_now
     described_class.perform_now
 
     expect(Issues::AutoPickProjectGate).to have_received(:call).twice.with(project)
+    expect(Issues::BulkEnqueueEligible).to have_received(:call).once.with(
+      project: project,
+      skip_project_gate: true
+    )
   end
 end
