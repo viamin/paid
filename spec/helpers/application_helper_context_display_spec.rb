@@ -37,10 +37,12 @@ RSpec.describe ApplicationHelper do
         issue: nil,
         custom_prompt: nil,
         source_pull_request_number: nil,
+        source_pull_request_record: nil,
         pull_request_number: nil,
         pull_request_url: nil,
         created_issue_url: nil,
         created_issue_number: nil,
+        created_issue_record: nil,
         "finished?": false,
         "running?": false,
         project: nil
@@ -57,21 +59,6 @@ RSpec.describe ApplicationHelper do
 
     def stub_project(github_url:)
       Struct.new(:github_url, keyword_init: true).new(github_url: github_url)
-    end
-
-    def stub_issue_scope(issues_by_key)
-      Struct.new(:issues_by_key, keyword_init: true) do
-        def find_by(github_number:, is_pull_request:)
-          issues_by_key[[ github_number, is_pull_request ]]
-        end
-      end.new(issues_by_key: issues_by_key)
-    end
-
-    def stub_project_with_issues(github_url:, issues_by_key:)
-      Struct.new(:github_url, :issues, keyword_init: true).new(
-        github_url: github_url,
-        issues: stub_issue_scope(issues_by_key)
-      )
     end
 
     context "when create_pr goal with issue" do
@@ -151,11 +138,9 @@ RSpec.describe ApplicationHelper do
       it "includes a tooltip for source PR context without a custom prompt" do
         source_pr = stub_issue(github_number: 7, github_url: "https://github.com/o/r/pull/7",
           is_pull_request: true, title: "Tighten tooltip coverage")
-        project = stub_project_with_issues(
-          github_url: "https://github.com/o/r",
-          issues_by_key: { [ 7, true ] => source_pr }
-        )
-        run = stub_run("create_pr_goal?": true, source_pull_request_number: 7, project: project)
+        project = stub_project(github_url: "https://github.com/o/r")
+        run = stub_run("create_pr_goal?": true, source_pull_request_number: 7,
+          source_pull_request_record: source_pr, project: project)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Tighten tooltip coverage"')
@@ -232,14 +217,10 @@ RSpec.describe ApplicationHelper do
       it "includes a tooltip for created issue context without a custom prompt" do
         created_issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
           title: "Document tooltip behavior")
-        project = stub_project_with_issues(
-          github_url: "https://github.com/o/r",
-          issues_by_key: { [ 42, false ] => created_issue }
-        )
         run = stub_run("create_issue_goal?": true,
           created_issue_url: "https://github.com/o/r/issues/42",
           created_issue_number: 42,
-          project: project)
+          created_issue_record: created_issue)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Document tooltip behavior"')
@@ -313,11 +294,9 @@ RSpec.describe ApplicationHelper do
       it "includes a tooltip for review PR context without a custom prompt" do
         source_pr = stub_issue(github_number: 15, github_url: "https://github.com/o/r/pull/15",
           is_pull_request: true, title: "Review the tooltip helper update")
-        project = stub_project_with_issues(
-          github_url: "https://github.com/o/r",
-          issues_by_key: { [ 15, true ] => source_pr }
-        )
-        run = stub_run("review_goal?": true, source_pull_request_number: 15, project: project)
+        project = stub_project(github_url: "https://github.com/o/r")
+        run = stub_run("review_goal?": true, source_pull_request_number: 15,
+          source_pull_request_record: source_pr, project: project)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Review the tooltip helper update"')

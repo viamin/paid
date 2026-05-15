@@ -26,6 +26,7 @@ class ProjectsController < ApplicationController
     @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
     AgentRun.preload_source_pull_requests(@recent_agent_runs)
+    AgentRun.preload_created_issue_records(@recent_agent_runs)
     settings = current_user.settings
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
     @issues = open_items.issues_only.includes(:sub_issues).limit(settings.max_issues_per_page)

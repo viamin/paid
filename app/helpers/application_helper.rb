@@ -541,10 +541,14 @@ module ApplicationHelper
       return nil
     end
 
-    project = run.project
-    return nil unless project.respond_to?(:issues)
+    if !is_pull_request && run.respond_to?(:created_issue_record)
+      title = run.created_issue_record&.title
+      return title if title.present?
 
-    project.issues.find_by(github_number: github_number, is_pull_request: is_pull_request)&.title
+      return nil
+    end
+
+    nil
   end
 
   def provider_display_for_identifier(identifier, provider: nil)
