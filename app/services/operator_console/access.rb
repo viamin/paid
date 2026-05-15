@@ -34,8 +34,15 @@ module OperatorConsole
       def configured_values(credential_key, env_key:)
         return split_values(ENV.fetch(env_key)) if ENV.key?(env_key)
 
-        credential_values = Rails.application.credentials.dig(:operator_console, credential_key)
+        credential_values = credentials_value(credential_key)
         Array(credential_values).flat_map { |value| split_values(value) }.uniq
+      end
+
+      def credentials_value(credential_key)
+        Rails.application.credentials.dig(:operator_console, credential_key)
+      rescue ActiveSupport::EncryptedFile::MissingKeyError,
+        ActiveSupport::MessageEncryptor::InvalidMessage
+        nil
       end
 
       def split_values(value)

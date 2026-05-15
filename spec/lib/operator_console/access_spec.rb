@@ -58,4 +58,18 @@ RSpec.describe OperatorConsole::Access, :no_db do
 
     expect(described_class.allowed?(user)).to be(true)
   end
+
+  it "fails closed when encrypted credentials are unavailable" do
+    ENV.delete("PAID_OPERATOR_EMAILS")
+    allow(credentials).to receive(:dig)
+      .with(:operator_console, :emails)
+      .and_raise(
+        ActiveSupport::EncryptedFile::MissingKeyError.new(
+          key_path: Pathname.new("config/credentials/test.key"),
+          env_key: "RAILS_TEST_KEY"
+        )
+      )
+
+    expect(described_class.allowed?(user)).to be(false)
+  end
 end
