@@ -88,4 +88,23 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
 
     expect(scope).to have_received(:find_each)
   end
+
+  it "stops after reaching the created-run limit" do
+    limited_service = described_class.new(project: project, limit: 1)
+    first_issue = instance_double(BulkTestIssue)
+    second_issue = instance_double(BulkTestIssue)
+    third_issue = instance_double(BulkTestIssue)
+    existing_run = instance_double(BulkTestRun, issue: first_issue, previously_new_record?: false)
+    created_run = instance_double(BulkTestRun, issue: second_issue, previously_new_record?: true)
+
+    allow(scope).to receive(:find_each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
+    allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(existing_run)
+    allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(created_run)
+    allow(Rails.logger).to receive(:info)
+
+    result = limited_service.call
+
+    expect(result).to eq([ existing_run, created_run ])
+    expect(Issues::EnqueueEligible).not_to have_received(:call).with(third_issue, project: project)
+  end
 end

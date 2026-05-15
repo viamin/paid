@@ -17,7 +17,8 @@ module Issues
         return nil
       end
 
-      provider = resolve_provider
+      goal = seeded_goal
+      provider = resolve_provider(goal)
       unless provider
         log_no_provider
         return nil
@@ -29,7 +30,7 @@ module Issues
         agent_run.status = "queued"
         agent_run.trigger_type = "automatic"
         agent_run.auto_pick = true
-        agent_run.goal = "create_pr"
+        agent_run.goal = goal
       end
 
       if run.previously_new_record?
@@ -63,9 +64,13 @@ module Issues
         .exists?
     end
 
-    def resolve_provider
-      provider_id, = AgentRuns::ProviderResolver.call(project: project, goal: "create_pr")
+    def resolve_provider(goal)
+      provider_id, = AgentRuns::ProviderResolver.call(project: project, goal: goal)
       Provider.kept_only.find_by(id: provider_id) if provider_id
+    end
+
+    def seeded_goal
+      project.auto_enhance_enabled? ? "analyze_issue" : "create_pr"
     end
 
     def blocking_runs

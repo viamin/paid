@@ -292,7 +292,7 @@ RSpec.describe ProcessRunQueueJob do
         created_run = nil
         call_count = 0
         allow(Issues::BulkEnqueueEligible).to receive(:call)
-          .with(project: having_attributes(id: project.id)) do
+          .with(project: having_attributes(id: project.id), limit: 1) do
             call_count += 1
             if call_count == 1
               created_run = create(:agent_run, :queued, project: project, issue: issue)
@@ -305,7 +305,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(Issues::BulkEnqueueEligible).to have_received(:call)
-          .with(project: having_attributes(id: project.id)).at_least(:once)
+          .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
         expect(created_run.reload.status).to eq("queued")
       end
 
@@ -313,7 +313,7 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project, auto_pick_enabled: true)
 
         allow(Issues::BulkEnqueueEligible).to receive(:call)
-          .with(project: having_attributes(id: project.id))
+          .with(project: having_attributes(id: project.id), limit: 1)
           .and_return([])
 
         described_class.new.perform
@@ -327,6 +327,22 @@ RSpec.describe ProcessRunQueueJob do
         expect(Issues::BulkEnqueueEligible).not_to receive(:call)
 
         described_class.new.perform
+      end
+
+      it "seeds at most one new auto-pick run per project in each pass" do
+        stub_const("#{described_class}::MAX_SEEDS_PER_PERFORM", 2)
+        account = create(:account)
+        user = create(:user, account: account)
+        user.settings.update!(max_concurrent_runs: 2)
+        first_project = create_auto_pick_project(account: account, user: user)
+        second_project = create_auto_pick_project(account: account, user: user)
+        2.times { create(:issue, project: first_project) }
+        2.times { create(:issue, project: second_project) }
+
+        described_class.new.perform
+
+        expect(first_project.agent_runs.where(auto_pick: true).count).to eq(1)
+        expect(second_project.agent_runs.where(auto_pick: true).count).to eq(1)
       end
 
       it "skips auto-pick seeding for projects whose account is paused" do

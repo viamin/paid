@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
-TestProject = Struct.new(:id)
+TestProject = Struct.new(:id) do
+  def auto_enhance_enabled? = false
+end
 TestIssue = Struct.new(:id, :github_number)
 TestProvider = Struct.new(:id, :provider_key)
 TestRun = Struct.new(:id, :previously_new_record?) do
@@ -10,7 +13,7 @@ TestRun = Struct.new(:id, :previously_new_record?) do
 end
 
 RSpec.describe Issues::EnqueueEligible, :no_db do
-  let(:project) { instance_double(TestProject, id: 7) }
+  let(:project) { instance_double(TestProject, id: 7, auto_enhance_enabled?: false) }
   let(:issue) { instance_double(TestIssue, id: 11, github_number: 42) }
   let(:eligible_scope) { instance_double(ActiveRecord::Relation) }
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
@@ -27,9 +30,12 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   it "creates a queued automatic auto-pick run for an eligible issue" do
-    run = instance_double(TestRun, id: 99, previously_new_record?: true)
-    allow(blocking_runs).to receive(:find_or_create_by!) do |attrs|
+    run = OpenStruct.new(id: 99)
+    def run.previously_new_record? = true
+
+    allow(blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
       expect(attrs).to eq(project: project, issue: issue)
+      block.call(run)
       run
     end
     allow(Rails.logger).to receive(:info)
@@ -38,9 +44,26 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     expect(result).to eq(run)
     expect(blocking_runs).to have_received(:find_or_create_by!).with(project: project, issue: issue)
+    expect(run.provider).to eq(provider)
+    expect(run.agent_type).to eq("claude_code")
+    expect(run.status).to eq("queued")
+    expect(run.trigger_type).to eq("automatic")
+    expect(run.auto_pick).to be(true)
+    expect(run.goal).to eq("create_pr")
     expect(Rails.logger).to have_received(:info).with(
       hash_including(message: "enqueue_eligible.created", issue_id: issue.id, agent_run_id: run.id)
     )
+  end
+
+  it "resolves the provider for analyze_issue when auto_enhance is enabled" do
+    allow(project).to receive(:auto_enhance_enabled?).and_return(true)
+    allow(service).to receive(:resolve_provider).with("analyze_issue").and_return(provider)
+    allow(blocking_runs).to receive(:find_or_create_by!).and_return(instance_double(TestRun, id: 99, previously_new_record?: true))
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(service).to have_received(:resolve_provider).with("analyze_issue")
   end
 
   it "returns nil when DefaultCandidateSource excludes the issue for paid_state reasons" do
@@ -88,7 +111,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   it "returns nil and warns when no provider can be resolved" do
-    allow(service).to receive(:resolve_provider).and_return(nil)
+    allow(service).to receive(:resolve_provider).with("create_pr").and_return(nil)
     allow(Rails.logger).to receive(:warn)
 
     result = service.call

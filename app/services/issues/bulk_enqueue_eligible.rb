@@ -6,8 +6,9 @@ module Issues
       new(...).call
     end
 
-    def initialize(project:)
+    def initialize(project:, limit: nil)
       @project = project
+      @limit = limit
     end
 
     def call
@@ -27,6 +28,7 @@ module Issues
         runs << run
         key = run.previously_new_record? ? :created : :existing
         counts[key] += 1
+        break if limit_reached?(counts)
       end
 
       Rails.logger.info(
@@ -43,9 +45,14 @@ module Issues
     private
 
     attr_reader :project
+    attr_reader :limit
 
     def eligible_scope
       Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project)
+    end
+
+    def limit_reached?(counts)
+      limit.present? && counts[:created] >= limit
     end
   end
 end
