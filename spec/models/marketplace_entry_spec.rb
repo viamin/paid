@@ -7,7 +7,7 @@ RSpec.describe MarketplaceEntry do
     subject(:entry) { build(:marketplace_entry) }
 
     it { is_expected.to validate_presence_of(:name) }
-    it { is_expected.to validate_inclusion_of(:entry_type).in_array(described_class::ENTRY_TYPES) }
+    it { is_expected.to validate_inclusion_of(:entry_type).in_array(described_class::PROMPT_COMPATIBLE_ENTRY_TYPES) }
     it { is_expected.to validate_inclusion_of(:team_scope).in_array(described_class::TEAM_SCOPES) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
   end

@@ -2,6 +2,7 @@
 
 class MarketplaceEntry < ApplicationRecord
   ENTRY_TYPES = %w[skill agent plugin mcp_server prompt_pack provider_config enhancement other].freeze
+  PROMPT_COMPATIBLE_ENTRY_TYPES = %w[skill agent prompt_pack enhancement other].freeze
   TEAM_SCOPES = %w[account private].freeze
   STATUSES = %w[draft active deprecated].freeze
 
@@ -19,7 +20,7 @@ class MarketplaceEntry < ApplicationRecord
   has_many :agent_runs, through: :agent_run_marketplace_entries
 
   validates :name, presence: true, length: { maximum: 255 }
-  validates :entry_type, presence: true, inclusion: { in: ENTRY_TYPES }
+  validates :entry_type, presence: true, inclusion: { in: PROMPT_COMPATIBLE_ENTRY_TYPES }
   validates :provider, length: { maximum: 100 }, allow_nil: true
   validates :provider_format, presence: true, length: { maximum: 100 }
   validates :added_by_name, presence: true, length: { maximum: 255 }
@@ -30,6 +31,7 @@ class MarketplaceEntry < ApplicationRecord
   validate :current_version_belongs_to_entry
 
   scope :active, -> { where(status: "active") }
+  scope :prompt_compatible, -> { where(entry_type: PROMPT_COMPATIBLE_ENTRY_TYPES) }
   scope :draft, -> { where(status: "draft") }
   scope :deprecated, -> { where(status: "deprecated") }
   scope :ordered, -> { order(:name, :id) }

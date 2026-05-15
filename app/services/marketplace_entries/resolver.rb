@@ -142,7 +142,7 @@ module MarketplaceEntries
     end
 
     def auto_attach_enabled?
-      auto_attach_enabled || effective_manual_entry_ids.any?
+      auto_attach_enabled
     end
   end
 end

@@ -37,7 +37,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results).to be_empty
   end
 
-  it "opts in to lower-priority sources when manual entries are present" do
+  it "does not opt in to automatic or team-default entries just because a manual entry is attached" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries_with_manual
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -50,7 +50,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     results = resolver.call
 
-    expect(results.map(&:source)).to include("manual")
+    expect(results.map(&:source)).to eq([ "manual" ])
   end
 
   it "applies attachment precedence as automatic < team_default < manual" do

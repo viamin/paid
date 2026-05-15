@@ -36,7 +36,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     )
     manual = create_manual_entry
 
-    attachments = described_class.call(agent_run:, manual_entry_ids: [ manual.id ])
+    attachments = described_class.call(agent_run:, manual_entry_ids: [ manual.id ], auto_attach_enabled: true)
 
     expect(attachments.map(&:marketplace_entry)).to contain_exactly(automatic, team_default, manual)
     expect(attachments.map(&:attachment_source)).to contain_exactly("automatic", "team_default", "manual")
@@ -77,6 +77,21 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     attachments = described_class.call(agent_run:)
 
     expect(attachments).to be_empty
+  end
+
+  it "does not treat a manual selection as consent for unrelated automatic or team-default entries" do
+    create_entry(
+      name: "Automatic skill",
+      rule_mode: "automatic",
+      conditions: { "goals" => [ "create_pr" ] },
+      content: "Automatic instructions"
+    )
+    manual = create_entry(name: "Manual skill", content: "Manual instructions")
+
+    attachments = described_class.call(agent_run:, manual_entry_ids: [ manual.id ])
+
+    expect(attachments.map(&:marketplace_entry)).to eq([ manual ])
+    expect(attachments.map(&:attachment_source)).to eq([ "manual" ])
   end
 
   it "injects prompt-append attachments into the effective prompt" do

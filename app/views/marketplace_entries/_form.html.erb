@@ -18,8 +18,12 @@
 
     <div>
       <%= form.label :entry_type, "Type", class: "block text-sm font-medium text-gray-700" %>
-      <%= form.select :entry_type, MarketplaceEntry::ENTRY_TYPES.map { |type| [ type.humanize, type ] }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+      <%= form.select :entry_type, MarketplaceEntry::PROMPT_COMPATIBLE_ENTRY_TYPES.map { |type| [ type.humanize, type ] }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
     </div>
+  </div>
+
+  <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+    Marketplace entries in this iteration are prompt-attached artifacts only. Use the dedicated MCP server and provider configuration screens for runtime-only integrations.
   </div>
 
   <div>

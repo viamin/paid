@@ -219,8 +219,12 @@ module Screenshots
             position: 0,
             rendered_format: "claude_skill_v1",
             rendered_payload: {
+              "provider" => "claude",
+              "provider_format" => "claude_skill_v1",
               "attachment_strategy" => "prompt_append",
-              "content" => "Use the screenshot marketplace skill."
+              "payload" => {
+                "content" => "Use the screenshot marketplace skill."
+              }
             }
           )
           attachment.save!
