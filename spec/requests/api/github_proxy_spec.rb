@@ -203,26 +203,22 @@ RSpec.describe "Api::GithubProxy" do
     before do
       stub_request(:post, target_url)
         .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
-      stub_request(:get, target_url)
-        .to_return(status: 200, body: [].to_json, headers: { "Content-Type" => "application/json" })
       allow(Rails.logger).to receive(:warn).and_call_original
+    end
+
+    def stub_review_list_response(reviews = [])
+      stub_request(:get, target_url)
+        .with(headers: hash_including("Authorization" => "token ghs_review_bot_token"))
+        .to_return(
+          status: 200,
+          body: reviews.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
     end
 
     def stub_stale_review_dismissal(review_id: 101)
       dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/#{review_id}/dismissals"
 
-      stub_request(:get, target_url)
-        .with(headers: hash_including("Authorization" => "token ghs_review_bot_token"))
-        .to_return(
-          status: 200,
-          body: [
-            { id: review_id, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
-            { id: 102, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Looks good" },
-            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" },
-            { id: 103, user: { login: "human-reviewer" }, state: "CHANGES_REQUESTED", body: "Human request" }
-          ].to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
       stub_request(:put, dismiss_url)
         .with(
           headers: hash_including("Authorization" => "token ghs_review_bot_token"),
@@ -231,6 +227,16 @@ RSpec.describe "Api::GithubProxy" do
         .to_return(status: 200, body: {}.to_json, headers: { "Content-Type" => "application/json" })
 
       dismiss_url
+    end
+
+    def clean_review_response_body
+      {
+        id: 999,
+        body: "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented",
+        comments: []
+      }.to_json
     end
 
     it "proxies review creation" do
@@ -471,6 +477,8 @@ RSpec.describe "Api::GithubProxy" do
       end
 
       it "forwards review creation with the review bot token" do
+        stub_review_list_response
+
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: { body: "Looks good", event: "COMMENT" }.to_json,
           headers: valid_headers
@@ -485,6 +493,7 @@ RSpec.describe "Api::GithubProxy" do
       it "does not touch last_used_at on the project GitHub token" do
         freeze_time do
           github_token.update_column(:last_used_at, 2.days.ago)
+          stub_review_list_response
 
           expect {
             post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
@@ -494,18 +503,26 @@ RSpec.describe "Api::GithubProxy" do
         end
       end
 
-      it "dismisses older paid-code-reviewer change requests after a non-blocking review" do
-        dismiss_url = stub_stale_review_dismissal
-        allow(Rails.logger).to receive(:info)
+      context "when older paid-code-reviewer change requests exist" do
+        it "dismisses the stale bot change request" do
+          stub_review_list_response([
+            { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 102, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Looks good" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" },
+            { id: 103, user: { login: "human-reviewer" }, state: "CHANGES_REQUESTED", body: "Human request" }
+          ])
+          dismiss_url = stub_stale_review_dismissal
+          allow(Rails.logger).to receive(:info)
 
-        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
-          params: { body: "Looks good", event: "COMMENT" }.to_json,
-          headers: valid_headers
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
 
-        expect(WebMock).to have_requested(:put, dismiss_url).once
-        expect(Rails.logger).to have_received(:info).with(
-          hash_including(message: "github_proxy.dismissed_stale_review", review_id: 101, pr_number: 10)
-        )
+          expect(WebMock).to have_requested(:put, dismiss_url).once
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "github_proxy.dismissed_stale_review", review_id: 101, pr_number: 10)
+          )
+        end
       end
 
       it "does not dismiss reviews when the latest review requests changes" do
@@ -542,6 +559,7 @@ RSpec.describe "Api::GithubProxy" do
 
       it "logs a warning when a non-clean review body is posted without inline comments" do
         allow(Rails.logger).to receive(:warn)
+        stub_review_list_response
 
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: { body: "Found two issues to fix before merge.", event: "COMMENT", comments: [] }.to_json,
@@ -559,6 +577,7 @@ RSpec.describe "Api::GithubProxy" do
 
       it "does not log a warning when the submitted review includes inline comments" do
         allow(Rails.logger).to receive(:warn)
+        stub_review_list_response
 
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: {
@@ -577,13 +596,7 @@ RSpec.describe "Api::GithubProxy" do
 
       it "does not log a warning for the clean review body-only format" do
         allow(Rails.logger).to receive(:warn)
-        clean_review_response_body = {
-          id: 999,
-          body: "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
-          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
-          state: "commented",
-          comments: []
-        }.to_json
+        stub_review_list_response
         stub_request(:post, target_url)
           .to_return(status: 200, body: clean_review_response_body, headers: { "Content-Type" => "application/json" })
 
