@@ -61,17 +61,16 @@ RSpec.describe Automation::Strategies::AutoContinue do
       expect(decision_types(result)).to eq([ "noop" ])
     end
 
-    it "operational_failure_breaker trumps escalation_dismissed" do
+    it "dismisses escalation when the owner removes the label" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "escalated",
-          operational_failure_breaker: true,
           escalation_dismissed: true,
-          escalation_reason: "Consecutive operational failures"
+          draft: false
         )
       )
 
-      expect(result.to_h[:decisions].first).to include(type: "escalate")
+      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
     end
 
     it "escalation_dismissed trumps phase-specific gates" do

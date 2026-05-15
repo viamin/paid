@@ -1051,6 +1051,8 @@ module Activities
     # failed due to a code error won't trip this breaker because a retry
     # with different code changes might succeed.
     def operational_failure_breaker?(project, issue, progress_state = pr_progress_state(project, issue))
+      return false if issue.escalated_phase?
+
       progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES
     end
 

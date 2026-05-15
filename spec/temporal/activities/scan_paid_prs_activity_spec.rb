@@ -8317,6 +8317,41 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when an escalated PR still has operational failures after dismissal" do
+    let(:dismissed_escalated_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "escalated",
+        pr_followup_count: 0,
+        review_goal_retry_reset_at: Time.current)
+    end
+
+    before do
+      enable_paid_agent_review!(project)
+      3.times do
+        create(:agent_run,
+          project: project, issue: dismissed_escalated_issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "failed",
+          started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      end
+      dismissed_escalated_issue.remove_label!("paid-escalated")
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "returns a dismiss trigger instead of re-escalating" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+
+      expect(trigger_types).to include("dismiss_escalation")
+      expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
   context "when a ready PR at retry limit has a transient fetch_pr_data failure" do
     let(:fetch_fail_issue) do
       create(:issue, :pull_request,
