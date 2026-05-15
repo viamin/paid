@@ -132,6 +132,7 @@ module Containers
         status: "warming",
         image: Provision::DEFAULTS[:image],
         network: pool_network_name,
+        container_host: Containers.backend.identifier,
         workspace_volume: "paid-pool-workspace-#{SecureRandom.hex(12)}"
       )
       provision_entry(entry)
@@ -145,7 +146,13 @@ module Containers
         image: entry.image
       )
       result = service.provision
-      entry.update!(container_id: result[:container_id], status: "warm", warmed_at: Time.current, last_error: nil)
+      entry.update!(
+        container_id: result[:container_id],
+        container_host: Containers.backend.identifier,
+        status: "warm",
+        warmed_at: Time.current,
+        last_error: nil
+      )
       entry
     rescue StandardError => e
       remove_failed_provision(entry, service, e.message)
@@ -220,7 +227,7 @@ module Containers
     end
 
     def container_running?(container_id)
-      container = Docker::Container.get(container_id)
+      container = Containers.backend.get_container(container_id)
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError
       false
@@ -229,7 +236,7 @@ module Containers
     def remove_container(container_id, force:)
       return if container_id.blank?
 
-      container = Docker::Container.get(container_id)
+      container = Containers.backend.get_container(container_id)
       container.stop(timeout: force ? 0 : 10) if container.info.dig("State", "Running")
       container.delete(force: force, v: true)
     rescue Docker::Error::NotFoundError
@@ -239,7 +246,7 @@ module Containers
     end
 
     def remove_volume(volume_name)
-      Docker::Volume.get(volume_name).remove
+      Containers.backend.delete_volume(Containers.backend.get_volume(volume_name))
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e

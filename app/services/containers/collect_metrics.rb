@@ -47,8 +47,8 @@ module Containers
     end
 
     def fetch_stats
-      container = Docker::Container.get(agent_run.container_id)
-      raw = container.stats(stream: false)
+      container = Containers.backend.get_container(agent_run.container_id)
+      raw = Containers.backend.container_stats(container, stream: false)
       parse_stats(raw)
     rescue Docker::Error::NotFoundError
       Rails.logger.warn(
