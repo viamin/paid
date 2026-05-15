@@ -2,6 +2,8 @@
 
 module MarketplaceEntries
   class RerenderForRun
+    include McpSnapshotSync
+
     attr_reader :agent_run, :provider_key
 
     def initialize(agent_run:, provider_key: nil)
@@ -42,16 +44,6 @@ module MarketplaceEntries
 
     def default_provider_key
       agent_run.provider&.provider_key || ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
-    end
-
-    def synchronize_mcp_snapshot!
-      base_snapshot = Array(agent_run.mcp_server_snapshot).reject { |snapshot| snapshot["marketplace_attachment"] == true }
-      attachment_snapshots = RuntimeAttachments.mcp_server_snapshots(agent_run)
-      merged_snapshot = base_snapshot + attachment_snapshots
-      return if merged_snapshot == agent_run.mcp_server_snapshot
-
-      agent_run.update_columns(mcp_server_snapshot: merged_snapshot)
-      agent_run.mcp_server_snapshot = merged_snapshot
     end
   end
 end

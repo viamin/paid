@@ -73,6 +73,31 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     expect(preparation.file_writes.map(&:path)).to eq([ "tmp/skill.json" ])
   end
 
+  it "ignores symlinked runtime file paths that resolve outside the allowed roots" do
+    outside_dir = Dir.mktmpdir
+    symlink_dir = Rails.root.join("tmp/runtime-attachments-symlink-test")
+    FileUtils.rm_f(symlink_dir)
+    FileUtils.ln_s(outside_dir, symlink_dir)
+
+    agent_run = build_agent_run([
+      build_attachment(
+        strategy: "runtime_config",
+        payload: {
+          "files" => [
+            { "path" => "tmp/runtime-attachments-symlink-test/escaped.json", "content" => "{\"enabled\":true}" }
+          ]
+        }
+      )
+    ])
+
+    preparation = described_class.runtime_preparation(agent_run)
+
+    expect(preparation).to be_nil
+  ensure
+    FileUtils.rm_f(symlink_dir)
+    FileUtils.rm_rf(outside_dir) if outside_dir
+  end
+
   it "keeps only marketplace-prefixed runtime env keys" do
     agent_run = build_agent_run([
       build_attachment(

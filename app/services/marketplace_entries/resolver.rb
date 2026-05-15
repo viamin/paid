@@ -20,50 +20,30 @@ module MarketplaceEntries
 
     def call
       selections = {}
-      attach_automatic_entries!(selections)
-      attach_team_default_entries!(selections)
+      attach_rule_based_entries!(selections, mode: "automatic", source: "automatic")
+      attach_rule_based_entries!(selections, mode: "team_default", source: "team_default")
       attach_manual_entries!(selections)
       selections.values
     end
 
     private
 
-    def attach_automatic_entries!(selections)
+    def attach_rule_based_entries!(selections, mode:, source:)
       return unless auto_attach_enabled? || account_auto_attach_required?
 
       compatible_entries.each do |entry|
         next if selections.key?(entry.id)
 
         matching_rule = ordered_enabled_rules(entry).find do |rule|
-          rule.mode == "automatic" && rule_matches?(rule, entry)
+          rule.mode == mode && rule_matches?(rule, entry)
         end
         next unless matching_rule
 
         selections[entry.id] = Result.new(
           entry:,
           version: entry.current_version,
-          source: "automatic",
-          reason: matching_rule.rationale.presence || "Matched automatic marketplace rule"
-        )
-      end
-    end
-
-    def attach_team_default_entries!(selections)
-      return unless auto_attach_enabled? || account_auto_attach_required?
-
-      compatible_entries.each do |entry|
-        next if selections.key?(entry.id)
-
-        matching_rule = ordered_enabled_rules(entry).find do |rule|
-          rule.mode == "team_default" && rule_matches?(rule, entry)
-        end
-        next unless matching_rule
-
-        selections[entry.id] = Result.new(
-          entry:,
-          version: entry.current_version,
-          source: "team_default",
-          reason: matching_rule.rationale.presence || "Matched team default marketplace rule"
+          source: source,
+          reason: matching_rule.rationale.presence || default_rule_reason(source)
         )
       end
     end
@@ -154,6 +134,10 @@ module MarketplaceEntries
 
     def provider_key
       @provider_key ||= agent_run.provider&.provider_key || ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
+    end
+
+    def default_rule_reason(source)
+      "Matched #{source.tr('_', ' ')} marketplace rule"
     end
 
     def auto_attach_enabled?

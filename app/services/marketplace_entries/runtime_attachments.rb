@@ -4,7 +4,7 @@ require "set"
 
 module MarketplaceEntries
   class RuntimeAttachments
-    RUNTIME_PREPARATION_ROOT = File.expand_path(".").freeze
+    RUNTIME_PREPARATION_ROOT = Rails.root.to_s.freeze
     RUNTIME_HOME_ROOT = "/home/agent".freeze
     ALLOWED_ENV_KEY_PATTERN = /\AMARKETPLACE_[A-Z0-9_]+\z/.freeze
     RESTRICTED_ENV_KEYS = %w[
@@ -122,10 +122,33 @@ module MarketplaceEntries
         next if path.blank? || content.nil?
 
         normalized_path = path.sub(/\A~(?=\/|$)/, RUNTIME_HOME_ROOT)
-        resolved_path = File.expand_path(normalized_path, RUNTIME_PREPARATION_ROOT)
+        expanded_path = File.expand_path(normalized_path, RUNTIME_PREPARATION_ROOT)
+        resolved_path = resolve_runtime_path(expanded_path)
         next unless allowed_runtime_path?(resolved_path)
 
         { path: normalized_path, content: content.to_s }
+      end
+    end
+
+    def resolve_runtime_path(path)
+      File.realpath(path)
+    rescue Errno::ENOENT
+      resolved_dir = resolve_existing_parent(File.dirname(path))
+      File.join(resolved_dir, File.basename(path))
+    rescue Errno::EACCES, Errno::ENOTDIR, Errno::ELOOP
+      path
+    end
+
+    def resolve_existing_parent(path)
+      current_path = path
+
+      loop do
+        return File.realpath(current_path)
+      rescue Errno::ENOENT
+        parent_path = File.dirname(current_path)
+        raise if parent_path == current_path
+
+        current_path = parent_path
       end
     end
 
