@@ -287,6 +287,30 @@ RSpec.describe Issue do
 
       expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: dependent_project, skip_project_gate: true)
     end
+
+    it "continues processing later dependents after one enqueue fails" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      first_dependent = create(:issue, project: project, github_state: "open")
+      second_dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: first_dependent, depends_on_issue: blocker)
+      create(:issue_dependency, issue: second_dependent, depends_on_issue: blocker)
+      allow(Rails.logger).to receive(:error)
+      allow(Issues::EnqueueEligible).to receive(:call) { |issue, **| raise StandardError, "transient failure" if issue == first_dependent }
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(first_dependent, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).to have_received(:call).with(second_dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolution_failed",
+          issue_id: blocker.id,
+          dependent_issue_id: first_dependent.id,
+          error: "transient failure"
+        )
+      )
+    end
   end
 
   describe "instance methods" do

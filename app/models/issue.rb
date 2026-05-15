@@ -504,9 +504,14 @@ class Issue < ApplicationRecord
       )
 
       Issues::EnqueueEligible.call(dependent, project: dependent.project, skip_project_gate: true)
+    rescue => e
+      Rails.logger.error(
+        message: "enqueue_eligible.dependency_resolution_failed",
+        issue_id: id,
+        dependent_issue_id: dependent.id,
+        error: e.message
+      )
     end
-  rescue => e
-    Rails.logger.error(message: "enqueue_eligible.dependency_resolution_failed", issue_id: id, error: e.message)
   end
 
   def auto_pick_enabled_dependents
