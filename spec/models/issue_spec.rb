@@ -528,6 +528,8 @@ RSpec.describe Issue do
       end
 
       it "resets both unified progress reset markers when resetting the review-goal breaker" do
+        allow(issue).to receive(:update!).and_return(true)
+
         freeze_time do
           issue.reset_review_goal_retry_breaker!
 
