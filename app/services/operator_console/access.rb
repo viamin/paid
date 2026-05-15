@@ -32,8 +32,7 @@ module OperatorConsole
       private
 
       def configured_values(credential_key, env_key:)
-        env_values = ENV.fetch(env_key, nil)
-        return split_values(env_values) if env_values.present?
+        return split_values(ENV.fetch(env_key)) if ENV.key?(env_key)
 
         credential_values = Rails.application.credentials.dig(:operator_console, credential_key)
         Array(credential_values).flat_map { |value| split_values(value) }.uniq

@@ -45,6 +45,13 @@ RSpec.describe OperatorConsole::Access, :no_db do
     expect(described_class.allowed?(user)).to be(true)
   end
 
+  it "fails closed when an operator env var is explicitly blank" do
+    ENV["PAID_OPERATOR_EMAILS"] = ""
+    allow(credentials).to receive(:dig).with(:operator_console, :emails).and_return([ "operator@example.com" ])
+
+    expect(described_class.allowed?(user)).to be(false)
+  end
+
   it "falls back to credentials when env vars are absent" do
     ENV.delete("PAID_OPERATOR_EMAILS")
     allow(credentials).to receive(:dig).with(:operator_console, :emails).and_return([ "operator@example.com" ])
