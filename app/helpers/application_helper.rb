@@ -612,6 +612,17 @@ module ApplicationHelper
 
   def app_route_path(name, *args, **kwargs)
     return public_send(name, *args, **kwargs) if respond_to?(name)
+    return main_app.public_send(name, *args, **kwargs) if respond_to?(:main_app) && main_app.respond_to?(name)
+
+    if respond_to?(:_routes_context, true)
+      routes_context = _routes_context
+      return routes_context.public_send(name, *args, **kwargs) if routes_context.respond_to?(name)
+    end
+
+    if respond_to?(:_routes, true)
+      route_helpers = _routes.url_helpers
+      return route_helpers.public_send(name, *args, **kwargs) if route_helpers.respond_to?(name)
+    end
 
     Rails.application.routes.url_helpers.public_send(name, *args, **kwargs)
   end
