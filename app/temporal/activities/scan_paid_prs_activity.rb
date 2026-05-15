@@ -166,10 +166,14 @@ module Activities
       progress_state = pr_progress_state(project, issue)
       op_breaker = operational_failure_breaker?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
+      retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue)
 
       reason = if op_breaker
         "Consecutive operational failures " \
           "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)"
+      elsif retry_escalation
+        "Review-goal retry limit reached " \
+          "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)"
       elsif failure_limit
         failure_streak_reason(project, issue, progress_state)
       end
@@ -181,6 +185,7 @@ module Activities
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
         failure_streak_limit_reached: failure_limit,
+        review_goal_retry_limit_requires_escalation: retry_escalation,
         escalation_dismissed: escalation_dismissed?(issue),
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
@@ -237,6 +242,18 @@ module Activities
 
       retry_needed = review_goal_retry_needed?(project, issue)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue)
+
+      # When the review-goal retry limit is exhausted and paid_agent is the
+      # only review method, escalate immediately — the PR cannot make
+      # progress without human intervention. Mixed-bot projects skip this
+      # gate so the remaining bot can continue gating the PR. This mirrors
+      # the pre-unification review_goal_retry_limit_requires_escalation?
+      # check that previously lived in each phase branch.
+      if retry_limit_reached && review_goal_retry_limit_requires_escalation?(project, issue)
+        return escalate_trigger(issue,
+          reason: "Review-goal retry limit reached " \
+                  "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
+      end
 
       # When a review-goal run has failed but the retry limit hasn't been
       # reached, build the retry trigger and continue to phase-specific
