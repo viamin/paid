@@ -554,12 +554,7 @@ module Activities
 
       checks = fetch_check_runs(client, project, pr_data)
       mergeable = pr_data && pr_data[:mergeable]
-      progress_state = pr_progress_state(
-        project,
-        issue,
-        current_head_sha: pr_head_sha(pr_data),
-        current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
-      )
+      progress_state = pr_progress_state(project, issue)
 
       if bot_user?(issue.github_creator_login)
         return scan_bot_authored_ready_pr(

@@ -13,6 +13,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_review_phase: phase,
         id: 123,
         github_number: 42,
+        github_creator_login: "paid-bot",
         review_goal_retry_count: 0,
         project: project)
     end
@@ -22,9 +23,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("GithubClientDouble", Class.new)
       stub_const("ProgressStateDouble", Class.new)
       stub_const("IssueDouble", Class.new)
-      stub_const("PrDataDouble", Class.new)
+      stub_const("PrDataDouble", Class.new do
+        def [](key); end
+      end)
       stub_const("PrHeadDouble", Class.new)
 
+      allow(activity).to receive_messages(
+        pr_progress_state: progress_state,
+        escalate_trigger: :unexpected_escalation
+      )
       allow(activity).to receive(:backfill_review_goal_retry_reset_at!).with(issue)
       allow(activity).to receive(:pr_progress_state).with(project, issue,
         current_head_sha: anything,
@@ -39,7 +46,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:review_goal_consecutive_failure_count).with(project, issue, progress_state:).and_return(3)
       allow(activity).to receive(:check_rate_budget!).with(client)
       allow(activity).to receive(:fetch_pr_data)
-      allow(activity).to receive(:escalate_trigger).and_return(:unexpected_escalation)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
     end
 
@@ -125,6 +131,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result).to eq(:draft_scan)
         expect(activity).not_to have_received(:escalate_trigger)
+      end
+    end
+
+    context "when the PR is ready and stays ready" do
+      let(:phase) { "ready" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: false,
+          head: instance_double(PrHeadDouble, sha: "ready123"),
+          updated_at: Time.current,
+          :[] => true)
+      end
+
+      it "reuses the cached progress state instead of refetching the head commit timestamp" do
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:fetch_check_runs).with(client, project, pr_data).and_return([])
+        allow(activity).to receive(:bot_user?).with(issue.github_creator_login).and_return(true)
+        allow(activity).to receive(:scan_bot_authored_ready_pr).with(
+          project,
+          client,
+          issue,
+          pr_data: pr_data,
+          checks: [],
+          mergeable: true,
+          progress_state: progress_state
+        ).and_return(:ready_scan)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:ready_scan)
+        expect(activity).to have_received(:pr_progress_state).with(project, issue).once
+        expect(activity).to have_received(:pr_head_commit_timestamp).with(client, project, issue, pr_data).once
       end
     end
 
