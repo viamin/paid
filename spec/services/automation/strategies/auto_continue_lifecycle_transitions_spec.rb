@@ -100,7 +100,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
 
       decisions = result.to_h[:decisions]
       expect(decisions.first[:type]).to eq("escalate")
-      expect(decisions.first[:reason]).to eq("Review-goal retry limit reached")
+      expect(decisions.first[:reason]).to eq("Automatic PR failure streak reached")
     end
 
     it "escalates on draft-phase streak exhaustion" do
