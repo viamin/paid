@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: TBD
+- **Related Issues**: #2019 (foundation), #2020 (sync hooks), #2021 (remove throttling), #2022 (dependency resolution)
 - **Related RDRs**: RDR-023 (Automation Modularization), RDR-031 (Focused Agent Runs)
 
 ## Problem Statement
