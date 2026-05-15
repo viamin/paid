@@ -1243,13 +1243,18 @@ RSpec.describe "AgentRuns" do
         expect(doc.css("[data-marketplace-picker-target='group']").size).to eq(2)
       end
 
-      it "does not apply team-default marketplace entries unless the account requires them" do
+      it "applies team-default marketplace entries for an opted-in project member" do
+        user.settings.update!(marketplace_auto_attach_enabled: true)
         team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
         create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
 
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
-        }.not_to change(AgentRunMarketplaceEntry, :count)
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(team_default_entry)
+        expect(attachment.attachment_source).to eq("team_default")
       end
 
       it "applies automatic marketplace entries for an opted-in project member" do

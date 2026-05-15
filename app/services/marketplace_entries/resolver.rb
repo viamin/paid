@@ -155,7 +155,7 @@ module MarketplaceEntries
     end
 
     def attach_rule_mode?(mode)
-      return account_auto_attach_required? if mode == "team_default"
+      return auto_attach_enabled? || account_auto_attach_required? if mode == "team_default"
 
       auto_attach_enabled? || account_auto_attach_required?
     end
