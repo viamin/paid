@@ -90,16 +90,41 @@ RSpec.describe Activities::FetchIssuesActivity do
       .once
   end
 
-  describe "#enqueue_eligible_issue", :no_db do
+  describe "#collect_eligible_issue", :no_db do
     let(:project_class) { Struct.new(:auto_pick_enabled?) }
     let(:issue_class) { Struct.new(:github_state, :is_pull_request?) }
     let(:project) { project_class.new(true) }
     let(:issue) { issue_class.new("open", false) }
 
-    it "enqueues eligible synced issues immediately" do
+    it "collects eligible synced issues into the list" do
+      eligible_issues = []
+
+      activity.send(:collect_eligible_issue, project, issue, eligible_issues)
+
+      expect(eligible_issues).to eq([ issue ])
+    end
+
+    it "skips ineligible synced issues" do
+      eligible_issues = []
+
+      activity.send(:collect_eligible_issue, project_class.new(false), issue, eligible_issues)
+      activity.send(:collect_eligible_issue, project, issue_class.new("closed", false), eligible_issues)
+      activity.send(:collect_eligible_issue, project, issue_class.new("open", true), eligible_issues)
+
+      expect(eligible_issues).to be_empty
+    end
+  end
+
+  describe "#seed_eligible_issues", :no_db do
+    let(:project_class) { Struct.new(:auto_pick_enabled?) }
+    let(:issue_class) { Struct.new(:github_state, :is_pull_request?) }
+    let(:project) { project_class.new(true) }
+    let(:issue) { issue_class.new("open", false) }
+
+    it "enqueues each collected issue during incremental sync" do
       allow(Issues::EnqueueEligible).to receive(:call)
 
-      activity.send(:enqueue_eligible_issue, project, issue)
+      activity.send(:seed_eligible_issues, project, [ issue ], incremental: true)
 
       expect(Issues::EnqueueEligible).to have_received(:call).with(
         issue,
@@ -108,14 +133,12 @@ RSpec.describe Activities::FetchIssuesActivity do
       )
     end
 
-    it "skips ineligible synced issues" do
-      allow(Issues::EnqueueEligible).to receive(:call)
+    it "bulk seeds during initial sync" do
+      allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([])
 
-      activity.send(:enqueue_eligible_issue, project_class.new(false), issue)
-      activity.send(:enqueue_eligible_issue, project, issue_class.new("closed", false))
-      activity.send(:enqueue_eligible_issue, project, issue_class.new("open", true))
+      activity.send(:seed_eligible_issues, project, [], incremental: false)
 
-      expect(Issues::EnqueueEligible).not_to have_received(:call)
+      expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project)
     end
   end
 

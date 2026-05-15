@@ -39,9 +39,10 @@ module Activities
       stale_pr_count = nil
       stale_issue_count = nil
       enhance_issue_rechecks = []
+      eligible_issues = []
 
       Project.suppress_broadcasts do
-        synced_issues = github_issues.map { |gi| sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled) }
+        synced_issues = github_issues.map { |gi| sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues) }
         sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed ||= relationship_changes
@@ -62,9 +63,12 @@ module Activities
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed ||= stale_issue_result[:changed]
         end
-
-        Issues::BulkEnqueueEligible.call(project: project) unless incremental
       end
+
+      # Seed queued runs outside suppress_broadcasts so AgentRun after_commit
+      # broadcasts are not suppressed. Deferring avoids per-run UI broadcast
+      # fan-out during the sync block.
+      seed_eligible_issues(project, eligible_issues, incremental: incremental)
 
       if sync_changed
         project.broadcast_project_show_refresh
@@ -256,7 +260,7 @@ module Activities
       [ issues, truncated ]
     end
 
-    def sync_issue(project, github_issue, eager_queue_enabled: false)
+    def sync_issue(project, github_issue, eager_queue_enabled: false, eligible_issues: nil)
       creator_login = github_issue.user&.login || "unknown"
       trusted = project.trusted_github_user?(creator_login)
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
@@ -276,19 +280,29 @@ module Activities
         github_issue: github_issue,
         body: trusted ? github_issue.body : nil
       )
-      enqueue_eligible_issue(project, issue) if eager_queue_enabled
+      collect_eligible_issue(project, issue, eligible_issues) if eager_queue_enabled
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
         changed: issue.previous_changes.present? }
     end
 
-    def enqueue_eligible_issue(project, issue)
+    def collect_eligible_issue(project, issue, eligible_issues)
       return unless project.auto_pick_enabled?
       return unless issue.github_state == "open"
       return if issue.is_pull_request?
 
-      Issues::EnqueueEligible.call(issue, project: project, skip_project_gate: true)
+      eligible_issues << issue
+    end
+
+    def seed_eligible_issues(project, eligible_issues, incremental:)
+      if incremental
+        eligible_issues.each do |issue|
+          Issues::EnqueueEligible.call(issue, project: project, skip_project_gate: true)
+        end
+      else
+        Issues::BulkEnqueueEligible.call(project: project)
+      end
     end
 
     def detect_enhance_issue_rechecks(project, synced_issues)
