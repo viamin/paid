@@ -214,14 +214,14 @@ module Activities
             # These runs only interact via the GitHub API proxy — no git repo exists.
             #
             # Keep heartbeats flowing during post-run bookkeeping too. By the
-            # time we reach this block the provider may already have posted a PR
+            # time we reach this block the runner may already have posted a PR
             # review/comment, so a long-running git operation here can otherwise
             # leave the AgentRun stuck in "running" until stale-run cleanup.
             #
             # Do not run infinite-loop detection here: the agent is no longer
             # producing output, so re-scanning the same stdout snapshots during
             # git bookkeeping can falsely classify a successful run as looping.
-            bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", provider) do
+            bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", runner) do
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
               if agent_run.repo_cloned?
@@ -234,8 +234,8 @@ module Activities
                       agent_run_id: agent_run_id,
                       success: false,
                       has_changes: check_for_changes(agent_run, pre_agent_sha),
-                      output_present: provider_result.fetch(:output_present),
-                      final_provider: attempt_label,
+                      output_present: runner_result.fetch(:output_present),
+                      final_runner: attempt_label,
                       error: "pre_commit_requirements_failed"
                     }
                   }

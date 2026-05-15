@@ -1672,7 +1672,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.reload.final_runner).to eq("claude_code")
       end
 
-      it "heartbeats during post-run bookkeeping after provider execution" do
+      it "heartbeats during post-run bookkeeping after runner execution" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
         allow(activity).to receive(:with_periodic_heartbeat).and_call_original
@@ -1683,6 +1683,24 @@ expect(container_service).to receive(:execute).with(
           .with("post_run_bookkeeping", "claude_code")
         expect(activity).not_to have_received(:with_periodic_heartbeat)
           .with("post_run_bookkeeping", "claude_code", agent_run: agent_run)
+      end
+
+      it "returns the selected runner when pre-commit requirements block completion" do
+        allow(activity).to receive(:evaluate_pre_commit_requirements).and_return(
+          { blocking: true, results: [ { name: "rubocop", status: "failed" } ] }
+        )
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result).to include(
+          success: false,
+          has_changes: true,
+          output_present: true,
+          final_runner: "claude_code",
+          error: "pre_commit_requirements_failed"
+        )
+        expect(agent_run.reload.final_runner).to eq("claude_code")
       end
     end
 
