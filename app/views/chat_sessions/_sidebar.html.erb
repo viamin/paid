@@ -1,48 +1,100 @@
-<aside class="overflow-hidden rounded-lg bg-white shadow">
-  <% can_create_chat_session = policy(ChatSession.new(account: current_account)).create? %>
+<% can_create_chat_session = policy(ChatSession.new(account: current_account)).create? %>
 
-  <div data-controller="chat-session-list"
-       data-chat-session-list-active-session-id-value="<%= active_session&.id %>">
-    <div class="border-b border-gray-200 p-4">
-      <div class="flex items-center gap-3">
-        <label class="relative flex-1">
-          <span class="sr-only">Search chat sessions</span>
-          <input type="search"
-                 placeholder="Search sessions"
-                 autocomplete="off"
-                 class="w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                 data-chat-session-list-target="searchInput"
-                 data-action="input->chat-session-list#filter">
-        </label>
-        <% if can_create_chat_session %>
-          <button type="button"
-                  class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-                  data-action="chat-session-list#openModal">
-            New Chat
-          </button>
-        <% end %>
-      </div>
-    </div>
+<div data-controller="chat-session-list"
+     data-chat-session-list-active-session-id-value="<%= active_session&.id %>">
+  <div class="rounded-lg bg-white shadow lg:hidden">
+    <div class="flex items-center justify-between gap-3 p-4">
+      <button type="button"
+              class="inline-flex min-w-0 items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700"
+              data-chat-session-list-target="mobileButton"
+              data-action="chat-session-list#toggleSidebar"
+              aria-controls="chat-sessions-sidebar"
+              aria-expanded="false">
+        <svg class="h-5 w-5 flex-none text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5m-16.5 5.25h16.5m-16.5 5.25h16.5" />
+        </svg>
+        <span class="truncate" data-chat-session-list-target="mobileOpenLabel">Previous chats</span>
+        <span class="hidden truncate" data-chat-session-list-target="mobileCloseLabel">Close history</span>
+      </button>
 
-    <div id="chat_sessions_list"
-         class="max-h-[70vh] space-y-2 overflow-y-auto p-4"
-         data-chat-session-list-target="list">
-      <% sessions.each do |chat_session| %>
-        <%= render "session_card", chat_session: chat_session %>
-      <% end %>
-      <% if local_assigns.fetch(:sidebar_has_more, false) && local_assigns[:sidebar_next_frame_id] && local_assigns[:sidebar_next_params] %>
-        <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy do %>
-          <p class="py-3 text-center text-xs text-gray-400">Loading more...</p>
-        <% end %>
+      <% if can_create_chat_session %>
+        <button type="button"
+                class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+                data-action="chat-session-list#openModal">
+          New Chat
+        </button>
       <% end %>
     </div>
-
-    <% if can_create_chat_session %>
-      <%= render "new_session_modal",
-                 chat_session: chat_session,
-                 available_runners: available_runners,
-                 available_projects: available_projects,
-                 available_models: available_models %>
-    <% end %>
   </div>
-</aside>
+
+  <div id="chat-sessions-sidebar"
+       class="hidden lg:block"
+       data-chat-session-list-target="mobileMenu"
+       aria-hidden="true">
+    <div class="fixed inset-0 z-40 lg:static lg:inset-auto lg:z-auto">
+      <button type="button"
+              class="absolute inset-0 bg-gray-900/40 lg:hidden"
+              data-action="chat-session-list#closeSidebar"
+              aria-label="Close chat history"></button>
+
+      <aside class="absolute inset-y-0 right-0 flex h-full w-full max-w-sm flex-col overflow-hidden bg-white shadow-xl lg:relative lg:inset-auto lg:max-w-none lg:rounded-lg lg:shadow">
+        <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3 lg:hidden">
+          <div>
+            <p class="text-sm font-semibold text-gray-900">Previous chats</p>
+            <p class="text-xs text-gray-500">Open a thread or start a new one.</p>
+          </div>
+          <button type="button"
+                  class="inline-flex items-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  data-action="chat-session-list#closeSidebar"
+                  aria-label="Close chat history">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="border-b border-gray-200 p-4">
+          <div class="flex items-center gap-3">
+            <label class="relative flex-1">
+              <span class="sr-only">Search chat sessions</span>
+              <input type="search"
+                     placeholder="Search sessions"
+                     autocomplete="off"
+                     class="w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                     data-chat-session-list-target="searchInput"
+                     data-action="input->chat-session-list#filter">
+            </label>
+            <% if can_create_chat_session %>
+              <button type="button"
+                      class="hidden items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 lg:inline-flex"
+                      data-action="chat-session-list#openModal">
+                New Chat
+              </button>
+            <% end %>
+          </div>
+        </div>
+
+        <div id="chat_sessions_list"
+             class="max-h-[70vh] flex-1 space-y-2 overflow-y-auto p-4 lg:max-h-[70vh]"
+             data-chat-session-list-target="list">
+          <% sessions.each do |sidebar_session| %>
+            <%= render "session_card", chat_session: sidebar_session %>
+          <% end %>
+          <% if local_assigns.fetch(:sidebar_has_more, false) && local_assigns[:sidebar_next_frame_id] && local_assigns[:sidebar_next_params] %>
+            <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy do %>
+              <p class="py-3 text-center text-xs text-gray-400">Loading more...</p>
+            <% end %>
+          <% end %>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <% if can_create_chat_session %>
+    <%= render "new_session_modal",
+               chat_session: chat_session,
+               available_runners: available_runners,
+               available_projects: available_projects,
+               available_models: available_models %>
+  <% end %>
+</div>
