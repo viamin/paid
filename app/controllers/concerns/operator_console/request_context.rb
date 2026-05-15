@@ -5,15 +5,18 @@ module OperatorConsole
     extend ActiveSupport::Concern
 
     included do
-      around_action :with_operator_console_request_context
+      prepend_before_action :apply_operator_console_request_context
+      after_action :clear_operator_console_request_context
     end
 
     private
 
-    def with_operator_console_request_context
+    def apply_operator_console_request_context
+      TenantContext.apply_system_access!
       Current.user = current_user if respond_to?(:current_user)
-      TenantContext.with_system_access { yield }
-    ensure
+    end
+
+    def clear_operator_console_request_context
       TenantContext.clear!
       Current.reset
     end
