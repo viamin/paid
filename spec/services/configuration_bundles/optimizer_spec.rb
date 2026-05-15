@@ -247,6 +247,8 @@ RSpec.describe ConfigurationBundles::Optimizer do
     end
 
     it "keeps the incumbent from older outcomes outside the surrogate training window" do
+      stub_const("ConfigurationBundles::TrainingDataset::MAX_ROWS", 3)
+
       create_bundle_history(
         experiment: experiment,
         variant: challenger,
@@ -257,8 +259,8 @@ RSpec.describe ConfigurationBundles::Optimizer do
       create_bundle_history(
         experiment: experiment,
         variant: control,
-        quality_scores: Array.new(ConfigurationBundles::SurrogateModel::MAX_OUTCOME_ROWS, 0.7),
-        objective_scores: Array.new(ConfigurationBundles::SurrogateModel::MAX_OUTCOME_ROWS, 0.7)
+        quality_scores: Array.new(3, 0.7),
+        objective_scores: Array.new(3, 0.7)
       )
 
       ranked = described_class.ranked_candidates(agent_run: agent_run)
