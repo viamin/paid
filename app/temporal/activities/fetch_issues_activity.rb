@@ -61,6 +61,8 @@ module Activities
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed ||= stale_issue_result[:changed]
         end
+
+        Issues::BulkEnqueueEligible.call(project: project) unless incremental
       end
 
       if sync_changed
@@ -273,10 +275,19 @@ module Activities
         github_issue: github_issue,
         body: trusted ? github_issue.body : nil
       )
+      enqueue_eligible_issue(project, issue)
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
         changed: issue.previous_changes.present? }
+    end
+
+    def enqueue_eligible_issue(project, issue)
+      return unless project.auto_pick_enabled?
+      return unless issue.github_state == "open"
+      return if issue.is_pull_request?
+
+      Issues::EnqueueEligible.call(issue, project: project)
     end
 
     def detect_enhance_issue_rechecks(project, synced_issues)

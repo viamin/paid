@@ -232,7 +232,7 @@ class Project < ApplicationRecord
   after_create_commit :enqueue_knowledge_collection
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
-  after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
+  after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
@@ -876,10 +876,10 @@ class Project < ApplicationRecord
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
   end
 
-  def trigger_auto_pick
-    ProcessRunQueueJob.perform_later
+  def seed_eligible_issues
+    Issues::BulkEnqueueEligible.call(project: self)
   rescue => e
-    Rails.logger.error(message: "auto_pick.trigger_failed", project_id: id, error: e.message)
+    Rails.logger.error(message: "auto_pick.bulk_seed_failed", project_id: id, error: e.message)
   end
 
   def enqueue_knowledge_collection

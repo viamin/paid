@@ -90,6 +90,31 @@ RSpec.describe Activities::FetchIssuesActivity do
       .once
   end
 
+  describe "#enqueue_eligible_issue", :no_db do
+    let(:project_class) { Struct.new(:auto_pick_enabled?) }
+    let(:issue_class) { Struct.new(:github_state, :is_pull_request?) }
+    let(:project) { project_class.new(true) }
+    let(:issue) { issue_class.new("open", false) }
+
+    it "enqueues eligible synced issues immediately" do
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      activity.send(:enqueue_eligible_issue, project, issue)
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue, project: project)
+    end
+
+    it "skips ineligible synced issues" do
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      activity.send(:enqueue_eligible_issue, project_class.new(false), issue)
+      activity.send(:enqueue_eligible_issue, project, issue_class.new("closed", false))
+      activity.send(:enqueue_eligible_issue, project, issue_class.new("open", true))
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+  end
+
   describe "#execute" do
     context "when issues are found" do
       let(:build_issue) do
@@ -214,6 +239,36 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when auto-pick is enabled" do
+      let(:project) { create(:project, auto_pick_enabled: true, label_mappings: { "build" => "paid-build" }) }
+      let(:eligible_issue) { github_issue(7) }
+      let(:pull_request_issue) { github_pr_issue(8) }
+      let(:closed_issue) do
+        github_issue(9).tap { |issue| issue.state = "closed" }
+      end
+
+      before do
+        allow(Issues::EnqueueEligible).to receive(:call)
+      end
+
+      it "queues an eligible synced issue immediately" do
+        stub_issues_by_label(nil => [ eligible_issue ])
+
+        activity.execute(project_id: project.id)
+
+        synced_issue = project.issues.find_by!(github_issue_id: eligible_issue.id)
+        expect(Issues::EnqueueEligible).to have_received(:call).with(synced_issue, project: project)
+      end
+
+      it "does not queue synced pull requests or closed issues" do
+        stub_issues_by_label(nil => [ pull_request_issue, closed_issue ])
+
+        activity.execute(project_id: project.id)
+
+        expect(Issues::EnqueueEligible).not_to have_received(:call)
+      end
+    end
+
     context "when no issues match" do
       before do
         allow(github_client).to receive(:issues).and_return([])
@@ -224,6 +279,30 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(result[:issues]).to eq([])
         expect(project.issues.count).to eq(0)
+      end
+    end
+
+    context "when running the first sync" do
+      let(:project) { create(:project, auto_pick_enabled: auto_pick_enabled, last_issue_sync_at: nil) }
+      let(:auto_pick_enabled) { true }
+
+      before do
+        allow(github_client).to receive(:issues).and_return([])
+        allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([])
+      end
+
+      it "bulk seeds eligible issues after the initial sync" do
+        activity.execute(project_id: project.id)
+
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project)
+      end
+
+      it "still invokes the bulk seeder when auto-pick is disabled so the service can no-op internally" do
+        allow(project).to receive(:auto_pick_enabled?).and_return(false)
+
+        activity.execute(project_id: project.id)
+
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project)
       end
     end
 
