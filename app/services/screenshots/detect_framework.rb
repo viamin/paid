@@ -462,8 +462,8 @@ module Screenshots
     def parse_rails_route_line(line, prefixes)
       return route_hash("/", "root") if line.match?(/^root\s+/)
 
-      if (match = line.match(/^(?:get|post|patch|put|delete)\s+["']([^"']+)["']/))
-        path = normalize_route_path(prefixes, match[1])
+      if (match = line.match(/^(?:get|post|patch|put|delete|match)\s+["']([^"']+)["']/))
+        path = normalize_route_path(prefixes, normalized_rails_route_segment(match[1]))
         return route_hash(path, route_name_from_path(path))
       end
 
@@ -475,6 +475,11 @@ module Screenshots
       if (match = line.match(/^resource\s+:([a-zA-Z_][\w]*)/))
         path = normalize_route_path(prefixes, match[1])
         return route_hash(path, match[1])
+      end
+
+      if (match = line.match(/^mount(?:_[a-zA-Z_][\w]*)?\s+.+?\s+at:\s+["']([^"']+)["']/))
+        path = normalize_route_path(prefixes, normalized_rails_route_segment(match[1]))
+        return route_hash(path, route_name_from_path(path))
       end
 
       nil
@@ -623,6 +628,10 @@ module Screenshots
     def normalize_route_path(prefixes, path)
       full_path = ([ "", *prefixes, path ]).join("/")
       "/" + full_path.gsub(%r{/+}, "/").delete_prefix("/")
+    end
+
+    def normalized_rails_route_segment(path)
+      path.to_s.sub(/\(\.:format\)\z/, "").sub(/\(\/\*[^)]+\)\z/, "")
     end
 
     def unique_routes(routes)

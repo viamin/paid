@@ -154,7 +154,7 @@ RSpec.describe Screenshots::DetectFramework do
     end
   end
 
-  describe "fallback Rails route parsing" do
+  describe "fallback Rails route parsing", :no_db do
     it "keeps namespace prefixes across nested non-namespace blocks" do
       routes = <<~RUBY
         Rails.application.routes.draw do
@@ -180,6 +180,31 @@ RSpec.describe Screenshots::DetectFramework do
       parsed_routes = service.send(:discover_rails_routes)
 
       expect(parsed_routes.map { |route| route["path"] }).to include("/admin/users", "/admin/dashboard")
+    end
+
+    it "detects mounted engines and wildcard match routes behind auth blocks" do
+      routes = <<~RUBY
+        Rails.application.routes.draw do
+          authenticate :user, ->(user) { user.operator? } do
+            mount_avo at: "/admin"
+          end
+
+          match "/admin(/*path)", to: "operator_console_access#show", via: :all
+        end
+      RUBY
+
+      repo = instance_double(
+        described_class::LocalRepository,
+        respond_to?: false,
+        read: routes
+      )
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_rails_routes)
+
+      expect(parsed_routes.map { |route| route["path"] }).to include("/admin")
     end
   end
 
