@@ -1,9 +1,8 @@
 <% session_title = chat_session_title(chat_session) %>
 <% session_preview = chat_session_preview(chat_session) %>
 <% session_projects = chat_session_projects(chat_session) %>
-<% chat_session_url = Rails.application.routes.url_helpers.chat_session_path(chat_session) %>
 
-<%= link_to chat_session_url,
+<%= link_to chat_session_path(chat_session),
             id: dom_id(chat_session),
             class: "chat-session-card block rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:bg-gray-50",
             data: {

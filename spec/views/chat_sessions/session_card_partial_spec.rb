@@ -40,6 +40,9 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
     allow(view).to receive(:chat_session_status_badge).with(chat_session).and_return('<span>Active</span>'.html_safe)
     allow(view).to receive(:chat_mode_badge).with(chat_session.mode).and_return('<span>Workspace</span>'.html_safe)
     allow(view).to receive(:local_time).with(chat_session.updated_at, format: :relative).and_return("5 minutes ago")
+    view.singleton_class.define_method(:chat_session_path) do |_chat_session|
+      "/chat/42"
+    end
   end
 
   it "renders the session link without relying on route helper availability" do

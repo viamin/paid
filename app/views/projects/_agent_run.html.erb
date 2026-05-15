@@ -1,5 +1,4 @@
 <tr id="<%= dom_id(agent_run) %>">
-  <% project_agent_run_url = Rails.application.routes.url_helpers.project_agent_run_path(project, agent_run) %>
   <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
     <%= agent_run_status_badge(agent_run.status) %>
   </td>
@@ -45,7 +44,7 @@
     <% end %>
   </td>
   <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-    <%= link_to "View", project_agent_run_url, class: "text-indigo-600 hover:text-indigo-900" %>
+    <%= link_to "View", project_agent_run_path(project, agent_run), class: "text-indigo-600 hover:text-indigo-900" %>
     <% if safe_github_url?(agent_run.pull_request_url) %>
       &middot;
       <%= link_to "PR", agent_run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>

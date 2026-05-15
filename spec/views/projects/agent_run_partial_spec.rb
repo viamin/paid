@@ -44,6 +44,9 @@ RSpec.describe "projects/_agent_run", :no_db, type: :view do
     allow(view).to receive(:agent_run_provider_display).with(agent_run).and_return("Cursor Stable")
     allow(view).to receive(:time_ago_in_words).with(agent_run.created_at).and_return("5 minutes")
     allow(view).to receive(:safe_github_url?).and_return(false)
+    view.singleton_class.define_method(:project_agent_run_path) do |_project, _agent_run|
+      "/projects/1/agent_runs/123"
+    end
   end
 
   it "renders the member link without relying on route helper availability" do

@@ -34,14 +34,20 @@ RSpec.describe "dashboard/_active_runs", :no_db, type: :view do
 
   before do
     allow(view).to receive(:dom_id).with(run, :dashboard_row).and_return("agent_run_123_dashboard_row")
-    allow(view).to receive(:project_path).with(project).and_return("/projects/1")
-    allow(view).to receive(:project_agent_run_path).with(project, run).and_return("/projects/1/agent_runs/123")
-    allow(view).to receive(:dashboard_cancel_run_path).with(run).and_return("/dashboard/runs/123/cancel")
     allow(view).to receive(:agent_run_status_badge).with("running").and_return('<span>Running</span>'.html_safe)
     allow(view).to receive(:agent_run_priority_badge).with(run).and_return('<span>2 - P1</span>'.html_safe)
     allow(view).to receive(:agent_run_context_display).with(run).and_return('<span class="context-label">Issue #42</span>'.html_safe)
     allow(view).to receive(:agent_run_goal_display).with(run).and_return('<span class="goal-label">PR Creation</span>'.html_safe)
     allow(view).to receive(:agent_run_provider_display).with(run).and_return("Codex")
+    view.singleton_class.define_method(:project_path) do |_project|
+      "/projects/1"
+    end
+    view.singleton_class.define_method(:project_agent_run_path) do |_project, _run|
+      "/projects/1/agent_runs/123"
+    end
+    view.singleton_class.define_method(:dashboard_cancel_run_path) do |_run|
+      "/dashboard/runs/123/cancel"
+    end
   end
 
   it "renders the priority column and shared helper output" do
