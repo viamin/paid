@@ -455,6 +455,18 @@ RSpec.describe Issue do
         expect(PullRequests::ProgressState).to have_received(:call).once
       end
 
+      it "forwards current_head_sha to ProgressState bypassing memoization" do
+        head_aware_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 0
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: anything)
+          .and_return(head_aware_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: Time.current)).to eq(0)
+      end
+
       it "invalidates the memoized progress state on reload" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,

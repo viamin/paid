@@ -182,10 +182,15 @@ module PullRequests
     def superseded_by_new_head?(run)
       return false if current_head_sha.blank?
 
-      run_head_shas = [ run.result_commit_sha, run.base_commit_sha ].compact
-      return false if run_head_shas.empty?
+      # Only compare against result_commit_sha (the HEAD after the agent
+      # finished and pushed). base_commit_sha stores the merge-base against
+      # the default branch for existing-PR runs, not the PR head SHA. When
+      # result_commit_sha is nil (e.g. a failed run that never pushed), we
+      # conservatively treat the run as NOT superseded so it still counts
+      # toward the failure streak.
+      return false if run.result_commit_sha.blank?
 
-      !run_head_shas.include?(current_head_sha)
+      run.result_commit_sha != current_head_sha
     end
 
     def meaningful_progress?(run)

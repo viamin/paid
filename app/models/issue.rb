@@ -181,28 +181,39 @@ class Issue < ApplicationRecord
     draft_review_count + pr_followup_count
   end
 
-  def pr_progress_state
+  # Returns the unified progress state for this PR. Pass +current_head_sha+
+  # and +current_head_updated_at+ (from live GitHub PR data) to enable the
+  # "new PR head commit" reset condition. Without those parameters, only
+  # explicit reset markers and successful-run resets apply.
+  def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
+    if current_head_sha.present?
+      return PullRequests::ProgressState.call(
+        project:, issue: self,
+        current_head_sha:, current_head_updated_at:
+      )
+    end
+
     @pr_progress_state ||= PullRequests::ProgressState.call(project:, issue: self)
   end
 
-  def consecutive_unsuccessful_pr_runs
-    pr_progress_state.consecutive_unsuccessful_automatic_runs
+  def consecutive_unsuccessful_pr_runs(**kwargs)
+    pr_progress_state(**kwargs).consecutive_unsuccessful_automatic_runs
   end
 
-  def last_pr_meaningful_progress_at
-    pr_progress_state.last_meaningful_progress_at
+  def last_pr_meaningful_progress_at(**kwargs)
+    pr_progress_state(**kwargs).last_meaningful_progress_at
   end
 
-  def pr_escalation_worthy?(limit:)
-    pr_progress_state.escalation_worthy?(limit:)
+  def pr_escalation_worthy?(limit:, **kwargs)
+    pr_progress_state(**kwargs).escalation_worthy?(limit:)
   end
 
-  def pr_retryable?(limit:)
-    pr_progress_state.retryable?(limit:)
+  def pr_retryable?(limit:, **kwargs)
+    pr_progress_state(**kwargs).retryable?(limit:)
   end
 
-  def pr_stuck?(limit:, stale_after:)
-    pr_progress_state.stuck?(limit:, stale_after:)
+  def pr_stuck?(limit:, stale_after:, **kwargs)
+    pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
   end
 
   def reload(*)
