@@ -100,11 +100,9 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     third_issue = instance_double(issue_class)
     existing_run = instance_double(run_class, issue: first_issue, previously_new_record?: false)
     created_run = instance_double(run_class, issue: second_issue, previously_new_record?: true)
-    limited_scope = instance_double(ActiveRecord::Relation)
 
     allow(scope).to receive(:find_each)
-    allow(ordered_scope).to receive(:limit).with(10).and_return(limited_scope)
-    allow(limited_scope).to receive(:each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
+    allow(ordered_scope).to receive(:each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
     allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(existing_run)
     allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(created_run)
     allow(Rails.logger).to receive(:info)
@@ -113,8 +111,28 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
 
     expect(result).to eq([ existing_run, created_run ])
     expect(Automation::Strategies::AutoPick::DefaultCandidateSource).to have_received(:ordered_scope).with(project)
-    expect(ordered_scope).to have_received(:limit).with(10)
+    expect(ordered_scope).to have_received(:each)
     expect(scope).not_to have_received(:find_each)
     expect(Issues::EnqueueEligible).not_to have_received(:call).with(third_issue, project: project)
+  end
+
+  it "keeps scanning ordered issues until it creates the requested number of runs" do
+    limited_service = described_class.new(project: project, limit: 1)
+    first_issue = instance_double(issue_class)
+    second_issue = instance_double(issue_class)
+    third_issue = instance_double(issue_class)
+    existing_run = instance_double(run_class, issue: first_issue, previously_new_record?: false)
+    created_run = instance_double(run_class, issue: third_issue, previously_new_record?: true)
+
+    allow(ordered_scope).to receive(:each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
+    allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(existing_run)
+    allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(nil)
+    allow(Issues::EnqueueEligible).to receive(:call).with(third_issue, project: project).and_return(created_run)
+    allow(Rails.logger).to receive(:info)
+
+    result = limited_service.call
+
+    expect(result).to eq([ existing_run, created_run ])
+    expect(Issues::EnqueueEligible).to have_received(:call).with(third_issue, project: project)
   end
 end
