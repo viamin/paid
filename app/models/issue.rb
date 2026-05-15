@@ -224,9 +224,9 @@ class Issue < ApplicationRecord
     pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
   end
 
-  def reload(...)
+  def reload(options = nil)
     @pr_progress_states = nil
-    super
+    super(options)
   end
 
   def associated_pull_request

@@ -509,6 +509,25 @@ RSpec.describe Issue do
         expect(PullRequests::ProgressState).to have_received(:call).twice
       end
 
+      it "forwards reload option hashes to ActiveRecord while clearing the memoized progress state" do
+        fresh_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+        fresh_issue = described_class.allocate
+        fresh_issue.instance_variable_set(:@association_cache, {})
+        fresh_issue.instance_variable_set(:@attributes, issue.instance_variable_get(:@attributes))
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, fresh_progress_state)
+        allow(issue).to receive(:_find_record).with({ lock: true }).and_return(fresh_issue)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        issue.reload(lock: true)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
+        expect(issue).to have_received(:_find_record).with({ lock: true })
+      end
+
       it "clears the memoized progress state when resetting the review-goal breaker" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,
