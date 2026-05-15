@@ -221,10 +221,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      MarketplaceEntries::AttachToRun.call(
-        agent_run: agent_run,
-        auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
-      )
+      attach_marketplace_entries_for_resume(agent_run:, user_settings:)
       assign_configuration_bundle(agent_run)
 
       logger.info(
@@ -248,6 +245,15 @@ module Activities
       return unless issue&.body.present?
 
       ScopeAnalysis::Analyze.call(text: issue.body)
+    end
+
+    def attach_marketplace_entries_for_resume(agent_run:, user_settings:)
+      return if agent_run.agent_run_marketplace_entries.exists?
+
+      MarketplaceEntries::AttachToRun.call(
+        agent_run: agent_run,
+        auto_attach_enabled: marketplace_auto_attach_enabled?(agent_run.project, user_settings)
+      )
     end
 
     def log_scope_analysis(agent_run, scope_result)

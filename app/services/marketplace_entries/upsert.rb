@@ -44,8 +44,7 @@ module MarketplaceEntries
         status: params[:status].presence || "draft"
       )
       entry.tags_csv = params[:tags_csv].to_s
-      entry.added_by_name = params[:added_by_name].presence || actor&.name.presence || actor&.email.to_s
-      entry.added_by_email = params[:added_by_email].presence || actor&.email.to_s
+      assign_original_publisher_metadata
     end
 
     def assign_virtual_fields
@@ -59,6 +58,15 @@ module MarketplaceEntries
       entry.team_default_enabled = params[:team_default_enabled]
       entry.team_default_conditions_json = params[:team_default_conditions_json].to_s
       entry.team_default_rationale = params[:team_default_rationale].to_s
+    end
+
+    def assign_original_publisher_metadata
+      if entry.added_by_name.blank?
+        entry.added_by_name = params[:added_by_name].presence || actor&.name.presence || actor&.email.to_s
+      end
+      if entry.added_by_email.blank?
+        entry.added_by_email = params[:added_by_email].presence || actor&.email.to_s
+      end
     end
 
     def parsed_artifact_payloads
