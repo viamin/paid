@@ -14,6 +14,7 @@ module Notifications
           issue.is_pull_request? &&
             issue.github_state == "open" &&
             issue.pr_review_phase.in?(%w[ready escalated]) &&
+            synced_with_latest_pr_state?(issue) &&
             issue.pr_escalation_worthy?(limit: issue.project.max_pr_followup_runs)
         end
       end
@@ -32,6 +33,10 @@ module Notifications
             max_pr_followup_runs: limit
           }
         }
+      end
+
+      def synced_with_latest_pr_state?(issue)
+        issue.last_pr_scan_at.present? && issue.last_pr_scan_at > issue.github_updated_at
       end
     end
   end
