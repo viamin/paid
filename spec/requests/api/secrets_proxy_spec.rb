@@ -119,7 +119,7 @@ RSpec.describe "Api::SecretsProxy" do
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
           headers: valid_headers.merge(
-            "X-Paid-Provider-Id" => provider.id.to_s,
+            "X-Paid-Provider-Id" => runner.id.to_s,
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 
@@ -136,7 +136,7 @@ RSpec.describe "Api::SecretsProxy" do
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
           headers: valid_headers.merge(
-            "X-Paid-Provider-Id" => provider.id.to_s,
+            "X-Paid-Provider-Id" => runner.id.to_s,
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 

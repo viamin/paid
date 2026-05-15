@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 class KnowledgeRun < ApplicationRecord
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "final_provider" => "final_runner",
+    "provider_attempts" => "runner_attempts"
+  }.freeze
+
   STATUSES = %w[pending running completed failed].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed].freeze
@@ -23,6 +28,24 @@ class KnowledgeRun < ApplicationRecord
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
 
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+    define_method(runner_name) do
+      if runner_name == "runner_attempts"
+        runner_attempts_from_provider_attempts
+      else
+        public_send(legacy_name)
+      end
+    end
+
+    define_method("#{runner_name}=") do |value|
+      if runner_name == "runner_attempts"
+        self.provider_attempts = provider_attempts_from_runner_attempts(value)
+      else
+        public_send("#{legacy_name}=", value)
+      end
+    end
+  end
+
   def active?
     ACTIVE_STATUSES.include?(status)
   end
@@ -35,6 +58,8 @@ class KnowledgeRun < ApplicationRecord
     final_provider.presence || provider_attempts.last&.fetch("provider", nil) || "unknown"
   end
 
+  alias_method :effective_runner, :effective_provider
+
   def record_provider_attempt(provider)
     attempt = {
       "provider" => provider,
@@ -42,6 +67,8 @@ class KnowledgeRun < ApplicationRecord
     }
     update!(provider_attempts: provider_attempts + [ attempt ])
   end
+
+  alias_method :record_runner_attempt, :record_provider_attempt
 
   def ensure_proxy_token!
     return proxy_token if proxy_token.present?
@@ -67,6 +94,23 @@ class KnowledgeRun < ApplicationRecord
   end
 
   private
+
+  def runner_attempts_from_provider_attempts
+    Array(provider_attempts).map do |attempt|
+      next attempt unless attempt.is_a?(Hash)
+
+      provider = attempt["provider"] || attempt["runner"]
+      attempt.merge("provider" => provider, "runner" => provider)
+    end
+  end
+
+  def provider_attempts_from_runner_attempts(value)
+    Array(value).map do |attempt|
+      next attempt unless attempt.is_a?(Hash)
+
+      attempt.except("runner").merge("provider" => attempt["runner"] || attempt["provider"])
+    end
+  end
 
   def generate_proxy_token
     self.proxy_token ||= SecureRandom.hex(32)
