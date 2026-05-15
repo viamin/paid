@@ -41,7 +41,10 @@ module Issues
     end
 
     def call
-      result = strategy.evaluate(build_context)
+      gate = Issues::AutoPickProjectGate.new(@project)
+      return nil unless gate.call
+
+      result = strategy.evaluate(build_context(gate: gate))
       decision = result.decisions.first
       return nil if decision.nil? || decision.type == "noop"
 
@@ -112,12 +115,9 @@ module Issues
       )
     end
 
-    def build_context
+    def build_context(gate:)
       context = Automation::Context.build(record: nil, project: @project, metadata: {})
-      # Avoid expensive PR-attention query when early guards will noop.
-      return context unless @project.auto_pick_enabled? && !@project.quality_paused?
-
-      context.with_metadata(Issues::AutoPickProjectGate.new(@project).context_metadata)
+      context.with_metadata(gate.context_metadata)
     end
 
     def create_agent_run(issue, goal: "create_pr")
