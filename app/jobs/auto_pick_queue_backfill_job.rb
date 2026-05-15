@@ -37,12 +37,13 @@ class AutoPickQueueBackfillJob < ApplicationJob
       )
     end
 
-    mark_completed if remaining_project_ids.empty?
+    remaining = remaining_project_ids
+    mark_completed if remaining.empty?
 
     Rails.logger.info(
       message: "auto_pick_queue_backfill.completed",
       processed_projects: processed,
-      remaining_projects: remaining_project_ids.size
+      remaining_projects: remaining.size
     )
   end
 
