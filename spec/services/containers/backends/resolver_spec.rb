@@ -3,8 +3,12 @@
 require "rails_helper"
 
 RSpec.describe Containers::Backends::Resolver, :no_db do
-  after do
-    described_class.reset!
+  around do |example|
+    previous = described_class.instance_variable_get(:@registry)
+    described_class.instance_variable_set(:@registry, previous&.dup || {})
+    example.run
+  ensure
+    described_class.instance_variable_set(:@registry, previous)
   end
 
   describe ".register" do
