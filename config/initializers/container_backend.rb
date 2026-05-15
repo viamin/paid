@@ -2,7 +2,7 @@
 
 Rails.application.config.to_prepare do
   resolver = Containers::Backends::Resolver
-  resolver.reset!
+  resolver.reset!(:local)
   resolver.register(:local, -> { Containers::Backends::LocalDocker.new })
 
   backend_type = ENV.fetch("CONTAINER_BACKEND", "local").to_sym
