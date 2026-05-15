@@ -355,6 +355,45 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
       end
 
+      it "skips auto-pick seeding when open PRs already need attention" do
+        project = create(:project, auto_pick_enabled: true)
+        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request,
+          project: project,
+          github_state: "open",
+          paid_state: "failed")
+        create(:issue, project: project)
+
+        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
+
+        described_class.new.perform
+      end
+
+      it "still seeds auto-pick work when paid-ready PRs no longer need attention" do
+        project = create(:project, auto_pick_enabled: true)
+        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request,
+          project: project,
+          github_state: "open",
+          paid_state: "in_progress",
+          labels: [ project.automation_label_name, "paid-ready" ],
+          pr_review_phase: "ready")
+        issue = create(:issue, project: project)
+
+        created_run = nil
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+          .with(project: having_attributes(id: project.id), limit: 1) do
+            created_run = create(:agent_run, :queued, project: project, issue: issue)
+            [ created_run ]
+          end
+
+        described_class.new.perform
+
+        expect(Issues::BulkEnqueueEligible).to have_received(:call)
+          .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
+        expect(created_run.reload.status).to eq("queued")
+      end
+
       it "fills idle capacity from one project when no others have pickable work" do
         project = create(:project, auto_pick_enabled: true)
         user = project.created_by
