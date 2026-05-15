@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Screenshots::DetectFramework do
+RSpec.describe Screenshots::DetectFramework, :no_db do
   def fixture_path(name)
     Rails.root.join("spec/fixtures/screenshots/#{name}").to_s
   end
@@ -170,7 +170,7 @@ RSpec.describe Screenshots::DetectFramework do
     end
   end
 
-  describe "fallback Rails route parsing", :no_db do
+  describe "fallback Rails route parsing" do
     it "keeps namespace prefixes across nested non-namespace blocks" do
       routes = <<~RUBY
         Rails.application.routes.draw do
@@ -301,9 +301,8 @@ RSpec.describe Screenshots::DetectFramework do
   describe "GitHub repository reads" do
     it "uses the project's configured default branch for both tree and file reads" do
       client = instance_double(GithubClient)
-      github_token = instance_double(GithubToken, client:)
-      project = instance_double(
-        Project,
+      github_token = double(client:)
+      project = double(
         github_token:,
         full_name: "acme/widgets",
         default_branch: "develop"

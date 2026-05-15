@@ -465,7 +465,9 @@ module Screenshots
         path = normalized_rails_route_segment(tokens[path_index])
         name = path_index.positive? ? tokens[path_index - 1] : route_name_from_path(path)
         route_hash(path, name, requires_auth: false)
-      end.then { |routes| unique_routes(routes) }
+      end.then do |routes|
+        unique_routes(routes) { |route| [ route["path"], route["name"] ] }
+      end
     end
 
     def parse_rails_route_line(line, prefixes)
@@ -643,8 +645,9 @@ module Screenshots
       path.to_s.sub(/\(\.:format\)\z/, "").sub(/\(\/\*[^)]+\)\z/, "")
     end
 
-    def unique_routes(routes)
-      routes.compact.uniq { |route| route["path"] }.first(10)
+    def unique_routes(routes, &identity)
+      identity ||= ->(route) { route["path"] }
+      routes.compact.uniq(&identity).first(10)
     end
 
     def route_hash(path, name, requires_auth: false)
