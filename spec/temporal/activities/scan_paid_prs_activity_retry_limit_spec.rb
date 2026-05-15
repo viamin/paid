@@ -360,6 +360,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "#maybe_advance_to_ready", :no_db do
+    before do
+      stub_const("AdvanceReadyProjectStub", Class.new)
+      stub_const("AdvanceReadyIssueStub", Class.new)
+      stub_const("AdvanceReadyPrDataStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(AdvanceReadyProjectStub, id: 123) }
+    let(:issue) do
+      instance_double(
+        AdvanceReadyIssueStub,
+        draft_phase?: true,
+        pr_review_phase: "draft",
+        github_number: 42
+      )
+    end
+    let(:pr_data) { instance_double(AdvanceReadyPrDataStub, draft: false) }
+
+    it "invalidates cached PR progress after advancing the local phase to ready" do
+      allow(issue).to receive(:update!).with(pr_review_phase: "ready")
+      allow(activity).to receive(:invalidate_pr_progress_state).with(issue)
+      allow(activity).to receive(:logger).and_return(instance_double(Logger, info: true))
+
+      result = activity.send(:maybe_advance_to_ready, project, issue, pr_data)
+
+      expect(result).to be(true)
+      expect(activity).to have_received(:invalidate_pr_progress_state).with(issue)
+    end
+  end
+
   describe "#followup_limit_reached?", :no_db do
     before do
       stub_const("FollowupLimitProjectStub", Class.new)

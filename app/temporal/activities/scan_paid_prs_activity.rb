@@ -887,6 +887,7 @@ module Activities
 
       previous_phase = issue.pr_review_phase
       issue.update!(pr_review_phase: "ready")
+      invalidate_pr_progress_state(issue)
 
       logger.info(
         message: "pr_scanner.phase_advanced_to_ready",
