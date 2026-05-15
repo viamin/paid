@@ -351,4 +351,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(cached_progress_state(current_head_updated_at: fetched_at)).to eq(head_aware_state)
     end
   end
+
+  describe "#followup_limit_reached?", :no_db do
+    before do
+      stub_const("FollowupLimitProjectStub", Class.new)
+      stub_const("FollowupLimitIssueStub", Class.new)
+      stub_const("FollowupLimitProgressStateStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(FollowupLimitProjectStub) }
+    let(:issue) { instance_double(FollowupLimitIssueStub, pr_review_phase: "ready", draft_phase?: false) }
+
+    it "suppresses the ready-phase follow-up gate for review failures that should not escalate" do
+      progress_state = instance_double(
+        FollowupLimitProgressStateStub,
+        latest_unsuccessful_review?: true
+      )
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
+        .with(project, issue, progress_state:)
+        .and_return(false)
+
+      expect(activity.send(:followup_limit_reached?, project, issue, progress_state)).to be(false)
+    end
+
+    it "keeps the ready-phase follow-up gate for non-review failure streaks" do
+      progress_state = instance_double(
+        FollowupLimitProgressStateStub,
+        latest_unsuccessful_review?: false,
+        escalation_worthy?: true
+      )
+      allow(project).to receive(:max_pr_followup_runs).and_return(3)
+
+      expect(activity.send(:followup_limit_reached?, project, issue, progress_state)).to be(true)
+    end
+  end
 end

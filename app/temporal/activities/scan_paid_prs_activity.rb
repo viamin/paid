@@ -169,7 +169,11 @@ module Activities
     def build_lifecycle_signals(project, issue)
       progress_state = pr_progress_state(project, issue)
       op_breaker = operational_failure_breaker?(project, issue, progress_state)
-      failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
+      failure_limit = if issue.pr_review_phase.in?(%w[ready escalated])
+        followup_limit_reached?(project, issue, progress_state)
+      else
+        failure_streak_limit_reached?(project, issue, progress_state)
+      end
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
       reason = if op_breaker
@@ -224,6 +228,7 @@ module Activities
         .pull_requests_only
         .auto_continue_active
         .where(github_state: "open")
+        .where.not(pr_review_phase: "merged")
         .where("labels @> ?", [ project.automation_label_name ].to_json)
     end
 
@@ -1080,7 +1085,16 @@ module Activities
     end
 
     def followup_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
-      issue.pr_review_phase.in?(%w[ready escalated]) && failure_streak_limit_reached?(project, issue, progress_state)
+      return false unless issue.pr_review_phase.in?(%w[ready escalated])
+      return false if suppress_followup_limit_for_review_failures?(project, issue, progress_state)
+
+      failure_streak_limit_reached?(project, issue, progress_state)
+    end
+
+    def suppress_followup_limit_for_review_failures?(project, issue, progress_state)
+      return false unless progress_state.latest_unsuccessful_review?
+
+      !review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
     end
 
     # Draft-phase circuit breaker: while the PR is in draft/restarted,

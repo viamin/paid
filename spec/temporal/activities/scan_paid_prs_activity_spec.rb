@@ -295,6 +295,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "escalates draft PRs at max review rounds without checking rate budget" do
         project.update!(max_draft_review_rounds: 3)
         pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
+        3.times do
+          create(:agent_run, :failed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 99)
+        end
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 99)
           .and_return(OpenStruct.new(draft: true, number: 99, head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: false)), mergeable: true, user: OpenStruct.new(login: "someone-else")))
@@ -1317,8 +1323,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create(:issue, :pull_request,
             project: project, github_number: 42,
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
-            pr_review_phase: "ready", paid_state: "completed",
-            pr_followup_count: 3)
+            pr_review_phase: "ready", paid_state: "completed")
+          3.times do
+            create(:agent_run, :failed,
+              project: project,
+              goal: "create_pr",
+              source_pull_request_number: 42)
+          end
           stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
         end
 
@@ -1369,8 +1380,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             project: project, github_number: 42,
             github_creator_login: "dependabot[bot]",
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
-            pr_review_phase: "ready", paid_state: "completed",
-            pr_followup_count: 3)
+            pr_review_phase: "ready", paid_state: "completed")
+          3.times do
+            create(:agent_run, :failed,
+              project: project,
+              goal: "create_pr",
+              source_pull_request_number: 42)
+          end
           stub_github_for_pr(
             author_login: "dependabot[bot]",
             checks: [ { name: "ci", conclusion: "failure" } ]
@@ -4565,6 +4581,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 3)
+        3.times do
+          create(:agent_run, :failed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 42)
+        end
         stub_github_for_pr(draft: true)
       end
 
@@ -6982,6 +7004,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still skips ready PRs at the follow-up limit when auto-fix is enabled" do
         project.update!(auto_fix_merge_conflicts: true, max_pr_followup_runs: 1)
         unchanged_pr.update!(pr_review_phase: "ready", pr_followup_count: 1)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "create_pr",
+          source_pull_request_number: 42,
+          completed_at: 5.minutes.ago,
+          updated_at: 5.minutes.ago,
+          created_at: 5.minutes.ago)
 
         result = activity.execute(project_id: project.id)
 
@@ -8372,7 +8401,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", status: "failed",
           started_at: 1.hour.ago, completed_at: 1.hour.ago)
       end
-      dismissed_escalated_issue.remove_label!("paid-escalated")
+      dismissed_escalated_issue.update!(labels: dismissed_escalated_issue.labels - [ "paid-escalated" ])
       stub_github_for_pr(reviews: [])
     end
 
