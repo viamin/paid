@@ -812,14 +812,17 @@ module Activities
         # so treat this as a provider failure to trigger fallback/retry.
         combined_output = [ stdout, stderr ].compact.join("\n")
         sanitized_output = strip_prompt_echo(combined_output, prompt)
-        if insufficient_credits_error?(sanitized_output)
-          raise ProviderExecutionError,
-            "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
-        end
-
+        # Rate-limit classification takes precedence over generic quota
+        # failures because some providers use quota-shaped wording for
+        # retryable usage caps (for example, GLM free-model limits).
         if successful_exit_rate_limit_error?(sanitized_output)
           reset_at = rate_limit_reset_at(provider, sanitized_output)
           raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
+        if insufficient_credits_error?(sanitized_output)
+          raise ProviderExecutionError,
+            "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
         end
 
         if provider_model_not_found_error?(sanitized_output)
@@ -937,18 +940,20 @@ module Activities
       sanitized_output = strip_prompt_echo(output, prompt)
 
       if result.success?
+        # Keep the same precedence as the main execution path so preflight
+        # retryable limits do not degrade into generic provider failures.
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
             provider: provider,
             reason: "Provider credit/quota error: #{sanitized_output.truncate(500)}"
           )
-        end
-
-        if successful_exit_rate_limit_error?(sanitized_output)
-          reset_at = rate_limit_reset_at(provider, sanitized_output)
-          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
-          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
         end
 
         if provider_model_not_found_error?(sanitized_output)
