@@ -444,7 +444,7 @@ RSpec.describe Issue do
 
       it "memoizes progress state across helper calls" do
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state)
 
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
@@ -467,6 +467,29 @@ RSpec.describe Issue do
         expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: Time.current)).to eq(0)
       end
 
+      it "promotes a head-aware state into the default memoized entry" do
+        stale_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 3
+        )
+        head_aware_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 0
+        )
+        fetched_at = Time.zone.parse("2026-05-15 12:00:00")
+
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(stale_progress_state)
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
+          .and_return(head_aware_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: fetched_at)).to eq(0)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(0)
+      end
+
       it "invalidates the memoized progress state on reload" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,
@@ -476,7 +499,7 @@ RSpec.describe Issue do
         fresh_issue.instance_variable_set(:@association_cache, {})
         fresh_issue.instance_variable_set(:@attributes, issue.instance_variable_get(:@attributes))
         allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state, fresh_progress_state)
         allow(issue).to receive(:_find_record).and_return(fresh_issue)
 

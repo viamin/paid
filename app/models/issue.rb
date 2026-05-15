@@ -186,14 +186,22 @@ class Issue < ApplicationRecord
   # enable the "new PR head commit" reset condition. Without those
   # parameters, only explicit reset markers and successful-run resets apply.
   def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
-    if current_head_sha.present?
-      return PullRequests::ProgressState.call(
-        project:, issue: self,
-        current_head_sha:, current_head_updated_at:
-      )
+    @pr_progress_states ||= {}
+    cache_key = if current_head_sha.present?
+      [ current_head_sha, current_head_updated_at ]
+    else
+      :default
     end
 
-    @pr_progress_state ||= PullRequests::ProgressState.call(project:, issue: self)
+    @pr_progress_states[cache_key] ||= PullRequests::ProgressState.call(
+      project:, issue: self,
+      current_head_sha:, current_head_updated_at:
+    )
+    # Once we have live PR head data, promote that result to the default
+    # cache entry so later helper calls on the same Issue instance don't
+    # reuse a stale pre-fetch snapshot.
+    @pr_progress_states[:default] = @pr_progress_states[cache_key] if current_head_sha.present?
+    @pr_progress_states[cache_key]
   end
 
   def consecutive_unsuccessful_pr_runs(**kwargs)
@@ -217,7 +225,7 @@ class Issue < ApplicationRecord
   end
 
   def reload(*)
-    @pr_progress_state = nil
+    @pr_progress_states = nil
     super
   end
 
