@@ -522,8 +522,8 @@ RSpec.describe Containers::Provision do
           AgentHarness::Providers::Gemini,
           cli_env_overrides: { "GEMINI_SANDBOX" => "false", "GEMINI_CLI_DISABLE_RETRIES" => "true" }
         )
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini).and_return(gemini_provider)
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_return(gemini_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -542,8 +542,8 @@ RSpec.describe Containers::Provision do
           config_file_content: "model_provider = \"paid\"\n",
           auth_lock_config: { path: "/tmp/codex-auth.lock" }
         )
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:codex).and_return(codex_provider)
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -558,15 +558,15 @@ RSpec.describe Containers::Provision do
       end
 
       it "raises when a known runner is missing from agent-harness" do
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini).and_raise(KeyError, "missing gemini")
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(KeyError, "missing gemini")
 
         expect { service.provision }.to raise_error(KeyError, /missing gemini/)
       end
 
       it "raises when runner CLI env overrides are misconfigured in agent-harness" do
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini)
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini)
           .and_raise(AgentHarness::ConfigurationError, "broken gemini")
 
         expect { service.provision }
