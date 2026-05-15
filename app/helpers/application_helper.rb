@@ -534,9 +534,11 @@ module ApplicationHelper
   def issue_title_for(run, github_number:, is_pull_request:)
     return nil if github_number.blank?
 
-    if is_pull_request && run.respond_to?(:source_pull_request_record, true)
-      title = run.send(:source_pull_request_record)&.title
+    if is_pull_request && run.respond_to?(:source_pull_request_record)
+      title = run.source_pull_request_record&.title
       return title if title.present?
+
+      return nil
     end
 
     project = run.project
