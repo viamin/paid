@@ -1,19 +1,16 @@
 # frozen_string_literal: true
 
-require "set"
-
 module MarketplaceEntries
   class Resolver
     Result = Struct.new(:entry, :version, :source, :reason, keyword_init: true)
 
-    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled, :consent_owner_id
+    attr_reader :project, :agent_run, :manual_entry_ids, :auto_attach_enabled
 
-    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, consent_owner_id: nil)
+    def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
       @project = project
       @agent_run = agent_run
       @manual_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
       @auto_attach_enabled = auto_attach_enabled
-      @consent_owner_id = consent_owner_id
     end
 
     def self.call(...)
@@ -109,46 +106,7 @@ module MarketplaceEntries
     end
 
     def automatic_compatible_entries
-      @automatic_compatible_entries ||= begin
-        opted_in_ids = persisted_opted_in_entry_ids
-        compatible_entries.select { |entry| opted_in_ids.include?(entry.id) }
-      end
-    end
-
-    def persisted_opted_in_entry_ids
-      @persisted_opted_in_entry_ids ||= begin
-        if effective_consent_owner_id.blank?
-          Set.new
-        else
-          # Agent runs do not currently persist the initiating user, so the
-          # tightest durable consent scope available today is the effective
-          # project owner/fallback owner rather than the whole account.
-          relation = AgentRunMarketplaceEntry
-            .joins(agent_run: :project)
-            .where(attachment_source: "manual")
-
-          relation = if fallback_owner_scope?
-            relation.where(projects: { account_id: project.account_id, created_by_id: [ nil, effective_consent_owner_id ] })
-          else
-            relation.where(projects: { created_by_id: effective_consent_owner_id })
-          end
-
-          relation.distinct.pluck(:marketplace_entry_id).to_set
-        end
-      end
-    end
-
-    def effective_consent_owner_id
-      return consent_owner_id if consent_owner_id.present?
-      return unless project.respond_to?(:created_by_id)
-
-      project.created_by_id || project.account&.fallback_owner_id
-    end
-
-    def fallback_owner_scope?
-      project.respond_to?(:created_by_id) &&
-        project.created_by_id.nil? &&
-        project.account&.fallback_owner_id == effective_consent_owner_id
+      @automatic_compatible_entries ||= compatible_entries
     end
 
     def compatible_with_run?(version)

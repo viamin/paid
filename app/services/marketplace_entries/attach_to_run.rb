@@ -2,13 +2,12 @@
 
 module MarketplaceEntries
   class AttachToRun
-    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled, :consent_owner_id
+    attr_reader :agent_run, :manual_entry_ids, :auto_attach_enabled
 
-    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, consent_owner_id: nil)
+    def initialize(agent_run:, manual_entry_ids: nil, auto_attach_enabled: false)
       @agent_run = agent_run
       @manual_entry_ids = manual_entry_ids
       @auto_attach_enabled = auto_attach_enabled
-      @consent_owner_id = consent_owner_id
     end
 
     def self.call(...)
@@ -20,8 +19,7 @@ module MarketplaceEntries
         project: agent_run.project,
         agent_run:,
         manual_entry_ids:,
-        auto_attach_enabled:,
-        consent_owner_id:
+        auto_attach_enabled:
       )
 
       AgentRunMarketplaceEntry.transaction do

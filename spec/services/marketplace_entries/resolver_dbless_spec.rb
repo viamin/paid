@@ -12,10 +12,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     entry = build_entry
 
     resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
-    allow(resolver).to receive_messages(
-      candidate_entries: [ entry ],
-      persisted_opted_in_entry_ids: Set[entry.id]
-    )
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
 
     results = resolver.call
 
@@ -24,7 +21,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:reason)).to eq([ "Matched automatically" ])
   end
 
-  it "does not auto-attach without opt-in" do
+  it "does not auto-attach when automatic attachment is disabled" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -40,7 +37,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results).to be_empty
   end
 
-  it "requires a persisted manual opt-in before automatic rules can attach" do
+  it "attaches both automatic and team-default entries when automatic attachment is enabled" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -53,15 +50,12 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     )
 
     resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
-    allow(resolver).to receive_messages(
-      candidate_entries: [ automatic_entry, team_default_entry ],
-      persisted_opted_in_entry_ids: Set.new
-    )
+    allow(resolver).to receive(:candidate_entries).and_return([ automatic_entry, team_default_entry ])
 
     results = resolver.call
 
-    expect(results.map(&:entry)).to eq([ team_default_entry ])
-    expect(results.map(&:source)).to eq([ "team_default" ])
+    expect(results.map(&:entry)).to eq([ automatic_entry, team_default_entry ])
+    expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
   end
 
   it "does not opt in to automatic or team-default entries just because a manual entry is attached" do
@@ -94,7 +88,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     )
 
     resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ entry.id ], auto_attach_enabled: true)
-    allow(resolver).to receive_messages(candidate_entries: [ entry ], persisted_opted_in_entry_ids: Set[entry.id])
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
 
     results = resolver.call
 
@@ -114,21 +108,6 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     2.times { resolver.send(:effective_manual_entry_ids) }
 
     expect(attachments).to have_received(:where).once.with(attachment_source: "manual")
-  end
-
-  it "memoizes the blank consent-owner opt-in set" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
-    attachments = agent_run_marketplace_entries
-    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
-      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
-
-    resolver = described_class.new(project:, agent_run:)
-
-    first = resolver.send(:persisted_opted_in_entry_ids)
-    second = resolver.send(:persisted_opted_in_entry_ids)
-
-    expect(first).to equal(second)
-    expect(first).to eq(Set.new)
   end
 
   def agent_run_marketplace_entries

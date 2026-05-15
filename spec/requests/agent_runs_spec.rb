@@ -1195,6 +1195,26 @@ RSpec.describe "AgentRuns" do
         }.not_to change(AgentRunMarketplaceEntry, :count)
       end
 
+      it "applies automatic marketplace entries for an opted-in project member" do
+        owner = create(:user, account: account)
+        owner_token = create(:github_token, account: account, created_by: owner)
+        shared_project = create(:project, account: account, github_token: owner_token, created_by: owner)
+        issue = create(:issue, project: shared_project, github_number: 43, title: "Fix the bug")
+        create(:project_membership, project: shared_project, user: user, role: "member")
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+
+        expect {
+          post project_agent_runs_path(shared_project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(automatic_entry)
+        expect(attachment.attachment_source).to eq("automatic")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }

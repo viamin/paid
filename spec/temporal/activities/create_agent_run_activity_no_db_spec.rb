@@ -33,7 +33,6 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
 
     before do
       allow(activity).to receive(:marketplace_auto_attach_enabled?).with(project, user_settings).and_return(true)
-      allow(activity).to receive(:marketplace_consent_owner_id).with(project).and_return(123)
       allow(MarketplaceEntries::AttachToRun).to receive(:call)
     end
 
@@ -55,8 +54,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
 
         expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
           agent_run: agent_run,
-          auto_attach_enabled: true,
-          consent_owner_id: 123
+          auto_attach_enabled: true
         )
       end
     end
@@ -69,8 +67,7 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
 
         expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
           agent_run: agent_run,
-          auto_attach_enabled: true,
-          consent_owner_id: 123
+          auto_attach_enabled: true
         )
       end
     end

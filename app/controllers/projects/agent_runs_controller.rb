@@ -647,8 +647,7 @@ module Projects
       MarketplaceEntries::AttachToRun.call(
         agent_run:,
         manual_entry_ids: params[:marketplace_entry_ids],
-        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
-        consent_owner_id: marketplace_consent_owner_id
+        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?
       )
       agent_run
     end
@@ -656,10 +655,6 @@ module Projects
     def marketplace_auto_attach_enabled_for_current_user?
       current_user.settings.marketplace_auto_attach_enabled? ||
         current_account.tenant_setting&.marketplace_auto_attach_required?
-    end
-
-    def marketplace_consent_owner_id
-      @project.created_by_id || current_account.fallback_owner_id
     end
 
     def enqueue_resume_run(pr)
