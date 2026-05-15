@@ -209,6 +209,122 @@ RSpec.describe Issue do
     end
   end
 
+  describe "after_update_commit on github_state change" do
+    it "enqueues a newly unblocked dependent when the blocker closes" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+      allow(Rails.logger).to receive(:info)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolved",
+          blocker_issue_id: blocker.id,
+          dependent_issue_id: dependent.id
+        )
+      )
+    end
+
+    it "does not enqueue a dependent that still has another open dependency" do
+      project = create(:project, auto_pick_enabled: true)
+      closing_blocker = create(:issue, project: project, github_state: "open")
+      other_blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: closing_blocker)
+      create(:issue_dependency, issue: dependent, depends_on_issue: other_blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      closing_blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "does not enqueue anything when the closed issue has no dependents" do
+      issue = create(:issue, github_state: "open")
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "enqueues dependents transitively as blockers close in sequence" do
+      project = create(:project, auto_pick_enabled: true)
+      issue_a = create(:issue, project: project, github_state: "open")
+      issue_b = create(:issue, project: project, github_state: "open")
+      issue_c = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_a)
+      create(:issue_dependency, issue: issue_c, depends_on_issue: issue_b)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue_a.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue_b, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).not_to have_received(:call).with(issue_c, project: project, skip_project_gate: true)
+
+      issue_b.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue_c, project: project, skip_project_gate: true)
+    end
+
+    it "enqueues cross-project dependents when their project has auto_pick enabled" do
+      account = create(:account)
+      github_token = create(:github_token, account: account)
+      user = create(:user, account: account)
+      blocker_project = create(:project, account: account, github_token: github_token, created_by: user, auto_pick_enabled: true)
+      dependent_project = create(:project, account: account, github_token: github_token, created_by: user, auto_pick_enabled: true)
+      blocker = create(:issue, project: blocker_project, github_state: "open")
+      dependent = create(:issue, project: dependent_project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: dependent_project, skip_project_gate: true)
+    end
+
+    it "does not enqueue dependents for paused projects" do
+      project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "continues processing later dependents after one enqueue fails" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      first_dependent = create(:issue, project: project, github_state: "open")
+      second_dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: first_dependent, depends_on_issue: blocker)
+      create(:issue_dependency, issue: second_dependent, depends_on_issue: blocker)
+      allow(Rails.logger).to receive(:error)
+      allow(Issues::EnqueueEligible).to receive(:call) { |issue, **| raise StandardError, "transient failure" if issue == first_dependent }
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(first_dependent, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).to have_received(:call).with(second_dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolution_failed",
+          issue_id: blocker.id,
+          dependent_issue_id: first_dependent.id,
+          error: "transient failure"
+        )
+      )
+    end
+  end
+
   describe "instance methods" do
     describe "#github_url" do
       it "returns the GitHub issue URL for issues" do
