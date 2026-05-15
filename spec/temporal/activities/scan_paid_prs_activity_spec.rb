@@ -298,6 +298,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 99)
           .and_return(OpenStruct.new(draft: true, number: 99, head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: false)), mergeable: true, user: OpenStruct.new(login: "someone-else")))
+        allow(github_client).to receive(:commit)
+          .with(project.full_name, "abc123")
+          .and_return(OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))))
         allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
 
         result = activity.execute(project_id: project.id)
@@ -330,6 +333,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_issue
         allow(github_client).to receive_messages(
           pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))),
           check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
           review_threads: [],
           pull_request_reviews: [],
@@ -456,6 +460,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             mergeable: false,
             user: OpenStruct.new(login: "someone-else")
           ),
+          commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))),
           check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
           review_threads: [],
           pull_request_reviews: [],
