@@ -2,7 +2,30 @@
 
 module Knowledge
   class RunnerConfiguration
-    Result = Struct.new(:runner, :runner_label, :api_key, :api_base_url, :api_key_record, :source, keyword_init: true)
+    class Result
+      attr_reader :runner, :runner_label, :api_key, :api_base_url, :api_key_record, :source
+
+      def initialize(
+        runner: nil,
+        runner_label: nil,
+        provider: nil,
+        provider_label: nil,
+        api_key: nil,
+        api_base_url: nil,
+        api_key_record: nil,
+        source: nil
+      )
+        @runner = runner || provider
+        @runner_label = runner_label || provider_label
+        @api_key = api_key
+        @api_base_url = api_base_url
+        @api_key_record = api_key_record
+        @source = source
+      end
+
+      alias_method :provider, :runner
+      alias_method :provider_label, :runner_label
+    end
 
     def self.for_embedding(project:)
       new(project:).for_embedding
