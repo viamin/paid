@@ -394,7 +394,7 @@ module ApplicationHelper
     if run.issue.present?
       prefix = run.issue.is_pull_request? ? "PR" : "Issue"
       label = "#{prefix} ##{run.issue.github_number}"
-      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title.presence || label)
     elsif run.source_pull_request_number.present?
       url = source_pull_request_url(run)
       label = "PR ##{run.source_pull_request_number}"
@@ -452,7 +452,7 @@ module ApplicationHelper
   def enhance_issue_context(run)
     if run.issue.present?
       label = "Issue ##{run.issue.github_number}"
-      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title.presence || label)
     else
       { type: :placeholder }
     end

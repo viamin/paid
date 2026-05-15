@@ -2,10 +2,22 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationHelper do
+RSpec.describe ApplicationHelper, :no_db do
+  def stub_priority_project(priority_labels: {})
+    Struct.new(:priority_labels, keyword_init: true) do
+      def priority_label_for(tier)
+        effective_priority_labels.fetch(tier, tier)
+      end
+
+      def effective_priority_labels
+        Project::DEFAULT_PRIORITY_LABELS.merge(priority_labels || {})
+      end
+    end.new(priority_labels: priority_labels)
+  end
+
   describe "#issue_label_badge_classes" do
     it "uses GitHub-like styling for default priority labels" do
-      project = build(:project)
+      project = stub_priority_project
 
       expect(helper.issue_label_badge_classes(project, "P0")).to include("bg-red-700 text-red-50")
       expect(helper.issue_label_badge_classes(project, "P1")).to include("bg-red-100 text-red-800")
@@ -14,7 +26,7 @@ RSpec.describe ApplicationHelper do
     end
 
     it "uses GitHub-like styling for configured priority labels only" do
-      project = build(:project, priority_labels: { "P1" => "urgent", "P2" => "high-touch", "P3" => "later" })
+      project = stub_priority_project(priority_labels: { "P1" => "urgent", "P2" => "high-touch", "P3" => "later" })
 
       expect(helper.issue_label_badge_classes(project, "urgent")).to include("bg-red-100 text-red-800")
       expect(helper.issue_label_badge_classes(project, "high-touch")).to include("bg-orange-100 text-orange-800")
@@ -101,13 +113,14 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 
-      it "omits the mobile info icon when tooltip is absent" do
+      it "falls back to the issue label tooltip when the issue title is absent" do
         issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42", title: nil)
         run = stub_run("create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).not_to include('data-controller="tooltip"')
-        expect(result).not_to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
+        expect(result).to include('title="Issue #42"')
+        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 
       it "includes aria attributes on tooltip button" do
@@ -327,6 +340,15 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include("Issue #55")
         expect(result).to include("https://github.com/o/r/issues/55")
+      end
+
+      it "falls back to the issue label tooltip when the issue title is absent" do
+        issue = stub_issue(github_number: 55, github_url: "https://github.com/o/r/issues/55", title: nil)
+        run = stub_run("analyze_issue_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include('title="Issue #55"')
+        expect(result).to include('data-controller="tooltip"')
       end
 
       it "shows placeholder when no issue" do
