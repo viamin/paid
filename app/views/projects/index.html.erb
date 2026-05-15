@@ -16,7 +16,7 @@
     </div>
   </div>
 
-  <% if @projects.any? %>
+  <% if @projects&.any? %>
     <div class="mt-6 flex items-center gap-3 text-sm text-gray-500">
       <span class="font-medium text-gray-700">Sort by:</span>
       <% sort_options = [
