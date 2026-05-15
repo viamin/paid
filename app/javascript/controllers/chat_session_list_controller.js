@@ -5,7 +5,7 @@ export default class extends Controller {
   static values = { activeSessionId: Number }
 
   connect() {
-    this.mediaQuery = window.matchMedia("(min-width: 1024px)")
+    this.mediaQuery = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 1024px)") : null
     this.boundCloseOnDesktop = this.closeOnDesktop.bind(this)
     this.boundCloseOnNavigate = this.closeSidebar.bind(this)
 
@@ -83,6 +83,8 @@ export default class extends Controller {
   }
 
   addMediaQueryListener(listener) {
+    if (!this.mediaQuery) return
+
     if (typeof this.mediaQuery.addEventListener === "function") {
       this.mediaQuery.addEventListener("change", listener)
       return
@@ -94,6 +96,8 @@ export default class extends Controller {
   }
 
   removeMediaQueryListener(listener) {
+    if (!this.mediaQuery) return
+
     if (typeof this.mediaQuery.removeEventListener === "function") {
       this.mediaQuery.removeEventListener("change", listener)
       return
@@ -115,7 +119,7 @@ export default class extends Controller {
     if (!this.hasMobileMenuTarget) return
 
     const open = forceOpen === null ? !this.mobileMenuTarget.classList.contains("hidden") : forceOpen
-    const isDesktop = this.mediaQuery.matches
+    const isDesktop = this.mediaQuery?.matches ?? false
     const mobileOpen = open && !isDesktop
 
     // On desktop the sidebar is always visible (lg:block), so never hide it from screen readers.

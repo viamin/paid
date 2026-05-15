@@ -221,8 +221,67 @@ class ChatSessionListControllerNodeHarness
       }
     }
 
+    function runMissingMatchMediaCase() {
+      const bodyClassList = buildClassList();
+      const menuClassList = buildClassList(["hidden"]);
+      const listeners = {};
+      let observerDisconnected = false;
+
+      global.window = {
+        MutationObserver: class {
+          observe() {}
+
+          disconnect() {
+            observerDisconnected = true;
+          }
+        },
+        location: { pathname: "/chat/42" }
+      };
+
+      global.document = {
+        addEventListener(name, listener) {
+          listeners[name] = listener;
+        },
+        body: { classList: bodyClassList },
+        removeEventListener(name, listener) {
+          if (listeners[name] === listener) delete listeners[name];
+        }
+      };
+
+      const controller = Object.create(ChatSessionListController.prototype);
+      controller.cardTargets = [];
+      controller.hasActiveSessionIdValue = false;
+      controller.hasModalTarget = false;
+      controller.hasMobileButtonTarget = false;
+      controller.hasMobileCloseLabelTarget = false;
+      controller.hasMobileMenuTarget = true;
+      controller.hasMobileOpenLabelTarget = false;
+      controller.hasSearchInputTarget = false;
+      controller.listTarget = {};
+      controller.mobileMenuTarget = {
+        attributes: {},
+        classList: menuClassList,
+        setAttribute(name, value) {
+          this.attributes[name] = value;
+        }
+      };
+
+      controller.connect();
+      controller.toggleSidebar();
+      controller.disconnect();
+
+      if (!observerDisconnected) {
+        throw new Error("Expected disconnect() to stop the mutation observer when matchMedia is unavailable");
+      }
+
+      if (controller.mobileMenuTarget.attributes["aria-hidden"] !== "false") {
+        throw new Error(`Expected open menu aria-hidden=false without matchMedia, saw ${controller.mobileMenuTarget.attributes["aria-hidden"]}`);
+      }
+    }
+
     runModernListenerCase();
     runLegacyListenerCase();
+    runMissingMatchMediaCase();
   JAVASCRIPT
 
   def self.run
