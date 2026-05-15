@@ -42,6 +42,15 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           step_names = job.fetch("steps").map { |step| step["name"] }
           expect(step_names).not_to include("Create application database role")
         end
+
+        it "installs the PGDG postgres client by major version for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
+
+          expect(install_step.fetch("run")).to include("apt.postgresql.org/pub/repos/apt")
+          expect(install_step.fetch("run")).to include("postgresql-client-16")
+          expect(install_step.fetch("run")).not_to include("postgresql-client-16=")
+        end
       end
     end
   end
