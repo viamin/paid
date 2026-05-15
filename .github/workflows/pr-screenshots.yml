@@ -51,8 +51,8 @@ jobs:
           fi
 
           ui_files=$(
-            DIFF_FILES="$diff_files" ruby -rjson -e '
-              require_relative "app/services/screenshots/detect_ui_changes"
+            DIFF_FILES="$diff_files" ruby -Iapp/services -e '
+              require "screenshots/detect_ui_changes"
               changed_files = ENV.fetch("DIFF_FILES", "").split("\n").map(&:strip).reject(&:empty?)
               result = Screenshots::DetectUiChanges.call(changed_files: changed_files)
               print result.fetch(:ui_files).join("\n")

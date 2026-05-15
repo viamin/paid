@@ -103,6 +103,34 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:reason)).to eq([ "Matched automatically" ])
   end
 
+  it "memoizes persisted manual attachment ids when no manual ids were passed" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    resolver = described_class.new(project:, agent_run:)
+
+    2.times { resolver.send(:effective_manual_entry_ids) }
+
+    expect(attachments).to have_received(:where).once.with(attachment_source: "manual")
+  end
+
+  it "memoizes the blank consent-owner opt-in set" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    resolver = described_class.new(project:, agent_run:)
+
+    first = resolver.send(:persisted_opted_in_entry_ids)
+    second = resolver.send(:persisted_opted_in_entry_ids)
+
+    expect(first).to equal(second)
+    expect(first).to eq(Set.new)
+  end
+
   def agent_run_marketplace_entries
     stub_const("ResolverDblessAttachments", Class.new do
       def where(...)

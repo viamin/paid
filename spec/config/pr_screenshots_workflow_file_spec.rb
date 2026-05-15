@@ -28,4 +28,13 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
 
     expect(upload_step.dig("with", "if-no-files-found")).to eq("ignore")
   end
+
+  it "loads screenshot detection from the app services load path instead of require_relative in ruby -e" do
+    detect_step = workflow.fetch("jobs").fetch("detect").fetch("steps").find do |step|
+      step["name"] == "Detect UI-facing changes"
+    end
+
+    expect(detect_step.fetch("run")).to include('ruby -Iapp/services -e')
+    expect(detect_step.fetch("run")).to include('require "screenshots/detect_ui_changes"')
+  end
 end

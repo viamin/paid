@@ -86,9 +86,11 @@ module MarketplaceEntries
     end
 
     def effective_manual_entry_ids
-      return manual_entry_ids if manual_entry_ids.any?
-
-      agent_run.agent_run_marketplace_entries.where(attachment_source: "manual").pluck(:marketplace_entry_id)
+      @effective_manual_entry_ids ||= if manual_entry_ids.any?
+        manual_entry_ids
+      else
+        agent_run.agent_run_marketplace_entries.where(attachment_source: "manual").pluck(:marketplace_entry_id)
+      end
     end
 
     def candidate_entries
@@ -115,22 +117,26 @@ module MarketplaceEntries
     end
 
     def persisted_opted_in_entry_ids
-      return Set.new if effective_consent_owner_id.blank?
+      @persisted_opted_in_entry_ids ||= begin
+        if effective_consent_owner_id.blank?
+          Set.new
+        else
+          # Agent runs do not currently persist the initiating user, so the
+          # tightest durable consent scope available today is the effective
+          # project owner/fallback owner rather than the whole account.
+          relation = AgentRunMarketplaceEntry
+            .joins(agent_run: :project)
+            .where(attachment_source: "manual")
 
-      # Agent runs do not currently persist the initiating user, so the
-      # tightest durable consent scope available today is the effective
-      # project owner/fallback owner rather than the whole account.
-      relation = AgentRunMarketplaceEntry
-        .joins(agent_run: :project)
-        .where(attachment_source: "manual")
+          relation = if fallback_owner_scope?
+            relation.where(projects: { account_id: project.account_id, created_by_id: [ nil, effective_consent_owner_id ] })
+          else
+            relation.where(projects: { created_by_id: effective_consent_owner_id })
+          end
 
-      relation = if fallback_owner_scope?
-        relation.where(projects: { account_id: project.account_id, created_by_id: [ nil, effective_consent_owner_id ] })
-      else
-        relation.where(projects: { created_by_id: effective_consent_owner_id })
+          relation.distinct.pluck(:marketplace_entry_id).to_set
+        end
       end
-
-      @persisted_opted_in_entry_ids ||= relation.distinct.pluck(:marketplace_entry_id).to_set
     end
 
     def effective_consent_owner_id
