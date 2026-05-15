@@ -239,8 +239,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
-    context "when auto-pick is enabled" do
-      let(:project) { create(:project, auto_pick_enabled: true, label_mappings: { "build" => "paid-build" }) }
+    context "when auto-pick is enabled (incremental sync)" do
+      let(:project) { create(:project, auto_pick_enabled: true, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: 10.minutes.ago) }
       let(:eligible_issue) { github_issue(7) }
       let(:pull_request_issue) { github_pr_issue(8) }
       let(:closed_issue) do
@@ -249,6 +249,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       before do
         allow(Issues::EnqueueEligible).to receive(:call)
+        project.update_column(:last_issue_reconciliation_at, Time.current)
       end
 
       it "queues an eligible synced issue immediately" do
@@ -266,6 +267,25 @@ RSpec.describe Activities::FetchIssuesActivity do
         activity.execute(project_id: project.id)
 
         expect(Issues::EnqueueEligible).not_to have_received(:call)
+      end
+    end
+
+    context "when auto-pick is enabled (initial sync)" do
+      let(:project) { create(:project, auto_pick_enabled: true, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: nil) }
+      let(:eligible_issue) { github_issue(7) }
+
+      before do
+        allow(Issues::EnqueueEligible).to receive(:call)
+        allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([])
+      end
+
+      it "skips per-issue enqueue and relies on bulk seeding" do
+        stub_issues_by_label(nil => [ eligible_issue ])
+
+        activity.execute(project_id: project.id)
+
+        expect(Issues::EnqueueEligible).not_to have_received(:call)
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project)
       end
     end
 

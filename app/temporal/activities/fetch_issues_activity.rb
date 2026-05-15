@@ -40,7 +40,7 @@ module Activities
       enhance_issue_rechecks = []
 
       Project.suppress_broadcasts do
-        synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
+        synced_issues = github_issues.map { |gi| sync_issue(project, gi, incremental: incremental) }
         sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed ||= relationship_changes
@@ -255,7 +255,7 @@ module Activities
       [ issues, truncated ]
     end
 
-    def sync_issue(project, github_issue)
+    def sync_issue(project, github_issue, incremental: true)
       creator_login = github_issue.user&.login || "unknown"
       trusted = project.trusted_github_user?(creator_login)
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
@@ -275,7 +275,7 @@ module Activities
         github_issue: github_issue,
         body: trusted ? github_issue.body : nil
       )
-      enqueue_eligible_issue(project, issue)
+      enqueue_eligible_issue(project, issue) if incremental
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
