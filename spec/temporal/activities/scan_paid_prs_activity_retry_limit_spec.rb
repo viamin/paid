@@ -303,6 +303,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     let(:issue) { instance_double(RetryLimitCacheIssueStub, id: 123) }
     let(:stale_state) { instance_double(PullRequests::ProgressState::Result) }
     let(:head_aware_state) { instance_double(PullRequests::ProgressState::Result) }
+    let(:fetched_at) { Time.zone.parse("2026-05-15 12:00:00") }
+
+    def cached_progress_state(current_head_updated_at:)
+      activity.send(
+        :pr_progress_state,
+        project,
+        issue,
+        current_head_sha: "abc123",
+        current_head_updated_at:
+      )
+    end
 
     it "promotes the head-aware state into the default cache entry" do
       allow(PullRequests::ProgressState).to receive(:call)
@@ -326,6 +337,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       ).to eq(head_aware_state)
 
       expect(activity.send(:pr_progress_state, project, issue)).to eq(head_aware_state)
+    end
+
+    it "does not reuse a same-sha cache entry computed before head commit time was known" do
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+        .and_return(stale_state)
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
+        .and_return(head_aware_state)
+
+      expect(cached_progress_state(current_head_updated_at: nil)).to eq(stale_state)
+      expect(cached_progress_state(current_head_updated_at: fetched_at)).to eq(head_aware_state)
     end
   end
 end

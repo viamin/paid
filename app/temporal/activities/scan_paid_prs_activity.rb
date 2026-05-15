@@ -1002,7 +1002,11 @@ module Activities
     def pr_progress_state(project, issue, current_head_sha: nil, current_head_updated_at: nil)
       @pr_progress_states ||= {}
       cache = (@pr_progress_states[issue.id] ||= {})
-      cache_key = current_head_sha.presence || :default
+      cache_key = if current_head_sha.present?
+        [ current_head_sha, current_head_updated_at ]
+      else
+        :default
+      end
       cache[cache_key] ||= PullRequests::ProgressState.call(
         project:,
         issue:,
