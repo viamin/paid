@@ -50,7 +50,8 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
 
     expect(publish_step.fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
-      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_MASTER_KEY }}"
+      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_MASTER_KEY }}",
+      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
     )
   end
 end
