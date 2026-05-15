@@ -65,7 +65,12 @@ class AutoPickQueueBackfillJob < ApplicationJob
   end
 
   def remaining_project_ids
-    eligible_projects.pluck(:id).reject { |id| project_backfilled?(id) }
+    eligible_projects.each_with_object([]) do |project, remaining|
+      next if project_backfilled?(project.id)
+      next unless Issues::AutoPickProjectGate.call(project)
+
+      remaining << project.id
+    end
   end
 
   def eligible_projects
