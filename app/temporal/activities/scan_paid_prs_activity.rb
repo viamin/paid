@@ -1771,9 +1771,7 @@ module Activities
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
 
-      progress_state = pr_progress_state(project, issue)
-      progress_state.latest_unsuccessful_review? &&
-        progress_state.escalation_worthy?(limit: review_goal_max_retries(project))
+      review_goal_consecutive_failure_count(project, issue) >= review_goal_max_retries(project)
     end
 
     # Escalate only when exhausting paid_agent retries leaves no other bot
@@ -1828,15 +1826,12 @@ module Activities
     def latest_finished_automatic_review_run(project, issue)
       attempted_automatic_review_runs_since_retry_reset(project, issue)
         .finished
-        .order(Arel.sql("COALESCE(completed_at, updated_at) DESC"))
+        .order(Arel.sql("#{PullRequests::ProgressState::RUN_TIMESTAMP_SQL} DESC, created_at DESC, id DESC"))
         .first
     end
 
     def review_goal_consecutive_failure_count(project, issue)
-      progress_state = pr_progress_state(project, issue)
-      return 0 unless progress_state.latest_unsuccessful_review?
-
-      progress_state.consecutive_unsuccessful_automatic_runs
+      consecutive_retryable_review_failures(attempted_automatic_review_runs_since_retry_reset(project, issue))
     end
 
     def review_goal_failure_reset_at(project, issue)
@@ -1854,6 +1849,34 @@ module Activities
         run_scope.where(goal: "review", status: "completed").maximum(:completed_at),
         run_scope.where(goal: "create_pr", status: "completed").maximum(:completed_at)
       ].compact.max
+    end
+
+    def consecutive_retryable_review_failures(scope, batch_size: PullRequests::ProgressState::RUN_BATCH_SIZE)
+      failure_count = 0
+      offset = 0
+      ordered_scope = scope.finished
+        .order(Arel.sql("#{PullRequests::ProgressState::RUN_TIMESTAMP_SQL} DESC, created_at DESC, id DESC"))
+
+      loop do
+        batch = ordered_scope
+          .limit(batch_size)
+          .offset(offset)
+          .to_a
+        break if batch.empty?
+
+        batch.each do |run|
+          return failure_count unless run.status.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+          return failure_count if run.review_posted_at.present?
+
+          failure_count += 1
+        end
+
+        break if batch.length < batch_size
+
+        offset += batch_size
+      end
+
+      failure_count
     end
 
     def review_goal_max_retries(project)

@@ -8053,6 +8053,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(triggers).not_to include("review_goal_retry")
       expect(triggers).not_to include("paid_agent_review_pending")
     end
+
+    it "does not escalate just because an older retryable failure exists" do
+      enable_paid_agent_review!(project, max_review_rounds: 1)
+
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("escalate_to_owner")
+    end
   end
 
   context "when paid_agent review-goal retry limit is reached" do
@@ -8380,6 +8389,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
+  context "when create_pr failures precede the first retryable review failure" do
+    let(:cross_goal_failure_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 5, max_review_goal_retries: 2)
+      create(:agent_run, :failed,
+        project: project, issue: cross_goal_failure_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        started_at: 3.hours.ago,
+        completed_at: 3.hours.ago)
+      create(:agent_run, :failed,
+        project: project, issue: cross_goal_failure_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        started_at: 2.hours.ago,
+        completed_at: 2.hours.ago)
+      create(:agent_run, :failed,
+        project: project, issue: cross_goal_failure_issue,
+        source_pull_request_number: 42,
+        goal: "review",
+        started_at: 1.hour.ago,
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(draft: true, reviews: [])
+    end
+
+    it "retries the review instead of escalating on the unified PR streak" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      retry_trigger = trigger[:triggers].find { |t| t[:type] == "review_goal_retry" }
+
+      expect(trigger_types).to include("review_goal_retry")
+      expect(trigger_types).not_to include("escalate_to_owner")
+      expect(retry_trigger[:details]).to include("attempt 2/2")
     end
   end
 

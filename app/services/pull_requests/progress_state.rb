@@ -12,6 +12,8 @@ module PullRequests
   # - issue.operational_failure_reset_at
   class ProgressState
     GOALS = %w[create_pr review].freeze
+    RUN_BATCH_SIZE = 100
+    RUN_TIMESTAMP_SQL = "COALESCE(completed_at, updated_at, created_at)".freeze
 
     Result = Data.define(
       :consecutive_unsuccessful_automatic_runs,
@@ -60,10 +62,11 @@ module PullRequests
       failure_streak = 0
       operational_streak = nil
       latest_failure = nil
+      latest_run_at = nil
 
-      relevant_runs.each do |run|
+      each_relevant_run(explicit_reset_at:) do |run|
         run_time = run_timestamp(run)
-        next if explicit_reset_at && run_time && run_time <= explicit_reset_at
+        latest_run_at ||= run_time
 
         if meaningful_progress?(run)
           progress_at = [ progress_at, progress_timestamp(run) ].compact.max
@@ -86,7 +89,7 @@ module PullRequests
         consecutive_unsuccessful_automatic_runs: failure_streak,
         consecutive_operational_failures: operational_streak || 0,
         last_meaningful_progress_at: progress_at,
-        latest_automatic_run_at: relevant_runs.first && run_timestamp(relevant_runs.first),
+        latest_automatic_run_at: latest_run_at,
         latest_unsuccessful_run_at: latest_failure && run_timestamp(latest_failure),
         latest_unsuccessful_run_goal: latest_failure&.goal,
         latest_unsuccessful_run_status: latest_failure&.status
@@ -97,11 +100,51 @@ module PullRequests
 
     attr_reader :project, :issue, :runs
 
-    def relevant_runs
-      @relevant_runs ||= Array(runs || load_runs)
+    def each_relevant_run(explicit_reset_at:, &block)
+      return enum_for(__method__, explicit_reset_at:) unless block
+
+      if runs
+        ordered_supplied_runs.each do |run|
+          run_time = run_timestamp(run)
+          break if explicit_reset_at && run_time && run_time <= explicit_reset_at
+
+          yield run
+        end
+      else
+        each_loaded_run(explicit_reset_at:, &block)
+      end
+    end
+
+    def ordered_supplied_runs
+      @ordered_supplied_runs ||= Array(runs)
         .compact
         .sort_by { |run| [ run_timestamp(run) || Time.at(0), run.created_at || Time.at(0) ] }
         .reverse
+    end
+
+    def each_loaded_run(explicit_reset_at:)
+      offset = 0
+
+      loop do
+        batch = ordered_run_scope.limit(RUN_BATCH_SIZE).offset(offset).to_a
+        break if batch.empty?
+
+        stop = false
+
+        batch.each do |run|
+          run_time = run_timestamp(run)
+          if explicit_reset_at && run_time && run_time <= explicit_reset_at
+            stop = true
+            break
+          end
+
+          yield run
+        end
+
+        break if stop || batch.length < RUN_BATCH_SIZE
+
+        offset += RUN_BATCH_SIZE
+      end
     end
 
     def load_runs
@@ -113,6 +156,12 @@ module PullRequests
         )
         .finished
         .where.not(status: "retried")
+    end
+
+    def ordered_run_scope
+      @ordered_run_scope ||= load_runs.order(
+        Arel.sql("#{RUN_TIMESTAMP_SQL} DESC, created_at DESC, id DESC")
+      )
     end
 
     def reset_markers

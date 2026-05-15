@@ -11,6 +11,47 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       :operational_failure_reset_at,
       keyword_init: true
     ))
+    stub_const("ProgressStateFakeRunScope", Class.new do
+      attr_reader :offsets_fetched, :order_args
+
+      def initialize(batches)
+        @batches = batches
+        @offsets_fetched = []
+        @offset_value = 0
+      end
+
+      def where(*)
+        self
+      end
+
+      def finished
+        self
+      end
+
+      def not(*)
+        self
+      end
+
+      def order(*args)
+        @order_args = args
+        self
+      end
+
+      def limit(value)
+        @limit_value = value
+        self
+      end
+
+      def offset(value)
+        @offset_value = value
+        self
+      end
+
+      def to_a
+        offsets_fetched << @offset_value
+        @batches.fetch(@offset_value, [])
+      end
+    end)
   end
 
   let(:run_class) do
@@ -58,6 +99,26 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       review_goal_retry_reset_at: review_goal_retry_reset_at,
       operational_failure_reset_at: operational_failure_reset_at
     )
+  end
+
+  def fake_run_scope(batches)
+    ProgressStateFakeRunScope.new(batches)
+  end
+
+  def batched_history(now)
+    {
+      0 => [
+        build_run(goal: "review", status: "failed", at: now),
+        build_run(goal: "create_pr", status: "failed", at: now - 5.minutes)
+      ],
+      2 => [
+        build_run(goal: "create_pr", status: "completed", at: now - 10.minutes),
+        build_run(goal: "create_pr", status: "failed", at: now - 15.minutes)
+      ],
+      4 => [
+        build_run(goal: "create_pr", status: "failed", at: now - 20.minutes)
+      ]
+    }
   end
 
   it "keeps one failure streak across failed draft and ready phase runs" do
@@ -141,5 +202,20 @@ RSpec.describe PullRequests::ProgressState, :no_db do
 
     expect(result.consecutive_operational_failures).to eq(2)
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(3)
+  end
+
+  it "loads database-backed history in ordered batches and stops after meaningful progress" do
+    stub_const("#{described_class}::RUN_BATCH_SIZE", 2)
+
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    scope = fake_run_scope(batched_history(now))
+    allow(project).to receive(:agent_runs).and_return(scope)
+
+    result = described_class.call(project: project, issue: issue)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(2)
+    expect(result.last_meaningful_progress_at).to eq(now - 10.minutes)
+    expect(scope.offsets_fetched).to eq([ 0, 2 ])
+    expect(scope.order_args).to be_present
   end
 end
