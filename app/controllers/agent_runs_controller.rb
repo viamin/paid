@@ -19,6 +19,7 @@ class AgentRunsController < ApplicationController
     @pagy, @agent_runs = pagy(@agent_runs)
     AgentRun.preload_final_provider_records(@agent_runs)
     AgentRun.preload_source_pull_requests(@agent_runs)
+    AgentRun.preload_created_issue_records(@agent_runs)
     cache_key = AgentRun.provider_options_cache_key_for(account_id: current_account.id)
     @provider_options = base_scope.distinct_effective_provider_options(account_id: current_account.id, cache_key: cache_key)
   end
