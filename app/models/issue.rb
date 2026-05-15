@@ -224,7 +224,7 @@ class Issue < ApplicationRecord
     pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
   end
 
-  def reload(*)
+  def reload(...)
     @pr_progress_states = nil
     super
   end
