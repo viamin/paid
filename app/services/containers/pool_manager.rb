@@ -66,7 +66,12 @@ module Containers
         **options.slice(*RECONNECT_OPTIONS)
       )
       PoolReplenishmentJob.perform_later(project.id)
-      Provision::Result.success(container_id: entry.container_id, service: service, pool_entry_id: entry.id)
+      Provision::Result.success(
+        container_id: entry.container_id,
+        container_host: entry.container_host,
+        service: service,
+        pool_entry_id: entry.id
+      )
     rescue Provision::ProvisionError => e
       remove_error_entry(entry, e.message) if entry
       nil
@@ -149,7 +154,7 @@ module Containers
       result = service.provision
       entry.update!(
         container_id: result[:container_id],
-        container_host: Containers.backend.identifier,
+        container_host: result[:container_host],
         status: "warm",
         warmed_at: Time.current,
         last_error: nil

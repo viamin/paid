@@ -95,6 +95,7 @@ RSpec.describe Containers::PoolManager do
 
       expect(result).to be_success
       expect(result[:container_id]).to eq(entry.container_id)
+      expect(result[:container_host]).to eq(entry.container_host)
       expect(entry.reload.status).to eq("claimed")
       expect(entry.agent_run).to eq(agent_run)
       expect(Containers::Provision).to have_received(:reconnect).with(
@@ -206,7 +207,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-1")
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local")
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -227,7 +228,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-2")
+        provision: Containers::Provision::Result.success(container_id: "warm-2", container_host: "local")
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -245,7 +246,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-3")
+        provision: Containers::Provision::Result.success(container_id: "warm-3", container_host: "local")
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -351,7 +352,7 @@ RSpec.describe Containers::PoolManager do
     allow(Containers::Provision).to receive(:new).and_return(provision)
     allow(provision).to receive_messages(
       network_name: "paid_agent",
-      provision: Containers::Provision::Result.success(container_id: "warm-4")
+      provision: Containers::Provision::Result.success(container_id: "warm-4", container_host: "local")
     )
     allow(backend).to receive(:stop_container).and_call_original
     allow(backend).to receive(:delete_container).and_call_original

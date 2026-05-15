@@ -1776,7 +1776,7 @@ class AgentRun < ApplicationRecord
     pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
     if pooled_result&.success?
       @container_service = pooled_result[:service]
-      update!(container_id: pooled_result[:container_id], container_host: Containers.backend.identifier)
+      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
       return pooled_result
     end
 
@@ -1787,7 +1787,7 @@ class AgentRun < ApplicationRecord
     )
     result = @container_service.provision
     if result.success?
-      update!(container_id: result[:container_id], container_host: Containers.backend.identifier)
+      update!(container_id: result[:container_id], container_host: result[:container_host])
       PoolReplenishmentJob.perform_later(project_id)
     end
     result

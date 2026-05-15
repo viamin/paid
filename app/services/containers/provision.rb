@@ -135,7 +135,7 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host
+    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host, :backend
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
@@ -201,7 +201,7 @@ module Containers
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
-      Result.success(container_id: container.id)
+      Result.success(container_id: container.id, container_host: backend.identifier)
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
       cleanup
@@ -2719,10 +2719,6 @@ module Containers
       unless watchdog.join(1)
         log_system("container.watchdog.zombie", message: "Watchdog thread did not terminate within 1s")
       end
-    end
-
-    def backend
-      @backend
     end
 
     # Simple result object for method returns
