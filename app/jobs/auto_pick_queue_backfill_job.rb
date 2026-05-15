@@ -22,8 +22,9 @@ class AutoPickQueueBackfillJob < ApplicationJob
 
     processed = 0
 
-    Project.where(auto_pick_enabled: true).find_each do |project|
+    eligible_projects.find_each do |project|
       next if project_backfilled?(project.id)
+      next unless Issues::AutoPickProjectGate.call(project)
 
       Issues::BulkEnqueueEligible.call(project: project, skip_project_gate: true)
       mark_project_backfilled(project.id)
@@ -64,7 +65,11 @@ class AutoPickQueueBackfillJob < ApplicationJob
   end
 
   def remaining_project_ids
-    Project.where(auto_pick_enabled: true).pluck(:id).reject { |id| project_backfilled?(id) }
+    eligible_projects.pluck(:id).reject { |id| project_backfilled?(id) }
+  end
+
+  def eligible_projects
+    Project.active.where(auto_pick_enabled: true)
   end
 
   def completed_cache_key
