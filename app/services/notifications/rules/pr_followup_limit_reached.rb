@@ -42,11 +42,11 @@ module Notifications
       end
 
       def synced_with_latest_pr_state?(issue)
-        issue.last_pr_scan_at.present? && issue.last_pr_scan_at > issue.github_updated_at
+        issue.last_pr_scan_at.present? && issue.last_pr_scan_at >= issue.github_updated_at
       end
 
       def progress_state_for(issue)
-        progress_states.fetch(issue.id) { issue.pr_progress_state }
+        progress_states.fetch(progress_state_key(issue.id)) { issue.pr_progress_state }
       end
 
       def index_progress_states(progress_states)
@@ -56,7 +56,7 @@ module Notifications
           issue_id = entry[:issue_id] || entry["issue_id"]
           next if issue_id.blank?
 
-          indexed[issue_id] = PullRequests::ProgressState::Result.new(
+          indexed[progress_state_key(issue_id)] = PullRequests::ProgressState::Result.new(
             consecutive_unsuccessful_automatic_runs: entry[:consecutive_unsuccessful_automatic_runs] || entry["consecutive_unsuccessful_automatic_runs"] || 0,
             consecutive_operational_failures: entry[:consecutive_operational_failures] || entry["consecutive_operational_failures"] || 0,
             last_meaningful_progress_at: entry[:last_meaningful_progress_at] || entry["last_meaningful_progress_at"],
@@ -66,6 +66,10 @@ module Notifications
             latest_unsuccessful_run_status: entry[:latest_unsuccessful_run_status] || entry["latest_unsuccessful_run_status"]
           )
         end
+      end
+
+      def progress_state_key(issue_id)
+        issue_id.to_s
       end
     end
   end

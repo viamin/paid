@@ -61,6 +61,15 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
       expect(rule.send(:detect, [ issue ])).to eq([ issue ])
     end
 
+    it "matches when the PR scan timestamp equals the latest GitHub update" do
+      allow(issue).to receive_messages(
+        last_pr_scan_at: Time.zone.parse("2026-05-15 12:05:00"),
+        github_updated_at: Time.zone.parse("2026-05-15 12:05:00")
+      )
+
+      expect(rule.send(:detect, [ issue ])).to eq([ issue ])
+    end
+
     it "does not match until the latest GitHub update has been scanned" do
       allow(issue).to receive(:github_updated_at).and_return(Time.zone.parse("2026-05-15 12:10:00"))
 
@@ -76,6 +85,19 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0
       } ])
       allow(issue).to receive_messages(pr_progress_state: stale_state, id: 123)
+
+      expect(rule.send(:detect, [ issue ])).to eq([])
+      expect(issue).not_to have_received(:pr_progress_state)
+    end
+
+    it "accepts string issue ids from serialized workflow payloads" do
+      stale_state = instance_double(PullRequests::ProgressState::Result)
+      rule = described_class.new(progress_states: [ {
+        issue_id: "42",
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0
+      } ])
+      allow(issue).to receive(:pr_progress_state).and_return(stale_state)
 
       expect(rule.send(:detect, [ issue ])).to eq([])
       expect(issue).not_to have_received(:pr_progress_state)
