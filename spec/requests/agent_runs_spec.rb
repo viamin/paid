@@ -778,6 +778,8 @@ RSpec.describe "AgentRuns" do
 
         expect(response.body).to include("Retry with Anthropic Claude CLI")
         expect(response.body).to include("Retry with Cursor AI")
+        expect(response.body).to include('name="runner"')
+        expect(response.body).to include('value="cursor"')
         expect(response.body).to include("Current")
         expect(response.body).to include('aria-haspopup="menu"')
         expect(response.body).to include("aria-controls=")
