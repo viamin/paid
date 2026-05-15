@@ -114,6 +114,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when the PR is restarted with stale failures from before the reset boundary" do
+      let(:phase) { "restarted" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: true,
+          head: instance_double(PrHeadDouble, sha: "restart123"),
+          updated_at: Time.current)
+      end
+
+      it "backfills first and avoids escalating on stale pre-restart failures" do
+        allow(activity).to receive(:backfill_review_goal_retry_reset_at!).with(issue)
+        allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue).and_return(true)
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:pr_progress_state).with(
+          project,
+          issue,
+          current_head_sha: "restart123",
+          current_head_updated_at: anything
+        ).and_return(progress_state)
+        allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(false)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_draft_pr).with(project, client, issue, pr_data: pr_data).and_return(:draft_scan)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:draft_scan)
+        expect(activity).to have_received(:backfill_review_goal_retry_reset_at!).with(issue).ordered
+        expect(activity).to have_received(:failure_streak_limit_reached?).with(project, issue).ordered
+        expect(activity).not_to have_received(:escalate_trigger)
+      end
+    end
+
     context "when the PR is ready and GitHub has converted it back to draft" do
       let(:phase) { "ready" }
       let(:pr_data) do

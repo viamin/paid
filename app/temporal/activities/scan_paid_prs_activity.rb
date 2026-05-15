@@ -232,17 +232,35 @@ module Activities
       record_focus_resolution(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
-      if issue.pr_review_phase.in?(%w[draft restarted]) && failure_streak_limit_reached?(project, issue)
-        return escalate_trigger(issue, reason: failure_streak_reason(project, issue))
-      end
-
       backfill_review_goal_retry_reset_at!(issue)
 
-      check_rate_budget!(client)
-      pr_data = fetch_pr_data(client, project, issue)
-      return :skipped if pr_data.nil?
+      pr_data = nil
+      progress_state = nil
 
-      progress_state = pr_progress_state(
+      if issue.pr_review_phase.in?(%w[draft restarted]) && failure_streak_limit_reached?(project, issue)
+        check_rate_budget!(client)
+        pr_data = fetch_pr_data(client, project, issue)
+        return :skipped if pr_data.nil?
+
+        progress_state = pr_progress_state(
+          project,
+          issue,
+          current_head_sha: pr_head_sha(pr_data),
+          current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
+        )
+
+        if failure_streak_limit_reached?(project, issue, progress_state) && pr_data.draft
+          return escalate_trigger(issue, reason: failure_streak_reason(project, issue, progress_state))
+        end
+      end
+
+      if pr_data.nil?
+        check_rate_budget!(client)
+        pr_data = fetch_pr_data(client, project, issue)
+        return :skipped if pr_data.nil?
+      end
+
+      progress_state ||= pr_progress_state(
         project,
         issue,
         current_head_sha: pr_head_sha(pr_data),
