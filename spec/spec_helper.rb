@@ -8,11 +8,11 @@ unless defined?(SpecRunMode)
       scoped_args = ARGV.reject { |arg| arg == "--" }
       return true if scoped_args.intersect?(%w[--only-failures --next-failure -e --example])
 
-      scoped_args.any? { |arg| line_target?(arg) }
+      scoped_args.any? { |arg| spec_target?(arg) }
     end
 
-    def line_target?(arg)
-      arg.match?(%r{\A(?:\./)?(?:spec|\.ephemeral-tests)/.+:\d+(?::\d+)?\z})
+    def spec_target?(arg)
+      arg.match?(%r{\A(?:\./)?(?:spec|\.ephemeral-tests)/.+(?:\.rb)?(?::\d+(?::\d+)?)?\z})
     end
   end
 end
