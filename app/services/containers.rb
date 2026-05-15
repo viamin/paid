@@ -9,13 +9,11 @@ module Containers
     end
 
     # Resolves the backend that owns a given container host.
-    # Falls back to the process-global default when host is nil or matches the current backend.
+    # Falls back to the process-global default only when the host is blank.
     def backend_for(host)
       return backend if host.blank?
 
       Backends::Resolver.for(host.to_sym)
-    rescue Backends::Resolver::UnknownBackendError
-      backend
     end
   end
 end

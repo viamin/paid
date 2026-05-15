@@ -26,7 +26,8 @@ RSpec.describe Containers, ".backend_for", :no_db do
     Containers::Backends::Resolver.reset!(:remote)
   end
 
-  it "falls back to the process-global backend for unknown hosts" do
-    expect(described_class.backend_for("nonexistent")).to eq(local_backend)
+  it "raises for unknown persisted hosts" do
+    expect { described_class.backend_for("nonexistent") }
+      .to raise_error(Containers::Backends::Resolver::UnknownBackendError, /nonexistent/)
   end
 end
