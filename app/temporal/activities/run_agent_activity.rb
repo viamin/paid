@@ -38,6 +38,7 @@ module Activities
       /quota exceeded/i,
       /free tier limit reached/i,
       /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -66,6 +67,7 @@ module Activities
       /quota exceeded/i,
       /free tier limit reached/i,
       /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
