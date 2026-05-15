@@ -647,7 +647,7 @@ module Projects
         )
         MarketplaceEntries::AttachToRun.call(
           agent_run:,
-          manual_entry_ids: params[:marketplace_entry_ids],
+          manual_entry_ids: params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil),
           auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
           account_auto_attach_required: marketplace_auto_attach_required_for_current_account?
         )

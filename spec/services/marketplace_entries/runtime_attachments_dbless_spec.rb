@@ -98,6 +98,44 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     FileUtils.rm_rf(outside_dir) if outside_dir
   end
 
+  it "rejects runtime file paths when realpath cannot be resolved safely" do
+    path = Rails.root.join("tmp/runtime-attachments-permission-test", "blocked.json")
+    agent_run = build_agent_run([
+      build_attachment(
+        strategy: "runtime_config",
+        payload: {
+          "files" => [
+            { "path" => path.relative_path_from(Rails.root).to_s, "content" => "{\"enabled\":true}" }
+          ]
+        }
+      )
+    ])
+
+    allow(File).to receive(:realpath).and_call_original
+    allow(File).to receive(:realpath).with(path.to_s).and_raise(Errno::EACCES)
+
+    expect(described_class.runtime_preparation(agent_run)).to be_nil
+  end
+
+  it "ignores oversized runtime file payloads" do
+    oversized_content = "x" * (1.megabyte + 1)
+    agent_run = build_agent_run([
+      build_attachment(
+        strategy: "runtime_config",
+        payload: {
+          "files" => [
+            { "path" => "tmp/too-large.json", "content" => oversized_content },
+            { "path" => "tmp/allowed.json", "content" => "{\"enabled\":true}" }
+          ]
+        }
+      )
+    ])
+
+    preparation = described_class.runtime_preparation(agent_run)
+
+    expect(preparation.file_writes.map(&:path)).to eq([ "tmp/allowed.json" ])
+  end
+
   it "allows provider-native env keys but blocks restricted and malformed keys" do
     env = {
       "MARKETPLACE_PLUGIN_FLAG" => "enabled", "OPENAI_BASE_URL" => "https://api.openai.com",

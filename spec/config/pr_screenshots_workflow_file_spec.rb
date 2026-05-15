@@ -37,4 +37,17 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     expect(detect_step.fetch("run")).to include('ruby -Iapp/services -e')
     expect(detect_step.fetch("run")).to include('require "screenshots/detect_ui_changes"')
   end
+
+  it "pins the detect job to the repository Ruby version before executing the inline script" do
+    setup_step = workflow.fetch("jobs").fetch("detect").fetch("steps").find do |step|
+      step["name"] == "Set up Ruby"
+    end
+
+    expect(setup_step).to include(
+      "uses" => "ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde"
+    )
+    expect(setup_step.fetch("with")).to include(
+      "ruby-version" => ".tool-versions"
+    )
+  end
 end

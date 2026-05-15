@@ -6,6 +6,7 @@ module MarketplaceEntries
   class RuntimeAttachments
     RUNTIME_PREPARATION_ROOT = Rails.root.to_s.freeze
     RUNTIME_HOME_ROOT = "/home/agent".freeze
+    MAX_FILE_CONTENT_BYTES = 1.megabyte
     ALLOWED_ENV_KEY_PATTERN = /\A[A-Z][A-Z0-9_]*\z/.freeze
     RESTRICTED_ENV_KEYS = %w[
       PATH
@@ -127,6 +128,7 @@ module MarketplaceEntries
         path = file["path"].to_s.strip
         content = file["content"]
         next if path.blank? || content.nil?
+        next if content.to_s.bytesize > MAX_FILE_CONTENT_BYTES
 
         normalized_path = path.sub(/\A~(?=\/|$)/, RUNTIME_HOME_ROOT)
         expanded_path = File.expand_path(normalized_path, RUNTIME_PREPARATION_ROOT)
@@ -143,7 +145,7 @@ module MarketplaceEntries
       resolved_dir = resolve_existing_parent(File.dirname(path))
       File.join(resolved_dir, File.basename(path))
     rescue Errno::EACCES, Errno::ENOTDIR, Errno::ELOOP
-      path
+      nil
     end
 
     def resolve_existing_parent(path)
@@ -160,6 +162,8 @@ module MarketplaceEntries
     end
 
     def allowed_runtime_path?(resolved_path)
+      return false if resolved_path.blank?
+
       [ RUNTIME_PREPARATION_ROOT, RUNTIME_HOME_ROOT ].any? do |root|
         resolved_path == root || resolved_path.start_with?("#{root}/")
       end
