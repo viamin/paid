@@ -60,6 +60,7 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       :status,
       :trigger_type,
       :created_at,
+      :started_at,
       :updated_at,
       :completed_at,
       :review_posted_at,
@@ -82,12 +83,13 @@ RSpec.describe PullRequests::ProgressState, :no_db do
   let(:issue) { issue_double }
 
   def build_run(goal:, status:, at:, review_posted_at: nil, operational_failure: false,
-    base_commit_sha: nil, result_commit_sha: nil, trigger_type: "automatic")
+    base_commit_sha: nil, result_commit_sha: nil, started_at: nil, trigger_type: "automatic")
     run_class.new(
       goal: goal,
       status: status,
       trigger_type: trigger_type,
       created_at: at,
+      started_at: started_at,
       updated_at: at,
       completed_at: at,
       review_posted_at: review_posted_at,
@@ -264,6 +266,25 @@ RSpec.describe PullRequests::ProgressState, :no_db do
 
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(0)
     expect(result.last_meaningful_progress_at).to eq(now - 2.minutes)
+  end
+
+  it "ignores runs that started before an explicit reset even if they finished after it" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    reset_issue = issue_double(review_goal_retry_reset_at: now - 1.hour)
+    runs = [
+      build_run(goal: "review", status: "failed", at: now - 10.minutes),
+      build_run(
+        goal: "review",
+        status: "completed",
+        at: now - 30.minutes,
+        started_at: now - 2.hours
+      )
+    ]
+
+    result = described_class.call(project: project, issue: reset_issue, runs: runs)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.last_meaningful_progress_at).to eq(now - 1.hour)
   end
 
   it "does not let phase transitions alone change the counting regime" do

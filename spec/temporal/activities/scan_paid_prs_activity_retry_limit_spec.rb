@@ -39,6 +39,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:pr_head_commit_timestamp).with(client, project, issue, anything).and_return(Time.current)
       allow(activity).to receive(:record_focus_resolution).with(project, client, issue)
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue).and_return(false)
       allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
       allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(true)
       allow(activity).to receive(:review_goal_retry_limit_reached?).with(project, issue, progress_state:).and_return(true)

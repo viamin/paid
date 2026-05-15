@@ -122,8 +122,8 @@ module PullRequests
 
       if runs
         ordered_supplied_runs.each do |run|
-          run_time = run_timestamp(run)
-          break if explicit_reset_at && run_time && run_time <= explicit_reset_at
+          boundary_time = explicit_reset_boundary_time(run)
+          break if explicit_reset_at && boundary_time && boundary_time <= explicit_reset_at
 
           yield run
         end
@@ -149,8 +149,8 @@ module PullRequests
         stop = false
 
         batch.each do |run|
-          run_time = run_timestamp(run)
-          if explicit_reset_at && run_time && run_time <= explicit_reset_at
+          boundary_time = explicit_reset_boundary_time(run)
+          if explicit_reset_at && boundary_time && boundary_time <= explicit_reset_at
             stop = true
             break
           end
@@ -186,6 +186,14 @@ module PullRequests
         issue.review_goal_retry_reset_at,
         issue.operational_failure_reset_at
       ]
+    end
+
+    # Explicit reset markers start a new automation cycle. Runs that began
+    # before the reset should not affect the new cycle even if they finished
+    # afterward, so prefer the earliest available start/create timestamp here.
+    def explicit_reset_boundary_time(run)
+      boundary_candidates = [ run.respond_to?(:started_at) ? run.started_at : nil, run.created_at ].compact
+      boundary_candidates.min || run_timestamp(run)
     end
 
     def superseded_by_new_head?(run)

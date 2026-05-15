@@ -149,13 +149,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
   end
 
   describe "ready phase gates" do
-    it "returns noop when no unified gate is active" do
+    it "delegates to AutoReview when no unified gate is active" do
       result = evaluate(
         lifecycle: base_lifecycle(phase: "ready"),
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
       )
 
-      expect(decision_types(result)).to eq([ "noop" ])
+      expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
     end
 
     it "escalates on the unified failure streak limit" do
@@ -187,13 +187,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
   end
 
   describe "escalated phase gates" do
-    it "returns noop when no unified gate is active" do
+    it "delegates to AutoReview when no unified gate is active" do
       result = evaluate(
         lifecycle: base_lifecycle(phase: "escalated"),
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
       )
 
-      expect(decision_types(result)).to eq([ "noop" ])
+      expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
     end
 
     it "escalates on the unified failure streak limit" do

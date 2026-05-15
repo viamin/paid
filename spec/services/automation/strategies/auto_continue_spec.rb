@@ -190,13 +190,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
         expect(result.to_h[:decisions].first).to include(type: "escalate")
       end
 
-      it "delegates when no unified gate is active" do
+      it "delegates to AutoReview when no unified gate is active" do
         result = evaluate(
           lifecycle: base_lifecycle,
           scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
         )
 
-        expect(decision_types(result)).to eq([ "noop" ])
+        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
       end
     end
 
@@ -215,13 +215,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
         expect(result.to_h[:decisions].first).to include(type: "escalate")
       end
 
-      it "returns noop when no unified gate is active" do
+      it "delegates to AutoReview when no unified gate is active" do
         result = evaluate(
           lifecycle: escalated_lifecycle,
           scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
         )
 
-        expect(decision_types(result)).to eq([ "noop" ])
+        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
       end
     end
   end

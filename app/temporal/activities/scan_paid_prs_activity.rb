@@ -232,6 +232,10 @@ module Activities
       record_focus_resolution(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
 
+      if issue.pr_review_phase.in?(%w[draft restarted]) && failure_streak_limit_reached?(project, issue)
+        return escalate_trigger(issue, reason: failure_streak_reason(project, issue))
+      end
+
       backfill_review_goal_retry_reset_at!(issue)
 
       check_rate_budget!(client)
@@ -1055,7 +1059,7 @@ module Activities
     # use max_pr_followup_runs. This keeps phase-specific retry semantics
     # intact even though the streak itself is phase-agnostic.
     def pr_failure_limit(project, issue)
-      limit = if issue.draft_phase?
+      limit = if issue.pr_review_phase.in?(%w[draft restarted])
         project.max_draft_review_rounds
       else
         project.max_pr_followup_runs
