@@ -19,6 +19,24 @@ RSpec.describe ProcessRunQueueJob do
       auto_pick_enabled: true)
   end
 
+  def stub_single_seeded_run(project:, issue:)
+    created_run = nil
+    call_count = 0
+
+    allow(Issues::BulkEnqueueEligible).to receive(:call)
+      .with(project: having_attributes(id: project.id), limit: 1) do
+        call_count += 1
+        if call_count == 1
+          created_run = create(:agent_run, :queued, project: project, issue: issue)
+          [ created_run ]
+        else
+          []
+        end
+      end
+
+    -> { created_run }
+  end
+
   describe "#perform" do
     it "starts the oldest queued run when capacity is available" do
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
@@ -289,43 +307,49 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project, auto_pick_enabled: true)
         issue = create(:issue, project: project)
 
-        auto_pick_service = instance_double(Issues::AutoPick)
-        allow(Issues::AutoPick).to receive(:new)
-          .with(having_attributes(id: project.id))
-          .and_return(auto_pick_service)
-        call_count = 0
-        allow(auto_pick_service).to receive(:call) do
-          call_count += 1
-          call_count == 1 ? create(:agent_run, :queued, project: project, issue: issue) : nil
-        end
+        created_run = stub_single_seeded_run(project:, issue:)
 
         described_class.new.perform
 
-        expect(Issues::AutoPick).to have_received(:new)
-          .with(having_attributes(id: project.id)).at_least(:once)
-        expect(AgentRun.last.status).to eq("queued")
+        expect(Issues::BulkEnqueueEligible).to have_received(:call)
+          .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
+        expect(created_run.call.reload.status).to eq("queued")
       end
 
       it "stops seeding when no new runs are created" do
         project = create(:project, auto_pick_enabled: true)
 
-        auto_pick_service = instance_double(Issues::AutoPick)
-        allow(Issues::AutoPick).to receive(:new)
-          .with(having_attributes(id: project.id))
-          .and_return(auto_pick_service)
-        allow(auto_pick_service).to receive(:call).and_return(nil)
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+          .with(project: having_attributes(id: project.id), limit: 1)
+          .and_return([])
 
         described_class.new.perform
 
-        expect(auto_pick_service).to have_received(:call).once
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).once
       end
 
       it "skips projects with auto_pick_enabled disabled" do
         create(:project, auto_pick_enabled: false)
 
-        expect(Issues::AutoPick).not_to receive(:new)
+        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
 
         described_class.new.perform
+      end
+
+      it "seeds at most one new auto-pick run per project in each pass" do
+        stub_const("#{described_class}::MAX_SEEDS_PER_PERFORM", 2)
+        account = create(:account)
+        user = create(:user, account: account)
+        user.settings.update!(max_concurrent_runs: 2)
+        first_project = create_auto_pick_project(account: account, user: user)
+        second_project = create_auto_pick_project(account: account, user: user)
+        2.times { create(:issue, project: first_project) }
+        2.times { create(:issue, project: second_project) }
+
+        described_class.new.perform
+
+        expect(first_project.agent_runs.where(auto_pick: true).count).to eq(1)
+        expect(second_project.agent_runs.where(auto_pick: true).count).to eq(1)
       end
 
       it "skips auto-pick seeding for projects whose account is paused" do
@@ -333,9 +357,43 @@ RSpec.describe ProcessRunQueueJob do
         paused_user = create(:user, account: paused_account)
         create_auto_pick_project(account: paused_account, user: paused_user)
 
-        expect(Issues::AutoPick).not_to receive(:new)
+        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
 
         described_class.new.perform
+      end
+
+      it "skips auto-pick seeding when open PRs already need attention" do
+        project = create(:project, auto_pick_enabled: true)
+        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request,
+          project: project,
+          github_state: "open",
+          paid_state: "failed")
+        create(:issue, project: project)
+
+        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
+
+        described_class.new.perform
+      end
+
+      it "still seeds auto-pick work when paid-ready PRs no longer need attention" do
+        project = create(:project, auto_pick_enabled: true)
+        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
+        create(:issue, :pull_request,
+          project: project,
+          github_state: "open",
+          paid_state: "in_progress",
+          labels: [ project.automation_label_name, "paid-ready" ],
+          pr_review_phase: "ready")
+        issue = create(:issue, project: project)
+
+        created_run = stub_single_seeded_run(project:, issue:)
+
+        described_class.new.perform
+
+        expect(Issues::BulkEnqueueEligible).to have_received(:call)
+          .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
+        expect(created_run.call.reload.status).to eq("queued")
       end
 
       it "fills idle capacity from one project when no others have pickable work" do
