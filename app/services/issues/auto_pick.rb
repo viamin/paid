@@ -5,8 +5,6 @@ module Issues
   # {Automation::Strategies::AutoPick}.
   #
   # Responsibilities kept here (orchestration):
-  # - Collecting project-level guard signals (count of open PRs that still
-  #   need attention, configured WIP limit).
   # - Running the pure-policy strategy and executing the resulting
   #   decision — resolving a runnable provider and creating the queued
   #   {AgentRun}.
@@ -27,10 +25,9 @@ module Issues
     PAID_READY_LABEL = "paid-ready"
 
     # Returns the Set of issue IDs from +displayed_issues+ that are
-    # currently eligible for auto-picking (per-issue criteria only;
-    # ignores transient project-level guards like active runs or PRs
-    # needing attention). Scoping to the displayed issues helps limit
-    # query cost and focuses results on the currently displayed subset.
+    # currently eligible for auto-picking. Scoping to the displayed
+    # issues helps limit query cost and focuses results on the currently
+    # displayed subset.
     def self.eligible_issue_ids(displayed_issues)
       Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_issue_ids(displayed_issues)
@@ -44,7 +41,7 @@ module Issues
       gate = Issues::AutoPickProjectGate.new(@project)
       return nil unless gate.call
 
-      result = strategy.evaluate(build_context(gate: gate))
+      result = strategy.evaluate(Automation::Context.build(record: nil, project: @project, metadata: {}))
       decision = result.decisions.first
       return nil if decision.nil? || decision.type == "noop"
 
@@ -113,11 +110,6 @@ module Issues
         strategy_type: :auto_pick,
         project: @project
       )
-    end
-
-    def build_context(gate:)
-      context = Automation::Context.build(record: nil, project: @project, metadata: {})
-      context.with_metadata(gate.context_metadata)
     end
 
     def create_agent_run(issue, goal: "create_pr")

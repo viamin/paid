@@ -110,7 +110,12 @@ Rails.application.configure do
     process_run_queue: {
       cron: "*/5 * * * *",
       class: "ProcessRunQueueJob",
-      description: "Process queued agent runs and auto-pick eligible issues"
+      description: "Process queued agent runs"
+    },
+    auto_pick_queue_backfill: {
+      cron: "0 * * * *",
+      class: "AutoPickQueueBackfillJob",
+      description: "Backfill eager auto-pick queue seeding for already-enabled projects"
     },
     service_container_reconciliation: {
       cron: "*/5 * * * *",
@@ -209,5 +214,6 @@ Rails.application.config.after_initialize do
   next unless defined?(Rails::Server) || ENV["GOOD_JOB_EXECUTION_MODE"] == "async_server"
 
   "DockerOrphanCleanupJob".constantize.perform_later
+  "AutoPickQueueBackfillJob".constantize.perform_later
   "PoolReplenishmentJob".constantize.perform_later if "Containers::PoolManager".constantize.enabled?
 end

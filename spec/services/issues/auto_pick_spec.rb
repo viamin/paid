@@ -773,34 +773,9 @@ RSpec.describe Issues::AutoPick do
       end
     end
 
-    context "when project has PRs needing attention" do
-      before do
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
-      end
-
-      it "returns nil when project has an open PR in in_progress state" do
+    context "when project has open pull requests" do
+      it "still picks an issue when project has an open PR in in_progress state" do
         create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "returns nil when project has an open PR in failed state" do
-        create(:issue, :pull_request, :failed, project: project)
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "picks an issue when an automation-labeled PR is paid-ready and out of draft" do
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          labels: [ project.automation_label_name, "paid-ready" ],
-          pr_review_phase: "ready")
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call
@@ -809,66 +784,19 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(issue)
       end
 
-      it "returns nil when an automation-labeled paid-ready PR is still in draft" do
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          labels: [ project.automation_label_name, "paid-ready" ],
-          pr_review_phase: "draft")
-        create(:issue, project: project)
+      it "still picks an issue when project has an open PR in failed state" do
+        create(:issue, :pull_request, :failed, project: project)
+        issue = create(:issue, project: project)
 
         result = described_class.new(project).call
 
-        expect(result).to be_nil
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
       end
 
-      it "returns nil when a paid-ready PR leaves draft without the automation label" do
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          labels: [ "paid-generated", "paid-ready" ],
-          pr_review_phase: "ready")
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "returns nil when an automation-labeled paid-ready PR is in restarted review phase" do
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          labels: [ project.automation_label_name, "paid-ready" ],
-          pr_review_phase: "restarted")
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "returns nil when an automation-labeled paid-ready PR has failed" do
-        create(:issue, :pull_request, :failed,
-          project: project,
-          labels: [ project.automation_label_name, "paid-ready" ],
-          pr_review_phase: "ready")
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "returns nil when open PRs already need attention even if a run is already active" do
+      it "still picks an issue when a run is already active for an open PR" do
         pr = create(:issue, :pull_request, :in_progress, project: project)
         create(:agent_run, :running, project: project, issue: pr)
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "picks an issue when all PRs are completed" do
-        create(:issue, :pull_request, :completed, project: project)
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call
@@ -877,125 +805,7 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(issue)
       end
 
-      it "picks an issue when all PRs are closed" do
-        create(:issue, :pull_request, project: project, github_state: "closed")
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "picks an issue when PRs are in new state" do
-        create(:issue, :pull_request, project: project, paid_state: "new")
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-    end
-
-    context "when PR is in escalated phase" do
-      before do
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
-      end
-
-      it "does not count escalated in_progress PRs as needing attention" do
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          pr_review_phase: "escalated")
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "does not count escalated failed PRs as needing attention" do
-        create(:issue, :pull_request, :failed,
-          project: project,
-          pr_review_phase: "escalated")
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "still blocks auto-pick for non-escalated failed PRs" do
-        create(:issue, :pull_request, :failed,
-          project: project,
-          pr_review_phase: "ready")
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-    end
-
-    context "with PR WIP limit" do
-      it "does not block auto-pick when limit is 0 (no limit)" do
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 0)
-        create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, :pull_request, :failed, project: project)
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "blocks auto-pick with default limit of 1 when any PR needs attention" do
-        create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "allows auto-pick when PRs needing attention are below the limit" do
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 3)
-        create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, :pull_request, :failed, project: project)
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "blocks auto-pick when PRs needing attention reach the limit" do
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 2)
-        create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, :pull_request, :failed, project: project)
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "defaults to limit of 1 when project has no effective owner" do
-        allow(project).to receive(:effective_owner).and_return(nil)
-        create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
-      end
-
-      it "does not count handed-off PRs toward the limit" do
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
+      it "still picks an issue when the PR is handed off and ready" do
         create(:issue, :pull_request, :in_progress,
           project: project,
           labels: [ project.automation_label_name, "paid-ready" ],
@@ -1006,35 +816,6 @@ RSpec.describe Issues::AutoPick do
 
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
-      end
-
-      it "uses the project's custom automation label for handed-off PRs" do
-        project.update!(automation_label_name: "custom-automation")
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          labels: [ "custom-automation", "paid-ready" ],
-          pr_review_phase: "ready")
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "does not treat the default automation label as handed off when the project uses a custom label" do
-        project.update!(automation_label_name: "custom-automation")
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
-        create(:issue, :pull_request, :in_progress,
-          project: project,
-          labels: [ "paid-automation", "paid-ready" ],
-          pr_review_phase: "ready")
-        create(:issue, project: project)
-
-        result = described_class.new(project).call
-
-        expect(result).to be_nil
       end
     end
 

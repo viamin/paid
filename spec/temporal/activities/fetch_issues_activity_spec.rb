@@ -338,19 +338,23 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(Issues::EnqueueEligible).not_to have_received(:call)
       end
 
-      it "does not eagerly enqueue when the project is already at the PR-attention cap" do
+      it "still eagerly enqueues when the project has open PRs needing attention" do
         create(:issue,
           project: project,
           is_pull_request: true,
           github_state: "open",
           paid_state: "in_progress",
           labels: [])
-        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
         stub_issues_by_label(nil => [ eligible_issue ])
 
         activity.execute(project_id: project.id)
 
-        expect(Issues::EnqueueEligible).not_to have_received(:call)
+        synced_issue = project.issues.find_by!(github_issue_id: eligible_issue.id)
+        expect(Issues::EnqueueEligible).to have_received(:call).with(
+          synced_issue,
+          project: project,
+          skip_project_gate: true
+        )
       end
     end
 

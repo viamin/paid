@@ -351,13 +351,33 @@ module ConfigurationBundles
         }
       end
 
-      return true if normalized_optimizer_experiment_definitions(definition.fetch("experiments", {})) == expected_experiments
+      normalized_definition_experiments = normalize_optimizer_definition_experiments(definition.fetch("experiments", {}))
+      return true if normalized_definition_experiments == expected_experiments
 
       Rails.logger.warn(
         message: "configuration_bundles.optimizer_payload_experiments_mismatch",
         agent_run_id: agent_run.id
       )
       false
+    end
+
+    def normalize_optimizer_definition_experiments(experiments)
+      return {} unless experiments.is_a?(Hash)
+
+      experiments.to_h do |config_key, experiment_definition|
+        normalized_definition =
+          if experiment_definition.is_a?(Hash)
+            experiment_definition.merge(
+              "configuration_experiment_id" => normalize_optimizer_experiment_id(
+                experiment_definition["configuration_experiment_id"]
+              )
+            )
+          else
+            experiment_definition
+          end
+
+        [ config_key, normalized_definition ]
+      end
     end
 
     def optimizer_definition_matches_run?(definition)
@@ -401,16 +421,6 @@ module ConfigurationBundles
       return false if parsed_value.equal?(INVALID_EXPERIMENT_VALUE)
 
       expected_value == parsed_value
-    end
-
-    def normalized_optimizer_experiment_definitions(experiment_definitions)
-      experiment_definitions.to_h.transform_values do |experiment_definition|
-        experiment_definition.merge(
-          "configuration_experiment_id" => normalize_optimizer_experiment_id(
-            experiment_definition["configuration_experiment_id"]
-          )
-        )
-      end
     end
 
     def expected_optimizer_definition_attributes
