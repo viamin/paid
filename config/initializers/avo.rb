@@ -11,7 +11,9 @@ Avo.configure do |config|
 
   config.authenticate_with do
     authenticate_user!
-    redirect_to main_app.root_path, alert: "You are not authorized to access the operator console." unless current_user&.operator?
+    next if performed? || current_user&.operator?
+
+    redirect_to main_app.root_path, alert: "You are not authorized to access the operator console."
   end
 end
 

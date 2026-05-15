@@ -7,6 +7,8 @@ RSpec.describe OperatorConsole::Access, :no_db do
     Struct.new(:id, :email).new(42, "operator@example.com")
   end
 
+  let(:credentials) { instance_double(Hash) }
+
   around do |example|
     original_emails = ENV["PAID_OPERATOR_EMAILS"]
     original_ids = ENV["PAID_OPERATOR_USER_IDS"]
@@ -16,6 +18,12 @@ RSpec.describe OperatorConsole::Access, :no_db do
     ENV["PAID_OPERATOR_EMAILS"] = original_emails
     ENV["PAID_OPERATOR_USER_IDS"] = original_ids
     described_class.reset_memoized!
+  end
+
+  before do
+    allow(Rails.application).to receive(:credentials).and_return(credentials)
+    allow(credentials).to receive(:dig).with(:operator_console, :emails).and_return(nil)
+    allow(credentials).to receive(:dig).with(:operator_console, :user_ids).and_return(nil)
   end
 
   it "fails closed when no allowlist is configured" do
@@ -33,6 +41,13 @@ RSpec.describe OperatorConsole::Access, :no_db do
 
   it "allows a configured user id" do
     ENV["PAID_OPERATOR_USER_IDS"] = "42"
+
+    expect(described_class.allowed?(user)).to be(true)
+  end
+
+  it "falls back to credentials when env vars are absent" do
+    ENV.delete("PAID_OPERATOR_EMAILS")
+    allow(credentials).to receive(:dig).with(:operator_console, :emails).and_return([ "operator@example.com" ])
 
     expect(described_class.allowed?(user)).to be(true)
   end
