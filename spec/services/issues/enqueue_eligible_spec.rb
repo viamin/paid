@@ -33,6 +33,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   let(:service) { described_class.new(issue, project: project) }
 
   before do
+    allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
       .and_return(eligible_scope)
@@ -141,6 +142,19 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     expect(Rails.logger).to have_received(:warn).with(
       hash_including(message: "enqueue_eligible.no_provider", issue_id: issue.id, project_id: project.id)
     )
+  end
+
+  it "returns nil when the project-level auto-pick gate defers seeding" do
+    allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false)
+    allow(Rails.logger).to receive(:info)
+
+    result = service.call
+
+    expect(result).to be_nil
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(message: "enqueue_eligible.project_deferred", issue_id: issue.id, project_id: project.id)
+    )
+    expect(eligible_scope).not_to have_received(:where)
   end
 
   it "scopes queued-run lookup by analyze_issue goal when auto_enhance is enabled" do
