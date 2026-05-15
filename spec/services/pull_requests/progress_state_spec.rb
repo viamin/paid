@@ -328,6 +328,19 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.consecutive_operational_failures).to eq(0)
   end
 
+  it "does not report a pre-boundary automatic run as the latest automatic run" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now, trigger_type: "manual"),
+      build_run(goal: "create_pr", status: "failed", at: now - 5.minutes)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.latest_automatic_run_at).to be_nil
+    expect(result.latest_unsuccessful_run_at).to be_nil
+  end
+
   it "stops the operational failure streak at an intervening failed manual PR run" do
     now = Time.zone.parse("2026-05-15 12:00:00")
     runs = [

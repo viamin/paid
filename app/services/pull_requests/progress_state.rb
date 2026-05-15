@@ -72,11 +72,11 @@ module PullRequests
       failure_streak = 0
       operational_streak = nil
       latest_failure = nil
-      latest_run_at = nil
+      latest_automatic_run_at = nil
 
       each_relevant_run(explicit_reset_at:) do |run|
         run_time = run_timestamp(run)
-        latest_run_at ||= run_time
+        latest_automatic_run_at ||= run_time if automatic_pr_run?(run)
 
         if superseded_by_new_head?(run)
           progress_at = [ progress_at, current_head_updated_at ].compact.max
@@ -106,7 +106,7 @@ module PullRequests
         consecutive_unsuccessful_automatic_runs: failure_streak,
         consecutive_operational_failures: operational_streak || 0,
         last_meaningful_progress_at: progress_at,
-        latest_automatic_run_at: latest_run_at,
+        latest_automatic_run_at: latest_automatic_run_at,
         latest_unsuccessful_run_at: latest_failure && run_timestamp(latest_failure),
         latest_unsuccessful_run_goal: latest_failure&.goal,
         latest_unsuccessful_run_status: latest_failure&.status
