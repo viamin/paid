@@ -931,6 +931,47 @@ RSpec.describe Project do
       end
     end
 
+    describe "#effective_auto_pick_skip_labels" do
+      it "uses project labels before user, tenant, and defaults" do
+        project = create(:project, auto_pick_skip_labels: %w[blocked])
+        project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq(%w[blocked])
+      end
+
+      it "falls back to user labels when the project does not override them" do
+        project = create(:project, auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq(%w[user-skip])
+      end
+
+      it "falls back to tenant labels when the project and user do not override them" do
+        project = create(:project, auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: nil)
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq(%w[tenant-skip])
+      end
+
+      it "falls back to built-in defaults when no override exists" do
+        project = create(:project, auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: nil)
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: nil)
+
+        expect(project.effective_auto_pick_skip_labels).to eq(AutoPickSkipLabels::DEFAULTS)
+      end
+
+      it "allows a project override to disable skip labels entirely" do
+        project = create(:project, auto_pick_skip_labels: [])
+        project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq([])
+      end
+    end
+
     describe "#effective_screenshot_settings" do
       it "returns defaults when screenshot_settings is empty" do
         project = build(:project, screenshot_settings: {})

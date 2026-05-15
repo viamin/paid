@@ -180,6 +180,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
+  before_validation :normalize_auto_pick_skip_labels
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -272,6 +273,30 @@ class Project < ApplicationRecord
     overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
       .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
     DEFAULT_PRIORITY_LABELS.merge(overrides)
+  end
+
+  def auto_pick_skip_labels_configured?
+    !auto_pick_skip_labels.nil?
+  end
+
+  def auto_pick_skip_labels_csv
+    AutoPickSkipLabels.to_csv(auto_pick_skip_labels)
+  end
+
+  def auto_pick_skip_labels_csv=(value)
+    self.auto_pick_skip_labels = AutoPickSkipLabels.parse_csv(value)
+  end
+
+  def effective_auto_pick_skip_labels
+    return auto_pick_skip_labels unless auto_pick_skip_labels.nil?
+
+    owner_labels = effective_owner&.settings&.auto_pick_skip_labels
+    return owner_labels unless owner_labels.nil?
+
+    tenant_labels = account&.tenant_setting&.auto_pick_skip_labels
+    return tenant_labels unless tenant_labels.nil?
+
+    AutoPickSkipLabels::DEFAULTS
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.
@@ -828,6 +853,10 @@ class Project < ApplicationRecord
   def normalized_screenshot_driver(value)
     value = value.to_s
     SCREENSHOT_DRIVERS.key?(value) ? value : DEFAULT_SCREENSHOT_SETTINGS["driver"]
+  end
+
+  def normalize_auto_pick_skip_labels
+    self.auto_pick_skip_labels = AutoPickSkipLabels.normalize(auto_pick_skip_labels)
   end
 
   def normalize_string_array(value)

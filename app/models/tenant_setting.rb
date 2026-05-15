@@ -166,6 +166,18 @@ class TenantSetting < ApplicationRecord
     [ limit, max_tokens_per_run ].compact.min
   end
 
+  def auto_pick_skip_labels_configured?
+    !auto_pick_skip_labels.nil?
+  end
+
+  def auto_pick_skip_labels_csv
+    AutoPickSkipLabels.to_csv(auto_pick_skip_labels)
+  end
+
+  def auto_pick_skip_labels_csv=(value)
+    self.auto_pick_skip_labels = AutoPickSkipLabels.parse_csv(value)
+  end
+
   def effective_worker_settings
     DEFAULT_WORKER_SETTINGS.deep_dup.merge(
       worker_settings.is_a?(Hash) ? worker_settings.deep_stringify_keys : {}
@@ -214,6 +226,7 @@ class TenantSetting < ApplicationRecord
     self.guardrails = normalize_integer_hash(guardrails, %w[max_concurrent_runs max_tokens_per_run max_monthly_cost_cents])
     self.quality_thresholds = normalize_quality_thresholds(quality_thresholds)
     self.agent_settings = normalize_agent_settings(agent_settings)
+    self.auto_pick_skip_labels = AutoPickSkipLabels.normalize(auto_pick_skip_labels)
     self.worker_settings = normalize_worker_settings(worker_settings)
     self.features = normalize_hash(features)
     apply_guardrail_columns

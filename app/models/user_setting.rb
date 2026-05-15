@@ -20,6 +20,8 @@ class UserSetting < ApplicationRecord
   belongs_to :user
   has_many :provider_states, through: :user
 
+  before_validation :normalize_auto_pick_skip_labels
+
   # Theme
   validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
 
@@ -227,6 +229,18 @@ class UserSetting < ApplicationRecord
     self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
+  def auto_pick_skip_labels_configured?
+    !auto_pick_skip_labels.nil?
+  end
+
+  def auto_pick_skip_labels_csv
+    AutoPickSkipLabels.to_csv(auto_pick_skip_labels)
+  end
+
+  def auto_pick_skip_labels_csv=(value)
+    self.auto_pick_skip_labels = AutoPickSkipLabels.parse_csv(value)
+  end
+
   # Returns the ordered list of providers to try: primary first, then fallbacks.
   #
   # @return [Array<String>] Provider names in priority order
@@ -371,6 +385,10 @@ class UserSetting < ApplicationRecord
   end
 
   private
+
+  def normalize_auto_pick_skip_labels
+    self.auto_pick_skip_labels = AutoPickSkipLabels.normalize(auto_pick_skip_labels)
+  end
 
   # Picks a candidate at random, weighted by each provider's weight column.
   # Falls back to uniform random when weights cannot be resolved (e.g. no
