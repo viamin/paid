@@ -271,7 +271,7 @@ class Issue < ApplicationRecord
       review_goal_retry_count: 0,
       review_goal_retry_reset_at: Time.current
     )
-    clear_pr_progress_state_cache!
+    invalidate_pr_progress_state_cache!
   end
 
   def dismiss_escalation!(draft:)
@@ -288,7 +288,7 @@ class Issue < ApplicationRecord
     attrs[:draft_review_count] = 0 if draft
 
     update!(attrs)
-    clear_pr_progress_state_cache!
+    invalidate_pr_progress_state_cache!
   end
 
   def ready_to_work?
@@ -466,11 +466,11 @@ class Issue < ApplicationRecord
     self.class.open_paid_generated_prs_by_issue_id(project: project, issue_ids: [ id ])[id]
   end
 
-  private
-
-  def clear_pr_progress_state_cache!
+  def invalidate_pr_progress_state_cache!
     @pr_progress_states = nil
   end
+
+  private
 
   CLOSING_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b/i
   CLOSING_REF_RE = /\G\s*(?:,\s*)?(?:and\s+)?(?:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)|(?<!\w))#(\d+)/

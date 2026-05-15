@@ -1042,6 +1042,7 @@ module Activities
 
     def invalidate_pr_progress_state(issue)
       @pr_progress_states&.delete(issue.id)
+      issue.invalidate_pr_progress_state_cache! if issue.respond_to?(:invalidate_pr_progress_state_cache!)
     end
 
     def pr_head_sha(pr_data)

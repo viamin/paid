@@ -350,6 +350,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(cached_progress_state(current_head_updated_at: nil)).to eq(stale_state)
       expect(cached_progress_state(current_head_updated_at: fetched_at)).to eq(head_aware_state)
     end
+
+    it "clears the issue-level progress cache when the activity invalidates its cache" do
+      allow(issue).to receive(:invalidate_pr_progress_state_cache!)
+
+      activity.send(:invalidate_pr_progress_state, issue)
+
+      expect(issue).to have_received(:invalidate_pr_progress_state_cache!)
+    end
   end
 
   describe "#followup_limit_reached?", :no_db do
