@@ -55,6 +55,24 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     expect(preparation.file_writes.map(&:path)).to eq([ "~/.config/paid/plugin.json" ])
   end
 
+  it "ignores normalized traversal paths that escape the runtime preparation root" do
+    agent_run = build_agent_run([
+      build_attachment(
+        strategy: "runtime_config",
+        payload: {
+          "files" => [
+            { "path" => "tmp/../../etc/shadow", "content" => "root:*:19793:0:99999:7:::" },
+            { "path" => "tmp/skill.json", "content" => "{\"enabled\":true}" }
+          ]
+        }
+      )
+    ])
+
+    preparation = described_class.runtime_preparation(agent_run)
+
+    expect(preparation.file_writes.map(&:path)).to eq([ "tmp/skill.json" ])
+  end
+
   it "keeps only marketplace-prefixed runtime env keys" do
     agent_run = build_agent_run([
       build_attachment(

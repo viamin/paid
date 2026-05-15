@@ -127,6 +127,13 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to contain_exactly("project_agent_runs", "project_agent_run_new", "project_agent_run_show")
     end
 
+    it "maps the project run form and run detail partials to the relevant project agent run pages" do
+      expect(described_class.call(changed_files: [ "app/views/projects/agent_runs/new.html.erb" ]).map(&:slug))
+        .to eq([ "project_agent_run_new" ])
+      expect(described_class.call(changed_files: [ "app/views/agent_runs/_detail.html.erb" ]).map(&:slug))
+        .to eq([ "project_agent_run_show" ])
+    end
+
     it "maps public assets to shared UI targets" do
       targets = described_class.call(changed_files: [ "public/icon.png" ])
 

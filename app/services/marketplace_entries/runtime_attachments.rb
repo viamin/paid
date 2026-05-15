@@ -4,6 +4,8 @@ require "set"
 
 module MarketplaceEntries
   class RuntimeAttachments
+    RUNTIME_PREPARATION_ROOT = File.expand_path(".").freeze
+    RUNTIME_HOME_ROOT = "/home/agent".freeze
     ALLOWED_ENV_KEY_PATTERN = /\AMARKETPLACE_[A-Z0-9_]+\z/.freeze
     RESTRICTED_ENV_KEYS = %w[
       PATH
@@ -118,9 +120,18 @@ module MarketplaceEntries
         path = file["path"].to_s.strip
         content = file["content"]
         next if path.blank? || content.nil?
-        next if path.start_with?("/") || path.include?("..")
+
+        normalized_path = path.sub(/\A~(?=\/|$)/, RUNTIME_HOME_ROOT)
+        resolved_path = File.expand_path(normalized_path, RUNTIME_PREPARATION_ROOT)
+        next unless allowed_runtime_path?(resolved_path)
 
         { path:, content: content.to_s }
+      end
+    end
+
+    def allowed_runtime_path?(resolved_path)
+      [ RUNTIME_PREPARATION_ROOT, RUNTIME_HOME_ROOT ].any? do |root|
+        resolved_path == root || resolved_path.start_with?("#{root}/")
       end
     end
   end

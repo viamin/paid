@@ -66,6 +66,25 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
+    it "applies automatic marketplace entries for opted-in users" do
+      project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
+      entry = create(:marketplace_entry, account: project.account, name: "Automatic skill")
+      version = create(:marketplace_entry_version,
+        marketplace_entry: entry,
+        canonical_artifact: {
+          "attachment_strategy" => "prompt_append",
+          "content" => "Always follow the automatic workflow."
+        })
+      entry.update!(current_version: version)
+      create(:marketplace_entry_rule, marketplace_entry: entry, mode: "automatic", conditions: {})
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.agent_run_marketplace_entries.pluck(:marketplace_entry_id)).to eq([ entry.id ])
+      expect(agent_run.agent_run_marketplace_entries.pluck(:attachment_source)).to eq([ "automatic" ])
+    end
+
     it "logs and continues when marketplace attachment fails during creation" do
       allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
       allow(activity).to receive(:logger).and_return(Rails.logger)

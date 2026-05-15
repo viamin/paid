@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe MarketplaceEntries::Resolver, :no_db do
-  it "uses the preloaded rule collection instead of relation scopes for an explicitly selected automatic entry" do
+  it "uses the preloaded rule collection instead of relation scopes for an automatically matched entry" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -11,7 +11,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     entry = build_entry
 
-    resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ entry.id ], auto_attach_enabled: true)
+    resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
     allow(resolver).to receive(:candidate_entries).and_return([ entry ])
 
     results = resolver.call
@@ -37,7 +37,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results).to be_empty
   end
 
-  it "does not attach automatic or team-default entries for unrelated entries when automatic attachment is enabled" do
+  it "attaches automatic entries but does not treat that as consent for unrelated team-default entries" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -54,7 +54,8 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     results = resolver.call
 
-    expect(results).to be_empty
+    expect(results.map(&:entry)).to eq([ automatic_entry ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
   end
 
   it "attaches an explicitly selected entry when its automatic rule matches" do
@@ -66,6 +67,23 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     entry = build_entry(id: 7)
 
     resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ entry.id ], auto_attach_enabled: true)
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ entry ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
+  end
+
+  it "attaches an automatic entry without manual selection when auto-attach is enabled" do
+    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    entry = build_entry(id: 7)
+
+    resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
     allow(resolver).to receive(:candidate_entries).and_return([ entry ])
 
     results = resolver.call
