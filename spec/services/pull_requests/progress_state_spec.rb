@@ -187,7 +187,7 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.last_meaningful_progress_at).to eq(now)
   end
 
-  it "does not reset the streak for failed runs without result_commit_sha" do
+  it "resets the streak for failed runs without result_commit_sha when the PR head moved after them" do
     now = Time.zone.parse("2026-05-15 12:00:00")
     runs = [
       build_run(goal: "review", status: "failed", at: now - 2.minutes),
@@ -200,6 +200,25 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       runs: runs,
       current_head_sha: "new-head",
       current_head_updated_at: now
+    )
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(0)
+    expect(result.last_meaningful_progress_at).to eq(now)
+  end
+
+  it "does not reset the streak for failed runs without result_commit_sha when head update time is unknown" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now - 2.minutes),
+      build_run(goal: "create_pr", status: "failed", at: now - 7.minutes)
+    ]
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      runs: runs,
+      current_head_sha: "new-head",
+      current_head_updated_at: nil
     )
 
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(2)
@@ -244,6 +263,33 @@ RSpec.describe PullRequests::ProgressState, :no_db do
 
     expect(result.consecutive_operational_failures).to eq(2)
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(3)
+  end
+
+  it "stuck? uses latest_unsuccessful_run_at as fallback instead of epoch when no progress recorded" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now - 10.minutes),
+      build_run(goal: "review", status: "failed", at: now - 20.minutes),
+      build_run(goal: "review", status: "failed", at: now - 30.minutes)
+    ]
+
+    travel_to(now) do
+      result = described_class.call(project: project, issue: issue, runs: runs)
+
+      # With 3 failures and no progress, stuck? should NOT be true when stale_after
+      # exceeds the time since the latest failure (the failures are recent).
+      expect(result.last_meaningful_progress_at).to be_nil
+      expect(result.stuck?(limit: 3, stale_after: 3600)).to be false
+
+      # But stuck? IS true when stale_after is shorter than time since latest failure
+      expect(result.stuck?(limit: 3, stale_after: 300)).to be true
+    end
+  end
+
+  it "stuck? returns false when there are no unsuccessful runs at all" do
+    result = described_class.call(project: project, issue: issue, runs: [])
+
+    expect(result.stuck?(limit: 1, stale_after: 1)).to be false
   end
 
   it "loads database-backed history in ordered batches and stops after meaningful progress" do

@@ -38,7 +38,9 @@ module PullRequests
         return false if latest_unsuccessful_run_at.blank?
         return false if stale_after.to_i <= 0
 
-        progress_at = last_meaningful_progress_at || Time.at(0)
+        progress_at = last_meaningful_progress_at || latest_unsuccessful_run_at
+        return false if progress_at.blank?
+
         progress_at <= stale_after.to_i.seconds.ago
       end
 
@@ -182,15 +184,20 @@ module PullRequests
     def superseded_by_new_head?(run)
       return false if current_head_sha.blank?
 
-      # Only compare against result_commit_sha (the HEAD after the agent
-      # finished and pushed). base_commit_sha stores the merge-base against
-      # the default branch for existing-PR runs, not the PR head SHA. When
-      # result_commit_sha is nil (e.g. a failed run that never pushed), we
-      # conservatively treat the run as NOT superseded so it still counts
-      # toward the failure streak.
-      return false if run.result_commit_sha.blank?
+      # Compare against result_commit_sha (the HEAD after the agent finished
+      # and pushed). base_commit_sha stores the merge-base against the default
+      # branch for existing-PR runs, not the PR head SHA.
+      #
+      # When result_commit_sha is present, compare it directly to current_head_sha.
+      # When result_commit_sha is nil (e.g. a failed run that never pushed),
+      # fall back to checking whether the PR head was updated after the run
+      # completed — a human follow-up commit supersedes the stale failure.
+      if run.result_commit_sha.present?
+        return run.result_commit_sha != current_head_sha
+      end
 
-      run.result_commit_sha != current_head_sha
+      current_head_updated_at.present? && run_timestamp(run).present? &&
+        current_head_updated_at > run_timestamp(run)
     end
 
     def meaningful_progress?(run)
