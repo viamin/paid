@@ -4,7 +4,7 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runners::HarnessExecutionPlan do
-  describe ".for_runner_key" do
+  describe ".for_runner_key", :no_db do
     let(:copilot_plan_payload) do
       {
         command: %w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping],
@@ -14,17 +14,17 @@ RSpec.describe Runners::HarnessExecutionPlan do
     end
 
     let(:harness_runner) do
-      instance_double(AgentHarness::Runners::GithubCopilot, plan_execution: copilot_plan_payload)
+      instance_double(AgentHarness::Providers::GithubCopilot, plan_execution: copilot_plan_payload)
     end
 
-    let(:runner_class) { class_double(AgentHarness::Runners::GithubCopilot) }
+    let(:provider_class) { class_double(AgentHarness::Providers::GithubCopilot) }
 
     before do
-      allow(AgentHarness).to receive(:runner_class).with(:github_copilot).and_return(runner_class)
+      allow(AgentHarness).to receive(:provider_class).with(:github_copilot).and_return(provider_class)
       allow(AgentHarness).to receive(:build_config).with(:github_copilot).and_return(
         AgentHarness::ProviderConfig.new(:github_copilot)
       )
-      allow(runner_class).to receive(:new).with(config: kind_of(AgentHarness::ProviderConfig)).and_return(harness_runner)
+      allow(provider_class).to receive(:new).with(config: kind_of(AgentHarness::ProviderConfig)).and_return(harness_runner)
     end
 
     it "uses plan_execution for probe-dependent providers" do
@@ -41,6 +41,14 @@ RSpec.describe Runners::HarnessExecutionPlan do
   end
 
   describe ".call" do
+    let(:runner_double_class) do
+      Class.new do
+        def runner_key; end
+
+        def agent_harness_runner_runtime; end
+      end
+    end
+
     it "builds the OpenCode execution contract through agent-harness" do
       user = create(
         :user,
@@ -91,20 +99,20 @@ RSpec.describe Runners::HarnessExecutionPlan do
       expect(parsed).not_to have_key("baseURL")
     end
 
-    it "constructs the harness runner with external sandboxing enabled" do
-      runner = instance_double(Runner, runner_key: "claude", agent_harness_runner_runtime: nil)
+    it "constructs the harness runner with external sandboxing enabled", :no_db do
+      runner = instance_double(runner_double_class, runner_key: "claude", agent_harness_runner_runtime: nil)
       harness_runner = instance_double(
-        AgentHarness::Runners::Anthropic,
+        AgentHarness::Providers::Anthropic,
         plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
       )
-      runner_class = class_double(AgentHarness::Runners::Anthropic)
+      provider_class = class_double(AgentHarness::Providers::Anthropic)
 
-      allow(AgentHarness).to receive(:runner_class).with(:claude).and_return(runner_class)
+      allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(provider_class)
       allow(AgentHarness).to receive(:build_config).with(:claude).and_return(
         AgentHarness::ProviderConfig.new(:claude)
       )
 
-      allow(runner_class).to receive(:new) do |config:|
+      allow(provider_class).to receive(:new) do |config:|
         expect(config).to be_a(AgentHarness::ProviderConfig)
         expect(config.name).to eq(:claude)
         expect(config.externally_sandboxed).to be(true)
