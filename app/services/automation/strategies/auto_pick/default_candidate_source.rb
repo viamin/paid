@@ -222,7 +222,7 @@ module Automation
             issues = Issue.arel_table
             priority_case = Arel::Nodes::Case.new
 
-            Project::PRIORITY_TIERS.each_with_index.each do |tier, index|
+            Project::PRIORITY_TIERS.each_with_index do |tier, index|
               label_name = effective[tier]
               next if label_name.blank?
 
