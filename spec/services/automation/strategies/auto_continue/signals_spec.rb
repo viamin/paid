@@ -24,6 +24,21 @@ RSpec.describe Automation::Strategies::AutoContinue::Signals, :no_db do
     }.merge(overrides)
   end
 
+  def string_keyed_metadata(lifecycle:, scan: nil)
+    { "lifecycle" => lifecycle.transform_keys(&:to_s), "scan" => scan }
+  end
+
+  def draft_string_keyed_payload
+    {
+      phase: "draft",
+      active_run_exists: true,
+      failure_streak_limit_reached: true,
+      consecutive_unsuccessful_automatic_runs: 2,
+      draft: true,
+      scan: { "triggers" => [] }
+    }
+  end
+
   describe ".from_metadata" do
     it "returns nil when metadata is nil" do
       expect(described_class.from_metadata(nil)).to be_nil
@@ -50,6 +65,29 @@ RSpec.describe Automation::Strategies::AutoContinue::Signals, :no_db do
         consecutive_unsuccessful_automatic_runs: 2, draft_review_count: 2,
         review_goal_retry_count: 1, pr_followup_count: 3, scan: scan
       )
+    end
+
+    it "accepts string-keyed metadata from serialized workflow payloads" do
+      payload = draft_string_keyed_payload
+      signals = described_class.from_metadata(string_keyed_metadata(
+        lifecycle: lifecycle_payload(
+          phase: payload[:phase],
+          active_run_exists: payload[:active_run_exists],
+          failure_streak_limit_reached: payload[:failure_streak_limit_reached],
+          consecutive_unsuccessful_automatic_runs: payload[:consecutive_unsuccessful_automatic_runs],
+          draft: payload[:draft]
+        ),
+        scan: payload[:scan]
+      ))
+
+      expect(signals.to_h.slice(
+        :phase,
+        :active_run_exists,
+        :failure_streak_limit_reached,
+        :consecutive_unsuccessful_automatic_runs,
+        :draft,
+        :scan
+      )).to eq(payload)
     end
 
     it "coerces boolean fields strictly" do
