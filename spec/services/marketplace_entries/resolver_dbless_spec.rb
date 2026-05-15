@@ -152,6 +152,29 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:reason)).to eq([ "Selected manually for this run" ])
   end
 
+  it "prefers team-default over automatic when the same entry matches both rule modes" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    entry = build_entry(
+      rules: [
+        build_rule(mode: "automatic", enabled: true, position: 0, id: 3, rationale: "Matched automatically"),
+        build_rule(mode: "team_default", enabled: true, position: 1, id: 2, rationale: "Matched as team default")
+      ]
+    )
+
+    resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true, account_auto_attach_required: true)
+    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ entry ])
+    expect(results.map(&:source)).to eq([ "team_default" ])
+    expect(results.map(&:reason)).to eq([ "Matched as team default" ])
+  end
+
   it "memoizes persisted manual attachment ids when no manual ids were passed" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries

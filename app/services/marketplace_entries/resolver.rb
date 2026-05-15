@@ -32,12 +32,12 @@ module MarketplaceEntries
       return unless attach_rule_mode?(mode)
 
       compatible_entries.each do |entry|
-        next if selections.key?(entry.id)
-
         matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == mode && rule_matches?(rule, entry)
         end
         next unless matching_rule
+
+        next if skip_rule_selection?(selections, entry.id, source)
 
         selections[entry.id] = Result.new(
           entry:,
@@ -137,6 +137,13 @@ module MarketplaceEntries
 
     def default_rule_reason(source)
       "Matched #{source.tr('_', ' ')} marketplace rule"
+    end
+
+    def skip_rule_selection?(selections, entry_id, source)
+      return false unless (existing = selections[entry_id])
+      return false if source == "team_default" && existing.source == "automatic"
+
+      true
     end
 
     def auto_attach_enabled?
