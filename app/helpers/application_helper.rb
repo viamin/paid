@@ -611,9 +611,13 @@ module ApplicationHelper
   end
 
   def app_route_path(name, *args, **kwargs)
-    return Rails.application.routes.url_helpers.public_send(name, *args, **kwargs) unless respond_to?(name)
+    return Rails.application.routes.url_helpers.public_send(name, *args, **kwargs) unless route_helper_available?(name)
 
     public_send(name, *args, **kwargs)
+  end
+
+  def route_helper_available?(name)
+    respond_to?(name) && respond_to?(:_routes_context, true)
   end
 
   def safe_return_path?(path)
