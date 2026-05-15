@@ -318,7 +318,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "still invokes the bulk seeder when auto-pick is disabled so the service can no-op internally" do
-        allow(project).to receive(:auto_pick_enabled?).and_return(false)
+        project.update!(auto_pick_enabled: false)
 
         activity.execute(project_id: project.id)
 
