@@ -502,6 +502,12 @@ RSpec.describe Runner do
 
       expect(described_class.for_identifier(user, "opencode", include_discarded: true)).to eq(kept_subscription)
     end
+
+    it "resolves legacy provider routing-key identifiers during the phase-1 bridge" do
+      subscription = user.runners.find_by!(runner_key: "claude")
+
+      expect(described_class.for_identifier(user, "provider:#{subscription.id}")).to eq(subscription)
+    end
   end
 
   describe "#display_name" do

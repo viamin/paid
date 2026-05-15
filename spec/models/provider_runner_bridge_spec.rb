@@ -25,6 +25,11 @@ RSpec.describe Provider, :no_db do
     expect(UserSetting.instance_methods).to include(:provider_priority, :provider_priority_for_goal, :available_providers)
   end
 
+  it "keeps legacy provider routing-key identifiers readable during the bridge" do
+    expect(Runner.routing_key?("provider:123")).to be(true)
+    expect(Runner.id_from_routing_key("provider:123")).to eq(123)
+  end
+
   it "keeps provider-named controller, helper, policy, service, and job constants available" do
     expect(ProvidersController < RunnersController).to be(true)
     expect(ProvidersHelper.included_modules).to include(RunnersHelper)

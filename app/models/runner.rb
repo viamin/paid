@@ -12,6 +12,7 @@ class Runner < ApplicationRecord
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "runner:".freeze
+  LEGACY_ROUTING_KEY_PREFIX = "provider:".freeze
   DEFAULT_WEIGHT = 1
   MAX_WEIGHT = 1000
   # Default cutoffs for mapping a complexity score (1-10) to an LlmModel tier.
@@ -165,7 +166,7 @@ class Runner < ApplicationRecord
 
   def matches_identifier?(identifier)
     id_str = identifier.to_s
-    return true if id_str == routing_key || id_str == runner_key.to_s
+    return true if id_str == routing_key || id_str == legacy_routing_key || id_str == runner_key.to_s
 
     # Also match agent_type identifiers (e.g. "claude_code") that map
     # to this runner's key (e.g. "claude") so that legacy final_runner
@@ -176,6 +177,10 @@ class Runner < ApplicationRecord
 
   def state_key
     subscription? ? runner_key.to_s : routing_key
+  end
+
+  def legacy_routing_key
+    persisted? ? "#{LEGACY_ROUTING_KEY_PREFIX}#{id}" : runner_key.to_s
   end
 
   def opencode_config
@@ -465,13 +470,14 @@ class Runner < ApplicationRecord
   end
 
   def self.routing_key?(identifier)
-    identifier.to_s.start_with?(ROUTING_KEY_PREFIX)
+    routing_key_prefix_for(identifier).present?
   end
 
   def self.id_from_routing_key(identifier)
-    return unless routing_key?(identifier)
+    prefix = routing_key_prefix_for(identifier)
+    return unless prefix
 
-    id_str = identifier.to_s.delete_prefix(ROUTING_KEY_PREFIX)
+    id_str = identifier.to_s.delete_prefix(prefix)
     id = Integer(id_str, exception: false)
     return unless id&.positive?
 
@@ -670,6 +676,15 @@ class Runner < ApplicationRecord
     matching_runners.subscription.first || matching_runners.first
   end
   private_class_method :preferred_identifier_match
+
+  def self.routing_key_prefix_for(identifier)
+    value = identifier.to_s
+    return ROUTING_KEY_PREFIX if value.start_with?(ROUTING_KEY_PREFIX)
+    return LEGACY_ROUTING_KEY_PREFIX if value.start_with?(LEGACY_ROUTING_KEY_PREFIX)
+
+    nil
+  end
+  private_class_method :routing_key_prefix_for
 
   def api_key_auth_requires_provider_api_key
     return unless api_key?
