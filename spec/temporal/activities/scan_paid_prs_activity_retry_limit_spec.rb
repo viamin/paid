@@ -425,4 +425,56 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(activity.send(:followup_limit_reached?, project, issue, progress_state)).to be(true)
     end
   end
+
+  describe "#build_lifecycle_signals", :no_db do
+    before do
+      stub_const("LifecycleSignalsProjectStub", Class.new)
+      stub_const("LifecycleSignalsIssueStub", Class.new)
+      stub_const("LifecycleSignalsProgressStateStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(LifecycleSignalsProjectStub, owner_reviewer_login: "alice") }
+    let(:issue) do
+      instance_double(
+        LifecycleSignalsIssueStub,
+        id: 123,
+        github_number: 42,
+        pr_review_phase: "ready",
+        draft_review_count: 0,
+        review_goal_retry_count: 1,
+        pr_followup_count: 0
+      )
+    end
+    let(:progress_state) do
+      instance_double(
+        LifecycleSignalsProgressStateStub,
+        consecutive_unsuccessful_automatic_runs: 3,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil
+      )
+    end
+
+    it "reports the unified failure streak even when the ready follow-up gate is suppressed" do
+      allow(activity).to receive(:pr_progress_state).with(project, issue).and_return(progress_state)
+      allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
+        .with(project, issue, progress_state:)
+        .and_return(false)
+      allow(activity).to receive(:failure_streak_reason).with(project, issue, progress_state)
+        .and_return("Automatic PR failure streak reached")
+      allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
+      allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
+
+      signals = activity.send(:build_lifecycle_signals, project, issue)
+
+      expect(signals).to include(
+        failure_streak_limit_reached: true,
+        escalation_reason: "Automatic PR failure streak reached",
+        consecutive_unsuccessful_automatic_runs: 3,
+        review_goal_retry_count: 1
+      )
+    end
+  end
 end

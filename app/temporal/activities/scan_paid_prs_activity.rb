@@ -169,11 +169,7 @@ module Activities
     def build_lifecycle_signals(project, issue)
       progress_state = pr_progress_state(project, issue)
       op_breaker = operational_failure_breaker?(project, issue, progress_state)
-      failure_limit = if issue.pr_review_phase.in?(%w[ready escalated])
-        followup_limit_reached?(project, issue, progress_state)
-      else
-        failure_streak_limit_reached?(project, issue, progress_state)
-      end
+      failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
       reason = if op_breaker
