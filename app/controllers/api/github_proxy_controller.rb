@@ -231,9 +231,10 @@ module Api
     # issues have been addressed.
     def dismiss_stale_changes_requested_reviews(path_match, new_review)
       return if new_review["state"].to_s.casecmp("CHANGES_REQUESTED").zero?
-      return unless Github::ReviewBotInstallationToken.configured?
 
       project = authenticated_project
+      return unless project&.review_method_enabled?("paid_agent")
+      return unless Github::ReviewBotInstallationToken.configured?
       bot_logins = Github::ReviewBotInstallationToken.bot_logins
       pr_number = path_match[:number].to_i
       new_review_id = new_review["id"]
