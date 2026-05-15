@@ -12,10 +12,12 @@ module MarketplaceEntries
     end
 
     def call
+      return @prompt unless marketplace_entries_attached?
+
       sections = []
       non_prompt_strategies = []
 
-      @agent_run.agent_run_marketplace_entries.includes(:marketplace_entry).ordered.each do |attachment|
+      attachments.includes(:marketplace_entry).ordered.each do |attachment|
         strategy = attachment.rendered_payload["attachment_strategy"]
 
         if MarketplaceEntries::Renderer.prompt_only?(strategy)
@@ -46,9 +48,22 @@ module MarketplaceEntries
       return @prompt if sections.empty?
 
       base = @prompt.to_s.rstrip
-      attachments = "# Marketplace Attachments\n\n#{sections.join("\n\n")}"
+      attachment_section = "# Marketplace Attachments\n\n#{sections.join("\n\n")}"
 
-      base.empty? ? attachments : "#{base}\n\n#{attachments}"
+      base.empty? ? attachment_section : "#{base}\n\n#{attachment_section}"
+    end
+
+    private
+
+    def attachments
+      @attachments ||= @agent_run.agent_run_marketplace_entries
+    end
+
+    def marketplace_entries_attached?
+      return attachments.any? if attachments.loaded?
+      return attachments.exists? if attachments.respond_to?(:exists?)
+
+      attachments.any?
     end
   end
 end

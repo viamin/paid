@@ -18,6 +18,18 @@ RSpec.describe MarketplaceEntries::InjectIntoPrompt, :no_db do
     expect(described_class.call(agent_run:, prompt: nil)).to be_nil
   end
 
+  it "returns the prompt without loading attachment records when none exist" do
+    stub_const("InjectIntoPromptDblessRelation", Class.new)
+    relation = instance_double(InjectIntoPromptDblessRelation)
+    allow(relation).to receive_messages(loaded?: false, exists?: false)
+    allow(relation).to receive(:includes).and_raise("should not load attachments")
+
+    agent_run = Struct.new(:agent_run_marketplace_entries, keyword_init: true)
+      .new(agent_run_marketplace_entries: relation)
+
+    expect(described_class.call(agent_run:, prompt: "Base prompt")).to eq("Base prompt")
+  end
+
   it "builds marketplace content when attachments exist but the base prompt is nil" do
     agent_run = build_agent_run
 
@@ -45,6 +57,14 @@ RSpec.describe MarketplaceEntries::InjectIntoPrompt, :no_db do
       selection_reason: "Selected manually"
     )
     relation = Struct.new(:attachments, keyword_init: true) do
+      def loaded?
+        true
+      end
+
+      def exists?
+        attachments.any?
+      end
+
       def includes(*)
         self
       end

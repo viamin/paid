@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class MarketplaceEntry < ApplicationRecord
-  ENTRY_TYPES = %w[skill agent plugin mcp_server prompt_pack provider_config enhancement other].freeze
   PROMPT_COMPATIBLE_ENTRY_TYPES = %w[skill agent prompt_pack enhancement other].freeze
   TEAM_SCOPES = %w[account private].freeze
   STATUSES = %w[draft active deprecated].freeze
