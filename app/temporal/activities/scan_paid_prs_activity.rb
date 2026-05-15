@@ -220,6 +220,7 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
+      backfill_review_goal_retry_reset_at!(issue)
       progress_state = pr_progress_state(project, issue)
 
       record_focus_resolution(project, client, issue)
@@ -233,8 +234,6 @@ module Activities
           reason: "Consecutive operational failures " \
                   "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
       end
-
-      backfill_review_goal_retry_reset_at!(issue)
 
       retry_needed = review_goal_retry_needed?(project, issue)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue)
@@ -986,6 +985,7 @@ module Activities
         project.max_pr_followup_runs
       end
 
+      return 0 if limit == 0
       value = limit.to_i
       value.positive? ? value : DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS
     end
