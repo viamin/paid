@@ -292,7 +292,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(github_client).not_to have_received(:rate_limit_remaining!)
       end
 
-      it "escalates draft PRs at max review rounds without checking rate budget" do
+      it "skips draft PR escalation when confirming the head state would exceed the rate budget" do
         project.update!(max_draft_review_rounds: 3)
         pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
         3.times do
@@ -311,9 +311,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(github_client).not_to have_received(:rate_limit_remaining!)
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(github_client).to have_received(:rate_limit_remaining!)
       end
     end
 
@@ -4610,6 +4609,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       before do
+        project.update!(max_draft_review_rounds: 3)
         stub_github_for_pr(
           draft: true,
           review_threads: [
