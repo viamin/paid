@@ -810,12 +810,14 @@ module Activities
     def maybe_restart_draft(project, issue, pr_data)
       return false unless pr_data&.draft
 
+      reset_at = Time.current
       issue.update!(
         pr_review_phase: "restarted",
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,
-        review_goal_retry_reset_at: Time.current,
+        review_goal_retry_reset_at: reset_at,
+        operational_failure_reset_at: reset_at,
         ci_retry_requested_at: nil
       )
 
