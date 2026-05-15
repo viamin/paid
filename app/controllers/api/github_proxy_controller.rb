@@ -236,7 +236,7 @@ module Api
       project = authenticated_project
       return unless project&.review_method_enabled?("paid_agent")
       return unless Github::ReviewBotInstallationToken.configured?
-      bot_logins = Github::ReviewBotInstallationToken.bot_logins.to_set { |login| login.downcase }
+      bot_logins = Github::ReviewBotInstallationToken.bot_logins.to_set(&:downcase)
       pr_number = path_match[:number].to_i
       new_review_id = new_review["id"].to_i
 
