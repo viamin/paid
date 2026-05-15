@@ -644,7 +644,8 @@ module Projects
       )
       MarketplaceEntries::AttachToRun.call(
         agent_run:,
-        manual_entry_ids: params[:marketplace_entry_ids]
+        manual_entry_ids: params[:marketplace_entry_ids],
+        auto_attach_enabled: true
       )
       agent_run
     end

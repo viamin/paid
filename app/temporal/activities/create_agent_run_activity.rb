@@ -93,7 +93,8 @@ module Activities
       agent_run = AgentRun.create!(**attrs)
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,
-        manual_entry_ids: manual_marketplace_entry_ids
+        manual_entry_ids: manual_marketplace_entry_ids,
+        auto_attach_enabled: true
       )
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 

@@ -1147,14 +1147,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "attaches selected marketplace entries to the queued run" do
-        entry = create(:marketplace_entry, account: account, name: "Repo skill")
-        version = create(:marketplace_entry_version,
-          marketplace_entry: entry,
-          canonical_artifact: {
-            "attachment_strategy" => "prompt_append",
-            "content" => "Use the repo coding workflow."
-          })
-        entry.update!(current_version: version)
+        entry = create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
 
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ entry.id ] }
@@ -1165,10 +1158,35 @@ RSpec.describe "AgentRuns" do
         expect(attachment.attachment_source).to eq("manual")
       end
 
+      it "also applies team-default marketplace entries when creating a queued run" do
+        manual_entry = create_prompt_append_marketplace_entry(name: "Manual skill", content: "Use the manual workflow.")
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ manual_entry.id ] }
+        }.to change(AgentRunMarketplaceEntry, :count).by(2)
+
+        run = AgentRun.last
+        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to contain_exactly("manual", "team_default")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
         }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      def create_prompt_append_marketplace_entry(name:, content:)
+        entry = create(:marketplace_entry, account: account, name:)
+        version = create(:marketplace_entry_version,
+          marketplace_entry: entry,
+          canonical_artifact: {
+            "attachment_strategy" => "prompt_append",
+            "content" => content
+          })
+        entry.update!(current_version: version)
+        entry
       end
 
       it "persists the selected priority tier and syncs the issue label" do
