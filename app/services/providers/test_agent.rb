@@ -397,6 +397,7 @@ module Providers
           [ {
             project_id: test_project.id,
             provider_id: provider.id,
+            runner_id: provider.id,
             agent_type: Provider.agent_type_for(provider.provider_key),
             status: "queued",
             temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,

@@ -2,6 +2,11 @@
 
 class RunnerState < ApplicationRecord
   self.table_name = "provider_states"
+  include LegacyAttributeBridge
+
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_name" => "runner_name"
+  }.freeze
   CIRCUIT_STATES = %w[closed open half_open].freeze
 
   belongs_to :user
@@ -92,6 +97,10 @@ class RunnerState < ApplicationRecord
   # Returns true if the runner is currently unavailable (rate limited or circuit open).
   def unavailable?
     rate_limited? || circuit_open?
+  end
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   private

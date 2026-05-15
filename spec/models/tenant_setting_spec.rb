@@ -28,6 +28,19 @@ RSpec.describe TenantSetting do
       expect(setting.runner_preferences).to eq({ "api_key_ids" => { "anthropic" => "1" } })
       expect(setting.allowed_runner_keys).to eq(%w[claude cursor])
     end
+
+    it "keeps runner-named settings synchronized when legacy provider columns are updated directly" do
+      setting = create(:tenant_setting)
+
+      setting.update_columns(
+        provider_preferences: { "api_key_ids" => { "openai" => "5" } },
+        allowed_provider_keys: %w[claude cursor]
+      )
+
+      setting.reload
+      expect(setting.runner_preferences).to eq({ "api_key_ids" => { "openai" => "5" } })
+      expect(setting.allowed_runner_keys).to eq(%w[claude cursor])
+    end
   end
 
   describe "validations" do

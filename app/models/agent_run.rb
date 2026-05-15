@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  include LegacyAttributeBridge
+
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_id" => "runner_id",
     "provider_switches" => "runner_switches",
@@ -258,6 +260,10 @@ class AgentRun < ApplicationRecord
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+  end
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }

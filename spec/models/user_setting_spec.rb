@@ -59,6 +59,21 @@ RSpec.describe UserSetting do
       expect(setting.kb_embedding_runner).to eq("openrouter")
       expect(setting.kb_embedding_fallback_runners).to eq([ "openai" ])
     end
+
+    it "keeps runner-named settings synchronized when legacy provider columns are updated directly" do
+      setting = create(:user_setting)
+
+      setting.update_columns(
+        default_agent_provider: "cursor",
+        kb_chat_provider: "codex",
+        kb_embedding_fallback_providers: [ "openai" ]
+      )
+
+      setting.reload
+      expect(setting.default_agent_runner).to eq("cursor")
+      expect(setting.kb_chat_runner).to eq("codex")
+      expect(setting.kb_embedding_fallback_runners).to eq([ "openai" ])
+    end
   end
 
   describe "validations" do

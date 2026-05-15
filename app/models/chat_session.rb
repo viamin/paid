@@ -2,7 +2,11 @@
 
 class ChatSession < ApplicationRecord
   include TenantScoped
+  include LegacyAttributeBridge
 
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_id" => "runner_id"
+  }.freeze
   STATUSES = %w[active idle closed archived].freeze
   MODES = %w[api workspace].freeze
   IDLE_TIMEOUT_DURATION = 30.minutes
@@ -43,6 +47,10 @@ class ChatSession < ApplicationRecord
     return self.runner = value if value.is_a?(Runner) || value.nil?
 
     super
+  end
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   scope :active, -> { where(status: "active") }

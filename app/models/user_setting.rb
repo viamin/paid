@@ -2,6 +2,7 @@
 
 class UserSetting < ApplicationRecord
   include AutoPickSkipLabels
+  include LegacyAttributeBridge
 
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "default_agent_provider" => "default_agent_runner",
@@ -152,6 +153,10 @@ class UserSetting < ApplicationRecord
     parsed.select { |runner| runner.is_a?(String) }
   rescue JSON::ParserError
     []
+  end
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   def self.parse_runner_array_param(value)

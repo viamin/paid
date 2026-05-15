@@ -2,6 +2,7 @@
 
 class TenantSetting < ApplicationRecord
   include AutoPickSkipLabels
+  include LegacyAttributeBridge
 
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_preferences" => "runner_preferences",
@@ -106,6 +107,10 @@ class TenantSetting < ApplicationRecord
       "self_repo_full_name" => self_repo_full_name,
       "features" => features
     }
+  end
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   def effective_runner_preferences

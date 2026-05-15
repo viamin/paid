@@ -8,7 +8,11 @@ class Runner < ApplicationRecord
   self.table_name = "providers"
   has_logidze
   include Discard::Model
+  include LegacyAttributeBridge
 
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_key" => "runner_key"
+  }.freeze
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "runner:".freeze
@@ -147,6 +151,10 @@ class Runner < ApplicationRecord
     label += " #{model_id}" if model_id.present?
     label += " (API Key)" if api_key?
     label
+  end
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   # Returns a merged hash of complexity thresholds (stored values overlaid on
