@@ -182,7 +182,7 @@ class Issue < ApplicationRecord
   end
 
   def pr_progress_state
-    PullRequests::ProgressState.call(project:, issue: self)
+    @pr_progress_state ||= PullRequests::ProgressState.call(project:, issue: self)
   end
 
   def consecutive_unsuccessful_pr_runs
@@ -203,6 +203,11 @@ class Issue < ApplicationRecord
 
   def pr_stuck?(limit:, stale_after:)
     pr_progress_state.stuck?(limit:, stale_after:)
+  end
+
+  def reload(*)
+    @pr_progress_state = nil
+    super
   end
 
   def associated_pull_request

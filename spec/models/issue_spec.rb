@@ -424,6 +424,57 @@ RSpec.describe Issue do
       end
     end
 
+    describe "PR progress helpers", :no_db do
+      let(:issue) { described_class.allocate }
+      let(:project) { Object.new }
+      let(:progress_state) do
+        instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 3,
+          last_meaningful_progress_at: Time.zone.parse("2026-05-15 12:00:00"),
+          escalation_worthy?: true,
+          retryable?: false,
+          stuck?: true
+        )
+      end
+
+      before do
+        allow(issue).to receive(:project).and_return(project)
+      end
+
+      it "memoizes progress state across helper calls" do
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:)
+          .and_return(progress_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.last_pr_meaningful_progress_at).to eq(Time.zone.parse("2026-05-15 12:00:00"))
+        expect(issue.pr_escalation_worthy?(limit: 3)).to be(true)
+        expect(issue.pr_retryable?(limit: 3)).to be(false)
+        expect(issue.pr_stuck?(limit: 3, stale_after: 3600)).to be(true)
+        expect(PullRequests::ProgressState).to have_received(:call).once
+      end
+
+      it "invalidates the memoized progress state on reload" do
+        fresh_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+        fresh_issue = described_class.allocate
+        fresh_issue.instance_variable_set(:@association_cache, {})
+        fresh_issue.instance_variable_set(:@attributes, issue.instance_variable_get(:@attributes))
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:)
+          .and_return(progress_state, fresh_progress_state)
+        allow(issue).to receive(:_find_record).and_return(fresh_issue)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        issue.reload
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
+        expect(PullRequests::ProgressState).to have_received(:call).twice
+      end
+    end
+
     describe "#has_associated_pull_requests?" do
       let(:project) { create(:project) }
 

@@ -1030,19 +1030,10 @@ module Activities
       issue.pr_review_phase.in?(%w[ready escalated]) && failure_streak_limit_reached?(project, issue)
     end
 
-    # Circuit breaker: if the last N automatic draft follow-up runs on
-    # this PR all ended without producing any output, stop requeueing
-    # to prevent infinite retry loops. A run is "unproductive" if it
-    # finished as no_output (completed with zero commits), or if it
-    # failed/cancelled/timed out with zero iterations. Runs that did
-    # real work before failing don't trip the breaker. Scoped to
-    # automatic create_pr runs so that manual runs or review-phase
-    # followups don't trip the breaker.
-    #
-    # The draft_review_count guard ensures we only consider runs from the
-    # current draft phase. maybe_restart_draft resets draft_review_count
-    # to 0, so older non-draft failures can't trip the breaker when a PR
-    # is converted back to draft.
+    # Draft-phase circuit breaker: while the PR is in draft/restarted,
+    # apply the draft-phase retry limit to the unified automatic-run
+    # failure streak. The streak itself is phase-agnostic; only the
+    # limit selection remains phase-specific here.
     def consecutive_draft_failures_breaker?(project, issue)
       issue.draft_phase? && failure_streak_limit_reached?(project, issue)
     end
@@ -1059,11 +1050,6 @@ module Activities
     # checks for infrastructure-class failures specifically. A run that
     # failed due to a code error won't trip this breaker because a retry
     # with different code changes might succeed.
-    #
-    # Skips PRs already in "escalated" phase to avoid re-escalating.
-    # Skips draft/restarted phases because those have their own failure
-    # breaker (consecutive_draft_failures_breaker?) with phase-aware
-    # guards (e.g. draft_review_count resets on restart).
     def operational_failure_breaker?(project, issue, progress_state = pr_progress_state(project, issue))
       progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES
     end
