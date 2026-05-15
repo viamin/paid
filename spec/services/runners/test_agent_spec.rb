@@ -226,7 +226,7 @@ RSpec.describe Runners::TestAgent do
 
     context "when codex has a Paid-managed OpenAI API key configured" do
       let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
-      let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
+      let(:runner_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "ok", message: "All checks passed", latency_ms: 12 } }
 
       before do
@@ -246,7 +246,7 @@ RSpec.describe Runners::TestAgent do
 
     context "when agent-harness returns a binary-encoded failure message" do
       let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
-      let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
+      let(:runner_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "error", message: "bad \xFF auth\x00".b, latency_ms: 12 } }
 
       before do
@@ -267,7 +267,7 @@ RSpec.describe Runners::TestAgent do
 
     context "when agent-harness returns valid UTF-8 bytes tagged as binary" do
       let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
-      let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
+      let(:runner_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "error", message: "caf\xC3\xA9 auth".b, latency_ms: 12 } }
 
       before do
@@ -346,7 +346,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when gemini has a Paid-managed Google API key configured" do
-      let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:runner_api_key, user: user, api_service_type: "google")) }
+      let(:runner_record) { create(:runner, :api_key, user: user, runner_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:runner_api_key, user: user, api_service_type: "google")) }
       let(:health_result) { { name: :gemini, status: "ok", message: "All checks passed", latency_ms: 12 } }
 
       before do
@@ -574,7 +574,7 @@ RSpec.describe Runners::TestAgent do
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
-        expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
+        expect(result.message).to eq("Agent started but did not produce a response. Verify the runner credentials and connectivity.")
       end
 
       it "handles multiple MCP session events" do
@@ -587,7 +587,7 @@ RSpec.describe Runners::TestAgent do
         result = described_class.call(runner: provider)
 
         expect(result).not_to be_success
-        expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
+        expect(result.message).to eq("Agent started but did not produce a response. Verify the runner credentials and connectivity.")
       end
 
       it "handles the session.mcp_servers_loaded variant" do
@@ -602,7 +602,7 @@ RSpec.describe Runners::TestAgent do
         result = described_class.call(runner: provider)
 
         expect(result).not_to be_success
-        expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
+        expect(result.message).to eq("Agent started but did not produce a response. Verify the runner credentials and connectivity.")
       end
     end
 
@@ -928,7 +928,7 @@ RSpec.describe Runners::TestAgent do
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
-        expect(result.message).to eq("Add a project before testing providers in the agent container")
+        expect(result.message).to eq("Add a project before testing runners in the agent container")
       end
     end
 
