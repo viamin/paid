@@ -42,6 +42,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
     end
 
+    context "when a restarted PR already has an active create_pr run" do
+      let(:phase) { "restarted" }
+
+      it "skips before backfilling the retry reset boundary" do
+        allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(true)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:skipped)
+        expect(activity).to have_received(:record_focus_resolution).with(project, client, issue)
+        expect(activity).to have_received(:active_run_exists?).with(project, issue)
+        expect(activity).not_to have_received(:backfill_review_goal_retry_reset_at!)
+      end
+    end
+
     context "when the PR is still in draft" do
       let(:phase) { "draft" }
       let(:pr_data) do

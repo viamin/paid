@@ -225,10 +225,10 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
-      backfill_review_goal_retry_reset_at!(issue)
-
       record_focus_resolution(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
+
+      backfill_review_goal_retry_reset_at!(issue)
 
       check_rate_budget!(client)
       pr_data = fetch_pr_data(client, project, issue)
