@@ -15,18 +15,17 @@ module OperatorConsole
       end
 
       def allowed_user_ids
-        @allowed_user_ids ||= configured_values(:user_ids, env_key: "PAID_OPERATOR_USER_IDS")
+        configured_values(:user_ids, env_key: "PAID_OPERATOR_USER_IDS")
       end
 
       def allowed_emails
-        @allowed_emails ||= configured_values(:emails, env_key: "PAID_OPERATOR_EMAILS").map do |email|
+        configured_values(:emails, env_key: "PAID_OPERATOR_EMAILS").map do |email|
           normalized_email(email)
         end
       end
 
       def reset_memoized!
-        @allowed_user_ids = nil
-        @allowed_emails = nil
+        nil
       end
 
       private

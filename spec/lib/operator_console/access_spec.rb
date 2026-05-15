@@ -12,12 +12,10 @@ RSpec.describe OperatorConsole::Access, :no_db do
   around do |example|
     original_emails = ENV["PAID_OPERATOR_EMAILS"]
     original_ids = ENV["PAID_OPERATOR_USER_IDS"]
-    described_class.reset_memoized!
     example.run
   ensure
     ENV["PAID_OPERATOR_EMAILS"] = original_emails
     ENV["PAID_OPERATOR_USER_IDS"] = original_ids
-    described_class.reset_memoized!
   end
 
   before do
@@ -43,6 +41,14 @@ RSpec.describe OperatorConsole::Access, :no_db do
     ENV["PAID_OPERATOR_USER_IDS"] = "42"
 
     expect(described_class.allowed?(user)).to be(true)
+  end
+
+  it "re-reads configuration after env changes without requiring a cache reset" do
+    ENV["PAID_OPERATOR_EMAILS"] = "operator@example.com"
+    expect(described_class.allowed?(user)).to be(true)
+
+    ENV["PAID_OPERATOR_EMAILS"] = "different@example.com"
+    expect(described_class.allowed?(user)).to be(false)
   end
 
   it "fails closed when an operator env var is explicitly blank" do
