@@ -3,7 +3,10 @@
 require "rails_helper"
 
 RSpec.describe "projects clarifying questions routing", :no_db do
-  before do
+  around do |example|
+    Rails.application.reload_routes!
+    example.run
+  ensure
     Rails.application.reload_routes!
   end
 
