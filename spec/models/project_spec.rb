@@ -390,7 +390,7 @@ RSpec.describe Project do
       expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
     end
 
-    it "does not bulk seed when the project is already at the PR-attention cap" do
+    it "bulk seeds even when the project has open PRs needing attention" do
       project = create(:project, auto_pick_enabled: false)
       create(:issue,
         project: project,
@@ -398,11 +398,10 @@ RSpec.describe Project do
         github_state: "open",
         paid_state: "in_progress",
         labels: [])
-      project.created_by.settings.update!(max_auto_pick_open_prs: 1)
 
       project.update!(auto_pick_enabled: true)
 
-      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+      expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
     end
 
     it "does not bulk seed when auto_pick is disabled" do

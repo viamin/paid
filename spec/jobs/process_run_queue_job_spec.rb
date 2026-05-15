@@ -11,32 +11,6 @@ RSpec.describe ProcessRunQueueJob do
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
   end
 
-  def create_auto_pick_project(account:, user:)
-    create(:project,
-      account: account,
-      created_by: user,
-      github_token: create(:github_token, account: account, created_by: user),
-      auto_pick_enabled: true)
-  end
-
-  def stub_single_seeded_run(project:, issue:)
-    created_run = nil
-    call_count = 0
-
-    allow(Issues::BulkEnqueueEligible).to receive(:call)
-      .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true) do
-        call_count += 1
-        if call_count == 1
-          created_run = create(:agent_run, :queued, project: project, issue: issue)
-          [ created_run ]
-        else
-          []
-        end
-      end
-
-    -> { created_run }
-  end
-
   describe "#perform" do
     it "starts the oldest queued run when capacity is available" do
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
@@ -302,228 +276,34 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("queued")
     end
 
-    context "when seeding auto-pick work" do
-      it "queues eligible auto-pick runs and starts them" do
-        project = create(:project, auto_pick_enabled: true)
-        issue = create(:issue, project: project)
+    it "does not seed auto-pick work while dequeuing" do
+      project = create(:project, auto_pick_enabled: true)
+      create(:issue, project: project)
 
-        created_run = stub_single_seeded_run(project:, issue:)
+      allow(Issues::BulkEnqueueEligible).to receive(:call)
 
-        described_class.new.perform
+      described_class.new.perform
 
-        expect(Issues::BulkEnqueueEligible).to have_received(:call)
-          .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true).at_least(:once)
-        expect(created_run.call.reload.status).to eq("queued")
-      end
+      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
 
-      it "stops seeding when no new runs are created" do
-        project = create(:project, auto_pick_enabled: true)
+    it "starts a queued manual run alongside running auto-pick work" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 4)
 
-        allow(Issues::BulkEnqueueEligible).to receive(:call)
-          .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true)
-          .and_return([])
+      3.times { create(:agent_run, :running, project: project, trigger_type: "automatic") }
+      manual_run = create(:agent_run, :queued, project: project, trigger_type: "manual")
 
-        described_class.new.perform
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: manual_run.id),
+        hash_including(task_queue: "paid-agent-tasks")
+      ).and_return(workflow_handle)
 
-        expect(Issues::BulkEnqueueEligible).to have_received(:call).once
-      end
+      described_class.new.perform
 
-      it "skips projects with auto_pick_enabled disabled" do
-        create(:project, auto_pick_enabled: false)
-
-        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
-
-        described_class.new.perform
-      end
-
-      it "seeds at most one new auto-pick run per project in each pass" do
-        stub_const("#{described_class}::MAX_SEEDS_PER_PERFORM", 2)
-        account = create(:account)
-        user = create(:user, account: account)
-        user.settings.update!(max_concurrent_runs: 2)
-        first_project = create_auto_pick_project(account: account, user: user)
-        second_project = create_auto_pick_project(account: account, user: user)
-        2.times { create(:issue, project: first_project) }
-        2.times { create(:issue, project: second_project) }
-
-        described_class.new.perform
-
-        expect(first_project.agent_runs.where(auto_pick: true).count).to eq(1)
-        expect(second_project.agent_runs.where(auto_pick: true).count).to eq(1)
-      end
-
-      it "skips auto-pick seeding for projects whose account is paused" do
-        paused_account = create(:account, scheduler_paused_at: Time.current)
-        paused_user = create(:user, account: paused_account)
-        create_auto_pick_project(account: paused_account, user: paused_user)
-
-        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
-
-        described_class.new.perform
-      end
-
-      it "skips auto-pick seeding when open PRs already need attention" do
-        project = create(:project, auto_pick_enabled: true)
-        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
-        create(:issue, :pull_request,
-          project: project,
-          github_state: "open",
-          paid_state: "failed")
-        create(:issue, project: project)
-
-        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
-
-        described_class.new.perform
-      end
-
-      it "still seeds auto-pick work when paid-ready PRs no longer need attention" do
-        project = create(:project, auto_pick_enabled: true)
-        project.created_by.settings.update!(max_auto_pick_open_prs: 1)
-        create(:issue, :pull_request,
-          project: project,
-          github_state: "open",
-          paid_state: "in_progress",
-          labels: [ project.automation_label_name, "paid-ready" ],
-          pr_review_phase: "ready")
-        issue = create(:issue, project: project)
-
-        created_run = stub_single_seeded_run(project:, issue:)
-
-        described_class.new.perform
-
-        expect(Issues::BulkEnqueueEligible).to have_received(:call)
-          .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true).at_least(:once)
-        expect(created_run.call.reload.status).to eq("queued")
-      end
-
-      it "fills idle capacity from one project when no others have pickable work" do
-        project = create(:project, auto_pick_enabled: true)
-        user = project.created_by
-        user.settings.update!(max_concurrent_runs: 4)
-
-        4.times { create(:issue, project: project) }
-
-        expect(temporal_client).to receive(:start_workflow).exactly(4).times.and_return(workflow_handle)
-
-        described_class.new.perform
-
-        expect(project.agent_runs.where(trigger_type: "automatic").count).to eq(4)
-        expect(project.agent_runs.claimed.count).to eq(4)
-        expect(project.agent_runs.unclaimed.count).to eq(0)
-      end
-
-      it "round robins auto-pick runs across projects before giving one project extra capacity" do
-        account = create(:account)
-        user = create(:user, account: account)
-        user.settings.update!(max_concurrent_runs: 4)
-
-        first_project = create_auto_pick_project(account: account, user: user)
-        second_project = create_auto_pick_project(account: account, user: user)
-
-        3.times { create(:issue, project: first_project) }
-        3.times { create(:issue, project: second_project) }
-
-        started_projects = []
-        allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
-          started_projects << AgentRun.find(input[:agent_run_id]).project_id
-          workflow_handle
-        end
-
-        described_class.new.perform
-
-        expected_order = [ first_project, second_project, first_project, second_project ].map(&:id)
-        expect(started_projects).to eq(expected_order)
-        expect(first_project.agent_runs.claimed.count).to eq(2)
-        expect(second_project.agent_runs.claimed.count).to eq(2)
-      end
-
-      it "starts auto-pick runs up to the full user capacity" do
-        project = create(:project, auto_pick_enabled: true)
-        user = project.created_by
-        user.settings.update!(max_concurrent_runs: 4)
-
-        4.times { create(:issue, project: project) }
-
-        described_class.new.perform
-
-        expect(project.agent_runs.claimed.count).to eq(4)
-        expect(project.agent_runs.unclaimed.count).to eq(0)
-      end
-
-      it "seeds every eligible auto-pick issue regardless of capacity" do
-        project = create(:project, auto_pick_enabled: true)
-        user = project.created_by
-        user.settings.update!(max_concurrent_runs: 2)
-
-        10.times { create(:issue, project: project) }
-
-        described_class.new.perform
-
-        expect(project.agent_runs.where(auto_pick: true).count).to eq(10)
-        expect(project.agent_runs.where(auto_pick: true).claimed.count).to eq(2)
-      end
-
-      it "seeds new auto-pick runs even when in-flight auto-pick work already exists" do
-        project = create(:project, auto_pick_enabled: true)
-        user = project.created_by
-        user.settings.update!(max_concurrent_runs: 2)
-
-        create(:agent_run, :running, project: project, trigger_type: "automatic", auto_pick: true)
-        5.times { create(:issue, project: project) }
-
-        described_class.new.perform
-
-        expect(project.agent_runs.where(auto_pick: true).count).to eq(6)
-      end
-
-      it "seeds all eligible issues across multiple projects owned by the same user" do
-        account = create(:account)
-        user = create(:user, account: account)
-        user.settings.update!(max_concurrent_runs: 2)
-
-        first_project = create_auto_pick_project(account: account, user: user)
-        second_project = create_auto_pick_project(account: account, user: user)
-
-        3.times { create(:issue, project: first_project) }
-        3.times { create(:issue, project: second_project) }
-
-        described_class.new.perform
-
-        total_seeded = AgentRun.where(project: [ first_project, second_project ], auto_pick: true).count
-        expect(total_seeded).to eq(6)
-      end
-
-      it "caps seeding at MAX_SEEDS_PER_PERFORM to bound DB load" do
-        stub_const("#{described_class}::MAX_SEEDS_PER_PERFORM", 5)
-        project = create(:project, auto_pick_enabled: true)
-        user = project.created_by
-        user.settings.update!(max_concurrent_runs: 1)
-
-        (described_class::MAX_SEEDS_PER_PERFORM + 3).times { create(:issue, project: project) }
-
-        described_class.new.perform
-
-        expect(project.agent_runs.where(auto_pick: true).count).to eq(described_class::MAX_SEEDS_PER_PERFORM)
-      end
-
-      it "starts a queued manual run alongside running auto-pick work" do
-        project = create(:project)
-        user = project.created_by
-        user.settings.update!(max_concurrent_runs: 4)
-
-        3.times { create(:agent_run, :running, project: project, trigger_type: "automatic") }
-        manual_run = create(:agent_run, :queued, project: project, trigger_type: "manual")
-
-        expect(temporal_client).to receive(:start_workflow).with(
-          Workflows::AgentExecutionWorkflow,
-          hash_including(agent_run_id: manual_run.id),
-          hash_including(task_queue: "paid-agent-tasks")
-        ).and_return(workflow_handle)
-
-        described_class.new.perform
-
-        expect(manual_run.reload.status).to eq("queued")
-      end
+      expect(manual_run.reload.status).to eq("queued")
     end
 
     it "fails a budget-blocked run without consuming capacity or counting as a failure" do
