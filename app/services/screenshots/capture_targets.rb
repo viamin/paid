@@ -6,7 +6,13 @@ module Screenshots
 
     Target = Struct.new(:slug, :path_builder, :requires_auth, keyword_init: true) do
       def path(seed_data)
-        path_builder.respond_to?(:call) ? path_builder.call(seed_data) : path_builder
+        resolved_seed_data = if seed_data.is_a?(Hash)
+          seed_data.transform_keys { |key| key.respond_to?(:to_sym) ? key.to_sym : key }
+        else
+          seed_data
+        end
+
+        path_builder.respond_to?(:call) ? path_builder.call(resolved_seed_data) : path_builder
       end
     end
 
