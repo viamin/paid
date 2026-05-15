@@ -3,6 +3,51 @@
 require "rails_helper"
 
 RSpec.describe Activities::RunAgentActivity, :no_db do
+  describe "#base_prompt_for" do
+    let(:activity) { described_class.new }
+
+    it "uses the public base_prompt interface when no custom prompt is set" do
+      agent_run = Struct.new(:custom_prompt, :base_prompt, keyword_init: true).new(
+        custom_prompt: nil,
+        base_prompt: "Base prompt"
+      )
+
+      expect(activity.send(:base_prompt_for, agent_run)).to eq("Base prompt")
+    end
+
+    it "prefers the custom prompt when present" do
+      agent_run = Struct.new(:custom_prompt, :base_prompt, keyword_init: true).new(
+        custom_prompt: "Custom prompt",
+        base_prompt: "Base prompt"
+      )
+
+      expect(activity.send(:base_prompt_for, agent_run)).to eq("Custom prompt")
+    end
+  end
+
+  describe "#effective_prompt_for" do
+    let(:activity) { described_class.new }
+    let(:agent_run) { Struct.new(:id, keyword_init: true).new(id: 42) }
+
+    it "passes the provider key through to marketplace prompt injection" do
+      allow(MarketplaceEntries::InjectIntoPrompt).to receive(:call).and_return("Rendered prompt")
+
+      prompt = activity.send(
+        :effective_prompt_for,
+        agent_run: agent_run,
+        base_prompt: "Base prompt",
+        provider_key: "codex"
+      )
+
+      expect(prompt).to eq("Rendered prompt")
+      expect(MarketplaceEntries::InjectIntoPrompt).to have_received(:call).with(
+        agent_run: agent_run,
+        prompt: "Base prompt",
+        provider_key: "codex"
+      )
+    end
+  end
+
   describe "#synchronize_marketplace_mcp_for_provider!" do
     let(:activity) { described_class.new }
     let(:attachments_relation) do
@@ -67,6 +112,20 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       )
 
       expect(provisioner).not_to have_received(:provision)
+    end
+
+    it "caches marketplace attachment existence across provider retries" do
+      2.times do
+        activity.send(
+          :synchronize_marketplace_mcp_for_provider!,
+          agent_run: agent_run,
+          provider_candidate: "codex",
+          provider: "codex",
+          user: nil
+        )
+      end
+
+      expect(attachments).to have_received(:exists?).once
     end
   end
 

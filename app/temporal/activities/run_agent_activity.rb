@@ -116,6 +116,7 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
       @agent_run = agent_run
+      @has_marketplace_attachments = nil
       @marketplace_runtime_env = {}
       @marketplace_runtime_preparation = {}
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
@@ -162,6 +163,7 @@ module Activities
           provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
           attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
           provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
+          provider_key = marketplace_provider_key(provider_candidate, provider, user_settings.user)
           heartbeat("provider_attempt", provider, index)
 
           # Skip unavailable providers, tracking rate-limited skips separately
@@ -186,10 +188,8 @@ module Activities
 
           prompt = effective_prompt_for(
             agent_run: agent_run,
-            provider_candidate: provider_candidate,
-            provider: provider,
-            user: user_settings.user,
-            base_prompt: base_prompt
+            base_prompt: base_prompt,
+            provider_key: provider_key
           )
           unless prompt
             raise Temporalio::Error::ApplicationError.new(
@@ -1591,14 +1591,14 @@ module Activities
     end
 
     def base_prompt_for(agent_run)
-      agent_run.custom_prompt.presence || agent_run.send(:prompt_for_goal)
+      agent_run.custom_prompt.presence || agent_run.base_prompt
     end
 
-    def effective_prompt_for(agent_run:, provider_candidate:, provider:, user:, base_prompt:)
+    def effective_prompt_for(agent_run:, base_prompt:, provider_key:)
       MarketplaceEntries::InjectIntoPrompt.call(
         agent_run: agent_run,
         prompt: base_prompt,
-        provider_key: marketplace_provider_key(provider_candidate, provider, user)
+        provider_key: provider_key
       )
     end
 
@@ -1626,8 +1626,7 @@ module Activities
     end
 
     def synchronize_marketplace_mcp_for_provider!(agent_run:, provider_candidate:, provider:, user:)
-      attachments = agent_run.agent_run_marketplace_entries
-      return unless attachments.exists?
+      return unless marketplace_attachments_attached?(agent_run)
 
       provider_key = marketplace_provider_key(provider_candidate, provider, user)
       previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
@@ -1644,6 +1643,12 @@ module Activities
       raise e if e.is_a?(ProviderExecutionError)
 
       raise ProviderExecutionError, "Failed to synchronize marketplace MCP servers for #{provider_key}: #{e.message}"
+    end
+
+    def marketplace_attachments_attached?(agent_run)
+      return @has_marketplace_attachments unless @has_marketplace_attachments.nil?
+
+      @has_marketplace_attachments = agent_run.agent_run_marketplace_entries.exists?
     end
 
     # Builds an execution plan for providers that use the agent-harness

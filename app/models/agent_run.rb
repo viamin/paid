@@ -1613,9 +1613,13 @@ class AgentRun < ApplicationRecord
   def effective_prompt(provider_key: nil)
     MarketplaceEntries::InjectIntoPrompt.call(
       agent_run: self,
-      prompt: custom_prompt.presence || prompt_for_goal,
+      prompt: custom_prompt.presence || base_prompt,
       provider_key: provider_key
     )
+  end
+
+  def base_prompt
+    prompt_for_goal
   end
 
   # Returns the base prompt for the review goal.
