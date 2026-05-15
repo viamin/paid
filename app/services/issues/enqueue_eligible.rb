@@ -6,12 +6,18 @@ module Issues
       new(...).call
     end
 
-    def initialize(issue, project:)
+    def initialize(issue, project:, skip_project_gate: false)
       @issue = issue
       @project = project
+      @skip_project_gate = skip_project_gate
     end
 
     def call
+      unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
+        log_project_deferred
+        return nil
+      end
+
       unless eligible?
         log_ineligible
         return nil
@@ -56,6 +62,7 @@ module Issues
     private
 
     attr_reader :issue, :project
+    attr_reader :skip_project_gate
 
     def eligible?
       Automation::Strategies::AutoPick::DefaultCandidateSource
@@ -87,6 +94,10 @@ module Issues
 
     def log_ineligible
       Rails.logger.info(log_context("enqueue_eligible.ineligible"))
+    end
+
+    def log_project_deferred
+      Rails.logger.info(log_context("enqueue_eligible.project_deferred"))
     end
 
     def log_no_provider

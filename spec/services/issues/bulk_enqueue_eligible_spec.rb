@@ -14,6 +14,7 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
   let(:auto_pick_enabled) { true }
 
   before do
+    allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
       .and_return(scope)
@@ -22,14 +23,20 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
       .and_return(ordered_scope)
   end
 
+  def stub_enqueue(issue, result)
+    allow(Issues::EnqueueEligible).to receive(:call)
+      .with(issue, project: project, skip_project_gate: true)
+      .and_return(result)
+  end
+
   it "queues all eligible issues for a project" do
     first_issue = instance_double(issue_class)
     second_issue = instance_double(issue_class)
     first_run = instance_double(run_class, issue: first_issue, previously_new_record?: true)
     second_run = instance_double(run_class, issue: second_issue, previously_new_record?: true)
     allow(scope).to receive(:find_each).and_yield(first_issue).and_yield(second_issue)
-    allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(first_run)
-    allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(second_run)
+    stub_enqueue(first_issue, first_run)
+    stub_enqueue(second_issue, second_run)
     allow(Rails.logger).to receive(:info)
 
     result = service.call
@@ -38,7 +45,7 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
   end
 
   it "returns early when auto_pick is disabled" do
-    allow(project).to receive(:auto_pick_enabled?).and_return(false)
+    allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false)
 
     expect(Issues::EnqueueEligible).not_to receive(:call)
 
@@ -50,8 +57,8 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     ineligible_issue = instance_double(issue_class)
     eligible_run = instance_double(run_class, issue: eligible_issue, previously_new_record?: true)
     allow(scope).to receive(:find_each).and_yield(eligible_issue).and_yield(ineligible_issue)
-    allow(Issues::EnqueueEligible).to receive(:call).with(eligible_issue, project: project).and_return(eligible_run)
-    allow(Issues::EnqueueEligible).to receive(:call).with(ineligible_issue, project: project).and_return(nil)
+    stub_enqueue(eligible_issue, eligible_run)
+    stub_enqueue(ineligible_issue, nil)
     allow(Rails.logger).to receive(:info)
 
     result = service.call
@@ -66,9 +73,9 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     created_run = instance_double(run_class, issue: first_issue, previously_new_record?: true)
     existing_run = instance_double(run_class, issue: second_issue, previously_new_record?: false)
     allow(scope).to receive(:find_each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
-    allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(created_run)
-    allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(existing_run)
-    allow(Issues::EnqueueEligible).to receive(:call).with(third_issue, project: project).and_return(nil)
+    stub_enqueue(first_issue, created_run)
+    stub_enqueue(second_issue, existing_run)
+    stub_enqueue(third_issue, nil)
     allow(Rails.logger).to receive(:info)
 
     service.call
@@ -103,8 +110,8 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
 
     allow(scope).to receive(:find_each)
     allow(ordered_scope).to receive(:each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
-    allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(existing_run)
-    allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(created_run)
+    stub_enqueue(first_issue, existing_run)
+    stub_enqueue(second_issue, created_run)
     allow(Rails.logger).to receive(:info)
 
     result = limited_service.call
@@ -113,7 +120,8 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     expect(Automation::Strategies::AutoPick::DefaultCandidateSource).to have_received(:ordered_scope).with(project)
     expect(ordered_scope).to have_received(:each)
     expect(scope).not_to have_received(:find_each)
-    expect(Issues::EnqueueEligible).not_to have_received(:call).with(third_issue, project: project)
+    expect(Issues::EnqueueEligible).not_to have_received(:call)
+      .with(third_issue, project: project, skip_project_gate: true)
   end
 
   it "keeps scanning ordered issues until it creates the requested number of runs" do
@@ -125,14 +133,15 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     created_run = instance_double(run_class, issue: third_issue, previously_new_record?: true)
 
     allow(ordered_scope).to receive(:each).and_yield(first_issue).and_yield(second_issue).and_yield(third_issue)
-    allow(Issues::EnqueueEligible).to receive(:call).with(first_issue, project: project).and_return(existing_run)
-    allow(Issues::EnqueueEligible).to receive(:call).with(second_issue, project: project).and_return(nil)
-    allow(Issues::EnqueueEligible).to receive(:call).with(third_issue, project: project).and_return(created_run)
+    stub_enqueue(first_issue, existing_run)
+    stub_enqueue(second_issue, nil)
+    stub_enqueue(third_issue, created_run)
     allow(Rails.logger).to receive(:info)
 
     result = limited_service.call
 
     expect(result).to eq([ existing_run, created_run ])
-    expect(Issues::EnqueueEligible).to have_received(:call).with(third_issue, project: project)
+    expect(Issues::EnqueueEligible).to have_received(:call)
+      .with(third_issue, project: project, skip_project_gate: true)
   end
 end

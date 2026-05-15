@@ -1589,18 +1589,22 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Auto-Pick Issues")
       end
 
-      it "enqueues ProcessRunQueueJob when enabling auto_pick" do
+      it "bulk seeds eligible issues when enabling auto_pick" do
         project = create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
-        expect {
-          post toggle_auto_pick_project_path(project)
-        }.to have_enqueued_job(ProcessRunQueueJob)
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+
+        post toggle_auto_pick_project_path(project)
+
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
       end
 
-      it "does not enqueue ProcessRunQueueJob when disabling auto_pick" do
+      it "does not bulk seed when disabling auto_pick" do
         project = create(:project, account: account, github_token: github_token, auto_pick_enabled: true)
-        expect {
-          post toggle_auto_pick_project_path(project)
-        }.not_to have_enqueued_job(ProcessRunQueueJob)
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+
+        post toggle_auto_pick_project_path(project)
+
+        expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
       end
     end
 
