@@ -251,18 +251,20 @@ module Api
 
       reviews = Array(bot_client.pull_request_reviews(project.full_name, pr_number))
       stale = reviews.select do |r|
-        review_state(r[:state]) == "CHANGES_REQUESTED" &&
-          bot_logins.include?(r[:user_login].to_s.downcase) &&
-          r[:id].to_i < new_review_id
+        review_state(review_attribute(r, :state)) == "CHANGES_REQUESTED" &&
+          bot_logins.include?(review_attribute(r, :user_login).to_s.downcase) &&
+          stale_review?(r, new_review_id)
       end
 
       stale.each do |review|
+        review_id = review_attribute(review, :id).to_i
+
         bot_client.dismiss_pull_request_review(
-          project.full_name, pr_number, review[:id],
+          project.full_name, pr_number, review_id,
           message: STALE_REVIEW_DISMISSAL_MESSAGE
         )
         log_info("github_proxy.dismissed_stale_review",
-          review_id: review[:id],
+          review_id: review_id,
           pr_number: pr_number)
       end
     rescue => e
@@ -307,6 +309,17 @@ module Api
 
     def review_state(value)
       value.to_s.upcase
+    end
+
+    def review_attribute(review, key)
+      review[key] || review[key.to_s]
+    end
+
+    def stale_review?(review, new_review_id)
+      review_id = review_attribute(review, :id).to_i
+      return false if review_id.zero?
+
+      review_id < new_review_id
     end
 
     def log_error(message, error)
