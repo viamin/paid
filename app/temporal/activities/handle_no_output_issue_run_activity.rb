@@ -117,7 +117,12 @@ module Activities
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
     def classify_outcome(agent_run, output_present, agent_summary)
-      return "needs_input" unless output_present
+      unless output_present
+        return "provider_error" if provider_error_output?(agent_summary)
+        return "infrastructure_error" if infrastructure_error_output?(agent_summary)
+
+        return "needs_input"
+      end
 
       # Guard: if the agent produced output but shows no evidence of having
       # actually run (zero iterations AND zero cost), the "output" is likely

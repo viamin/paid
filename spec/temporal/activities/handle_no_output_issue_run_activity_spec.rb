@@ -89,6 +89,30 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("needs_input")
       end
 
+      it "classifies hidden provider quota output as provider_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("provider_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "classifies hidden infrastructure output as infrastructure_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "bwrap: No permissions to create a new namespace")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
