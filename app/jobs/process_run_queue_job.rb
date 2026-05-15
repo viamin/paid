@@ -170,10 +170,11 @@ class ProcessRunQueueJob < ApplicationJob
         break if seeded >= MAX_SEEDS_PER_PERFORM
         next unless project.effective_owner
 
-        run = Issues::AutoPick.new(project).call
-        next unless run
+        runs = Issues::BulkEnqueueEligible.call(project: project)
+        created = runs.count(&:previously_new_record?)
+        next if created.zero?
 
-        seeded += 1
+        seeded += created
         created_in_pass = true
       end
 

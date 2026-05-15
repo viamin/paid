@@ -289,41 +289,42 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project, auto_pick_enabled: true)
         issue = create(:issue, project: project)
 
-        auto_pick_service = instance_double(Issues::AutoPick)
-        allow(Issues::AutoPick).to receive(:new)
-          .with(having_attributes(id: project.id))
-          .and_return(auto_pick_service)
+        created_run = nil
         call_count = 0
-        allow(auto_pick_service).to receive(:call) do
-          call_count += 1
-          call_count == 1 ? create(:agent_run, :queued, project: project, issue: issue) : nil
-        end
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+          .with(project: having_attributes(id: project.id)) do
+            call_count += 1
+            if call_count == 1
+              created_run = create(:agent_run, :queued, project: project, issue: issue)
+              [ created_run ]
+            else
+              []
+            end
+          end
 
         described_class.new.perform
 
-        expect(Issues::AutoPick).to have_received(:new)
-          .with(having_attributes(id: project.id)).at_least(:once)
-        expect(AgentRun.last.status).to eq("queued")
+        expect(Issues::BulkEnqueueEligible).to have_received(:call)
+          .with(project: having_attributes(id: project.id)).at_least(:once)
+        expect(created_run.reload.status).to eq("queued")
       end
 
       it "stops seeding when no new runs are created" do
         project = create(:project, auto_pick_enabled: true)
 
-        auto_pick_service = instance_double(Issues::AutoPick)
-        allow(Issues::AutoPick).to receive(:new)
-          .with(having_attributes(id: project.id))
-          .and_return(auto_pick_service)
-        allow(auto_pick_service).to receive(:call).and_return(nil)
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+          .with(project: having_attributes(id: project.id))
+          .and_return([])
 
         described_class.new.perform
 
-        expect(auto_pick_service).to have_received(:call).once
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).once
       end
 
       it "skips projects with auto_pick_enabled disabled" do
         create(:project, auto_pick_enabled: false)
 
-        expect(Issues::AutoPick).not_to receive(:new)
+        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
 
         described_class.new.perform
       end
@@ -333,7 +334,7 @@ RSpec.describe ProcessRunQueueJob do
         paused_user = create(:user, account: paused_account)
         create_auto_pick_project(account: paused_account, user: paused_user)
 
-        expect(Issues::AutoPick).not_to receive(:new)
+        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
 
         described_class.new.perform
       end
