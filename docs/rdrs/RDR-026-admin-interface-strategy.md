@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: TBD (single implementation issue for Avo operator console), #733 (tenant onboarding flow design)
+- **Related Issues**: #2011 (Avo Operator Console), #2012 (User-Facing Account Administration)
 - **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md) (Multi-Tenancy and RBAC), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation Strategy), [RDR-018](RDR-018-billing-aggregation.md) (Billing Aggregation)
 
 ## Problem Statement

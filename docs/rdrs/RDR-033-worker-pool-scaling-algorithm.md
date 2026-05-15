@@ -1,8 +1,10 @@
-# RDR-024: Worker Pool Scaling Algorithm
+# RDR-033: Worker Pool Scaling Algorithm
 
-**Status**: Accepted
+**Status**: Implemented
 **Date**: 2026-04-17
 **Issue**: #726
+
+> Originally numbered RDR-024. Renumbered to RDR-033 to resolve collision with RDR-024 (Multi-Tenancy Isolation Strategy).
 
 ## Context
 

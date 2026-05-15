@@ -544,7 +544,7 @@ Deliverables:
 
 **Objective**: Lay groundwork for automatic worker scaling.
 
-**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, and `docs/rdrs/RDR-024`.
+**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, and `docs/rdrs/RDR-033`.
 
 Tasks:
 
