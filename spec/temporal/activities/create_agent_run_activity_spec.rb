@@ -348,27 +348,29 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
-    it "re-resolves marketplace attachments on resume when automatic provider selection changes" do
+    it "preserves stored marketplace attachments on resume when automatic provider selection changes" do
       queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
-      preserved_manual_entry, added_entry = seed_provider_switch_resume_entries(queued_run)
+      preserved_manual_entry, preserved_limited_entry = seed_provider_switch_resume_entries(queued_run)
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call).and_call_original
 
       activity.execute(agent_run_id: queued_run.id)
 
       expect(queued_run.provider).to eq(codex_provider)
+      expect(MarketplaceEntries::RerenderForRun).to have_received(:call).with(agent_run: queued_run)
       expect_provider_switch_resume_attachments(
         queued_run: queued_run,
         preserved_manual_entry: preserved_manual_entry,
-        added_entry: added_entry
+        preserved_limited_entry: preserved_limited_entry
       )
     end
 
-    it "fails closed when required marketplace attachments cannot be re-resolved during a provider-switch resume" do
+    it "fails closed when required marketplace attachments cannot be re-rendered during a provider-switch resume" do
       project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
       queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
       attach_required_provider_switching_entry_to(queued_run)
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
-      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "rerender failed")
+      allow(MarketplaceEntries::RerenderForRun).to receive(:call).and_raise(StandardError, "rerender failed")
 
       expect {
         activity.execute(agent_run_id: queued_run.id)
@@ -462,32 +464,32 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
     def seed_provider_switch_resume_entries(queued_run)
       preserved_manual_entry = create_provider_switching_marketplace_entry(name: "Manual skill")
-      dropped_entry = create_provider_limited_marketplace_entry(name: "Claude-only skill", provider_keys: [ "claude" ])
-      added_entry = create_provider_limited_marketplace_entry(
+      preserved_limited_entry = create_provider_limited_marketplace_entry(name: "Claude-only skill", provider_keys: [ "claude" ])
+      create_provider_limited_marketplace_entry(
         name: "Codex automatic skill",
         provider_keys: [ "codex" ],
         rule_mode: "automatic"
       )
-      MarketplaceEntries::AttachToRun.call(agent_run: queued_run, manual_entry_ids: [ preserved_manual_entry.id, dropped_entry.id ])
+      MarketplaceEntries::AttachToRun.call(agent_run: queued_run, manual_entry_ids: [ preserved_manual_entry.id, preserved_limited_entry.id ])
 
-      [ preserved_manual_entry, added_entry ]
+      [ preserved_manual_entry, preserved_limited_entry ]
     end
 
-    def expect_provider_switch_resume_attachments(queued_run:, preserved_manual_entry:, added_entry:)
+    def expect_provider_switch_resume_attachments(queued_run:, preserved_manual_entry:, preserved_limited_entry:)
       attachments = queued_run.reload.agent_run_marketplace_entries.order(:position)
 
-      expect(attachments.pluck(:marketplace_entry_id)).to contain_exactly(preserved_manual_entry.id, added_entry.id)
+      expect(attachments.pluck(:marketplace_entry_id)).to contain_exactly(preserved_manual_entry.id, preserved_limited_entry.id)
 
       preserved_manual_attachment = attachments.find { |attachment| attachment.marketplace_entry_id == preserved_manual_entry.id }
-      automatic_attachment = attachments.find { |attachment| attachment.marketplace_entry_id == added_entry.id }
+      preserved_limited_attachment = attachments.find { |attachment| attachment.marketplace_entry_id == preserved_limited_entry.id }
 
       expect(preserved_manual_attachment.attachment_source).to eq("manual")
-      expect(preserved_manual_attachment.rendered_format).to eq("codex_skill_v1")
+      expect(preserved_manual_attachment.rendered_format).to eq("claude_skill_v1")
       expect(preserved_manual_attachment.rendered_payload).to include(
-        "provider" => "codex",
-        "payload" => include("content" => "Codex instructions")
+        "provider" => "claude",
+        "payload" => include("content" => "Claude instructions")
       )
-      expect(automatic_attachment.attachment_source).to eq("automatic")
+      expect(preserved_limited_attachment.attachment_source).to eq("manual")
     end
 
     def existing_create_pr_bundle_definition
