@@ -43,12 +43,14 @@ RSpec.describe "Projects::PrTemplates" do
       end
 
       it "creates a project-level PR template" do
+        existing_ids = PrTemplate.pluck(:id)
+
         expect {
           post project_pr_templates_path(project), params: valid_params
         }.to change(PrTemplate, :count).by(1)
 
         expect(response).to have_http_status(:created)
-        template = PrTemplate.last
+        template = PrTemplate.where.not(id: existing_ids).sole
         expect(template.name).to eq("standard")
         expect(template.project).to eq(project)
         expect(template.account).to eq(account)

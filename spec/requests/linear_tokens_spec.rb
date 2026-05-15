@@ -90,18 +90,27 @@ RSpec.describe "LinearTokens" do
         end
 
         it "redirects to the token show page" do
+          existing_ids = LinearToken.pluck(:id)
+
           post linear_tokens_path, params: { linear_token: { name: "Test Key", token: valid_token } }
-          expect(response).to redirect_to(linear_token_path(LinearToken.last))
+          created_token = LinearToken.where.not(id: existing_ids).sole
+          expect(response).to redirect_to(linear_token_path(created_token))
         end
 
         it "associates the token with the current account" do
+          existing_ids = LinearToken.pluck(:id)
+
           post linear_tokens_path, params: { linear_token: { name: "Test Key", token: valid_token } }
-          expect(LinearToken.last.account).to eq(account)
+          created_token = LinearToken.where.not(id: existing_ids).sole
+          expect(created_token.account).to eq(account)
         end
 
         it "associates the token with the current user as creator" do
+          existing_ids = LinearToken.pluck(:id)
+
           post linear_tokens_path, params: { linear_token: { name: "Test Key", token: valid_token } }
-          expect(LinearToken.last.created_by).to eq(user)
+          created_token = LinearToken.where.not(id: existing_ids).sole
+          expect(created_token.created_by).to eq(user)
         end
       end
 

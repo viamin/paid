@@ -189,8 +189,11 @@ RSpec.describe "GithubTokens" do
         end
 
         it "creates token with pending validation status" do
+          existing_ids = GithubToken.pluck(:id)
+
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(GithubToken.last.validation_status).to eq("pending")
+          created_token = GithubToken.where.not(id: existing_ids).sole
+          expect(created_token.validation_status).to eq("pending")
         end
 
         it "enqueues a validation job" do
@@ -200,19 +203,28 @@ RSpec.describe "GithubTokens" do
         end
 
         it "redirects to the token show page" do
+          existing_ids = GithubToken.pluck(:id)
+
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to redirect_to(github_token_path(GithubToken.last))
+          created_token = GithubToken.where.not(id: existing_ids).sole
+          expect(response).to redirect_to(github_token_path(created_token))
           expect(flash[:notice]).to include("Validating")
         end
 
         it "associates the token with the current account" do
+          existing_ids = GithubToken.pluck(:id)
+
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(GithubToken.last.account).to eq(account)
+          created_token = GithubToken.where.not(id: existing_ids).sole
+          expect(created_token.account).to eq(account)
         end
 
         it "associates the token with the current user as creator" do
+          existing_ids = GithubToken.pluck(:id)
+
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(GithubToken.last.created_by).to eq(user)
+          created_token = GithubToken.where.not(id: existing_ids).sole
+          expect(created_token.created_by).to eq(user)
         end
       end
 

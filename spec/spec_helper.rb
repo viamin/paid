@@ -1,9 +1,26 @@
 # frozen_string_literal: true
 
+unless defined?(SpecRunMode)
+  module SpecRunMode
+    module_function
+
+    def focused?
+      scoped_args = ARGV.reject { |arg| arg == "--" }
+      return true if scoped_args.intersect?(%w[--only-failures --next-failure -e --example])
+
+      scoped_args.any? { |arg| spec_target?(arg) }
+    end
+
+    def spec_target?(arg)
+      arg.match?(%r{\A(?:\./)?(?:spec|\.ephemeral-tests)/.+(?:\.rb)?(?::\d+(?::\d+)?)?\z})
+    end
+  end
+end
+
 if ENV.fetch("COVERAGE", "true") != "false"
   require "simplecov"
   SimpleCov.start "rails" do
-    minimum_coverage 80
+    minimum_coverage 80 unless SpecRunMode.focused?
     add_filter "/spec/"
     add_filter "/config/"
     add_filter "/vendor/"
