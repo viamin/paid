@@ -782,6 +782,30 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when kilocode glm exits 0 but reports the free model usage limit wording in the message" do
+      let(:provider_record) do
+        create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false)
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode, status: "ok",
+          message: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "classifies the result as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
     context "when a z.ai coding plan provider reports the weekly/monthly limit wording" do
       let(:provider_record) do
         create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false)
@@ -1127,6 +1151,32 @@ RSpec.describe Providers::TestAgent do
         stub_container_smoke_test(
           name: :kilocode,
           status: "error",
+          message: "",
+          output: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10,
+          error_category: nil,
+          check: :smoke_test
+        )
+      end
+
+      it "classifies the output-only failure as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
+    context "when the harness exits 0 and returns failure details only in output" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode,
+          status: "ok",
           message: "",
           output: "Free model usage limit reached. Please try again later.",
           latency_ms: 10,

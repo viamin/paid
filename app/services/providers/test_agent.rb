@@ -288,11 +288,13 @@ module Providers
       message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
       display_message = message || output || "Provider health check returned no message"
+      classification_message = [ message, output ].compact.uniq.join("\n")
 
-      if status == "ok" || smoke_test_output_success?(output || message)
+      if smoke_test_output_success?(output) || smoke_test_output_success?(message)
+        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+      elsif status == "ok" && !smoke_test_failure_output?(classification_message)
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
-        classification_message = [ message, output ].compact.uniq.join("\n")
         translated_message = translate_and_extract_error(classification_message.presence || display_message)
         error_type = resolve_error_type(
           harness_error_type: map_harness_error_category(result[:error_category]),
@@ -309,6 +311,14 @@ module Providers
 
     def smoke_test_output_success?(text)
       text.to_s.strip.match?(/\AOK[.!]?\z/i)
+    end
+
+    def smoke_test_failure_output?(text)
+      message = sanitize_error_message(text)
+      return false if message.empty?
+      return true if message.match?(/Model not found:/i)
+
+      classify_failed_response(message) != :unexpected
     end
 
     def map_harness_error_category(category)
