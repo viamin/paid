@@ -20,9 +20,9 @@ module MarketplaceEntries
 
     def call
       selections = {}
-      attach_rule_based_entries!(selections, mode: "automatic", source: "automatic")
-      attach_rule_based_entries!(selections, mode: "team_default", source: "team_default")
       attach_manual_entries!(selections)
+      attach_rule_based_entries!(selections, mode: "team_default", source: "team_default")
+      attach_rule_based_entries!(selections, mode: "automatic", source: "automatic")
       selections.values
     end
 

@@ -36,7 +36,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments.find { |attachment| attachment.marketplace_entry == manual }.rendered_format).to eq("claude_skill_v1")
   end
 
-  it "preserves automatic precedence over later team-default and manual matches for the same entry" do
+  it "preserves manual precedence over later team-default and automatic matches for the same entry" do
     entry = create_entry(
       name: "Shared skill",
       rule_mode: "automatic",
@@ -49,8 +49,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
-    expect(attachments.first.attachment_source).to eq("automatic")
-    expect(attachments.first.selection_reason).to eq("Matched automatic marketplace rule")
+    expect(attachments.first.attachment_source).to eq("manual")
+    expect(attachments.first.selection_reason).to eq("Selected manually for this run")
   end
 
   it "attaches runtime-config marketplace entries and preserves the rendered payload" do
@@ -107,7 +107,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, auto_attach_enabled: true)
 
-    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
+    expect(attachments.map(&:attachment_source)).to eq([ "team_default", "automatic" ])
   end
 
   it "attaches account-required automatic and team-default entries without manual selection" do
@@ -126,8 +126,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, account_auto_attach_required: true)
 
-    expect(attachments.map(&:marketplace_entry)).to eq([ automatic, team_default ])
-    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
+    expect(attachments.map(&:marketplace_entry)).to eq([ team_default, automatic ])
+    expect(attachments.map(&:attachment_source)).to eq([ "team_default", "automatic" ])
   end
 
   it "does not treat a manual selection as consent for unrelated automatic or team-default entries" do

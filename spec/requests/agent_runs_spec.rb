@@ -1181,7 +1181,7 @@ RSpec.describe "AgentRuns" do
         }.to change(AgentRunMarketplaceEntry, :count).by(2)
 
         run = AgentRun.last
-        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "automatic", "manual" ])
+        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "manual", "automatic" ])
       end
 
       it "shows all active marketplace entries in the run form" do
@@ -1241,8 +1241,8 @@ RSpec.describe "AgentRuns" do
         }.to change(AgentRunMarketplaceEntry, :count).by(2)
 
         attachments = AgentRun.last.agent_run_marketplace_entries.order(:position)
-        expect(attachments.pluck(:marketplace_entry_id)).to eq([ automatic_entry.id, team_default_entry.id ])
-        expect(attachments.pluck(:attachment_source)).to eq([ "automatic", "team_default" ])
+        expect(attachments.pluck(:marketplace_entry_id)).to eq([ team_default_entry.id, automatic_entry.id ])
+        expect(attachments.pluck(:attachment_source)).to eq([ "team_default", "automatic" ])
       end
 
       it "enqueues ProcessRunQueueJob" do
