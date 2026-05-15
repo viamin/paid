@@ -59,13 +59,18 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
     end
 
     context "when the provider changed during resume" do
-      it "re-renders the stored marketplace snapshots for the resolved provider" do
+      it "re-resolves marketplace attachments for the resolved provider" do
         agent_run = build_agent_run(attachments_exist: true)
 
         activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, force: true, account_auto_attach_required: false)
 
-        expect(MarketplaceEntries::AttachToRun).not_to have_received(:call)
-        expect(MarketplaceEntries::RerenderForRun).to have_received(:call).with(agent_run: agent_run)
+        expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
+          agent_run: agent_run,
+          manual_entry_ids: nil,
+          auto_attach_enabled: true,
+          account_auto_attach_required: false
+        )
+        expect(MarketplaceEntries::RerenderForRun).not_to have_received(:call)
       end
     end
 
@@ -96,7 +101,6 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
         activity.send(
           :attach_marketplace_entries,
           agent_run: agent_run,
-          manual_entry_ids: [ 7 ],
           auto_attach_enabled: true,
           account_auto_attach_required: false
         )
@@ -125,20 +129,20 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
         )
       }.to raise_error(StandardError, "render failed")
     end
-  end
 
-  describe "#rerender_marketplace_entries" do
-    let(:activity) { described_class.new }
-    let(:agent_run) { Struct.new(:id).new(42) }
-    let(:logger) { instance_double(Logger, warn: nil) }
-
-    it "re-raises rerender errors when required marketplace attachments must be preserved" do
+    it "re-raises marketplace attachment errors when the run included manual marketplace selections" do
       allow(activity).to receive(:logger).and_return(logger)
-      allow(MarketplaceEntries::RerenderForRun).to receive(:call).and_raise(StandardError, "rerender failed")
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
 
       expect {
-        activity.send(:rerender_marketplace_entries, agent_run: agent_run, required: true)
-      }.to raise_error(StandardError, "rerender failed")
+        activity.send(
+          :attach_marketplace_entries,
+          agent_run: agent_run,
+          manual_entry_ids: [ 7 ],
+          auto_attach_enabled: true,
+          account_auto_attach_required: false
+        )
+      }.to raise_error(StandardError, "render failed")
     end
   end
 end

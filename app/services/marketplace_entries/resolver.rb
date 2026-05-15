@@ -20,9 +20,9 @@ module MarketplaceEntries
 
     def call
       selections = {}
-      attach_automatic_entries!(selections)
-      attach_team_default_entries!(selections)
       attach_manual_entries!(selections)
+      attach_team_default_entries!(selections)
+      attach_automatic_entries!(selections)
       selections.values
     end
 
@@ -31,7 +31,7 @@ module MarketplaceEntries
     def attach_automatic_entries!(selections)
       return unless auto_attach_enabled?
 
-      selected_compatible_entries.each do |entry|
+      compatible_entries.each do |entry|
         next if selections.key?(entry.id)
 
         matching_rule = ordered_enabled_rules(entry).find do |rule|
@@ -51,7 +51,7 @@ module MarketplaceEntries
     def attach_team_default_entries!(selections)
       return unless auto_attach_enabled? || account_auto_attach_required?
 
-      team_default_compatible_entries.each do |entry|
+      compatible_entries.each do |entry|
         next if selections.key?(entry.id)
 
         matching_rule = ordered_enabled_rules(entry).find do |rule|
@@ -106,18 +106,6 @@ module MarketplaceEntries
 
     def compatible_entries
       @compatible_entries ||= prefiltered_candidate_entries.select { |entry| compatible_with_run?(entry.current_version) }
-    end
-
-    def selected_compatible_entries
-      @selected_compatible_entries ||= compatible_entries.select { |entry| effective_manual_entry_ids.include?(entry.id) }
-    end
-
-    def team_default_compatible_entries
-      @team_default_compatible_entries ||= if account_auto_attach_required?
-        compatible_entries
-      else
-        selected_compatible_entries
-      end
     end
 
     def prefiltered_candidate_entries

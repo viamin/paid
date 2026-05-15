@@ -256,7 +256,11 @@ module Activities
 
     def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false, account_auto_attach_required: false)
       attachments = agent_run.agent_run_marketplace_entries
-      return rerender_marketplace_entries(agent_run:, required: required_marketplace_rerender?(attachments, account_auto_attach_required)) if attachments.exists? && force
+      return attach_marketplace_entries(
+        agent_run: agent_run,
+        auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
+        account_auto_attach_required: account_auto_attach_required
+      ) if attachments.exists? && force
       return if attachments.exists?
       return unless should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)
 
@@ -283,13 +287,7 @@ module Activities
       )
     rescue => e
       log_marketplace_attachment_failure(agent_run:, error: e)
-      raise if account_auto_attach_required
-    end
-
-    def required_marketplace_rerender?(attachments, account_auto_attach_required)
-      return false unless account_auto_attach_required
-
-      attachments.exists?(attachment_source: "team_default")
+      raise if account_auto_attach_required || Array(manual_entry_ids).any?
     end
 
     def should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)

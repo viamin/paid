@@ -31,7 +31,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.configuration_bundle).to be_present
     end
 
-    it "does not apply team-default marketplace entries for opted-in users until that entry is explicitly selected" do
+    it "applies team-default marketplace entries for opted-in users" do
       project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
       entry = create(:marketplace_entry, account: project.account, name: "Team default skill")
       version = create(:marketplace_entry_version,
@@ -46,7 +46,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.agent_run_marketplace_entries).to be_empty
+      expect(agent_run.agent_run_marketplace_entries.pluck(:attachment_source)).to eq([ "team_default" ])
     end
 
     it "does not apply team-default marketplace entries by default" do
@@ -66,7 +66,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_run_marketplace_entries).to be_empty
     end
 
-    it "does not apply automatic marketplace entries for opted-in users until that entry is explicitly selected" do
+    it "applies automatic marketplace entries for opted-in users" do
       project.created_by.settings.update!(marketplace_auto_attach_enabled: true)
       entry = create(:marketplace_entry, account: project.account, name: "Automatic skill")
       version = create(:marketplace_entry_version,
@@ -81,7 +81,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.agent_run_marketplace_entries).to be_empty
+      expect(agent_run.agent_run_marketplace_entries.pluck(:attachment_source)).to eq([ "automatic" ])
     end
 
     it "logs and continues when marketplace attachment fails during creation" do
@@ -99,6 +99,14 @@ RSpec.describe Activities::CreateAgentRunActivity do
           error: "render failed"
         )
       )
+    end
+
+    it "fails closed when a manually selected marketplace entry cannot be attached during creation" do
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, marketplace_entry_ids: [ 7 ])
+      }.to raise_error(StandardError, "render failed")
     end
 
     it "returns the project max_execution_seconds in the result" do
@@ -320,29 +328,27 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
-    it "re-renders marketplace attachments on resume when automatic provider selection changes" do
+    it "re-resolves marketplace attachments on resume when automatic provider selection changes" do
       queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
-      entry = create_provider_switching_marketplace_entry
-      MarketplaceEntries::AttachToRun.call(agent_run: queued_run, manual_entry_ids: [ entry.id ])
+      preserved_manual_entry, added_entry = seed_provider_switch_resume_entries(queued_run)
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
 
       activity.execute(agent_run_id: queued_run.id)
 
-      attachment = queued_run.reload.agent_run_marketplace_entries.first
       expect(queued_run.provider).to eq(codex_provider)
-      expect(attachment.rendered_format).to eq("codex_skill_v1")
-      expect(attachment.rendered_payload).to include(
-        "provider" => "codex",
-        "payload" => include("content" => "Codex instructions")
+      expect_provider_switch_resume_attachments(
+        queued_run: queued_run,
+        preserved_manual_entry: preserved_manual_entry,
+        added_entry: added_entry
       )
     end
 
-    it "fails closed when required marketplace attachments cannot be re-rendered during a provider-switch resume" do
+    it "fails closed when required marketplace attachments cannot be re-resolved during a provider-switch resume" do
       project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
       queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
       attach_required_provider_switching_entry_to(queued_run)
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
-      allow(MarketplaceEntries::RerenderForRun).to receive(:call).and_raise(StandardError, "rerender failed")
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "rerender failed")
 
       expect {
         activity.execute(agent_run_id: queued_run.id)
@@ -394,8 +400,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
-    def create_provider_switching_marketplace_entry
-      entry = create(:marketplace_entry, account: project.account, name: "Shared skill")
+    def create_provider_switching_marketplace_entry(name: "Shared skill")
+      entry = create(:marketplace_entry, account: project.account, name: name)
       version = create(:marketplace_entry_version,
         marketplace_entry: entry,
         canonical_artifact: {
@@ -416,6 +422,52 @@ RSpec.describe Activities::CreateAgentRunActivity do
         })
       entry.update!(current_version: version)
       entry
+    end
+
+    def create_provider_limited_marketplace_entry(name:, provider_keys:, rule_mode: nil)
+      entry = create(:marketplace_entry, account: project.account, name: name)
+      version = create(:marketplace_entry_version,
+        marketplace_entry: entry,
+        canonical_artifact: {
+          "attachment_strategy" => "prompt_append",
+          "content" => "#{name} instructions"
+        },
+        compatibility_constraints: {
+          "provider_keys" => provider_keys
+        })
+      entry.update!(current_version: version)
+      create(:marketplace_entry_rule, marketplace_entry: entry, mode: rule_mode, conditions: {}) if rule_mode
+      entry
+    end
+
+    def seed_provider_switch_resume_entries(queued_run)
+      preserved_manual_entry = create_provider_switching_marketplace_entry(name: "Manual skill")
+      dropped_entry = create_provider_limited_marketplace_entry(name: "Claude-only skill", provider_keys: [ "claude" ])
+      added_entry = create_provider_limited_marketplace_entry(
+        name: "Codex automatic skill",
+        provider_keys: [ "codex" ],
+        rule_mode: "automatic"
+      )
+      MarketplaceEntries::AttachToRun.call(agent_run: queued_run, manual_entry_ids: [ preserved_manual_entry.id, dropped_entry.id ])
+
+      [ preserved_manual_entry, added_entry ]
+    end
+
+    def expect_provider_switch_resume_attachments(queued_run:, preserved_manual_entry:, added_entry:)
+      attachments = queued_run.reload.agent_run_marketplace_entries.order(:position)
+
+      expect(attachments.pluck(:marketplace_entry_id)).to contain_exactly(preserved_manual_entry.id, added_entry.id)
+
+      preserved_manual_attachment = attachments.find { |attachment| attachment.marketplace_entry_id == preserved_manual_entry.id }
+      automatic_attachment = attachments.find { |attachment| attachment.marketplace_entry_id == added_entry.id }
+
+      expect(preserved_manual_attachment.attachment_source).to eq("manual")
+      expect(preserved_manual_attachment.rendered_format).to eq("codex_skill_v1")
+      expect(preserved_manual_attachment.rendered_payload).to include(
+        "provider" => "codex",
+        "payload" => include("content" => "Codex instructions")
+      )
+      expect(automatic_attachment.attachment_source).to eq("automatic")
     end
 
     def existing_create_pr_bundle_definition

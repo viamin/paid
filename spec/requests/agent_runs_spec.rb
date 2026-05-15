@@ -1181,7 +1181,7 @@ RSpec.describe "AgentRuns" do
         }.to change(AgentRunMarketplaceEntry, :count).by(2)
 
         run = AgentRun.last
-        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "automatic", "manual" ])
+        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "manual", "automatic" ])
       end
 
       it "shows all active marketplace entries in the run form" do

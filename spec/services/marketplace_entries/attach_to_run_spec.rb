@@ -39,11 +39,11 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     attachments = described_class.call(agent_run:, manual_entry_ids: [ automatic.id, manual.id ], auto_attach_enabled: true, account_auto_attach_required: true)
 
     expect(attachments.map(&:marketplace_entry)).to contain_exactly(automatic, team_default, manual)
-    expect(attachments.map(&:attachment_source)).to contain_exactly("automatic", "team_default", "manual")
-    expect(attachments.last.rendered_format).to eq("claude_skill_v1")
+    expect(attachments.map(&:attachment_source)).to contain_exactly("manual", "team_default", "automatic")
+    expect(attachments.find { |attachment| attachment.marketplace_entry == manual }.rendered_format).to eq("claude_skill_v1")
   end
 
-  it "preserves automatic precedence over later team-default and manual matches for the same entry" do
+  it "preserves manual precedence over later team-default and automatic matches for the same entry" do
     entry = create_entry(
       name: "Shared skill",
       rule_mode: "automatic",
@@ -56,8 +56,8 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
-    expect(attachments.first.attachment_source).to eq("automatic")
-    expect(attachments.first.selection_reason).to eq("Matched automatic marketplace rule")
+    expect(attachments.first.attachment_source).to eq("manual")
+    expect(attachments.first.selection_reason).to eq("Selected manually for this run")
   end
 
   it "attaches runtime-config marketplace entries and preserves the rendered payload" do
@@ -98,7 +98,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments).to be_empty
   end
 
-  it "skips automatic entries until the user selects them and still skips team-default entries unless the account requires them" do
+  it "attaches automatic and team-default entries when the user has enabled automatic attachment" do
     create_entry(
       name: "Automatic skill",
       rule_mode: "automatic",
@@ -114,7 +114,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     attachments = described_class.call(agent_run:, auto_attach_enabled: true)
 
-    expect(attachments).to be_empty
+    expect(attachments.map(&:attachment_source)).to eq([ "team_default", "automatic" ])
   end
 
   it "attaches account-required team-default entries without manual selection" do

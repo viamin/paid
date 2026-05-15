@@ -134,6 +134,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
 
+      - name: Ensure Chromium is available for Cuprite capture
+        run: |
+          if command -v google-chrome >/dev/null || command -v chromium-browser >/dev/null || command -v chromium >/dev/null; then
+            exit 0
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
+
       - name: Locate Chromium-family browser
         run: |
           chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
@@ -142,7 +151,8 @@ jobs:
             echo "Chrome found at ${chrome_path}"
             "$chrome_path" --version
           else
-            echo "No Chromium-family browser found; continuing because Playwright capture uses browserless over CHROME_URL."
+            echo "No Chromium-family browser found after install attempt."
+            exit 1
           fi
 
       - name: Export changed UI files
