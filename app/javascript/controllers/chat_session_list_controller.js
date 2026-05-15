@@ -87,9 +87,12 @@ export default class extends Controller {
     if (!this.hasMobileMenuTarget) return
 
     const open = forceOpen === null ? !this.mobileMenuTarget.classList.contains("hidden") : forceOpen
-    const mobileOpen = open && !this.mediaQuery.matches
+    const isDesktop = this.mediaQuery.matches
+    const mobileOpen = open && !isDesktop
 
-    this.mobileMenuTarget.setAttribute("aria-hidden", (!mobileOpen).toString())
+    // On desktop the sidebar is always visible (lg:block), so never hide it from screen readers.
+    const ariaHidden = isDesktop ? false : !mobileOpen
+    this.mobileMenuTarget.setAttribute("aria-hidden", ariaHidden.toString())
     document.body.classList.toggle("overflow-hidden", mobileOpen)
 
     if (this.hasMobileButtonTarget) {
