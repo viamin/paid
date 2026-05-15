@@ -63,12 +63,8 @@ module Activities
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed ||= stale_issue_result[:changed]
         end
+        seed_eligible_issues(project, eligible_issues, incremental: incremental)
       end
-
-      # Seed queued runs outside suppress_broadcasts so AgentRun after_commit
-      # broadcasts are not suppressed. Deferring avoids per-run UI broadcast
-      # fan-out during the sync block.
-      seed_eligible_issues(project, eligible_issues, incremental: incremental)
 
       if sync_changed
         project.broadcast_project_show_refresh
