@@ -1233,6 +1233,22 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Config Conflicts")
         expect(response.body).to include("driver: cuprite")
       end
+
+      it "wires Enter in settings inputs to the save submitter" do
+        project = create(:project, account: account, github_token: github_token)
+
+        get edit_project_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        form = doc.at_css("form[action='#{project_path(project)}']")
+        save_button = form.at_css("input[data-project-settings-form-target='saveButton']")
+        auto_detect_button = doc.at_css("button[name='screenshot_action'][value='detect']")
+
+        expect(form["data-controller"]).to include("project-settings-form")
+        expect(form["data-action"]).to include("keydown->project-settings-form#submitOnEnter")
+        expect(save_button).to be_present
+        expect(auto_detect_button["type"]).to eq("submit")
+      end
     end
   end
 
