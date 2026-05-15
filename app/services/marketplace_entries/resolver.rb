@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module MarketplaceEntries
   class Resolver
     Result = Struct.new(:entry, :version, :source, :reason, keyword_init: true)
@@ -30,7 +32,7 @@ module MarketplaceEntries
     def attach_automatic_entries!(selections)
       return unless auto_attach_enabled?
 
-      compatible_entries.each do |entry|
+      automatic_compatible_entries.each do |entry|
         matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "automatic" && rule_matches?(rule, entry)
         end
@@ -95,6 +97,29 @@ module MarketplaceEntries
 
     def compatible_entries
       @compatible_entries ||= candidate_entries.select { |entry| compatible_with_run?(entry.current_version) }
+    end
+
+    def automatic_compatible_entries
+      @automatic_compatible_entries ||= begin
+        opted_in_ids = persisted_opted_in_entry_ids
+        compatible_entries.select { |entry| opted_in_ids.include?(entry.id) }
+      end
+    end
+
+    def persisted_opted_in_entry_ids
+      return Set.new unless project.respond_to?(:account_id) && project.account_id.present?
+
+      # Agent runs do not currently persist the initiating user, so the durable
+      # opt-in signal we can enforce today is account-level: an entry must have
+      # been manually attached on a prior run in this account before automatic
+      # rules may start attaching it.
+      @persisted_opted_in_entry_ids ||= AgentRunMarketplaceEntry
+        .joins(:agent_run)
+        .where(agent_runs: { account_id: project.account_id })
+        .where(attachment_source: "manual")
+        .distinct
+        .pluck(:marketplace_entry_id)
+        .to_set
     end
 
     def compatible_with_run?(version)

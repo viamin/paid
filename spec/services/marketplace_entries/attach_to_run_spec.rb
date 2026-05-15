@@ -79,6 +79,27 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments).to be_empty
   end
 
+  it "attaches team defaults without a prior manual opt-in but keeps automatic rules gated" do
+    automatic = create_entry(
+      name: "Automatic skill",
+      rule_mode: "automatic",
+      conditions: { "goals" => [ "create_pr" ] },
+      content: "Automatic instructions"
+    )
+    team_default = create_entry(
+      name: "Team default skill",
+      rule_mode: "team_default",
+      conditions: {},
+      content: "Team default instructions"
+    )
+
+    attachments = described_class.call(agent_run:, auto_attach_enabled: true)
+
+    expect(attachments.map(&:marketplace_entry)).to eq([ team_default ])
+    expect(attachments.map(&:attachment_source)).to eq([ "team_default" ])
+    expect(attachments.map(&:marketplace_entry)).not_to include(automatic)
+  end
+
   it "does not treat a manual selection as consent for unrelated automatic or team-default entries" do
     create_entry(
       name: "Automatic skill",

@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe MarketplaceEntries::Resolver, :no_db do
   it "uses the preloaded rule collection instead of relation scopes" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -12,7 +12,10 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     entry = build_entry
 
     resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
-    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+    allow(resolver).to receive_messages(
+      candidate_entries: [ entry ],
+      persisted_opted_in_entry_ids: Set[entry.id]
+    )
 
     results = resolver.call
 
@@ -35,6 +38,30 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     results = resolver.call
 
     expect(results).to be_empty
+  end
+
+  it "requires a persisted manual opt-in before automatic rules can attach" do
+    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    automatic_entry = build_entry(id: 7)
+    team_default_entry = build_entry(
+      id: 8,
+      rules: [ build_rule(mode: "team_default", enabled: true, position: 0, id: 4, rationale: "Required by the account") ]
+    )
+
+    resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+    allow(resolver).to receive_messages(
+      candidate_entries: [ automatic_entry, team_default_entry ],
+      persisted_opted_in_entry_ids: Set.new
+    )
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ team_default_entry ])
+    expect(results.map(&:source)).to eq([ "team_default" ])
   end
 
   it "does not opt in to automatic or team-default entries just because a manual entry is attached" do
@@ -107,7 +134,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     end
   end
 
-  def build_entry(rules: default_rules)
+  def build_entry(id: 7, rules: default_rules)
     version_struct = Struct.new(:compatibility_constraints, keyword_init: true)
     entry_struct = Struct.new(:id, :current_version, :marketplace_entry_rules, keyword_init: true)
 
@@ -128,7 +155,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     allow(association).to receive(:ordered).and_raise("should use the preloaded association")
 
     entry_struct.new(
-      id: 7,
+      id: id,
       current_version: version_struct.new(compatibility_constraints: {}),
       marketplace_entry_rules: association
     )

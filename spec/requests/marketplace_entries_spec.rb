@@ -101,16 +101,28 @@ RSpec.describe "MarketplaceEntries" do
         .and change(MarketplaceEntryRule, :count).by(2)
     end
 
-    it "rejects entry types that are not wired into the runtime in this iteration" do
+    it "creates plugin entries for non-prompt runtime attachments" do
+      plugin_params = params.deep_dup
+      plugin_params[:marketplace_entry][:entry_type] = "plugin"
+
+      expect {
+        post marketplace_entries_path, params: plugin_params
+      }.to change(MarketplaceEntry, :count).by(1)
+
+      expect(MarketplaceEntry.last.entry_type).to eq("plugin")
+      expect(response).to redirect_to(marketplace_entry_path(MarketplaceEntry.last))
+    end
+
+    it "rejects private team scopes until entry ownership semantics exist" do
       invalid_params = params.deep_dup
-      invalid_params[:marketplace_entry][:entry_type] = "plugin"
+      invalid_params[:marketplace_entry][:team_scope] = "private"
 
       expect {
         post marketplace_entries_path, params: invalid_params
       }.not_to change(MarketplaceEntry, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("Entry type is not included in the list")
+      expect(response.body).to include("Team scope is not included in the list")
     end
   end
 end
