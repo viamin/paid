@@ -20,4 +20,12 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
       "cancel-in-progress" => true
     )
   end
+
+  it "does not fail the workflow when no screenshot files were generated" do
+    upload_step = workflow.fetch("jobs").fetch("capture").fetch("steps").find do |step|
+      step["name"] == "Upload screenshots to artifacts"
+    end
+
+    expect(upload_step.dig("with", "if-no-files-found")).to eq("ignore")
+  end
 end

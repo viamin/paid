@@ -4,7 +4,7 @@ module MarketplaceEntries
   class InjectIntoPrompt
     def initialize(agent_run:, prompt:)
       @agent_run = agent_run
-      @prompt = prompt.to_s
+      @prompt = prompt
     end
 
     def self.call(...)
@@ -45,7 +45,10 @@ module MarketplaceEntries
 
       return @prompt if sections.empty?
 
-      "#{@prompt.rstrip}\n\n# Marketplace Attachments\n\n#{sections.join("\n\n")}"
+      base = @prompt.to_s.rstrip
+      attachments = "# Marketplace Attachments\n\n#{sections.join("\n\n")}"
+
+      base.empty? ? attachments : "#{base}\n\n#{attachments}"
     end
   end
 end
