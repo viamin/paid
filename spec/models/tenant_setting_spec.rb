@@ -7,6 +7,29 @@ RSpec.describe TenantSetting do
     it { is_expected.to belong_to(:account) }
   end
 
+  describe "provider bridge columns" do
+    it "keeps legacy provider-named settings synchronized with runner-named settings" do
+      setting = create(
+        :tenant_setting,
+        runner_preferences: { "model_preferences" => { "claude" => "sonnet" } },
+        allowed_runner_keys: %w[claude cursor]
+      )
+
+      expect(setting.read_attribute(:provider_preferences)).to eq({ "model_preferences" => { "claude" => "sonnet" } })
+      expect(setting.read_attribute(:allowed_provider_keys)).to eq(%w[claude cursor])
+    end
+
+    it "updates runner-named settings when legacy provider setters are used" do
+      setting = build(:tenant_setting)
+
+      setting.provider_preferences = { "api_key_ids" => { "anthropic" => "1" } }
+      setting.allowed_provider_keys = %w[claude cursor]
+
+      expect(setting.runner_preferences).to eq({ "api_key_ids" => { "anthropic" => "1" } })
+      expect(setting.allowed_runner_keys).to eq(%w[claude cursor])
+    end
+  end
+
   describe "validations" do
     it { is_expected.to validate_numericality_of(:max_concurrent_runs).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:max_projects).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(2_147_483_647) }

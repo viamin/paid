@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 class TenantSetting < ApplicationRecord
-  self.ignored_columns = %w[provider_preferences allowed_provider_keys]
-  alias_attribute :provider_preferences, :runner_preferences
-  alias_attribute :allowed_provider_keys, :allowed_runner_keys
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_preferences" => "runner_preferences",
+    "allowed_provider_keys" => "allowed_runner_keys"
+  }.freeze
 
   has_logidze
   PG_INT_MAX = 2_147_483_647
@@ -58,6 +59,7 @@ class TenantSetting < ApplicationRecord
   belongs_to :account
 
   before_validation :normalize_configuration_namespaces
+  before_validation :sync_legacy_provider_bridge_columns
 
   validates :max_concurrent_runs,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
@@ -79,6 +81,17 @@ class TenantSetting < ApplicationRecord
     format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
     allow_nil: true,
     if: -> { self_repo_full_name.present? }
+
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+    define_method(legacy_name) do
+      self[runner_name]
+    end
+
+    define_method("#{legacy_name}=") do |value|
+      self[runner_name] = value
+      self[legacy_name] = value
+    end
+  end
 
   def configuration
     {
@@ -211,6 +224,23 @@ class TenantSetting < ApplicationRecord
   private_class_method :read_worker_setting_from_db
 
   private
+
+  def sync_legacy_provider_bridge_columns
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      runner_value = self[runner_name]
+      legacy_value = self[legacy_name]
+
+      if will_save_change_to_attribute?(runner_name)
+        self[legacy_name] = runner_value
+      elsif will_save_change_to_attribute?(legacy_name)
+        self[runner_name] = legacy_value
+      elsif runner_value.nil? && !legacy_value.nil?
+        self[runner_name] = legacy_value
+      elsif legacy_value.nil? && !runner_value.nil?
+        self[legacy_name] = runner_value
+      end
+    end
+  end
 
   def normalize_configuration_namespaces
     self.runner_preferences = normalize_hash(runner_preferences)

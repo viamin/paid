@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  self.ignored_columns = %w[provider_id provider_switches providers_attempted final_provider]
-  alias_attribute :provider_id, :runner_id
-  alias_attribute :provider_switches, :runner_switches
-  alias_attribute :providers_attempted, :runners_attempted
-  alias_attribute :final_provider, :final_runner
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_id" => "runner_id",
+    "provider_switches" => "runner_switches",
+    "providers_attempted" => "runners_attempted",
+    "final_provider" => "final_runner"
+  }.freeze
 
   attribute :focus, :string, default: "general"
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
@@ -163,6 +164,7 @@ class AgentRun < ApplicationRecord
 
   attr_readonly :mcp_server_snapshot
 
+  before_validation :sync_legacy_provider_bridge_columns
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
@@ -220,6 +222,17 @@ class AgentRun < ApplicationRecord
   validate :runner_belongs_to_project_owner, if: -> { runner.present? }
   validate :has_prompt_source, on: :create
   validate :draft_review_round_tracking_is_consistent
+
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+    define_method(legacy_name) do
+      self[runner_name]
+    end
+
+    define_method("#{legacy_name}=") do |value|
+      self[runner_name] = value
+      self[legacy_name] = value
+    end
+  end
 
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
@@ -1867,6 +1880,23 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def sync_legacy_provider_bridge_columns
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      runner_value = self[runner_name]
+      legacy_value = self[legacy_name]
+
+      if will_save_change_to_attribute?(runner_name)
+        self[legacy_name] = runner_value
+      elsif will_save_change_to_attribute?(legacy_name)
+        self[runner_name] = legacy_value
+      elsif runner_value.nil? && !legacy_value.nil?
+        self[runner_name] = legacy_value
+      elsif legacy_value.nil? && !runner_value.nil?
+        self[legacy_name] = runner_value
+      end
+    end
+  end
 
   # Guard: only fires when these specific columns are being changed, so unrelated
   # saves skip this check. Safe because no code path clears expected_draft_review_count

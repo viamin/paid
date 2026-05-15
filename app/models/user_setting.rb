@@ -1,20 +1,17 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
-  self.ignored_columns = %w[
-    default_agent_provider default_agent_providers_by_goal fallback_providers
-    provider_selection_mode provider_round_robin_state kb_chat_provider
-    kb_chat_fallback_providers kb_embedding_provider kb_embedding_fallback_providers
-  ]
-  alias_attribute :default_agent_provider, :default_agent_runner
-  alias_attribute :default_agent_providers_by_goal, :default_agent_runners_by_goal
-  alias_attribute :fallback_providers, :fallback_runners
-  alias_attribute :provider_selection_mode, :runner_selection_mode
-  alias_attribute :provider_round_robin_state, :runner_round_robin_state
-  alias_attribute :kb_chat_provider, :kb_chat_runner
-  alias_attribute :kb_chat_fallback_providers, :kb_chat_fallback_runners
-  alias_attribute :kb_embedding_provider, :kb_embedding_runner
-  alias_attribute :kb_embedding_fallback_providers, :kb_embedding_fallback_runners
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "default_agent_provider" => "default_agent_runner",
+    "default_agent_providers_by_goal" => "default_agent_runners_by_goal",
+    "fallback_providers" => "fallback_runners",
+    "provider_selection_mode" => "runner_selection_mode",
+    "provider_round_robin_state" => "runner_round_robin_state",
+    "kb_chat_provider" => "kb_chat_runner",
+    "kb_chat_fallback_providers" => "kb_chat_fallback_runners",
+    "kb_embedding_provider" => "kb_embedding_runner",
+    "kb_embedding_fallback_providers" => "kb_embedding_fallback_runners"
+  }.freeze
 
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
@@ -34,9 +31,21 @@ class UserSetting < ApplicationRecord
 
   belongs_to :user
   has_many :runner_states, through: :user
+  before_validation :sync_legacy_provider_bridge_columns
 
   # Theme
   validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
+
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+    define_method(legacy_name) do
+      self[runner_name]
+    end
+
+    define_method("#{legacy_name}=") do |value|
+      self[runner_name] = value
+      self[legacy_name] = value
+    end
+  end
 
   # Polling & Timing
   validates :default_poll_interval_seconds,
@@ -396,6 +405,23 @@ class UserSetting < ApplicationRecord
   end
 
   private
+
+  def sync_legacy_provider_bridge_columns
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      runner_value = self[runner_name]
+      legacy_value = self[legacy_name]
+
+      if will_save_change_to_attribute?(runner_name)
+        self[legacy_name] = runner_value
+      elsif will_save_change_to_attribute?(legacy_name)
+        self[runner_name] = legacy_value
+      elsif runner_value.nil? && !legacy_value.nil?
+        self[runner_name] = legacy_value
+      elsif legacy_value.nil? && !runner_value.nil?
+        self[legacy_name] = runner_value
+      end
+    end
+  end
 
   # Picks a candidate at random, weighted by each runner's weight column.
   # Falls back to uniform random when weights cannot be resolved (e.g. no

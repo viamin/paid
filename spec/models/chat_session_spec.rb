@@ -45,6 +45,26 @@ RSpec.describe ChatSession do
     end
   end
 
+  describe "provider bridge column" do
+    it "keeps the legacy provider_id synchronized with runner_id" do
+      runner = create(:runner, user: create(:user), runner_key: "cursor")
+      session = create(:chat_session, runner: runner)
+
+      expect(session.read_attribute(:provider_id)).to eq(runner.id)
+      expect(session.provider_id).to eq(runner.id)
+    end
+
+    it "updates runner_id when the legacy provider_id setter is used" do
+      runner = create(:runner, user: create(:user), runner_key: "cursor")
+      session = build(:chat_session)
+
+      session.provider_id = runner.id
+
+      expect(session.runner_id).to eq(runner.id)
+      expect(session.read_attribute(:provider_id)).to eq(runner.id)
+    end
+  end
+
   describe "scopes" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }

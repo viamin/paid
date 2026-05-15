@@ -1,9 +1,6 @@
 # frozen_string_literal: true
 
 class ChatSession < ApplicationRecord
-  self.ignored_columns = %w[provider_id]
-  alias_attribute :provider_id, :runner_id
-
   include TenantScoped
 
   STATUSES = %w[active idle closed archived].freeze
@@ -11,6 +8,7 @@ class ChatSession < ApplicationRecord
   IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
+  before_validation :sync_legacy_provider_id
   before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
   after_update_commit :broadcast_sidebar_refresh
@@ -31,6 +29,15 @@ class ChatSession < ApplicationRecord
   validates :external_id, uniqueness: true
   validate :runner_must_belong_to_same_account
   validate :project_must_belong_to_same_account
+
+  def provider_id
+    self[:runner_id]
+  end
+
+  def provider_id=(value)
+    self[:runner_id] = value
+    self[:provider_id] = value
+  end
 
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
@@ -92,6 +99,18 @@ class ChatSession < ApplicationRecord
   end
 
   private
+
+  def sync_legacy_provider_id
+    if will_save_change_to_runner_id?
+      self[:provider_id] = runner_id
+    elsif will_save_change_to_attribute?("provider_id")
+      self[:runner_id] = self[:provider_id]
+    elsif runner_id.nil? && self[:provider_id].present?
+      self[:runner_id] = self[:provider_id]
+    elsif self[:provider_id].nil? && runner_id.present?
+      self[:provider_id] = runner_id
+    end
+  end
 
   def set_external_id
     self.external_id ||= SecureRandom.uuid

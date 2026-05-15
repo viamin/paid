@@ -18,6 +18,39 @@ RSpec.describe AgentRun do
     it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
   end
 
+  describe "provider bridge columns" do
+    let(:runner) { create(:runner, user: create(:user), runner_key: "cursor") }
+
+    it "keeps legacy provider columns synchronized when runner-named attributes change" do
+      agent_run = create(
+        :agent_run,
+        runner: runner,
+        runner_switches: 2,
+        runners_attempted: [ { "runner" => runner.routing_key } ],
+        final_runner: runner.routing_key
+      )
+
+      expect(agent_run.read_attribute(:provider_id)).to eq(runner.id)
+      expect(agent_run.read_attribute(:provider_switches)).to eq(2)
+      expect(agent_run.read_attribute(:providers_attempted)).to eq([ { "runner" => runner.routing_key } ])
+      expect(agent_run.read_attribute(:final_provider)).to eq(runner.routing_key)
+    end
+
+    it "keeps runner-named attributes synchronized when legacy provider setters are used" do
+      agent_run = build(:agent_run)
+
+      agent_run.provider_id = runner.id
+      agent_run.provider_switches = 3
+      agent_run.providers_attempted = [ { "runner" => runner.routing_key } ]
+      agent_run.final_provider = runner.routing_key
+
+      expect(agent_run.runner_id).to eq(runner.id)
+      expect(agent_run.runner_switches).to eq(3)
+      expect(agent_run.runners_attempted).to eq([ { "runner" => runner.routing_key } ])
+      expect(agent_run.final_runner).to eq(runner.routing_key)
+    end
+  end
+
   describe "validations" do
     subject { build(:agent_run) }
 
