@@ -11,19 +11,11 @@ RSpec.describe Avo::ApplicationController, :no_db do
   let(:paths) { Struct.new(:new_user_session_path, :root_path).new("/users/sign_in", "/") }
   let(:controller_context) do
     Class.new do
-      attr_reader :redirect_path, :redirect_options
+      attr_reader :redirect_path, :redirect_options, :warden, :main_app
 
       def initialize(warden:, paths:)
         @warden = warden
-        @paths = paths
-      end
-
-      def warden
-        @warden
-      end
-
-      def main_app
-        @paths
+        @main_app = paths
       end
 
       def redirect_to(path, **options)
