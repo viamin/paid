@@ -24,7 +24,7 @@ RSpec.describe ProcessRunQueueJob do
     call_count = 0
 
     allow(Issues::BulkEnqueueEligible).to receive(:call)
-      .with(project: having_attributes(id: project.id), limit: 1) do
+      .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true) do
         call_count += 1
         if call_count == 1
           created_run = create(:agent_run, :queued, project: project, issue: issue)
@@ -312,7 +312,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(Issues::BulkEnqueueEligible).to have_received(:call)
-          .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
+          .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true).at_least(:once)
         expect(created_run.call.reload.status).to eq("queued")
       end
 
@@ -320,7 +320,7 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project, auto_pick_enabled: true)
 
         allow(Issues::BulkEnqueueEligible).to receive(:call)
-          .with(project: having_attributes(id: project.id), limit: 1)
+          .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true)
           .and_return([])
 
         described_class.new.perform
@@ -392,7 +392,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(Issues::BulkEnqueueEligible).to have_received(:call)
-          .with(project: having_attributes(id: project.id), limit: 1).at_least(:once)
+          .with(project: having_attributes(id: project.id), limit: 1, skip_project_gate: true).at_least(:once)
         expect(created_run.call.reload.status).to eq("queued")
       end
 
