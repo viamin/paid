@@ -70,6 +70,9 @@ application.register("nav-badges", NavBadgesController)
 import NotificationDropdownController from "./notification_dropdown_controller"
 application.register("notification-dropdown", NotificationDropdownController)
 
+import ProviderFormController from "./provider_form_controller"
+application.register("provider-form", ProviderFormController)
+
 import RunnerFormController from "./runner_form_controller"
 application.register("runner-form", RunnerFormController)
 

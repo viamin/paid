@@ -51,7 +51,7 @@ function loadDirectOutboundApiProviderServiceTypes() {
 }
 
 // Provider keys that use dynamic api_provider selection.
-const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode"])
+const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode", "aider"])
 
 export default class extends Controller {
   static values = {
@@ -68,6 +68,7 @@ export default class extends Controller {
     "apiKeyOption",
     "opencodeSettings",
     "kilocodeSettings",
+    "aiderSettings",
     "directOutboundApiProviderSelect",
     "tierSettings",
     "tierSelect",
@@ -118,6 +119,7 @@ export default class extends Controller {
     const isApiKey = this.providerApiKeyMode()
     const showOpenCodeSettings = isApiKey && providerKey === "opencode"
     const showKiloCodeSettings = isApiKey && providerKey === "kilocode"
+    const showAiderSettings = isApiKey && providerKey === "aider"
 
     this.opencodeSettingsTargets.forEach((el) => {
       el.hidden = !showOpenCodeSettings
@@ -130,6 +132,13 @@ export default class extends Controller {
       el.hidden = !showKiloCodeSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showKiloCodeSettings
+      })
+    })
+
+    this.aiderSettingsTargets.forEach((el) => {
+      el.hidden = !showAiderSettings
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !showAiderSettings
       })
     })
 
