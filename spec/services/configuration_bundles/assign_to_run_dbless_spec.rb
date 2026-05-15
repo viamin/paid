@@ -107,6 +107,29 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "accepts string experiment ids in optimizer definitions when the variant map is missing" do
+      optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+      optimized_definition.dig("experiments", "knowledge.token_budget")["configuration_experiment_id"] = experiment.id.to_s
+      selection = optimizer_selection(definition: optimized_definition)
+      assignment_variant = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+      assignment = Struct.new(:configuration_experiment_variant).new(assignment_variant)
+
+      allow(service).to receive_messages(
+        optimizer_selection: selection,
+        active_experiments: [ experiment ]
+      )
+      allow(service).to receive(:optimizer_definition_variant_for).with(experiment, selected_variant.id).and_return(assignment_variant)
+      expect(ConfigurationExperiments::Assign).to receive(:call).with(
+        configuration_experiment: experiment,
+        agent_run: agent_run,
+        variant: assignment_variant
+      ).and_return(assignment)
+      expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+      expect(agent_run).to receive(:update!).with(expected_update_arguments)
+
+      expect(service.call).to eq(bundle)
+    end
+
     it "accepts optimizer definitions that omit optional empty identity keys" do
       setup_optional_identity_keys_omitted_selection
 
