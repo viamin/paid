@@ -62,6 +62,28 @@ RSpec.describe Api::GithubProxyController, :no_db, type: :controller do
       )
     end
 
+    it "prefers submitted_at over review id when deciding staleness" do
+      timed_review = {
+        "id" => 500,
+        "state" => "COMMENTED",
+        "submitted_at" => "2026-05-15T12:00:00Z"
+      }
+      allow(client).to receive(:pull_request_reviews).with("testowner/testrepo", 10).and_return([
+        { id: 1001, user_login: "paid-code-reviewer[bot]", state: "CHANGES_REQUESTED", submitted_at: "2026-05-15T11:00:00Z" },
+        { id: 101, user_login: "paid-code-reviewer[bot]", state: "CHANGES_REQUESTED", submitted_at: "2026-05-15T13:00:00Z" }
+      ])
+
+      controller.send(:dismiss_stale_changes_requested_reviews, path_match, timed_review)
+
+      expect(client).to have_received(:dismiss_pull_request_review).with(
+        "testowner/testrepo", 10, 1001,
+        message: Api::GithubProxyController::STALE_REVIEW_DISMISSAL_MESSAGE
+      ).once
+      expect(client).not_to have_received(:dismiss_pull_request_review).with(
+        "testowner/testrepo", 10, 101, any_args
+      )
+    end
+
     it "skips dismissal when the new review requests changes" do
       allow(client).to receive(:pull_request_reviews)
 

@@ -242,6 +242,7 @@ module Api
       return if path_match[:number].blank? || new_review["id"].blank?
       pr_number = path_match[:number].to_i
       new_review_id = new_review["id"].to_i
+      return if pr_number.zero? || new_review_id.zero?
 
       bot_client = GithubClient.new(
         token: Github::ReviewBotInstallationToken.new(
@@ -253,7 +254,7 @@ module Api
       stale = reviews.select do |r|
         review_state(review_attribute(r, :state)) == "CHANGES_REQUESTED" &&
           bot_logins.include?(review_attribute(r, :user_login).to_s.downcase) &&
-          stale_review?(r, new_review_id)
+          stale_review?(r, new_review)
       end
 
       stale.each do |review|
@@ -315,11 +316,30 @@ module Api
       review[key] || review[key.to_s]
     end
 
-    def stale_review?(review, new_review_id)
+    def stale_review?(review, new_review)
+      review_submitted_at = review_submitted_at(review)
+      new_review_submitted_at = review_submitted_at(new_review)
+      if review_submitted_at && new_review_submitted_at
+        return review_submitted_at < new_review_submitted_at
+      end
+
       review_id = review_attribute(review, :id).to_i
       return false if review_id.zero?
 
+      new_review_id = review_attribute(new_review, :id).to_i
+      return false if new_review_id.zero?
+
       review_id < new_review_id
+    end
+
+    def review_submitted_at(review)
+      value = review_attribute(review, :submitted_at)
+      return value if value.is_a?(Time)
+      return if value.blank?
+
+      Time.zone.parse(value.to_s)
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def log_error(message, error)
