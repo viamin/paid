@@ -221,11 +221,13 @@ module Automation
             effective = project.effective_priority_labels
             issues = Issue.arel_table
             priority_case = Arel::Nodes::Case.new
+            configured_tiers = 0
 
             Project::PRIORITY_TIERS.each_with_index do |tier, index|
               label_name = effective[tier]
               next if label_name.blank?
 
+              configured_tiers += 1
               condition = Arel::Nodes::InfixOperation.new(
                 "@>",
                 issues[:labels],
@@ -233,6 +235,8 @@ module Automation
               )
               priority_case.when(condition).then(index + 1)
             end
+
+            return Arel.sql((Project::PRIORITY_TIERS.size + 1).to_s) if configured_tiers.zero?
 
             priority_case.else(Project::PRIORITY_TIERS.size + 1)
           end
