@@ -155,14 +155,15 @@ module Activities
     end
 
     def classification_text_for(agent_run)
-      raw_output = agent_run.agent_run_logs
+      recent_output = agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
-        .order(:created_at)
+        .order(created_at: :desc)
         .limit(CLASSIFICATION_LOG_LIMIT)
         .pluck(:content)
+        .reverse
         .join("\n")
 
-      normalized_text(raw_output)
+      normalized_text(recent_output)
     end
 
     def provider_error_patterns

@@ -113,6 +113,21 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(issue.reload.paid_state).to eq("failed")
       end
 
+      it "classifies hidden provider output from the most recent logs" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        Activities::HandleNoOutputIssueRunActivity::CLASSIFICATION_LOG_LIMIT.times do |i|
+          agent_run.log!("stdout", "progress line #{i}")
+        end
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("provider_error")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
