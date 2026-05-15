@@ -41,6 +41,14 @@ module Notifications
         }
       end
 
+      def resolve_candidates(scope)
+        Array(scope).select do |issue|
+          issue.github_state != "open" ||
+            !issue.pr_review_phase.in?(%w[ready escalated]) ||
+            synced_with_latest_pr_state?(issue)
+        end
+      end
+
       def synced_with_latest_pr_state?(issue)
         return false if issue.last_pr_scan_at.blank?
         return true if issue.github_updated_at.blank?

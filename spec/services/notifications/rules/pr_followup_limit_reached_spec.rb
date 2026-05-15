@@ -142,6 +142,26 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
     }.not_to change(Notification, :count)
   end
 
+  it "does not resolve an existing notification until the latest GitHub update has been scanned" do
+    issue.update!(github_updated_at: 1.minute.ago, last_pr_scan_at: 5.minutes.ago)
+    create(:notification, account: account, source: "pr_followup_limit_reached", subject: issue)
+    allow(issue).to receive(:pr_progress_state).and_return(
+      PullRequests::ProgressState::Result.new(
+        consecutive_unsuccessful_automatic_runs: 2,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: nil,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: "review",
+        latest_unsuccessful_run_status: "failed"
+      )
+    )
+
+    described_class.call(scope: [ issue ])
+
+    expect(Notification.find_by!(source: "pr_followup_limit_reached", subject: issue).resolved_at).to be_nil
+  end
+
   it "resolves when the PR closes" do
     create(:notification, account: account, source: "pr_followup_limit_reached", subject: issue)
     issue.update!(github_state: "closed")
