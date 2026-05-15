@@ -37,6 +37,7 @@ RSpec.describe ApplicationHelper do
         issue: nil,
         custom_prompt: nil,
         source_pull_request_number: nil,
+        source_pull_request_record: nil,
         pull_request_number: nil,
         pull_request_url: nil,
         created_issue_url: nil,
@@ -246,6 +247,17 @@ RSpec.describe ApplicationHelper do
         expect(result).to include("<a")
       end
 
+      it "shows PR title as tooltip when source_pull_request_record is present" do
+        project = stub_project(github_url: "https://github.com/o/r")
+        pr_record = Struct.new(:title, keyword_init: true).new(title: "Fix login bug")
+        run = stub_run("review_goal?": true, source_pull_request_number: 15,
+          project: project, source_pull_request_record: pr_record)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("PR #15")
+        expect(result).to include("Fix login bug")
+      end
+
       it "shows PR number as text when project is nil" do
         run = stub_run("review_goal?": true, source_pull_request_number: 15, project: nil)
         result = helper.agent_run_context_display(run)
@@ -335,16 +347,14 @@ RSpec.describe ApplicationHelper do
       Struct.new(:id, :goal, keyword_init: true).new(id: id, goal: goal)
     end
 
-    it "renders the goal label with a mobile tooltip wrapper" do
+    it "renders the goal label without a tooltip" do
       run = goal_display_run(id: 42, goal: "create_pr")
       result = helper.agent_run_goal_display(run)
 
       expect(result).to include("PR Creation")
-      expect(result).to include('title="PR Creation"')
-      expect(result).to include('data-controller="tooltip"')
-      expect(result).to include('role="tooltip"')
-      expect(result).to include('aria-label="Show goal details"')
-      expect(result).to include('aria-controls="goal_42"')
+      expect(result).not_to include("title=")
+      expect(result).not_to include('data-controller="tooltip"')
+      expect(result).not_to include('role="tooltip"')
     end
 
     it "titleizes unknown goal values in the rendered label" do

@@ -342,10 +342,7 @@ module ApplicationHelper
     text = agent_run_goal_text(run)
     return tag.span("-", class: "text-gray-400") if text.blank?
 
-    inner = tag.span(text, class: "min-w-0 block truncate", title: text)
-    tooltip_id = "goal_#{run.id || run.object_id}"
-
-    mobile_tooltip_wrapper(inner, text, tooltip_id, aria_label: "Show goal details")
+    tag.span(text, class: "min-w-0 block truncate")
   end
 
   def agent_run_goal_text(run)
@@ -442,7 +439,8 @@ module ApplicationHelper
     if run.source_pull_request_number.present?
       url = source_pull_request_url(run)
       label = "PR ##{run.source_pull_request_number}"
-      github_link_or_text(label, label, url)
+      pr_title = run.source_pull_request_record&.title
+      github_link_or_text(label, label, url, tooltip: pr_title)
     else
       { type: :placeholder }
     end
