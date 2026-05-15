@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-module Runners
+module Providers
   class HarnessExecutionPlan
     Result = Struct.new(:command, :env, :preparation, keyword_init: true)
 
-    def initialize(runner:, prompt:, options: {})
-      @runner = runner
+    def initialize(provider:, prompt:, options: {})
+      @provider = provider
       @prompt = prompt
       @options = options
     end
@@ -15,9 +15,9 @@ module Runners
     end
 
     # Builds an execution plan for a provider identified by its app-level key
-    # (e.g. "claude", "codex") without requiring a Runner model record.
+    # (e.g. "claude", "codex") without requiring a Provider model record.
     # Used for subscription-auth and standard providers that don't have a
-    # per-user Runner entry.
+    # per-user Provider entry.
     #
     # Container-executed providers are always externally sandboxed (the
     # agent Docker container is the sandbox), so this is passed through to
@@ -29,13 +29,9 @@ module Runners
     # @param options [Hash] options forwarded to the harness provider
     # @return [Result] command, env, and preparation
     def self.for_provider_key(provider_key:, prompt:, options: {})
-      harness_key = RunnerSupport.harness_runner_key_for(provider_key).to_sym
-      runner_instance = build_harness_provider(harness_key)
-      Result.new(**runner_instance.plan_execution(prompt: prompt, **options))
-    end
-
-    def self.for_runner_key(runner_key:, prompt:, options: {})
-      for_provider_key(provider_key: runner_key, prompt: prompt, options: options)
+      harness_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
+      provider_instance = build_harness_provider(harness_key)
+      Result.new(**provider_instance.plan_execution(prompt: prompt, **options))
     end
 
     def call
@@ -58,11 +54,11 @@ module Runners
     end
 
     def harness_provider_name
-      RunnerSupport.harness_runner_key_for(@runner.runner_key).to_sym
+      ProviderSupport.harness_provider_key_for(@provider.provider_key).to_sym
     end
 
     def provider_runtime
-      @runner.agent_harness_runner_runtime
+      @provider.agent_harness_provider_runtime
     end
   end
 end

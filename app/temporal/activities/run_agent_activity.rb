@@ -1295,7 +1295,7 @@ module Activities
     end
 
     def runner_runtime_model(runner_candidate, user)
-      runner_entry_for(runner_candidate, user)&.agent_harness_provider_runtime&.model
+      runner_entry_for(runner_candidate, user)&.agent_harness_runner_runtime&.model
     end
 
     def harness_duration(execution_started_at)
@@ -1467,21 +1467,21 @@ module Activities
     # build_command can share the same capture without re-running the
     # harness provider. The boolean discriminator ensures calls with
     # and without a runner_entry that has an
-    # agent_harness_provider_runtime are never conflated. The MCP
+    # agent_harness_runner_runtime are never conflated. The MCP
     # servers are included so that a later execution on the same
     # activity instance with a different MCP setup does not reuse a
     # stale plan.
     def harness_execution_plan_for(runner_key, prompt, runner_entry: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ runner_key, prompt, runner_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
+      cache_key = [ runner_key, prompt, runner_entry&.agent_harness_runner_runtime.present?, @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
       options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
-      @harness_plan_cache[cache_key] = if runner_entry&.agent_harness_provider_runtime
+      @harness_plan_cache[cache_key] = if runner_entry&.agent_harness_runner_runtime
         Runners::HarnessExecutionPlan.call(
-          provider: runner_entry,
+          runner: runner_entry,
           prompt: prompt,
           options: options
         )
@@ -1577,7 +1577,7 @@ module Activities
       return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
 
       @direct_outbound_execution_plan_cache[cache_key] = Runners::HarnessExecutionPlan.call(
-        provider: runner_entry,
+        runner: runner_entry,
         prompt: prompt,
         options: { dangerous_mode: true }
       )

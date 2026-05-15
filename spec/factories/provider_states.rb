@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 FactoryBot.define do
-  factory :runner_state do
+  factory :provider_state do
     user
-    runner_name { "claude" }
+    provider_name { "claude" }
     circuit_state { "closed" }
     failure_count { 0 }
 

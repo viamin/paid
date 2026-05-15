@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-module Runners
-  # Sends a lightweight test prompt to a runner's agent to verify
+module Providers
+  # Sends a lightweight test prompt to a provider's agent to verify
   # installation, authentication, and responsiveness.
   #
   # Delegates smoke-test execution to agent-harness via two paths:
@@ -11,16 +11,16 @@ module Runners
   #    provisioned Docker container via Containers::HarnessExecutor.
   #
   # @example
-  #   result = Runners::TestAgent.call(runner: runner)
+  #   result = Providers::TestAgent.call(provider: provider)
   #   result.success? # => true
   class TestAgent
-    UnsupportedRunnerError = Class.new(StandardError)
+    UnsupportedProviderError = Class.new(StandardError)
     NotContainerExecutableError = Class.new(StandardError)
     MissingProjectContextError = Class.new(StandardError)
 
     TIMEOUT = 60
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
-    # Base authentication patterns shared across all runners. Runner-specific
+    # Base authentication patterns shared across all providers. Provider-specific
     # patterns are sourced from agent-harness error_classification_patterns[:authentication].
     BASE_AUTHENTICATION_ERROR_PATTERNS = [
       /api[_ -]?key/i,
@@ -75,7 +75,7 @@ module Runners
       /Connection refused.*?(?=\n|$)/i
     ].freeze
     ANSI_ESCAPE_PATTERN = /\e\[[0-9;?]*[ -\/]*[@-~]/
-    # Base noisy-error patterns shared across all runners. Runner-specific
+    # Base noisy-error patterns shared across all providers. Provider-specific
     # patterns are sourced from agent-harness noisy_error_patterns.
     BASE_NOISY_ERROR_LINES = [
       /^INFO\s+\d{4}-\d{2}-\d{2}T/i,
@@ -132,10 +132,10 @@ module Runners
       unknown: :unexpected
     }.freeze
 
-    attr_reader :runner
+    attr_reader :provider
 
-    def initialize(runner:, diagnostic_prompt: nil, diagnostic_timeout: nil, diagnostic_success_pattern: nil)
-      @runner = runner
+    def initialize(provider:, diagnostic_prompt: nil, diagnostic_timeout: nil, diagnostic_success_pattern: nil)
+      @provider = provider
       @diagnostic_prompt = diagnostic_prompt
       @diagnostic_timeout = diagnostic_timeout
       @diagnostic_success_pattern = diagnostic_success_pattern
@@ -160,14 +160,14 @@ module Runners
           execute_container_smoke_test
         end
 
-      update_runner_state!(result) unless @diagnostic_prompt
+      update_provider_state!(result) unless @diagnostic_prompt
       result
     rescue NotContainerExecutableError
       Result.new(success: false, error_type: :installation,
-        message: "Runner #{runner.runner_key} CLI is not installed in the agent container")
-    rescue UnsupportedRunnerError
+        message: "Provider #{provider.provider_key} CLI is not installed in the agent container")
+    rescue UnsupportedProviderError
       Result.new(success: false, error_type: :unexpected,
-        message: "Runner #{runner.runner_key} is not recognized by the agent harness")
+        message: "Provider #{provider.provider_key} is not recognized by the agent harness")
     rescue MissingProjectContextError => e
       Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
     rescue Containers::Provision::TimeoutError => e
@@ -176,8 +176,8 @@ module Runners
       Result.new(success: false, error_type: :connection, message: normalize_output_text(e.message))
     rescue StandardError => e
       Rails.logger.error(
-        message: "runners.test_agent.unexpected_error",
-        runner_key: runner&.runner_key,
+        message: "providers.test_agent.unexpected_error",
+        provider_key: provider&.provider_key,
         error_class: e.class.name,
         error_message: normalize_output_text(e.message)
       )
@@ -187,18 +187,18 @@ module Runners
     private
 
     def validate!
-      unless RunnerSupport.supported_runner_key?(runner.runner_key)
-        raise UnsupportedRunnerError, "Unknown runner: #{runner.runner_key}"
+      unless ProviderSupport.supported_provider_key?(provider.provider_key)
+        raise UnsupportedProviderError, "Unknown provider: #{provider.provider_key}"
       end
 
-      unless RunnerSupport.container_executable_runner_key?(runner.runner_key)
+      unless ProviderSupport.container_executable_provider_key?(provider.provider_key)
         raise NotContainerExecutableError,
-          "Runner #{runner.runner_key} is not installed in the agent container"
+          "Provider #{provider.provider_key} is not installed in the agent container"
       end
 
       return if harness_health_check_supported? && !@diagnostic_prompt
 
-      raise MissingProjectContextError, "Add a project before testing runners in the agent container" unless test_project
+      raise MissingProjectContextError, "Add a project before testing providers in the agent container" unless test_project
     end
 
     # Runs a custom prompt against the provider's agent inside a provisioned
@@ -219,7 +219,7 @@ module Runners
           started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           response = AgentHarness.send_message(
             @diagnostic_prompt,
-            provider: harness_runner_key,
+            provider: harness_provider_name,
             executor: executor,
             provider_runtime: container_provider_runtime,
             timeout: timeout
@@ -256,7 +256,7 @@ module Runners
     end
 
     def execute_harness_health_check
-      AgentHarness.check_provider(harness_runner_key, timeout: TIMEOUT)
+      AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
     end
 
     # Runs the agent-harness smoke_test contract inside a provisioned container.
@@ -271,7 +271,7 @@ module Runners
           executor = Containers::HarnessExecutor.new(run)
           prepare_kilocode_config!(run) if kilocode_direct_outbound?
           harness_result = AgentHarness.check_provider(
-            harness_runner_key,
+            harness_provider_name,
             timeout: TIMEOUT,
             executor: executor,
             provider_runtime: container_provider_runtime
@@ -285,7 +285,7 @@ module Runners
 
     def process_harness_result(result)
       status = result[:status].to_s
-      message = normalize_output_text(result[:message]).presence || "Runner health check returned no message"
+      message = normalize_output_text(result[:message]).presence || "Provider health check returned no message"
       output = normalize_output_text(result[:output]).presence
 
       if status == "ok" || smoke_test_output_success?(output || message)
@@ -326,29 +326,29 @@ module Runners
 
     # Builds a ProviderRuntime for container-based smoke tests.
     #
-    # For direct-outbound runners (e.g. opencode with API key), this returns
-    # the runner's full runtime with env/base_url overrides. For kilocode
+    # For direct-outbound providers (e.g. opencode with API key), this returns
+    # the provider's full runtime with env/base_url overrides. For kilocode
     # direct-outbound, this builds a runtime with the upstream API key env
     # (config file bootstrap is handled by prepare_kilocode_config!).
-    # For subscription-auth runners, this strips the Paid proxy credential
+    # For subscription-auth providers, this strips the Paid proxy credential
     # env vars so the CLI uses its mounted local auth state, matching the
     # behavior of RunAgentActivity.subscription_auth_command.
     def container_provider_runtime
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
-      runner.agent_harness_runner_runtime
+      provider.agent_harness_provider_runtime
     end
 
     def subscription_provider_runtime?
-      runner.subscription? &&
-        RunnerSupport.subscription_auth_unset_vars_for(runner.runner_key).any?
+      provider.subscription? &&
+        ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key).any?
     end
 
     def subscription_provider_runtime
-      unset_vars = RunnerSupport.subscription_auth_unset_vars_for(runner.runner_key)
+      unset_vars = ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key)
 
-      if runner.runner_key == "copilot"
+      if provider.provider_key == "copilot"
         unset_vars.delete("COPILOT_GITHUB_TOKEN")
       end
 
@@ -362,11 +362,11 @@ module Runners
     # key from environment variables. This runtime passes the API key through
     # the env var referenced by the generated config.
     def kilocode_provider_runtime
-      AgentHarness::ProviderRuntime.new(env: runner.kilocode_runtime_env)
+      AgentHarness::ProviderRuntime.new(env: provider.kilocode_runtime_env)
     end
 
     def kilocode_direct_outbound?
-      runner.runner_key == "kilocode" && runner.requires_direct_outbound?
+      provider.provider_key == "kilocode" && provider.requires_direct_outbound?
     end
 
     # Writes the kilocode config file into the container before the smoke test.
@@ -376,7 +376,7 @@ module Runners
     # provision.rb ensure block), which removes the config before the
     # subsequent smoke test runs.
     def prepare_kilocode_config!(run)
-      config_json = runner.kilocode_config_json
+      config_json = provider.kilocode_config_json
       run.execute_in_container(
         [ "sh", "-c",
           "mkdir -p /home/agent/.config/kilo && " \
@@ -396,8 +396,8 @@ module Runners
         result = AgentRun.insert_all!(
           [ {
             project_id: test_project.id,
-            runner_id: runner.id,
-            agent_type: Runner.agent_type_for(runner.runner_key),
+            provider_id: provider.id,
+            agent_type: Provider.agent_type_for(provider.provider_key),
             status: "queued",
             temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
             goal: "create_pr",
@@ -415,66 +415,66 @@ module Runners
     end
 
     def test_project
-      @test_project ||= runner.user.created_projects.active.order(:id).first ||
-        runner.user.member_projects.active.order(:id).first
+      @test_project ||= provider.user.created_projects.active.order(:id).first ||
+        provider.user.member_projects.active.order(:id).first
     end
 
     def harness_health_check_supported?
-      return false if runner.subscription?
-      api_key_name = RunnerSupport.proxy_health_check_api_key_for(runner.runner_key)
+      return false if provider.subscription?
+      api_key_name = ProviderSupport.proxy_health_check_api_key_for(provider.provider_key)
       !!(api_key_name && proxy_api_key_configured?(api_key_name))
     end
 
-    def harness_runner_key
-      RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
+    def harness_provider_name
+      ProviderSupport.harness_provider_key_for(provider.provider_key).to_sym
     end
 
-    def proxy_api_key_configured?(runner_key)
-      Rails.application.credentials.dig(:llm, :"#{runner_key}_api_key").present? ||
-        ENV["#{runner_key.to_s.upcase}_API_KEY"].present?
+    def proxy_api_key_configured?(provider_name)
+      Rails.application.credentials.dig(:llm, :"#{provider_name}_api_key").present? ||
+        ENV["#{provider_name.to_s.upcase}_API_KEY"].present?
     end
 
-    def update_runner_state!(result)
+    def update_provider_state!(result)
       if result.success?
-        clear_runner_state_if_healthy!
+        clear_provider_state_if_healthy!
       elsif result.error_type == :rate_limited
         persist_rate_limited_state!(result.message)
       end
     end
 
-    def clear_runner_state_if_healthy!
-      runner_state_names.each do |state_name|
-        runner.user.runner_states.find_by(runner_name: state_name)&.record_success!
+    def clear_provider_state_if_healthy!
+      provider_state_names.each do |provider_name|
+        provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
       end
     end
 
     def persist_rate_limited_state!(message)
       reset_at = rate_limit_reset_at(message)
 
-      runner_state_names.each do |state_name|
-        runner.user.runner_states.find_or_create_by!(runner_name: state_name).mark_rate_limited!(reset_at: reset_at)
+      provider_state_names.each do |provider_name|
+        provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     rescue ActiveRecord::RecordNotUnique
-      runner_state_names.each do |state_name|
-        runner.user.runner_states.find_by!(runner_name: state_name).mark_rate_limited!(reset_at: reset_at)
+      provider_state_names.each do |provider_name|
+        provider.user.provider_states.find_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     end
 
-    def runner_state_names
-      names = [ runner.state_key ]
-      if runner.subscription? || runner.state_key == runner.runner_key
-        names << runner.runner_key
+    def provider_state_names
+      names = [ provider.state_key ]
+      if provider.subscription? || provider.state_key == provider.provider_key
+        names << provider.provider_key
       end
 
       names.uniq
     end
 
     def rate_limit_reset_at(message)
-      RunnerSupport.rate_limit_reset_at(harness_provider, message)
+      ProviderSupport.rate_limit_reset_at(harness_provider, message)
     end
 
     def harness_provider
-      AgentHarness.provider(harness_runner_key)
+      AgentHarness.provider(harness_provider_name)
     end
 
     def classify_failed_response(error_message)
@@ -500,7 +500,7 @@ module Runners
       message = sanitize_error_message(error_message)
       return message if message.empty?
 
-      translated = RunnerSupport.translate_runner_error(runner.runner_key, message)
+      translated = ProviderSupport.translate_provider_error(provider.provider_key, message)
       return translated if translated
 
       extracted = USER_FACING_ERROR_EXTRACTORS.find { |pattern| pattern.match?(message) }
@@ -518,7 +518,7 @@ module Runners
     def fallback_message_from(raw_message)
       lines = raw_message.lines.map(&:strip).reject(&:empty?)
       if lines.any? && lines.all? { |line| line.match?(MCP_SESSION_EVENT_PATTERN) }
-        "Agent started but did not produce a response. Verify the runner credentials and connectivity."
+        "Agent started but did not produce a response. Verify the provider credentials and connectivity."
       else
         lines.first.to_s.strip
       end
@@ -545,7 +545,7 @@ module Runners
 
     include OutputSanitizer
 
-    def translate_known_runner_errors(message)
+    def translate_known_provider_errors(message)
       # Paid-specific translations that reference container/proxy infrastructure
       # take priority since they provide more actionable context than generic
       # agent-harness translations.
@@ -574,12 +574,12 @@ module Runners
 
     def authentication_error_patterns
       @authentication_error_patterns ||= BASE_AUTHENTICATION_ERROR_PATTERNS +
-        RunnerSupport.error_classification_patterns_for(runner.runner_key, :authentication)
+        ProviderSupport.error_classification_patterns_for(provider.provider_key, :authentication)
     end
 
     def noisy_error_line_patterns
       @noisy_error_line_patterns ||= BASE_NOISY_ERROR_LINES +
-        RunnerSupport.aggregated_noisy_error_patterns
+        ProviderSupport.aggregated_noisy_error_patterns
     end
 
     class Result

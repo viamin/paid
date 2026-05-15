@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 FactoryBot.define do
-  factory :runner do
+  factory :provider do
     user
-    runner_key { "cursor" }
+    provider_key { "cursor" }
     auth_type { "subscription" }
     enabled_for_agent_runs { true }
     enabled_for_fallback { true }
