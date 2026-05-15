@@ -1297,6 +1297,26 @@ RSpec.describe "Projects" do
         expect(project.reload.auto_fix_merge_conflicts).to be true
       end
 
+      it "persists max draft review rounds" do
+        project = create(:project, account: account, github_token: github_token, max_draft_review_rounds: 10)
+
+        expect {
+          patch project_path(project), params: { project: { max_draft_review_rounds: 4 } }
+        }.to change { project.reload.max_draft_review_rounds }.from(10).to(4)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "persists zero max draft review rounds" do
+        project = create(:project, account: account, github_token: github_token, max_draft_review_rounds: 10)
+
+        expect {
+          patch project_path(project), params: { project: { max_draft_review_rounds: 0 } }
+        }.to change { project.reload.max_draft_review_rounds }.from(10).to(0)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
       it "persists screenshot settings" do
         project = create(:project, account: account, github_token: github_token)
         patch project_path(project), params: screenshot_update_params
