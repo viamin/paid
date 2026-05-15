@@ -38,11 +38,15 @@ export default class extends Controller {
   }
 
   openModal() {
+    if (!this.hasModalTarget) return
+
     this.closeSidebar()
     this.modalTarget.showModal()
   }
 
   closeModal() {
+    if (!this.hasModalTarget) return
+
     this.modalTarget.close()
   }
 

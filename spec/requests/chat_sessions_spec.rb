@@ -216,10 +216,15 @@ RSpec.describe "ChatSessions" do
         get chat_session_path(chat_session)
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Previous chats")
-        expect(response.body).to include("id=\"chat-sessions-sidebar\"")
-        expect(response.body).to include("data-chat-session-list-target=\"mobileMenu\"")
-        expect(response.body).to include("class=\"hidden lg:block\"")
+        doc = Nokogiri::HTML(response.body)
+        mobile_toggle = doc.at_css("button[data-chat-session-list-target='mobileButton']")
+        sidebar = doc.at_css("#chat-sessions-sidebar[data-chat-session-list-target='mobileMenu']")
+
+        expect(mobile_toggle).to be_present
+        expect(mobile_toggle.text).to include("Previous chats")
+        expect(sidebar).to be_present
+        expect(sidebar["aria-hidden"]).to eq("true")
+        expect(sidebar["class"].split).to include("hidden", "lg:block")
       end
 
       it "defaults wildcard accept show requests to the existing json API" do
