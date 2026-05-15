@@ -72,6 +72,8 @@ module Activities
     ].freeze
 
     def execute(input)
+      @pr_progress_states = {}
+
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
       return { prs_to_trigger: [], automation_results: [], project_missing: true } unless project

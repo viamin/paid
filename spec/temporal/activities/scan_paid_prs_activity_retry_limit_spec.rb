@@ -394,6 +394,106 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "#execute", :no_db do
+    before do
+      stub_const("Project", Class.new do
+        def self.find_by(id:); end
+      end)
+      stub_const("ExecuteCacheProjectStub", Class.new)
+      stub_const("ExecuteCacheIssueStub", Class.new)
+      stub_const("ExecuteCacheAccountStub", Class.new)
+      stub_const("ExecuteCacheTenantSettingStub", Class.new)
+      stub_const("ExecuteCacheGithubTokenStub", Class.new)
+      stub_const("ExecuteCacheGithubClientStub", Class.new)
+      stub_const("ExecuteCacheProgressStateStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) do
+      instance_double(
+        ExecuteCacheProjectStub,
+        id: 7,
+        auto_scan_prs: true,
+        account: account,
+        github_token: github_token
+      )
+    end
+    let(:account) { instance_double(ExecuteCacheAccountStub, id: 11, tenant_setting: tenant_setting) }
+    let(:tenant_setting) { instance_double(ExecuteCacheTenantSettingStub, auto_continue?: true) }
+    let(:github_token) { instance_double(ExecuteCacheGithubTokenStub, client: github_client) }
+    let(:github_client) { instance_double(ExecuteCacheGithubClientStub) }
+    let(:issue) do
+      instance_double(
+        ExecuteCacheIssueStub,
+        id: 123,
+        github_number: 42,
+        project: project
+      )
+    end
+    let(:first_progress_state) do
+      instance_double(
+        ExecuteCacheProgressStateStub,
+        consecutive_unsuccessful_automatic_runs: 1,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: nil,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: nil,
+        latest_unsuccessful_run_status: nil
+      )
+    end
+    let(:second_progress_state) do
+      instance_double(
+        ExecuteCacheProgressStateStub,
+        consecutive_unsuccessful_automatic_runs: 3,
+        consecutive_operational_failures: 2,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: nil,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: "review",
+        latest_unsuccessful_run_status: "failed"
+      )
+    end
+
+    def serialized_state(issue_id:, streak:, operational_streak:, goal:, status:)
+      {
+        issue_id: issue_id,
+        consecutive_unsuccessful_automatic_runs: streak,
+        consecutive_operational_failures: operational_streak,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: nil,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: goal,
+        latest_unsuccessful_run_status: status
+      }
+    end
+
+    it "resets the per-execution progress cache so reused activity instances do not leak stale state" do
+      allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+      allow(activity).to receive(:find_paid_prs).with(project).and_return([ issue ])
+      allow(activity).to receive(:skip_unchanged_pr?).with(project, issue).and_return(false)
+      allow(activity).to receive(:scan_pr).with(project, github_client, issue).and_return(nil)
+      allow(issue).to receive(:update_column).with(:last_pr_scan_at, kind_of(Time))
+      allow(activity).to receive(:pending_review_state).with(issue, nil).and_return(nil)
+      allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
+      allow(activity).to receive(:logger).and_return(instance_double(Logger, info: true, warn: true))
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+        .and_return(first_progress_state, second_progress_state)
+
+      first_result = activity.execute(project_id: project.id)
+      second_result = activity.execute(project_id: project.id)
+
+      expect(first_result[:pr_progress_states]).to eq([
+        serialized_state(issue_id: 123, streak: 1, operational_streak: 0, goal: nil, status: nil)
+      ])
+      expect(second_result[:pr_progress_states]).to eq([
+        serialized_state(issue_id: 123, streak: 3, operational_streak: 2, goal: "review", status: "failed")
+      ])
+      expect(PullRequests::ProgressState).to have_received(:call).twice
+    end
+  end
+
   describe "#maybe_advance_to_ready", :no_db do
     before do
       stub_const("AdvanceReadyProjectStub", Class.new)
