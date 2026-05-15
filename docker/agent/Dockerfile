@@ -150,7 +150,7 @@ RUN SCC_VERSION=3.7.0 \
 
 # Install Claude Code CLI via agent-harness install contract.
 # The install command and post-install binary path are extracted from
-# agent-harness at build time (see scripts/extract-provider-install-contract.rb)
+# agent-harness at build time (see scripts/extract-runner-install-contract.rb)
 # so Paid does not own the Claude-specific install recipe or version pin.
 # The installer places the binary under $HOME/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
@@ -250,7 +250,7 @@ RUN if [ -z "${COPILOT_INSTALL_COMMAND}" ]; then \
 
 # Install Cursor agent CLI via agent-harness install contract.
 # agent-harness owns the artifact URL, checksum pin, and binary metadata.
-# These values are extracted at build time (see scripts/extract-provider-install-contract.rb)
+# These values are extracted at build time (see scripts/extract-runner-install-contract.rb)
 # so Paid does not own the Cursor-specific install recipe or version pin.
 # The artifact tarball is downloaded directly (more stable than the install script
 # whose checksum changes frequently) and verified against agent-harness's pinned SHA256.
