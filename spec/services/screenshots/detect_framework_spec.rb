@@ -152,6 +152,22 @@ RSpec.describe Screenshots::DetectFramework do
 
       expect(paths).to include("/sessions", "/sign_in")
     end
+
+    it "captures mounted engines and wildcard match routes without verbs" do
+      output = <<~ROUTES
+                         Prefix Verb   URI Pattern                 Controller#Action
+                            avo        /admin                      Avo::Engine
+                                       /admin(/*path)(.:format)    operator_console_access#show
+      ROUTES
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      routes = service.send(:parse_rails_routes_output, output)
+
+      expect(routes).to include(
+        a_hash_including("path" => "/admin", "name" => "avo"),
+        a_hash_including("path" => "/admin", "name" => "admin")
+      )
+    end
   end
 
   describe "fallback Rails route parsing", :no_db do

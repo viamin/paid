@@ -447,14 +447,23 @@ module Screenshots
     def parse_rails_routes_output(output)
       output.each_line.filter_map do |line|
         tokens = line.strip.split(/\s+/)
-        next if tokens.length < 3
+        next if tokens.empty?
 
         verb_index = tokens.index { |token| token.match?(/\A(?:GET|POST|PATCH|PUT|DELETE)\z/) }
-        next unless verb_index
-        next unless tokens[verb_index + 1]
+        if verb_index && tokens[verb_index + 1]
+          path = normalized_rails_route_segment(tokens[verb_index + 1])
+          name = verb_index.positive? ? tokens[verb_index - 1] : path
+          next route_hash(path, name, requires_auth: false)
+        end
 
-        path = tokens[verb_index + 1].sub(/\(\.:format\)\z/, "")
-        name = verb_index.positive? ? tokens[verb_index - 1] : path
+        # Mounted engines and wildcard match routes can appear without a verb in
+        # `bin/rails routes` output, e.g. `avo /admin Avo::Engine` or
+        # `/admin(/*path)(.:format) operator_console_access#show`.
+        path_index = tokens.index { |token| token.start_with?("/") }
+        next unless path_index
+
+        path = normalized_rails_route_segment(tokens[path_index])
+        name = path_index.positive? ? tokens[path_index - 1] : route_name_from_path(path)
         route_hash(path, name, requires_auth: false)
       end.then { |routes| unique_routes(routes) }
     end
