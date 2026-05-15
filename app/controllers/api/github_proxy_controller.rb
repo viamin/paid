@@ -83,7 +83,7 @@ module Api
         match_data = endpoint[:pattern].match(path)
         next unless match_data
 
-        return { owner: match_data[:owner], repo: match_data[:repo] }
+        return match_data.named_captures.symbolize_keys
       end
 
       nil
