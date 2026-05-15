@@ -76,8 +76,16 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       end
     end
     let(:provisioner) { instance_double(provisioner_class) }
+    let(:agent_run_class) do
+      Class.new do
+        def self.transaction
+          yield
+        end
+      end
+    end
 
     before do
+      stub_const("AgentRun", agent_run_class)
       allow(MarketplaceEntries::RerenderForRun).to receive(:call) do |agent_run:, provider_key:|
         agent_run.mcp_server_snapshot = [ { "name" => "#{provider_key}-server", "marketplace_attachment" => true } ]
       end

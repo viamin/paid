@@ -284,6 +284,7 @@ module Activities
     rescue => e
       log_marketplace_attachment_failure(agent_run:, error: e)
       raise if account_auto_attach_required || Array(manual_entry_ids).any?
+      raise unless ignorable_marketplace_attachment_error?(e)
     end
 
     def should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)
@@ -300,6 +301,10 @@ module Activities
         error_class: error.class.name,
         error: error.message
       )
+    end
+
+    def ignorable_marketplace_attachment_error?(error)
+      error.is_a?(ActiveRecord::RecordNotFound) || error.is_a?(ActiveRecord::RecordInvalid)
     end
 
     def log_scope_analysis(agent_run, scope_result)

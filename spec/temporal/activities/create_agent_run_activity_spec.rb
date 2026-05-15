@@ -84,8 +84,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_run_marketplace_entries.pluck(:attachment_source)).to eq([ "automatic" ])
     end
 
-    it "logs and continues when marketplace attachment fails during creation" do
-      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+    it "logs and continues when an optional marketplace attachment becomes invalid during creation" do
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
       allow(activity).to receive(:logger).and_return(Rails.logger)
       allow(Rails.logger).to receive(:warn)
 
@@ -95,10 +95,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(Rails.logger).to have_received(:warn).with(
         hash_including(
           message: "agent_execution.marketplace_attachment_failed",
-          error_class: "StandardError",
-          error: "render failed"
+          error_class: "ActiveRecord::RecordNotFound",
+          error: "missing entry"
         )
       )
+    end
+
+    it "fails closed when optional marketplace attachment resolution raises an unexpected error during creation" do
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id)
+      }.to raise_error(StandardError, "render failed")
+      expect(AgentRun.count).to eq(0)
     end
 
     it "fails closed when a manually selected marketplace entry cannot be attached during creation" do
@@ -1018,9 +1027,9 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(queued_run.reload.agent_run_marketplace_entries.pluck(:marketplace_entry_id)).to eq([ entry.id ])
       end
 
-      it "logs and continues when marketplace attachment fails during resume when the account does not require marketplace defaults" do
+      it "logs and continues when an optional marketplace attachment becomes invalid during resume" do
         queued_run = create(:agent_run, :queued, project: project, issue: issue)
-        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "resume failed")
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
         allow(activity).to receive(:logger).and_return(Rails.logger)
         allow(Rails.logger).to receive(:warn)
 
@@ -1031,10 +1040,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
           hash_including(
             message: "agent_execution.marketplace_attachment_failed",
             agent_run_id: queued_run.id,
-            error_class: "StandardError",
-            error: "resume failed"
+            error_class: "ActiveRecord::RecordNotFound",
+            error: "missing entry"
           )
         )
+      end
+
+      it "fails closed when optional marketplace attachment resolution raises an unexpected error during resume" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "resume failed")
+
+        expect {
+          activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+        }.to raise_error(StandardError, "resume failed")
       end
 
       it "does not re-resolve marketplace auto-attach for manual queued runs with no stored attachments" do

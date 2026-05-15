@@ -13,7 +13,6 @@ RSpec.describe Projects::AgentRunsController, :no_db do
         marketplace_auto_attach_enabled_for_current_user?: true,
         marketplace_auto_attach_required_for_current_account?: account_auto_attach_required
       )
-      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
       allow(Rails.logger).to receive(:warn)
     end
 
@@ -21,7 +20,9 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       let(:params_hash) { {} }
       let(:account_auto_attach_required) { false }
 
-      it "logs and continues" do
+      it "logs and continues for ignorable attachment errors" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
+
         expect {
           controller.send(:attach_marketplace_entries, agent_run:)
         }.not_to raise_error
@@ -30,10 +31,18 @@ RSpec.describe Projects::AgentRunsController, :no_db do
           hash_including(
             message: "agent_execution.marketplace_attachment_failed",
             agent_run_id: 42,
-            error_class: "StandardError",
-            error: "render failed"
+            error_class: "ActiveRecord::RecordNotFound",
+            error: "missing entry"
           )
         )
+      end
+
+      it "re-raises unexpected attachment errors" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+        expect {
+          controller.send(:attach_marketplace_entries, agent_run:)
+        }.to raise_error(StandardError, "render failed")
       end
     end
 
@@ -42,6 +51,8 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       let(:account_auto_attach_required) { false }
 
       it "re-raises the attachment error" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
         expect {
           controller.send(:attach_marketplace_entries, agent_run:)
         }.to raise_error(StandardError, "render failed")
@@ -53,6 +64,8 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       let(:account_auto_attach_required) { true }
 
       it "re-raises the attachment error" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
         expect {
           controller.send(:attach_marketplace_entries, agent_run:)
         }.to raise_error(StandardError, "render failed")

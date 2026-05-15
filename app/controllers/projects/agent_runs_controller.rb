@@ -668,6 +668,7 @@ module Projects
         error: e.message
       )
       raise if account_auto_attach_required || Array(manual_entry_ids).any?
+      raise unless ignorable_marketplace_attachment_error?(e)
     end
 
     def marketplace_auto_attach_enabled_for_current_user?
@@ -676,6 +677,10 @@ module Projects
 
     def marketplace_auto_attach_required_for_current_account?
       current_account.tenant_setting&.marketplace_auto_attach_required?
+    end
+
+    def ignorable_marketplace_attachment_error?(error)
+      error.is_a?(ActiveRecord::RecordNotFound) || error.is_a?(ActiveRecord::RecordInvalid)
     end
 
     def enqueue_resume_run(pr)

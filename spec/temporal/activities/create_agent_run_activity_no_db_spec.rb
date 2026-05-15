@@ -93,9 +93,9 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
     let(:agent_run) { Struct.new(:id).new(42) }
     let(:logger) { instance_double(Logger, warn: nil) }
 
-    it "logs and swallows marketplace attachment errors" do
+    it "logs and swallows ignorable marketplace attachment errors" do
       allow(activity).to receive(:logger).and_return(logger)
-      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
 
       expect {
         activity.send(
@@ -110,10 +110,24 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
         hash_including(
           message: "agent_execution.marketplace_attachment_failed",
           agent_run_id: 42,
-          error_class: "StandardError",
-          error: "render failed"
+          error_class: "ActiveRecord::RecordNotFound",
+          error: "missing entry"
         )
       )
+    end
+
+    it "re-raises unexpected marketplace attachment errors even when attachment was optional" do
+      allow(activity).to receive(:logger).and_return(logger)
+      allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
+
+      expect {
+        activity.send(
+          :attach_marketplace_entries,
+          agent_run: agent_run,
+          auto_attach_enabled: true,
+          account_auto_attach_required: false
+        )
+      }.to raise_error(StandardError, "render failed")
     end
 
     it "re-raises marketplace attachment errors when the account requires marketplace defaults" do

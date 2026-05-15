@@ -1631,14 +1631,16 @@ module Activities
       provider_key = marketplace_provider_key(provider_candidate, provider, user)
       previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
 
-      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider_key)
+      AgentRun.transaction do
+        MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider_key)
 
-      return if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
+        next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
 
-      Containers::McpProvisioner.new.provision(
-        agent_run,
-        network: Containers::Provision.network_for(agent_run: agent_run)
-      )
+        Containers::McpProvisioner.new.provision(
+          agent_run,
+          network: Containers::Provision.network_for(agent_run: agent_run)
+        )
+      end
     rescue => e
       raise e if e.is_a?(ProviderExecutionError)
 

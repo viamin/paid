@@ -10,6 +10,9 @@ module MarketplaceEntries
       merged_snapshot = base_snapshot + attachment_snapshots
       return if merged_snapshot == agent_run.mcp_server_snapshot
 
+      # AgentRun keeps the creation-time MCP snapshot immutable via
+      # attr_readonly, so provider-specific rerenders must persist
+      # directly without invoking the standard update path.
       agent_run.update_columns(mcp_server_snapshot: merged_snapshot)
       agent_run.mcp_server_snapshot = merged_snapshot
     end

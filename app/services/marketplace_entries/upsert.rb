@@ -26,7 +26,8 @@ module MarketplaceEntries
       end
 
       true
-    rescue ActiveRecord::RecordInvalid
+    rescue ActiveRecord::RecordInvalid => e
+      entry.errors.merge!(e.record.errors) if e.record != entry
       false
     end
 

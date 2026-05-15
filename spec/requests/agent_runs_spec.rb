@@ -1158,9 +1158,9 @@ RSpec.describe "AgentRuns" do
         expect(attachment.attachment_source).to eq("manual")
       end
 
-      it "logs and continues when optional marketplace attachment fails" do
+      it "logs and continues when optional marketplace attachment lookup fails" do
         allow(Rails.logger).to receive(:warn)
-        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
 
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
@@ -1170,10 +1170,20 @@ RSpec.describe "AgentRuns" do
         expect(Rails.logger).to have_received(:warn).with(
           hash_including(
             message: "agent_execution.marketplace_attachment_failed",
-            error_class: "RuntimeError",
-            error: "boom"
+            error_class: "ActiveRecord::RecordNotFound",
+            error: "missing entry"
           )
         )
+      end
+
+      it "rolls back the agent run when optional marketplace attachment resolution raises an unexpected error" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.to raise_error(RuntimeError, "boom")
+        }.not_to change(AgentRun, :count)
       end
 
       it "rolls back the agent run when a selected marketplace attachment fails" do

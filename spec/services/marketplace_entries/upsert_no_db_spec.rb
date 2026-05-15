@@ -125,4 +125,27 @@ RSpec.describe MarketplaceEntries::Upsert, :no_db do
       expect(entry.errors[:renderers]).to include("must map provider keys to JSON objects (invalid: claude)")
     end
   end
+
+  describe "#call" do
+    it "merges nested validation errors onto the entry" do
+      entry_model = Class.new do
+        include ActiveModel::Model
+      end.new
+      nested_record = Class.new do
+        include ActiveModel::Model
+      end.new
+      nested_record.errors.add(:base, "nested failure")
+      service = described_class.new(entry: entry_model, params: {}, actor: nil)
+
+      allow(service).to receive_messages(
+        assign_metadata: nil,
+        assign_virtual_fields: nil,
+        parsed_artifact_payloads: true
+      )
+      allow(ActiveRecord::Base).to receive(:transaction).and_raise(ActiveRecord::RecordInvalid.new(nested_record))
+
+      expect(service.call).to be(false)
+      expect(entry_model.errors[:base]).to include("nested failure")
+    end
+  end
 end

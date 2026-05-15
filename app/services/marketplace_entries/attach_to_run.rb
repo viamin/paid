@@ -27,7 +27,7 @@ module MarketplaceEntries
       )
 
       AgentRunMarketplaceEntry.transaction do
-        agent_run.agent_run_marketplace_entries.delete_all
+        agent_run.agent_run_marketplace_entries.destroy_all
         results.each_with_index do |result, index|
           rendered = Renderer.call(
             entry: result.entry,
