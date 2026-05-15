@@ -414,16 +414,14 @@ RSpec.describe ApplicationHelper, :no_db do
       Struct.new(:id, :goal, keyword_init: true).new(id: id, goal: goal)
     end
 
-    it "renders the goal label with a mobile tooltip wrapper" do
+    it "renders the goal label without a tooltip" do
       run = goal_display_run(id: 42, goal: "create_pr")
       result = helper.agent_run_goal_display(run)
 
       expect(result).to include("PR Creation")
-      expect(result).to include('title="PR Creation"')
-      expect(result).to include('data-controller="tooltip"')
-      expect(result).to include('role="tooltip"')
-      expect(result).to include('aria-label="Show goal details"')
-      expect(result).to include('aria-controls="goal_42"')
+      expect(result).not_to include("title=")
+      expect(result).not_to include('data-controller="tooltip"')
+      expect(result).not_to include('role="tooltip"')
     end
 
     it "titleizes unknown goal values in the rendered label" do
