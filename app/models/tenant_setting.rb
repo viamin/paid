@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 class TenantSetting < ApplicationRecord
+  include AutoPickSkipLabels
+
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_preferences" => "runner_preferences",
     "allowed_provider_keys" => "allowed_runner_keys"
   }.freeze
-
   has_logidze
   PG_INT_MAX = 2_147_483_647
   BUDGET_TYPES = CostBudget::BUDGET_TYPES

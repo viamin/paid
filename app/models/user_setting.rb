@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
+  include AutoPickSkipLabels
+
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "default_agent_provider" => "default_agent_runner",
     "default_agent_providers_by_goal" => "default_agent_runners_by_goal",
@@ -12,7 +14,6 @@ class UserSetting < ApplicationRecord
     "kb_embedding_provider" => "kb_embedding_runner",
     "kb_embedding_fallback_providers" => "kb_embedding_fallback_runners"
   }.freeze
-
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647

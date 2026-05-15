@@ -1351,6 +1351,48 @@ RSpec.describe "Projects" do
         expect(project.reload.priority_labels).to eq("P1" => "urgent", "P2" => "normal", "P3" => "low")
       end
 
+      it "allows updating project auto-pick skip labels" do
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: {
+          project: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.auto_pick_skip_labels).to eq(%w[planning research])
+      end
+
+      it "allows a project override to skip no labels" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_skip_labels: %w[planning])
+
+        patch project_path(project), params: {
+          project: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: ""
+          }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.auto_pick_skip_labels).to eq([])
+      end
+
+      it "clears the project skip-label override when override is disabled" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_skip_labels: %w[planning])
+
+        patch project_path(project), params: {
+          project: {
+            auto_pick_skip_labels_override: "0",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.auto_pick_skip_labels).to be_nil
+      end
+
       it "rejects blank priority label values" do
         project = create(:project, account: account, github_token: github_token,
           priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" })
