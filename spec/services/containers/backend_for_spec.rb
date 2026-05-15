@@ -17,6 +17,10 @@ RSpec.describe Containers, ".backend_for", :no_db do
     expect(described_class.backend_for("")).to eq(local_backend)
   end
 
+  it "returns the process-global backend when host matches the active backend identifier" do
+    expect(described_class.backend_for("local")).to eq(local_backend)
+  end
+
   it "resolves a registered backend by host name" do
     remote_backend = instance_double(Containers::Backends::Base, identifier: "remote")
     Containers::Backends::Resolver.register(:remote, -> { remote_backend })
