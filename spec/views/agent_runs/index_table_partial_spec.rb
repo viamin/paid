@@ -47,9 +47,8 @@ RSpec.describe "agent_runs/_index_table", :no_db, type: :view do
     allow(view).to receive(:agent_run_context_display).with(run).and_return('<span class="context-label">PR #87</span>'.html_safe)
     allow(view).to receive(:time_ago_in_words).with(run.created_at).and_return("5 minutes")
     allow(view).to receive(:safe_github_url?).and_return(false)
-    view.singleton_class.define_method(:project_agent_run_path) do |_project, _run|
-      "/projects/1/agent_runs/123"
-    end
+    allow(view).to receive(:project_member_path).with(project).and_return("/projects/1")
+    allow(view).to receive(:project_agent_run_member_path).with(project, run).and_return("/projects/1/agent_runs/123")
   end
 
   it "renders a single Provider column and keeps goal content distinct from context" do

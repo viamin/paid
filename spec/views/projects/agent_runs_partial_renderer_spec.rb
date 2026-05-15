@@ -27,9 +27,7 @@ RSpec.describe "projects/_agent_runs", :no_db, type: :view do
         id.to_s
       end
     end)
-    view.singleton_class.define_method(:project_agent_runs_path) do |_project|
-      "/projects/1/agent_runs"
-    end
+    allow(view).to receive(:project_agent_runs_collection_path).with(instance_of(AgentRunsPartialRendererFakeProject)).and_return("/projects/1/agent_runs")
   end
 
   let(:project) { AgentRunsPartialRendererFakeProject.new(id: 1, name: "Platform") }

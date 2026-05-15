@@ -212,6 +212,26 @@ module ApplicationHelper
     false
   end
 
+  def project_member_path(project)
+    app_route_path(:project_path, project)
+  end
+
+  def project_agent_run_member_path(project, agent_run)
+    app_route_path(:project_agent_run_path, project, agent_run)
+  end
+
+  def project_agent_runs_collection_path(project)
+    app_route_path(:project_agent_runs_path, project)
+  end
+
+  def new_project_agent_run_member_path(project)
+    app_route_path(:new_project_agent_run_path, project)
+  end
+
+  def dashboard_cancel_agent_run_member_path(agent_run)
+    app_route_path(:dashboard_cancel_run_path, agent_run)
+  end
+
   # Returns context display info for an agent run as a hash with :type and optional :label, :url, :classes.
   # Centralizes the priority logic so the ERB template only needs a simple case statement.
   def agent_run_context(run)
@@ -584,6 +604,10 @@ module ApplicationHelper
 
   def normalized_provider_identifier(identifier)
     ProviderSupport.provider_key_for_agent_type(identifier)
+  end
+
+  def app_route_path(name, *args, **kwargs)
+    Rails.application.routes.url_helpers.public_send(name, *args, **kwargs)
   end
 
   def safe_return_path?(path)

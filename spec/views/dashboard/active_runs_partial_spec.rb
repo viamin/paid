@@ -39,15 +39,9 @@ RSpec.describe "dashboard/_active_runs", :no_db, type: :view do
     allow(view).to receive(:agent_run_context_display).with(run).and_return('<span class="context-label">Issue #42</span>'.html_safe)
     allow(view).to receive(:agent_run_goal_display).with(run).and_return('<span class="goal-label">PR Creation</span>'.html_safe)
     allow(view).to receive(:agent_run_provider_display).with(run).and_return("Codex")
-    view.singleton_class.define_method(:project_path) do |_project|
-      "/projects/1"
-    end
-    view.singleton_class.define_method(:project_agent_run_path) do |_project, _run|
-      "/projects/1/agent_runs/123"
-    end
-    view.singleton_class.define_method(:dashboard_cancel_run_path) do |_run|
-      "/dashboard/runs/123/cancel"
-    end
+    allow(view).to receive(:project_member_path).with(project).and_return("/projects/1")
+    allow(view).to receive(:project_agent_run_member_path).with(project, run).and_return("/projects/1/agent_runs/123")
+    allow(view).to receive(:dashboard_cancel_agent_run_member_path).with(run).and_return("/dashboard/runs/123/cancel")
   end
 
   it "renders the priority column and shared helper output" do
