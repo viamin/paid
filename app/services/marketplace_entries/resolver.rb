@@ -29,7 +29,7 @@ module MarketplaceEntries
     private
 
     def attach_rule_based_entries!(selections, mode:, source:)
-      return unless auto_attach_enabled? || account_auto_attach_required?
+      return unless attach_rule_mode?(mode)
 
       compatible_entries.each do |entry|
         next if selections.key?(entry.id)
@@ -145,6 +145,12 @@ module MarketplaceEntries
 
     def account_auto_attach_required?
       account_auto_attach_required
+    end
+
+    def attach_rule_mode?(mode)
+      return account_auto_attach_required? if mode == "team_default"
+
+      auto_attach_enabled? || account_auto_attach_required?
     end
   end
 end

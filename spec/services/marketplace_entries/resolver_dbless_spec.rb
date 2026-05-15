@@ -37,7 +37,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results).to be_empty
   end
 
-  it "attaches automatic and team-default entries for opted-in users" do
+  it "attaches automatic entries but not team-default entries for opted-in users" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -54,8 +54,8 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     results = resolver.call
 
-    expect(results.map(&:entry)).to eq([ automatic_entry, team_default_entry ])
-    expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
+    expect(results.map(&:entry)).to eq([ automatic_entry ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
   end
 
   it "upgrades to manual when the user explicitly selects an automatically matched entry" do
