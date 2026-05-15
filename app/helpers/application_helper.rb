@@ -611,6 +611,10 @@ module ApplicationHelper
   end
 
   def app_route_path(name, *args, **kwargs)
+    public_send(name, *args, **kwargs)
+  rescue NoMethodError => error
+    raise unless error.name == name
+
     Rails.application.routes.url_helpers.public_send(name, *args, **kwargs)
   end
 
