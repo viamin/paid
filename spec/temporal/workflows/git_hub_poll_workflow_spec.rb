@@ -132,7 +132,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         issue_ids: [ 10, 11 ],
         pr_scan_result: {
           pr_issue_ids: [ 11 ],
-          pending_review_states: [ { issue_id: 11, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ]
+          pending_review_states: [ { issue_id: 11, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ],
+          pr_progress_states: [ { issue_id: 11, consecutive_unsuccessful_automatic_runs: 2 } ]
         })
 
       expect(workflow).to have_received(:run_activity).with(
@@ -141,7 +142,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           project_id: 1,
           issue_ids: [ 10, 11 ],
           pr_issue_ids: [ 11 ],
-          pending_review_states: [ { issue_id: 11, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ]
+          pending_review_states: [ { issue_id: 11, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ],
+          pr_progress_states: [ { issue_id: 11, consecutive_unsuccessful_automatic_runs: 2 } ]
         },
         timeout: 60
       )

@@ -13,7 +13,10 @@ module Activities
 
       Notifications::Rules::RepeatedNoChanges.call(scope: issue_scope)
       Notifications::Rules::StalledDraftPr.call(scope: pr_scope)
-      Notifications::Rules::PrFollowupLimitReached.call(scope: pr_scope)
+      Notifications::Rules::PrFollowupLimitReached.call(
+        scope: pr_scope,
+        progress_states: Array(input[:pr_progress_states])
+      )
       Notifications::Rules::ScannerWedgedOnPendingReview.call(scope: Array(input[:pending_review_states]))
 
       { evaluated: true }

@@ -18,12 +18,16 @@ RSpec.describe Activities::EvaluateNotificationRulesActivity do
       project_id: project.id,
       issue_ids: [ issue.id, pr.id ],
       pr_issue_ids: [ pr.id ],
-      pending_review_states: [ { issue_id: pr.id, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ]
+      pending_review_states: [ { issue_id: pr.id, pending_review: true, requested_bot: "copilot", pr_phase: "draft" } ],
+      pr_progress_states: [ { issue_id: pr.id, consecutive_unsuccessful_automatic_runs: 1 } ]
     )
 
     expect(Notifications::Rules::RepeatedNoChanges).to have_received(:call)
     expect(Notifications::Rules::StalledDraftPr).to have_received(:call)
-    expect(Notifications::Rules::PrFollowupLimitReached).to have_received(:call)
+    expect(Notifications::Rules::PrFollowupLimitReached).to have_received(:call).with(
+      scope: kind_of(ActiveRecord::Relation),
+      progress_states: [ { issue_id: pr.id, consecutive_unsuccessful_automatic_runs: 1 } ]
+    )
     expect(Notifications::Rules::ScannerWedgedOnPendingReview).to have_received(:call)
   end
 end

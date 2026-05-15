@@ -304,7 +304,8 @@ module Workflows
         project_id: project_id,
         issue_ids: issue_ids,
         pr_issue_ids: Array(pr_scan_result&.dig(:pr_issue_ids)),
-        pending_review_states: Array(pr_scan_result&.dig(:pending_review_states))
+        pending_review_states: Array(pr_scan_result&.dig(:pending_review_states)),
+        pr_progress_states: Array(pr_scan_result&.dig(:pr_progress_states))
       }, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise

@@ -5,7 +5,13 @@ module Notifications
     class PrFollowupLimitReached < Rule
       SOURCE = "pr_followup_limit_reached"
 
+      def initialize(progress_states: nil)
+        @progress_states = index_progress_states(progress_states)
+      end
+
       private
+
+      attr_reader :progress_states
 
       def source = SOURCE
 
@@ -15,12 +21,12 @@ module Notifications
             issue.github_state == "open" &&
             issue.pr_review_phase.in?(%w[ready escalated]) &&
             synced_with_latest_pr_state?(issue) &&
-            issue.pr_escalation_worthy?(limit: issue.project.max_pr_followup_runs)
+            progress_state_for(issue).escalation_worthy?(limit: issue.project.max_pr_followup_runs)
         end
       end
 
       def build(issue)
-        count = issue.consecutive_unsuccessful_pr_runs
+        count = progress_state_for(issue).consecutive_unsuccessful_automatic_runs
         limit = issue.project.max_pr_followup_runs
         {
           severity: :info,
@@ -37,6 +43,29 @@ module Notifications
 
       def synced_with_latest_pr_state?(issue)
         issue.last_pr_scan_at.present? && issue.last_pr_scan_at > issue.github_updated_at
+      end
+
+      def progress_state_for(issue)
+        progress_states.fetch(issue.id) { issue.pr_progress_state }
+      end
+
+      def index_progress_states(progress_states)
+        Array(progress_states).each_with_object({}) do |entry, indexed|
+          next unless entry.is_a?(Hash)
+
+          issue_id = entry[:issue_id] || entry["issue_id"]
+          next if issue_id.blank?
+
+          indexed[issue_id] = PullRequests::ProgressState::Result.new(
+            consecutive_unsuccessful_automatic_runs: entry[:consecutive_unsuccessful_automatic_runs] || entry["consecutive_unsuccessful_automatic_runs"] || 0,
+            consecutive_operational_failures: entry[:consecutive_operational_failures] || entry["consecutive_operational_failures"] || 0,
+            last_meaningful_progress_at: entry[:last_meaningful_progress_at] || entry["last_meaningful_progress_at"],
+            latest_automatic_run_at: entry[:latest_automatic_run_at] || entry["latest_automatic_run_at"],
+            latest_unsuccessful_run_at: entry[:latest_unsuccessful_run_at] || entry["latest_unsuccessful_run_at"],
+            latest_unsuccessful_run_goal: entry[:latest_unsuccessful_run_goal] || entry["latest_unsuccessful_run_goal"],
+            latest_unsuccessful_run_status: entry[:latest_unsuccessful_run_status] || entry["latest_unsuccessful_run_status"]
+          )
+        end
       end
     end
   end

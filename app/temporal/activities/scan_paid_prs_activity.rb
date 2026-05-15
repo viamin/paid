@@ -87,6 +87,7 @@ module Activities
       prs_to_trigger = []
       automation_results = []
       pending_review_states = []
+      progress_states = []
       paid_prs.each do |issue|
         if skip_unchanged_pr?(project, issue)
           if merge_conflict_rescan_needed?(project, issue)
@@ -95,6 +96,7 @@ module Activities
               scanned_count += 1
               issue.update_column(:last_pr_scan_at, Time.current)
               pending_review_states << pending_review_state(issue, result)
+              progress_states << serialized_pr_progress_state(project, issue)
               collect_scan_result(issue, result, prs_to_trigger, automation_results,
                 explicit_pr_decisions:,
                 lifecycle: explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil)
@@ -118,6 +120,7 @@ module Activities
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
+        progress_states << serialized_pr_progress_state(project, issue)
         if result
           collect_scan_result(issue, result, prs_to_trigger, automation_results,
             explicit_pr_decisions:,
@@ -148,7 +151,8 @@ module Activities
         prs_to_trigger: prs_to_trigger,
         automation_results: automation_results,
         pr_issue_ids: paid_prs.map(&:id),
-        pending_review_states: pending_review_states.compact
+        pending_review_states: pending_review_states.compact,
+        pr_progress_states: progress_states
       }
     end
 
@@ -1008,6 +1012,21 @@ module Activities
       )
       cache[:default] ||= cache[cache_key] if current_head_sha.present?
       cache[cache_key]
+    end
+
+    def serialized_pr_progress_state(project, issue)
+      progress_state = pr_progress_state(project, issue)
+
+      {
+        issue_id: issue.id,
+        consecutive_unsuccessful_automatic_runs: progress_state.consecutive_unsuccessful_automatic_runs,
+        consecutive_operational_failures: progress_state.consecutive_operational_failures,
+        last_meaningful_progress_at: progress_state.last_meaningful_progress_at,
+        latest_automatic_run_at: progress_state.latest_automatic_run_at,
+        latest_unsuccessful_run_at: progress_state.latest_unsuccessful_run_at,
+        latest_unsuccessful_run_goal: progress_state.latest_unsuccessful_run_goal,
+        latest_unsuccessful_run_status: progress_state.latest_unsuccessful_run_status
+      }
     end
 
     def invalidate_pr_progress_state(issue)

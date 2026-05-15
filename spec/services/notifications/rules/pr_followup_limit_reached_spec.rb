@@ -13,16 +13,24 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
 
   before do
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
-    allow(issue).to receive(:pr_escalation_worthy?)
-      .with(limit: project.max_pr_followup_runs)
-      .and_return(true)
-    allow(issue).to receive(:consecutive_unsuccessful_pr_runs).and_return(3)
+    allow(issue).to receive(:pr_progress_state).and_return(
+      PullRequests::ProgressState::Result.new(
+        consecutive_unsuccessful_automatic_runs: 3,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: nil,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: "review",
+        latest_unsuccessful_run_status: "failed"
+      )
+    )
   end
 
   describe "#detect", :no_db do
     let(:project) { double(max_pr_followup_runs: 3) }
     let(:issue) do
       double(
+        id: 42,
         is_pull_request?: true,
         github_state: "open",
         pr_review_phase: "ready",
@@ -36,7 +44,17 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
     let(:github_updated_at) { Time.zone.parse("2026-05-15 12:00:00") }
 
     before do
-      allow(issue).to receive(:pr_escalation_worthy?).with(limit: 3).and_return(true)
+      allow(issue).to receive(:pr_progress_state).and_return(
+        PullRequests::ProgressState::Result.new(
+          consecutive_unsuccessful_automatic_runs: 3,
+          consecutive_operational_failures: 0,
+          last_meaningful_progress_at: nil,
+          latest_automatic_run_at: nil,
+          latest_unsuccessful_run_at: nil,
+          latest_unsuccessful_run_goal: "review",
+          latest_unsuccessful_run_status: "failed"
+        )
+      )
     end
 
     it "matches when the PR scan is newer than the latest GitHub update" do
@@ -47,7 +65,20 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
       allow(issue).to receive(:github_updated_at).and_return(Time.zone.parse("2026-05-15 12:10:00"))
 
       expect(rule.send(:detect, [ issue ])).to eq([])
-      expect(issue).not_to have_received(:pr_escalation_worthy?)
+      expect(issue).not_to have_received(:pr_progress_state)
+    end
+
+    it "prefers scan-derived progress state over stale issue memoization" do
+      stale_state = instance_double(PullRequests::ProgressState::Result)
+      rule = described_class.new(progress_states: [ {
+        issue_id: 123,
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0
+      } ])
+      allow(issue).to receive_messages(pr_progress_state: stale_state, id: 123)
+
+      expect(rule.send(:detect, [ issue ])).to eq([])
+      expect(issue).not_to have_received(:pr_progress_state)
     end
   end
 
@@ -58,9 +89,17 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
   end
 
   it "does not publish below the threshold" do
-    allow(issue).to receive(:pr_escalation_worthy?)
-      .with(limit: project.max_pr_followup_runs)
-      .and_return(false)
+    allow(issue).to receive(:pr_progress_state).and_return(
+      PullRequests::ProgressState::Result.new(
+        consecutive_unsuccessful_automatic_runs: 2,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: nil,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: "review",
+        latest_unsuccessful_run_status: "failed"
+      )
+    )
 
     expect {
       described_class.call(scope: [ issue ])
