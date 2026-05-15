@@ -140,7 +140,7 @@ module Knowledge
       end
 
       begin
-        result = Containers.backend.exec_in_container(@container, cmd, exec_options)
+        result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
       rescue Docker::Error::DockerError => e
         raise TimeoutError, "LLM call timed out after #{timeout}s" if mutex.synchronize { timed_out }
         raise ContainerError, "Container execution failed: #{e.message}"

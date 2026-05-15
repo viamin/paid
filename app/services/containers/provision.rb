@@ -415,7 +415,7 @@ module Containers
       begin
         watchdog = start_watchdog(watchdog_ctx)
 
-        exec_result = Containers.backend.exec_in_container(container, cmd_array, exec_options) do |stream_type, chunk|
+        exec_result = Containers.backend.exec_in_container(container, cmd_array, **exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
             output_received = true
             last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -860,7 +860,7 @@ module Containers
       preparation_env = env.merge(script_env)
       exec_options = { wait: options[:timeout_seconds] }
       exec_options[:Env] = preparation_env.map { |key, value| "#{key}=#{value}" }
-      stdout, stderr, exit_code = Containers.backend.exec_in_container(container, [ "sh", "-lc", script ], exec_options)
+      stdout, stderr, exit_code = Containers.backend.exec_in_container(container, [ "sh", "-lc", script ], **exec_options)
 
       return if exit_code.to_i.zero?
 

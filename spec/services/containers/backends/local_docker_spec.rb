@@ -28,4 +28,10 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(backend.get_network("paid_agent")).to eq(network)
     expect(backend.get_volume("paid-workspace-1")).to eq(volume)
   end
+
+  it "delegates volume deletion to docker-api" do
+    allow(volume).to receive(:remove).with(force: true).and_return(true)
+
+    expect(backend.delete_volume(volume, force: true)).to be(true)
+  end
 end

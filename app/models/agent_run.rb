@@ -2077,7 +2077,8 @@ class AgentRun < ApplicationRecord
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
     volume_name = "paid-workspace-#{id}"
-    Docker::Volume.get(volume_name).remove
+    volume = Containers.backend.get_volume(volume_name)
+    Containers.backend.delete_volume(volume)
   rescue Docker::Error::NotFoundError
     # Volume already removed, nothing to do
   rescue Docker::Error::DockerError => e

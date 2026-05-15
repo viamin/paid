@@ -124,7 +124,7 @@ module Knowledge
         end
       end
 
-      result = Containers.backend.exec_in_container(@container, cmd, exec_options)
+      result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
       raise TimeoutError, "Embedding generation timed out after #{timeout}s" if mutex.synchronize { timed_out }
 
       stdout = Array(result[0]).join

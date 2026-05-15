@@ -181,7 +181,7 @@ module Knowledge
       end
 
       begin
-        result = Containers.backend.exec_in_container(@container, cmd_array, exec_options)
+        result = Containers.backend.exec_in_container(@container, cmd_array, **exec_options)
       rescue Docker::Error::DockerError => e
         raise TimeoutError, "Command timed out after #{timeout} seconds" if mutex.synchronize { timed_out }
         raise ContainerError, "Command execution failed: #{e.message}"
