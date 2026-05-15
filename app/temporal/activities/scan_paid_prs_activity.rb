@@ -242,14 +242,15 @@ module Activities
 
       retry_needed = review_goal_retry_needed?(project, issue)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue)
+      retry_limit_requires_escalation = retry_limit_reached &&
+        review_goal_retry_limit_requires_escalation?(project, issue)
 
       # When the review-goal retry limit is exhausted and paid_agent is the
       # only review method, escalate immediately — the PR cannot make
-      # progress without human intervention. Mixed-bot projects skip this
-      # gate so the remaining bot can continue gating the PR. This mirrors
-      # the pre-unification review_goal_retry_limit_requires_escalation?
-      # check that previously lived in each phase branch.
-      if retry_limit_reached && review_goal_retry_limit_requires_escalation?(project, issue)
+      # progress without human intervention. Ready/escalated PRs still fetch
+      # live PR state first so a GitHub-side draft conversion or transient
+      # fetch failure can short-circuit before we escalate on stale data.
+      if retry_limit_requires_escalation && issue.pr_review_phase.in?(%w[draft restarted])
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
                   "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
