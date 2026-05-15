@@ -312,6 +312,7 @@ module Activities
       return if issue.review_goal_retry_reset_at.present?
 
       issue.update_column(:review_goal_retry_reset_at, Time.current)
+      invalidate_pr_progress_state(issue)
     end
 
     MAX_CONSECUTIVE_OPERATIONAL_FAILURES = 3
@@ -819,6 +820,8 @@ module Activities
         ci_retry_requested_at: nil
       )
 
+      invalidate_pr_progress_state(issue)
+
       logger.info(
         message: "pr_scanner.phase_restarted",
         project_id: project.id,
@@ -966,6 +969,10 @@ module Activities
     def pr_progress_state(project, issue)
       @pr_progress_states ||= {}
       @pr_progress_states[issue.id] ||= PullRequests::ProgressState.call(project:, issue:)
+    end
+
+    def invalidate_pr_progress_state(issue)
+      @pr_progress_states&.delete(issue.id)
     end
 
     # Returns the failure-streak limit for the gate currently being enforced.
