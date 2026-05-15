@@ -620,9 +620,10 @@ module Activities
     def followup_limit_escalation(issue, triggers)
       project = issue.project
       types_summary = triggers.map { |t| t[:type] }.uniq.join(", ")
+      streak = pr_progress_state(project, issue).consecutive_unsuccessful_automatic_runs
       escalate_trigger(issue,
         reason: "Follow-up run limit reached " \
-                "(#{issue.pr_followup_count}/#{project.max_pr_followup_runs}); " \
+                "(#{streak}/#{project.max_pr_followup_runs}); " \
                 "unresolved: #{types_summary}")
     end
 

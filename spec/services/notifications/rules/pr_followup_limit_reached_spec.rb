@@ -12,6 +12,10 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
 
   before do
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+    allow(issue).to receive(:pr_escalation_worthy?)
+      .with(limit: project.max_pr_followup_runs)
+      .and_return(true)
+    allow(issue).to receive(:consecutive_unsuccessful_pr_runs).and_return(3)
   end
 
   it "publishes when the follow-up limit is reached" do
@@ -21,7 +25,9 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
   end
 
   it "does not publish below the threshold" do
-    issue.update!(pr_followup_count: 2)
+    allow(issue).to receive(:pr_escalation_worthy?)
+      .with(limit: project.max_pr_followup_runs)
+      .and_return(false)
 
     expect {
       described_class.call(scope: [ issue ])

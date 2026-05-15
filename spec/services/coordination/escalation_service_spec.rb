@@ -65,9 +65,7 @@ RSpec.describe Coordination::EscalationService do
     def persisted_prediction_signals
       {
         "operational_failure_breaker" => true,
-        "review_goal_retry_pressure" => 0.0,
-        "draft_review_pressure" => 0.0,
-        "followup_pressure" => 0.0,
+        "unified_failure_pressure" => 0.0,
         "blocking_trigger_pressure" => 0.0,
         "owner_reviewer_present" => true,
         "escalated_phase" => false
@@ -110,7 +108,7 @@ RSpec.describe Coordination::EscalationService do
       {
         "human_value_threshold" => 0.15,
         "weights" => {
-          "review_goal_retry_pressure" => 0.7,
+          "unified_failure_pressure" => 0.7,
           "blocking_triggers" => 0.4
         }
       }

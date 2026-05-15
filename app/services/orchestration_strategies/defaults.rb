@@ -162,9 +162,7 @@ module OrchestrationStrategies
           ],
           "weights" => {
             "operational_failure_breaker" => 0.45,
-            "review_goal_retry_pressure" => 0.3,
-            "draft_review_pressure" => 0.2,
-            "followup_pressure" => 0.15,
+            "unified_failure_pressure" => 0.3,
             "blocking_triggers" => 0.15,
             "owner_reviewer_present" => 0.1,
             "escalated_phase" => 0.1
