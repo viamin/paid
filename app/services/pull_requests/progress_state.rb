@@ -8,6 +8,7 @@ module PullRequests
   # Reset conditions:
   # - a completed automatic create_pr run
   # - an automatic review run that posted a review
+  # - a new PR HEAD commit (when the current head SHA is supplied)
   # - issue.review_goal_retry_reset_at
   # - issue.operational_failure_reset_at
   class ProgressState
@@ -50,10 +51,12 @@ module PullRequests
       new(...).call
     end
 
-    def initialize(project:, issue:, runs: nil)
+    def initialize(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil)
       @project = project
       @issue = issue
       @runs = runs
+      @current_head_sha = current_head_sha
+      @current_head_updated_at = current_head_updated_at
     end
 
     def call
@@ -67,6 +70,11 @@ module PullRequests
       each_relevant_run(explicit_reset_at:) do |run|
         run_time = run_timestamp(run)
         latest_run_at ||= run_time
+
+        if superseded_by_new_head?(run)
+          progress_at = [ progress_at, current_head_updated_at ].compact.max
+          break
+        end
 
         if meaningful_progress?(run)
           progress_at = [ progress_at, progress_timestamp(run) ].compact.max
@@ -98,7 +106,7 @@ module PullRequests
 
     private
 
-    attr_reader :project, :issue, :runs
+    attr_reader :project, :issue, :runs, :current_head_sha, :current_head_updated_at
 
     def each_relevant_run(explicit_reset_at:, &block)
       return enum_for(__method__, explicit_reset_at:) unless block
@@ -169,6 +177,15 @@ module PullRequests
         issue.review_goal_retry_reset_at,
         issue.operational_failure_reset_at
       ]
+    end
+
+    def superseded_by_new_head?(run)
+      return false if current_head_sha.blank?
+
+      run_head_shas = [ run.result_commit_sha, run.base_commit_sha ].compact
+      return false if run_head_shas.empty?
+
+      !run_head_shas.include?(current_head_sha)
     end
 
     def meaningful_progress?(run)

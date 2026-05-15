@@ -226,10 +226,20 @@ module Activities
 
     def scan_pr(project, client, issue)
       backfill_review_goal_retry_reset_at!(issue)
-      progress_state = pr_progress_state(project, issue)
 
       record_focus_resolution(project, client, issue)
       return :skipped if active_run_exists?(project, issue)
+
+      check_rate_budget!(client)
+      pr_data = fetch_pr_data(client, project, issue)
+      return :skipped if pr_data.nil?
+
+      progress_state = pr_progress_state(
+        project,
+        issue,
+        current_head_sha: pr_head_sha(pr_data),
+        current_head_updated_at: pr_head_updated_at(pr_data)
+      )
 
       # Escalate PRs that are repeatedly failing due to operational issues
       # (provider exhaustion, timeouts, rate limiting) so they stop blocking
@@ -272,26 +282,18 @@ module Activities
 
       result = case issue.pr_review_phase
       when "draft", "restarted"
-        check_rate_budget!(client)
-        pr_data = fetch_pr_data(client, project, issue)
         if maybe_advance_to_ready(project, issue, pr_data)
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         else
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         end
       when "ready"
-        check_rate_budget!(client)
-        pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
-        elsif pr_data.nil?
-          :skipped
         else
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
-        check_rate_budget!(client)
-        pr_data = fetch_pr_data(client, project, issue)
         return dismiss_escalation_trigger(issue, draft: pr_data&.draft) if escalation_dismissed?(issue)
 
         if maybe_restart_draft(project, issue, pr_data)
@@ -552,9 +554,23 @@ module Activities
 
       checks = fetch_check_runs(client, project, pr_data)
       mergeable = pr_data && pr_data[:mergeable]
+      progress_state = pr_progress_state(
+        project,
+        issue,
+        current_head_sha: pr_head_sha(pr_data),
+        current_head_updated_at: pr_head_updated_at(pr_data)
+      )
 
       if bot_user?(issue.github_creator_login)
-        return scan_bot_authored_ready_pr(project, client, issue, pr_data: pr_data, checks: checks, mergeable: mergeable)
+        return scan_bot_authored_ready_pr(
+          project,
+          client,
+          issue,
+          pr_data: pr_data,
+          checks: checks,
+          mergeable: mergeable,
+          progress_state: progress_state
+        )
       end
 
       reviews = fetch_reviews(client, project, issue)
@@ -570,17 +586,16 @@ module Activities
                   "(#{review_goal_consecutive_failure_count(project, issue)} consecutive failures)")
       end
 
-      # Follow-up budget exhausted: escalate if cheap signals (CI,
-      # merge conflicts, actionable labels — all derivable from data
-      # already fetched above) show unresolved work. Otherwise
-      # short-circuit BEFORE the expensive review-thread / comment
-      # fetches that detect_ready_triggers would issue. This preserves
-      # the historical "silent skip when nothing visibly wrong"
-      # behavior on budget-exhausted PRs while ensuring failing CI no
-      # longer leaves a PR wedged in `paid-ready` with no signal.
-      if followup_limit_reached?(project, issue)
-        cheap_triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
-        return followup_limit_escalation(issue, cheap_triggers) if cheap_triggers.any?
+      # Follow-up budget exhausted: inspect the full ready-phase trigger set
+      # before skipping. The unified streak can now be exhausted by draft-era
+      # failures, so ready-only signals like changes_requested reviews,
+      # unresolved threads, or conversation comments still need to surface
+      # even when no ready-phase follow-up has run yet.
+      if followup_limit_reached?(project, issue, progress_state)
+        triggers = detect_ready_triggers(project, client, issue,
+          pr_data: pr_data, checks: checks, reviews: reviews)
+        return :skipped if triggers.nil?
+        return followup_limit_escalation(issue, triggers, progress_state:) if triggers.any?
 
         return nil
       end
@@ -606,12 +621,12 @@ module Activities
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
     # Auto-merge is handled by EvaluateDependabotAutoMergeActivity + DependabotAutoMergeJob.
     # This method only detects follow-up triggers (CI failures, merge conflicts, labels).
-    def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:)
+    def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:, progress_state:)
       triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
 
       return nil if triggers.empty?
 
-      return followup_limit_escalation(issue, triggers) if followup_limit_reached?(project, issue)
+      return followup_limit_escalation(issue, triggers, progress_state:) if followup_limit_reached?(project, issue, progress_state)
 
       log_triggers(project, issue, triggers)
 
@@ -635,10 +650,10 @@ module Activities
         check_actionable_labels(project, issue)
     end
 
-    def followup_limit_escalation(issue, triggers)
+    def followup_limit_escalation(issue, triggers, progress_state: pr_progress_state(issue.project, issue))
       project = issue.project
       types_summary = triggers.map { |t| t[:type] }.uniq.join(", ")
-      streak = pr_progress_state(project, issue).consecutive_unsuccessful_automatic_runs
+      streak = progress_state.consecutive_unsuccessful_automatic_runs
       escalate_trigger(issue,
         reason: "Follow-up run limit reached " \
                 "(#{streak}/#{project.max_pr_followup_runs}); " \
@@ -986,13 +1001,30 @@ module Activities
         .exists?
     end
 
-    def pr_progress_state(project, issue)
+    def pr_progress_state(project, issue, current_head_sha: nil, current_head_updated_at: nil)
       @pr_progress_states ||= {}
-      @pr_progress_states[issue.id] ||= PullRequests::ProgressState.call(project:, issue:)
+      cache = (@pr_progress_states[issue.id] ||= {})
+      cache_key = current_head_sha.presence || :default
+      cache[cache_key] ||= PullRequests::ProgressState.call(
+        project:,
+        issue:,
+        current_head_sha:,
+        current_head_updated_at:
+      )
+      cache[:default] ||= cache[cache_key] if current_head_sha.present?
+      cache[cache_key]
     end
 
     def invalidate_pr_progress_state(issue)
       @pr_progress_states&.delete(issue.id)
+    end
+
+    def pr_head_sha(pr_data)
+      pr_data&.head&.sha
+    end
+
+    def pr_head_updated_at(pr_data)
+      pr_data&.updated_at
     end
 
     # Returns the failure-streak limit for the gate currently being enforced.
@@ -1027,8 +1059,8 @@ module Activities
       end
     end
 
-    def followup_limit_reached?(project, issue)
-      issue.pr_review_phase.in?(%w[ready escalated]) && failure_streak_limit_reached?(project, issue)
+    def followup_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
+      issue.pr_review_phase.in?(%w[ready escalated]) && failure_streak_limit_reached?(project, issue, progress_state)
     end
 
     # Draft-phase circuit breaker: while the PR is in draft/restarted,

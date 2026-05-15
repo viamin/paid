@@ -1327,6 +1327,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
+      context "when draft-phase failures exhaust the unified limit but ready-phase review work remains" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation", "paid-ready" ],
+            pr_review_phase: "ready", paid_state: "completed")
+          3.times do
+            create(:agent_run, :failed,
+              project: project,
+              goal: "create_pr",
+              source_pull_request_number: 42,
+              base_commit_sha: "abc123")
+          end
+          stub_github_for_pr(
+            checks: [ { name: "ci", conclusion: "success" } ],
+            reviews: default_clean_copilot_review + [
+              { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: Time.current }
+            ]
+          )
+        end
+
+        it "escalates instead of silently skipping the ready-phase review signals" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger].size).to eq(1)
+          trigger = result[:prs_to_trigger].first[:triggers].first
+          expect(trigger[:type]).to eq("escalate_to_owner")
+          expect(trigger[:details]).to include("changes_requested")
+        end
+      end
+
       context "when a bot-authored PR still has failing CI" do
         before do
           create(:issue, :pull_request,

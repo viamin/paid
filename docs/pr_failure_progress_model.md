@@ -16,6 +16,7 @@ Automatic PR retries now use one PR-level progress model for both `create_pr` an
 
 - A completed automatic `create_pr` run
 - An automatic `review` run that posted a review
+- A new PR head commit
 - `issues.review_goal_retry_reset_at`
 - `issues.operational_failure_reset_at`
 

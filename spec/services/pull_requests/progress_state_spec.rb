@@ -63,6 +63,8 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       :updated_at,
       :completed_at,
       :review_posted_at,
+      :base_commit_sha,
+      :result_commit_sha,
       :operational_failure_flag,
       keyword_init: true
     ) do
@@ -79,7 +81,8 @@ RSpec.describe PullRequests::ProgressState, :no_db do
   let(:project) { instance_double(ProgressStateProjectStub) }
   let(:issue) { issue_double }
 
-  def build_run(goal:, status:, at:, review_posted_at: nil, operational_failure: false)
+  def build_run(goal:, status:, at:, review_posted_at: nil, operational_failure: false,
+    base_commit_sha: nil, result_commit_sha: nil)
     run_class.new(
       goal: goal,
       status: status,
@@ -88,6 +91,8 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       updated_at: at,
       completed_at: at,
       review_posted_at: review_posted_at,
+      base_commit_sha: base_commit_sha,
+      result_commit_sha: result_commit_sha,
       operational_failure_flag: operational_failure
     )
   end
@@ -161,6 +166,25 @@ RSpec.describe PullRequests::ProgressState, :no_db do
 
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
     expect(result.last_meaningful_progress_at).to eq(now - 5.minutes)
+  end
+
+  it "resets the unified streak when the PR head has moved to a new commit" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "review", status: "failed", at: now - 2.minutes, base_commit_sha: "old-head"),
+      build_run(goal: "create_pr", status: "failed", at: now - 7.minutes, base_commit_sha: "old-head")
+    ]
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      runs: runs,
+      current_head_sha: "new-head",
+      current_head_updated_at: now
+    )
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(0)
+    expect(result.last_meaningful_progress_at).to eq(now)
   end
 
   it "resets the streak from explicit human progress markers" do
