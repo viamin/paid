@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_14_193654) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_15_110029) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1489,6 +1489,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_193654) do
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
     t.string "auto_merge_mode", default: "off", null: false
     t.boolean "auto_pick_enabled", default: false, null: false
+    t.jsonb "auto_pick_skip_labels", comment: "Optional project-level override for labels that make auto-pick skip an issue. Null means inherit user, tenant, or built-in defaults."
     t.string "auto_release_granularity", default: "off", null: false
     t.boolean "auto_scan_prs", default: true, null: false
     t.boolean "auto_scan_security", default: false, null: false
@@ -2007,6 +2008,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_193654) do
     t.bigint "account_id", null: false
     t.jsonb "agent_settings", default: {}, null: false
     t.text "allowed_provider_keys", default: [], array: true
+    t.jsonb "auto_pick_skip_labels", comment: "Optional tenant-level override for labels that make auto-pick skip an issue. Null means use built-in defaults."
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
     t.jsonb "features", default: {}, null: false
@@ -2072,6 +2074,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_193654) do
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false

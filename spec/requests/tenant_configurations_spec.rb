@@ -55,6 +55,46 @@ RSpec.describe "TenantConfigurations" do
       )
     end
 
+    it "updates tenant-level auto-pick skip labels" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          auto_pick_skip_labels_override: "1",
+          auto_pick_skip_labels_csv: "planning, research"
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "allows an empty tenant-level skip-label override" do
+      account.tenant_setting!.update!(auto_pick_skip_labels: %w[planning])
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          auto_pick_skip_labels_override: "1",
+          auto_pick_skip_labels_csv: ""
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.auto_pick_skip_labels).to eq([])
+    end
+
+    it "clears the tenant-level override when skip labels are not overridden" do
+      account.tenant_setting!.update!(auto_pick_skip_labels: %w[planning])
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          auto_pick_skip_labels_override: "0",
+          auto_pick_skip_labels_csv: "planning, research"
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.auto_pick_skip_labels).to be_nil
+    end
+
     it "disables auto-continue when the checkbox submits its hidden false value" do
       account.tenant_setting!.update!(agent_settings: { "auto_continue" => true })
 

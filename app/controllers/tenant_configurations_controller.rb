@@ -78,10 +78,12 @@ class TenantConfigurationsController < ApplicationController
   end
 
   def tenant_setting_params
-    attrs = params.require(:tenant_setting).permit(
+    raw_params = params.require(:tenant_setting)
+    attrs = raw_params.permit(
       :max_concurrent_runs, :max_projects, :max_users, :max_tokens_per_run, :max_monthly_cost_cents,
       :self_repo_full_name,
       allowed_provider_keys: [],
+      auto_pick_skip_labels: [],
       provider_preferences: [
         api_key_ids: ProviderSupport.api_service_types.keys,
         model_preferences: ProviderSupport.supported_provider_keys
@@ -100,6 +102,16 @@ class TenantConfigurationsController < ApplicationController
       ],
       features: FeatureFlags::DEFINITIONS.keys
     ).to_h
+
+    if raw_params.key?(:auto_pick_skip_labels)
+      attrs["auto_pick_skip_labels"] = AutoPickSkipLabels.normalize(raw_params[:auto_pick_skip_labels])
+    elsif raw_params.key?(:auto_pick_skip_labels_override) || raw_params.key?(:auto_pick_skip_labels_csv)
+      attrs["auto_pick_skip_labels"] =
+        if ActiveModel::Type::Boolean.new.cast(raw_params[:auto_pick_skip_labels_override])
+          AutoPickSkipLabels.parse_csv(raw_params[:auto_pick_skip_labels_csv])
+        end
+    end
+
     attrs["features"] ||= {}
     FeatureFlags::DEFINITIONS.each_key do |flag_name|
       attrs["features"][flag_name.to_s] = ActiveModel::Type::Boolean.new.cast(attrs["features"][flag_name.to_s])

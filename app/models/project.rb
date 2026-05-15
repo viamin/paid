@@ -128,6 +128,7 @@ class Project < ApplicationRecord
   ].freeze
 
   include TenantScoped
+  include AutoPickSkipLabels
 
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -272,6 +273,18 @@ class Project < ApplicationRecord
     overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
       .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
     DEFAULT_PRIORITY_LABELS.merge(overrides)
+  end
+
+  def effective_auto_pick_skip_labels
+    return auto_pick_skip_labels unless auto_pick_skip_labels.nil?
+
+    owner_labels = effective_owner&.user_setting&.auto_pick_skip_labels
+    return owner_labels unless owner_labels.nil?
+
+    tenant_labels = account&.tenant_setting&.auto_pick_skip_labels
+    return tenant_labels unless tenant_labels.nil?
+
+    AutoPickSkipLabels::DEFAULTS
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.

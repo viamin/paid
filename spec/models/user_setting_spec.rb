@@ -301,6 +301,43 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "#auto_pick_skip_labels_csv" do
+    it "returns labels as a comma-separated string" do
+      setting = build(:user_setting, auto_pick_skip_labels: %w[planning research])
+
+      expect(setting.auto_pick_skip_labels_csv).to eq("planning, research")
+    end
+
+    it "returns an empty string when labels are not configured" do
+      setting = build(:user_setting, auto_pick_skip_labels: nil)
+
+      expect(setting.auto_pick_skip_labels_csv).to eq("")
+    end
+  end
+
+  describe "#auto_pick_skip_labels_csv=" do
+    it "parses comma-separated labels into a deduplicated array" do
+      setting = build(:user_setting)
+      setting.auto_pick_skip_labels_csv = " planning, research, planning "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "normalizes labels to lowercase before deduplicating" do
+      setting = build(:user_setting)
+      setting.auto_pick_skip_labels_csv = " Planning, research, PLANNING "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "allows configuring an empty skip-label list" do
+      setting = build(:user_setting)
+      setting.auto_pick_skip_labels_csv = ""
+
+      expect(setting.auto_pick_skip_labels).to eq([])
+    end
+  end
+
   describe "default values" do
     let(:user) { create(:user) }
     let(:setting) { described_class.create!(user: user) }

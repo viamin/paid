@@ -71,8 +71,18 @@ class UserSettingsController < ApplicationController
       :fallback_enabled,
       :fallback_providers,
       :kb_embedding_provider,
-      :kb_chat_provider
+      :kb_chat_provider,
+      auto_pick_skip_labels: []
     )
+
+    if raw_params.key?(:auto_pick_skip_labels)
+      permitted[:auto_pick_skip_labels] = AutoPickSkipLabels.normalize(raw_params[:auto_pick_skip_labels])
+    elsif raw_params.key?(:auto_pick_skip_labels_override) || raw_params.key?(:auto_pick_skip_labels_csv)
+      permitted[:auto_pick_skip_labels] =
+        if ActiveModel::Type::Boolean.new.cast(raw_params[:auto_pick_skip_labels_override])
+          AutoPickSkipLabels.parse_csv(raw_params[:auto_pick_skip_labels_csv])
+        end
+    end
 
     %i[
       fallback_providers

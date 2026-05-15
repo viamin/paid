@@ -144,6 +144,46 @@ RSpec.describe "UserSettings" do
         expect(settings.default_allowed_github_usernames).to eq(%w[alice bob])
       end
 
+      it "updates auto-pick skip labels for the user" do
+        patch user_settings_path, params: {
+          user_setting: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.auto_pick_skip_labels).to eq(%w[planning research])
+      end
+
+      it "allows the user to override defaults with an empty skip-label list" do
+        user.settings.update!(auto_pick_skip_labels: %w[planning])
+
+        patch user_settings_path, params: {
+          user_setting: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: ""
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.auto_pick_skip_labels).to eq([])
+      end
+
+      it "clears the user override when auto-pick skip labels are not overridden" do
+        user.settings.update!(auto_pick_skip_labels: %w[planning])
+
+        patch user_settings_path, params: {
+          user_setting: {
+            auto_pick_skip_labels_override: "0",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.auto_pick_skip_labels).to be_nil
+      end
+
       it "updates advanced settings" do
         patch user_settings_path, params: {
           user_setting: {
