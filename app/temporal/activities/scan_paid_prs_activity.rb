@@ -972,18 +972,23 @@ module Activities
       @pr_progress_states[issue.id] ||= PullRequests::ProgressState.call(project:, issue:)
     end
 
-    def pr_failure_limit(project)
-      configured_limits = [
-        project.max_draft_review_rounds,
-        project.max_pr_followup_runs,
-        (review_goal_max_retries(project) if project.review_enabled? && project.review_method_enabled?("paid_agent"))
-      ].compact.map(&:to_i).select(&:positive?)
+    # Returns the failure-streak limit for the gate currently being enforced.
+    # Draft-phase checks use max_draft_review_rounds; ready/escalated checks
+    # use max_pr_followup_runs. This keeps phase-specific retry semantics
+    # intact even though the streak itself is phase-agnostic.
+    def pr_failure_limit(project, issue)
+      limit = if issue.draft_phase?
+        project.max_draft_review_rounds
+      else
+        project.max_pr_followup_runs
+      end
 
-      configured_limits.max || DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS
+      value = limit.to_i
+      value.positive? ? value : DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS
     end
 
     def failure_streak_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
-      progress_state.escalation_worthy?(limit: pr_failure_limit(project))
+      progress_state.escalation_worthy?(limit: pr_failure_limit(project, issue))
     end
 
     def failure_streak_reason(project, issue, progress_state = pr_progress_state(project, issue))
@@ -1762,7 +1767,7 @@ module Activities
 
       progress_state = pr_progress_state(project, issue)
       progress_state.latest_unsuccessful_review? &&
-        progress_state.escalation_worthy?(limit: pr_failure_limit(project))
+        progress_state.escalation_worthy?(limit: review_goal_max_retries(project))
     end
 
     # Escalate only when exhausting paid_agent retries leaves no other bot
