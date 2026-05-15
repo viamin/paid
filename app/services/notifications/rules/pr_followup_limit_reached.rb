@@ -42,7 +42,10 @@ module Notifications
       end
 
       def synced_with_latest_pr_state?(issue)
-        issue.last_pr_scan_at.present? && issue.last_pr_scan_at >= issue.github_updated_at
+        return false if issue.last_pr_scan_at.blank?
+        return true if issue.github_updated_at.blank?
+
+        issue.last_pr_scan_at >= issue.github_updated_at
       end
 
       def progress_state_for(issue)

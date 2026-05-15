@@ -70,6 +70,12 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
       expect(rule.send(:detect, [ issue ])).to eq([ issue ])
     end
 
+    it "matches when the latest GitHub update time is unknown" do
+      allow(issue).to receive(:github_updated_at).and_return(nil)
+
+      expect(rule.send(:detect, [ issue ])).to eq([ issue ])
+    end
+
     it "does not match until the latest GitHub update has been scanned" do
       allow(issue).to receive(:github_updated_at).and_return(Time.zone.parse("2026-05-15 12:10:00"))
 
