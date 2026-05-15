@@ -201,6 +201,7 @@ module Api
         review_url: review_url)
 
       warn_if_missing_inline_comments(body)
+      dismiss_stale_changes_requested_reviews(match, body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
     end
@@ -222,6 +223,45 @@ module Api
         review_id: response_body["id"],
         comment_count: comment_count
       )
+    end
+
+    # When a new review is posted that does NOT request changes, dismiss any
+    # previous CHANGES_REQUESTED reviews from the paid-code-reviewer bot.
+    # Without this, stale change requests block PR merging even after the
+    # issues have been addressed.
+    def dismiss_stale_changes_requested_reviews(path_match, new_review)
+      return if new_review["state"].to_s.casecmp("CHANGES_REQUESTED").zero?
+      return unless Github::ReviewBotInstallationToken.configured?
+
+      project = authenticated_project
+      bot_logins = Github::ReviewBotInstallationToken.bot_logins
+      pr_number = path_match[:number].to_i
+      new_review_id = new_review["id"]
+
+      bot_client = GithubClient.new(
+        token: Github::ReviewBotInstallationToken.new(
+          repo_full_name: project.full_name
+        ).fetch
+      )
+
+      reviews = bot_client.pull_request_reviews(project.full_name, pr_number)
+      stale = reviews.select do |r|
+        r[:state] == "CHANGES_REQUESTED" &&
+          bot_logins.include?(r[:user_login]) &&
+          r[:id] != new_review_id
+      end
+
+      stale.each do |review|
+        bot_client.dismiss_pull_request_review(
+          project.full_name, pr_number, review[:id],
+          message: "Subsequent review found no remaining actionable issues."
+        )
+        log_info("github_proxy.dismissed_stale_review",
+          review_id: review[:id],
+          pr_number: pr_number)
+      end
+    rescue => e
+      log_error("github_proxy.dismiss_stale_reviews_failed", e.message)
     end
 
     def parse_response_body(body)

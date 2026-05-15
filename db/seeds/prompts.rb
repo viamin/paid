@@ -741,6 +741,12 @@ upsert_global_prompt.call(
     - Case A: "comments" array is NON-EMPTY, each entry has "path", "line", and "body"
     - Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []
 
+    CRITICAL: Always use `"event": "COMMENT"` — never use `"event":
+    "REQUEST_CHANGES"` or `"event": "APPROVE"`. Change requests are
+    expressed through inline comments in the "comments" array, not
+    through the review event. Using REQUEST_CHANGES blocks PR merging
+    and will be automatically dismissed.
+
     IMPORTANT: You MUST post exactly one PR review via the
     `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
     actionable comments) or Case B (clean review). This is how your review is

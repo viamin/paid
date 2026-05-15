@@ -774,6 +774,19 @@ class GithubClient
     end
   end
 
+  # Dismisses a pull request review. Requires write access on the repository
+  # and the review must be in CHANGES_REQUESTED state.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pull_number [Integer] Pull request number
+  # @param review_id [Integer] The review ID to dismiss
+  # @param message [String] Reason for dismissal
+  def dismiss_pull_request_review(repo, pull_number, review_id, message:)
+    handle_errors do
+      client.dismiss_pull_request_review(repo, pull_number, review_id, message: message)
+    end
+  end
+
   # Replies to a review comment on a pull request.
   #
   # @param repo [String] Repository in "owner/name" format
