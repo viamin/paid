@@ -1172,16 +1172,18 @@ RSpec.describe "AgentRuns" do
         expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to contain_exactly("manual", "team_default")
       end
 
-      it "shows only prompt-compatible marketplace entries in the run form" do
+      it "shows all active marketplace entries in the run form" do
         create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
         create(:marketplace_entry, account: account, name: "Tool plugin", entry_type: "plugin")
         create(:marketplace_entry, account: account, name: "Provider preset", entry_type: "provider_config")
+        create(:marketplace_entry, account: account, name: "Repo MCP", entry_type: "mcp_server")
 
         get new_project_agent_run_path(project)
 
         expect(response.body).to include("Repo skill")
-        expect(response.body).not_to include("Tool plugin")
-        expect(response.body).not_to include("Provider preset")
+        expect(response.body).to include("Tool plugin")
+        expect(response.body).to include("Provider preset")
+        expect(response.body).to include("Repo MCP")
       end
 
       it "does not apply team-default marketplace entries unless the user opts in or the account requires it" do

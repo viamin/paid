@@ -46,7 +46,6 @@ module Projects
       @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
       @marketplace_entries = current_account.marketplace_entries.active
-        .prompt_compatible
         .ordered
         .includes(:current_version)
       @issues = @project.issues

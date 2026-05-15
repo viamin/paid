@@ -11,7 +11,6 @@ class MarketplaceEntry < ApplicationRecord
     provider_config
     other
   ].freeze
-  PROMPT_COMPATIBLE_ENTRY_TYPES = %w[skill agent prompt_pack enhancement other].freeze
   # Private visibility needs an owner/user reference that marketplace entries
   # do not currently persist. Keep the scope account-wide until ownership
   # semantics exist.
@@ -43,7 +42,6 @@ class MarketplaceEntry < ApplicationRecord
   validate :current_version_belongs_to_entry
 
   scope :active, -> { where(status: "active") }
-  scope :prompt_compatible, -> { where(entry_type: PROMPT_COMPATIBLE_ENTRY_TYPES) }
   scope :draft, -> { where(status: "draft") }
   scope :deprecated, -> { where(status: "deprecated") }
   scope :ordered, -> { order(:name, :id) }
