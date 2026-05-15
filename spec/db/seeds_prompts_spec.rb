@@ -112,6 +112,25 @@ RSpec.describe Prompt, type: :model do
         .to include('Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []')
     end
 
+    it "seeded template forbids REQUEST_CHANGES and APPROVE review events" do
+      template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      expect(template).to include('Always use `"event": "COMMENT"`')
+      expect(template).to include('"REQUEST_CHANGES"')
+      expect(template).to include('"APPROVE"')
+      expect(template).to include("will be automatically dismissed")
+    end
+
+    it "FALLBACK_REVIEW_GOAL_PROMPT forbids REQUEST_CHANGES and APPROVE review events" do
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('Always use `"event": "COMMENT"`')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('"REQUEST_CHANGES"')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('"APPROVE"')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("will be automatically dismissed")
+    end
+
     it "seeded template tells reviewers to install bundled gems before Ruby validation" do
       template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
       expect(template).to include(

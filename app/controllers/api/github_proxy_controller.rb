@@ -7,6 +7,7 @@ module Api
 
     REVIEW_COMMENT_MARKER = "<!-- paid:code-review -->"
     REVIEW_HEADER = "## Code Review"
+    STALE_REVIEW_DISMISSAL_MESSAGE = "Subsequent review found no remaining actionable issues."
 
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
@@ -82,7 +83,7 @@ module Api
         match_data = endpoint[:pattern].match(path)
         next unless match_data
 
-        return { owner: match_data[:owner], repo: match_data[:repo] }
+        return match_data.named_captures.symbolize_keys
       end
 
       nil
@@ -188,19 +189,20 @@ module Api
 
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?
-      return if @agent_run.review_posted_at.present? && @agent_run.review_url.present?
+      if @agent_run.review_posted_at.blank? || @agent_run.review_url.blank?
+        review_url = body["html_url"].presence || review_url_for(match[:number], body["id"])
+        @agent_run.update!(
+          review_posted_at: @agent_run.review_posted_at || Time.current,
+          review_url: review_url
+        )
 
-      review_url = body["html_url"].presence || review_url_for(match[:number], body["id"])
-      @agent_run.update!(
-        review_posted_at: @agent_run.review_posted_at || Time.current,
-        review_url: review_url
-      )
-
-      log_info("github_proxy.review_created",
-        review_id: body["id"],
-        review_url: review_url)
+        log_info("github_proxy.review_created",
+          review_id: body["id"],
+          review_url: review_url)
+      end
 
       warn_if_missing_inline_comments(body)
+      dismiss_stale_changes_requested_reviews(match, body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
     end
@@ -222,6 +224,53 @@ module Api
         review_id: response_body["id"],
         comment_count: comment_count
       )
+    end
+
+    # When a new review is posted that does NOT request changes, dismiss any
+    # previous CHANGES_REQUESTED reviews from the paid-code-reviewer bot.
+    # Without this, stale change requests block PR merging even after the
+    # issues have been addressed.
+    def dismiss_stale_changes_requested_reviews(path_match, new_review)
+      return if review_state(new_review["state"]) == "CHANGES_REQUESTED"
+
+      project = authenticated_project
+      return unless project&.review_method_enabled?("paid_agent")
+      return unless Github::ReviewBotInstallationToken.configured?
+      bot_logins = project.enabled_review_bot_logins &
+        ProviderSupport.provider_bot_usernames_for("paid_agent")
+      return if bot_logins.empty?
+      return if path_match[:number].blank? || new_review["id"].blank?
+      pr_number = path_match[:number].to_i
+      new_review_id = new_review["id"].to_i
+      return if pr_number.zero? || new_review_id.zero?
+
+      bot_client = GithubClient.new(
+        token: Github::ReviewBotInstallationToken.new(
+          repo_full_name: project.full_name
+        ).fetch
+      )
+
+      reviews = Array(bot_client.pull_request_reviews(project.full_name, pr_number))
+      stale = reviews.select do |r|
+        review_state(review_attribute(r, :state)) == "CHANGES_REQUESTED" &&
+          bot_logins.include?(review_attribute(r, :user_login).to_s.downcase) &&
+          stale_review?(r, new_review)
+      end
+
+      stale.each do |review|
+        review_id = review_attribute(review, :id).to_i
+        next if review_id.zero?
+
+        bot_client.dismiss_pull_request_review(
+          project.full_name, pr_number, review_id,
+          message: STALE_REVIEW_DISMISSAL_MESSAGE
+        )
+        log_info("github_proxy.dismissed_stale_review",
+          review_id: review_id,
+          pr_number: pr_number)
+      end
+    rescue => e
+      log_error("github_proxy.dismiss_stale_reviews_failed", e.message)
     end
 
     def parse_response_body(body)
@@ -258,6 +307,45 @@ module Api
 
     def clean_review_body?(body)
       body.to_s.include?("<!-- paid-review-clean -->")
+    end
+
+    def review_state(value)
+      value.to_s.upcase
+    end
+
+    def review_attribute(review, key)
+      direct_value = review[key] || review[key.to_s]
+      return direct_value if direct_value.present?
+      return unless key.to_sym == :user_login
+
+      user = review[:user] || review["user"]
+      user&.dig(:login) || user&.dig("login")
+    end
+
+    def stale_review?(review, new_review)
+      review_submitted_at = review_submitted_at(review)
+      new_review_submitted_at = review_submitted_at(new_review)
+      if review_submitted_at && new_review_submitted_at
+        return review_submitted_at < new_review_submitted_at
+      end
+
+      review_id = review_attribute(review, :id).to_i
+      return false if review_id.zero?
+
+      new_review_id = review_attribute(new_review, :id).to_i
+      return false if new_review_id.zero?
+
+      review_id < new_review_id
+    end
+
+    def review_submitted_at(review)
+      value = review_attribute(review, :submitted_at)
+      return value if value.is_a?(Time)
+      return if value.blank?
+
+      Time.zone.parse(value.to_s)
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def log_error(message, error)
