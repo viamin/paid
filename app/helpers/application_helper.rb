@@ -614,10 +614,6 @@ module ApplicationHelper
     return Rails.application.routes.url_helpers.public_send(name, *args, **kwargs) unless respond_to?(name)
 
     public_send(name, *args, **kwargs)
-  rescue NoMethodError => error
-    raise unless error.name == name
-
-    Rails.application.routes.url_helpers.public_send(name, *args, **kwargs)
   end
 
   def safe_return_path?(path)
