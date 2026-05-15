@@ -31,25 +31,31 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
       jobs.each_key do |job_name|
-        it "keeps #{job_name} on the bootstrap postgres role until db:prepare completes" do
+        it "uses the expected database bootstrap role flow for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
-
-          expect(job.fetch("env")).to include(
-            "DB_USERNAME" => "postgres",
-            "DB_PASSWORD" => "postgres"
-          )
-
           step_names = job.fetch("steps").map { |step| step["name"] }
-          expect(step_names).not_to include("Create application database role")
+
+          if workflow_path == ".github/workflows/pr-screenshots.yml"
+            expect(job.fetch("env")).to include(
+              "DB_USERNAME" => "paid",
+              "DB_PASSWORD" => "paid"
+            )
+            expect(step_names).to include("Create application database role")
+          else
+            expect(job.fetch("env")).to include(
+              "DB_USERNAME" => "postgres",
+              "DB_PASSWORD" => "postgres"
+            )
+            expect(step_names).not_to include("Create application database role")
+          end
         end
 
-        it "installs the PGDG postgres client by major version for #{job_name}" do
+        it "installs the exact PGDG postgres client package for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
 
           expect(install_step.fetch("run")).to include("apt.postgresql.org/pub/repos/apt")
-          expect(install_step.fetch("run")).to include("postgresql-client-16")
-          expect(install_step.fetch("run")).not_to include("postgresql-client-16=")
+          expect(install_step.fetch("run")).to include("postgresql-client-16=16.13-1.pgdg24.04+1")
         end
       end
     end

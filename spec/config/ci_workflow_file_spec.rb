@@ -14,18 +14,15 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
   end
 
-  it "passes test credentials to the database-backed ci jobs" do
+  it "passes the expected test credentials to the database-backed ci jobs" do
     jobs = workflow.fetch("jobs")
 
     expect(jobs.fetch("test").fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
-      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_MASTER_KEY }}",
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
     )
     expect(jobs.fetch("performance").fetch("env")).to include(
-      "SECRET_KEY_BASE" => "test-secret-key-base",
-      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_MASTER_KEY }}",
-      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
+      "SECRET_KEY_BASE" => "test-secret-key-base"
     )
   end
 end

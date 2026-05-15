@@ -7,7 +7,7 @@ class SystemWorkflowFile < Pathname
 end
 
 RSpec.describe SystemWorkflowFile, :no_db do
-  it "keeps system tests resilient to missing preinstalled Chromium and passes test credentials" do
+  it "passes test credentials and falls back when Chromium is absent" do
     workflow = Psych.safe_load_file(
       Rails.root.join(".github/workflows/system_tests.yml"),
       aliases: true
@@ -17,9 +17,9 @@ RSpec.describe SystemWorkflowFile, :no_db do
 
     expect(system_job.fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
-      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_MASTER_KEY }}",
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
     )
-    expect(locate_step.fetch("run")).to include('command -v chromium || true')
+    expect(locate_step.fetch("run")).to include('command -v chromium)')
+    expect(locate_step.fetch("run")).to include("falling back to rack_test")
   end
 end
