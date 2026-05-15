@@ -527,6 +527,19 @@ RSpec.describe Issue do
         expect(PullRequests::ProgressState).to have_received(:call).twice
       end
 
+      it "resets both unified progress reset markers when resetting the review-goal breaker" do
+        freeze_time do
+          issue.reset_review_goal_retry_breaker!
+
+          expect(issue).to have_received(:update!).with(
+            hash_including(
+              review_goal_retry_reset_at: Time.current,
+              operational_failure_reset_at: Time.current
+            )
+          )
+        end
+      end
+
       it "clears the memoized progress state when dismissing escalation" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,

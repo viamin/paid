@@ -266,10 +266,13 @@ class Issue < ApplicationRecord
   end
 
   def reset_review_goal_retry_breaker!
+    reset_at = Time.current
+
     update!(
       pr_review_phase: "ready",
       review_goal_retry_count: 0,
-      review_goal_retry_reset_at: Time.current
+      review_goal_retry_reset_at: reset_at,
+      operational_failure_reset_at: reset_at
     )
     invalidate_pr_progress_state_cache!
   end
