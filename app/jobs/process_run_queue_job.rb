@@ -37,7 +37,6 @@ class ProcessRunQueueJob < ApplicationJob
   # with unbounded INSERTs in a single pass. The next perform will pick
   # up where this one left off.
   MAX_SEEDS_PER_PERFORM = 200
-  PAID_READY_LABEL = Issues::AutoPick::PAID_READY_LABEL
 
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
@@ -170,7 +169,6 @@ class ProcessRunQueueJob < ApplicationJob
       ordered_auto_pick_projects.each do |project|
         break if seeded >= MAX_SEEDS_PER_PERFORM
         next unless project.effective_owner
-        next if auto_pick_deferred_by_pr_attention_limit?(project)
 
         runs = Issues::BulkEnqueueEligible.call(project: project, limit: 1)
         created = runs.count(&:previously_new_record?)
@@ -225,38 +223,6 @@ class ProcessRunQueueJob < ApplicationJob
         ]
       end
     end
-  end
-
-  def auto_pick_deferred_by_pr_attention_limit?(project)
-    limit = max_auto_pick_open_prs(project)
-    return false if limit <= 0
-
-    prs_needing_attention_count(project) >= limit
-  end
-
-  def prs_needing_attention_count(project)
-    base = Issue.where(
-      project: project,
-      is_pull_request: true,
-      github_state: "open",
-      paid_state: %w[in_progress failed]
-    )
-
-    handed_off = base
-      .where(paid_state: "in_progress")
-      .where("labels @> ?::jsonb", [ project.automation_label_name, PAID_READY_LABEL ].to_json)
-      .where.not(pr_review_phase: %w[draft restarted])
-
-    escalated = base.where(pr_review_phase: "escalated")
-
-    base.where.not(id: handed_off).where.not(id: escalated).count
-  end
-
-  def max_auto_pick_open_prs(project)
-    owner = project.effective_owner
-    return 1 unless owner
-
-    owner.settings.max_auto_pick_open_prs
   end
 
   def start_claimed_run(agent_run)

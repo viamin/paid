@@ -355,19 +355,6 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
       end
 
-      it "skips auto-pick seeding when open PRs already need attention" do
-        project = create(:project, auto_pick_enabled: true)
-        project.effective_owner.settings.update!(max_auto_pick_open_prs: 1)
-        create(:issue, :pull_request, :in_progress, project: project)
-        create(:issue, project: project)
-
-        expect(Issues::BulkEnqueueEligible).not_to receive(:call)
-
-        described_class.new.perform
-
-        expect(project.agent_runs.where(auto_pick: true)).to be_empty
-      end
-
       it "fills idle capacity from one project when no others have pickable work" do
         project = create(:project, auto_pick_enabled: true)
         user = project.created_by
