@@ -183,7 +183,7 @@ jobs:
         with:
           name: pr-screenshots
           path: tmp/screenshots/*.png
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
 
   # Clean up uploaded screenshots when a PR is closed or merged.
