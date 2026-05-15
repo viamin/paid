@@ -29,20 +29,22 @@ class RunnersController < ApplicationController
     end
 
     @runner = current_user.runners.new(auth_type: auth_type)
+    assign_legacy_provider_ivars(@runner)
     authorize @runner
   end
 
   def create
     @runner = current_user.runners.new(runner_params)
+    assign_legacy_provider_ivars(@runner)
     authorize @runner
     validate_runner_key_enabled!
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
       if reconcile_settings!
-        redirect_to runners_path, notice: "Runner created successfully."
+        redirect_to resource_index_path, notice: resource_created_notice
       else
-        redirect_to runners_path, alert: "Runner created, but settings reconciliation failed. Please review settings."
+        redirect_to resource_index_path, alert: resource_reconciliation_alert(action: "created")
       end
     else
       preserve_submitted_runner_key_in_options
@@ -65,9 +67,9 @@ class RunnersController < ApplicationController
 
     if @runner.errors.none? && @runner.save
       if reconcile_settings!
-        redirect_to runners_path, notice: "Runner updated successfully."
+        redirect_to resource_index_path, notice: resource_updated_notice
       else
-        redirect_to runners_path, alert: "Runner updated, but settings reconciliation failed. Please review settings."
+        redirect_to resource_index_path, alert: resource_reconciliation_alert(action: "updated")
       end
     else
       render :edit, status: :unprocessable_content
@@ -79,12 +81,12 @@ class RunnersController < ApplicationController
 
     if @runner.discard
       if reconcile_settings!
-        redirect_to runners_path, notice: "Runner deleted successfully."
+        redirect_to resource_index_path, notice: resource_deleted_notice
       else
-        redirect_to runners_path, alert: "Runner deleted, but settings reconciliation failed. Please review settings."
+        redirect_to resource_index_path, alert: resource_reconciliation_alert(action: "deleted")
       end
     else
-      redirect_to runners_path, alert: @runner.errors.full_messages.to_sentence
+      redirect_to resource_index_path, alert: @runner.errors.full_messages.to_sentence
     end
   end
 
@@ -133,7 +135,7 @@ class RunnersController < ApplicationController
     attrs[:default_agent_runners_by_goal] = goal_default_runner_attrs(attrs)
 
     if weights_ok && @user_setting.update(attrs)
-      redirect_to runners_path, notice: "Runner settings saved successfully."
+      redirect_to resource_index_path, notice: resource_settings_saved_notice
     else
       load_index_context
       render :index, status: :unprocessable_content
@@ -151,14 +153,16 @@ class RunnersController < ApplicationController
 
   def set_runner
     @runner = policy_scope(Runner).find(params[:id])
+    assign_legacy_provider_ivars(@runner)
   end
 
   def runner_params
+    raw_params = params[resource_param_key] || params.fetch(:runner)
     permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer, :weight ]
     if action_name == "create"
-      permitted.push(:runner_key, :auth_type, :provider_api_key_id)
+      permitted.push(:runner_key, :provider_key, :auth_type, :provider_api_key_id)
     end
-    attrs = params.require(:runner).permit(
+    attrs = raw_params.permit(
       *permitted,
       config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
@@ -171,10 +175,11 @@ class RunnersController < ApplicationController
     # which prevents UnfilteredParameters when consumed by the model.
     config = attrs[:config]&.to_h || {}
 
-    runner_key = attrs[:runner_key].presence || @runner&.runner_key
+    runner_key = attrs[:runner_key].presence || attrs[:provider_key].presence || @runner&.runner_key
     config = config.slice(runner_key) if runner_key.present?
 
     result = attrs.to_h.merge("config" => config)
+    result["runner_key"] = result.delete("provider_key") if result.key?("provider_key")
     if result.key?("tier_model_ids")
       result["tier_model_ids"] = result["tier_model_ids"].to_h.compact_blank
     end
@@ -218,6 +223,7 @@ class RunnersController < ApplicationController
 
     # Combined for backward compat
     @runner_options = @subscription_runner_options
+    assign_legacy_provider_option_ivars
   end
 
   # When re-rendering :new after a validation failure, ensure the submitted
@@ -376,10 +382,12 @@ class RunnersController < ApplicationController
     @addable_runner_options = (
       (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
     ).uniq.presence || []
+    assign_legacy_provider_index_ivars
   end
 
   def update_fallback_runner_flags!
-    raw = params.dig(:user_setting, :enabled_fallback_runner_keys)
+    raw = params.dig(:user_setting, :enabled_fallback_runner_keys) ||
+      params.dig(:user_setting, :enabled_fallback_provider_keys)
     return unless raw
 
     enabled_keys = UserSetting.normalize_fallback_runners_param(raw)
@@ -392,15 +400,30 @@ class RunnersController < ApplicationController
   def runner_settings_params
     permitted = params.require(:user_setting).permit(
       :default_agent_runner,
+      :default_agent_provider,
       :fallback_enabled,
       :fallback_runners,
+      :fallback_providers,
       :runner_selection_mode,
-      default_agent_runners_by_goal: AgentRun::GOALS
+      :provider_selection_mode,
+      default_agent_runners_by_goal: AgentRun::GOALS,
+      default_agent_providers_by_goal: AgentRun::GOALS
     )
 
-    if permitted.key?(:fallback_runners)
-      permitted[:fallback_runners] = UserSetting.normalize_fallback_runners_param(permitted[:fallback_runners])
+    if permitted.key?(:default_agent_provider) && !permitted.key?(:default_agent_runner)
+      permitted[:default_agent_runner] = permitted.delete(:default_agent_provider)
     end
+    if permitted.key?(:default_agent_providers_by_goal) && !permitted.key?(:default_agent_runners_by_goal)
+      permitted[:default_agent_runners_by_goal] = permitted.delete(:default_agent_providers_by_goal)
+    end
+    if permitted.key?(:fallback_providers) && !permitted.key?(:fallback_runners)
+      permitted[:fallback_runners] = permitted.delete(:fallback_providers)
+    end
+    if permitted.key?(:provider_selection_mode) && !permitted.key?(:runner_selection_mode)
+      permitted[:runner_selection_mode] = permitted.delete(:provider_selection_mode)
+    end
+
+    permitted[:fallback_runners] = UserSetting.normalize_fallback_runners_param(permitted[:fallback_runners]) if permitted.key?(:fallback_runners)
 
     if permitted.key?(:runner_selection_mode) && permitted[:runner_selection_mode].present?
       mode = permitted[:runner_selection_mode].to_s
@@ -421,7 +444,9 @@ class RunnersController < ApplicationController
   # for a specific runner, or "round_robin"/"random" for multi-runner
   # distribution.
   def expand_combined_runner_mode!(permitted)
-    combined = params.dig(:user_setting, :runner_mode).to_s.strip
+    combined = params.dig(:user_setting, :runner_mode).presence ||
+      params.dig(:user_setting, :provider_mode).presence
+    combined = combined.to_s.strip
     return if combined.blank?
 
     if combined.start_with?("single:")
@@ -438,7 +463,8 @@ class RunnersController < ApplicationController
   # the settings save so the user sees the failure rather than a silent
   # partial update.
   def update_runner_weights!
-    raw = params.dig(:user_setting, :runner_weights)
+    raw = params.dig(:user_setting, :runner_weights) ||
+      params.dig(:user_setting, :provider_weights)
     return true if raw.blank?
 
     weights = raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw.to_h
@@ -532,7 +558,8 @@ class RunnersController < ApplicationController
     submitted = attrs[:default_agent_runners_by_goal]
     return sanitize_goal_default_runner_identifiers(@user_setting, enabled_agent_runner_identifiers) unless submitted
 
-    raw_submitted = params.dig(:user_setting, :default_agent_runners_by_goal)
+    raw_submitted = params.dig(:user_setting, :default_agent_runners_by_goal) ||
+      params.dig(:user_setting, :default_agent_providers_by_goal)
     return sanitize_goal_default_runner_identifiers(@user_setting, enabled_agent_runner_identifiers) if submitted.empty? && raw_goal_defaults_filtered_out?(raw_submitted)
 
     submitted
@@ -542,5 +569,72 @@ class RunnersController < ApplicationController
     return true unless raw_submitted.respond_to?(:keys)
 
     raw_submitted.keys.map(&:to_s).intersection(AgentRun::GOALS).empty?
+  end
+
+  def legacy_provider_controller?
+    controller_name == "providers"
+  end
+
+  def resource_param_key
+    return :provider if params.key?(:provider)
+
+    :runner
+  end
+
+  def resource_index_path
+    legacy_provider_controller? ? providers_path : runners_path
+  end
+
+  def resource_created_notice
+    legacy_provider_controller? ? "Provider created successfully." : "Runner created successfully."
+  end
+
+  def resource_updated_notice
+    legacy_provider_controller? ? "Provider updated successfully." : "Runner updated successfully."
+  end
+
+  def resource_deleted_notice
+    legacy_provider_controller? ? "Provider deleted successfully." : "Runner deleted successfully."
+  end
+
+  def resource_settings_saved_notice
+    legacy_provider_controller? ? "Provider settings saved successfully." : "Runner settings saved successfully."
+  end
+
+  def resource_reconciliation_alert(action:)
+    resource_name = legacy_provider_controller? ? "Provider" : "Runner"
+    "#{resource_name} #{action}, but settings reconciliation failed. Please review settings."
+  end
+
+  def assign_legacy_provider_ivars(record)
+    return unless legacy_provider_controller?
+
+    @provider = record
+  end
+
+  def assign_legacy_provider_option_ivars
+    return unless legacy_provider_controller?
+
+    @subscription_provider_options = @subscription_runner_options
+    @api_key_provider_options = @api_key_runner_options
+  end
+
+  def assign_legacy_provider_index_ivars
+    return unless legacy_provider_controller?
+
+    @providers = @runners
+    @provider_states = @runner_states
+    @enabled_agent_providers = @enabled_agent_runners
+    @run_enabled_providers = @run_enabled_runners
+    @fallback_candidate_providers = @fallback_candidate_runners
+    @default_provider_identifier = @default_runner_identifier
+    @goal_provider_labels = @goal_runner_labels
+    @explicit_goal_default_providers = @explicit_goal_default_runners
+    @saved_fallback_provider_tokens = @saved_fallback_runner_tokens
+    @provider_labels = @runner_labels
+    @subscription_provider_identifiers = @subscription_runner_identifiers
+    @provider_state_aliases = @runner_state_aliases
+    @provider_stats_by_id = @runner_stats_by_id
+    @addable_provider_options = @addable_runner_options
   end
 end
