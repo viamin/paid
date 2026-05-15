@@ -85,8 +85,12 @@ jobs:
               run = runs.find do |candidate|
                 next false unless candidate["head_sha"] == head_sha
 
-                candidate["head_branch"] == head_ref ||
-                  candidate.fetch("pull_requests", []).any? { |pr| pr["number"] == pr_number }
+                pull_requests = candidate.fetch("pull_requests", [])
+                if pull_requests.any?
+                  pull_requests.any? { |pr| pr["number"] == pr_number }
+                else
+                  candidate["head_branch"] == head_ref
+                end
               end
 
               break if run && run["status"] == "completed"
