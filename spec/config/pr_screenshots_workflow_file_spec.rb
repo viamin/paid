@@ -50,4 +50,17 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
       "ruby-version" => ".tool-versions"
     )
   end
+
+  it "passes test credentials to capture and tolerates runners without a preinstalled browser" do
+    capture_job = workflow.fetch("jobs").fetch("capture")
+    locate_step = capture_job.fetch("steps").find do |step|
+      step["name"] == "Locate Chromium-family browser"
+    end
+
+    expect(capture_job.fetch("env")).to include(
+      "SECRET_KEY_BASE" => "test-secret-key-base",
+      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
+    )
+    expect(locate_step.fetch("run")).to include('command -v chromium || true')
+  end
 end
