@@ -749,8 +749,9 @@ module Containers
     # @return [Provision] The reconnected service instance
     # @raise [ProvisionError] When container cannot be found
     def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil, **options)
-      container = Containers.backend.get_container(container_id)
       pool_entry ||= ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: container_id)
+      host = pool_entry&.container_host || agent_run.container_host
+      container = Containers.backend_for(host).get_container(container_id)
       workspace_volume ||= pool_entry&.workspace_volume
 
       new(agent_run: agent_run, worktree_path: worktree_path, workspace_volume: workspace_volume, pool_entry: pool_entry, **options)

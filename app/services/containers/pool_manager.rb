@@ -53,7 +53,7 @@ module Containers
       entry = claim_entry(agent_run, options: options)
       return unless entry
 
-      unless container_running?(entry.container_id)
+      unless container_running?(entry.container_id, backend: Containers.backend_for(entry.container_host))
         remove_error_entry(entry, "warm container is not running")
         return
       end
@@ -82,8 +82,9 @@ module Containers
     end
 
     def remove_entry(entry, force: false)
-      remove_container(entry.container_id, force: force)
-      remove_volume(entry.workspace_volume)
+      backend = Containers.backend_for(entry.container_host)
+      remove_container(entry.container_id, force: force, backend: backend)
+      remove_volume(entry.workspace_volume, backend: backend)
       entry.destroy!
     end
 
@@ -178,7 +179,7 @@ module Containers
       end
 
       current_pool_entries.warm.find_each do |entry|
-        remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id)
+        remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id, backend: Containers.backend_for(entry.container_host))
       end
     end
 
@@ -226,27 +227,27 @@ module Containers
       ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, project_lock_key ])
     end
 
-    def container_running?(container_id)
-      container = Containers.backend.get_container(container_id)
+    def container_running?(container_id, backend: Containers.backend)
+      container = backend.get_container(container_id)
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError
       false
     end
 
-    def remove_container(container_id, force:)
+    def remove_container(container_id, force:, backend: Containers.backend)
       return if container_id.blank?
 
-      container = Containers.backend.get_container(container_id)
-      Containers.backend.stop_container(container, timeout: force ? 0 : 10) if container.info.dig("State", "Running")
-      Containers.backend.delete_container(container, force: force, v: true)
+      container = backend.get_container(container_id)
+      backend.stop_container(container, timeout: force ? 0 : 10) if container.info.dig("State", "Running")
+      backend.delete_container(container, force: force, v: true)
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e
       Rails.logger.warn(message: "container_manager.pool_container_remove_failed", container_id: container_id, error: e.message)
     end
 
-    def remove_volume(volume_name)
-      Containers.backend.delete_volume(Containers.backend.get_volume(volume_name))
+    def remove_volume(volume_name, backend: Containers.backend)
+      backend.delete_volume(backend.get_volume(volume_name))
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e
