@@ -10,8 +10,13 @@ Avo.configure do |config|
   config.license_key = ENV["AVO_LICENSE_KEY"] if ENV["AVO_LICENSE_KEY"].present?
 
   config.authenticate_with do
-    authenticate_user!
-    next if performed? || current_user&.operator?
+    user = warden.authenticate(scope: :user)
+    unless user
+      redirect_to main_app.new_user_session_path
+      next
+    end
+
+    next if user.operator?
 
     redirect_to main_app.root_path, alert: "You are not authorized to access the operator console."
   end
