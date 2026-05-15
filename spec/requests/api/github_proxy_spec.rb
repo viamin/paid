@@ -523,6 +523,26 @@ RSpec.describe "Api::GithubProxy" do
             hash_including(message: "github_proxy.dismissed_stale_review", review_id: 101, pr_number: 10)
           )
         end
+
+        it "dismisses stale bot change requests even when the review was already tracked on the run" do
+          agent_run.update!(
+            review_posted_at: 1.hour.ago,
+            review_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-previous"
+          )
+          stub_review_list_response([
+            { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
+          ])
+          dismiss_url = stub_stale_review_dismissal
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).to have_requested(:put, dismiss_url).once
+          expect(agent_run.reload.review_url)
+            .to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-previous")
+        end
       end
 
       it "does not dismiss reviews when the latest review requests changes" do
