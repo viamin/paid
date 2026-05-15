@@ -1,10 +1,17 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["list", "searchInput", "card", "modal"]
+  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel"]
   static values = { activeSessionId: Number }
 
   connect() {
+    this.mediaQuery = window.matchMedia("(min-width: 1024px)")
+    this.boundCloseOnDesktop = this.closeOnDesktop.bind(this)
+    this.boundCloseOnNavigate = this.closeSidebar.bind(this)
+
+    this.mediaQuery.addEventListener("change", this.boundCloseOnDesktop)
+    document.addEventListener("turbo:before-visit", this.boundCloseOnNavigate)
+
     this.observer = new window.MutationObserver(() => {
       this.filter()
       this.updateActiveCard()
@@ -12,10 +19,14 @@ export default class extends Controller {
     this.observer.observe(this.listTarget, { childList: true, subtree: true })
     this.filter()
     this.updateActiveCard()
+    this.updateMobileSidebarState()
   }
 
   disconnect() {
     this.observer?.disconnect()
+    this.mediaQuery.removeEventListener("change", this.boundCloseOnDesktop)
+    document.removeEventListener("turbo:before-visit", this.boundCloseOnNavigate)
+    document.body.classList.remove("overflow-hidden")
   }
 
   filter() {
@@ -27,11 +38,20 @@ export default class extends Controller {
   }
 
   openModal() {
+    this.closeSidebar()
     this.modalTarget.showModal()
   }
 
   closeModal() {
     this.modalTarget.close()
+  }
+
+  toggleSidebar() {
+    this.setSidebarOpen(this.mobileMenuTarget.classList.contains("hidden"))
+  }
+
+  closeSidebar() {
+    this.setSidebarOpen(false)
   }
 
   updateActiveCard() {
@@ -50,5 +70,38 @@ export default class extends Controller {
 
     const match = window.location.pathname.match(/\/chat\/(\d+)/)
     return match ? Number(match[1]) : null
+  }
+
+  closeOnDesktop(event) {
+    if (event.matches) this.closeSidebar()
+  }
+
+  setSidebarOpen(open) {
+    if (!this.hasMobileMenuTarget) return
+
+    this.mobileMenuTarget.classList.toggle("hidden", !open)
+    this.updateMobileSidebarState(open)
+  }
+
+  updateMobileSidebarState(forceOpen = null) {
+    if (!this.hasMobileMenuTarget) return
+
+    const open = forceOpen === null ? !this.mobileMenuTarget.classList.contains("hidden") : forceOpen
+    const mobileOpen = open && !this.mediaQuery.matches
+
+    this.mobileMenuTarget.setAttribute("aria-hidden", (!mobileOpen).toString())
+    document.body.classList.toggle("overflow-hidden", mobileOpen)
+
+    if (this.hasMobileButtonTarget) {
+      this.mobileButtonTarget.setAttribute("aria-expanded", mobileOpen.toString())
+    }
+
+    if (this.hasMobileOpenLabelTarget) {
+      this.mobileOpenLabelTarget.classList.toggle("hidden", mobileOpen)
+    }
+
+    if (this.hasMobileCloseLabelTarget) {
+      this.mobileCloseLabelTarget.classList.toggle("hidden", !mobileOpen)
+    }
   }
 }

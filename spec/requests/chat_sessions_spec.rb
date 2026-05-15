@@ -212,6 +212,16 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Rendered markdown")
       end
 
+      it "renders mobile archive controls without expanding the sidebar by default" do
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Previous chats")
+        expect(response.body).to include("id=\"chat-sessions-sidebar\"")
+        expect(response.body).to include("data-chat-session-list-target=\"mobileMenu\"")
+        expect(response.body).to include("class=\"hidden lg:block\"")
+      end
+
       it "defaults wildcard accept show requests to the existing json API" do
         create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
 
