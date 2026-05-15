@@ -40,6 +40,6 @@ export default class extends Controller {
   submittableInput(target) {
     if (!target || target.tagName !== "INPUT") return false
 
-    SUBMITTABLE_INPUT_TYPES.has(target.type)
+    return SUBMITTABLE_INPUT_TYPES.has(target.type)
   }
 }
