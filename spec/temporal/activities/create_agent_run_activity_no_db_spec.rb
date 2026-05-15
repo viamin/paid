@@ -58,5 +58,18 @@ RSpec.describe Activities::CreateAgentRunActivity, :no_db do
         )
       end
     end
+
+    context "when the provider changed during resume" do
+      let(:attachments_exist) { true }
+
+      it "re-renders marketplace attachments for the resolved provider" do
+        activity.send(:attach_marketplace_entries_for_resume, agent_run:, user_settings:, force: true)
+
+        expect(MarketplaceEntries::AttachToRun).to have_received(:call).with(
+          agent_run: agent_run,
+          auto_attach_enabled: true
+        )
+      end
+    end
   end
 end

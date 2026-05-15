@@ -33,6 +33,8 @@ module MarketplaceEntries
       return unless auto_attach_enabled?
 
       automatic_compatible_entries.each do |entry|
+        next if selections.key?(entry.id)
+
         matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "automatic" && rule_matches?(rule, entry)
         end
@@ -51,6 +53,8 @@ module MarketplaceEntries
       return unless auto_attach_enabled?
 
       compatible_entries.each do |entry|
+        next if selections.key?(entry.id)
+
         matching_rule = ordered_enabled_rules(entry).find do |rule|
           rule.mode == "team_default" && rule_matches?(rule, entry)
         end
@@ -69,6 +73,8 @@ module MarketplaceEntries
       return if effective_manual_entry_ids.empty?
 
       compatible_entries.select { |entry| effective_manual_entry_ids.include?(entry.id) }.each do |entry|
+        next if selections.key?(entry.id)
+
         selections[entry.id] = Result.new(
           entry:,
           version: entry.current_version,
@@ -88,6 +94,7 @@ module MarketplaceEntries
       @candidate_entries ||= MarketplaceEntry
         .includes(:current_version, :marketplace_entry_rules)
         .where(account: project.account, status: "active")
+        .where(entry_type: MarketplaceEntry::PROMPT_COMPATIBLE_ENTRY_TYPES)
         .where.not(current_version_id: nil)
     end
 

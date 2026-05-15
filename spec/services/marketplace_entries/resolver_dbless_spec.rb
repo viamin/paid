@@ -25,7 +25,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "does not auto-attach without opt-in" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -80,7 +80,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "manual" ])
   end
 
-  it "applies attachment precedence as automatic < team_default < manual" do
+  it "preserves the first matching attachment source as automatic > team_default > manual" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -94,13 +94,13 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     )
 
     resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ entry.id ], auto_attach_enabled: true)
-    allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+    allow(resolver).to receive_messages(candidate_entries: [ entry ], persisted_opted_in_entry_ids: Set[entry.id])
 
     results = resolver.call
 
     expect(results.map(&:entry)).to eq([ entry ])
-    expect(results.map(&:source)).to eq([ "manual" ])
-    expect(results.map(&:reason)).to eq([ "Selected manually for this run" ])
+    expect(results.map(&:source)).to eq([ "automatic" ])
+    expect(results.map(&:reason)).to eq([ "Matched automatically" ])
   end
 
   def agent_run_marketplace_entries

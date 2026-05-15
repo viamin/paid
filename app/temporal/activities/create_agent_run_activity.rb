@@ -207,9 +207,10 @@ module Activities
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
       user_settings = resolve_user_settings(agent_run.project)
+      provider_changed = false
 
       if agent_run.queued?
-        validate_and_sync_resumed_provider!(agent_run)
+        provider_changed = validate_and_sync_resumed_provider!(agent_run)
       else
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
@@ -221,7 +222,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
-      attach_marketplace_entries_for_resume(agent_run:, user_settings:)
+      attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: provider_changed)
       assign_configuration_bundle(agent_run)
 
       logger.info(
@@ -247,8 +248,8 @@ module Activities
       ScopeAnalysis::Analyze.call(text: issue.body)
     end
 
-    def attach_marketplace_entries_for_resume(agent_run:, user_settings:)
-      return if agent_run.agent_run_marketplace_entries.exists?
+    def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false)
+      return if agent_run.agent_run_marketplace_entries.exists? && !force
 
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,

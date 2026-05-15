@@ -15,6 +15,7 @@ module MarketplaceEntries
     end
 
     def call
+      validate_manual_entry_ids!
       results = Resolver.call(project: agent_run.project, agent_run:, manual_entry_ids:, auto_attach_enabled:)
 
       AgentRunMarketplaceEntry.transaction do
@@ -42,6 +43,22 @@ module MarketplaceEntries
     end
 
     private
+
+    def validate_manual_entry_ids!
+      selected_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
+      return if selected_entry_ids.empty?
+
+      unsupported_entries = agent_run.project.account.marketplace_entries
+        .where(id: selected_entry_ids)
+        .where.not(entry_type: MarketplaceEntry::PROMPT_COMPATIBLE_ENTRY_TYPES)
+      return if unsupported_entries.empty?
+
+      agent_run.errors.add(
+        :base,
+        "Only prompt-compatible marketplace entries can be attached to runs in this first pass: #{unsupported_entries.order(:name).pluck(:name).join(', ')}"
+      )
+      raise ActiveRecord::RecordInvalid, agent_run
+    end
 
     def provider_key
       @provider_key ||= agent_run.provider&.provider_key || ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)

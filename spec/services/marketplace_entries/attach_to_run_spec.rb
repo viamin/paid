@@ -43,7 +43,7 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments.last.rendered_format).to eq("claude_skill_v1")
   end
 
-  it "preserves manual precedence over lower-priority attachment sources for the same entry" do
+  it "preserves automatic precedence over later team-default and manual matches for the same entry" do
     entry = create_entry(
       name: "Shared skill",
       rule_mode: "automatic",
@@ -56,8 +56,24 @@ RSpec.describe MarketplaceEntries::AttachToRun do
 
     expect(attachments.size).to eq(1)
     expect(attachments.first.marketplace_entry).to eq(entry)
-    expect(attachments.first.attachment_source).to eq("manual")
-    expect(attachments.first.selection_reason).to eq("Selected manually for this run")
+    expect(attachments.first.attachment_source).to eq("automatic")
+    expect(attachments.first.selection_reason).to eq("Matched automatic marketplace rule")
+  end
+
+  it "rejects manual selections for marketplace entries that are not prompt-compatible yet" do
+    entry = create(:marketplace_entry, account: project.account, name: "Build plugin", entry_type: "plugin")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "attachment_strategy" => "runtime_config",
+        "content" => "Plugin configuration"
+      },
+      compatibility_constraints: {})
+    entry.update!(current_version: version)
+
+    expect {
+      described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
+    }.to raise_error(ActiveRecord::RecordInvalid, /Only prompt-compatible marketplace entries can be attached to runs in this first pass/)
   end
 
   it "does not attach automatic or team default entries without opt-in" do

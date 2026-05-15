@@ -287,6 +287,23 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "re-renders marketplace attachments on resume when automatic provider selection changes" do
+      queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
+      entry = create_provider_switching_marketplace_entry
+      MarketplaceEntries::AttachToRun.call(agent_run: queued_run, manual_entry_ids: [ entry.id ])
+      project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      attachment = queued_run.reload.agent_run_marketplace_entries.first
+      expect(queued_run.provider).to eq(codex_provider)
+      expect(attachment.rendered_format).to eq("codex_skill_v1")
+      expect(attachment.rendered_payload).to include(
+        "provider" => "codex",
+        "payload" => include("content" => "Codex instructions")
+      )
+    end
+
     it "recomputes the configuration bundle on resume when model selection metadata becomes available" do
       existing_bundle = create(:configuration_bundle,
         account: project.account,
@@ -316,6 +333,44 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "agent_type" => "claude_code",
         "provider_id" => claude_provider.id
       }
+    end
+
+    def create_automatic_review_run(provider:, agent_type:)
+      create(
+        :agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        trigger_type: "automatic",
+        goal: "review",
+        provider: provider,
+        agent_type: agent_type
+      )
+    end
+
+    def create_provider_switching_marketplace_entry
+      entry = create(:marketplace_entry, account: project.account, name: "Shared skill")
+      version = create(:marketplace_entry_version,
+        marketplace_entry: entry,
+        canonical_artifact: {
+          "attachment_strategy" => "prompt_append",
+          "content" => "Canonical instructions"
+        },
+        renderers: {
+          "claude" => {
+            "attachment_strategy" => "prompt_append",
+            "provider_format" => "claude_skill_v1",
+            "content" => "Claude instructions"
+          },
+          "codex" => {
+            "attachment_strategy" => "prompt_append",
+            "provider_format" => "codex_skill_v1",
+            "content" => "Codex instructions"
+          }
+        })
+      entry.update!(current_version: version)
+      entry
     end
 
     def existing_create_pr_bundle_definition
