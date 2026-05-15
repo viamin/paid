@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class TenantSetting < ApplicationRecord
+  include AutoPickSkipLabels
   has_logidze
   PG_INT_MAX = 2_147_483_647
   BUDGET_TYPES = CostBudget::BUDGET_TYPES

@@ -160,15 +160,17 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
         USING (
           paid_tenant_bypass() OR EXISTS (
             SELECT 1 FROM agent_runs
+            INNER JOIN projects ON projects.id = agent_runs.project_id
             WHERE agent_runs.id = agent_run_marketplace_entries.agent_run_id
-              AND agent_runs.account_id = paid_current_account_id()
+              AND projects.account_id = paid_current_account_id()
           )
         )
         WITH CHECK (
           paid_tenant_bypass() OR EXISTS (
             SELECT 1 FROM agent_runs
+            INNER JOIN projects ON projects.id = agent_runs.project_id
             WHERE agent_runs.id = agent_run_marketplace_entries.agent_run_id
-              AND agent_runs.account_id = paid_current_account_id()
+              AND projects.account_id = paid_current_account_id()
           )
         );
     SQL
