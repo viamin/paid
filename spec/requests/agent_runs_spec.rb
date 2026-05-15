@@ -31,7 +31,7 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(project.name)
       end
 
-      it "shows each run goal type label in the index table with a mobile tooltip wrapper" do
+      it "shows each run goal type label without redundant tooltips" do
         run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr",
           custom_prompt: "Implement multi-step OAuth token refresh handling for stale sessions")
 
@@ -42,14 +42,12 @@ RSpec.describe "AgentRuns" do
         expect(goal_column_index(document)).not_to be_nil
 
         goal_cell = goal_cell_for_run(document, run)
-        tooltip_wrapper = goal_cell.at_css('[data-controller="tooltip"]')
         truncated_label = goal_cell.at_css("span.block.truncate")
 
         expect(goal_cell.text).to include("PR Creation")
-        expect(truncated_label["title"]).to eq("PR Creation")
-        expect(tooltip_wrapper).to be_present
-        expect(tooltip_wrapper.at_css('button[aria-label="Show goal details"]')).to be_present
-        expect(tooltip_wrapper.at_css('span[role="tooltip"]')["id"]).to eq("goal_#{run.id}")
+        expect(truncated_label["title"]).to be_nil
+        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
       it "aligns the Provider header with provider values in each row" do
@@ -164,6 +162,24 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.text).not_to include("PR #87")
         expect(goal_cell.text).not_to include(run.custom_prompt)
         expect(context_cell.text).to include("PR #87")
+      end
+
+      it "shows the source pull request title as a review context tooltip" do
+        source_pull_request = create(:issue, :pull_request, project: project, github_number: 87,
+          title: "Tighten dashboard review context tooltips")
+        run = create(:agent_run, :review_goal, :with_custom_prompt, project: project, issue: nil,
+          source_pull_request_number: source_pull_request.github_number)
+
+        get agent_runs_path
+
+        context_cell = cell_for_run(parsed_html, run, "Context")
+        tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        tooltip_content = tooltip_wrapper&.at_css('span[role="tooltip"]')
+
+        expect(context_cell.text).to include("PR ##{run.source_pull_request_number}")
+        expect(tooltip_wrapper).to be_present
+        expect(tooltip_content).to be_present
+        expect(tooltip_content.text).to include(source_pull_request.title)
       end
 
       it "shows custom prompt context separately from the goal label" do

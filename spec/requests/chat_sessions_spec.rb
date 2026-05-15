@@ -64,11 +64,14 @@ RSpec.describe "ChatSessions" do
       end
 
       it "auto-creates a new session when no active sessions exist" do
+        existing_ids = ChatSession.pluck(:id)
+
         expect {
           get chat_sessions_path
         }.to change(ChatSession, :count).by(1)
 
-        expect(response).to redirect_to(chat_session_path(ChatSession.last))
+        created_session = ChatSession.where.not(id: existing_ids).sole
+        expect(response).to redirect_to(chat_session_path(created_session))
       end
 
       it "defaults wildcard accept requests to the existing json API" do
@@ -128,9 +131,12 @@ RSpec.describe "ChatSessions" do
       end
 
       it "redirects to the session page for html requests" do
+        existing_ids = ChatSession.pluck(:id)
+
         post chat_sessions_path, params: { mode: "api", title: "UI Chat" }
 
-        expect(response).to redirect_to(chat_session_path(ChatSession.last))
+        created_session = ChatSession.where.not(id: existing_ids).sole
+        expect(response).to redirect_to(chat_session_path(created_session))
       end
 
       it "defaults wildcard accept create requests to json" do
