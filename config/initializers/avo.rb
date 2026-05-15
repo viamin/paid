@@ -16,9 +16,10 @@ Avo.configure do |config|
       next
     end
 
-    next if user.operator?
+    next user if user.operator?
 
     redirect_to main_app.root_path, alert: "You are not authorized to access the operator console."
+    next
   end
 end
 

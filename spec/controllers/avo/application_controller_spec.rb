@@ -29,8 +29,9 @@ RSpec.describe Avo::ApplicationController, :no_db do
     let(:authenticated_user) { nil }
 
     it "redirects to sign in" do
-      controller_context.instance_exec(&authenticate)
+      result = controller_context.instance_exec(&authenticate)
 
+      expect(result).to be_nil
       expect(controller_context.redirect_path).to eq("/users/sign_in")
       expect(controller_context.redirect_options).to eq({})
     end
@@ -40,8 +41,9 @@ RSpec.describe Avo::ApplicationController, :no_db do
     let(:authenticated_user) { non_operator_user }
 
     it "redirects to the app root with an authorization alert" do
-      controller_context.instance_exec(&authenticate)
+      result = controller_context.instance_exec(&authenticate)
 
+      expect(result).to be_nil
       expect(controller_context.redirect_path).to eq("/")
       expect(controller_context.redirect_options).to eq(
         { alert: "You are not authorized to access the operator console." }
@@ -53,8 +55,9 @@ RSpec.describe Avo::ApplicationController, :no_db do
     let(:authenticated_user) { operator_user }
 
     it "allows the request to continue" do
-      controller_context.instance_exec(&authenticate)
+      result = controller_context.instance_exec(&authenticate)
 
+      expect(result).to be(operator_user)
       expect(controller_context.redirect_path).to be_nil
       expect(controller_context.redirect_options).to be_nil
     end
