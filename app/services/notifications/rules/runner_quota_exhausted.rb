@@ -28,7 +28,7 @@ module Notifications
           severity: duration >= ERROR_THRESHOLD ? :error : :warning,
           title: "#{runner.display_name} quota exhausted for #{human_duration(state.updated_at)}",
           description: description_for(runner, state),
-          nav_section: "providers",
+          nav_section: "runners",
           action_url: edit_runner_path(runner),
           metadata: {
             blocked_run_count: blocked_run_count_for(runner),
