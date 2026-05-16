@@ -32,6 +32,7 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
   it "reports a remote backend identifier" do
     expect(backend.identifier).to eq("worker-1")
     expect(backend).to be_remote
+    expect(backend.supports_host_paths?).to be(false)
   end
 
   it "creates a tls docker connection for the remote host" do

@@ -38,6 +38,10 @@ module Containers
         true
       end
 
+      def supports_host_paths?
+        false
+      end
+
       def ping
         Docker.ping(connection)
       end

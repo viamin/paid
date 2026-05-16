@@ -232,6 +232,13 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
   end
 
   describe "container configuration" do
+    it "enables TLS in generated proxy scripts when PROXY_BASE_URL is HTTPS" do
+      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+
+      expect(runner.send(:anthropic_script)).to include('http.use_ssl = uri.scheme == "https"')
+      expect(runner.send(:openai_script)).to include('http.use_ssl = uri.scheme == "https"')
+    end
+
     it "creates container with security hardening" do
       runner = described_class.new(project: project, knowledge_run: knowledge_run)
       allow(mock_container).to receive(:exec).and_return([ [ "ok" ], [ "" ], 0 ])

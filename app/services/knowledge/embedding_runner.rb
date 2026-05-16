@@ -184,6 +184,7 @@ module Knowledge
         texts = JSON.parse(File.read(input_path))
         uri = URI("#{proxy_url}/api/proxy/openai/v1/embeddings")
         http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 

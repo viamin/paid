@@ -64,6 +64,12 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   end
 
   describe "#script_env" do
+    it "enables TLS in the generated embedding proxy script when PROXY_BASE_URL is HTTPS" do
+      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+
+      expect(runner.send(:script)).to include('http.use_ssl = uri.scheme == "https"')
+    end
+
     it "uses the external proxy URL for remote backends" do
       original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
       ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"

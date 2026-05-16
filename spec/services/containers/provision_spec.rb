@@ -84,6 +84,7 @@ RSpec.describe Containers::Provision do
       Containers::Backends::RemoteDocker,
       identifier: "worker-1",
       remote?: true,
+      supports_host_paths?: false,
       create_volume: mock_volume,
       create_container: mock_container,
       start_container: true,
