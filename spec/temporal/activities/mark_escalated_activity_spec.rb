@@ -73,6 +73,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(anything, anything, a_string_including("automatic PR failure limit"))
       end
 
+      it "uses the draft-phase limit in the fallback reason for draft-originated escalations" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("(#{issue.project.max_draft_review_rounds} consecutive unsuccessful runs)"))
+      end
+
       it "uses the ready-phase limit in the fallback reason outside draft" do
         issue.update!(pr_review_phase: "ready")
 
