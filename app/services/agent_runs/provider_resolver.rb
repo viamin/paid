@@ -12,7 +12,8 @@ module AgentRuns
 
     def self.normalize_legacy_kwargs(kwargs)
       normalized = kwargs.dup
-      normalized[:requested_runner_id] ||= normalized.delete(:requested_provider_id)
+      requested_provider_id = normalized.delete(:requested_provider_id)
+      normalized[:requested_runner_id] ||= requested_provider_id
       normalized
     end
 

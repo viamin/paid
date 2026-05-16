@@ -23,6 +23,26 @@ RSpec.describe AgentRuns::ProviderResolver, :no_db do
         requested_runner_id: 123
       )
     end
+
+    it "prefers requested_runner_id when both runner and legacy provider ids are present" do
+      project = instance_double(ProviderResolverBridgeProject)
+      resolver = instance_double(described_class, call: [ 123, "claude_code" ])
+
+      allow(described_class).to receive(:new).and_return(resolver)
+
+      described_class.call(
+        project: project,
+        goal: "create_pr",
+        requested_runner_id: 123,
+        requested_provider_id: 456
+      )
+
+      expect(described_class).to have_received(:new).with(
+        project: project,
+        goal: "create_pr",
+        requested_runner_id: 123
+      )
+    end
   end
 
   describe ".selected_provider" do
