@@ -8071,6 +8071,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(triggered_types).not_to include("paid_agent_review_pending")
     end
 
+    it "retries failed review runs linked only by pull_request_number" do
+      project.agent_runs.where(goal: "review").delete_all
+      create(:agent_run,
+        project: project, issue: failed_review_issue,
+        source_pull_request_number: nil,
+        pull_request_number: 42,
+        goal: "review", status: "failed",
+        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).to include("paid_agent_review_pending")
+    end
+
     it "re-triggers review when a newer create_pr run exists after a posted-but-failed review" do
       run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
       run.update!(review_posted_at: 30.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
@@ -8078,6 +8093,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       create(:agent_run,
         project: project, issue: failed_review_issue,
         source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        trigger_type: "automatic",
+        started_at: 10.minutes.ago, completed_at: 10.minutes.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).to include("paid_agent_review_pending")
+    end
+
+    it "re-triggers review when the newer create_pr run is linked only by pull_request_number" do
+      run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
+      run.update!(review_posted_at: 30.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+      create(:agent_run,
+        project: project, issue: failed_review_issue,
+        source_pull_request_number: nil,
+        pull_request_number: 42,
         goal: "create_pr", status: "completed",
         trigger_type: "automatic",
         started_at: 10.minutes.ago, completed_at: 10.minutes.ago)

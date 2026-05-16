@@ -1182,26 +1182,25 @@ module Activities
     end
 
     def last_completed_run(project, issue)
-      project.agent_runs
-        .where(
-          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-          pr_num: issue.github_number
-        )
+      pr_run_history_scope(project, issue)
         .completed
         .order(completed_at: :desc)
         .first
     end
 
     def completed_focused_runs_for(project, issue)
-      project.agent_runs
-        .where(
-          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-          pr_num: issue.github_number
-        )
+      pr_run_history_scope(project, issue)
         .where(goal: "create_pr")
         .where.not(focus: "general")
         .completed
         .order(completed_at: :desc)
+    end
+
+    def pr_run_history_scope(project, issue)
+      project.agent_runs.where(
+        "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+        pr_num: issue.github_number
+      )
     end
 
     def latest_completed_focused_run(project, issue)
@@ -1827,8 +1826,8 @@ module Activities
       last_review_run = current_cycle_review_runs.finished
         .order(Arel.sql("COALESCE(completed_at, updated_at) DESC")).first
       last_create_pr_run = create_pr_runs_for_current_cycle(
-        project.agent_runs
-          .where(source_pull_request_number: issue.github_number, goal: "create_pr")
+        pr_run_history_scope(project, issue)
+          .where(goal: "create_pr")
           .completed,
         issue
       ).order(completed_at: :desc).first
@@ -1905,10 +1904,8 @@ module Activities
 
     def all_review_runs(project, issue)
       review_runs_for_current_cycle(
-        project.agent_runs.where(
-          source_pull_request_number: issue.github_number,
-          goal: "review"
-        ),
+        pr_run_history_scope(project, issue)
+          .where(goal: "review"),
         issue
       )
     end
