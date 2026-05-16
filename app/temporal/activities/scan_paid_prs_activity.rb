@@ -275,6 +275,14 @@ module Activities
         current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
       )
 
+      # Owner dismissal must win before any breaker can re-escalate the PR.
+      # Otherwise an escalated PR with the label removed can get stuck in an
+      # immediate re-escalation loop on the next scan when old failures are
+      # still present.
+      if issue.pr_review_phase == "escalated" && escalation_dismissed?(issue)
+        return dismiss_escalation_trigger(issue, draft: pr_data&.draft)
+      end
+
       # Escalate PRs that are repeatedly failing due to operational issues
       # (provider exhaustion, timeouts, rate limiting) so they stop blocking
       # project progress and surface to the owner for attention.
@@ -328,8 +336,6 @@ module Activities
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
-        return dismiss_escalation_trigger(issue, draft: pr_data&.draft) if escalation_dismissed?(issue)
-
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else

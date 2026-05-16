@@ -234,6 +234,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result).to eq(:dismissed)
         expect(activity).not_to have_received(:escalate_trigger)
       end
+
+      it "dismisses before the operational failure breaker can re-escalate" do
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(true)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:dismiss_escalation_trigger).with(issue, draft: false).and_return(:dismissed)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:dismissed)
+        expect(activity).not_to have_received(:escalate_trigger)
+      end
     end
   end
 
