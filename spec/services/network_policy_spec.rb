@@ -227,7 +227,7 @@ RSpec.describe NetworkPolicy do
         allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:3443")
 
         expect(remote_backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
-          expect(cmd[2]).to include("-d proxy.example.test -p tcp --dport #{described_class::SECRETS_PROXY_PORT}")
+          expect(cmd[2]).to include("-d proxy.example.test -p tcp --dport 3443")
           [ [], [], 0 ]
         end
 
@@ -277,6 +277,15 @@ RSpec.describe NetworkPolicy do
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
           .to raise_error(described_class::Error, /Invalid PAID_PROXY_EXTERNAL_URL/)
+      end
+
+      it "raises NetworkPolicy::Error for an invalid PAID_PROXY_EXTERNAL_URL port" do
+        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:99999")
+
+        expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
+          .to raise_error(described_class::Error, /Invalid proxy port/)
       end
     end
   end

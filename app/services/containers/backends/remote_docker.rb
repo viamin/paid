@@ -13,7 +13,7 @@ module Containers
         ssl_ca_file: "REMOTE_DOCKER_CA"
       }.freeze
 
-      attr_reader :connection, :docker_url
+      attr_reader :connection, :docker_url, :identifier
 
       def self.from_env(env = ENV)
         host = env["REMOTE_DOCKER_HOST"].presence
@@ -36,10 +36,6 @@ module Containers
 
       def remote?
         true
-      end
-
-      def identifier
-        @identifier
       end
 
       def ping

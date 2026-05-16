@@ -88,9 +88,15 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
 
   describe ".from_env" do
     around do |example|
+      env_keys = %w[
+        REMOTE_DOCKER_HOST
+        REMOTE_DOCKER_IDENTIFIER
+        REMOTE_DOCKER_CERT
+        REMOTE_DOCKER_KEY
+        REMOTE_DOCKER_CA
+      ]
       original_env = ENV.to_h.slice(
-        "REMOTE_DOCKER_HOST", "REMOTE_DOCKER_IDENTIFIER",
-        "REMOTE_DOCKER_CERT", "REMOTE_DOCKER_KEY", "REMOTE_DOCKER_CA"
+        *env_keys
       )
       ENV["REMOTE_DOCKER_HOST"] = "worker-2.internal:2443"
       ENV["REMOTE_DOCKER_IDENTIFIER"] = "worker-2"
@@ -99,7 +105,8 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
       ENV["REMOTE_DOCKER_CA"] = "/certs/ca.pem"
       example.run
     ensure
-      original_env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+      env_keys.each { |key| ENV.delete(key) }
+      original_env.each { |key, value| ENV[key] = value }
     end
 
     it "builds a backend from environment configuration" do
