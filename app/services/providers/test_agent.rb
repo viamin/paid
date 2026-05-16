@@ -287,19 +287,31 @@ module Providers
       status = result[:status].to_s
       message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
+      harness_error_type = map_harness_error_category(result[:error_category])
       display_message = message || output || "Provider health check returned no message"
       classification_message = [ message, output ].compact.uniq.join("\n")
 
       if smoke_test_failure_output?(classification_message)
         translated_message = translate_and_extract_error(classification_message.presence || display_message)
         error_type = resolve_error_type(
-          harness_error_type: map_harness_error_category(result[:error_category]),
+          harness_error_type: harness_error_type,
           message: translated_message.presence || classification_message.presence || display_message
         )
 
         Result.new(
           success: false,
           error_type: error_type,
+          message: translated_message.presence || display_message
+        )
+      elsif harness_error_type.present? && !smoke_test_output_success?(output) && !smoke_test_output_success?(message)
+        translated_message = translate_and_extract_error(classification_message.presence || display_message)
+
+        Result.new(
+          success: false,
+          error_type: resolve_error_type(
+            harness_error_type: harness_error_type,
+            message: translated_message.presence || classification_message.presence || display_message
+          ),
           message: translated_message.presence || display_message
         )
       elsif smoke_test_output_success?(output) || smoke_test_output_success?(message)
@@ -309,7 +321,7 @@ module Providers
       else
         translated_message = translate_and_extract_error(classification_message.presence || display_message)
         error_type = resolve_error_type(
-          harness_error_type: map_harness_error_category(result[:error_category]),
+          harness_error_type: harness_error_type,
           message: translated_message.presence || classification_message.presence || display_message
         )
 

@@ -1106,6 +1106,19 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
       end
+
+      it "preserves a harness-classified rate limit when the provider exits 0" do
+        stub_container_smoke_test(
+          name: :gemini, status: "ok",
+          message: "Provider health check failed",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
+
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+      end
     end
 
     context "when the harness marks a noisy provider failure as rate limited" do
