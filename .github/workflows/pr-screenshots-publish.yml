@@ -145,7 +145,8 @@ jobs:
           BUNDLE_FROZEN: "true"
           RAILS_ENV: test
           SECRET_KEY_BASE: test-secret-key-base
-          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}
+          RAILS_MASTER_KEY: ${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}
           PAID_TEST_DATABASE: paid_test
           SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
           SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
