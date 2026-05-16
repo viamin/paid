@@ -10,6 +10,8 @@ module Containers
       DEFAULT_NODE_SCHEME = "https"
       NODE_HOSTNAME_CACHE_TTL = 30
       NODE_ADDRESS_LABEL = "paid.docker_host"
+      TASK_READY_TIMEOUT = 30
+      TASK_POLL_INTERVAL = 0.25
 
       VolumeHandle = Struct.new(:backend, :id, :host, keyword_init: true) do
         def remove(**options)
@@ -36,6 +38,19 @@ module Containers
         def refresh!
           @service = backend.inspect_service(id)
           @task = backend.primary_task_for(id)
+          rebuild_info!
+          self
+        end
+
+        def update!(service:, task:)
+          @service = service
+          @task = task
+          rebuild_info!
+          self
+        end
+
+        def update_task!(task)
+          @task = task
           rebuild_info!
           self
         end
@@ -108,7 +123,7 @@ module Containers
       end
 
       def start_container(container)
-        container.refresh!
+        wait_for_runnable_task!(container)
       end
 
       def stop_container(container, **options)
@@ -133,8 +148,15 @@ module Containers
 
       def list_containers(**options)
         query = options[:filters].present? ? { filters: options[:filters] } : {}
-        parse_json(manager_connection.get("/services", query)).map do |service|
-          ServiceHandle.new(backend: self, service: service, task: primary_task_for(service.fetch("ID")))
+        services = parse_json(manager_connection.get("/services", query))
+        tasks_by_service = tasks_for_services(services.map { |service| service.fetch("ID") })
+
+        services.map do |service|
+          ServiceHandle.new(
+            backend: self,
+            service: service,
+            task: primary_task_for(service.fetch("ID"), tasks: tasks_by_service[service.fetch("ID")])
+          )
         end
       end
 
@@ -168,7 +190,7 @@ module Containers
         return VolumeHandle.new(backend: self, id: name, host: host) if host.present?
 
         node = healthy_nodes.find do |candidate|
-          Docker::Volume.get(name, node_connection(candidate))
+          Docker::Volume.get(name, {}, node_connection(candidate))
           true
         rescue Docker::Error::NotFoundError
           false
@@ -180,15 +202,15 @@ module Containers
 
       def delete_volume(volume, **options)
         node = node_by_hostname(volume.host) || raise(Docker::Error::NotFoundError, "Swarm node #{volume.host.inspect} not found")
-        Docker::Volume.get(volume.id, node_connection(node)).remove(options, node_connection(node))
+        Docker::Volume.get(volume.id, {}, node_connection(node)).remove(**options)
       end
 
       def inspect_service(id)
         parse_json(manager_connection.get("/services/#{id}"))
       end
 
-      def primary_task_for(service_id)
-        tasks_for(service_id).max_by { |task| task.dig("Version", "Index").to_i }
+      def primary_task_for(service_id, tasks: nil)
+        choose_primary_task(tasks || tasks_for(service_id))
       end
 
       def service_info(service, task)
@@ -359,9 +381,13 @@ module Containers
       end
 
       def task_for(container)
-        return container.task if container.respond_to?(:task)
+        if container.respond_to?(:service_id)
+          latest_task = primary_task_for(service_id(container))
+          container.update_task!(latest_task) if container.respond_to?(:update_task!)
+          return latest_task if latest_task
+        end
 
-        primary_task_for(service_id(container))
+        container.task if container.respond_to?(:task)
       end
 
       def node_for(container_or_task)
@@ -421,8 +447,55 @@ module Containers
       end
 
       def tasks_for(service_id)
-        filters = MultiJson.dump(service: [ service_id ])
-        parse_json(manager_connection.get("/tasks", filters: filters))
+        tasks_for_services([ service_id ]).fetch(service_id, [])
+      end
+
+      def tasks_for_services(service_ids)
+        return {} if service_ids.empty?
+
+        filters = MultiJson.dump(service: service_ids)
+        parse_json(manager_connection.get("/tasks", filters: filters)).group_by { |task| task["ServiceID"] }
+      end
+
+      def choose_primary_task(tasks)
+        Array(tasks).max_by { |task| [ task_priority(task), task.dig("Version", "Index").to_i ] }
+      end
+
+      def task_priority(task)
+        return 2 if runnable_task?(task)
+        return 1 if active_task?(task)
+
+        0
+      end
+
+      def runnable_task?(task)
+        task.present? &&
+          active_task?(task) &&
+          task.dig("Status", "ContainerStatus", "ContainerID").present?
+      end
+
+      def active_task?(task)
+        return false if task.blank?
+
+        task.dig("DesiredState") == "running" || task.dig("Status", "State") == "running"
+      end
+
+      def wait_for_runnable_task!(container)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + TASK_READY_TIMEOUT
+
+        loop do
+          service = inspect_service(service_id(container))
+          task = primary_task_for(service.fetch("ID"))
+          container.update!(service:, task:)
+          return container if runnable_task?(task)
+
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+            raise Docker::Error::DockerError,
+              "Swarm service #{service.fetch("ID")} did not reach a runnable task within #{TASK_READY_TIMEOUT} seconds"
+          end
+
+          sleep(TASK_POLL_INTERVAL)
+        end
       end
 
       def swarm_network_config(config)

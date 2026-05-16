@@ -1670,7 +1670,7 @@ module Containers
 
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
-    #   /paid-heartbeat     - bind mount of host temp dir (rw, for heartbeat file shared with watchdog)
+    #   /paid-heartbeat     - host bind mount when supported, otherwise tmpfs (rw, for heartbeat touches)
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
@@ -1741,6 +1741,14 @@ module Containers
         binds << "#{copilot_config_host_path}:/home/agent/.copilot-host:ro"
       end
 
+      # /paid-heartbeat carries agent heartbeat touches used by the watchdog.
+      # When the backend supports host paths we bind-mount a host temp dir so
+      # both host and container can observe the same file. Backends like Swarm
+      # cannot expose host paths, so keep the in-container contract intact with
+      # a writable tmpfs at the same path.
+      tmpfs = {}
+      tmpfs[HEARTBEAT_MOUNT_POINT] = "size=#{1024 * 1024},mode=0777" unless heartbeat_dir_host
+
       # /tmp must be `exec` because every coding/review/rebase prompt has the
       # agent run `bundle install` as step 1, and review-goal runs additionally
       # set BUNDLE_PATH=/tmp/bundle. Bundler builds native gem extensions in
@@ -1752,10 +1760,10 @@ module Containers
       # /home/agent/.cache needs exec because some providers (e.g. GitHub Copilot)
       # download native Node.js addons (pty.node) into ~/.cache/copilot/pkg/ at
       # runtime; dlopen() requires mmap(PROT_EXEC), which fails on a noexec mount.
-      tmpfs = {
+      tmpfs.merge!(
         "/tmp" => "exec,size=#{options[:tmpfs_tmp_size]},mode=1777",
         "/home/agent/.cache" => "exec,size=#{options[:tmpfs_cache_size]},mode=0755"
-      }
+      )
 
       # Claude CLI needs to write session data, project indexes, todos, debug
       # logs, and stats under ~/.claude. A writable tmpfs lets it do so without

@@ -34,6 +34,7 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
   let(:task_payload) do
     {
       "ID" => "task-1",
+      "ServiceID" => service_id,
       "NodeID" => node_id,
       "DesiredState" => "running",
       "Status" => {
@@ -125,11 +126,52 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.container_host_for(service)).to eq("worker-1")
   end
 
+  it "waits for a runnable task before returning from start_container" do
+    pending_task = task_payload.deep_dup
+    pending_task["Status"] = { "State" => "pending", "ContainerStatus" => {} }
+
+    stub_request(:get, "#{manager_url}/tasks")
+      .with(query: hash_including("filters" => /#{service_id}/))
+      .to_return(
+        { status: 200, body: [ pending_task ].to_json },
+        { status: 200, body: [ pending_task ].to_json },
+        { status: 200, body: [ task_payload ].to_json }
+      )
+
+    service = backend.get_container(service_id)
+
+    expect(backend.start_container(service)).to eq(service)
+    expect(service.task.dig("Status", "ContainerStatus", "ContainerID")).to eq(container_id)
+  end
+
   it "executes commands against the landed task container on the worker node" do
     service = backend.get_container(service_id)
 
     expect(backend.exec_in_container(service, [ "pwd" ])).to eq([ [ "ok" ], [], 0 ])
     expect(Docker::Container).to have_received(:get).with(container_id, {}, kind_of(Docker::Connection)).at_least(:once)
+  end
+
+  it "refreshes the routed task before exec when the service is rescheduled" do
+    replacement_task = task_payload.deep_dup
+    replacement_task["ID"] = "task-2"
+    replacement_task["Version"] = { "Index" => 4 }
+    replacement_task["Status"]["ContainerStatus"]["ContainerID"] = "container-456"
+    replacement_container = instance_double(Docker::Container, exec: [ [ "moved" ], [], 0 ], json: container_payload)
+
+    allow(Docker::Container).to receive(:get)
+      .with("container-456", {}, kind_of(Docker::Connection))
+      .and_return(replacement_container)
+    stub_request(:get, "#{manager_url}/tasks")
+      .with(query: hash_including("filters" => /#{service_id}/))
+      .to_return(
+        { status: 200, body: [ task_payload ].to_json },
+        { status: 200, body: [ replacement_task ].to_json }
+      )
+
+    service = backend.get_container(service_id)
+
+    expect(backend.exec_in_container(service, [ "pwd" ])).to eq([ [ "moved" ], [], 0 ])
+    expect(service.task.fetch("ID")).to eq("task-2")
   end
 
   it "returns service state based on the current swarm task" do
@@ -145,6 +187,59 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(a_request(:get, "#{manager_url}/services/#{service_id}")).to have_been_made.once
     expect(a_request(:get, "#{manager_url}/tasks")
       .with(query: hash_including("filters" => /#{service_id}/))).to have_been_made.once
+  end
+
+  it "fetches tasks once when listing multiple services" do
+    other_service_id = "svc-456"
+    filters = MultiJson.dump(service: [ service_id, other_service_id ])
+    other_task = task_payload.deep_dup
+    other_task["ID"] = "task-9"
+    other_task["ServiceID"] = other_service_id
+    other_task["Version"] = { "Index" => 9 }
+    other_service = service_payload.deep_dup
+    other_service["ID"] = other_service_id
+    other_service["Spec"]["Name"] = "paid-agent-2"
+
+    stub_request(:get, "#{manager_url}/services")
+      .to_return(status: 200, body: [ service_payload, other_service ].to_json)
+    tasks_request = stub_request(:get, "#{manager_url}/tasks")
+      .with(query: { "filters" => filters })
+      .to_return(status: 200, body: [ task_payload, other_task ].to_json)
+
+    services = backend.list_containers
+
+    expect(services.map(&:service_id)).to eq([ service_id, other_service_id ])
+    expect(tasks_request).to have_been_requested.once
+  end
+
+  it "looks up volumes on each worker connection" do
+    volume = instance_double(Docker::Volume)
+
+    without_partial_double_verification do
+      allow(Docker::Volume).to receive(:get)
+        .with("paid-workspace-42", {}, kind_of(Docker::Connection))
+        .and_return(volume)
+    end
+
+    handle = backend.get_volume("paid-workspace-42")
+
+    expect(handle.host).to eq("worker-1")
+  end
+
+  it "removes volumes through the owning worker connection" do
+    volume = instance_double(Docker::Volume, remove: true)
+    without_partial_double_verification do
+      allow(Docker::Volume).to receive(:get)
+        .with("paid-workspace-42", {}, kind_of(Docker::Connection))
+        .and_return(volume)
+    end
+
+    backend.delete_volume(
+      described_class::VolumeHandle.new(backend: backend, id: "paid-workspace-42", host: "worker-1"),
+      force: true
+    )
+
+    expect(volume).to have_received(:remove).with(force: true)
   end
 
   def stub_manager_get(path, response, query: nil)

@@ -59,6 +59,17 @@ RSpec.describe Containers::Provision do
     allow(provision).to receive(:apply_network_restrictions!)
   end
 
+  def build_remote_backend_without_host_paths(container, &create_container)
+    backend = instance_double(
+      Containers::Backends::Base,
+      supports_host_paths?: false,
+      start_container: true,
+      container_host_for: "worker-1"
+    )
+    allow(backend).to receive(:create_container, &create_container || ->(*) { container })
+    backend
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -236,14 +247,12 @@ RSpec.describe Containers::Provision do
         expect(result[:container_id]).to eq("abc123container")
       end
 
-      it "prepares heartbeat directories only when the backend supports host paths" do
-        backend = instance_double(
-          Containers::Backends::Base,
-          supports_host_paths?: false,
-          create_container: mock_container,
-          start_container: true,
-          container_host_for: "worker-1"
-        )
+      it "mounts a tmpfs heartbeat directory when the backend lacks host path support" do
+        config = nil
+        backend = build_remote_backend_without_host_paths(mock_container) do |given_config|
+          config = given_config
+          mock_container
+        end
         provision = described_class.new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
 
         stub_provision_steps(provision)
@@ -253,7 +262,10 @@ RSpec.describe Containers::Provision do
 
         expect(result).to be_success
         expect(provision).not_to have_received(:prepare_heartbeat_dir!)
-        expect(backend).to have_received(:create_container)
+        expect(config.dig("HostConfig", "Tmpfs")).to include(
+          described_class::HEARTBEAT_MOUNT_POINT => "size=1048576,mode=0777"
+        )
+        expect(config.dig("HostConfig", "Binds").grep(/#{Regexp.escape(described_class::HEARTBEAT_MOUNT_POINT)}/)).to be_empty
         expect(backend).to have_received(:start_container).with(mock_container)
       end
 
