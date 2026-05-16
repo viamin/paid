@@ -1468,7 +1468,7 @@ RSpec.describe AgentRun do
           )
 
           allow(Containers::PoolManager).to receive(:new)
-            .with(project: project)
+            .with(project: agent_run.project)
             .and_return(instance_double(Containers::PoolManager, acquire: pooled_result))
 
           agent_run.provision_container
@@ -1483,7 +1483,7 @@ RSpec.describe AgentRun do
           result = Containers::Provision::Result.success(container_id: "fresh-container", container_host: "remote")
 
           allow(Containers::PoolManager).to receive(:new)
-            .with(project: project)
+            .with(project: agent_run.project)
             .and_return(instance_double(Containers::PoolManager, acquire: nil))
           allow(Containers::Provision).to receive(:new).and_return(provision_service)
           allow(provision_service).to receive(:provision).and_return(result)
@@ -1493,7 +1493,7 @@ RSpec.describe AgentRun do
 
           expect(agent_run.reload.container_id).to eq("fresh-container")
           expect(agent_run.container_host).to eq("remote")
-          expect(PoolReplenishmentJob).to have_received(:perform_later).with(project.id)
+          expect(PoolReplenishmentJob).to have_received(:perform_later).with(agent_run.project_id)
         end
 
         it "provisions container when worktree_path is blank" do
