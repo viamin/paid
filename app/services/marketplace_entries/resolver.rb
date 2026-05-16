@@ -9,6 +9,7 @@ module MarketplaceEntries
     def initialize(project:, agent_run:, manual_entry_ids: nil, auto_attach_enabled: false, account_auto_attach_required: false)
       @project = project
       @agent_run = agent_run
+      @manual_entry_ids_specified = !manual_entry_ids.nil?
       @manual_entry_ids = Array(manual_entry_ids).filter_map { |id| Integer(id, exception: false) }.uniq
       @auto_attach_enabled = auto_attach_enabled
       @account_auto_attach_required = account_auto_attach_required
@@ -69,7 +70,7 @@ module MarketplaceEntries
     end
 
     def effective_manual_entry_ids
-      @effective_manual_entry_ids ||= if manual_entry_ids.any?
+      @effective_manual_entry_ids ||= if manual_entry_ids_specified?
         manual_entry_ids
       else
         agent_run.agent_run_marketplace_entries.where(attachment_source: "manual").pluck(:marketplace_entry_id)
@@ -153,6 +154,10 @@ module MarketplaceEntries
 
     def auto_attach_enabled?
       auto_attach_enabled
+    end
+
+    def manual_entry_ids_specified?
+      @manual_entry_ids_specified
     end
 
     def account_auto_attach_required?

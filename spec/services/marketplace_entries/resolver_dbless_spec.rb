@@ -156,6 +156,21 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "manual" ])
   end
 
+  it "treats an explicit empty manual selection as clearing manual attachments" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries_with_manual
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    resolver = described_class.new(project:, agent_run:, manual_entry_ids: [])
+    allow(resolver).to receive(:candidate_entries).and_return([])
+
+    results = resolver.call
+
+    expect(results).to be_empty
+    expect(attachments).not_to have_received(:where)
+  end
+
   it "fails closed when a manually selected entry cannot be resolved for the run" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries
