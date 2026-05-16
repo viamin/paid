@@ -70,7 +70,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
 
     volume_name = "#{VOLUME_PREFIX}#{agent_run.id}"
     backend = Containers.backend_for(agent_run.container_host)
-    backend.delete_volume(backend.get_volume(volume_name))
+    backend.delete_volume(backend.get_volume(volume_name, host: agent_run.container_host))
     true
   rescue Docker::Error::NotFoundError
     true # Volume already removed — treat as successfully cleaned
