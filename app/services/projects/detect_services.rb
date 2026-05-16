@@ -99,8 +99,7 @@ module Projects
       "mongodb" => /mongo/,
       "elasticsearch" => /elasticsearch|opensearch/,
       "memcached" => /memcache/,
-      "selenium" => /selenium/,
-      "chromium" => /chromium/
+      "selenium" => /selenium/
     }.freeze
 
     attr_reader :project
@@ -145,16 +144,18 @@ module Projects
 
     private
 
-    # Finds ServiceContainer records matching the given canonical service names.
+    # Finds ServiceContainer records matching the given canonical service names,
+    # scoped to the project's account to prevent cross-tenant matches.
     # Tries exact name match first (e.g. name == "postgres"), then falls back
     # to image-pattern matching so containers named "Screenshot Postgres" or
     # "Dev Redis" are still matched to their canonical service.
     def matching_containers(detected_names)
-      by_name = ServiceContainer.where(name: detected_names).index_by(&:name)
+      account_scope = ServiceContainer.where(account_id: project.account_id)
+      by_name = account_scope.where(name: detected_names).index_by(&:name)
       remaining = detected_names.reject { |n| by_name.key?(n) }
       return by_name if remaining.empty?
 
-      ServiceContainer.all.each do |sc|
+      account_scope.each do |sc|
         remaining.each do |service_name|
           next if by_name.key?(service_name)
 
