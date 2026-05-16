@@ -200,6 +200,7 @@ module Knowledge
 
         uri = URI("#{proxy_url}/api/proxy/anthropic/v1/messages")
         http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 
@@ -243,6 +244,7 @@ module Knowledge
 
         uri = URI("#{proxy_url}/api/proxy/openai/v1/chat/completions")
         http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 
@@ -304,8 +306,7 @@ module Knowledge
     end
 
     def proxy_base_url
-      proxy_port = Rails.application.config.x.paid_proxy_port
-      "http://paid-proxy:#{proxy_port}"
+      Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: true)
     end
 
     def start_watchdog(timeout)

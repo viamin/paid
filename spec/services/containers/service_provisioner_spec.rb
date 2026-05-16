@@ -68,7 +68,8 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive(:start)
-        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
 
         # Stub per-run database creation
         allow(Docker::Container).to receive(:get).with("abc123").and_return(docker_container)
@@ -188,7 +189,8 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(new_container)
         allow(new_container).to receive(:start)
-        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
 
         # Stub per-run database creation
         allow(Docker::Container).to receive(:get).with("new456").and_return(new_container)
@@ -330,27 +332,34 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: service_container)
       end
 
-      it "removes stale stopped container and retries" do
+      def stub_stale_container_retry(service_host, stale_json, new_container, provisioner)
         stale = instance_double(Docker::Container, id: "stale789")
-        new_container = instance_double(Docker::Container, id: "new789")
-
         allow(Docker::Image).to receive(:create)
+
         call_count = 0
         allow(Docker::Container).to receive(:create) do
           call_count += 1
           raise Docker::Error::ConflictError, "Conflict. The container name is already in use" if call_count == 1
+
           new_container
         end
+
         allow(Docker::Container).to receive(:get).with(service_host).and_return(stale)
         allow(stale).to receive(:json).and_return(stale_json)
         allow(stale).to receive(:stop)
         allow(stale).to receive(:delete)
         allow(new_container).to receive(:start)
-        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
-
-        # Stub per-run database creation
+        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
         allow(Docker::Container).to receive(:get).with("new789").and_return(new_container)
         allow(new_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
+
+        stale
+      end
+
+      it "removes stale stopped container and retries" do
+        new_container = instance_double(Docker::Container, id: "new789")
+        stale = stub_stale_container_retry(service_host, stale_json, new_container, provisioner)
 
         result = provisioner.provision(agent_run)
 
@@ -364,7 +373,8 @@ RSpec.describe Containers::ServiceProvisioner do
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with(service_host).and_return(running_container)
         allow(running_container).to receive_messages(json: running_json, stop: nil, delete: nil)
-        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
 
         # Stub per-run database creation
         allow(Docker::Container).to receive(:get).with("running789").and_return(running_container)
@@ -391,7 +401,8 @@ RSpec.describe Containers::ServiceProvisioner do
           .and_return(instance_double(Docker::Network, disconnect: nil))
         allow(network).to receive(:connect)
         allow(running_container).to receive_messages(json: running_json, stop: nil, delete: nil)
-        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
         allow(running_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
 
         provisioner.provision(agent_run, network: NetworkPolicy::INFRA_NETWORK_NAME)
@@ -443,7 +454,8 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(Docker::Container).to receive(:get).with("test123").and_return(docker_container)
-        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
       end
 
       it "generates per-run DATABASE_URL for postgres images" do
@@ -669,6 +681,26 @@ RSpec.describe Containers::ServiceProvisioner do
       result = provisioner.send(:docker_healthcheck_status, sc)
       expect(result).to be_nil
     end
+
+    it "probes from inside the container when the backend is remote and no healthcheck exists" do
+      sc = create(:service_container, status: "running", docker_container_id: "remote123", name: "redis", port: 6379)
+      container = instance_double(Docker::Container)
+      backend = Containers::Backends::LocalDocker.new
+
+      allow(backend).to receive(:remote?).and_return(true)
+      allow(Containers).to receive(:backend).and_return(backend)
+      allow(Docker::Container).to receive(:get).with("remote123").and_return(container)
+      allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+
+      expect(provisioner.send(:tcp_port_open?, sc)).to be(true)
+      expect(Containers::TcpHealthProbe).to have_received(:open?).with(
+        backend: backend,
+        container: container,
+        fallback_on_missing_tools: false,
+        host: a_string_matching(/\Apaid-svc-/),
+        port: 6379
+      )
+    end
   end
 
   describe "metrics collection scheduling" do
@@ -692,7 +724,8 @@ RSpec.describe Containers::ServiceProvisioner do
       allow(docker_container).to receive(:exec).and_return([ [ "(0 rows)" ], [], 0 ])
       allow(Docker::Container).to receive(:create).and_return(docker_container)
       allow(Docker::Container).to receive(:get).with("m123").and_return(docker_container)
-      allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+      allow(provisioner).to receive(:docker_healthcheck_status).and_return(nil)
+      allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
     end
 
     it "silently handles concurrency errors from duplicate metrics job enqueues" do

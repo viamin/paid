@@ -62,12 +62,38 @@ RSpec.describe Containers::Provision do
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
+      remote?: false,
       supports_host_paths?: false,
       start_container: true,
       container_host_for: "worker-1"
     )
     allow(backend).to receive(:create_container, &create_container || ->(*) { container })
     backend
+  end
+
+  def stub_remote_backend_proxy_support(mock_network:, mock_volume:, mock_container:)
+    remote_backend = build_remote_backend(mock_volume:, mock_container:)
+    allow(remote_backend).to receive(:get_volume).and_raise(Docker::Error::NotFoundError)
+    allow(remote_backend).to receive(:get_network).with("paid_agent").and_return(mock_network)
+    allow(NetworkPolicy).to receive(:ensure_network!).with(network: "paid_agent", backend: remote_backend).and_return(mock_network)
+    allow(NetworkPolicy).to receive(:apply_firewall_rules)
+    remote_backend
+  end
+
+  def build_remote_backend(mock_volume:, mock_container:)
+    instance_double(
+      Containers::Backends::RemoteDocker,
+      identifier: "worker-1",
+      remote?: true,
+      supports_host_paths?: false,
+      container_host_for: "worker-1",
+      create_volume: mock_volume,
+      create_container: mock_container,
+      start_container: true,
+      exec_in_container: [ [], [], 0 ],
+      delete_container: true,
+      delete_volume: true
+    )
   end
 
   let(:project) { create(:project) }
@@ -587,6 +613,31 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "uses PAID_PROXY_EXTERNAL_URL when a remote backend is active" do
+        remote_backend = stub_remote_backend_proxy_support(
+          mock_network: mock_network,
+          mock_volume: mock_volume,
+          mock_container: mock_container
+        )
+
+        original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+        ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+
+        remote_service = described_class.new(agent_run: agent_run, backend: remote_backend)
+
+        expect(remote_backend).to receive(:create_container) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_PROXY_URL=https://proxy.example.test:3443")
+          expect(env).to include("OPENAI_BASE_URL=https://proxy.example.test:3443/api/proxy/openai")
+          expect(env).to include("GOOGLE_GEMINI_BASE_URL=https://proxy.example.test:3443/api/proxy/google")
+          mock_container
+        end
+
+        remote_service.provision
+      ensure
+        ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+      end
+
       it "includes provider CLI env overrides from agent-harness" do
         gemini_provider = instance_double(
           AgentHarness::Providers::Gemini,
@@ -759,7 +810,10 @@ RSpec.describe Containers::Provision do
 
     context "with network integration" do
       it "ensures the agent network exists before provisioning" do
-        expect(NetworkPolicy).to receive(:ensure_network!).with(network: NetworkPolicy::NETWORK_NAME).ordered
+        expect(NetworkPolicy).to receive(:ensure_network!).with(
+          network: NetworkPolicy::NETWORK_NAME,
+          backend: service.backend
+        ).ordered
         expect(Docker::Container).to receive(:create).ordered.and_return(mock_container)
 
         service.provision
@@ -800,7 +854,11 @@ RSpec.describe Containers::Provision do
 
       it "applies firewall rules after container start" do
         expect(mock_container).to receive(:start).ordered
-        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(mock_container, service_destinations: []).ordered
+        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(
+          mock_container,
+          service_destinations: [],
+          backend: service.backend
+        ).ordered
 
         service.provision
       end
@@ -904,7 +962,10 @@ RSpec.describe Containers::Provision do
       end
 
       it "ensures the infrastructure network exists" do
-        expect(NetworkPolicy).to receive(:ensure_network!).with(network: NetworkPolicy::INFRA_NETWORK_NAME)
+        expect(NetworkPolicy).to receive(:ensure_network!).with(
+          network: NetworkPolicy::INFRA_NETWORK_NAME,
+          backend: service.backend
+        )
 
         service.provision
       end

@@ -90,6 +90,10 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.identifier).to eq("swarm")
   end
 
+  it "uses overlay DNS rather than remote proxy routing" do
+    expect(backend.remote?).to be(false)
+  end
+
   it "does not advertise host path support" do
     expect(backend.supports_host_paths?).to be(false)
   end
@@ -97,6 +101,10 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
   it "treats the landing node hostname as belonging to the active swarm backend" do
     expect(backend.owns_host?("worker-1")).to be(true)
     expect(backend.owns_host?("other-host")).to be(false)
+  end
+
+  it "includes node hostnames and backend identifier in all_host_identifiers" do
+    expect(backend.all_host_identifiers).to contain_exactly("worker-1", "swarm")
   end
 
   it "keeps recognizing persisted node hostnames even when the node is not ready" do

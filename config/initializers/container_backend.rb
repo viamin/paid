@@ -2,9 +2,12 @@
 
 Rails.application.config.to_prepare do
   resolver = Containers::Backends::Resolver
-  resolver.reset!(:local)
-  resolver.reset!(:swarm)
+  resolver.reset!
   resolver.register(:local, -> { Containers::Backends::LocalDocker.new })
+  if (remote_backend = Containers::Backends::RemoteDocker.from_env)
+    resolver.register(remote_backend.identifier, -> { remote_backend })
+    resolver.register(:remote, -> { remote_backend })
+  end
   resolver.register(:swarm, -> {
     Containers::Backends::Swarm.new(
       manager_host: ENV.fetch("SWARM_MANAGER_HOST", ENV.fetch("DOCKER_HOST", "unix:///var/run/docker.sock")),
@@ -18,4 +21,10 @@ Rails.application.config.to_prepare do
 
   backend_type = ENV.fetch("CONTAINER_BACKEND", "local").to_sym
   Rails.application.config.x.container_backend = resolver.for(backend_type)
+
+  if Rails.application.config.x.container_backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].blank?
+    Rails.logger.warn(
+      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL is not set; remote containers will be unable to reach the secrets proxy"
+    )
+  end
 end

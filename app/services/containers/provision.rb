@@ -2048,9 +2048,7 @@ module Containers
     end
 
     def proxy_base_url
-      proxy_port = Rails.application.config.x.paid_proxy_port
-      proxy_host = network_contract.restricted? ? "paid-proxy" : "web"
-      "http://#{proxy_host}:#{proxy_port}"
+      Containers::ProxyUrl.resolve(backend:, restricted: network_contract.restricted?)
     end
 
     def validate_backend_mount_support!
@@ -2285,7 +2283,7 @@ module Containers
 
     def detected_config_mount(suffix)
       hostname = Socket.gethostname
-      container = Containers.backend.get_container(hostname)
+      container = local_runtime_backend.get_container(hostname)
       mounts = container.info["Mounts"] || []
       mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
     rescue Docker::Error::DockerError
@@ -2317,7 +2315,7 @@ module Containers
       return @current_container_mounts if defined?(@current_container_mounts)
 
       hostname = Socket.gethostname
-      container = Containers.backend.get_container(hostname)
+      container = local_runtime_backend.get_container(hostname)
       @current_container_mounts = container.info["Mounts"] || []
     rescue Docker::Error::DockerError
       @current_container_mounts = nil
@@ -2360,7 +2358,7 @@ module Containers
     end
 
     def ensure_network!
-      NetworkPolicy.ensure_network!(network: network_name)
+      NetworkPolicy.ensure_network!(network: network_name, backend: backend)
       log_system("container.network.ready", network: network_name, mode: network_contract.mode)
     rescue NetworkPolicy::Error => e
       raise ProvisionError, "Network setup failed: #{e.message}"
@@ -2371,7 +2369,8 @@ module Containers
 
       NetworkPolicy.apply_firewall_rules(
         container,
-        service_destinations: resolve_service_destinations
+        service_destinations: resolve_service_destinations,
+        backend: backend
       )
       log_system("container.firewall.applied", container_id: container.id)
     rescue NetworkPolicy::Error => e
@@ -2396,6 +2395,12 @@ module Containers
         agent_run: agent_run,
         logger: method(:log_system)
       )
+    end
+
+    def local_runtime_backend
+      @local_runtime_backend ||= Containers.backend_for("local")
+    rescue Containers::Backends::Resolver::UnknownBackendError
+      Containers.backend
     end
 
     def streaming_event_command?(command)
