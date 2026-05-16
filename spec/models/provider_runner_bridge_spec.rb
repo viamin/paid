@@ -17,6 +17,7 @@ RSpec.describe Provider, :no_db do
   end
 
   it "keeps provider-named compatibility methods available" do
+    expect(described_class).to respond_to(:default_provider_key)
     expect(AgentRun).to respond_to(:distinct_effective_provider_options)
     expect(AgentRun).to respond_to(:provider_options_cache_key_for)
     expect(AgentRun).to respond_to(:invalidate_provider_options_cache)

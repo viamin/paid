@@ -38,6 +38,10 @@ class Provider < Runner
       ProviderSupport.addable_provider_key?(provider_key)
     end
 
+    def default_provider_key
+      default_runner_key
+    end
+
     def harness_provider_key_for(provider_key)
       ProviderSupport.harness_provider_key_for(provider_key)
     end
