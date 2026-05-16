@@ -55,6 +55,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:check_rate_budget!).with(client)
       allow(activity).to receive(:fetch_pr_data)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
+      allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
     end
 
     context "when a restarted PR already has an active create_pr run" do
@@ -286,6 +287,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.send(:scan_pr, project, client, issue)
 
         expect(result).to eq(scan_result)
+        expect(activity).not_to have_received(:escalate_trigger)
+      end
+    end
+
+    context "when stale operational failures are present on a draft PR" do
+      let(:phase) { "draft" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: false,
+          head: instance_double(PrHeadDouble, sha: "draft123"),
+          updated_at: Time.current)
+      end
+
+      it "preserves legacy escalate_to_owner when explicit decisions are disabled" do
+        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:failure_streak_reason).with(project, issue, progress_state).and_return("stale operational failures")
+        allow(activity).to receive(:escalate_trigger).with(issue, reason: "stale operational failures").and_return(:escalated)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:escalated)
+      end
+
+      it "keeps operational failures lifecycle-only when explicit decisions are enabled" do
+        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_draft_pr).with(project, client, issue, pr_data: pr_data).and_return(:draft_scan)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:draft_scan)
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end

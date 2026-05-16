@@ -288,9 +288,15 @@ module Activities
         return dismiss_escalation_trigger(issue, draft: pr_data&.draft)
       end
 
-      # Provider/infrastructure bursts are now a lifecycle-only signal. The
-      # policy layer decides whether stale operational failures should
-      # escalate, back off, or continue through normal scan triggers.
+      # Provider/infrastructure bursts are now a lifecycle-owned signal when
+      # explicit PR automation decisions are enabled. The legacy workflow path
+      # only consumes prs_to_trigger, so preserve its direct escalate trigger
+      # until that rollout is complete.
+      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
+      if operational_failure_breaker?(project, issue, progress_state) && !explicit_pr_decisions
+        return escalate_trigger(issue, reason: failure_streak_reason(project, issue, progress_state))
+      end
+
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue, progress_state:)
       retry_limit_requires_escalation = retry_limit_reached &&
