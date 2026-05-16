@@ -223,8 +223,8 @@ RSpec.describe NetworkPolicy do
 
       it "uses PAID_PROXY_EXTERNAL_URL for remote backends" do
         remote_backend = instance_double(Containers::Backends::Base, remote?: true, exec_in_container: [ [], [], 0 ])
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:3443")
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:3443")
 
         expect(remote_backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           expect(cmd[2]).to include("-d proxy.example.test -p tcp --dport 3443")
@@ -272,8 +272,8 @@ RSpec.describe NetworkPolicy do
 
       it "raises NetworkPolicy::Error for invalid PAID_PROXY_EXTERNAL_URL" do
         remote_backend = instance_double(Containers::Backends::Base, remote?: true)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("not a url")
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("PAID_PROXY_EXTERNAL_URL").and_return("not a url")
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
           .to raise_error(described_class::Error, /Invalid PAID_PROXY_EXTERNAL_URL/)
@@ -281,8 +281,8 @@ RSpec.describe NetworkPolicy do
 
       it "raises NetworkPolicy::Error for an invalid PAID_PROXY_EXTERNAL_URL port" do
         remote_backend = instance_double(Containers::Backends::Base, remote?: true)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:99999")
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:99999")
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
           .to raise_error(described_class::Error, /Invalid proxy port/)
