@@ -498,6 +498,28 @@ RSpec.describe Issue do
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(0)
       end
 
+      it "does not promote a head-aware state into the default cache when head commit time is unknown" do
+        stale_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 3
+        )
+        partial_head_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(stale_progress_state)
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+          .and_return(partial_head_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: nil)).to eq(1)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+      end
+
       it "invalidates the memoized progress state on reload" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,

@@ -385,6 +385,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(cached_progress_state(current_head_updated_at: fetched_at)).to eq(head_aware_state)
     end
 
+    it "does not promote a same-sha cache entry into the default slot before head commit time is known" do
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+        .and_return(stale_state)
+      allow(PullRequests::ProgressState).to receive(:call)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+        .and_return(head_aware_state)
+
+      expect(activity.send(:pr_progress_state, project, issue)).to eq(stale_state)
+      expect(cached_progress_state(current_head_updated_at: nil)).to eq(head_aware_state)
+      expect(activity.send(:pr_progress_state, project, issue)).to eq(stale_state)
+    end
+
     it "clears the issue-level progress cache when the activity invalidates its cache" do
       allow(issue).to receive(:invalidate_pr_progress_state_cache!)
 

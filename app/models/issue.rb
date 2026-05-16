@@ -201,7 +201,9 @@ class Issue < ApplicationRecord
     # Once we have live PR head data, promote that result to the default
     # cache entry so later helper calls on the same Issue instance don't
     # reuse a stale pre-fetch snapshot.
-    @pr_progress_states[:default] = @pr_progress_states[cache_key] if current_head_sha.present?
+    if current_head_sha.present? && current_head_updated_at.present?
+      @pr_progress_states[:default] = @pr_progress_states[cache_key]
+    end
     @pr_progress_states[cache_key]
   end
 
