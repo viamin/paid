@@ -51,9 +51,9 @@ module AgentRuns
     end
 
     def execute_agent
-      runner_key = Runner.runner_key_for_agent_type(agent_run.agent_type)
+      harness_runner_key = harness_runner_key_for(agent_run.agent_type)
 
-      options = { runner: runner_key, dangerous_mode: true }
+      options = { runner: harness_runner_key.to_s, dangerous_mode: true }
       options[:timeout] = timeout unless timeout.nil?
 
       AgentHarness.send_message(prompt, **options)
@@ -125,7 +125,7 @@ module AgentRuns
       Result.new(success: false, error: error)
     end
 
-    def runner_key_for(agent_type)
+    def harness_runner_key_for(agent_type)
       runner_key = Runner.runner_key_for_agent_type(agent_type)
       return nil unless Runner.supported_runner_key?(runner_key)
 
