@@ -40,7 +40,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "DB_USERNAME" => "postgres",
             "DB_PASSWORD" => "postgres",
             "TMPDIR" => "${{ github.workspace }}/.tmp-build",
-            "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn"
+            "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn",
+            "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache"
           )
           expect(step_names).not_to include("Create application database role")
         end
@@ -57,7 +58,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch(job_name)
           install_step = job.fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
 
-          expect(install_step.fetch("run")).to include('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER"')
+          expect(install_step.fetch("run")).to include('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"')
           expect(install_step.fetch("run")).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
         end
 
