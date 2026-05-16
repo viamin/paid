@@ -262,7 +262,14 @@ module Activities
         )
 
         if no_progress_stuck?(project, issue, progress_state) && pr_data.draft
-          return escalate_trigger(issue, reason: failure_streak_reason(project, issue, progress_state))
+          reason = if progress_state.latest_unsuccessful_review? &&
+              review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
+            review_goal_retry_escalation_reason(project, issue, progress_state:)
+          else
+            failure_streak_reason(project, issue, progress_state)
+          end
+
+          return escalate_trigger(issue, reason:)
         end
       end
 
