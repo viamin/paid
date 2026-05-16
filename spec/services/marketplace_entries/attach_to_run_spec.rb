@@ -111,6 +111,31 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     expect(attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
   end
 
+  it "does not add unrelated team-default entries when the user manually selected a marketplace entry" do
+    automatic = create_entry(
+      name: "Automatic skill",
+      rule_mode: "automatic",
+      conditions: { "goals" => [ "create_pr" ] },
+      content: "Automatic instructions"
+    )
+    create_entry(
+      name: "Team default skill",
+      rule_mode: "team_default",
+      conditions: {},
+      content: "Team default instructions"
+    )
+    manual = create_entry(name: "Manual skill", content: "Manual instructions")
+
+    attachments = described_class.call(
+      agent_run:,
+      manual_entry_ids: [ manual.id ],
+      auto_attach_enabled: true
+    )
+
+    expect(attachments.map(&:marketplace_entry)).to eq([ automatic, manual ])
+    expect(attachments.map(&:attachment_source)).to eq([ "automatic", "manual" ])
+  end
+
   it "attaches account-required automatic and team-default entries without manual selection" do
     automatic = create_entry(
       name: "Automatic skill",

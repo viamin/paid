@@ -58,6 +58,33 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
   end
 
+  it "does not treat manual selections as consent for unrelated team-default entries" do
+    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    automatic_entry = build_entry(id: 7)
+    manual_entry = build_entry(id: 8, rules: [])
+    team_default_entry = build_entry(
+      id: 9,
+      rules: [ build_rule(mode: "team_default", enabled: true, position: 0, id: 4, rationale: "Required by the account") ]
+    )
+
+    resolver = described_class.new(
+      project:,
+      agent_run:,
+      manual_entry_ids: [ manual_entry.id ],
+      auto_attach_enabled: true
+    )
+    allow(resolver).to receive(:candidate_entries).and_return([ automatic_entry, manual_entry, team_default_entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ automatic_entry, manual_entry ])
+    expect(results.map(&:source)).to eq([ "automatic", "manual" ])
+  end
+
   it "upgrades to manual when the user explicitly selects an automatically matched entry" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
