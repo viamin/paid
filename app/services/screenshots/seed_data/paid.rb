@@ -67,7 +67,12 @@ module Screenshots
             record.labels = [ project.enhance_issue_needs_input_label_name ]
           end
 
-          provider = user.providers.subscription.first!
+          provider = user.providers.subscription.first ||
+            user.providers.create!(
+              provider_key: "claude",
+              auth_type: "subscription",
+              name: "Screenshot Claude"
+            )
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
           service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|

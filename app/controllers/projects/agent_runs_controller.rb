@@ -703,11 +703,11 @@ module Projects
     end
 
     def marketplace_auto_attach_enabled_for_current_user?
-      current_user.settings.marketplace_auto_attach_enabled?
+      current_user&.settings&.marketplace_auto_attach_enabled? || false
     end
 
     def marketplace_auto_attach_required_for_current_account?
-      current_account.tenant_setting&.marketplace_auto_attach_required?
+      current_account&.tenant_setting&.marketplace_auto_attach_required? || false
     end
 
     def ignorable_marketplace_attachment_error?(error)

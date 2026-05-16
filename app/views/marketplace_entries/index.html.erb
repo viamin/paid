@@ -23,11 +23,12 @@
       </thead>
       <tbody class="divide-y divide-gray-200 bg-white">
         <% @marketplace_entries.each do |entry| %>
+          <% entry_tags = Array(entry.tags) %>
           <tr>
             <td class="px-4 py-3 text-sm text-gray-900">
               <%= link_to entry.name, marketplace_entry_path(entry), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
-              <% if entry.tags.any? %>
-                <div class="mt-1 text-xs text-gray-500"><%= entry.tags.join(", ") %></div>
+              <% if entry_tags.any? %>
+                <div class="mt-1 text-xs text-gray-500"><%= entry_tags.join(", ") %></div>
               <% end %>
             </td>
             <td class="px-4 py-3 text-sm text-gray-700"><%= entry.entry_type.humanize %></td>

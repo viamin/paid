@@ -164,4 +164,24 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       end
     end
   end
+
+  describe "#marketplace_auto_attach_enabled_for_current_user?" do
+    let(:controller) { described_class.new }
+
+    it "returns false when the current user has no settings object" do
+      allow(controller).to receive(:current_user).and_return(double(settings: nil))
+
+      expect(controller.send(:marketplace_auto_attach_enabled_for_current_user?)).to be(false)
+    end
+  end
+
+  describe "#marketplace_auto_attach_required_for_current_account?" do
+    let(:controller) { described_class.new }
+
+    it "returns false when the current account has no tenant settings" do
+      allow(controller).to receive(:current_account).and_return(double(tenant_setting: nil))
+
+      expect(controller.send(:marketplace_auto_attach_required_for_current_account?)).to be(false)
+    end
+  end
 end

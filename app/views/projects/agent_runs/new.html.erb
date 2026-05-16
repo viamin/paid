@@ -161,7 +161,7 @@
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
             <% if @marketplace_entries.any? %>
               <% selected_marketplace_entry_ids = Array(params[:marketplace_entry_ids]).map(&:to_s) %>
-              <% marketplace_tags = @marketplace_entries.flat_map(&:tags).compact_blank.uniq.sort %>
+              <% marketplace_tags = @marketplace_entries.flat_map { |entry| Array(entry.tags) }.compact_blank.uniq.sort %>
               <div class="space-y-4" data-controller="marketplace-picker">
                 <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
                   <div>
@@ -216,8 +216,9 @@
 
                       <div class="space-y-3">
                         <% entries.each do |entry| %>
-                          <% search_text = [entry.name, entry.description, entry.usage_guidance, entry.tags.join(" ")].compact.join(" ").downcase %>
-                          <% normalized_tags = entry.tags.map(&:downcase) %>
+                          <% entry_tags = Array(entry.tags) %>
+                          <% search_text = [entry.name, entry.description, entry.usage_guidance, entry_tags.join(" ")].compact.join(" ").downcase %>
+                          <% normalized_tags = entry_tags.map(&:downcase) %>
                           <label class="flex items-start gap-3 rounded-md border border-gray-200 p-3 hover:border-indigo-300"
                                  data-marketplace-picker-target="entry"
                                  data-search-text="<%= search_text %>"
@@ -233,9 +234,9 @@
                                 <% strategy = entry.current_version.canonical_artifact["attachment_strategy"].presence || (entry.entry_type == "mcp_server" ? "mcp_server" : entry.entry_type.in?(%w[plugin provider_config]) ? "runtime_config" : "prompt_append") %>
                                 <p class="mt-1 text-xs text-gray-500">Delivery: <%= strategy.humanize %></p>
                               <% end %>
-                              <% if entry.tags.any? %>
+                              <% if entry_tags.any? %>
                                 <div class="mt-2 flex flex-wrap gap-2">
-                                  <% entry.tags.each do |tag| %>
+                                  <% entry_tags.each do |tag| %>
                                     <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= tag %></span>
                                   <% end %>
                                 </div>
