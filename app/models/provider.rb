@@ -59,6 +59,23 @@ class Provider < Runner
     end
   end
 
+  def agent_harness_provider_runtime
+    agent_harness_runner_runtime
+  end
+
+  def agent_harness_runtime?
+    super
+  end
+
+  def provider_key
+    self[:provider_key].presence || runner_key
+  end
+
+  def provider_key=(value)
+    self[:provider_key] = value
+    self.runner_key = value
+  end
+
   private
 
   def bridge_runner_validation_errors
