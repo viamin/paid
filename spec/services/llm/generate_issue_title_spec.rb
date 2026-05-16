@@ -17,7 +17,7 @@ RSpec.describe Llm::GenerateIssueTitle do
       expect(title).to eq("JWT authentication system review")
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_matching(/Generate a concise GitHub issue title/),
-        provider: :claude,
+        runner: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
         tools: :none,
