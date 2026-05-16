@@ -129,6 +129,31 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
     expect(decision_types(result)).to eq([ "escalate" ])
   end
 
+  it "escalates even when the unified failure streak signal remains soft" do
+    reason = "Review-goal retry budget exhausted with no meaningful progress for 60 minutes"
+    context = Automation::Context.build(
+      record: pull_request,
+      project: project,
+      metadata: {
+        lifecycle: lifecycle.merge(
+          failure_streak_limit_reached: false,
+          review_goal_retry_limit_requires_escalation: true,
+          no_progress_stuck: true,
+          escalation_reason: reason
+        ),
+        scan:
+      }
+    )
+
+    allow(Coordination::EscalationService).to receive(:call)
+      .with(project: project, issue: pull_request, signals: kind_of(Automation::Strategies::AutoContinue::Signals))
+      .and_return(escalation_result(reason))
+
+    result = strategy.evaluate(context)
+
+    expect(decision_types(result)).to eq([ "escalate" ])
+  end
+
   it "continues into AutoReview when escalation service decides auto_resolve" do
     context = Automation::Context.build(
       record: pull_request,

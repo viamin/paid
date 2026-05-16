@@ -7,7 +7,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     let(:activity) { described_class.new }
     let(:project) { instance_double(ProjectDouble) }
     let(:client) { instance_double(GithubClientDouble) }
-    let(:progress_state) { instance_double(ProgressStateDouble) }
+    let(:progress_state) { instance_double(ProgressStateDouble, latest_unsuccessful_review?: false) }
     let(:issue) do
       instance_double(IssueDouble,
         pr_review_phase: phase,
@@ -808,7 +808,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     let(:activity) { described_class.new }
     let(:project) { instance_double(NoProgressProjectStub) }
     let(:issue) { instance_double(NoProgressIssueStub) }
-    let(:progress_state) { instance_double(NoProgressProgressStateStub) }
+    let(:progress_state) { instance_double(NoProgressProgressStateStub, latest_unsuccessful_review?: false) }
 
     it "stays false until the stale no-progress window has elapsed" do
       allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
@@ -827,6 +827,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(progress_state).to receive(:stuck?).and_return(false)
 
       expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(false)
+    end
+
+    it "uses the review-goal retry limit when follow-up streak escalation is disabled" do
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
+        .with(project, issue, progress_state:)
+        .and_return(true)
+      allow(progress_state).to receive(:latest_unsuccessful_review?).and_return(true)
+      allow(activity).to receive(:review_goal_max_retries).with(project).and_return(2)
+      expect(activity).not_to receive(:failure_streak_limit_reached?)
+      expect(progress_state).to receive(:stuck?).with(
+        limit: 2,
+        stale_after: Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+      ).and_return(true)
+
+      expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(true)
     end
   end
 end

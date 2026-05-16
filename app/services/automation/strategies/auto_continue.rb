@@ -115,8 +115,8 @@ module Automation
       def escalation_candidate?(signals)
         return true if signals.operational_failure_breaker
         return false unless signals.no_progress_stuck
-        return false unless signals.failure_streak_limit_reached
         return true if signals.review_goal_retry_limit_requires_escalation
+        return false unless signals.failure_streak_limit_reached
         return false if review_followup_pending?(signals)
 
         true

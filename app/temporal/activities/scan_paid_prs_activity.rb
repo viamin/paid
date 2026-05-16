@@ -1180,9 +1180,20 @@ module Activities
     end
 
     def no_progress_stuck?(project, issue, progress_state = pr_progress_state(project, issue))
-      return false unless failure_streak_limit_reached?(project, issue, progress_state)
+      limit = no_progress_stuck_limit(project, issue, progress_state)
+      return false if limit <= 0
 
-      progress_state.stuck?(limit: pr_failure_limit(project, issue), stale_after: NO_PROGRESS_ESCALATION_WINDOW)
+      progress_state.stuck?(limit:, stale_after: NO_PROGRESS_ESCALATION_WINDOW)
+    end
+
+    def no_progress_stuck_limit(project, issue, progress_state)
+      if progress_state.latest_unsuccessful_review? &&
+          review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
+        return review_goal_max_retries(project)
+      end
+      return 0 unless failure_streak_limit_reached?(project, issue, progress_state)
+
+      pr_failure_limit(project, issue)
     end
 
     # Returns true when the latest finished automatic review-goal run in the
