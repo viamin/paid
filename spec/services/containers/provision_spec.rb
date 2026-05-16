@@ -852,7 +852,11 @@ RSpec.describe Containers::Provision do
 
       it "applies firewall rules after container start" do
         expect(mock_container).to receive(:start).ordered
-        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(mock_container, service_destinations: []).ordered
+        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(
+          mock_container,
+          service_destinations: [],
+          backend: service.backend
+        ).ordered
 
         service.provision
       end
