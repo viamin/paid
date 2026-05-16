@@ -102,6 +102,24 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "manual" ])
   end
 
+  it "preserves explicit manual selection order when candidate entries are returned in a different order" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    first_entry = build_entry(id: 7, rules: [])
+    second_entry = build_entry(id: 8, rules: [])
+
+    resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ second_entry.id, first_entry.id ])
+    allow(resolver).to receive(:candidate_entries).and_return([ first_entry, second_entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ second_entry, first_entry ])
+    expect(results.map(&:source)).to eq([ "manual", "manual" ])
+  end
+
   it "attaches an automatic entry without manual selection when auto-attach is enabled" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries

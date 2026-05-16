@@ -52,12 +52,14 @@ module MarketplaceEntries
     def attach_manual_entries!(selections)
       return if effective_manual_entry_ids.empty?
 
+      compatible_entries_by_id = compatible_entries.index_by(&:id)
       resolved_manual_entry_ids = []
 
-      compatible_entries.each do |entry|
-        next unless effective_manual_entry_ids.include?(entry.id)
+      effective_manual_entry_ids.each do |entry_id|
+        entry = compatible_entries_by_id[entry_id]
+        next unless entry
 
-        resolved_manual_entry_ids << entry.id
+        resolved_manual_entry_ids << entry_id
         selections[entry.id] = Result.new(
           entry:,
           version: entry.current_version,
@@ -81,6 +83,7 @@ module MarketplaceEntries
       @candidate_entries ||= MarketplaceEntry
         .joins(:current_version)
         .includes(:current_version, :marketplace_entry_rules)
+        .ordered
         .where(account: project.account, status: "active")
         .where.not(current_version_id: nil)
     end
