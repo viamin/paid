@@ -292,6 +292,26 @@ RSpec.describe NetworkPolicy do
           .to raise_error(described_class::Error, /Invalid proxy port/)
       end
     end
+
+    context "with invalid service destinations" do
+      it "raises NetworkPolicy::Error for shell metacharacters in the port" do
+        expect {
+          described_class.apply_firewall_rules(
+            mock_container,
+            service_destinations: [ { ip: "172.28.0.5", port: "5432; rm -rf /" } ]
+          )
+        }.to raise_error(described_class::Error, /Invalid service port/)
+      end
+
+      it "raises NetworkPolicy::Error for out-of-range service ports" do
+        expect {
+          described_class.apply_firewall_rules(
+            mock_container,
+            service_destinations: [ { ip: "172.28.0.5", port: 65_536 } ]
+          )
+        }.to raise_error(described_class::Error, /Invalid service port/)
+      end
+    end
   end
 
   describe ".fetch_github_ips" do

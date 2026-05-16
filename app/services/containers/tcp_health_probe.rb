@@ -29,6 +29,9 @@ module Containers
       end
 
       def probe_script(port)
+        port = Integer(port)
+        raise ArgumentError, "Invalid probe port: #{port}" unless port.between?(1, 65_535)
+
         <<~SH
           set -eu
           if command -v nc >/dev/null 2>&1; then
@@ -51,6 +54,8 @@ module Containers
           fi
           exit 127
         SH
+      rescue ArgumentError, TypeError
+        raise ArgumentError, "Invalid probe port: #{port.inspect}"
       end
     end
   end

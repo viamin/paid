@@ -140,7 +140,7 @@ class NetworkPolicy
 
       validated_ips = github_ips.map { |cidr| validate_cidr!(cidr) }
       validated_host = validate_host!(proxy_destination.fetch(:host))
-      validated_port = validate_port!(proxy_destination.fetch(:port))
+      validated_port = validate_port!(proxy_destination.fetch(:port), label: "proxy port")
 
       script = build_firewall_script(
         github_ips: validated_ips,
@@ -339,13 +339,13 @@ class NetworkPolicy
       host
     end
 
-    def validate_port!(port)
+    def validate_port!(port, label: "port")
       port = Integer(port)
-      raise Error, "Invalid proxy port: #{port}" unless port.between?(1, 65_535)
+      raise Error, "Invalid #{label}: #{port}" unless port.between?(1, 65_535)
 
       port
     rescue ArgumentError, TypeError
-      raise Error, "Invalid proxy port: #{port.inspect}"
+      raise Error, "Invalid #{label}: #{port.inspect}"
     end
 
     def default_proxy_destination(backend: Containers.backend)
@@ -375,7 +375,8 @@ class NetworkPolicy
       end
 
       service_rules = service_destinations.map do |dest|
-        "iptables -A OUTPUT -d #{validate_host!(dest[:ip])} -p tcp --dport #{dest[:port].to_i} -j ACCEPT"
+        service_port = validate_port!(dest[:port], label: "service port")
+        "iptables -A OUTPUT -d #{validate_host!(dest[:ip])} -p tcp --dport #{service_port} -j ACCEPT"
       end
 
       <<~SCRIPT

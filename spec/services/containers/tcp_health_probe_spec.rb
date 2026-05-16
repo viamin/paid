@@ -32,5 +32,21 @@ RSpec.describe Containers::TcpHealthProbe, :no_db do
 
       expect(described_class.open?(backend: backend, container: container, host: "svc-host", port: 5432)).to be(false)
     end
+
+    it "raises for an invalid remote probe port" do
+      backend = instance_double(Containers::Backends::Base, remote?: true)
+
+      expect {
+        described_class.open?(backend: backend, container: container, host: "svc-host", port: "5432;rm -rf /")
+      }.to raise_error(ArgumentError, 'Invalid probe port: "5432;rm -rf /"')
+    end
+
+    it "raises for an out-of-range remote probe port" do
+      backend = instance_double(Containers::Backends::Base, remote?: true)
+
+      expect {
+        described_class.open?(backend: backend, container: container, host: "svc-host", port: 65_536)
+      }.to raise_error(ArgumentError, "Invalid probe port: 65536")
+    end
   end
 end
