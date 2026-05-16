@@ -398,6 +398,18 @@ RSpec.describe DockerOrphanCleanupJob do
     context "with volumes" do
       before { stub_no_containers }
 
+      it "returns a complete empty summary when no paid volumes exist" do
+        stub_no_volumes
+
+        expect(job.send(:cleanup_volumes, backend: backend)).to eq(
+          found: 0,
+          removed: 0,
+          failed: 0,
+          active: 0,
+          retained: 0
+        )
+      end
+
       it "removes volumes for completed agent runs" do
         completed_run = create(:agent_run, :completed)
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{completed_run.id}", remove: true)

@@ -147,7 +147,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   # Skips volumes for runs with an unexpired retention TTL.
   def cleanup_volumes(backend:)
     volumes = list_paid_volumes(backend: backend)
-    return { found: 0, removed: 0, failed: 0, active: 0 } if volumes.empty?
+    return { found: 0, removed: 0, failed: 0, active: 0, retained: 0 } if volumes.empty?
 
     numeric_agent_run_ids = volumes
                               .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
