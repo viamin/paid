@@ -36,9 +36,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       pool_removed += cleanup_pool_containers(backend: backend)
       service_removed += cleanup_service_containers(backend: backend)
       backend_volume_result = cleanup_volumes(backend: backend)
-      volume_result = volume_result.merge(
-        volume_result.keys.to_h { |key| [ key, volume_result[key] + backend_volume_result.fetch(key, 0) ] }
-      )
+      volume_result = volume_result.merge(backend_volume_result) { |_key, old_val, new_val| old_val + new_val }
     end
 
     Rails.logger.info(
