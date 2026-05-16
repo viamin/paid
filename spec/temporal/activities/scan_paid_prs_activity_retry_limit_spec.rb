@@ -458,6 +458,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "#pr_run_history_scope", :no_db do
+    before do
+      stub_const("PrRunHistoryProjectStub", Class.new)
+      stub_const("PrRunHistoryIssueStub", Class.new)
+      stub_const("PrRunHistoryScopeStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:scope) { instance_double(PrRunHistoryScopeStub) }
+    let(:project) { instance_double(PrRunHistoryProjectStub, agent_runs: scope) }
+    let(:issue) { instance_double(PrRunHistoryIssueStub, id: 7, github_number: 42) }
+
+    it "matches runs by direct issue association as well as PR number" do
+      allow(scope).to receive(:where).with(
+        "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+        issue_id: 7,
+        pr_num: 42
+      ).and_return(scope)
+
+      result = activity.send(:pr_run_history_scope, project, issue)
+
+      expect(result).to eq(scope)
+      expect(scope).to have_received(:where).with(
+        "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+        issue_id: 7,
+        pr_num: 42
+      )
+    end
+  end
+
   describe "#execute", :no_db do
     before do
       stub_const("Project", Class.new do

@@ -163,7 +163,8 @@ module PullRequests
       project.agent_runs
         .where(goal: GOALS)
         .where(
-          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          issue_id: issue.id,
           pr_num: issue.github_number
         )
         .finished

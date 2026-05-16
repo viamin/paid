@@ -6,21 +6,24 @@ RSpec.describe PullRequests::ProgressState, :no_db do
   before do
     stub_const("ProgressStateProjectStub", Class.new)
     stub_const("ProgressStateIssueStub", Struct.new(
+      :id,
       :github_number,
       :review_goal_retry_reset_at,
       :operational_failure_reset_at,
       keyword_init: true
     ))
     stub_const("ProgressStateFakeRunScope", Class.new do
-      attr_reader :offsets_fetched, :order_args
+      attr_reader :offsets_fetched, :order_args, :where_calls
 
       def initialize(batches)
         @batches = batches
         @offsets_fetched = []
+        @where_calls = []
         @offset_value = 0
       end
 
-      def where(*)
+      def where(*args)
+        where_calls << args
         self
       end
 
@@ -102,6 +105,7 @@ RSpec.describe PullRequests::ProgressState, :no_db do
   def issue_double(review_goal_retry_reset_at: nil, operational_failure_reset_at: nil)
     instance_double(
       ProgressStateIssueStub,
+      id: 7,
       github_number: 42,
       review_goal_retry_reset_at: review_goal_retry_reset_at,
       operational_failure_reset_at: operational_failure_reset_at
@@ -412,5 +416,18 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.last_meaningful_progress_at).to eq(now - 10.minutes)
     expect(scope.offsets_fetched).to eq([ 0, 2 ])
     expect(scope.order_args).to be_present
+  end
+
+  it "loads runs linked directly to the PR issue as well as by PR number" do
+    scope = fake_run_scope({})
+    allow(project).to receive(:agent_runs).and_return(scope)
+
+    described_class.call(project: project, issue: issue)
+
+    expect(scope.where_calls).to include([ goal: described_class::GOALS ])
+    expect(scope.where_calls).to include([
+      "issue_id = :issue_id OR source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+      { issue_id: 7, pr_num: 42 }
+    ])
   end
 end
