@@ -276,12 +276,12 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def active_pool_volume_names_for_backend(backend)
-    warm_names = pool_entries_for_backend(backend).warm.pluck(:workspace_volume)
-    warming_names = pool_entries_for_backend(backend).active_warming.pluck(:workspace_volume)
-    claimed_names = active_claimed_pool_entries(backend).pluck(:workspace_volume)
-
     @active_pool_volume_names ||= {}
     @active_pool_volume_names[backend.identifier] ||= begin
+      warm_names = pool_entries_for_backend(backend).warm.pluck(:workspace_volume)
+      warming_names = pool_entries_for_backend(backend).active_warming.pluck(:workspace_volume)
+      claimed_names = active_claimed_pool_entries(backend).pluck(:workspace_volume)
+
       (warm_names + warming_names + claimed_names).to_set
     end
   end
