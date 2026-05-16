@@ -4588,18 +4588,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create(:agent_run, :failed,
             project: project,
             goal: "create_pr",
-            source_pull_request_number: 42)
+            source_pull_request_number: 42,
+            created_at: 2.hours.ago)
         end
         stub_github_for_pr(draft: true)
       end
 
-      it "returns escalate_to_owner trigger" do
+      it "returns escalate_to_owner trigger once the PR has been stuck past the no-progress window" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:current_draft_review_count]).to eq(3)
+      end
+
+      it "does not escalate immediately when the failure streak is still recent" do
+        AgentRun.where(project: project, source_pull_request_number: 42).delete_all
+        3.times do |i|
+          create(:agent_run, :failed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 42,
+            created_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).not_to eq("escalate_to_owner")
       end
     end
 
@@ -4635,8 +4653,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           created_at: created_at)
       end
 
-      it "escalates after 3 consecutive unsuccessful draft runs with the unified streak reason" do
-        3.times { |i| create_draft_run(status: "no_output", iterations: 0, created_at: i.minutes.ago) }
+      it "escalates after 3 consecutive unsuccessful draft runs once the PR is stuck past the no-progress window" do
+        3.times do |i|
+          create_draft_run(status: "no_output", iterations: 0, created_at: 2.hours.ago - i.minutes)
+        end
 
         result = activity.execute(project_id: project.id)
 
@@ -4644,6 +4664,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("Automatic PR failure streak reached")
+      end
+
+      it "does not escalate immediately after 3 consecutive failures when progress might still resume" do
+        3.times { |i| create_draft_run(status: "no_output", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
 
       it "does not escalate when a recent run produced output" do
