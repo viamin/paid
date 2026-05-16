@@ -256,7 +256,8 @@ module Containers
               "ReadOnly" => config["ReadonlyRootfs"],
               "Mounts" => build_mounts(host_config),
               "CapabilityAdd" => config["CapAdd"],
-              "CapabilityDrop" => config["CapDrop"]
+              "CapabilityDrop" => config["CapDrop"],
+              "Privileges" => privileges_spec(host_config)
             ),
             "RestartPolicy" => { "Condition" => "none" },
             "Resources" => resource_limits(host_config),
@@ -277,10 +278,18 @@ module Containers
       def resource_limits(host_config)
         limits = compact_hash(
           "MemoryBytes" => host_config["Memory"],
-          "NanoCPUs" => nano_cpus(host_config["CpuQuota"], host_config["CpuPeriod"])
+          "NanoCPUs" => nano_cpus(host_config["CpuQuota"], host_config["CpuPeriod"]),
+          "Pids" => host_config["PidsLimit"]
         )
 
         compact_hash("Limits" => limits.presence)
+      end
+
+      def privileges_spec(host_config)
+        security_opts = Array(host_config["SecurityOpt"])
+        no_new_privs = security_opts.any? { |opt| opt.match?(/\Ano-new-privileges\s*[:=]\s*true\z/i) }
+
+        compact_hash("NoNewPrivileges" => no_new_privs.presence)
       end
 
       def nano_cpus(cpu_quota, cpu_period)
@@ -322,10 +331,12 @@ module Containers
         parsed = list_value(options, separator: ",")
         mode = parsed.find { |part| part.start_with?("mode=") }&.delete_prefix("mode=")
         size = parsed.find { |part| part.start_with?("size=") }&.delete_prefix("size=")
+        mount_flags = parsed.reject { |part| part.match?(/\A(mode|size)=/) }
 
         compact_hash(
           "Mode" => mode&.to_i(8),
-          "SizeBytes" => size && parse_size(size)
+          "SizeBytes" => size && parse_size(size),
+          "Options" => mount_flags.presence
         )
       end
 

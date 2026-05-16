@@ -266,9 +266,14 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
         "Memory" => 4 * 1024 * 1024 * 1024,
         "CpuQuota" => 200_000,
         "CpuPeriod" => 100_000,
+        "PidsLimit" => 4096,
+        "SecurityOpt" => [ "no-new-privileges:true" ],
         "NetworkMode" => "paid_agent",
         "Binds" => [ "paid-workspace-42:/workspace:rw" ],
-        "Tmpfs" => { "/tmp" => "exec,size=1048576,mode=1777" }
+        "Tmpfs" => {
+          "/tmp" => "exec,size=1048576,mode=1777",
+          "/home/agent/.cache" => "exec,size=536870912,mode=0755"
+        }
       }
     }
   end
@@ -287,5 +292,18 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(payload.dig("TaskTemplate", "Placement", "Preferences")).to eq([
       { "Spread" => { "SpreadDescriptor" => "node.labels.paid.zone" } }
     ])
+    expect(payload.dig("TaskTemplate", "ContainerSpec", "Privileges")).to eq(
+      "NoNewPrivileges" => true
+    )
+    expect(payload.dig("TaskTemplate", "Resources", "Limits", "Pids")).to eq(4096)
+
+    tmpfs_mounts = payload.dig("TaskTemplate", "ContainerSpec", "Mounts").select { |m| m["Type"] == "tmpfs" }
+    tmp_mount = tmpfs_mounts.find { |m| m["Target"] == "/tmp" }
+    cache_mount = tmpfs_mounts.find { |m| m["Target"] == "/home/agent/.cache" }
+    expect(tmp_mount.dig("TmpfsOptions", "Options")).to eq([ "exec" ])
+    expect(tmp_mount.dig("TmpfsOptions", "Mode")).to eq(0o1777)
+    expect(tmp_mount.dig("TmpfsOptions", "SizeBytes")).to eq(1_048_576)
+    expect(cache_mount.dig("TmpfsOptions", "Options")).to eq([ "exec" ])
+    expect(cache_mount.dig("TmpfsOptions", "Mode")).to eq(0o755)
   end
 end
