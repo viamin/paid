@@ -4663,7 +4663,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Automatic PR failure streak reached")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 60 minutes after")
       end
 
       it "does not escalate immediately after 3 consecutive failures when progress might still resume" do
@@ -4896,7 +4896,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "failed",
             error_message: "All providers exhausted: claude_code, codex",
-            created_at: i.minutes.ago
+            created_at: 2.hours.ago - i.minutes
           )
         end
 
@@ -4905,7 +4905,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 60 minutes after")
       end
 
       it "escalates after 3 consecutive timeout failures" do
@@ -4913,7 +4913,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "timeout",
             error_message: "wall_clock_timeout: exceeded 30 minutes",
-            created_at: i.minutes.ago
+            created_at: 2.hours.ago - i.minutes
           )
         end
 
@@ -4922,13 +4922,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 60 minutes after")
       end
 
       it "escalates after 3 consecutive mixed operational failures" do
-        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
-        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
-        create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 3.minutes.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 2.hours.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.hours.ago - 1.minute)
+        create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 2.hours.ago - 2.minutes)
 
         result = activity.execute(project_id: project.id)
 
@@ -4984,7 +4984,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         triggers = result[:prs_to_trigger]
         escalation_triggers = triggers.select do |t|
-          t[:triggers].any? { |tr| tr[:details]&.include?("Consecutive operational failures") }
+          t[:triggers].any? { |tr| tr[:details]&.include?("No meaningful progress for 60 minutes after") }
         end
         expect(escalation_triggers).to be_empty
       end
