@@ -115,7 +115,7 @@ jobs:
           SQL
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
 
       - name: Verify Qdrant health
         run: |

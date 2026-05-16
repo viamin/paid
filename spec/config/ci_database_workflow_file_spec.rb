@@ -60,6 +60,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(install_step.fetch("run")).to include('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER"')
           expect(install_step.fetch("run")).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
         end
+
+        it "bootstraps a schema-only test database for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
+
+          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
+        end
       end
     end
   end

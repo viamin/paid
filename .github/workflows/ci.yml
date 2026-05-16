@@ -231,7 +231,7 @@ jobs:
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
 
       - name: Verify Qdrant health
         run: |
@@ -356,7 +356,7 @@ jobs:
           SQL
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
 
       - name: Run performance benchmarks
         run: >
