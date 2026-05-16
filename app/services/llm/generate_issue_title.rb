@@ -45,7 +45,7 @@ module Llm
     def request_title
       response = AgentHarness.send_message(
         prompt,
-        runner: :claude,
+        provider: :claude,
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
         tools: :none,

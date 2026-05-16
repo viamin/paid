@@ -35,7 +35,7 @@ RSpec.describe Llm::GeneratePrDescription do
       expect(result).to eq(generated_description.strip)
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("Lead with", "Agent Output", agent_summary),
-        runner: :claude,
+        provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
         tools: :none,

@@ -84,7 +84,7 @@ RSpec.describe Models::MetaAgentSelector do
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_matching(/Select the best LLM model/),
-        runner: :claude,
+        provider: :claude,
         model: "claude-haiku-4-5-20251001",
         timeout: 15,
         tools: :none

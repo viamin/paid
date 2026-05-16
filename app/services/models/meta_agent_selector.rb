@@ -94,7 +94,7 @@ module Models
     def request_selection(candidates)
       response = AgentHarness.send_message(
         build_prompt(candidates),
-        runner: :claude,
+        provider: :claude,
         model: MODEL,
         timeout: TIMEOUT,
         tools: :none,
