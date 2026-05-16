@@ -619,7 +619,9 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         agent_run = create(:agent_run, :running, project: project, issue: issue)
         agent_run.log!("stderr", "Some context\nrequires more credits\nMore context")
 
-        activity.execute(agent_run_id: agent_run.id, output_present: false)
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("needs_input")
 
         expect(client).to have_received(:add_comment) do |_repo, _number, body|
           expect(body).to include("Needs Input")

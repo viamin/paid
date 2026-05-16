@@ -33,6 +33,17 @@ module Activities
       /\b429\b/,
       /free model usage limit reached/i,
       /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
+      /requires more credits,? or fewer max_tokens/i,
+      /can only afford \d+/i,
+      %r{visit .*/credits .*add more credits}i,
+      /add more credits/i,
+      /not enough credits/i,
+      /purchase (?:more )?credits/i,
+      /buy (?:more )?credits/i,
+      /requires? more credits/i
+    ].freeze
+
+    COMMENT_REDACTION_ONLY_PATTERNS = [
       /add more credits/i,
       /not enough credits/i,
       /purchase (?:more )?credits/i,
@@ -145,7 +156,13 @@ module Activities
     def provider_error_output?(text)
       return false if text.blank?
 
-      provider_error_patterns.any? { |pattern| text.match?(pattern) }
+      provider_error_classification_patterns.any? { |pattern| text.match?(pattern) }
+    end
+
+    def provider_error_redaction_line?(text)
+      return false if text.blank?
+
+      provider_error_redaction_patterns.any? { |pattern| text.match?(pattern) }
     end
 
     def infrastructure_error_output?(text)
@@ -166,8 +183,13 @@ module Activities
       normalized_text(recent_output)
     end
 
-    def provider_error_patterns
-      @provider_error_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
+    def provider_error_classification_patterns
+      @provider_error_classification_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
+        SUPPLEMENTARY_ERROR_PATTERNS.reject { |pattern| COMMENT_REDACTION_ONLY_PATTERNS.include?(pattern) }
+    end
+
+    def provider_error_redaction_patterns
+      @provider_error_redaction_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
         SUPPLEMENTARY_ERROR_PATTERNS
     end
 
@@ -301,7 +323,7 @@ module Activities
     def sanitize_summary_for_github(text)
       return text if text.blank?
 
-      text.each_line.reject { |line| provider_error_output?(line) }.join.strip
+      text.each_line.reject { |line| provider_error_redaction_line?(line) }.join.strip
     end
 
     def post_needs_input_comment(client, project, issue, agent_summary)
