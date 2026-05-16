@@ -52,8 +52,9 @@ module AgentRuns
 
     def execute_agent
       harness_runner_key = harness_runner_key_for(agent_run.agent_type)
+      raise ArgumentError, "Unsupported agent type: #{agent_run.agent_type}" if harness_runner_key.nil?
 
-      options = { provider: harness_runner_key.to_sym, dangerous_mode: true }
+      options = { runner: harness_runner_key.to_s, dangerous_mode: true }
       options[:timeout] = timeout unless timeout.nil?
 
       AgentHarness.send_message(prompt, **options)
@@ -129,7 +130,7 @@ module AgentRuns
       runner_key = Runner.runner_key_for_agent_type(agent_type)
       return nil unless Runner.supported_runner_key?(runner_key)
 
-      Runner.harness_runner_key_for(runner_key).to_sym
+      Runner.harness_runner_key_for(runner_key)
     end
 
     # Simple result object for execute outcomes

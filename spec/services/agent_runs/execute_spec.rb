@@ -120,7 +120,7 @@ RSpec.describe AgentRuns::Execute do
       it "calls AgentHarness.send_message with correct parameters" do
         expect(AgentHarness).to receive(:send_message).with(
           prompt,
-          provider: :claude,
+          runner: "claude",
           dangerous_mode: true
         ).and_return(response)
 
@@ -373,7 +373,7 @@ RSpec.describe AgentRuns::Execute do
       it "passes custom timeout to agent-harness" do
         expect(AgentHarness).to receive(:send_message).with(
           prompt,
-          provider: :claude,
+          runner: "claude",
           timeout: 1200,
           dangerous_mode: true
         ).and_return(response)
