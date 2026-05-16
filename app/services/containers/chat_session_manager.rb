@@ -59,7 +59,8 @@ module Containers
       exec_options = { wait: EXECUTE_TIMEOUT }
       exec_options[:Env] = plan.env.map { |k, v| "#{k}=#{v}" } if plan.env.present?
 
-      exec_result = container.exec(
+      exec_result = Containers.backend.exec_in_container(
+        container,
         [ "sh", "-c", command ],
         **exec_options
       ) do |stream_type, chunk|
@@ -159,7 +160,7 @@ module Containers
     private
 
     def container
-      @container ||= Docker::Container.get(chat_session.container_id)
+      @container ||= Containers.backend.get_container(chat_session.container_id)
     end
 
     def ensure_container_running!
@@ -202,7 +203,8 @@ module Containers
 
       preparation.file_writes.each do |write|
         encoded = Base64.strict_encode64(write.content)
-        container.exec(
+        Containers.backend.exec_in_container(
+          container,
           [ "sh", "-c", "mkdir -p $(dirname #{Shellwords.escape(write.path)}) && echo $PAID_PREPARATION_B64 | base64 -d > #{Shellwords.escape(write.path)}" ],
           Env: [ "PAID_PREPARATION_B64=#{encoded}" ]
         )
@@ -215,9 +217,9 @@ module Containers
     end
 
     def stop_and_remove_container
-      docker_container = Docker::Container.get(chat_session.container_id)
+      docker_container = Containers.backend.get_container(chat_session.container_id)
       begin
-        docker_container.stop(timeout: 10)
+        Containers.backend.stop_container(docker_container, timeout: 10)
       rescue Docker::Error::NotFoundError
         return
       rescue Docker::Error::DockerError
@@ -225,7 +227,7 @@ module Containers
       end
 
       begin
-        docker_container.delete(force: true, v: true)
+        Containers.backend.delete_container(docker_container, force: true, v: true)
       rescue Docker::Error::DockerError
         # Container may already be gone
       end
@@ -235,14 +237,14 @@ module Containers
 
     def remove_workspace_volume
       volume_name = chat_session.workspace_volume || "paid-chat-workspace-#{chat_session.id}"
-      Docker::Volume.get(volume_name).remove
+      Containers.backend.delete_volume(Containers.backend.get_volume(volume_name))
     rescue Docker::Error::DockerError
       # Volume may already be removed
     end
 
     def remove_state_volume
       volume_name = "paid-chat-state-#{chat_session.id}"
-      Docker::Volume.get(volume_name).remove
+      Containers.backend.delete_volume(Containers.backend.get_volume(volume_name))
     rescue Docker::Error::DockerError
       # Volume may already be removed
     end

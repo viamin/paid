@@ -185,6 +185,30 @@ RSpec.describe Containers::Provision do
       expect(Docker::Volume).to have_received(:get).with(entry.workspace_volume)
       expect(Docker::Volume).not_to have_received(:get).with("paid-workspace-#{agent_run.id}")
     end
+
+    it "uses the resolved backend for later lifecycle calls after reconnect" do
+      agent_run.update!(container_host: "remote")
+      remote_volume = instance_double(Docker::Volume, remove: true)
+      remote_backend = instance_double(
+        Containers::Backends::Base,
+        get_container: mock_container,
+        stop_container: true,
+        delete_container: true,
+        get_volume: remote_volume,
+        delete_volume: true
+      )
+      allow(Containers).to receive(:backend_for).with("remote").and_return(remote_backend)
+
+      reconnected = described_class.reconnect(agent_run: agent_run, container_id: container_id, pool_entry: nil)
+      reconnected.cleanup(force: true)
+
+      expect(Containers).to have_received(:backend_for).with("remote")
+      expect(remote_backend).to have_received(:get_container).with(container_id)
+      expect(remote_backend).to have_received(:stop_container).with(mock_container, timeout: 0)
+      expect(remote_backend).to have_received(:delete_container).with(mock_container, force: true, v: true)
+      expect(remote_backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}")
+      expect(remote_backend).to have_received(:delete_volume).with(remote_volume)
+    end
   end
 
   describe "#provision" do

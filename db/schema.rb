@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_15_110029) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -176,6 +176,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_110029) do
     t.string "configuration_bundle_selection_context", comment: "Primary optimization context used for bundle routing, such as task or project."
     t.string "configuration_bundle_selection_mode", comment: "Whether configuration bundle routing favored exploitative or exploratory selection for this run."
     t.string "container_id", limit: 128
+    t.string "container_host", limit: 64, default: "local", comment: "Container backend host identifier used to provision and reconnect to this run's container."
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
@@ -537,6 +538,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_110029) do
     t.bigint "agent_run_id", comment: "Agent run that claimed or last used the warm pool entry."
     t.datetime "claimed_at", precision: nil, comment: "Time an agent run claimed the warm container entry."
     t.string "container_id", limit: 128
+    t.string "container_host", limit: 64, default: "local", comment: "Container backend host identifier for the warmed container."
     t.datetime "created_at", null: false
     t.string "image", null: false
     t.text "last_error", comment: "Most recent provisioning or lifecycle error for this pool entry."

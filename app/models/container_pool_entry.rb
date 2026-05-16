@@ -9,6 +9,7 @@ class ContainerPoolEntry < ApplicationRecord
 
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :container_id, length: { maximum: 128 }, allow_nil: true
+  validates :container_host, length: { maximum: 64 }, allow_nil: true
   validates :workspace_volume, presence: true, length: { maximum: 128 }, uniqueness: true
   validates :image, presence: true
   validates :network, presence: true, length: { maximum: 64 }
