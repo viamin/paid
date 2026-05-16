@@ -2983,7 +2983,7 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
-        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+        expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
       it "detects a weekly limit error returned with exit code 0" do
@@ -2998,7 +2998,7 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
-        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+        expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
       it "detects a short rate limit line wrapped in otherwise successful output" do
@@ -3015,7 +3015,7 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
-        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+        expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
       it "detects ProviderModelNotFoundError returned with exit code 0" do
