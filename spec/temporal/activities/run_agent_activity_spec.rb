@@ -1793,7 +1793,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       def expect_prompt_echo_to_fail_without_rate_limit!(prompt:, output:)
-        allow(agent_run).to receive(:effective_prompt).and_return(prompt)
+        allow(activity).to receive(:effective_prompt_for).and_return(prompt)
         allow(container_service).to receive(:execute).and_return(output)
 
         expect {
@@ -2370,7 +2370,7 @@ expect(container_service).to receive(:execute).with(
 
     it "raises an error when no prompt is available" do
       agent_run_no_prompt = create(:agent_run, :with_custom_prompt, project: project, container_id: "abc123")
-      allow(agent_run_no_prompt).to receive(:effective_prompt).and_return(nil)
+      allow(activity).to receive(:effective_prompt_for).and_return(nil)
       allow(AgentRun).to receive(:find).with(agent_run_no_prompt.id).and_return(agent_run_no_prompt)
 
       expect {
