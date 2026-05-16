@@ -21,6 +21,8 @@ RSpec.describe Provider, :no_db do
     expect(AgentRun).to respond_to(:provider_options_cache_key_for)
     expect(AgentRun).to respond_to(:invalidate_provider_options_cache)
     expect(AgentRun).to respond_to(:preload_final_provider_records)
+    expect(AgentRun).to respond_to(:normalize_provider_sql)
+    expect(AgentRun).to respond_to(:effective_provider_sql)
     expect(UserSetting).to respond_to(:fallback_candidate_providers)
     expect(UserSetting.instance_methods).to include(
       :provider_priority,
@@ -32,6 +34,13 @@ RSpec.describe Provider, :no_db do
       :provider_state_for
     )
     expect(UserSetting.private_instance_methods).to include(:identifiers_for_provider_token)
+  end
+
+  it "normalizes legacy provider SQL expressions through the runner bridge" do
+    expect(AgentRun.normalize_provider_sql("agent_type")).to include("CASE agent_type")
+    expect(AgentRun.normalize_provider_sql("final_provider")).to include("CASE final_runner")
+    expect(AgentRun.normalize_provider_sql("attempt->>'provider'")).to include("attempt->>'runner'")
+    expect(AgentRun.effective_provider_sql).to include("final_runner")
   end
 
   it "keeps legacy provider routing-key identifiers readable during the bridge" do

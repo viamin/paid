@@ -292,6 +292,11 @@ class AgentRun < ApplicationRecord
     "NULLIF(final_runner, '')",
     "attempt->>'runner'"
   ].freeze
+  LEGACY_PROVIDER_NORMALIZABLE_COLUMNS = {
+    "final_provider" => "final_runner",
+    "NULLIF(final_provider, '')" => "NULLIF(final_runner, '')",
+    "attempt->>'provider'" => "COALESCE(attempt->>'runner', attempt->>'provider')"
+  }.freeze
 
   # SQL CASE expression that normalizes a column's value to its canonical
   # runner key (e.g. "claude_code" → "claude") so SQL aggregations match
@@ -308,16 +313,14 @@ class AgentRun < ApplicationRecord
       raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe"
     end
 
-    remapped = AGENT_TYPES.filter_map do |agent_type|
-      runner_key = RunnerSupport.runner_key_for_agent_type(agent_type)
-      next if runner_key == agent_type
+    build_normalized_runner_sql(column)
+  end
 
-      "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(runner_key)}"
-    end
+  def self.normalize_provider_sql(column = "agent_type")
+    normalized_column = LEGACY_PROVIDER_NORMALIZABLE_COLUMNS.fetch(column, column)
+    raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe" unless trusted_provider_normalizable_column?(column, normalized_column)
 
-    return column if remapped.empty?
-
-    "CASE #{column} #{remapped.join(" ")} ELSE #{column} END"
+    build_normalized_runner_sql(normalized_column)
   end
 
   def self.normalized_agent_type_sql
@@ -329,6 +332,10 @@ class AgentRun < ApplicationRecord
   # both SQL aggregations and Ruby code share the same logic.
   def self.effective_runner_sql
     "COALESCE(#{normalize_runner_sql("NULLIF(final_runner, '')")}, #{normalized_agent_type_sql})"
+  end
+
+  def self.effective_provider_sql
+    "COALESCE(#{normalize_provider_sql("NULLIF(final_provider, '')")}, #{normalized_agent_type_sql})"
   end
 
   ransacker :tokens_total, type: :integer do
@@ -501,6 +508,30 @@ class AgentRun < ApplicationRecord
     Runner.with_discarded.where(id: runner_ids, user_id: owner_ids).index_by { |runner| [ runner.user_id, runner.routing_key ] }
   end
   private_class_method :final_runner_records_by_lookup
+
+  def self.build_normalized_runner_sql(column)
+    remapped = AGENT_TYPES.filter_map do |agent_type|
+      runner_key = RunnerSupport.runner_key_for_agent_type(agent_type)
+      next if runner_key == agent_type
+
+      "WHEN #{quote_sql_literal(agent_type)} THEN #{quote_sql_literal(runner_key)}"
+    end
+
+    return column if remapped.empty?
+
+    "CASE #{column} #{remapped.join(" ")} ELSE #{column} END"
+  end
+  private_class_method :build_normalized_runner_sql
+
+  def self.trusted_provider_normalizable_column?(original_column, normalized_column)
+    LEGACY_PROVIDER_NORMALIZABLE_COLUMNS.key?(original_column) || NORMALIZABLE_COLUMNS.include?(normalized_column)
+  end
+  private_class_method :trusted_provider_normalizable_column?
+
+  def self.quote_sql_literal(value)
+    "'#{value.to_s.gsub("'", "''")}'"
+  end
+  private_class_method :quote_sql_literal
 
   def self.effective_owner_id_for(run, fallback_owner_ids)
     project = run.project
