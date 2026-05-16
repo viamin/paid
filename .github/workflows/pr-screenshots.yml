@@ -161,17 +161,35 @@ jobs:
           SQL
 
       - name: Locate Chromium-family browser
+        id: locate_chromium
         run: |
-          chrome_path="${CHROMIUM_PATH:-}"
-          if [ -z "$chrome_path" ]; then
-            chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
-          fi
+          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
+          echo "chrome_path=$chrome_path" >> "$GITHUB_OUTPUT"
+
           if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
-            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
             echo "Chrome found at ${chrome_path}"
             "$chrome_path" --version
           else
-            echo "::error::No Chrome/Chromium binary found"
+            echo "No Chromium-family browser found on PATH; installing a fallback copy."
+          fi
+
+      - name: Set up Chrome fallback
+        id: setup_chrome
+        if: steps.locate_chromium.outputs.chrome_path == ''
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Export Chromium path
+        env:
+          LOCATED_CHROME_PATH: ${{ steps.locate_chromium.outputs.chrome_path }}
+          INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
+        run: |
+          chrome_path="${LOCATED_CHROME_PATH:-$INSTALLED_CHROME_PATH}"
+          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
+            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
+            echo "Chrome available at ${chrome_path}"
+            "$chrome_path" --version
+          else
+            echo "::error::No Chrome/Chromium binary found after fallback installation"
             exit 1
           fi
 
