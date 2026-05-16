@@ -5048,14 +5048,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
-      it "can re-escalate after a fresh post-dismiss streak of operational failures" do
-        pr_issue.update!(operational_failure_reset_at: 10.minutes.ago)
-        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
-        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
+      it "can re-escalate after a stale post-dismiss streak of operational failures" do
+        pr_issue.update!(operational_failure_reset_at: 3.hours.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 2.hours.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.hours.ago - 1.minute)
         create_followup_run(
           status: "failed",
           error_message: "All providers exhausted: claude_code",
-          created_at: 3.minutes.ago
+          created_at: 2.hours.ago - 2.minutes
         )
 
         result = activity.execute(project_id: project.id)
