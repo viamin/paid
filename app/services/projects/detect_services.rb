@@ -92,15 +92,7 @@ module Projects
     # no ServiceContainer exists with an exactly-matching name. Allows containers
     # named "Screenshot Postgres" or "Dev Redis" to be matched to the
     # "postgres" / "redis" services detected from the repo.
-    IMAGE_SERVICE_PATTERNS = {
-      "postgres" => /postgres/,
-      "redis" => /redis/,
-      "mysql" => /mysql|mariadb/,
-      "mongodb" => /mongo/,
-      "elasticsearch" => /elasticsearch|opensearch/,
-      "memcached" => /memcache/,
-      "selenium" => /selenium/
-    }.freeze
+    IMAGE_SERVICE_PATTERNS = COMPOSE_IMAGE_PATTERNS.invert.freeze
 
     attr_reader :project
 
