@@ -95,6 +95,10 @@ module Containers
         "swarm"
       end
 
+      def remote?
+        true
+      end
+
       def supports_host_paths?
         false
       end
