@@ -184,4 +184,53 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       expect(controller.send(:marketplace_auto_attach_required_for_current_account?)).to be(false)
     end
   end
+
+  describe "#marketplace_entries_for_new_run" do
+    let(:controller) { described_class.new }
+    let(:account_class) { Struct.new(:marketplace_entries) }
+    let(:association_class) do
+      Class.new do
+        def active; end
+      end
+    end
+    let(:active_scope_class) do
+      Class.new do
+        def where; end
+      end
+    end
+    let(:where_chain_class) do
+      Class.new do
+        def not(*) = nil
+      end
+    end
+    let(:filtered_scope_class) do
+      Class.new do
+        def ordered; end
+      end
+    end
+    let(:ordered_scope_class) do
+      Class.new do
+        def includes(*) = nil
+      end
+    end
+
+    it "only returns active entries with a current immutable version" do
+      association = instance_double(association_class)
+      active_scope = instance_double(active_scope_class)
+      where_chain = instance_double(where_chain_class)
+      filtered_scope = instance_double(filtered_scope_class)
+      ordered_scope = instance_double(ordered_scope_class)
+      result_scope = Object.new
+      account = instance_double(account_class, marketplace_entries: association)
+
+      allow(controller).to receive(:current_account).and_return(account)
+      allow(association).to receive(:active).and_return(active_scope)
+      allow(active_scope).to receive(:where).and_return(where_chain)
+      allow(where_chain).to receive(:not).with(current_version_id: nil).and_return(filtered_scope)
+      allow(filtered_scope).to receive(:ordered).and_return(ordered_scope)
+      allow(ordered_scope).to receive(:includes).with(:current_version).and_return(result_scope)
+
+      expect(controller.send(:marketplace_entries_for_new_run)).to eq(result_scope)
+    end
+  end
 end

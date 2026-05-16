@@ -1230,9 +1230,9 @@ RSpec.describe "AgentRuns" do
 
       it "shows all active marketplace entries in the run form" do
         create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
-        create(:marketplace_entry, account: account, name: "Tool plugin", entry_type: "plugin")
-        create(:marketplace_entry, account: account, name: "Provider preset", entry_type: "provider_config")
-        create(:marketplace_entry, account: account, name: "Repo MCP", entry_type: "mcp_server")
+        create_runtime_marketplace_entry(name: "Tool plugin", entry_type: "plugin")
+        create_runtime_marketplace_entry(name: "Provider preset", entry_type: "provider_config")
+        create_runtime_marketplace_entry(name: "Repo MCP", entry_type: "mcp_server")
 
         get new_project_agent_run_path(project)
 
@@ -1243,8 +1243,8 @@ RSpec.describe "AgentRuns" do
       end
 
       it "renders marketplace search and filter controls in the run form" do
-        create(:marketplace_entry, account: account, name: "Ruby skill", entry_type: "skill", tags: [ "ruby", "backend" ])
-        create(:marketplace_entry, account: account, name: "MCP helper", entry_type: "mcp_server", tags: [ "ops" ])
+        create_runtime_marketplace_entry(name: "Ruby skill", entry_type: "skill", tags: [ "ruby", "backend" ])
+        create_runtime_marketplace_entry(name: "MCP helper", entry_type: "mcp_server", tags: [ "ops" ])
 
         get new_project_agent_run_path(project)
 
@@ -1257,6 +1257,14 @@ RSpec.describe "AgentRuns" do
         expect(doc.at_css("select#marketplace-entry-tag option[value='ruby']")).to be_present
         expect(doc.at_css("select#marketplace-entry-tag option[value='ops']")).to be_present
         expect(doc.css("[data-marketplace-picker-target='group']").size).to eq(2)
+      end
+
+      it "does not show active marketplace entries without a current version" do
+        create(:marketplace_entry, account: account, name: "Unversioned entry")
+
+        get new_project_agent_run_path(project)
+
+        expect(response.body).not_to include("Unversioned entry")
       end
 
       it "applies team-default marketplace entries for an opted-in project member" do
@@ -1325,6 +1333,13 @@ RSpec.describe "AgentRuns" do
             "attachment_strategy" => "prompt_append",
             "content" => content
           })
+        entry.update!(current_version: version)
+        entry
+      end
+
+      def create_runtime_marketplace_entry(name:, entry_type:, tags: [ "team" ])
+        entry = create(:marketplace_entry, account: account, name:, entry_type:, tags:)
+        version = create(:marketplace_entry_version, marketplace_entry: entry)
         entry.update!(current_version: version)
         entry
       end

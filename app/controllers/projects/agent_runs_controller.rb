@@ -46,9 +46,7 @@ module Projects
       end.compact
       @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
-      @marketplace_entries = current_account.marketplace_entries.active
-        .ordered
-        .includes(:current_version)
+      @marketplace_entries = marketplace_entries_for_new_run
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -708,6 +706,13 @@ module Projects
 
     def marketplace_auto_attach_required_for_current_account?
       current_account&.tenant_setting&.marketplace_auto_attach_required? || false
+    end
+
+    def marketplace_entries_for_new_run
+      current_account.marketplace_entries.active
+        .where.not(current_version_id: nil)
+        .ordered
+        .includes(:current_version)
     end
 
     def ignorable_marketplace_attachment_error?(error)
