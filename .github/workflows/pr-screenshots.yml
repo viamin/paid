@@ -102,6 +102,8 @@ jobs:
       DB_HOST: localhost
       DB_USERNAME: paid
       DB_PASSWORD: paid
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
 
     steps:
@@ -133,7 +135,9 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
         run: |

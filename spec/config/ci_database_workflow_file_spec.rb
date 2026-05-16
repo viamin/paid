@@ -38,7 +38,9 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(job.fetch("env")).to include(
             "PAID_TEST_DATABASE" => "paid_test",
             "DB_USERNAME" => "paid",
-            "DB_PASSWORD" => "paid"
+            "DB_PASSWORD" => "paid",
+            "TMPDIR" => "${{ github.workspace }}/.tmp-build",
+            "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn"
           )
           expect(step_names).to include("Create application database role")
         end
@@ -49,6 +51,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
           expect(install_step.fetch("run")).to include("apt.postgresql.org/pub/repos/apt")
           expect(install_step.fetch("run")).to include("postgresql-client-16=16.13-1.pgdg24.04+1")
+        end
+
+        it "installs JavaScript dependencies with workspace-backed temp and cache directories for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          install_step = job.fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
+
+          expect(install_step.fetch("run")).to include('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER"')
+          expect(install_step.fetch("run")).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
         end
       end
     end
