@@ -1301,6 +1301,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     context "when followup limit is reached" do
+      before do
+        project.update!(max_pr_followup_runs: 3)
+      end
+
       context "without any actionable triggers present" do
         before do
           create(:issue, :pull_request,
