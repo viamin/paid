@@ -16,6 +16,10 @@ RSpec.describe Projects::DetectServices do
       def self.where(name:)
         raise "stub me"
       end
+
+      def self.all
+        raise "stub me"
+      end
     end
   end
 
@@ -24,7 +28,7 @@ RSpec.describe Projects::DetectServices do
     # Default: all files return NotFound
     allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError)
     # Default: no service containers exist
-    allow(service_container_class).to receive(:where).and_return(double(index_by: {}))
+    allow(service_container_class).to receive_messages(where: double(index_by: {}), all: [])
   end
 
   def stub_file(path, content)
@@ -37,11 +41,20 @@ RSpec.describe Projects::DetectServices do
 
   def stub_containers(*names)
     containers_by_name = names.each_with_object({}) do |name, hash|
-      hash[name] = Struct.new(:name).new(name)
+      hash[name] = Struct.new(:name, :image).new(name, "#{name}:latest")
     end
     relation = double(index_by: containers_by_name)
-    allow(service_container_class).to receive(:where).and_return(relation)
+    allow(service_container_class).to receive_messages(where: relation, all: containers_by_name.values)
     containers_by_name
+  end
+
+  def stub_containers_by_image(containers_spec)
+    # containers_spec: { "My Postgres" => "postgres:16", "My Redis" => "redis:7" }
+    containers = containers_spec.map do |name, image|
+      Struct.new(:name, :image).new(name, image)
+    end
+    allow(service_container_class).to receive_messages(where: double(index_by: {}), all: containers)
+    containers.index_by(&:name)
   end
 
   describe ".call" do
@@ -101,6 +114,46 @@ RSpec.describe Projects::DetectServices do
           unmatched_services = result.unmatched.map { |d| d[:service] }
           expect(unmatched_services).to include("postgres", "redis")
         end
+      end
+    end
+
+    context "when a container exists with matching image but non-canonical name" do
+      before do
+        stub_file("Gemfile", <<~GEMFILE)
+          gem "pg"
+          gem "redis"
+        GEMFILE
+      end
+
+      it "matches postgres by image pattern when no container is named 'postgres'" do
+        stub_containers_by_image("Screenshot Postgres" => "postgres:16", "My Redis" => "redis:7-alpine")
+
+        result = described_class.call(project: project)
+
+        matched_names = result.matched.map(&:name)
+        expect(matched_names).to include("Screenshot Postgres", "My Redis")
+        expect(result.unmatched).to be_empty
+      end
+
+      it "prefers exact name match over image-pattern match" do
+        containers = stub_containers("postgres")
+        image_container = Struct.new(:name, :image).new("Other Postgres", "postgres:16")
+        allow(service_container_class).to receive(:all).and_return([ containers["postgres"], image_container ])
+
+        result = described_class.call(project: project)
+
+        matched_names = result.matched.map(&:name)
+        expect(matched_names).to include("postgres")
+        expect(matched_names).not_to include("Other Postgres")
+      end
+
+      it "reports unmatched when no container image matches" do
+        stub_containers_by_image("My MySQL" => "mysql:8")
+
+        result = described_class.call(project: project)
+
+        unmatched_services = result.unmatched.map { |d| d[:service] }
+        expect(unmatched_services).to include("postgres", "redis")
       end
     end
 

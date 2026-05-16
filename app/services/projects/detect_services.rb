@@ -88,6 +88,21 @@ module Projects
     # to Ruby objects.
     MAX_YAML_ALIASES = 100
 
+    # Maps canonical service names to image patterns used as a fallback when
+    # no ServiceContainer exists with an exactly-matching name. Allows containers
+    # named "Screenshot Postgres" or "Dev Redis" to be matched to the
+    # "postgres" / "redis" services detected from the repo.
+    IMAGE_SERVICE_PATTERNS = {
+      "postgres" => /postgres/,
+      "redis" => /redis/,
+      "mysql" => /mysql|mariadb/,
+      "mongodb" => /mongo/,
+      "elasticsearch" => /elasticsearch|opensearch/,
+      "memcached" => /memcache/,
+      "selenium" => /selenium/,
+      "chromium" => /chromium/
+    }.freeze
+
     attr_reader :project
 
     def initialize(project:)
@@ -107,7 +122,7 @@ module Projects
 
       unique_services = detections.uniq { |d| d[:service] }
       detected_names = unique_services.map { |d| d[:service] }
-      containers = ServiceContainer.where(name: detected_names).index_by(&:name)
+      containers = matching_containers(detected_names)
 
       matched = []
       unmatched = []
@@ -129,6 +144,27 @@ module Projects
     end
 
     private
+
+    # Finds ServiceContainer records matching the given canonical service names.
+    # Tries exact name match first (e.g. name == "postgres"), then falls back
+    # to image-pattern matching so containers named "Screenshot Postgres" or
+    # "Dev Redis" are still matched to their canonical service.
+    def matching_containers(detected_names)
+      by_name = ServiceContainer.where(name: detected_names).index_by(&:name)
+      remaining = detected_names.reject { |n| by_name.key?(n) }
+      return by_name if remaining.empty?
+
+      ServiceContainer.all.each do |sc|
+        remaining.each do |service_name|
+          next if by_name.key?(service_name)
+
+          pattern = IMAGE_SERVICE_PATTERNS[service_name]
+          by_name[service_name] = sc if pattern && sc.image.match?(pattern)
+        end
+      end
+
+      by_name
+    end
 
     def fetch_file(path)
       client = project.github_token.client
