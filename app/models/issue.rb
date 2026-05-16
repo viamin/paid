@@ -62,6 +62,7 @@ class Issue < ApplicationRecord
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
   after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
+  after_update_commit :invalidate_pr_progress_state_cache!
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }

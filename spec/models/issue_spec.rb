@@ -442,6 +442,14 @@ RSpec.describe Issue do
         allow(issue).to receive(:project).and_return(project)
       end
 
+      it "registers a commit callback to clear memoized progress state after updates" do
+        after_commit_filters = described_class._commit_callbacks
+          .select { |callback| callback.kind == :after }
+          .map(&:filter)
+
+        expect(after_commit_filters).to include(:invalidate_pr_progress_state_cache!)
+      end
+
       it "memoizes progress state across helper calls" do
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
