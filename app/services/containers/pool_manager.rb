@@ -89,7 +89,7 @@ module Containers
     def remove_entry(entry, force: false)
       backend = Containers.backend_for(entry.container_host)
       remove_container(entry.container_id, force: force, backend: backend)
-      remove_volume(entry.workspace_volume, backend: backend)
+      remove_volume(entry.workspace_volume, backend: backend, host: entry.container_host)
       entry.destroy!
     end
 
@@ -251,8 +251,8 @@ module Containers
       Rails.logger.warn(message: "container_manager.pool_container_remove_failed", container_id: container_id, error: e.message)
     end
 
-    def remove_volume(volume_name, backend: Containers.backend)
-      backend.delete_volume(backend.get_volume(volume_name))
+    def remove_volume(volume_name, backend: Containers.backend, host: nil)
+      backend.delete_volume(backend.get_volume(volume_name, host: host))
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e

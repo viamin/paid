@@ -70,6 +70,41 @@ RSpec.describe Containers::PoolManager do
     end
   end
 
+  describe ".cleanup_claimed_container" do
+    let(:agent_run) { create(:agent_run, project: project) }
+    let(:container) { instance_double(Docker::Container, info: { "State" => { "Running" => true } }) }
+    let(:volume) { instance_double(Docker::Volume) }
+    let(:remote_backend) do
+      instance_double(
+        Containers::Backends::Base,
+        get_container: container,
+        stop_container: true,
+        delete_container: true,
+        get_volume: volume,
+        delete_volume: true
+      )
+    end
+
+    it "uses the persisted container host for workspace volume cleanup" do
+      entry = create(
+        :container_pool_entry,
+        :claimed,
+        project: project,
+        agent_run: agent_run,
+        container_host: "worker-1"
+      )
+      allow(Containers).to receive(:backend_for).with("worker-1").and_return(remote_backend)
+
+      expect(described_class.cleanup_claimed_container(agent_run: agent_run, force: true)).to be(true)
+      expect(remote_backend).to have_received(:get_container).with(entry.container_id)
+      expect(remote_backend).to have_received(:stop_container).with(container, timeout: 0)
+      expect(remote_backend).to have_received(:delete_container).with(container, force: true, v: true)
+      expect(remote_backend).to have_received(:get_volume).with(entry.workspace_volume, host: "worker-1")
+      expect(remote_backend).to have_received(:delete_volume).with(volume)
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+    end
+  end
+
   describe "#acquire" do
     let(:agent_run) { create(:agent_run, project: project) }
     let(:service) { instance_double(Containers::Provision) }
