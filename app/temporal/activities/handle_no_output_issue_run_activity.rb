@@ -156,7 +156,7 @@ module Activities
     def provider_error_output?(text)
       return false if text.blank?
 
-      provider_error_classification_patterns.any? { |pattern| text.match?(pattern) }
+      normalized_text(text).each_line.any? { |line| provider_error_signal_line?(line) }
     end
 
     def provider_error_redaction_line?(text)
@@ -184,13 +184,35 @@ module Activities
     end
 
     def provider_error_classification_patterns
-      @provider_error_classification_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
-        SUPPLEMENTARY_ERROR_PATTERNS.reject { |pattern| COMMENT_REDACTION_ONLY_PATTERNS.include?(pattern) }
+      @provider_error_classification_patterns ||= begin
+        combined = ProviderSupport.aggregated_error_classification_patterns(:quota) + SUPPLEMENTARY_ERROR_PATTERNS
+        combined.reject { |pattern| redaction_only_pattern?(pattern) }.uniq
+      end
+    end
+
+    def provider_error_upstream_patterns
+      @provider_error_upstream_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota)
     end
 
     def provider_error_redaction_patterns
       @provider_error_redaction_patterns ||= ProviderSupport.aggregated_error_classification_patterns(:quota) +
         SUPPLEMENTARY_ERROR_PATTERNS
+    end
+
+    def provider_error_signal_line?(line)
+      normalized_line = normalized_text(line)
+      return false if normalized_line.blank?
+
+      return true if provider_error_classification_patterns.any? { |pattern| normalized_line.match?(pattern) }
+
+      provider_error_upstream_patterns.any? { |pattern| normalized_line.match?(pattern) } &&
+        !provider_error_redaction_line?(normalized_line)
+    end
+
+    def redaction_only_pattern?(pattern)
+      COMMENT_REDACTION_ONLY_PATTERNS.any? do |redaction_pattern|
+        pattern.source == redaction_pattern.source && pattern.options == redaction_pattern.options
+      end
     end
 
     def normalized_text(text)
