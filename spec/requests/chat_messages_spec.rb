@@ -79,6 +79,24 @@ RSpec.describe "ChatMessages" do
         post chat_session_chat_messages_path(chat_session), params: { content: "" }
         expect(response).to have_http_status(:unprocessable_content)
       end
+
+      it "persists the chat response and token usage through the controller path" do
+        llm_client = instance_double(Proc, call: llm_response)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
+
+        expect {
+          post chat_session_chat_messages_path(chat_session), params: { content: "Hello" }
+        }.to change { chat_session.messages.where(role: "assistant").count }.by(1)
+          .and change { chat_session.token_usages.for_chat.count }.by(1)
+
+        expect(response).to have_http_status(:created)
+        expect(chat_session.token_usages.for_chat.order(:id).last).to have_attributes(
+          input_tokens: 10,
+          output_tokens: 5,
+          llm_model: "gpt-4o",
+          request_type: "chat_message"
+        )
+      end
     end
 
     context "when authenticated with SSE response" do

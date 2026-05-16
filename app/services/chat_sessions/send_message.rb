@@ -231,14 +231,21 @@ module ChatSessions
       output_tokens = assistant_message.tokens_output.to_i
       cost_cents = TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: assistant_message.model)
 
-      TokenUsage.create!(
-        chat_session: chat_session,
-        input_tokens: input_tokens,
-        output_tokens: output_tokens,
-        cost_cents: cost_cents,
-        llm_model: assistant_message.model,
-        request_type: "chat_message"
-      )
+      # Chat message delivery can run on ActionController::Live request threads,
+      # where per-connection RLS state is not always reliably preserved for
+      # association-based internal telemetry writes. The chat session itself was
+      # already policy-scoped before execution, so record usage with system
+      # access to avoid dropping successful responses on an internal audit write.
+      TenantContext.with_system_access do
+        TokenUsage.create!(
+          chat_session_id: chat_session.id,
+          input_tokens: input_tokens,
+          output_tokens: output_tokens,
+          cost_cents: cost_cents,
+          llm_model: assistant_message.model,
+          request_type: "chat_message"
+        )
+      end
 
       Projects::StatsSummary.bust_cache!(chat_session.project_id) if chat_session.project_id
     end

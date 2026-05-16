@@ -18,13 +18,14 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
     end
 
     it "computes summary counts from all bundles, not just the displayed rows" do
+      stub_const("#{described_class}::MIN_REVIEWABLE_SAMPLE_SIZE", 1)
       bundle_count = described_class::MAX_BUNDLE_ROWS + 1
 
       Array.new(bundle_count) do
         bundle = create(:configuration_bundle, account: project.account, definition: {
           "schema_version" => 1, "goal" => "create_pr", "agent_type" => "claude_code", "experiments" => {}
         })
-        3.times { create_bundle_outcome(project: project, bundle: bundle, quality_score: 0.7, cost_cents: 30) }
+        create_bundle_outcome(project: project, bundle: bundle, quality_score: 0.7, cost_cents: 30)
         bundle
       end
 

@@ -91,11 +91,12 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "uses shorter adaptive thresholds for fast healthy goals" do
-      create_list(:agent_run, AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
-        :completed,
-        :review_goal,
-        duration_seconds: 120,
-        completed_at: 1.day.ago)
+      allow(AgentRun).to receive(:healthy_successful_runtime_stats_by_goal).and_return(
+        "review" => {
+          count: AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+          p95: 120.0
+        }
+      )
 
       stale_review = create(:agent_run, :running, :review_goal,
         started_at: (AgentRun.stale_running_timeout(goal: "review") + 60).seconds.ago)
