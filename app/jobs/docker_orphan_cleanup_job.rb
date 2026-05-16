@@ -62,10 +62,17 @@ class DockerOrphanCleanupJob < ApplicationJob
 
     agent_run_ids = containers.filter_map { |c| c.info.dig("Labels", "paid.agent_run_id") }
     numeric_ids = agent_run_ids.select { |id| id.match?(/\A\d+\z/) }
-    active_ids = AgentRun.capacity_inflight.where(id: numeric_ids).pluck(:id).map(&:to_s).to_set
-    retained_ids = AgentRun.where(id: numeric_ids)
+    active_ids = agent_runs_for_backend(backend, AgentRun.capacity_inflight)
+      .where(id: numeric_ids)
+      .pluck(:id)
+      .map(&:to_s)
+      .to_set
+    retained_ids = agent_runs_for_backend(backend, AgentRun.all)
+      .where(id: numeric_ids)
       .where("container_retained_until > ?", Time.current)
-      .pluck(:id).map(&:to_s).to_set
+      .pluck(:id)
+      .map(&:to_s)
+      .to_set
 
     removed = 0
     containers.each do |container|
@@ -86,7 +93,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed = 0
     containers.each do |container|
       entry_id = container.info.dig("Labels", "paid.container_pool_entry_id")
-      entry = ContainerPoolEntry.find_by(id: entry_id) if entry_id.present?
+      entry = pool_entries_for_backend(backend).find_by(id: entry_id) if entry_id.present?
       next if entry&.status.in?(%w[warm warming claimed]) && pool_entry_active?(entry)
 
       removed += 1 if stop_and_remove_container(container, "pool", entry_id, backend: backend)
@@ -133,15 +140,23 @@ class DockerOrphanCleanupJob < ApplicationJob
     numeric_agent_run_ids = volumes
                               .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
                               .select { |id| id.match?(/\A\d+\z/) }
-    active_ids = AgentRun.capacity_inflight.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
-    retained_ids = AgentRun.where(id: numeric_agent_run_ids)
+    active_ids = agent_runs_for_backend(backend, AgentRun.capacity_inflight)
+      .where(id: numeric_agent_run_ids)
+      .pluck(:id)
+      .map(&:to_s)
+      .to_set
+    retained_ids = agent_runs_for_backend(backend, AgentRun.all)
+      .where(id: numeric_agent_run_ids)
       .where("container_retained_until > ?", Time.current)
-      .pluck(:id).map(&:to_s).to_set
+      .pluck(:id)
+      .map(&:to_s)
+      .to_set
 
     removed = 0
     failed = 0
     active = 0
     retained = 0
+    active_pool_volume_names = active_pool_volume_names_for_backend(backend)
     volumes.each do |volume|
       if volume.id.start_with?(POOL_VOLUME_PREFIX)
         if active_pool_volume_names.include?(volume.id)
@@ -245,28 +260,39 @@ class DockerOrphanCleanupJob < ApplicationJob
     claimed_pool_entry_active?(entry)
   end
 
-  def active_pool_volume_names
-    @active_pool_volume_names ||= begin
-      warm_names = ContainerPoolEntry.warm.pluck(:workspace_volume)
-      warming_names = ContainerPoolEntry.active_warming.pluck(:workspace_volume)
-      claimed_names = active_claimed_pool_entries.pluck(:workspace_volume)
-
-      (warm_names + warming_names + claimed_names).to_set
-    end
-  end
-
   def claimed_pool_entry_active?(entry)
     agent_run = entry.agent_run
     agent_run&.status.in?(AgentRun::UNFINISHED_STATUSES) || agent_run&.container_retained?
   end
 
-  def active_claimed_pool_entries
-    ContainerPoolEntry.claimed
+  def active_claimed_pool_entries(backend)
+    pool_entries_for_backend(backend).claimed
       .joins(:agent_run)
       .where(
         AgentRun.arel_table[:status].in(AgentRun::UNFINISHED_STATUSES).or(
           AgentRun.arel_table[:container_retained_until].gt(Time.current)
         )
       )
+  end
+
+  def active_pool_volume_names_for_backend(backend)
+    warm_names = pool_entries_for_backend(backend).warm.pluck(:workspace_volume)
+    warming_names = pool_entries_for_backend(backend).active_warming.pluck(:workspace_volume)
+    claimed_names = active_claimed_pool_entries(backend).pluck(:workspace_volume)
+
+    (warm_names + warming_names + claimed_names).to_set
+  end
+
+  def agent_runs_for_backend(backend, scope)
+    return scope.where(container_host: [ nil, "", backend.identifier ]) unless backend.remote?
+
+    scope.where(container_host: backend.identifier)
+  end
+
+  def pool_entries_for_backend(backend)
+    scope = ContainerPoolEntry.all
+    return scope.where(container_host: [ nil, "", backend.identifier ]) unless backend.remote?
+
+    scope.where(container_host: backend.identifier)
   end
 end
