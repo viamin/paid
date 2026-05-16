@@ -84,7 +84,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Draft | Medium |
+| [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Implemented | Medium |
 | [RDR-033](RDR-033-worker-pool-scaling-algorithm.md) | Worker Pool Scaling Algorithm | Implemented | Medium |
 
 ### Quality & Automation
