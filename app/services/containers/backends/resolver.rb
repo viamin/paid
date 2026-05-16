@@ -26,6 +26,10 @@ module Containers
           factory.call
         end
 
+        def backend_types
+          registry.keys
+        end
+
         private
 
         def registry

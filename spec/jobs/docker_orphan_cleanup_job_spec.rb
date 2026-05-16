@@ -9,6 +9,20 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
   let(:backend) { Containers.backend }
 
+  def build_backend(identifier:, remote:)
+    instance_double(
+      Containers::Backends::Base,
+      identifier: identifier,
+      remote?: remote,
+      all_host_identifiers: [ identifier ],
+      list_containers: [],
+      list_volumes: [],
+      stop_container: nil,
+      delete_container: nil,
+      delete_volume: nil
+    )
+  end
+
   def stub_no_containers
     allow(backend).to receive(:list_containers).and_return([])
   end
@@ -35,14 +49,43 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
-  def make_container(labels:)
+  def make_container(labels:, id: SecureRandom.hex(32))
     instance_double(Docker::Container,
+      id: id,
       info: { "Labels" => labels },
       stop: true,
       delete: true)
   end
 
+  def stub_backend_resources(target_backend, agent: [], pool: [], service: [], volumes: [])
+    allow(target_backend).to receive(:list_containers).with(all: true, filters: agent_filter).and_return(agent)
+    allow(target_backend).to receive(:list_containers).with(all: true, filters: pool_filter).and_return(pool)
+    allow(target_backend).to receive(:list_containers).with(all: true, filters: service_filter).and_return(service)
+    allow(target_backend).to receive(:list_volumes).and_return(volumes)
+  end
+
   describe "#perform" do
+    it "cleans up resources across all registered backends" do
+      local_backend = build_backend(identifier: "local", remote: false)
+      remote_backend = build_backend(identifier: "worker-1", remote: true)
+      local_container = make_container(labels: { "paid.agent_run_id" => "999999" })
+      remote_container = make_container(labels: { "paid.agent_run_id" => "888888" })
+
+      allow(Containers).to receive(:all_backends).and_return([ local_backend, remote_backend ])
+      stub_backend_resources(local_backend, agent: [ local_container ])
+      allow(local_backend).to receive(:stop_container).with(local_container, timeout: 10)
+      allow(local_backend).to receive(:delete_container).with(local_container, force: true, v: true)
+
+      stub_backend_resources(remote_backend, agent: [ remote_container ])
+      allow(remote_backend).to receive(:stop_container).with(remote_container, timeout: 10)
+      allow(remote_backend).to receive(:delete_container).with(remote_container, force: true, v: true)
+
+      job.perform
+
+      expect(local_backend).to have_received(:delete_container).with(local_container, force: true, v: true)
+      expect(remote_backend).to have_received(:delete_container).with(remote_container, force: true, v: true)
+    end
+
     context "with agent containers" do
       before do
         stub_no_volumes
@@ -140,6 +183,26 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).to have_received(:delete).with(force: true, v: true)
       end
 
+      it "removes wrong-host orphaned containers even when the run is still active on another backend" do
+        remote_run = create(:agent_run, :running, container_host: "worker-1")
+        local_backend = build_backend(identifier: "local", remote: false)
+        remote_backend = build_backend(identifier: "worker-1", remote: true)
+        local_container = make_container(labels: { "paid.agent_run_id" => remote_run.id.to_s })
+        remote_container = make_container(labels: { "paid.agent_run_id" => remote_run.id.to_s })
+
+        allow(Containers).to receive(:all_backends).and_return([ local_backend, remote_backend ])
+        stub_backend_resources(local_backend, agent: [ local_container ])
+        allow(local_backend).to receive(:stop_container).with(local_container, timeout: 10)
+        allow(local_backend).to receive(:delete_container).with(local_container, force: true, v: true)
+
+        stub_backend_resources(remote_backend, agent: [ remote_container ])
+
+        job.perform
+
+        expect(local_backend).to have_received(:delete_container).with(local_container, force: true, v: true)
+        expect(remote_backend).not_to have_received(:delete_container)
+      end
+
       it "continues processing when individual container removal fails" do
         completed1 = create(:agent_run, :completed)
         completed2 = create(:agent_run, :completed)
@@ -219,6 +282,26 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).not_to have_received(:delete)
       end
 
+      it "removes stale service containers whose docker_container_id no longer matches" do
+        sc = create(:service_container, status: "running", docker_container_id: "active-container-on-remote")
+        stale_container = make_container(
+          id: "old-local-container-id",
+          labels: {
+            "paid.service_container" => "true",
+            "paid.service_container_id" => sc.id.to_s
+          }
+        )
+        stub_service_containers(stale_container)
+        allow(sc).to receive(:capacity_inflight_agent_run_count).and_return(2)
+        allow(ServiceContainer).to receive(:find_by).with(id: sc.id.to_s).and_return(sc)
+
+        job.perform
+
+        expect(stale_container).to have_received(:delete).with(force: true, v: true)
+        expect(sc.reload.docker_container_id).to eq("active-container-on-remote")
+        expect(sc.reload.status).to eq("running")
+      end
+
       it "removes service containers with no matching DB record" do
         container = make_container(labels: {
           "paid.service_container" => "true",
@@ -293,10 +376,48 @@ RSpec.describe DockerOrphanCleanupJob do
 
         expect(container).not_to have_received(:delete)
       end
+
+      it "removes wrong-host orphaned pool containers even when the entry is active on another backend" do
+        remote_entry = create(:container_pool_entry, container_host: "worker-1")
+        local_backend = build_backend(identifier: "local", remote: false)
+        remote_backend = build_backend(identifier: "worker-1", remote: true)
+        local_container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => remote_entry.id.to_s
+        })
+        remote_container = make_container(labels: {
+          "paid.container_pool" => "true",
+          "paid.container_pool_entry_id" => remote_entry.id.to_s
+        })
+
+        allow(Containers).to receive(:all_backends).and_return([ local_backend, remote_backend ])
+        stub_backend_resources(local_backend, pool: [ local_container ])
+        allow(local_backend).to receive(:stop_container).with(local_container, timeout: 10)
+        allow(local_backend).to receive(:delete_container).with(local_container, force: true, v: true)
+
+        stub_backend_resources(remote_backend, pool: [ remote_container ])
+
+        job.perform
+
+        expect(local_backend).to have_received(:delete_container).with(local_container, force: true, v: true)
+        expect(remote_backend).not_to have_received(:delete_container)
+      end
     end
 
     context "with volumes" do
       before { stub_no_containers }
+
+      it "returns a complete empty summary when no paid volumes exist" do
+        stub_no_volumes
+
+        expect(job.send(:cleanup_volumes, backend: backend)).to eq(
+          found: 0,
+          removed: 0,
+          failed: 0,
+          active: 0,
+          retained: 0
+        )
+      end
 
       it "removes volumes for completed agent runs" do
         completed_run = create(:agent_run, :completed)
@@ -437,6 +558,25 @@ RSpec.describe DockerOrphanCleanupJob do
         allow(backend).to receive(:list_volumes).and_raise(Docker::Error::DockerError, "daemon error")
 
         expect { job.perform }.not_to raise_error
+      end
+
+      it "removes wrong-host orphaned pool volumes even when the entry is active on another backend" do
+        remote_entry = create(:container_pool_entry, container_host: "worker-1")
+        local_backend = build_backend(identifier: "local", remote: false)
+        remote_backend = build_backend(identifier: "worker-1", remote: true)
+        local_volume = instance_double(Docker::Volume, id: remote_entry.workspace_volume, remove: true)
+        remote_volume = instance_double(Docker::Volume, id: remote_entry.workspace_volume, remove: true)
+
+        allow(Containers).to receive(:all_backends).and_return([ local_backend, remote_backend ])
+        allow(local_backend).to receive_messages(list_containers: [], list_volumes: [ local_volume ])
+        allow(local_backend).to receive(:delete_volume).with(local_volume)
+
+        allow(remote_backend).to receive_messages(list_containers: [], list_volumes: [ remote_volume ])
+
+        job.perform
+
+        expect(local_backend).to have_received(:delete_volume).with(local_volume)
+        expect(remote_backend).not_to have_received(:delete_volume)
       end
     end
   end

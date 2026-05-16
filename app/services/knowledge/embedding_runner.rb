@@ -30,7 +30,10 @@ module Knowledge
     end
 
     def self.available?
-      Containers.backend.ping == "OK"
+      backend = Containers.backend
+      return false unless backend.supports_host_paths?
+
+      backend.ping == "OK"
     rescue Excon::Error, Docker::Error::DockerError
       false
     end
@@ -63,9 +66,12 @@ module Knowledge
 
     def ensure_container!
       return if @container
+      unless Containers.backend.supports_host_paths?
+        raise ContainerError, "Embedding containers require a backend with host path support"
+      end
 
       cleanup_input_dir!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend: Containers.backend)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
@@ -150,12 +156,12 @@ module Knowledge
     end
 
     def apply_network_restrictions!
-      NetworkPolicy.apply_firewall_rules(@container)
+      NetworkPolicy.apply_firewall_rules(@container, backend: Containers.backend)
     end
 
     def script_env(provider:, model:, dimensions:, timeout:)
       {
-        "PROXY_BASE_URL" => "http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}",
+        "PROXY_BASE_URL" => Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: true),
         "KNOWLEDGE_RUN_ID" => knowledge_run.id.to_s,
         "PROXY_TOKEN" => knowledge_run.ensure_proxy_token!,
         "EMBEDDING_PROVIDER" => provider,
@@ -184,6 +190,7 @@ module Knowledge
         texts = JSON.parse(File.read(input_path))
         uri = URI("#{proxy_url}/api/proxy/openai/v1/embeddings")
         http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 
