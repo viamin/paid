@@ -54,6 +54,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def create_stale_review_runs!(issue, statuses:, trigger_type: "automatic")
+    Array(statuses).each_with_index do |status, index|
+      timestamp = (Array(statuses).size - index + 2).hours.ago
+      create(:agent_run,
+        project: project,
+        issue: issue,
+        source_pull_request_number: issue.github_number,
+        goal: "review",
+        status: status,
+        trigger_type: trigger_type,
+        started_at: timestamp,
+        completed_at: timestamp)
+    end
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
@@ -7333,12 +7348,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "escalates when retry limit is reached" do
         pr_issue.update!(review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         result = activity.execute(project_id: project.id)
 
@@ -7350,12 +7360,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not escalate when an automatic review-goal run is still queued" do
         pr_issue.update!(review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         create(:agent_run, :automatic,
           project: project,
           goal: "review",
@@ -7375,12 +7380,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "escalated",
           labels: pr_issue.labels + [ "paid-escalated" ]
         )
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         result = activity.execute(project_id: project.id)
 
@@ -7391,12 +7391,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "detects draft conversion before escalating at retry limit in ready phase" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         stub_github_for_pr(draft: true, reviews: [])
 
@@ -7409,12 +7404,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "escalates at retry limit in ready phase when PR is not draft" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: false, reviews: [])
 
         result = activity.execute(project_id: project.id)
@@ -7427,12 +7417,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not escalate in ready phase while an automatic review-goal run is still running" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         create(:agent_run, :automatic,
           project: project,
           goal: "review",
@@ -7450,10 +7435,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not escalate in ready phase while a manual review-goal run is still running" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed, project: project, goal: "review",
-            source_pull_request_number: 42, trigger_type: "automatic")
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         create(:agent_run, project: project, goal: "review",
           status: "running", trigger_type: "manual", source_pull_request_number: 42)
         stub_github_for_pr(draft: false, reviews: [])
@@ -7469,12 +7451,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "skips escalation when pr_data fetch fails in ready phase at retry limit" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 42)
@@ -7583,12 +7560,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue.update!(review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         result = activity.execute(project_id: project.id)
 
@@ -7657,12 +7629,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                      body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
@@ -7701,12 +7668,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
       end
 
@@ -7738,12 +7700,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
       end
 
@@ -8213,13 +8170,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project, max_review_rounds: 3)
-      3.times do
-        create(:agent_run,
-          project: project, issue: retry_limit_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(retry_limit_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8337,11 +8288,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project, max_review_rounds: 1)
-      create(:agent_run,
-        project: project, issue: low_rounds_issue,
-        source_pull_request_number: 42,
-        goal: "review", status: "failed",
-        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      create_stale_review_runs!(low_rounds_issue, statuses: [ "failed" ])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8367,13 +8314,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: ready_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(ready_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr
     end
 
@@ -8398,13 +8339,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project)
       project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
-      3.times do
-        create(:agent_run,
-          project: project, issue: approved_ready_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(approved_ready_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(
         reviews: [
           { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
@@ -8437,13 +8372,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: dismissed_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(dismissed_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(reviews: [])
     end
 
@@ -8467,13 +8396,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: dismissed_escalated_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(dismissed_escalated_issue, statuses: %w[failed failed failed])
       dismissed_escalated_issue.update!(labels: dismissed_escalated_issue.labels - [ "paid-escalated" ])
       stub_github_for_pr(reviews: [])
     end
@@ -8501,13 +8424,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: fetch_fail_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(fetch_fail_issue, statuses: %w[failed failed failed])
       allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
         .and_raise(GithubClient::Error, "transient API failure")
@@ -8713,11 +8630,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      create(:agent_run,
-        project: project, issue: custom_retries_issue,
-        source_pull_request_number: 42,
-        goal: "review", status: "failed",
-        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      create_stale_review_runs!(custom_retries_issue, statuses: [ "failed" ])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8808,13 +8721,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project, max_review_rounds: 3)
-      3.times do
-        create(:agent_run,
-          project: project, issue: no_output_retry_limit_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "no_output",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(no_output_retry_limit_issue, statuses: %w[no_output no_output no_output])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8877,13 +8784,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!
-      3.times do
-        create(:agent_run,
-          project: project, issue: escalated_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(escalated_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr
     end
 
@@ -8914,13 +8815,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!
-      3.times do
-        create(:agent_run,
-          project: project, issue: escalated_no_dismiss_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(escalated_no_dismiss_issue, statuses: %w[failed failed failed])
       stub_github_for_pr
     end
 
@@ -9036,13 +8931,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      3.times do
-        create(:agent_run,
-          project: project, issue: mixed_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(mixed_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -9122,13 +9011,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      3.times do
-        create(:agent_run,
-          project: project, issue: manual_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(manual_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -9165,13 +9048,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      3.times do
-        create(:agent_run,
-          project: project, issue: ci_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(ci_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
