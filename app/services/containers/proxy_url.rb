@@ -7,8 +7,11 @@ module Containers
     module_function
 
     def resolve(backend:, restricted:)
-      if backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].present?
-        return validate_external_url!(ENV.fetch("PAID_PROXY_EXTERNAL_URL"))
+      if backend.remote?
+        external_url = ENV["PAID_PROXY_EXTERNAL_URL"].presence
+        raise ArgumentError, "PAID_PROXY_EXTERNAL_URL is required when CONTAINER_BACKEND is remote" if external_url.blank?
+
+        return validate_external_url!(external_url)
       end
 
       proxy_port = Rails.application.config.x.paid_proxy_port

@@ -349,8 +349,11 @@ class NetworkPolicy
     end
 
     def default_proxy_destination(backend: Containers.backend)
-      if backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].present?
-        return external_proxy_destination
+      if backend.remote?
+        external_url = ENV["PAID_PROXY_EXTERNAL_URL"].presence
+        raise Error, "PAID_PROXY_EXTERNAL_URL is required when CONTAINER_BACKEND is remote" if external_url.blank?
+
+        return external_proxy_destination(external_url)
       end
 
       # Default to the hostname used by agents to reach the secrets proxy.
@@ -358,8 +361,8 @@ class NetworkPolicy
       { host: "paid-proxy", port: SECRETS_PROXY_PORT }
     end
 
-    def external_proxy_destination
-      uri = URI.parse(ENV.fetch("PAID_PROXY_EXTERNAL_URL"))
+    def external_proxy_destination(url)
+      uri = URI.parse(url)
       host = uri.host.presence or raise Error, "Invalid PAID_PROXY_EXTERNAL_URL: missing host"
       { host: host, port: uri.port }
     rescue URI::InvalidURIError => e

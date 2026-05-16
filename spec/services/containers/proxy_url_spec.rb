@@ -28,6 +28,14 @@ RSpec.describe Containers::ProxyUrl, :no_db do
         .to eq("https://proxy.example.test:3443")
     end
 
+    it "raises when the remote backend has no external proxy URL" do
+      ENV.delete("PAID_PROXY_EXTERNAL_URL")
+
+      expect {
+        described_class.resolve(backend: remote_backend, restricted: true)
+      }.to raise_error(ArgumentError, "PAID_PROXY_EXTERNAL_URL is required when CONTAINER_BACKEND is remote")
+    end
+
     it "raises for an invalid external URL" do
       ENV["PAID_PROXY_EXTERNAL_URL"] = "not a url"
 

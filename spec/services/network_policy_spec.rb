@@ -284,6 +284,14 @@ RSpec.describe NetworkPolicy do
           .to raise_error(described_class::Error, /Invalid PAID_PROXY_EXTERNAL_URL/)
       end
 
+      it "raises NetworkPolicy::Error when the remote backend has no external proxy URL" do
+        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        ENV.delete("PAID_PROXY_EXTERNAL_URL")
+
+        expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
+          .to raise_error(described_class::Error, /PAID_PROXY_EXTERNAL_URL is required/)
+      end
+
       it "raises NetworkPolicy::Error for an invalid PAID_PROXY_EXTERNAL_URL port" do
         remote_backend = instance_double(Containers::Backends::Base, remote?: true)
         ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:99999"
