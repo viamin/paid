@@ -102,8 +102,22 @@ module Automation
       end
 
       def escalation_candidate?(signals)
-        signals.operational_failure_breaker ||
-          signals.failure_streak_limit_reached
+        return true if signals.operational_failure_breaker
+        return false unless signals.failure_streak_limit_reached
+
+        !review_goal_retry_pending?(signals)
+      end
+
+      def review_goal_retry_pending?(signals)
+        Array(signals.scan&.dig(:triggers) || signals.scan&.dig("triggers")).any? do |trigger|
+          trigger_type(trigger) == "review_goal_retry"
+        end
+      end
+
+      def trigger_type(trigger)
+        return unless trigger.is_a?(Hash)
+
+        trigger[:type] || trigger["type"]
       end
 
       def escalation_service_result(signals, service_result)
