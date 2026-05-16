@@ -160,7 +160,7 @@ module Projects
       remaining = detected_names.reject { |n| by_name.key?(n) }
       return by_name if remaining.empty?
 
-      account_scope.each do |sc|
+      account_scope.order(:name).each do |sc|
         remaining.each do |service_name|
           next if by_name.key?(service_name)
 
