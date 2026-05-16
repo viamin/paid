@@ -182,6 +182,12 @@ module ConfigurationBundles
 
     def persist_optimizer_assignments(selection, created_assignments:)
       optimizer_assignment_inputs(selection).each_with_object({}) do |(experiment, variant), resolved_variants|
+        existing_assignment = existing_optimizer_assignment_for(experiment)
+        if existing_assignment
+          resolved_variants[experiment.id] = existing_assignment.configuration_experiment_variant
+          next
+        end
+
         assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
           agent_run: agent_run,
@@ -199,6 +205,17 @@ module ConfigurationBundles
         error: e.message
       )
       false
+    end
+
+    def existing_optimizer_assignment_for(experiment)
+      return unless ActiveRecord::Base.connected?
+
+      ConfigurationExperimentAssignment.find_by(
+        configuration_experiment: experiment,
+        agent_run: agent_run
+      )
+    rescue ActiveRecord::ConnectionNotEstablished
+      nil
     end
 
     def optimizer_assignment_created?(assignment)
