@@ -57,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgdbm-dev \
     libpq-dev \
-    postgresql-client-16=16.13-1.pgdg24.04+1 \
+    postgresql-client-16=16.14-1.pgdg24.04+1 \
     rustc \
     shellcheck \
     python3 \
