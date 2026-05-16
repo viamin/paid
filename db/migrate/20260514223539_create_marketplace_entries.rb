@@ -42,7 +42,7 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
     create_table :agent_run_marketplace_entries, comment: "Marketplace entries attached to a specific agent run with rendered provider payloads" do |t|
       t.references :agent_run, null: false, foreign_key: true
       t.references :marketplace_entry, null: false, foreign_key: true
-      t.references :marketplace_entry_version, null: false, foreign_key: true
+      t.references :marketplace_entry_version, null: false, foreign_key: true, index: { name: "idx_arm_entries_entry_ver" }
       t.string :attachment_source, null: false, limit: 50, comment: "Whether the attachment came from manual selection, a team default, or automatic matching."
       t.integer :position, null: false, default: 0
       t.text :selection_reason
@@ -56,8 +56,10 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
       foreign_key: { to_table: :marketplace_entry_versions, on_delete: :nullify },
       comment: "Current active content snapshot for this marketplace entry."
 
-    add_index :marketplace_entries, [ :account_id, :entry_type, :status ]
-    add_index :marketplace_entries, [ :account_id, :team_scope, :status ]
+    add_index :marketplace_entries, [ :account_id, :entry_type, :status ],
+      name: "idx_marketplace_entries_lookup"
+    add_index :marketplace_entries, [ :account_id, :team_scope, :status ],
+      name: "idx_marketplace_entries_scope"
     add_index :marketplace_entries, :tags, using: :gin
     add_index :marketplace_entry_versions, [ :marketplace_entry_id, :version ], unique: true,
       name: "index_marketplace_entry_versions_unique_version"

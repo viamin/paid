@@ -25,6 +25,18 @@ RSpec.describe CreateMarketplaceEntries, :no_db do
     expect(recorded_sql.join("\n")).to include("projects.account_id = paid_current_account_id()")
   end
 
+  it "uses PostgreSQL-safe index names for schema load" do
+    schema_index_names = Rails.root.join("db/schema.rb").read.scan(/name: "([^"]+)"/).flatten
+      .grep(/marketplace_entries|marketplace_entry_rules|marketplace_entry_versions|arm_entries/)
+
+    expect(schema_index_names).to include(
+      "idx_marketplace_entries_lookup",
+      "idx_marketplace_entries_scope",
+      "idx_arm_entries_entry_ver"
+    )
+    expect(schema_index_names).to all(satisfy { |name| name.length <= 63 })
+  end
+
   it "drops marketplace tenant-isolation policies during rollback" do
     allow(migration).to receive(:table_exists?).and_return(true)
     allow(migration).to receive(:column_exists?).with(:marketplace_entries, :current_version_id).and_return(true)

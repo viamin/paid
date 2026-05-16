@@ -1253,8 +1253,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for safe rollout and deprecation."
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "entry_type", "status"], name: "index_marketplace_entries_on_account_id_and_entry_type_and_status"
-    t.index ["account_id", "team_scope", "status"], name: "index_marketplace_entries_on_account_id_and_team_scope_and_status"
+    t.index ["account_id", "entry_type", "status"], name: "idx_marketplace_entries_lookup"
+    t.index ["account_id", "team_scope", "status"], name: "idx_marketplace_entries_scope"
     t.index ["account_id"], name: "index_marketplace_entries_on_account_id"
     t.index ["current_version_id"], name: "index_marketplace_entries_on_current_version_id"
     t.index ["tags"], name: "index_marketplace_entries_on_tags", using: :gin
@@ -1303,7 +1303,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.index ["agent_run_id", "marketplace_entry_id"], name: "index_agent_run_marketplace_entries_unique_attachment", unique: true
     t.index ["agent_run_id"], name: "index_agent_run_marketplace_entries_on_agent_run_id"
     t.index ["marketplace_entry_id"], name: "index_agent_run_marketplace_entries_on_marketplace_entry_id"
-    t.index ["marketplace_entry_version_id"], name: "index_agent_run_marketplace_entries_on_marketplace_entry_version_id"
+    t.index ["marketplace_entry_version_id"], name: "idx_arm_entries_entry_ver"
   end
 
   create_table "mcp_server_definitions", force: :cascade do |t|
