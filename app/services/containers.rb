@@ -26,7 +26,8 @@ module Containers
     def all_backends
       active_backend = backend
       backends = { active_backend.identifier => active_backend }
-      Backends::Resolver.backend_types.each do |backend_type|
+
+      cleanup_backend_keys(active_backend).each do |backend_type|
         candidate = resolve_optional_backend(backend_type)
         next unless candidate
 
@@ -36,6 +37,15 @@ module Containers
     end
 
     private
+
+    def cleanup_backend_keys(active_backend)
+      return [] if active_backend.identifier.to_sym == :swarm
+
+      keys = []
+      keys << LOCAL_BACKEND_KEY if active_backend.remote?
+      keys << REMOTE_BACKEND_KEY if active_backend.identifier.to_sym == LOCAL_BACKEND_KEY
+      keys
+    end
 
     def local_backend
       resolve_optional_backend(LOCAL_BACKEND_KEY)
