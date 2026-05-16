@@ -122,6 +122,7 @@ module Automation
 
       def escalation_service_result(signals, service_result)
         return escalate_result(signals, reason: service_result.reason) if service_result.escalate?
+        return nil if service_result.auto_resolve?
 
         noop_result
       end
