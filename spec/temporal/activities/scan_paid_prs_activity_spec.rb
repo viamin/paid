@@ -64,6 +64,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         goal: "review",
         status: status,
         trigger_type: trigger_type,
+        created_at: timestamp,
+        updated_at: timestamp,
         started_at: timestamp,
         completed_at: timestamp)
     end
