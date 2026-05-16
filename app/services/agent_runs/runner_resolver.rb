@@ -101,7 +101,7 @@ module AgentRuns
       return unless base_runner
       return unless runner_runnable?(base_runner)
 
-      service_type = RunnerSupport.api_service_type_for(base_runner.runner_key)
+      service_type = base_runner.required_api_service_type
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
       return unless api_key
       return unless api_key.compatible_with?(base_runner.runner_key)
