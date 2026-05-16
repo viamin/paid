@@ -298,6 +298,7 @@ module Activities
 
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue, progress_state:)
+      retry_limit_stuck = retry_limit_reached && no_progress_stuck?(project, issue, progress_state)
       retry_limit_requires_escalation = retry_limit_reached &&
         review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
@@ -307,18 +308,20 @@ module Activities
       # live PR state first so a GitHub-side draft conversion or transient
       # fetch failure can short-circuit before we escalate on stale data.
       if retry_limit_requires_escalation &&
-          no_progress_stuck?(project, issue, progress_state) &&
+          retry_limit_stuck &&
           issue.pr_review_phase.in?(%w[draft restarted])
         return escalate_trigger(issue,
           reason: review_goal_retry_escalation_reason(project, issue, progress_state:))
       end
 
       # When a review-goal run has failed but the retry limit hasn't been
-      # reached, build the retry trigger and continue to phase-specific
+      # reached, or the PR has not yet gone stale past the no-progress
+      # window, build the retry trigger and continue to phase-specific
       # scanning so other signals (CI failures, unresolved threads, etc.)
-      # are still evaluated alongside the retry.
+      # are still evaluated alongside the retry. This keeps retries
+      # progress-based instead of pausing immediately at a small count.
       retry_trigger = nil
-      if retry_needed && !retry_limit_reached
+      if retry_needed && (!retry_limit_reached || !retry_limit_stuck)
         failed_count = review_goal_consecutive_failure_count(project, issue, progress_state:)
         max_retries = review_goal_max_retries(project)
         retry_trigger = {

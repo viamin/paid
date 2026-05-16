@@ -52,9 +52,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:review_goal_retry_limit_reached?).with(project, issue, progress_state:).and_return(true)
       allow(activity).to receive(:review_goal_retry_limit_requires_escalation?).with(project, issue, progress_state:).and_return(true)
       allow(activity).to receive(:review_goal_consecutive_failure_count).with(project, issue, progress_state:).and_return(3)
+      allow(activity).to receive(:review_goal_max_retries).with(project).and_return(3)
       allow(activity).to receive(:check_rate_budget!).with(client)
       allow(activity).to receive(:fetch_pr_data)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
+      allow(activity).to receive(:focus_for).and_return("review_feedback")
       allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
     end
 
@@ -177,7 +179,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.send(:scan_pr, project, client, issue)
 
-        expect(result).to eq(:draft_scan)
+        expect(result).to include(
+          focus: "review_feedback",
+          triggers: [
+            {
+              type: "review_goal_retry",
+              details: "Retrying failed review-goal run (attempt 4/3)"
+            }
+          ]
+        )
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end
@@ -192,7 +202,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           :[] => true)
       end
 
-      it "reuses the cached progress state instead of refetching the head commit timestamp" do
+      def stub_ready_scan(pr_data, progress_state, activity, project, client, issue)
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
         allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:fetch_check_runs).with(client, project, pr_data).and_return([])
@@ -206,12 +216,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           mergeable: true,
           progress_state: progress_state
         ).and_return(:ready_scan)
+      end
+
+      it "reuses the cached progress state instead of refetching the head commit timestamp" do
+        stub_ready_scan(pr_data, progress_state, activity, project, client, issue)
 
         result = activity.send(:scan_pr, project, client, issue)
 
-        expect(result).to eq(:ready_scan)
+        expect(result).to include(
+          focus: "review_feedback",
+          triggers: [
+            {
+              type: "review_goal_retry",
+              details: "Retrying failed review-goal run (attempt 4/3)"
+            }
+          ]
+        )
         expect(activity).to have_received(:pr_progress_state).with(project, issue).once
         expect(activity).to have_received(:pr_head_commit_timestamp).with(client, project, issue, pr_data).once
+      end
+
+      it "keeps emitting review_goal_retry until the no-progress window is actually exhausted" do
+        stub_ready_scan(pr_data, progress_state, activity, project, client, issue)
+        allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(false)
+        allow(activity).to receive(:scan_bot_authored_ready_pr).and_return(nil)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to include(
+          triggers: [
+            {
+              type: "review_goal_retry",
+              details: "Retrying failed review-goal run (attempt 4/3)"
+            }
+          ],
+          current_review_goal_retry_count: 0
+        )
       end
     end
 
