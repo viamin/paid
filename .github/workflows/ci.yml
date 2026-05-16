@@ -132,7 +132,6 @@ jobs:
           check_contains .github/workflows/test_prof.yml "$noble_client" ".github/workflows/test_prof.yml is not pinned to $noble_client"
           check_contains .github/workflows/pr-screenshots.yml "$noble_client" ".github/workflows/pr-screenshots.yml is not pinned to $noble_client"
           check_contains .github/workflows/ephemeral_tests.yml "$noble_client" ".github/workflows/ephemeral_tests.yml is not pinned to $noble_client"
-          check_contains .github/workflows/claude-code-review.yml "$noble_client" ".github/workflows/claude-code-review.yml is not pinned to $noble_client"
 
   test:
     runs-on: ubuntu-24.04
