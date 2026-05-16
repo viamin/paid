@@ -41,6 +41,14 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
+  def normalize_steps_for(path)
+    workflow = workflow_config(path)
+
+    workflow.fetch("jobs").flat_map do |_name, job|
+      Array(job["steps"]).select { |step| step["name"] == "Normalize test master key" }
+    end
+  end
+
   it "sets an explicit test secret key base anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
       expect(test_env_blocks_for(path)).to all(include("SECRET_KEY_BASE" => "test-secret-key-base")),
@@ -57,7 +65,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
   it "passes the test master key alias anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
-      expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}")),
+      expect(test_env_blocks_for(path)).to all(include("RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}")),
         "expected #{path} test env blocks to pass RAILS_TEST_KEY explicitly"
     end
   end
@@ -66,6 +74,25 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     workflow_paths.each do |path|
       expect(test_env_blocks_for(path)).to all(satisfy { |env| !env.key?("RAILS_MASTER_KEY") }),
         "expected #{path} test env blocks to rely on RAILS_TEST_KEY aliasing instead of exporting RAILS_MASTER_KEY directly"
+    end
+  end
+
+  it "normalizes missing test keys from RAILS_MASTER_KEY before Rails boots" do
+    %w[
+      .github/workflows/ci.yml
+      .github/workflows/pr-screenshots.yml
+      .github/workflows/system_tests.yml
+      .github/workflows/test_prof.yml
+      .github/workflows/ephemeral_tests.yml
+    ].each do |path|
+      expect(normalize_steps_for(path)).to all(include("if" => "env.RAILS_TEST_KEY == ''")),
+        "expected #{path} to normalize an empty RAILS_TEST_KEY"
+      expect(normalize_steps_for(path).map { |step| step.fetch("env") }).to all(
+        include("RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}")
+      ), "expected #{path} to source the fallback key from RAILS_MASTER_KEY"
+      expect(normalize_steps_for(path).map { |step| step.fetch("run") }).to all(
+        include('echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"')
+      ), "expected #{path} to export the fallback key into RAILS_TEST_KEY"
     end
   end
 end

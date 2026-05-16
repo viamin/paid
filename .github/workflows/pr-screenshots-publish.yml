@@ -145,7 +145,7 @@ jobs:
           BUNDLE_FROZEN: "true"
           RAILS_ENV: test
           SECRET_KEY_BASE: test-secret-key-base
-          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}
+          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
           PAID_TEST_DATABASE: paid_test
           SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
           SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
@@ -158,4 +158,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           SCREENSHOT_COMMENT_STATUS: ${{ steps.resolve.outputs.comment_status }}
-        run: bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"
+          bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download
