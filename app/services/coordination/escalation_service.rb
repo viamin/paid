@@ -209,9 +209,9 @@ module Coordination
     end
 
     def unified_failure_count
-      return signals["consecutive_unsuccessful_automatic_runs"] if signals.key?("consecutive_unsuccessful_automatic_runs")
+      return 0 unless signals.key?("consecutive_unsuccessful_automatic_runs")
 
-      [ signals["review_goal_retry_count"], signals["draft_review_count"], signals["pr_followup_count"] ].compact.max || 0
+      signals["consecutive_unsuccessful_automatic_runs"]
     end
 
     def trigger_types
