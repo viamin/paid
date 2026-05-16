@@ -21,6 +21,7 @@ module Notifications
             issue.github_state == "open" &&
             issue.pr_review_phase.in?(%w[ready escalated]) &&
             synced_with_latest_pr_state?(issue) &&
+            !progress_state_for(issue).latest_unsuccessful_review? &&
             progress_state_for(issue).escalation_worthy?(limit: issue.project.max_pr_followup_runs)
         end
       end
