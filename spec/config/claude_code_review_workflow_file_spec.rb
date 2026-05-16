@@ -31,7 +31,7 @@ RSpec.describe ClaudeCodeReviewWorkflowFile, :no_db do
   it "provisions postgres for Docker-based Claude review runs and exposes test env over the service hostname" do
     expect(services).to include(
       "postgres" => a_hash_including(
-        "image" => "postgres:16.13",
+        "image" => "postgres:16.14",
         "env" => a_hash_including(
           "POSTGRES_USER" => "postgres",
           "POSTGRES_PASSWORD" => "postgres"
