@@ -285,28 +285,64 @@ module Runners
 
     def process_harness_result(result)
       status = result[:status].to_s
-      message = normalize_output_text(result[:message]).presence || "Runner health check returned no message"
+      message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
+      harness_error_type = map_harness_error_category(result[:error_category])
+      display_message = message || output || "Runner health check returned no message"
+      classification_message = [ message, output ].compact.uniq.join("\n")
 
-      if status == "ok" || smoke_test_output_success?(output || message)
-        Result.new(success: true, error_type: nil, message: "Agent is healthy")
-      else
-        translated_message = translate_and_extract_error(message)
+      if smoke_test_failure_output?(classification_message)
+        translated_message = translate_and_extract_error(classification_message.presence || display_message)
         error_type = resolve_error_type(
-          harness_error_type: map_harness_error_category(result[:error_category]),
-          message: translated_message.presence || message
+          harness_error_type: harness_error_type,
+          message: translated_message.presence || classification_message.presence || display_message
         )
 
         Result.new(
           success: false,
           error_type: error_type,
-          message: translated_message.presence || message
+          message: translated_message.presence || display_message
+        )
+      elsif harness_error_type.present? && !smoke_test_output_success?(output) && !smoke_test_output_success?(message)
+        translated_message = translate_and_extract_error(classification_message.presence || display_message)
+
+        Result.new(
+          success: false,
+          error_type: resolve_error_type(
+            harness_error_type: harness_error_type,
+            message: translated_message.presence || classification_message.presence || display_message
+          ),
+          message: translated_message.presence || display_message
+        )
+      elsif smoke_test_output_success?(output) || smoke_test_output_success?(message)
+        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+      elsif status == "ok"
+        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+      else
+        translated_message = translate_and_extract_error(classification_message.presence || display_message)
+        error_type = resolve_error_type(
+          harness_error_type: harness_error_type,
+          message: translated_message.presence || classification_message.presence || display_message
+        )
+
+        Result.new(
+          success: false,
+          error_type: error_type,
+          message: translated_message.presence || display_message
         )
       end
     end
 
     def smoke_test_output_success?(text)
       text.to_s.strip.match?(/\AOK[.!]?\z/i)
+    end
+
+    def smoke_test_failure_output?(text)
+      message = sanitize_error_message(text)
+      return false if message.empty?
+      return true if message.match?(/Model not found:/i)
+
+      classify_failed_response(message) != :unexpected
     end
 
     def map_harness_error_category(category)
@@ -319,7 +355,9 @@ module Runners
       classified_error_type = classify_failed_response(message)
       return :unexpected if message.match?(/Model not found:/i)
       return classified_error_type if harness_error_type.nil? || harness_error_type == :unexpected
-      return classified_error_type if harness_error_type == :rate_limited && classified_error_type != :rate_limited
+      return classified_error_type if harness_error_type == :rate_limited &&
+        classified_error_type != :rate_limited &&
+        classified_error_type != :unexpected
 
       harness_error_type
     end
@@ -512,6 +550,11 @@ module Runners
         .reject(&:empty?)
         .reject { |line| line.match?(/\A[^\p{Alnum}]+\z/) }
         .reject { |line| noisy_error_line?(line) }
+
+      classified_line = cleaned_lines.find do |line|
+        line.match?(/Model not found:/i) || classify_failed_response(line) != :unexpected
+      end
+      return classified_line if classified_line
 
       cleaned_lines.first || fallback_message_from(message)
     end
