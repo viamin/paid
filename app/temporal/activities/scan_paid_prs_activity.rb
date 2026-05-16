@@ -1051,10 +1051,12 @@ module Activities
         current_head_sha:,
         current_head_updated_at:
       )
-      # Once we have live PR head data, promote that result to the default
+      # Once we know the live PR head SHA, promote that result to the default
       # cache entry so later callers in the same scan don't reuse a stale
-      # pre-fetch snapshot.
-      if current_head_sha.present? && current_head_updated_at.present?
+      # pre-fetch snapshot. A SHA mismatch alone is enough to prove progress
+      # for runs that recorded result_commit_sha; only nil-result runs need the
+      # extra head commit timestamp.
+      if current_head_sha.present?
         cache[:default] = cache[cache_key]
       end
       cache[cache_key]
