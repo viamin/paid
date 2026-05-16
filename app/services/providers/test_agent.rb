@@ -536,6 +536,11 @@ module Providers
         .reject { |line| line.match?(/\A[^\p{Alnum}]+\z/) }
         .reject { |line| noisy_error_line?(line) }
 
+      classified_line = cleaned_lines.find do |line|
+        line.match?(/Model not found:/i) || classify_failed_response(line) != :unexpected
+      end
+      return classified_line if classified_line
+
       cleaned_lines.first || fallback_message_from(message)
     end
 
