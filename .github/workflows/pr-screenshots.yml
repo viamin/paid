@@ -120,6 +120,9 @@ jobs:
             echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
           fi
 
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
         with:

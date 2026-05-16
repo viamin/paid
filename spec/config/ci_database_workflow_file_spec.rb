@@ -62,6 +62,19 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(install_step.fetch("run")).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
         end
 
+        it "creates workspace-backed temp and cache directories before tool setup for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          steps = job.fetch("steps")
+          prepare_index = steps.index { |step| step["name"] == "Prepare workspace cache directories" }
+          ruby_index = steps.index { |step| step["name"] == "Set up Ruby" }
+          node_index = steps.index { |step| step["name"] == "Set up Node" }
+
+          expect(prepare_index).not_to be_nil
+          expect(steps.fetch(prepare_index).fetch("run")).to eq('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"')
+          expect(prepare_index).to be < ruby_index
+          expect(prepare_index).to be < node_index
+        end
+
         it "bootstraps a schema-only test database for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }

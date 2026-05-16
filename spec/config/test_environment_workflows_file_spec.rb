@@ -49,6 +49,27 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
+  def prepare_workspace_cache_steps_for(path)
+    workflow = workflow_config(path)
+
+    workflow.fetch("jobs").filter_map do |_name, job|
+      next unless job["env"].is_a?(Hash) && job.dig("env", "RAILS_ENV") == "test"
+
+      steps = Array(job["steps"])
+      prepare_index = steps.index { |step| step["name"] == "Prepare workspace cache directories" }
+      ruby_index = steps.index { |step| step["name"] == "Set up Ruby" }
+      node_index = steps.index { |step| step["name"] == "Set up Node" }
+      next if prepare_index.nil? || ruby_index.nil? || node_index.nil?
+
+      {
+        step: steps.fetch(prepare_index),
+        prepare_index:,
+        ruby_index:,
+        node_index:
+      }
+    end
+  end
+
   it "sets an explicit test secret key base anywhere Rails boots in test mode" do
     workflow_paths.each do |path|
       expect(test_env_blocks_for(path)).to all(include("SECRET_KEY_BASE" => "test-secret-key-base")),
@@ -93,6 +114,27 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
       expect(normalize_steps_for(path).map { |step| step.fetch("run") }).to all(
         include('echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"')
       ), "expected #{path} to export the fallback key into RAILS_TEST_KEY"
+    end
+  end
+
+  it "creates workspace-backed temp and cache directories before Ruby and Node setup in test jobs" do
+    %w[
+      .github/workflows/ci.yml
+      .github/workflows/pr-screenshots.yml
+      .github/workflows/system_tests.yml
+      .github/workflows/test_prof.yml
+      .github/workflows/ephemeral_tests.yml
+    ].each do |path|
+      prepare_steps = prepare_workspace_cache_steps_for(path)
+
+      expect(prepare_steps).not_to be_empty, "expected #{path} test jobs to prepare workspace cache directories"
+      expect(prepare_steps.map { |item| item.fetch(:step).fetch("run") }).to all(
+        eq('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"')
+      ), "expected #{path} to create workspace-backed cache directories explicitly"
+      expect(prepare_steps).to all(satisfy do |item|
+        item.fetch(:prepare_index) < item.fetch(:ruby_index) &&
+          item.fetch(:prepare_index) < item.fetch(:node_index)
+      end), "expected #{path} to prepare cache directories before Ruby and Node setup"
     end
   end
 end
