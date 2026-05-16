@@ -22,7 +22,7 @@ RSpec.describe Containers::TcpHealthProbe, :no_db do
       expect(described_class.open?(backend: backend, container: container, host: "svc-host", port: 5432)).to be(true)
       expect(backend).to have_received(:exec_in_container).with(
         container,
-        [ "sh", "-lc", a_string_including("127.0.0.1", "5432") ]
+        [ "sh", "-c", a_string_including("127.0.0.1", "5432") ]
       )
     end
 

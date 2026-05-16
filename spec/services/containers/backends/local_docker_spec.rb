@@ -34,4 +34,14 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
 
     expect(backend.delete_volume(volume, force: true)).to be(true)
   end
+
+  it "accepts the legacy positional options hash when creating volumes" do
+    allow(Docker::Volume).to receive(:create) do |name, options|
+      expect(name).to eq("paid-workspace-1")
+      expect(options).to eq("Labels" => { "paid.managed" => "true" })
+      volume
+    end
+
+    expect(backend.create_volume("paid-workspace-1", "Labels" => { "paid.managed" => "true" })).to eq(volume)
+  end
 end

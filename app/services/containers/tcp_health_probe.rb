@@ -14,7 +14,7 @@ module Containers
       def remote_port_open?(backend:, container:, port:)
         return false if container.blank?
 
-        _stdout, _stderr, status = backend.exec_in_container(container, [ "sh", "-lc", probe_script(port) ])
+        _stdout, _stderr, status = backend.exec_in_container(container, [ "sh", "-c", probe_script(port) ])
         status.zero?
       rescue Docker::Error::DockerError, Excon::Error
         false
@@ -38,7 +38,7 @@ module Containers
             exec nc -z 127.0.0.1 #{port}
           fi
           if command -v bash >/dev/null 2>&1; then
-            exec bash -lc "exec 3<>/dev/tcp/127.0.0.1/#{port}"
+            exec bash -c "exec 3<>/dev/tcp/127.0.0.1/#{port}"
           fi
           if command -v ruby >/dev/null 2>&1; then
             exec ruby -rsocket -e "Socket.tcp('127.0.0.1', #{port}, connect_timeout: 1).close"
