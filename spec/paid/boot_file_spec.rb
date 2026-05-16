@@ -58,4 +58,19 @@ RSpec.describe BootFile, :no_db do
     expect(status.success?).to be(true), stderr
     expect(stdout.strip).to eq("")
   end
+
+  it "does not alias the test key outside the test environment" do
+    stdout, stderr, status = Open3.capture3(
+      {
+        "RAILS_ENV" => "development",
+        "RAILS_TEST_KEY" => "test-master-key",
+        "RAILS_MASTER_KEY" => nil
+      },
+      "bundle", "exec", "ruby", "-e", boot_script,
+      chdir: Rails.root.to_s
+    )
+
+    expect(status.success?).to be(true), stderr
+    expect(stdout.strip).to eq("")
+  end
 end
