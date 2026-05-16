@@ -14,6 +14,14 @@ RSpec.describe BootFile, :no_db do
     RUBY
   end
 
+  let(:environment_boot_script) do
+    <<~RUBY
+      ENV["SECRET_KEY_BASE"] ||= "test-secret-key-base"
+      require_relative "config/environment"
+      puts Rails.application.credentials.to_h.inspect
+    RUBY
+  end
+
   it "aliases RAILS_TEST_KEY to RAILS_MASTER_KEY in test when the master key is unset" do
     stdout, stderr, status = Open3.capture3(
       {
@@ -72,5 +80,21 @@ RSpec.describe BootFile, :no_db do
 
     expect(status.success?).to be(true), stderr
     expect(stdout.strip).to eq("")
+  end
+
+  it "boots the test environment without credential keys by treating test credentials as optional" do
+    stdout, stderr, status = Open3.capture3(
+      {
+        "RAILS_ENV" => "test",
+        "RAILS_TEST_KEY" => nil,
+        "RAILS_MASTER_KEY" => nil,
+        "SECRET_KEY_BASE" => "test-secret-key-base"
+      },
+      "bundle", "exec", "ruby", "-e", environment_boot_script,
+      chdir: Rails.root.to_s
+    )
+
+    expect(status.success?).to be(true), stderr
+    expect(stdout.strip).to eq("{}")
   end
 end
