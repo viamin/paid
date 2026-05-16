@@ -230,7 +230,7 @@ RSpec.describe Containers::Provision do
       expect(remote_backend).to have_received(:get_container).with(container_id)
       expect(remote_backend).to have_received(:stop_container).with(mock_container, timeout: 0)
       expect(remote_backend).to have_received(:delete_container).with(mock_container, force: true, v: true)
-      expect(remote_backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}")
+      expect(remote_backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
       expect(remote_backend).to have_received(:delete_volume).with(remote_volume)
     end
   end
