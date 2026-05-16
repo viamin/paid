@@ -506,9 +506,9 @@ class RunnersController < ApplicationController
   end
 
   def compatible_api_key_for_runner?(api_key:, runner_key:)
-    # OpenCode and KiloCode support multiple API key types depending on the
+    # Direct-outbound runners support multiple API key types depending on the
     # selected api_provider, so check against all compatible service types.
-    if %w[opencode kilocode].include?(runner_key)
+    if %w[opencode kilocode aider].include?(runner_key)
       return resource_model_class::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
     end
 
