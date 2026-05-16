@@ -107,6 +107,10 @@ module Containers
         cached_node_hostnames.include?(host.to_s)
       end
 
+      def all_host_identifiers
+        cached_node_hostnames.to_a + [ identifier ]
+      end
+
       def ping
         manager_connection.ping
       end

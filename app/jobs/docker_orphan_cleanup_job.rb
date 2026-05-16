@@ -292,15 +292,15 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def agent_runs_for_backend(backend, scope)
-    return scope.where(container_host: [ nil, "", backend.identifier ]) unless backend.remote?
+    return scope.where(container_host: backend.identifier) if backend.remote?
 
-    scope.where(container_host: backend.identifier)
+    scope.where(container_host: [ nil, "" ] + backend.all_host_identifiers)
   end
 
   def pool_entries_for_backend(backend)
     scope = ContainerPoolEntry.all
-    return scope.where(container_host: [ nil, "", backend.identifier ]) unless backend.remote?
+    return scope.where(container_host: backend.identifier) if backend.remote?
 
-    scope.where(container_host: backend.identifier)
+    scope.where(container_host: [ nil, "" ] + backend.all_host_identifiers)
   end
 end

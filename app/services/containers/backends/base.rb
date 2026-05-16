@@ -23,6 +23,13 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Returns all container_host values this backend may have persisted.
+      # Used by cleanup jobs to scope queries to the correct backend.
+      # Backends with multiple hosts (e.g., swarm) should override this.
+      def all_host_identifiers
+        [ identifier ]
+      end
+
       def container_host_for(_container)
         identifier
       end

@@ -103,6 +103,10 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.owns_host?("other-host")).to be(false)
   end
 
+  it "includes node hostnames and backend identifier in all_host_identifiers" do
+    expect(backend.all_host_identifiers).to contain_exactly("worker-1", "swarm")
+  end
+
   it "keeps recognizing persisted node hostnames even when the node is not ready" do
     down_node = node_payload.deep_dup
     down_node["Status"]["State"] = "down"
