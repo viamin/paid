@@ -94,11 +94,11 @@ module Containers
         Docker::Volume.all({}, connection)
       end
 
-      def create_volume(name, options = {})
-        Docker::Volume.create(name, options, connection)
+      def create_volume(name, options = nil, host: nil, **keyword_options)
+        Docker::Volume.create(name, normalize_volume_options(options, keyword_options), connection)
       end
 
-      def get_volume(name)
+      def get_volume(name, host: nil)
         Docker::Volume.get(name, connection)
       end
 
@@ -110,6 +110,10 @@ module Containers
 
       def build_tls_config(tls_config)
         tls_config.to_h.compact.merge(scheme: "https")
+      end
+
+      def normalize_volume_options(options, keyword_options)
+        (options || {}).merge(keyword_options.transform_keys(&:to_s))
       end
 
       def validate_tls_config!

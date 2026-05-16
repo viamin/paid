@@ -80,6 +80,18 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.list_volumes).to eq([ volume ])
   end
 
+  it "accepts host keywords for shared volume cleanup paths" do
+    allow(Docker::Volume).to receive(:get).with("paid-workspace-1", connection).and_return(volume)
+    allow(Docker::Volume).to receive(:create)
+      .with("paid-workspace-1", { "Labels" => { "paid.managed" => "true" } }, connection)
+      .and_return(volume)
+
+    expect(backend.get_volume("paid-workspace-1", host: "worker-1")).to eq(volume)
+    expect(
+      backend.create_volume("paid-workspace-1", { "Labels" => { "paid.managed" => "true" } }, host: "worker-1")
+    ).to eq(volume)
+  end
+
   it "requires mutual tls configuration" do
     expect {
       described_class.new(host: "worker-1.internal", tls_config: { client_cert: "/tmp/cert.pem" })
