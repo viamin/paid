@@ -696,6 +696,7 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(Containers::TcpHealthProbe).to have_received(:open?).with(
         backend: backend,
         container: container,
+        fallback_on_missing_tools: false,
         host: a_string_matching(/\Apaid-svc-/),
         port: 6379
       )

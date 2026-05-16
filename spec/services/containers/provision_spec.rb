@@ -62,6 +62,7 @@ RSpec.describe Containers::Provision do
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
+      remote?: false,
       supports_host_paths?: false,
       start_container: true,
       container_host_for: "worker-1"
@@ -85,6 +86,7 @@ RSpec.describe Containers::Provision do
       identifier: "worker-1",
       remote?: true,
       supports_host_paths?: false,
+      container_host_for: "worker-1",
       create_volume: mock_volume,
       create_container: mock_container,
       start_container: true,
