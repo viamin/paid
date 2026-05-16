@@ -31,18 +31,18 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
       jobs.each_key do |job_name|
-        it "uses the expected database bootstrap role flow for #{job_name}" do
+        it "uses the expected database connection flow for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           step_names = job.fetch("steps").map { |step| step["name"] }
 
           expect(job.fetch("env")).to include(
             "PAID_TEST_DATABASE" => "paid_test",
-            "DB_USERNAME" => "paid",
-            "DB_PASSWORD" => "paid",
+            "DB_USERNAME" => "postgres",
+            "DB_PASSWORD" => "postgres",
             "TMPDIR" => "${{ github.workspace }}/.tmp-build",
             "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn"
           )
-          expect(step_names).to include("Create application database role")
+          expect(step_names).not_to include("Create application database role")
         end
 
         it "installs the exact PGDG postgres client package for #{job_name}" do
@@ -61,14 +61,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(install_step.fetch("run")).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
         end
 
-        it "bootstraps a schema-only test database for #{job_name}" do
+        it "prepares the test database for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
 
-          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
+          expect(setup_step.fetch("run")).to eq("bin/rails db:prepare")
         end
 
-        it "bootstraps required orchestration defaults after schema load for #{job_name}" do
+        it "bootstraps required orchestration defaults after database setup for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           bootstrap_step = job.fetch("steps").find { |step| step["name"] == "Bootstrap test defaults" }
 
