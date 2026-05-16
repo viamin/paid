@@ -149,14 +149,16 @@ module Coordination
       trigger_types.any? { |type| policy["auto_resolve_trigger_types"].include?(type) }
     end
 
+    # Only defer for an active run. Unlike the old followup_limit_reached
+    # deferral, failure_streak_limit_reached is deliberately not deferred —
+    # when the unified failure limit is hit the PR should be evaluated for
+    # escalation immediately so it surfaces to the owner for attention.
     def defer_signal?
-      signals["active_run_exists"] == true || signals["followup_limit_reached"] == true
+      signals["active_run_exists"] == true
     end
 
     def defer_reason
-      return "active_run_in_progress" if signals["active_run_exists"] == true
-
-      "followup_limit_reached"
+      "active_run_in_progress" if signals["active_run_exists"] == true
     end
 
     def predict_human_value(policy, prediction_signals)
@@ -164,9 +166,7 @@ module Coordination
 
       value = 0.0
       value += weights["operational_failure_breaker"] if prediction_signals["operational_failure_breaker"]
-      value += weights["review_goal_retry_pressure"] * prediction_signals["review_goal_retry_pressure"]
-      value += weights["draft_review_pressure"] * prediction_signals["draft_review_pressure"]
-      value += weights["followup_pressure"] * prediction_signals["followup_pressure"]
+      value += weights["unified_failure_pressure"] * prediction_signals["unified_failure_pressure"]
       value += weights["blocking_triggers"] * prediction_signals["blocking_trigger_pressure"]
       value += weights["owner_reviewer_present"] if prediction_signals["owner_reviewer_present"]
       value += weights["escalated_phase"] if prediction_signals["escalated_phase"]
@@ -177,9 +177,7 @@ module Coordination
     def prediction_signals
       {
         "operational_failure_breaker" => signals["operational_failure_breaker"] == true,
-        "review_goal_retry_pressure" => normalized_retry_pressure,
-        "draft_review_pressure" => normalized_draft_pressure,
-        "followup_pressure" => normalized_followup_pressure,
+        "unified_failure_pressure" => normalized_unified_failure_pressure,
         "blocking_trigger_pressure" => normalized_blocking_trigger_pressure,
         "owner_reviewer_present" => signals["owner_reviewer_login"].present?,
         "escalated_phase" => signals["phase"] == "escalated"
@@ -195,16 +193,8 @@ module Coordination
       cost.clamp(0.0, 1.0)
     end
 
-    def normalized_retry_pressure
-      normalize_counter(signals["review_goal_retry_count"], 3)
-    end
-
-    def normalized_draft_pressure
-      normalize_counter(signals["draft_review_count"], 3)
-    end
-
-    def normalized_followup_pressure
-      normalize_counter(signals["pr_followup_count"], 3)
+    def normalized_unified_failure_pressure
+      normalize_counter(unified_failure_count, 3)
     end
 
     def normalized_blocking_trigger_pressure
@@ -216,6 +206,12 @@ module Coordination
       (numeric.to_f / ceiling).clamp(0.0, 1.0)
     rescue ArgumentError, TypeError
       0.0
+    end
+
+    def unified_failure_count
+      return 0 unless signals.key?("consecutive_unsuccessful_automatic_runs")
+
+      signals["consecutive_unsuccessful_automatic_runs"]
     end
 
     def trigger_types

@@ -181,6 +181,37 @@ class Issue < ApplicationRecord
     draft_review_count + pr_followup_count
   end
 
+  # Returns the unified progress state for this PR. Pass +current_head_sha+
+  # and +current_head_updated_at+ (the live PR head commit timestamp) to
+  # enable the "new PR head commit" reset condition. Without those
+  # parameters, only explicit reset markers and successful-run resets apply.
+  def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
+    PullRequests::ProgressState.call(
+      project:, issue: self,
+      current_head_sha:, current_head_updated_at:
+    )
+  end
+
+  def consecutive_unsuccessful_pr_runs(**kwargs)
+    pr_progress_state(**kwargs).consecutive_unsuccessful_automatic_runs
+  end
+
+  def last_pr_meaningful_progress_at(**kwargs)
+    pr_progress_state(**kwargs).last_meaningful_progress_at
+  end
+
+  def pr_escalation_worthy?(limit:, **kwargs)
+    pr_progress_state(**kwargs).escalation_worthy?(limit:)
+  end
+
+  def pr_retryable?(limit:, **kwargs)
+    pr_progress_state(**kwargs).retryable?(limit:)
+  end
+
+  def pr_stuck?(limit:, stale_after:, **kwargs)
+    pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
+  end
+
   def associated_pull_request
     if sub_issues.loaded?
       open_prs = sub_issues.select { |si| si.is_pull_request? && si.github_state == "open" }
@@ -218,10 +249,13 @@ class Issue < ApplicationRecord
   end
 
   def reset_review_goal_retry_breaker!
+    reset_at = Time.current
+
     update!(
       pr_review_phase: "ready",
       review_goal_retry_count: 0,
-      review_goal_retry_reset_at: Time.current
+      review_goal_retry_reset_at: reset_at,
+      operational_failure_reset_at: reset_at
     )
   end
 
@@ -414,6 +448,13 @@ class Issue < ApplicationRecord
     return nil unless project_id && id
 
     self.class.open_paid_generated_prs_by_issue_id(project: project, issue_ids: [ id ])[id]
+  end
+
+  def invalidate_pr_progress_state_cache!
+    # Progress is derived from agent-run history, so Issue-level memoization
+    # would go stale whenever runs change while the same Issue instance is
+    # still in memory. Keep the compatibility hook, but make it a no-op.
+    nil
   end
 
   private
