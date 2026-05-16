@@ -98,6 +98,16 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.owns_host?("other-host")).to be(false)
   end
 
+  it "caches node hostnames between owns_host? checks for a short ttl" do
+    allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 100.0, 131.0)
+
+    expect(backend.owns_host?("worker-1")).to be(true)
+    expect(backend.owns_host?("other-host")).to be(false)
+    expect(backend.owns_host?("worker-1")).to be(true)
+
+    expect(a_request(:get, "#{manager_url}/nodes")).to have_been_made.twice
+  end
+
   it "creates single-replica services with swarm placement and overlay networking" do
     payload = nil
     request = stub_request(:post, "#{manager_url}/services/create")

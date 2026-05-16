@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "set"
 
 module Containers
   module Backends
     class Swarm < Base
       DEFAULT_NODE_PORT = 2376
       DEFAULT_NODE_SCHEME = "https"
+      NODE_HOSTNAME_CACHE_TTL = 30
       NODE_ADDRESS_LABEL = "paid.docker_host"
 
       VolumeHandle = Struct.new(:backend, :id, :host, keyword_init: true) do
@@ -83,7 +85,7 @@ module Containers
       end
 
       def owns_host?(host)
-        healthy_nodes.any? { |node| node_hostname(node) == host.to_s }
+        cached_node_hostnames.include?(host.to_s)
       end
 
       def ping
@@ -384,6 +386,16 @@ module Containers
           node.dig("Spec", "Availability") == "active" &&
             node.dig("Status", "State") == "ready"
         end
+      end
+
+      def cached_node_hostnames
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        if @node_hostnames_expires_at.nil? || now >= @node_hostnames_expires_at
+          @cached_node_hostnames = healthy_nodes.map { |node| node_hostname(node) }.compact.to_set
+          @node_hostnames_expires_at = now + NODE_HOSTNAME_CACHE_TTL
+        end
+
+        @cached_node_hostnames
       end
 
       def inspect_node(id)
