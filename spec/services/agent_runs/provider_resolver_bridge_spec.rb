@@ -3,6 +3,8 @@
 require "rails_helper"
 
 class ProviderResolverBridgeProject
+  def effective_owner
+  end
 end
 
 RSpec.describe AgentRuns::ProviderResolver, :no_db do
@@ -30,6 +32,19 @@ RSpec.describe AgentRuns::ProviderResolver, :no_db do
       allow(described_class).to receive(:selected_runner).with(project: project, runner_id: 456).and_return(:runner)
 
       expect(described_class.selected_provider(project: project, provider_id: 456)).to eq(:runner)
+    end
+  end
+
+  describe "legacy provider support hooks" do
+    it "uses ProviderSupport for runnable agent-type checks" do
+      project = instance_double(ProviderResolverBridgeProject, effective_owner: nil)
+      resolver = described_class.new(project: project, goal: "create_pr", requested_agent_type: "codex")
+
+      allow(ProviderSupport).to receive(:provider_key_for_agent_type).with("codex").and_return("codex")
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("codex").and_return(true)
+      allow(RunnerSupport).to receive(:container_executable_runner_key?).with("codex").and_return(false)
+
+      expect(resolver.call).to eq([ nil, "codex" ])
     end
   end
 end

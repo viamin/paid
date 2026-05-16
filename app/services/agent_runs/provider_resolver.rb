@@ -19,5 +19,23 @@ module AgentRuns
     def initialize(**kwargs)
       super(**self.class.normalize_legacy_kwargs(kwargs))
     end
+
+    private
+
+    def container_executable_runner_keys
+      ProviderSupport.container_executable_provider_keys
+    end
+
+    def container_executable_runner_key?(runner_key)
+      ProviderSupport.container_executable_provider_key?(runner_key)
+    end
+
+    def runner_key_for_agent_type(agent_type)
+      ProviderSupport.provider_key_for_agent_type(agent_type)
+    end
+
+    def agent_type_for_runner_key(runner_key)
+      ProviderSupport.agent_type_for(runner_key)
+    end
   end
 end
