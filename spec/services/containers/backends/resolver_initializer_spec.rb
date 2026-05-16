@@ -10,10 +10,12 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
   around do |example|
     original_backend = ENV["CONTAINER_BACKEND"]
     original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+    original_config_backend = Rails.application.config.x.container_backend
     example.run
   ensure
     ENV["CONTAINER_BACKEND"] = original_backend
     ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+    Rails.application.config.x.container_backend = original_config_backend
   end
 
   before do
