@@ -9,11 +9,11 @@ RSpec.describe Projects::DetectServices do
 
   # Use lightweight stubs for AR models to avoid DB connections during class loading
   let(:github_token_stub) { Struct.new(:client).new(github_client) }
-  let(:project) { Struct.new(:owner, :repo, :github_token).new("test-owner", "test-repo", github_token_stub) }
+  let(:project) { Struct.new(:owner, :repo, :github_token, :account_id).new("test-owner", "test-repo", github_token_stub, 1) }
 
   let(:service_container_class) do
     Class.new do
-      def self.where(name:)
+      def self.where(**_kwargs)
         raise "stub me"
       end
     end
@@ -23,8 +23,11 @@ RSpec.describe Projects::DetectServices do
     stub_const("ServiceContainer", service_container_class)
     # Default: all files return NotFound
     allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError)
-    # Default: no service containers exist
-    allow(service_container_class).to receive(:where).and_return(double(index_by: {}))
+    # Default: no service containers exist in this account
+    empty_scope = instance_double(ActiveRecord::Relation)
+    allow(empty_scope).to receive_messages(where: double(index_by: {}), order: empty_scope)
+    allow(empty_scope).to receive(:each)
+    allow(service_container_class).to receive(:where).and_return(empty_scope)
   end
 
   def stub_file(path, content)
@@ -35,13 +38,30 @@ RSpec.describe Projects::DetectServices do
       .and_return(response)
   end
 
+  # Stubs account-scoped ServiceContainer queries for named containers.
+  # Exact-name queries return all stubbed containers; the fallback scan
+  # also iterates them (matching by image pattern when names differ).
   def stub_containers(*names)
     containers_by_name = names.each_with_object({}) do |name, hash|
-      hash[name] = Struct.new(:name).new(name)
+      hash[name] = Struct.new(:name, :image).new(name, "#{name}:latest")
     end
-    relation = double(index_by: containers_by_name)
-    allow(service_container_class).to receive(:where).and_return(relation)
+    account_scope = instance_double(ActiveRecord::Relation)
+    allow(account_scope).to receive_messages(where: double(index_by: containers_by_name), order: account_scope)
+    allow(account_scope).to receive(:each) { |&block| containers_by_name.values.each(&block) }
+    allow(service_container_class).to receive(:where).and_return(account_scope)
     containers_by_name
+  end
+
+  # Stubs account-scoped ServiceContainer queries where containers have custom
+  # names but recognizable images (e.g. "My Postgres" => "postgres:16").
+  # Exact-name queries find nothing; the fallback scan iterates all containers.
+  def stub_containers_by_image(containers_spec)
+    containers = containers_spec.map { |name, image| Struct.new(:name, :image).new(name, image) }
+    account_scope = instance_double(ActiveRecord::Relation)
+    allow(account_scope).to receive_messages(where: double(index_by: {}), order: account_scope)
+    allow(account_scope).to receive(:each) { |&block| containers.each(&block) }
+    allow(service_container_class).to receive(:where).and_return(account_scope)
+    containers.index_by(&:name)
   end
 
   describe ".call" do
@@ -101,6 +121,62 @@ RSpec.describe Projects::DetectServices do
           unmatched_services = result.unmatched.map { |d| d[:service] }
           expect(unmatched_services).to include("postgres", "redis")
         end
+      end
+    end
+
+    context "when a container exists with matching image but non-canonical name" do
+      before do
+        stub_file("Gemfile", <<~GEMFILE)
+          gem "pg"
+          gem "redis"
+        GEMFILE
+      end
+
+      it "matches postgres by image pattern when no container is named 'postgres'" do
+        stub_containers_by_image("Screenshot Postgres" => "postgres:16", "My Redis" => "redis:7-alpine")
+
+        result = described_class.call(project: project)
+
+        matched_names = result.matched.map(&:name)
+        expect(matched_names).to include("Screenshot Postgres", "My Redis")
+        expect(result.unmatched).to be_empty
+      end
+
+      it "prefers exact name match over image-pattern match" do
+        containers = stub_containers("postgres")
+        image_container = Struct.new(:name, :image).new("Other Postgres", "postgres:16")
+        # Both containers must be visible in the fallback scan; exact-name lookup
+        # still returns only the canonical "postgres" container.
+        account_scope = instance_double(ActiveRecord::Relation)
+        allow(account_scope).to receive_messages(where: double(index_by: { "postgres" => containers["postgres"] }), order: account_scope)
+        allow(account_scope).to receive(:each) { |&block| [ containers["postgres"], image_container ].each(&block) }
+        allow(service_container_class).to receive(:where).and_return(account_scope)
+
+        result = described_class.call(project: project)
+
+        matched_names = result.matched.map(&:name)
+        expect(matched_names).to include("postgres")
+        expect(matched_names).not_to include("Other Postgres")
+      end
+
+      it "reports unmatched when no container image matches" do
+        stub_containers_by_image("My MySQL" => "mysql:8")
+
+        result = described_class.call(project: project)
+
+        unmatched_services = result.unmatched.map { |d| d[:service] }
+        expect(unmatched_services).to include("postgres", "redis")
+      end
+
+      it "scopes container lookups to the project's own account" do
+        scope = instance_double(ActiveRecord::Relation)
+        allow(scope).to receive_messages(where: double(index_by: {}), order: scope)
+        allow(scope).to receive(:each)
+        expect(service_container_class).to receive(:where)
+          .with(hash_including(account_id: project.account_id))
+          .and_return(scope)
+
+        described_class.call(project: project)
       end
     end
 
