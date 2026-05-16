@@ -42,6 +42,8 @@ RSpec.describe ClaudeCodeReviewWorkflowFile, :no_db do
     expect(env).to include(
       "RAILS_ENV" => "test",
       "SECRET_KEY_BASE" => "test-secret-key-base",
+      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
+      "PAID_TEST_DATABASE" => "paid_test",
       "DB_HOST" => "postgres",
       "DB_USERNAME" => "postgres",
       "DB_PASSWORD" => "postgres"
