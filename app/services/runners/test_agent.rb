@@ -396,6 +396,7 @@ module Runners
         result = AgentRun.insert_all!(
           [ {
             project_id: test_project.id,
+            provider_id: runner.id,
             runner_id: runner.id,
             agent_type: Runner.agent_type_for(runner.runner_key),
             status: "queued",

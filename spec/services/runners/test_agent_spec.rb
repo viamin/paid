@@ -108,6 +108,22 @@ RSpec.describe Runners::TestAgent do
           provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
         )
       end
+
+      it "creates the ephemeral agent run with both provider_id and runner_id populated" do
+        expect(AgentRun).to receive(:insert_all!).with(
+          [
+            hash_including(
+              provider_id: provider.id,
+              runner_id: provider.id
+            )
+          ],
+          returning: [ :id ]
+        ).and_return(insert_result)
+        allow(AgentRun).to receive(:find).with(1).and_return(test_run)
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+
+        described_class.call(runner: provider)
+      end
     end
 
     context "when a provider returns the smoke-test success text with trailing punctuation" do
