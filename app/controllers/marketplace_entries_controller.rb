@@ -64,7 +64,9 @@ class MarketplaceEntriesController < ApplicationController
   private
 
   def set_marketplace_entry
-    @marketplace_entry = policy_scope(MarketplaceEntry).find(params[:id])
+    @marketplace_entry = policy_scope(MarketplaceEntry)
+      .includes(:current_version, :marketplace_entry_rules)
+      .find(params[:id])
   end
 
   def marketplace_entry_params
@@ -88,8 +90,9 @@ class MarketplaceEntriesController < ApplicationController
 
   def preload_form_fields
     version = @marketplace_entry.current_version
-    automatic_rule = @marketplace_entry.marketplace_entry_rules.find_by(mode: "automatic")
-    team_default_rule = @marketplace_entry.marketplace_entry_rules.find_by(mode: "team_default")
+    rules_by_mode = @marketplace_entry.marketplace_entry_rules.index_by(&:mode)
+    automatic_rule = rules_by_mode["automatic"]
+    team_default_rule = rules_by_mode["team_default"]
 
     @marketplace_entry.canonical_artifact_json = JSON.pretty_generate(version&.canonical_artifact || {})
     @marketplace_entry.renderers_json = JSON.pretty_generate(version&.renderers || {})
