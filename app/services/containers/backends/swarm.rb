@@ -182,7 +182,7 @@ module Containers
         end
       end
 
-      def create_volume(name, _options = {}, host: nil)
+      def create_volume(name, _options = nil, host: nil, **_keyword_options)
         VolumeHandle.new(backend: self, id: name, host: host)
       end
 

@@ -75,7 +75,7 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def create_volume(_name, _options = {}, host: nil)
+      def create_volume(_name, _options = nil, host: nil, **_keyword_options)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
