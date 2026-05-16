@@ -44,6 +44,7 @@ module Activities
     ].freeze
 
     COMMENT_REDACTION_ONLY_PATTERNS = [
+      /requires more credits/i,
       /add more credits/i,
       /not enough credits/i,
       /purchase (?:more )?credits/i,
