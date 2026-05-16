@@ -23,8 +23,8 @@ module MarketplaceEntries
       selections = {}
       attach_rule_based_entries!(selections, mode: "automatic", source: "automatic")
       attach_rule_based_entries!(selections, mode: "team_default", source: "team_default")
-      attach_manual_entries!(selections)
-      selections.values
+      resolved_manual_entry_ids = attach_manual_entries!(selections)
+      ordered_results(selections, resolved_manual_entry_ids)
     end
 
     private
@@ -50,7 +50,7 @@ module MarketplaceEntries
     end
 
     def attach_manual_entries!(selections)
-      return if effective_manual_entry_ids.empty?
+      return [] if effective_manual_entry_ids.empty?
 
       # Preserve the user's explicit selection order instead of the database
       # relation order so attachment positions remain stable in the run snapshot.
@@ -71,13 +71,32 @@ module MarketplaceEntries
       end
 
       assert_all_manual_entries_resolved!(resolved_manual_entry_ids)
+      resolved_manual_entry_ids
     end
 
     def effective_manual_entry_ids
       @effective_manual_entry_ids ||= if manual_entry_ids_specified?
         manual_entry_ids
       else
-        agent_run.agent_run_marketplace_entries.where(attachment_source: "manual").pluck(:marketplace_entry_id)
+        agent_run.agent_run_marketplace_entries.where(attachment_source: "manual").ordered.pluck(:marketplace_entry_id)
+      end
+    end
+
+    def ordered_results(selections, resolved_manual_entry_ids)
+      results = selections.values
+      return results if resolved_manual_entry_ids.length <= 1
+
+      manual_results = resolved_manual_entry_ids.filter_map { |entry_id| selections[entry_id] }
+      manual_index = 0
+
+      results.map do |result|
+        if result.source == "manual"
+          current_result = manual_results.fetch(manual_index)
+          manual_index += 1
+          current_result
+        else
+          result
+        end
       end
     end
 

@@ -100,6 +100,23 @@ RSpec.describe MarketplaceEntries::Resolver do
     expect(results.map(&:source)).to eq([ "manual", "manual" ])
   end
 
+  it "preserves explicit manual selection order when one selected entry also matched an automatic rule" do
+    project = create(:project)
+    automatic_entry = create_automatic_entry_for(project.account)
+    manual_entry = create_manual_entry_for(project.account, name: "Manual skill")
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      manual_entry_ids: [ manual_entry.id, automatic_entry.id ],
+      auto_attach_enabled: true
+    )
+
+    expect(results.map(&:entry)).to eq([ manual_entry, automatic_entry ])
+    expect(results.map(&:source)).to eq([ "manual", "manual" ])
+  end
+
   def create_automatic_entry_for(account)
     entry = create(:marketplace_entry, account: account, name: "Shared skill")
     version = create(:marketplace_entry_version,

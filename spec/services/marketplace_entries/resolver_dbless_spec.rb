@@ -227,6 +227,29 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:reason)).to eq([ "Selected manually for this run" ])
   end
 
+  it "preserves explicit manual selection order when one selected entry already matched a rule" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    automatic_entry = build_entry(id: 7)
+    manual_entry = build_entry(id: 8, rules: [])
+
+    resolver = described_class.new(
+      project:,
+      agent_run:,
+      manual_entry_ids: [ manual_entry.id, automatic_entry.id ],
+      auto_attach_enabled: true
+    )
+    allow(resolver).to receive(:candidate_entries).and_return([ automatic_entry, manual_entry ])
+
+    results = resolver.call
+
+    expect(results.map(&:entry)).to eq([ manual_entry, automatic_entry ])
+    expect(results.map(&:source)).to eq([ "manual", "manual" ])
+  end
+
   it "prefers team-default over automatic when the same entry matches both rule modes" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries
@@ -268,12 +291,16 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       def where(...)
       end
 
+      def ordered
+      end
+
       def pluck(...)
       end
     end)
 
     instance_double(ResolverDblessAttachments).tap do |attachments|
       allow(attachments).to receive(:where).with(attachment_source: "manual").and_return(attachments)
+      allow(attachments).to receive(:ordered).and_return(attachments)
       allow(attachments).to receive(:pluck).with(:marketplace_entry_id).and_return([])
     end
   end
@@ -283,11 +310,15 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       def where(...)
       end
 
+      def ordered
+      end
+
       def pluck(...)
       end
     end)
 
     manual_relation = instance_double(ResolverDblessManualAttachments)
+    allow(manual_relation).to receive(:ordered).and_return(manual_relation)
     allow(manual_relation).to receive(:pluck).with(:marketplace_entry_id).and_return([ 7 ])
     instance_double(ResolverDblessManualAttachments).tap do |attachments|
       allow(attachments).to receive(:where).with(attachment_source: "manual").and_return(manual_relation)
