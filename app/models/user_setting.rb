@@ -191,6 +191,10 @@ class UserSetting < ApplicationRecord
     )
   end
 
+  def self.enabled_agent_providers(user = nil, identifiers: false)
+    enabled_agent_runners(user, identifiers: identifiers)
+  end
+
   # Returns runners that can be used as fallback for a user.
   # Filtered to container-executable runners only, since non-executable
   # runners would cause immediate failures during fallback in RunAgentActivity.
