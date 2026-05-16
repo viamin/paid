@@ -304,7 +304,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
         allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
-        allow(activity).to receive(:failure_streak_reason).with(project, issue, progress_state).and_return("stale operational failures")
+        allow(activity).to receive(:operational_failure_reason).and_return("stale operational failures")
         allow(activity).to receive(:escalate_trigger).with(issue, reason: "stale operational failures").and_return(:escalated)
 
         result = activity.send(:scan_pr, project, client, issue)

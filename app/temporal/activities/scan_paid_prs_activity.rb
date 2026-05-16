@@ -178,8 +178,7 @@ module Activities
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
       reason = if op_breaker
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
-          "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
+        operational_failure_reason
       elsif no_progress_stuck && retry_escalation
         "Review-goal retry budget exhausted with no meaningful progress for " \
           "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
@@ -294,7 +293,7 @@ module Activities
       # until that rollout is complete.
       explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
       if operational_failure_breaker?(project, issue, progress_state) && !explicit_pr_decisions
-        return escalate_trigger(issue, reason: failure_streak_reason(project, issue, progress_state))
+        return escalate_trigger(issue, reason: operational_failure_reason)
       end
 
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
@@ -1131,6 +1130,11 @@ module Activities
         "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
           "#{streak} consecutive unsuccessful automatic runs"
       end
+    end
+
+    def operational_failure_reason
+      "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
     end
 
     def followup_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
