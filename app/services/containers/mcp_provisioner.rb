@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "socket"
-
 module Containers
   # Provisions MCP (Model Context Protocol) servers for agent runs.
   #
@@ -151,7 +149,7 @@ module Containers
 
       begin
         Containers.backend.start_container(container) unless container_running?(container)
-        wait_for_health!(hostname, port)
+        wait_for_health!(container, hostname, port)
       rescue => e
         remove_container(container)
         raise Error, "Failed to start MCP sidecar #{name}: #{e.message}"
@@ -227,11 +225,11 @@ module Containers
       raise Error, "Failed to pull MCP server image #{image}: #{e.message}"
     end
 
-    def wait_for_health!(hostname, port)
+    def wait_for_health!(container, hostname, port)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        return if tcp_port_open?(hostname, port)
+        return if TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
 
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           raise Error, "Health check timeout for MCP sidecar #{hostname}:#{port}"
@@ -240,15 +238,6 @@ module Containers
         sleep HEALTH_CHECK_INTERVAL
       end
     end
-
-    def tcp_port_open?(host, port)
-      socket = Socket.tcp(host, port, connect_timeout: HEALTH_CHECK_INTERVAL)
-      socket.close
-      true
-    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ETIMEDOUT, SocketError
-      false
-    end
-
     def sidecar_hostname(agent_run, name)
       suffix = "run#{agent_run.id}"
       budget = [ MAX_NAME_LENGTH - CONTAINER_NAME_PREFIX.length - suffix.length - 2, 1 ].max

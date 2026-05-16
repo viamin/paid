@@ -669,6 +669,25 @@ RSpec.describe Containers::ServiceProvisioner do
       result = provisioner.send(:docker_healthcheck_status, sc)
       expect(result).to be_nil
     end
+
+    it "probes from inside the container when the backend is remote and no healthcheck exists" do
+      sc = create(:service_container, status: "running", docker_container_id: "remote123", name: "redis", port: 6379)
+      container = instance_double(Docker::Container)
+      backend = Containers::Backends::LocalDocker.new
+
+      allow(backend).to receive(:remote?).and_return(true)
+      allow(Containers).to receive(:backend).and_return(backend)
+      allow(Docker::Container).to receive(:get).with("remote123").and_return(container)
+      allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+
+      expect(provisioner.send(:tcp_port_open?, sc)).to be(true)
+      expect(Containers::TcpHealthProbe).to have_received(:open?).with(
+        backend: backend,
+        container: container,
+        host: a_string_matching(/\Apaid-svc-/),
+        port: 6379
+      )
+    end
   end
 
   describe "metrics collection scheduling" do

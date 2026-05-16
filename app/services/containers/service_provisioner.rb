@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "socket"
 require "uri"
 
 module Containers
@@ -434,7 +433,7 @@ module Containers
         end
 
         # Fall back to TCP probe when no Docker HEALTHCHECK is configured.
-        if has_healthcheck == false && tcp_port_open?(runtime_name(service_container), service_container.port)
+        if has_healthcheck == false && tcp_port_open?(service_container)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -464,11 +463,15 @@ module Containers
       nil
     end
 
-    def tcp_port_open?(host, port)
-      socket = Socket.tcp(host, port, connect_timeout: HEALTH_CHECK_INTERVAL)
-      socket.close
-      true
-    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ETIMEDOUT, SocketError
+    def tcp_port_open?(service_container)
+      container = Containers.backend.get_container(service_container.docker_container_id)
+      TcpHealthProbe.open?(
+        backend: Containers.backend,
+        container: container,
+        host: runtime_name(service_container),
+        port: service_container.port
+      )
+    rescue Docker::Error::DockerError, Excon::Error
       false
     end
 
