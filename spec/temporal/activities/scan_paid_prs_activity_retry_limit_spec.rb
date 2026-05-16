@@ -488,6 +488,56 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "#recently_completed_run?", :no_db do
+    before do
+      stub_const("RecentRunProjectStub", Class.new)
+      stub_const("RecentRunIssueStub", Class.new)
+      stub_const("RecentRunScopeStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(RecentRunProjectStub) }
+    let(:issue) do
+      instance_double(
+        RecentRunIssueStub,
+        last_pr_scan_at: Time.zone.parse("2026-05-15 12:00:00")
+      )
+    end
+    let(:scope) { instance_double(RecentRunScopeStub) }
+
+    it "checks for completed runs through the unified PR history scope" do
+      allow(activity).to receive(:pr_run_history_scope).with(project, issue).and_return(scope)
+      allow(scope).to receive(:where).with("completed_at >= ?", issue.last_pr_scan_at).and_return(scope)
+      allow(scope).to receive(:exists?).and_return(true)
+
+      expect(activity.send(:recently_completed_run?, project, issue)).to be(true)
+      expect(activity).to have_received(:pr_run_history_scope).with(project, issue)
+    end
+  end
+
+  describe "#active_run_exists?", :no_db do
+    before do
+      stub_const("ActiveRunProjectStub", Class.new)
+      stub_const("ActiveRunIssueStub", Class.new)
+      stub_const("ActiveRunScopeStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(ActiveRunProjectStub) }
+    let(:issue) { instance_double(ActiveRunIssueStub) }
+    let(:scope) { instance_double(ActiveRunScopeStub) }
+
+    it "checks in-flight create_pr runs through the unified PR history scope" do
+      allow(activity).to receive(:pr_run_history_scope).with(project, issue).and_return(scope)
+      allow(scope).to receive(:where).with(status: AgentRun::UNFINISHED_STATUSES).and_return(scope)
+      allow(scope).to receive(:where).with(goal: "create_pr").and_return(scope)
+      allow(scope).to receive(:exists?).and_return(true)
+
+      expect(activity.send(:active_run_exists?, project, issue)).to be(true)
+      expect(activity).to have_received(:pr_run_history_scope).with(project, issue)
+    end
+  end
+
   describe "#execute", :no_db do
     before do
       stub_const("Project", Class.new do

@@ -1022,16 +1022,13 @@ module Activities
     end
 
     def recently_completed_run?(project, issue)
-      project.agent_runs
-        .where(source_pull_request_number: issue.github_number)
-        .or(project.agent_runs.where(pull_request_number: issue.github_number))
+      pr_run_history_scope(project, issue)
         .where("completed_at >= ?", issue.last_pr_scan_at)
         .exists?
     end
 
     def active_run_exists?(project, issue)
-      project.agent_runs
-        .where(source_pull_request_number: issue.github_number)
+      pr_run_history_scope(project, issue)
         .where(status: AgentRun::UNFINISHED_STATUSES)
         .where(goal: "create_pr")
         .exists?
