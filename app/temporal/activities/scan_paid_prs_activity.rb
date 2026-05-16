@@ -82,6 +82,7 @@ module Activities
 
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
+      scanned_prs = paid_prs.reject { |issue| merged_issue?(issue) }
       explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
 
       scanned_count = 0
@@ -90,7 +91,7 @@ module Activities
       automation_results = []
       pending_review_states = []
       progress_states = []
-      paid_prs.each do |issue|
+      scanned_prs.each_with_index do |issue, index|
         if skip_unchanged_pr?(project, issue)
           if merge_conflict_rescan_needed?(project, issue)
             result = scan_merge_conflict_only(project, client, issue)
@@ -135,7 +136,7 @@ module Activities
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
           prs_collected: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size,
-          prs_remaining: paid_prs.size - paid_prs.index(issue) - 1
+          prs_remaining: scanned_prs.size - index - 1
         )
         break
       end
@@ -226,8 +227,13 @@ module Activities
         .pull_requests_only
         .auto_continue_active
         .where(github_state: "open")
-        .where.not(pr_review_phase: "merged")
         .where("labels @> ?", [ project.automation_label_name ].to_json)
+    end
+
+    def merged_issue?(issue)
+      return issue.merged_phase? if issue.respond_to?(:merged_phase?)
+
+      issue.respond_to?(:pr_review_phase) && issue.pr_review_phase == "merged"
     end
 
     def scan_pr(project, client, issue)

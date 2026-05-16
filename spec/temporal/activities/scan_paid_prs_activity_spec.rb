@@ -5964,7 +5964,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     context "when PR is in merged phase" do
-      before do
+      let!(:merged_pr) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -5972,10 +5972,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_state: "open")
       end
 
-      it "does not scan merged PRs" do
+      before do
+        allow(github_client).to receive(:pull_request)
+      end
+
+      it "does not scan merged PRs but still returns their ids for downstream notification resolution" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:pr_issue_ids]).to contain_exactly(merged_pr.id)
+        expect(github_client).not_to have_received(:pull_request)
       end
     end
 
