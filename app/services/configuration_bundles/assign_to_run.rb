@@ -119,14 +119,24 @@ module ConfigurationBundles
       return [] unless agent_run.respond_to?(:agent_run_marketplace_entries)
 
       agent_run.agent_run_marketplace_entries.ordered.map do |attachment|
+        rendered_payload = MarketplaceEntries::Renderer.for_attachment(
+          attachment,
+          provider_key: marketplace_provider_key
+        )
+
         {
           entry_id: attachment.marketplace_entry_id,
           version_id: attachment.marketplace_entry_version_id,
           source: attachment.attachment_source,
-          rendered_format: attachment.rendered_format,
-          rendered_payload: attachment.rendered_payload
+          rendered_format: rendered_payload.fetch("provider_format"),
+          rendered_payload: rendered_payload
         }
       end
+    end
+
+    def marketplace_provider_key
+      @marketplace_provider_key ||= agent_run.provider&.provider_key ||
+        ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
     end
 
     def experiment_definitions(selected_variants = nil)
