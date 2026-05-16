@@ -134,6 +134,7 @@ module MarketplaceEntries
         expanded_path = File.expand_path(normalized_path, RUNTIME_PREPARATION_ROOT)
         resolved_path = resolve_runtime_path(expanded_path)
         next unless allowed_runtime_path?(resolved_path)
+        next unless normalized_path.start_with?(RUNTIME_HOME_ROOT) || resolved_path == expanded_path
 
         { path: normalized_path, content: content.to_s }
       end
@@ -142,23 +143,23 @@ module MarketplaceEntries
     def resolve_runtime_path(path)
       File.realpath(path)
     rescue Errno::ENOENT
-      resolved_dir = resolve_existing_parent(File.dirname(path))
-      File.join(resolved_dir, File.basename(path))
+      current_path = File::SEPARATOR
+      components = Pathname.new(path).each_filename.to_a
+
+      components.each_with_index do |component, index|
+        candidate_path = File.join(current_path, component)
+
+        if File.exist?(candidate_path) || File.symlink?(candidate_path)
+          current_path = File.realpath(candidate_path)
+          next
+        end
+
+        return File.join(current_path, *components[index..])
+      end
+
+      current_path
     rescue Errno::EACCES, Errno::ENOTDIR, Errno::ELOOP
       nil
-    end
-
-    def resolve_existing_parent(path)
-      current_path = path
-
-      loop do
-        return File.realpath(current_path)
-      rescue Errno::ENOENT
-        parent_path = File.dirname(current_path)
-        raise if parent_path == current_path
-
-        current_path = parent_path
-      end
     end
 
     def allowed_runtime_path?(resolved_path)

@@ -28,4 +28,17 @@ RSpec.describe CiWorkflowFile, :no_db do
       "PAID_TEST_DATABASE" => "paid_test"
     )
   end
+
+  it "verifies workflow jobs install the matching PGDG postgres client major package" do
+    lint_step = workflow.fetch("jobs").fetch("lint").fetch("steps")
+      .find { |step| step["name"] == "Verify Postgres image pins and client install sources are in sync" }
+
+    expect(lint_step.fetch("run")).to include('workflow_client="postgresql-client-${major}"')
+    expect(lint_step.fetch("run")).to include(
+      'check_contains .github/workflows/ci.yml "$workflow_client" ".github/workflows/ci.yml must install $workflow_client"'
+    )
+    expect(lint_step.fetch("run")).to include(
+      'check_contains .github/workflows/ci.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ci.yml must install PostgreSQL client tools from PGDG"'
+    )
+  end
 end

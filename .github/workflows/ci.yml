@@ -74,9 +74,11 @@ jobs:
       - name: Run lint checks
         run: bin/lint
 
-      - name: Verify Postgres image pins are in sync
+      - name: Verify Postgres image pins and client install sources are in sync
         # Keep the Postgres server image pin aligned across compose, devcontainer,
-        # and CI, and ensure installed client tools use the exact matching pg_dump version.
+        # and CI. Docker images pin the exact client package version because they
+        # build once, while GitHub-hosted workflow jobs install the matching
+        # major client package from PGDG at runtime.
         run: |
           check_contains() {
             local file="$1"
@@ -99,6 +101,7 @@ jobs:
           claude_review=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/claude-code-review.yml | head -1 | awk '{print $NF}')
           version=${compose#postgres:}
           major=${version%%.*}
+          workflow_client="postgresql-client-${major}"
           bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
           trixie_client="postgresql-client-${major}=${version}-1.pgdg13+1"
           noble_client="postgresql-client-${major}=${version}-1.pgdg24.04+1"
@@ -111,6 +114,7 @@ jobs:
           echo ".github/workflows/pr-screenshots:${screenshots:-<none>}"
           echo ".github/workflows/ephemeral:     ${ephemeral:-<none>}"
           echo ".github/workflows/claude-review: ${claude_review:-<none>}"
+          echo "expected workflow client:        ${workflow_client}"
           echo "expected Bookworm client:        ${bookworm_client}"
           echo "expected Trixie client:          ${trixie_client}"
           echo "expected Noble client:           ${noble_client}"
@@ -127,11 +131,16 @@ jobs:
           check_contains docker/agent/Dockerfile "$noble_client" "docker/agent/Dockerfile is not pinned to $noble_client"
           check_contains docker/agent/Dockerfile "apt.postgresql.org/pub/repos/apt" "docker/agent/Dockerfile must install from PGDG"
           check_contains Dockerfile "apt.postgresql.org/pub/repos/apt" "Dockerfile must install from PGDG"
-          check_contains .github/workflows/ci.yml "$noble_client" ".github/workflows/ci.yml is not pinned to $noble_client"
-          check_contains .github/workflows/system_tests.yml "$noble_client" ".github/workflows/system_tests.yml is not pinned to $noble_client"
-          check_contains .github/workflows/test_prof.yml "$noble_client" ".github/workflows/test_prof.yml is not pinned to $noble_client"
-          check_contains .github/workflows/pr-screenshots.yml "$noble_client" ".github/workflows/pr-screenshots.yml is not pinned to $noble_client"
-          check_contains .github/workflows/ephemeral_tests.yml "$noble_client" ".github/workflows/ephemeral_tests.yml is not pinned to $noble_client"
+          check_contains .github/workflows/ci.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ci.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/system_tests.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/system_tests.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/test_prof.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/test_prof.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/pr-screenshots.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/pr-screenshots.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/ephemeral_tests.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ephemeral_tests.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/ci.yml "$workflow_client" ".github/workflows/ci.yml must install $workflow_client"
+          check_contains .github/workflows/system_tests.yml "$workflow_client" ".github/workflows/system_tests.yml must install $workflow_client"
+          check_contains .github/workflows/test_prof.yml "$workflow_client" ".github/workflows/test_prof.yml must install $workflow_client"
+          check_contains .github/workflows/pr-screenshots.yml "$workflow_client" ".github/workflows/pr-screenshots.yml must install $workflow_client"
+          check_contains .github/workflows/ephemeral_tests.yml "$workflow_client" ".github/workflows/ephemeral_tests.yml must install $workflow_client"
 
   test:
     runs-on: ubuntu-24.04
