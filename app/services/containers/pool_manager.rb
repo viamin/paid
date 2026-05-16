@@ -53,7 +53,7 @@ module Containers
       entry = claim_entry(agent_run, options: options)
       return unless entry
 
-      unless container_running?(entry.container_id)
+      unless container_running?(entry.container_id, backend: Containers.backend_for(entry.container_host))
         remove_error_entry(entry, "warm container is not running")
         return
       end
@@ -66,7 +66,12 @@ module Containers
         **options.slice(*RECONNECT_OPTIONS)
       )
       PoolReplenishmentJob.perform_later(project.id)
-      Provision::Result.success(container_id: entry.container_id, service: service, pool_entry_id: entry.id)
+      Provision::Result.success(
+        container_id: entry.container_id,
+        container_host: entry.container_host,
+        service: service,
+        pool_entry_id: entry.id
+      )
     rescue Provision::ProvisionError => e
       remove_error_entry(entry, e.message) if entry
       nil
@@ -82,8 +87,9 @@ module Containers
     end
 
     def remove_entry(entry, force: false)
-      remove_container(entry.container_id, force: force)
-      remove_volume(entry.workspace_volume)
+      backend = Containers.backend_for(entry.container_host)
+      remove_container(entry.container_id, force: force, backend: backend)
+      remove_volume(entry.workspace_volume, backend: backend)
       entry.destroy!
     end
 
@@ -132,6 +138,7 @@ module Containers
         status: "warming",
         image: Provision::DEFAULTS[:image],
         network: pool_network_name,
+        container_host: Containers.backend.identifier,
         workspace_volume: "paid-pool-workspace-#{SecureRandom.hex(12)}"
       )
       provision_entry(entry)
@@ -145,7 +152,13 @@ module Containers
         image: entry.image
       )
       result = service.provision
-      entry.update!(container_id: result[:container_id], status: "warm", warmed_at: Time.current, last_error: nil)
+      entry.update!(
+        container_id: result[:container_id],
+        container_host: result[:container_host],
+        status: "warm",
+        warmed_at: Time.current,
+        last_error: nil
+      )
       entry
     rescue StandardError => e
       remove_failed_provision(entry, service, e.message)
@@ -171,7 +184,7 @@ module Containers
       end
 
       current_pool_entries.warm.find_each do |entry|
-        remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id)
+        remove_error_entry(entry, "warm container is not running") unless container_running?(entry.container_id, backend: Containers.backend_for(entry.container_host))
       end
     end
 
@@ -219,27 +232,27 @@ module Containers
       ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, project_lock_key ])
     end
 
-    def container_running?(container_id)
-      container = Docker::Container.get(container_id)
+    def container_running?(container_id, backend: Containers.backend)
+      container = backend.get_container(container_id)
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError
       false
     end
 
-    def remove_container(container_id, force:)
+    def remove_container(container_id, force:, backend: Containers.backend)
       return if container_id.blank?
 
-      container = Docker::Container.get(container_id)
-      container.stop(timeout: force ? 0 : 10) if container.info.dig("State", "Running")
-      container.delete(force: force, v: true)
+      container = backend.get_container(container_id)
+      backend.stop_container(container, timeout: force ? 0 : 10) if container.info.dig("State", "Running")
+      backend.delete_container(container, force: force, v: true)
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e
       Rails.logger.warn(message: "container_manager.pool_container_remove_failed", container_id: container_id, error: e.message)
     end
 
-    def remove_volume(volume_name)
-      Docker::Volume.get(volume_name).remove
+    def remove_volume(volume_name, backend: Containers.backend)
+      backend.delete_volume(backend.get_volume(volume_name))
     rescue Docker::Error::NotFoundError
       nil
     rescue Docker::Error::DockerError => e

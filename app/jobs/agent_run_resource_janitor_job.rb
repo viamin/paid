@@ -39,14 +39,15 @@ class AgentRunResourceJanitorJob < ApplicationJob
     container_id = agent_run.container_id
     return false if container_id.blank?
 
+    backend = Containers.backend_for(agent_run.container_host)
     begin
-      container = Docker::Container.get(container_id)
+      container = backend.get_container(container_id)
       begin
-        container.stop(timeout: 10)
+        backend.stop_container(container, timeout: 10)
       rescue Docker::Error::NotFoundError, Docker::Error::ClientError
         # Already stopped or gone
       end
-      container.delete(force: true, v: true)
+      backend.delete_container(container, force: true, v: true)
     rescue Docker::Error::NotFoundError
       # Container already removed — clear the stale reference
     end
@@ -68,7 +69,8 @@ class AgentRunResourceJanitorJob < ApplicationJob
     return false if agent_run.worktree_path.present?
 
     volume_name = "#{VOLUME_PREFIX}#{agent_run.id}"
-    Docker::Volume.get(volume_name).remove
+    backend = Containers.backend_for(agent_run.container_host)
+    backend.delete_volume(backend.get_volume(volume_name))
     true
   rescue Docker::Error::NotFoundError
     true # Volume already removed — treat as successfully cleaned

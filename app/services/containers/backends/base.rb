@@ -1,0 +1,79 @@
+# frozen_string_literal: true
+
+module Containers
+  module Backends
+    class Base
+      def identifier
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def ping
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def get_container(_id)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def create_container(_config)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def start_container(_container)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def stop_container(_container, **)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def delete_container(_container, **)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def exec_in_container(_container, _command, **)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def container_stats(_container, **)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def container_logs(_container, **)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def list_containers(**)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def get_network(_name)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def create_network(_name, _config)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def pull_image(_config)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def list_volumes
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def create_volume(_name, _options = {})
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def get_volume(_name)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def delete_volume(_volume, **)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+    end
+  end
+end
