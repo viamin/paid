@@ -208,8 +208,6 @@ module ConfigurationBundles
     end
 
     def existing_optimizer_assignment_for(experiment)
-      return unless ActiveRecord::Base.connected?
-
       ConfigurationExperimentAssignment.find_by(
         configuration_experiment: experiment,
         agent_run: agent_run
