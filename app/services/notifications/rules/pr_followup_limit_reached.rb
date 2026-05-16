@@ -4,9 +4,7 @@ module Notifications
   module Rules
     class PrFollowupLimitReached < Rule
       SOURCE = "pr_followup_limit_reached"
-      # Must match Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
-      # so owner-facing notifications align with the actual escalation gate.
-      NO_PROGRESS_ESCALATION_WINDOW = 1.hour
+      NO_PROGRESS_ESCALATION_WINDOW = Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
 
       def initialize(progress_states: nil)
         @progress_states = index_progress_states(progress_states)
