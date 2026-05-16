@@ -209,6 +209,9 @@ jobs:
       - name: Set up database
         run: bin/rails db:create db:schema:load
 
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
       - name: Capture screenshots
         id: capture_screenshots
         run: bin/rails screenshots:capture

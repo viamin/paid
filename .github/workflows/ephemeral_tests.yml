@@ -160,6 +160,9 @@ jobs:
       - name: Set up database
         run: bin/rails db:create db:schema:load
 
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
       - name: Run ephemeral RSpec tests
         run: |
           spec_files=$(find .ephemeral-tests -name '*_spec.rb')

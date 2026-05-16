@@ -233,6 +233,9 @@ jobs:
       - name: Set up database
         run: bin/rails db:create db:schema:load
 
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
       - name: Verify Qdrant health
         run: |
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
@@ -357,6 +360,9 @@ jobs:
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run performance benchmarks
         run: >

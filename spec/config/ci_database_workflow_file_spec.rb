@@ -67,6 +67,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
           expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
         end
+
+        it "bootstraps required orchestration defaults after schema load for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          bootstrap_step = job.fetch("steps").find { |step| step["name"] == "Bootstrap test defaults" }
+
+          expect(bootstrap_step.fetch("run")).to eq("bin/rails ci:bootstrap_test_defaults")
+        end
       end
     end
   end
