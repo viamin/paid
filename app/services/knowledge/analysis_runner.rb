@@ -38,11 +38,12 @@ module Knowledge
     # API service types supported for containerized LLM calls.
     SUPPORTED_API_TYPES = %w[anthropic openai].freeze
 
-    attr_reader :project, :knowledge_run
+    attr_reader :project, :knowledge_run, :backend
 
-    def initialize(project:, knowledge_run:)
+    def initialize(project:, knowledge_run:, backend: Containers.backend)
       @project = project
       @knowledge_run = knowledge_run
+      @backend = backend
       @container = nil
     end
 
@@ -96,8 +97,8 @@ module Knowledge
 
     def provision!
       log("provision.start")
-      @container = Containers.backend.create_container(container_config)
-      Containers.backend.start_container(@container)
+      @container = backend.create_container(container_config)
+      backend.start_container(@container)
       log("provision.success", container_id: @container.id)
     rescue Docker::Error::DockerError => e
       cleanup!
@@ -109,12 +110,12 @@ module Knowledge
 
       log("cleanup.start", container_id: @container.id)
       begin
-        Containers.backend.stop_container(@container, timeout: 5)
+        backend.stop_container(@container, timeout: 5)
       rescue Docker::Error::DockerError
         # Container may already be stopped
       end
       begin
-        Containers.backend.delete_container(@container, force: true)
+        backend.delete_container(@container, force: true)
       rescue Docker::Error::DockerError
         # Container may already be removed
       end
@@ -140,7 +141,7 @@ module Knowledge
       end
 
       begin
-        result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
+        result = backend.exec_in_container(@container, cmd, **exec_options)
       rescue Docker::Error::DockerError => e
         raise TimeoutError, "LLM call timed out after #{timeout}s" if mutex.synchronize { timed_out }
         raise ContainerError, "Container execution failed: #{e.message}"
@@ -304,8 +305,7 @@ module Knowledge
     end
 
     def proxy_base_url
-      proxy_port = Rails.application.config.x.paid_proxy_port
-      "http://paid-proxy:#{proxy_port}"
+      Containers::ProxyUrl.resolve(backend:, restricted: true)
     end
 
     def start_watchdog(timeout)
@@ -315,7 +315,7 @@ module Knowledge
         next unless should_stop
 
         begin
-          Containers.backend.stop_container(@container, timeout: 0) if @container
+          backend.stop_container(@container, timeout: 0) if @container
         rescue Docker::Error::DockerError
           # Container may already be stopped
         end

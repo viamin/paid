@@ -20,11 +20,12 @@ module Knowledge
       timeout_seconds: 120
     }.freeze
 
-    attr_reader :project, :knowledge_run
+    attr_reader :project, :knowledge_run, :backend
 
-    def initialize(project:, knowledge_run:)
+    def initialize(project:, knowledge_run:, backend: Containers.backend)
       @project = project
       @knowledge_run = knowledge_run
+      @backend = backend
       @container = nil
       @input_dir = nil
     end
@@ -65,10 +66,10 @@ module Knowledge
       return if @container
 
       cleanup_input_dir!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend:)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
-      @container = Containers.backend.create_container(container_config)
-      Containers.backend.start_container(@container)
+      @container = backend.create_container(container_config)
+      backend.start_container(@container)
       apply_network_restrictions!
     rescue Docker::Error::DockerError => e
       cleanup!
@@ -81,12 +82,12 @@ module Knowledge
     def cleanup_container!
       return unless @container
 
-      Containers.backend.stop_container(@container, timeout: 5)
+      backend.stop_container(@container, timeout: 5)
     rescue Docker::Error::DockerError
       nil
     ensure
       begin
-        Containers.backend.delete_container(@container, force: true) if @container
+        backend.delete_container(@container, force: true) if @container
       rescue Docker::Error::DockerError
         nil
       end
@@ -120,11 +121,11 @@ module Knowledge
           next if exec_completed
 
           timed_out = true
-          Containers.backend.stop_container(@container, timeout: 0) if @container
+          backend.stop_container(@container, timeout: 0) if @container
         end
       end
 
-      result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
+      result = backend.exec_in_container(@container, cmd, **exec_options)
       raise TimeoutError, "Embedding generation timed out after #{timeout}s" if mutex.synchronize { timed_out }
 
       stdout = Array(result[0]).join
@@ -150,12 +151,12 @@ module Knowledge
     end
 
     def apply_network_restrictions!
-      NetworkPolicy.apply_firewall_rules(@container)
+      NetworkPolicy.apply_firewall_rules(@container, backend:)
     end
 
     def script_env(provider:, model:, dimensions:, timeout:)
       {
-        "PROXY_BASE_URL" => "http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}",
+        "PROXY_BASE_URL" => proxy_base_url,
         "KNOWLEDGE_RUN_ID" => knowledge_run.id.to_s,
         "PROXY_TOKEN" => knowledge_run.ensure_proxy_token!,
         "EMBEDDING_PROVIDER" => provider,
@@ -205,6 +206,10 @@ module Knowledge
 
         $stdout.print(res.body)
       RUBY
+    end
+
+    def proxy_base_url
+      Containers::ProxyUrl.resolve(backend:, restricted: true)
     end
 
     def container_config

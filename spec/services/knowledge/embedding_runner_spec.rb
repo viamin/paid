@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   let(:project) { Struct.new(:id).new(42) }
+  let(:backend) { instance_double(Containers::Backends::Base, remote?: false) }
   let(:knowledge_run) do
     Struct.new(:id) do
       def ensure_proxy_token!
@@ -14,7 +15,7 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
 
   describe "#container_config" do
     it "bind-mounts the input directory read-only" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
       runner.instance_variable_set(:@input_dir, "/tmp/paid-embedding-runner-test")
 
       config = runner.send(:container_config)
@@ -28,7 +29,7 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
 
   describe "#generate" do
     it "cleans up the temp input directory when container execution fails" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
 
       allow(runner).to receive(:ensure_container!)
       allow(runner).to receive(:write_input_file)
@@ -47,18 +48,34 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
 
   describe "#ensure_container!" do
     it "applies firewall rules after the container starts" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
       container = instance_double(Docker::Container, start: true)
 
       allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-embedding-runner-test")
       allow(NetworkPolicy).to receive(:ensure_network!)
-      allow(Docker::Container).to receive(:create).and_return(container)
+      allow(backend).to receive(:create_container).and_return(container)
+      allow(backend).to receive(:start_container)
       allow(NetworkPolicy).to receive(:apply_firewall_rules)
 
       runner.send(:ensure_container!)
 
-      expect(NetworkPolicy).to have_received(:ensure_network!).with(network: NetworkPolicy::NETWORK_NAME)
-      expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(container)
+      expect(NetworkPolicy).to have_received(:ensure_network!).with(network: NetworkPolicy::NETWORK_NAME, backend: backend)
+      expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(container, backend: backend)
+    end
+  end
+
+  describe "#script_env" do
+    it "uses the external proxy URL for remote backends" do
+      original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+      remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: remote_backend)
+
+      env = runner.send(:script_env, provider: "openai", model: "text-embedding-3-small", dimensions: 1536, timeout: 120)
+
+      expect(env["PROXY_BASE_URL"]).to eq("https://proxy.example.test:3443")
+    ensure
+      ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
     end
   end
 end

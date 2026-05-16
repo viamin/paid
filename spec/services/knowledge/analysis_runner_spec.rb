@@ -4,6 +4,16 @@ require "rails_helper"
 
 RSpec.describe Knowledge::AnalysisRunner, :no_db do
   let(:project) { Struct.new(:id).new(42) }
+  let(:backend) do
+    instance_double(
+      Containers::Backends::Base,
+      remote?: false,
+      create_container: mock_container,
+      start_container: true,
+      stop_container: true,
+      delete_container: true
+    )
+  end
   let(:knowledge_run) do
     Struct.new(:id, :proxy_token, :persisted?, :active?, :status) do
       def ensure_proxy_token!
@@ -21,10 +31,6 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
       stop: true,
       delete: true
     )
-  end
-
-  before do
-    allow(Docker::Container).to receive(:create).and_return(mock_container)
   end
 
   describe ".available?" do
@@ -81,34 +87,35 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
 
   describe "#with_container" do
     it "provisions a container, yields, and cleans up" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
 
       runner.with_container do |r|
         expect(r).to eq(runner)
-        expect(Docker::Container).to have_received(:create)
-        expect(mock_container).to have_received(:start)
+        expect(backend).to have_received(:create_container)
+        expect(backend).to have_received(:start_container).with(mock_container)
       end
 
-      expect(mock_container).to have_received(:stop)
-      expect(mock_container).to have_received(:delete)
+      expect(backend).to have_received(:stop_container).with(mock_container, timeout: 5)
+      expect(backend).to have_received(:delete_container).with(mock_container, force: true)
     end
 
     it "cleans up container even when block raises" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
 
       expect {
         runner.with_container { raise "boom" }
       }.to raise_error(RuntimeError, "boom")
 
-      expect(mock_container).to have_received(:stop)
-      expect(mock_container).to have_received(:delete)
+      expect(backend).to have_received(:stop_container).with(mock_container, timeout: 5)
+      expect(backend).to have_received(:delete_container).with(mock_container, force: true)
     end
 
     it "raises ContainerError when Docker fails to provision" do
-      allow(Docker::Container).to receive(:create)
+      failing_backend = instance_double(Containers::Backends::Base, create_container: nil)
+      allow(failing_backend).to receive(:create_container)
         .and_raise(Docker::Error::DockerError, "no such image")
 
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: failing_backend)
 
       expect {
         runner.with_container { |_r| }
@@ -117,23 +124,35 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
   end
 
   describe "#call_llm" do
-    let(:runner) { described_class.new(project: project, knowledge_run: knowledge_run) }
+    let(:runner) { described_class.new(project: project, knowledge_run: knowledge_run, backend: backend) }
+    let(:remote_backend) do
+      instance_double(
+        Containers::Backends::Base,
+        remote?: true,
+        create_container: mock_container,
+        start_container: true,
+        stop_container: true,
+        delete_container: true,
+        exec_in_container: [ [ "output" ], [ "" ], 0 ]
+      )
+    end
 
     before do
       # Simulate container is provisioned
       allow(runner).to receive(:instance_variable_get).and_call_original
+      allow(backend).to receive(:exec_in_container)
       runner.send(:provision!)
     end
 
     after { runner.send(:cleanup!) }
 
     it "executes an anthropic script for claude provider" do
-      allow(mock_container).to receive(:exec).and_return([ [ '{"title":"Test"}' ], [ "" ], 0 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [ '{"title":"Test"}' ], [ "" ], 0 ])
 
       result = runner.call_llm("Draft a decision", provider: "claude", model: "claude-sonnet-4-6")
 
       expect(result).to eq('{"title":"Test"}')
-      expect(mock_container).to have_received(:exec) do |cmd, opts|
+      expect(backend).to have_received(:exec_in_container).with(mock_container, kind_of(Array), wait: 60, Env: kind_of(Array)) do |_container, cmd, **opts|
         expect(cmd[0]).to eq("ruby")
         expect(cmd[1]).to eq("-e")
         expect(cmd[2]).to include("anthropic")
@@ -146,22 +165,22 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
     end
 
     it "executes an openai script for codex provider" do
-      allow(mock_container).to receive(:exec).and_return([ [ '{"title":"Test"}' ], [ "" ], 0 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [ '{"title":"Test"}' ], [ "" ], 0 ])
 
       result = runner.call_llm("Draft a decision", provider: "codex")
 
       expect(result).to eq('{"title":"Test"}')
-      expect(mock_container).to have_received(:exec) do |cmd, _opts|
+      expect(backend).to have_received(:exec_in_container) do |_container, cmd, **_opts|
         expect(cmd[2]).to include("openai")
       end
     end
 
     it "uses default model when not specified" do
-      allow(mock_container).to receive(:exec).and_return([ [ "output" ], [ "" ], 0 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [ "output" ], [ "" ], 0 ])
 
       runner.call_llm("test", provider: "claude")
 
-      expect(mock_container).to have_received(:exec) do |_cmd, opts|
+      expect(backend).to have_received(:exec_in_container) do |_container, _cmd, **opts|
         env_hash = opts[:Env].to_h { |e| e.split("=", 2) }
         expect(env_hash["LLM_MODEL"]).to eq("claude-sonnet-4-6")
       end
@@ -182,7 +201,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
     end
 
     it "raises ContainerError when exec returns non-zero exit code" do
-      allow(mock_container).to receive(:exec).and_return([ [ "" ], [ "Proxy error: 500" ], 1 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [ "" ], [ "Proxy error: 500" ], 1 ])
 
       expect {
         runner.call_llm("test", provider: "claude")
@@ -190,26 +209,43 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
     end
 
     it "passes base64-encoded prompt in env" do
-      allow(mock_container).to receive(:exec).and_return([ [ "output" ], [ "" ], 0 ])
+      allow(backend).to receive(:exec_in_container).and_return([ [ "output" ], [ "" ], 0 ])
 
       runner.call_llm("Hello world", provider: "claude")
 
-      expect(mock_container).to have_received(:exec) do |_cmd, opts|
+      expect(backend).to have_received(:exec_in_container) do |_container, _cmd, **opts|
         env_hash = opts[:Env].to_h { |e| e.split("=", 2) }
         decoded = Base64.strict_decode64(env_hash["PROMPT_B64"])
         expect(decoded).to eq("Hello world")
       end
     end
+
+    it "uses the external proxy URL for remote backends" do
+      original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+      remote_runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: remote_backend)
+      remote_runner.send(:provision!)
+
+      remote_runner.call_llm("test", provider: "claude")
+
+      expect(remote_backend).to have_received(:exec_in_container) do |_container, _cmd, **opts|
+        env_hash = opts[:Env].to_h { |e| e.split("=", 2) }
+        expect(env_hash["PROXY_BASE_URL"]).to eq("https://proxy.example.test:3443")
+      end
+    ensure
+      remote_runner&.send(:cleanup!)
+      ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+    end
   end
 
   describe "container configuration" do
     it "creates container with security hardening" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
-      allow(mock_container).to receive(:exec).and_return([ [ "ok" ], [ "" ], 0 ])
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
+      allow(backend).to receive(:exec_in_container).and_return([ [ "ok" ], [ "" ], 0 ])
 
       runner.with_container { |r| r.call_llm("test", provider: "claude") }
 
-      expect(Docker::Container).to have_received(:create) do |config|
+      expect(backend).to have_received(:create_container) do |config|
         expect(config["ReadonlyRootfs"]).to be true
         expect(config["CapDrop"]).to eq([ "ALL" ])
         expect(config["SecurityOpt"]).to eq([ "no-new-privileges:true" ])
@@ -223,10 +259,10 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
     end
 
     it "does not include API keys in container env" do
-      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      runner = described_class.new(project: project, knowledge_run: knowledge_run, backend: backend)
 
       runner.with_container do |_r|
-        expect(Docker::Container).to have_received(:create) do |config|
+        expect(backend).to have_received(:create_container) do |config|
           env_keys = config["Env"].map { |e| e.split("=", 2).first }
           expect(env_keys).not_to include("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
         end

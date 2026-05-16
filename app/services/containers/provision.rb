@@ -2023,13 +2023,7 @@ module Containers
     end
 
     def proxy_base_url
-      if backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].present?
-        return ENV["PAID_PROXY_EXTERNAL_URL"]
-      end
-
-      proxy_port = Rails.application.config.x.paid_proxy_port
-      proxy_host = network_contract.restricted? ? "paid-proxy" : "web"
-      "http://#{proxy_host}:#{proxy_port}"
+      Containers::ProxyUrl.resolve(backend:, restricted: network_contract.restricted?)
     end
 
     # Returns the Docker-host path to the Claude config directory.
