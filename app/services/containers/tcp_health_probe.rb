@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "docker-api"
 require "socket"
 
 module Containers

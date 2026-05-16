@@ -33,6 +33,13 @@ RSpec.describe Containers::TcpHealthProbe, :no_db do
       expect(described_class.open?(backend: backend, container: container, host: "svc-host", port: 5432)).to be(false)
     end
 
+    it "returns false when the remote exec raises a docker transport error" do
+      backend = instance_double(Containers::Backends::Base, remote?: true)
+      allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::ServerError, "transport failed")
+
+      expect(described_class.open?(backend: backend, container: container, host: "svc-host", port: 5432)).to be(false)
+    end
+
     it "raises for an invalid remote probe port" do
       backend = instance_double(Containers::Backends::Base, remote?: true)
 
