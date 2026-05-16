@@ -41,4 +41,13 @@ RSpec.describe CiWorkflowFile, :no_db do
       'check_contains .github/workflows/ci.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ci.yml must install PostgreSQL client tools from PGDG"'
     )
   end
+
+  it "installs ast-grep into a user-writable directory during the test job" do
+    install_step = workflow.fetch("jobs").fetch("test").fetch("steps")
+      .find { |step| step["name"] == "Install ast-grep" }
+
+    expect(install_step.fetch("run")).to include('mkdir -p "$HOME/.local/bin"')
+    expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
+    expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
+  end
 end

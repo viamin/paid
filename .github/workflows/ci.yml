@@ -217,7 +217,10 @@ jobs:
           yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install ast-grep
-        run: bin/install-ast-grep
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep
 
       - name: Install PostgreSQL client
         run: |
