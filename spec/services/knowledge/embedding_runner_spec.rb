@@ -86,7 +86,10 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
 
       runner.send(:ensure_container!)
 
-      expect(NetworkPolicy).to have_received(:ensure_network!).with(network: NetworkPolicy::NETWORK_NAME)
+      expect(NetworkPolicy).to have_received(:ensure_network!).with(
+        network: NetworkPolicy::NETWORK_NAME,
+        backend: local_backend
+      )
       expect(NetworkPolicy).to have_received(:apply_firewall_rules).with(container, backend: Containers.backend)
     end
   end

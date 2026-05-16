@@ -105,7 +105,7 @@ module Containers
       return {} if service_containers.empty?
 
       @network = network
-      NetworkPolicy.ensure_network!(network: @network)
+      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)

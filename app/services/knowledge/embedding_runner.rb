@@ -71,7 +71,7 @@ module Knowledge
       end
 
       cleanup_input_dir!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend: Containers.backend)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
