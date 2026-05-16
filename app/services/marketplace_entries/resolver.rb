@@ -51,9 +51,12 @@ module MarketplaceEntries
     def attach_manual_entries!(selections)
       return if effective_manual_entry_ids.empty?
 
+      resolved_manual_entry_ids = []
+
       compatible_entries.each do |entry|
         next unless effective_manual_entry_ids.include?(entry.id)
 
+        resolved_manual_entry_ids << entry.id
         selections[entry.id] = Result.new(
           entry:,
           version: entry.current_version,
@@ -61,6 +64,8 @@ module MarketplaceEntries
           reason: "Selected manually for this run"
         )
       end
+
+      assert_all_manual_entries_resolved!(resolved_manual_entry_ids)
     end
 
     def effective_manual_entry_ids
@@ -152,6 +157,14 @@ module MarketplaceEntries
 
     def account_auto_attach_required?
       account_auto_attach_required
+    end
+
+    def assert_all_manual_entries_resolved!(resolved_manual_entry_ids)
+      missing_ids = effective_manual_entry_ids - resolved_manual_entry_ids
+      return if missing_ids.empty?
+
+      raise ActiveRecord::RecordNotFound,
+        "Selected marketplace entries are unavailable or incompatible for this run: #{missing_ids.join(', ')}"
     end
 
     def attach_rule_mode?(mode)

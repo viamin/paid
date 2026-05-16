@@ -67,6 +67,23 @@ RSpec.describe MarketplaceEntries::Resolver do
     expect(results.map(&:reason)).to eq([ "Required by the team" ])
   end
 
+  it "fails closed when a manually selected entry is unavailable to the run" do
+    project = create(:project)
+    other_account_entry = create_automatic_entry_for(create(:account))
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    expect {
+      described_class.call(
+        project: project,
+        agent_run: agent_run,
+        manual_entry_ids: [ other_account_entry.id ]
+      )
+    }.to raise_error(
+      ActiveRecord::RecordNotFound,
+      /Selected marketplace entries are unavailable or incompatible/
+    )
+  end
+
   def create_automatic_entry_for(account)
     entry = create(:marketplace_entry, account: account, name: "Shared skill")
     version = create(:marketplace_entry_version,

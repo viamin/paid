@@ -148,4 +148,42 @@ RSpec.describe MarketplaceEntries::Upsert, :no_db do
       expect(entry_model.errors[:base]).to include("nested failure")
     end
   end
+
+  describe "#parse_required_object" do
+    let(:entry_class) do
+      stub_const("MarketplaceEntryUpsertNoDbRequiredEntry", Class.new do
+        attr_accessor :canonical_artifact_json
+
+        def errors
+          @errors ||= ActiveModel::Errors.new(self)
+        end
+
+        def read_attribute_for_validation(attribute)
+          public_send(attribute)
+        end
+
+        def self.human_attribute_name(attribute, *)
+          attribute.to_s.humanize
+        end
+
+        def self.lookup_ancestors
+          [ self ]
+        end
+      end)
+    end
+
+    it "accepts an empty JSON object as a present canonical artifact" do
+      entry = entry_class.new
+      entry.canonical_artifact_json = JSON.generate({})
+
+      parsed = described_class.new(entry:, params:, actor:).send(
+        :parse_required_object,
+        :canonical_artifact_json,
+        :canonical_artifact
+      )
+
+      expect(parsed).to eq({})
+      expect(entry.errors[:canonical_artifact]).to be_empty
+    end
+  end
 end

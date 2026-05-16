@@ -156,6 +156,21 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "manual" ])
   end
 
+  it "fails closed when a manually selected entry cannot be resolved for the run" do
+    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    attachments = agent_run_marketplace_entries
+    agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
+      .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
+
+    resolver = described_class.new(project:, agent_run:, manual_entry_ids: [ 7 ])
+    allow(resolver).to receive(:candidate_entries).and_return([])
+
+    expect { resolver.call }.to raise_error(
+      ActiveRecord::RecordNotFound,
+      /Selected marketplace entries are unavailable or incompatible/
+    )
+  end
+
   it "upgrades to manual when the user explicitly selects an entry that also matches automatic and team_default rules" do
     project = Struct.new(:id, :full_name).new(12, "acme/repo")
     attachments = agent_run_marketplace_entries

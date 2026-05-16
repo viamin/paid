@@ -155,7 +155,7 @@ module MarketplaceEntries
 
     def parse_required_object(source_attribute, target_attribute)
       parsed = parse_optional_object(source_attribute, target_attribute)
-      return parsed if parsed.present?
+      return parsed unless parsed.nil?
 
       entry.errors.add(target_attribute, "must be present")
       nil
