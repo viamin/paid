@@ -96,7 +96,7 @@ module Containers
       end
 
       def remote?
-        true
+        false
       end
 
       def supports_host_paths?

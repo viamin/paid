@@ -16,6 +16,11 @@ module Containers
         return false if container.blank?
 
         _stdout, _stderr, status = backend.exec_in_container(container, [ "sh", "-c", probe_script(port) ])
+        # Exit 127 means none of the probe tools (nc, bash, ruby, python, node)
+        # were found in the container. Fall back to assuming healthy to avoid
+        # blocking minimal/distroless images that lack these executables.
+        return true if status == 127
+
         status.zero?
       rescue Docker::Error::DockerError, Excon::Error
         false

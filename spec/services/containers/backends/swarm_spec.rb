@@ -90,8 +90,8 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.identifier).to eq("swarm")
   end
 
-  it "treats swarm as a remote backend for host-scoped routing" do
-    expect(backend.remote?).to be(true)
+  it "uses overlay DNS rather than remote proxy routing" do
+    expect(backend.remote?).to be(false)
   end
 
   it "does not advertise host path support" do
