@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Containers::CollectMetrics do
-  let(:agent_run) { create(:agent_run, :running, container_id: "container123") }
+  let(:agent_run) { create(:agent_run, :running, container_id: "container123", container_host: "remote") }
+  let(:backend) { instance_double(Containers::Backends::Base) }
 
   let(:docker_stats) do
     {
@@ -29,8 +30,9 @@ RSpec.describe Containers::CollectMetrics do
   let(:mock_container) { instance_double(Docker::Container, stats: docker_stats) }
 
   before do
-    allow(Docker::Container).to receive(:get).with("container123").and_return(mock_container)
-    allow(mock_container).to receive(:stats).with(stream: false).and_return(docker_stats)
+    allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+    allow(backend).to receive(:get_container).with("container123").and_return(mock_container)
+    allow(backend).to receive(:container_stats).with(mock_container, stream: false).and_return(docker_stats)
   end
 
   describe ".call" do
@@ -66,6 +68,14 @@ RSpec.describe Containers::CollectMetrics do
       docker_stats["pids_stats"] = {}
       described_class.call(agent_run: agent_run)
       expect(ContainerMetric.last.pids_count).to be_nil
+    end
+
+    it "routes stats collection through the persisted container host backend" do
+      described_class.call(agent_run: agent_run)
+
+      expect(Containers).to have_received(:backend_for).with("remote")
+      expect(backend).to have_received(:get_container).with("container123")
+      expect(backend).to have_received(:container_stats).with(mock_container, stream: false)
     end
 
     it "updates agent run summary fields and increments counter" do
@@ -119,12 +129,12 @@ RSpec.describe Containers::CollectMetrics do
     end
 
     it "handles Docker errors gracefully" do
-      allow(Docker::Container).to receive(:get).and_raise(Docker::Error::DockerError)
+      allow(backend).to receive(:get_container).and_raise(Docker::Error::DockerError)
       expect(described_class.call(agent_run: agent_run)).to be_nil
     end
 
     it "handles missing container gracefully and logs a warning" do
-      allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      allow(backend).to receive(:get_container).and_raise(Docker::Error::NotFoundError)
       allow(Rails.logger).to receive(:warn)
 
       expect(described_class.call(agent_run: agent_run)).to eq(:not_found)

@@ -101,7 +101,7 @@ class NetworkPolicy
     # @return [Docker::Network] the agent network
     # @raise [Error] if network creation fails
     def ensure_network!(network: NETWORK_NAME)
-      Docker::Network.get(network)
+      Containers.backend.get_network(network)
     rescue Docker::Error::NotFoundError
       raise Error, "Docker network #{network} does not exist" unless network == NETWORK_NAME
 
@@ -112,7 +112,7 @@ class NetworkPolicy
     #
     # @return [Boolean]
     def network_exists?
-      Docker::Network.get(NETWORK_NAME)
+      Containers.backend.get_network(NETWORK_NAME)
       true
     rescue Docker::Error::NotFoundError
       false
@@ -315,7 +315,7 @@ class NetworkPolicy
         }
       end
 
-      Docker::Network.create(NETWORK_NAME, config)
+      Containers.backend.create_network(NETWORK_NAME, config)
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create agent network: #{e.message}"
     end

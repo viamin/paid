@@ -156,7 +156,7 @@ module Containers
       )
 
       begin
-        container.start unless container_running?(container)
+        Containers.backend.start_container(container) unless container_running?(container)
         wait_for_health!(hostname, port)
       rescue => e
         remove_container(container)
@@ -183,7 +183,7 @@ module Containers
     # Adopts an existing sidecar container (from a prior attempt) or creates
     # a new one. This makes provisioning idempotent across activity retries.
     def adopt_or_create_sidecar(image:, hostname:, port:, env:, agent_run:)
-      Docker::Container.get(hostname)
+      Containers.backend.get_container(hostname)
     rescue Docker::Error::NotFoundError
       create_sidecar_container(image: image, hostname: hostname, port: port, env: env, agent_run: agent_run)
     end
@@ -196,7 +196,7 @@ module Containers
     end
 
     def create_sidecar_container(image:, hostname:, port:, env:, agent_run:)
-      Docker::Container.create(
+      Containers.backend.create_container(
         "Image" => image,
         "name" => hostname,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
@@ -226,7 +226,7 @@ module Containers
     end
 
     def pull_image(image)
-      Docker::Image.create("fromImage" => image)
+      Containers.backend.pull_image("fromImage" => image)
     rescue Docker::Error::NotFoundError
       raise Error, "MCP server image not found: #{image}"
     rescue Docker::Error::DockerError => e
@@ -290,12 +290,12 @@ module Containers
     end
 
     def remove_container(container)
-      container.stop(timeout: 10)
+      Containers.backend.stop_container(container, timeout: 10)
     rescue Docker::Error::NotFoundError, Docker::Error::ClientError, Docker::Error::ServerError
       # Already stopped or daemon error — proceed to force-delete
     ensure
       begin
-        container.delete(force: true, v: true)
+        Containers.backend.delete_container(container, force: true, v: true)
       rescue Docker::Error::NotFoundError
         # Already gone
       rescue Docker::Error::DockerError => e
@@ -305,9 +305,9 @@ module Containers
     end
 
     def remove_container_by_id(container_id)
-      container = Docker::Container.get(container_id)
+      container = Containers.backend.get_container(container_id)
       begin
-        container.stop(timeout: 10)
+        Containers.backend.stop_container(container, timeout: 10)
       rescue Docker::Error::NotFoundError, Docker::Error::ClientError
         # Already stopped
       end
@@ -319,7 +319,7 @@ module Containers
     ensure
       if container
         begin
-          container.delete(force: true, v: true)
+          Containers.backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
         rescue Docker::Error::DockerError => e
