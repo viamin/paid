@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe NetworkPolicy do
+RSpec.describe NetworkPolicy, :no_db do
   let(:backend) { Containers.backend }
   let(:mock_network) do
     instance_double(
@@ -297,7 +297,7 @@ RSpec.describe NetworkPolicy do
         ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:99999"
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
-          .to raise_error(described_class::Error, /Invalid proxy port/)
+          .to raise_error(described_class::Error, /PAID_PROXY_EXTERNAL_URL port must be between 1 and 65535/)
       end
 
       it "raises NetworkPolicy::Error for an unsupported PAID_PROXY_EXTERNAL_URL scheme" do
