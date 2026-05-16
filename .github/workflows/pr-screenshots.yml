@@ -156,9 +156,9 @@ jobs:
           DO $$
           BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
+              CREATE ROLE paid LOGIN PASSWORD 'paid' CREATEDB SUPERUSER;
             ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid' CREATEDB SUPERUSER;
             END IF;
           END;
           $$;
