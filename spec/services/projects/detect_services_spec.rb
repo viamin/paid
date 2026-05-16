@@ -25,7 +25,7 @@ RSpec.describe Projects::DetectServices do
     allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError)
     # Default: no service containers exist in this account
     empty_scope = instance_double(ActiveRecord::Relation)
-    allow(empty_scope).to receive(:where).and_return(double(index_by: {}))
+    allow(empty_scope).to receive_messages(where: double(index_by: {}), order: empty_scope)
     allow(empty_scope).to receive(:each)
     allow(service_container_class).to receive(:where).and_return(empty_scope)
   end
@@ -46,7 +46,7 @@ RSpec.describe Projects::DetectServices do
       hash[name] = Struct.new(:name, :image).new(name, "#{name}:latest")
     end
     account_scope = instance_double(ActiveRecord::Relation)
-    allow(account_scope).to receive(:where).and_return(double(index_by: containers_by_name))
+    allow(account_scope).to receive_messages(where: double(index_by: containers_by_name), order: account_scope)
     allow(account_scope).to receive(:each) { |&block| containers_by_name.values.each(&block) }
     allow(service_container_class).to receive(:where).and_return(account_scope)
     containers_by_name
@@ -58,7 +58,7 @@ RSpec.describe Projects::DetectServices do
   def stub_containers_by_image(containers_spec)
     containers = containers_spec.map { |name, image| Struct.new(:name, :image).new(name, image) }
     account_scope = instance_double(ActiveRecord::Relation)
-    allow(account_scope).to receive(:where).and_return(double(index_by: {}))
+    allow(account_scope).to receive_messages(where: double(index_by: {}), order: account_scope)
     allow(account_scope).to receive(:each) { |&block| containers.each(&block) }
     allow(service_container_class).to receive(:where).and_return(account_scope)
     containers.index_by(&:name)
@@ -148,7 +148,7 @@ RSpec.describe Projects::DetectServices do
         # Both containers must be visible in the fallback scan; exact-name lookup
         # still returns only the canonical "postgres" container.
         account_scope = instance_double(ActiveRecord::Relation)
-        allow(account_scope).to receive(:where).and_return(double(index_by: { "postgres" => containers["postgres"] }))
+        allow(account_scope).to receive_messages(where: double(index_by: { "postgres" => containers["postgres"] }), order: account_scope)
         allow(account_scope).to receive(:each) { |&block| [ containers["postgres"], image_container ].each(&block) }
         allow(service_container_class).to receive(:where).and_return(account_scope)
 
@@ -170,7 +170,7 @@ RSpec.describe Projects::DetectServices do
 
       it "scopes container lookups to the project's own account" do
         scope = instance_double(ActiveRecord::Relation)
-        allow(scope).to receive(:where).and_return(double(index_by: {}))
+        allow(scope).to receive_messages(where: double(index_by: {}), order: scope)
         allow(scope).to receive(:each)
         expect(service_container_class).to receive(:where)
           .with(hash_including(account_id: project.account_id))
