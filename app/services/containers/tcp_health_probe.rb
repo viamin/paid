@@ -6,20 +6,22 @@ require "socket"
 module Containers
   class TcpHealthProbe
     class << self
-      def open?(backend:, container:, host:, port:)
-        backend.remote? ? remote_port_open?(backend: backend, container: container, port: port) : local_port_open?(host, port)
+      def open?(backend:, container:, host:, port:, fallback_on_missing_tools: true)
+        backend.remote? ? remote_port_open?(backend: backend, container: container, port: port, fallback_on_missing_tools: fallback_on_missing_tools) : local_port_open?(host, port)
       end
 
       private
 
-      def remote_port_open?(backend:, container:, port:)
+      def remote_port_open?(backend:, container:, port:, fallback_on_missing_tools: true)
         return false if container.blank?
 
         _stdout, _stderr, status = backend.exec_in_container(container, [ "sh", "-c", probe_script(port) ])
         # Exit 127 means none of the probe tools (nc, bash, ruby, python, node)
-        # were found in the container. Fall back to assuming healthy to avoid
-        # blocking minimal/distroless images that lack these executables.
-        return true if status == 127
+        # were found in the container. When fallback_on_missing_tools is true,
+        # assume healthy to avoid blocking minimal/distroless images. When false
+        # (e.g. service containers like postgres/redis that should have tools),
+        # report unhealthy so the caller keeps waiting.
+        return fallback_on_missing_tools if status == 127
 
         status.zero?
       rescue Docker::Error::DockerError, Excon::Error

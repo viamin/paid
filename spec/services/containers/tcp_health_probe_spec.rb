@@ -40,6 +40,24 @@ RSpec.describe Containers::TcpHealthProbe, :no_db do
       expect(described_class.open?(backend: backend, container: container, host: "svc-host", port: 5432)).to be(false)
     end
 
+    it "returns true on exit 127 when fallback_on_missing_tools is true (default)" do
+      backend = instance_double(Containers::Backends::Base, remote?: true)
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 127 ])
+
+      expect(described_class.open?(backend: backend, container: container, host: "svc-host", port: 5432)).to be(true)
+    end
+
+    it "returns false on exit 127 when fallback_on_missing_tools is false" do
+      backend = instance_double(Containers::Backends::Base, remote?: true)
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 127 ])
+
+      result = described_class.open?(
+        backend: backend, container: container, host: "svc-host", port: 5432,
+        fallback_on_missing_tools: false
+      )
+      expect(result).to be(false)
+    end
+
     it "raises for an invalid remote probe port" do
       backend = instance_double(Containers::Backends::Base, remote?: true)
 

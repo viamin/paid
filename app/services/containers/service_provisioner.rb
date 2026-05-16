@@ -417,6 +417,7 @@ module Containers
     def wait_for_health!(service_container)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
       has_healthcheck = nil # nil = unknown, true/false once determined
+      docker_container = Containers.backend.get_container(service_container.docker_container_id)
 
       loop do
         # Only query Docker HEALTHCHECK when we haven't confirmed its absence.
@@ -433,7 +434,9 @@ module Containers
         end
 
         # Fall back to TCP probe when no Docker HEALTHCHECK is configured.
-        if has_healthcheck == false && tcp_port_open?(service_container)
+        # Service containers (postgres, redis) should always have probe tools,
+        # so we pass fallback_on_missing_tools: false to avoid false-healthy.
+        if has_healthcheck == false && tcp_port_open?(service_container, docker_container: docker_container)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -463,13 +466,14 @@ module Containers
       nil
     end
 
-    def tcp_port_open?(service_container)
-      container = Containers.backend.get_container(service_container.docker_container_id)
+    def tcp_port_open?(service_container, docker_container: nil, fallback_on_missing_tools: false)
+      docker_container ||= Containers.backend.get_container(service_container.docker_container_id)
       Containers::TcpHealthProbe.open?(
         backend: Containers.backend,
-        container: container,
+        container: docker_container,
         host: runtime_name(service_container),
-        port: service_container.port
+        port: service_container.port,
+        fallback_on_missing_tools: fallback_on_missing_tools
       )
     rescue Docker::Error::DockerError, Excon::Error
       false
