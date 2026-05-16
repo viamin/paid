@@ -11,7 +11,7 @@ This glossary defines terms specific to the Paid platform that are not industry-
 | **Agent Run** | A single execution of a runner against a task (issue, PR review, etc.). Tracks lifecycle from queued to running to completed/failed. Core domain object (`AgentRun` model). |
 | **Focused Agent Run** | An agent run scoped to a single, narrow problem class (e.g., CI fix, review response) rather than all PR problems at once. See RDR-031. |
 | **Runner** | A code execution backend (e.g., Claude Code, Copilot, Aider, OpenCode, Kilocode) that performs agent work. Formerly called "Provider" in code. Renamed in #1950. NOT the same as an LLM provider. |
-| **Runner State** | The operational status record for a runner (healthy, degraded, circuit-open, etc.). Formerly `provider_states`. Renamed in #1950. |
+| **Runner State** | The operational status record for a runner (healthy, degraded, circuit-open, etc.). This remains implemented through legacy `ProviderState` / `provider_states` identifiers even though the domain concept is runner health. |
 | **Runner Key** | The unique identifier string for a specific runner (e.g., `claude_code`, `copilot`). Formerly `provider_key`. Renamed in #1950. |
 | **Agent Harness** | The shared execution framework (`agent_harness` gem) that wraps individual runners, providing plan-only APIs, heartbeats, and lifecycle management. All LLM calls must go through this gem. |
 
@@ -25,15 +25,15 @@ This glossary defines terms specific to the Paid platform that are not industry-
 | **Orchestration Decision** | A logged record of why the system chose a particular runner, decomposition, or retry path. Used for observability and scaling analysis. |
 | **Coordination Policy** | Rules governing how multiple concurrent agent runs interact, avoid conflicts, and escalate. Evolved via the coordination evolution workflow. |
 | **Decomposition** | Breaking a complex issue into smaller sub-tasks that can be handled by individual agent runs. Policy-based via `DecompositionService`. |
-| **Escalation** | Promoting an agent run issue to human review when confidence is low or the task exceeds agent capability. Driven by `EscalationService` with human-value prediction. |
-| **Optimizer** | The Bayesian optimization system that ranks runner/configuration candidates and balances exploration vs. exploitation. `Optimizer.ranked_candidates`. |
+| **Escalation** | Promoting an agent run issue to human review when confidence is low or the task exceeds agent capability. Driven by `Coordination::EscalationService` with human-value prediction. |
+| **Optimizer** | The Bayesian optimization system that ranks runner/configuration candidates and balances exploration vs. exploitation. `ConfigurationBundles::Optimizer.ranked_candidates`. |
 
 ## Infrastructure
 
 | Term | Definition |
 |------|-----------|
 | **Workspace** | The isolated filesystem environment (Docker volume or local directory) where a runner executes code changes. Container-managed via Docker or Swarm backend. |
-| **Circuit Breaker** | Per-runner failure tracking that temporarily disables a runner after repeated failures. Transitions between closed/open/half-open states on `RunnerState`. |
+| **Circuit Breaker** | Per-runner failure tracking that temporarily disables a runner after repeated failures. Transitions between closed/open/half-open states on legacy `ProviderState` records. |
 | **Smoke Test / Test Agent** | A lightweight validation run that verifies a runner is functional (auth works, CLI responds). Used for health checks and onboarding. |
 | **Watchdog** | A background thread that monitors running agent containers for hangs, timeouts, and silent failures via heartbeat-based liveness detection. |
 | **Tenant** | A top-level organizational unit (GitHub org or team) that owns projects, users, runners, and settings. Multi-tenancy boundary. |
@@ -58,6 +58,6 @@ These terms refer to LLM providers (not runners) and were intentionally kept dur
 
 ## References
 
-- [#1950](https://github.com/paidplatform/paid/pull/1950) — feat(runners): rename providers to runners (phase 1)
-- [#1945](https://github.com/paidplatform/paid/issues/1945) — original issue motivating the rename
-- [RDR-031](docs/rdrs/RDR-031-focused-agent-runs.md) — Focused Agent Runs architecture
+- [#1950](https://github.com/viamin/paid/pull/1950) — feat(runners): rename providers to runners (phase 1)
+- [#1945](https://github.com/viamin/paid/issues/1945) — original issue motivating the rename
+- [RDR-031](rdrs/RDR-031-focused-agent-runs.md) — Focused Agent Runs architecture
