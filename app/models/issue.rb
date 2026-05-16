@@ -62,7 +62,6 @@ class Issue < ApplicationRecord
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
   after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
-  after_update_commit :invalidate_pr_progress_state_cache!
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -187,24 +186,10 @@ class Issue < ApplicationRecord
   # enable the "new PR head commit" reset condition. Without those
   # parameters, only explicit reset markers and successful-run resets apply.
   def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
-    @pr_progress_states ||= {}
-    cache_key = if current_head_sha.present?
-      [ current_head_sha, current_head_updated_at ]
-    else
-      :default
-    end
-
-    @pr_progress_states[cache_key] ||= PullRequests::ProgressState.call(
+    PullRequests::ProgressState.call(
       project:, issue: self,
       current_head_sha:, current_head_updated_at:
     )
-    # Once we have live PR head data, promote that result to the default
-    # cache entry so later helper calls on the same Issue instance don't
-    # reuse a stale pre-fetch snapshot.
-    if current_head_sha.present? && current_head_updated_at.present?
-      @pr_progress_states[:default] = @pr_progress_states[cache_key]
-    end
-    @pr_progress_states[cache_key]
   end
 
   def consecutive_unsuccessful_pr_runs(**kwargs)
@@ -225,11 +210,6 @@ class Issue < ApplicationRecord
 
   def pr_stuck?(limit:, stale_after:, **kwargs)
     pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
-  end
-
-  def reload(options = nil)
-    @pr_progress_states = nil
-    super(options)
   end
 
   def associated_pull_request
@@ -277,7 +257,6 @@ class Issue < ApplicationRecord
       review_goal_retry_reset_at: reset_at,
       operational_failure_reset_at: reset_at
     )
-    invalidate_pr_progress_state_cache!
   end
 
   def dismiss_escalation!(draft:)
@@ -294,7 +273,6 @@ class Issue < ApplicationRecord
     attrs[:draft_review_count] = 0 if draft
 
     update!(attrs)
-    invalidate_pr_progress_state_cache!
   end
 
   def ready_to_work?
@@ -473,7 +451,10 @@ class Issue < ApplicationRecord
   end
 
   def invalidate_pr_progress_state_cache!
-    @pr_progress_states = nil
+    # Progress is derived from agent-run history, so Issue-level memoization
+    # would go stale whenever runs change while the same Issue instance is
+    # still in memory. Keep the compatibility hook, but make it a no-op.
+    nil
   end
 
   private

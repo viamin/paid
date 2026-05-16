@@ -442,15 +442,15 @@ RSpec.describe Issue do
         allow(issue).to receive(:project).and_return(project)
       end
 
-      it "registers a commit callback to clear memoized progress state after updates" do
+      it "does not register a commit callback for PR progress helper state" do
         after_commit_filters = described_class._commit_callbacks
           .select { |callback| callback.kind == :after }
           .map(&:filter)
 
-        expect(after_commit_filters).to include(:invalidate_pr_progress_state_cache!)
+        expect(after_commit_filters).not_to include(:invalidate_pr_progress_state_cache!)
       end
 
-      it "memoizes progress state across helper calls" do
+      it "recomputes progress state across helper calls" do
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
           .and_return(progress_state)
@@ -460,10 +460,10 @@ RSpec.describe Issue do
         expect(issue.pr_escalation_worthy?(limit: 3)).to be(true)
         expect(issue.pr_retryable?(limit: 3)).to be(false)
         expect(issue.pr_stuck?(limit: 3, stale_after: 3600)).to be(true)
-        expect(PullRequests::ProgressState).to have_received(:call).once
+        expect(PullRequests::ProgressState).to have_received(:call).exactly(5).times
       end
 
-      it "forwards current_head_sha to ProgressState bypassing memoization" do
+      it "forwards current_head_sha to ProgressState" do
         head_aware_state = instance_double(
           PullRequests::ProgressState::Result,
           consecutive_unsuccessful_automatic_runs: 0
@@ -475,11 +475,7 @@ RSpec.describe Issue do
         expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: Time.current)).to eq(0)
       end
 
-      it "promotes a head-aware state into the default memoized entry" do
-        stale_progress_state = instance_double(
-          PullRequests::ProgressState::Result,
-          consecutive_unsuccessful_automatic_runs: 3
-        )
+      it "does not reuse a head-aware result for later default lookups" do
         head_aware_state = instance_double(
           PullRequests::ProgressState::Result,
           consecutive_unsuccessful_automatic_runs: 0
@@ -488,21 +484,17 @@ RSpec.describe Issue do
 
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(stale_progress_state)
+          .and_return(progress_state, progress_state)
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
           .and_return(head_aware_state)
 
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
         expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: fetched_at)).to eq(0)
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(0)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
       end
 
-      it "does not promote a head-aware state into the default cache when head commit time is unknown" do
-        stale_progress_state = instance_double(
-          PullRequests::ProgressState::Result,
-          consecutive_unsuccessful_automatic_runs: 3
-        )
+      it "does not reuse a partial head-aware result for later default lookups" do
         partial_head_state = instance_double(
           PullRequests::ProgressState::Result,
           consecutive_unsuccessful_automatic_runs: 1
@@ -510,7 +502,7 @@ RSpec.describe Issue do
 
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(stale_progress_state)
+          .and_return(progress_state, progress_state)
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
           .and_return(partial_head_state)
@@ -520,45 +512,7 @@ RSpec.describe Issue do
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
       end
 
-      it "invalidates the memoized progress state on reload" do
-        fresh_progress_state = instance_double(
-          PullRequests::ProgressState::Result,
-          consecutive_unsuccessful_automatic_runs: 1
-        )
-        fresh_issue = described_class.allocate
-        fresh_issue.instance_variable_set(:@association_cache, {})
-        fresh_issue.instance_variable_set(:@attributes, issue.instance_variable_get(:@attributes))
-        allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(progress_state, fresh_progress_state)
-        allow(issue).to receive(:_find_record).and_return(fresh_issue)
-
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
-        issue.reload
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
-        expect(PullRequests::ProgressState).to have_received(:call).twice
-      end
-
-      it "forwards reload option hashes to ActiveRecord while clearing the memoized progress state" do
-        fresh_progress_state = instance_double(
-          PullRequests::ProgressState::Result,
-          consecutive_unsuccessful_automatic_runs: 1
-        )
-        fresh_issue = described_class.allocate
-        fresh_issue.instance_variable_set(:@association_cache, {})
-        fresh_issue.instance_variable_set(:@attributes, issue.instance_variable_get(:@attributes))
-        allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(progress_state, fresh_progress_state)
-        allow(issue).to receive(:_find_record).with({ lock: true }).and_return(fresh_issue)
-
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
-        issue.reload(lock: true)
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
-        expect(issue).to have_received(:_find_record).with({ lock: true })
-      end
-
-      it "clears the memoized progress state when resetting the review-goal breaker" do
+      it "continues to recompute progress state when resetting the review-goal breaker" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,
           consecutive_unsuccessful_automatic_runs: 1
@@ -591,7 +545,7 @@ RSpec.describe Issue do
         end
       end
 
-      it "clears the memoized progress state when dismissing escalation" do
+      it "continues to recompute progress state when dismissing escalation" do
         fresh_progress_state = instance_double(
           PullRequests::ProgressState::Result,
           consecutive_unsuccessful_automatic_runs: 1
