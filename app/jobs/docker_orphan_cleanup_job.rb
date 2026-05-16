@@ -103,6 +103,8 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   # Phase 3: Remove service containers with zero in-flight capacity runs.
+  # Also removes stale containers whose docker_container_id no longer matches
+  # the DB record (e.g. reprovisioned onto a different backend).
   def cleanup_service_containers(backend:)
     containers = list_containers_by_label("paid.service_container=true", backend: backend)
     return 0 if containers.empty?
@@ -112,8 +114,18 @@ class DockerOrphanCleanupJob < ApplicationJob
       sc_id = container.info.dig("Labels", "paid.service_container_id")
       service_container = ServiceContainer.find_by(id: sc_id) if sc_id.present?
 
-      if service_container.nil? || service_container.capacity_inflight_agent_run_count == 0
-        if stop_and_remove_container(container, "service", sc_id, backend: backend)
+      # Container is orphaned if:
+      # 1. No matching DB record exists, OR
+      # 2. The DB record points to a different Docker container (reprovisioned on another backend), OR
+      # 3. No agent runs are currently using this service container
+      stale_on_backend = service_container&.docker_container_id.present? &&
+        service_container.docker_container_id != container.id
+      orphaned = service_container.nil? || stale_on_backend ||
+        service_container.capacity_inflight_agent_run_count == 0
+
+      if orphaned && stop_and_remove_container(container, "service", sc_id, backend: backend)
+        # Only clear the DB record if this container is still the active one
+        unless stale_on_backend
           begin
             service_container&.update!(status: "stopped", docker_container_id: nil)
           rescue ActiveRecord::ActiveRecordError => e
@@ -124,8 +136,8 @@ class DockerOrphanCleanupJob < ApplicationJob
               error: e.message
             )
           end
-          removed += 1
         end
+        removed += 1
       end
     end
     removed

@@ -39,8 +39,9 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
-  def make_container(labels:)
+  def make_container(labels:, id: SecureRandom.hex(32))
     instance_double(Docker::Container,
+      id: id,
       info: { "Labels" => labels },
       stop: true,
       delete: true)
@@ -269,6 +270,27 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(container).not_to have_received(:delete)
+      end
+
+      it "removes stale service containers whose docker_container_id no longer matches" do
+        sc = create(:service_container, status: "running", docker_container_id: "active-container-on-remote")
+        stale_container = make_container(
+          id: "old-local-container-id",
+          labels: {
+            "paid.service_container" => "true",
+            "paid.service_container_id" => sc.id.to_s
+          }
+        )
+        stub_service_containers(stale_container)
+        allow(sc).to receive(:capacity_inflight_agent_run_count).and_return(2)
+        allow(ServiceContainer).to receive(:find_by).with(id: sc.id.to_s).and_return(sc)
+
+        job.perform
+
+        expect(stale_container).to have_received(:delete).with(force: true, v: true)
+        # DB record should NOT be cleared since it points to the active container on another backend
+        expect(sc.reload.docker_container_id).to eq("active-container-on-remote")
+        expect(sc.reload.status).to eq("running")
       end
 
       it "removes service containers with no matching DB record" do
