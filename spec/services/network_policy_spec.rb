@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe NetworkPolicy do
+  let(:backend) { Containers.backend }
   let(:mock_network) do
     instance_double(
       Docker::Network,
@@ -21,7 +22,7 @@ RSpec.describe NetworkPolicy do
   describe ".ensure_network!" do
     context "when network already exists" do
       before do
-        allow(Docker::Network).to receive(:get)
+        allow(backend).to receive(:get_network)
           .with(described_class::NETWORK_NAME)
           .and_return(mock_network)
       end
@@ -32,21 +33,21 @@ RSpec.describe NetworkPolicy do
       end
 
       it "does not create a new network" do
-        expect(Docker::Network).not_to receive(:create)
+        expect(backend).not_to receive(:create_network)
         described_class.ensure_network!
       end
     end
 
     context "when network does not exist" do
       before do
-        allow(Docker::Network).to receive(:get)
+        allow(backend).to receive(:get_network)
           .with(described_class::NETWORK_NAME)
           .and_raise(Docker::Error::NotFoundError)
-        allow(Docker::Network).to receive(:create).and_return(mock_network)
+        allow(backend).to receive(:create_network).and_return(mock_network)
       end
 
       it "creates the network with correct configuration" do
-        expect(Docker::Network).to receive(:create).with(
+        expect(backend).to receive(:create_network).with(
           described_class::NETWORK_NAME,
           hash_including(
             "Driver" => "bridge",
@@ -63,7 +64,7 @@ RSpec.describe NetworkPolicy do
         before { allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production")) }
 
         it "creates an internal network with masquerade disabled" do
-          expect(Docker::Network).to receive(:create).with(
+          expect(backend).to receive(:create_network).with(
             described_class::NETWORK_NAME,
             hash_including(
               "Internal" => true,
@@ -79,7 +80,7 @@ RSpec.describe NetworkPolicy do
 
       context "when in development" do
         it "creates a non-internal network" do
-          expect(Docker::Network).to receive(:create).with(
+          expect(backend).to receive(:create_network).with(
             described_class::NETWORK_NAME,
             hash_not_including("Internal" => true)
           ).and_return(mock_network)
@@ -96,10 +97,10 @@ RSpec.describe NetworkPolicy do
 
     context "when network creation fails" do
       before do
-        allow(Docker::Network).to receive(:get)
+        allow(backend).to receive(:get_network)
           .with(described_class::NETWORK_NAME)
           .and_raise(Docker::Error::NotFoundError)
-        allow(Docker::Network).to receive(:create)
+        allow(backend).to receive(:create_network)
           .and_raise(Docker::Error::ServerError.new("Docker error"))
       end
 
@@ -111,13 +112,13 @@ RSpec.describe NetworkPolicy do
 
     context "when the infrastructure network is missing" do
       before do
-        allow(Docker::Network).to receive(:get)
+        allow(backend).to receive(:get_network)
           .with(described_class::INFRA_NETWORK_NAME)
           .and_raise(Docker::Error::NotFoundError)
       end
 
       it "raises instead of creating the infrastructure network" do
-        expect(Docker::Network).not_to receive(:create)
+        expect(backend).not_to receive(:create_network)
 
         expect { described_class.ensure_network!(network: described_class::INFRA_NETWORK_NAME) }
           .to raise_error(described_class::Error, /paid_internal does not exist/)
@@ -128,7 +129,7 @@ RSpec.describe NetworkPolicy do
   describe ".network_exists?" do
     context "when network exists" do
       before do
-        allow(Docker::Network).to receive(:get)
+        allow(backend).to receive(:get_network)
           .with(described_class::NETWORK_NAME)
           .and_return(mock_network)
       end
@@ -140,7 +141,7 @@ RSpec.describe NetworkPolicy do
 
     context "when network does not exist" do
       before do
-        allow(Docker::Network).to receive(:get)
+        allow(backend).to receive(:get_network)
           .with(described_class::NETWORK_NAME)
           .and_raise(Docker::Error::NotFoundError)
       end

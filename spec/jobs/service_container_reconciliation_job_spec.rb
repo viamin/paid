@@ -4,11 +4,16 @@ require "rails_helper"
 
 RSpec.describe ServiceContainerReconciliationJob do
   let(:job) { described_class.new }
+  let(:backend) { instance_double(Containers::Backends::Base) }
+
+  before do
+    allow(Containers).to receive(:backend).and_return(backend)
+  end
 
   describe "#perform" do
     it "corrects running DB records when Docker container is gone" do
       sc = create(:service_container, status: "running", docker_container_id: "dead123")
-      allow(Docker::Container).to receive(:get).with("dead123")
+      allow(backend).to receive(:get_container).with("dead123")
         .and_raise(Docker::Error::NotFoundError)
 
       job.perform
@@ -21,7 +26,7 @@ RSpec.describe ServiceContainerReconciliationJob do
     it "leaves running containers that are actually running in Docker" do
       sc = create(:service_container, status: "running", docker_container_id: "alive123")
       container = instance_double(Docker::Container)
-      allow(Docker::Container).to receive(:get).with("alive123").and_return(container)
+      allow(backend).to receive(:get_container).with("alive123").and_return(container)
       allow(container).to receive(:json).and_return({ "State" => { "Running" => true } })
 
       job.perform
@@ -34,7 +39,7 @@ RSpec.describe ServiceContainerReconciliationJob do
     it "corrects records when Docker container exists but is stopped" do
       sc = create(:service_container, status: "running", docker_container_id: "stopped123")
       container = instance_double(Docker::Container)
-      allow(Docker::Container).to receive(:get).with("stopped123").and_return(container)
+      allow(backend).to receive(:get_container).with("stopped123").and_return(container)
       allow(container).to receive(:json).and_return({ "State" => { "Running" => false } })
 
       job.perform
@@ -46,11 +51,11 @@ RSpec.describe ServiceContainerReconciliationJob do
 
     it "skips non-running service containers" do
       sc = create(:service_container, status: "stopped", docker_container_id: nil)
-      allow(Docker::Container).to receive(:get)
+      allow(backend).to receive(:get_container)
 
       job.perform
 
-      expect(Docker::Container).not_to have_received(:get)
+      expect(backend).not_to have_received(:get_container)
       expect(sc.reload.status).to eq("stopped")
     end
 
@@ -58,9 +63,9 @@ RSpec.describe ServiceContainerReconciliationJob do
       sc1 = create(:service_container, status: "running", docker_container_id: "err123")
       sc2 = create(:service_container, status: "running", docker_container_id: "gone456")
 
-      allow(Docker::Container).to receive(:get).with("err123")
+      allow(backend).to receive(:get_container).with("err123")
         .and_raise(Docker::Error::DockerError, "daemon error")
-      allow(Docker::Container).to receive(:get).with("gone456")
+      allow(backend).to receive(:get_container).with("gone456")
         .and_raise(Docker::Error::NotFoundError)
 
       job.perform

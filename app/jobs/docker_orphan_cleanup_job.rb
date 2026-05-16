@@ -169,7 +169,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def list_containers_by_label(label)
-    Docker::Container.all(all: true, filters: { label: [ label ] }.to_json)
+    Containers.backend.list_containers(all: true, filters: { label: [ label ] }.to_json)
   rescue Docker::Error::DockerError => e
     Rails.logger.error(
       message: "container_manager.container_list_failed",
@@ -181,12 +181,12 @@ class DockerOrphanCleanupJob < ApplicationJob
 
   def stop_and_remove_container(container, kind, resource_id)
     begin
-      container.stop(timeout: 10)
+      Containers.backend.stop_container(container, timeout: 10)
     rescue Docker::Error::NotFoundError, Docker::Error::ClientError
       # Already stopped or gone
     end
     begin
-      container.delete(force: true, v: true)
+      Containers.backend.delete_container(container, force: true, v: true)
     rescue Docker::Error::NotFoundError
       # Container disappeared between stop and delete (race condition)
     end
@@ -202,7 +202,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def list_paid_volumes
-    Docker::Volume.all.select { |v| v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) }
+    Containers.backend.list_volumes.select { |v| v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) }
   rescue Docker::Error::DockerError => e
     Rails.logger.error(
       message: "container_manager.volume_list_failed",

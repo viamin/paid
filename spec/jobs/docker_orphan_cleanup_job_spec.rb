@@ -7,29 +7,30 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:agent_filter) { { label: [ "paid.agent_run_id" ] }.to_json }
   let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
+  let(:backend) { Containers.backend }
 
   def stub_no_containers
-    allow(Docker::Container).to receive(:all).and_return([])
+    allow(backend).to receive(:list_containers).and_return([])
   end
 
   def stub_no_volumes
-    allow(Docker::Volume).to receive(:all).and_return([])
+    allow(backend).to receive(:list_volumes).and_return([])
   end
 
   def stub_agent_containers(*containers)
-    allow(Docker::Container).to receive(:all)
+    allow(backend).to receive(:list_containers)
       .with(all: true, filters: agent_filter)
       .and_return(containers)
   end
 
   def stub_pool_containers(*containers)
-    allow(Docker::Container).to receive(:all)
+    allow(backend).to receive(:list_containers)
       .with(all: true, filters: pool_filter)
       .and_return(containers)
   end
 
   def stub_service_containers(*containers)
-    allow(Docker::Container).to receive(:all)
+    allow(backend).to receive(:list_containers)
       .with(all: true, filters: service_filter)
       .and_return(containers)
   end
@@ -153,7 +154,7 @@ RSpec.describe DockerOrphanCleanupJob do
       end
 
       it "handles Docker errors when listing containers" do
-        allow(Docker::Container).to receive(:all)
+        allow(backend).to receive(:list_containers)
           .with(all: true, filters: agent_filter)
           .and_raise(Docker::Error::DockerError, "daemon error")
         stub_no_volumes
@@ -300,7 +301,7 @@ RSpec.describe DockerOrphanCleanupJob do
       it "removes volumes for completed agent runs" do
         completed_run = create(:agent_run, :completed)
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{completed_run.id}", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -310,7 +311,7 @@ RSpec.describe DockerOrphanCleanupJob do
       it "skips volumes for claimed queued runs" do
         claimed_run = create(:agent_run, status: "queued", temporal_workflow_id: "workflow-123")
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{claimed_run.id}", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -320,7 +321,7 @@ RSpec.describe DockerOrphanCleanupJob do
       it "skips volumes for active agent runs" do
         running_run = create(:agent_run, status: "running")
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{running_run.id}", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -331,7 +332,7 @@ RSpec.describe DockerOrphanCleanupJob do
         running_run = create(:agent_run, status: "running")
         entry = create(:container_pool_entry, :claimed, agent_run: running_run)
         volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -342,7 +343,7 @@ RSpec.describe DockerOrphanCleanupJob do
         completed_run = create(:agent_run, :completed)
         entry = create(:container_pool_entry, :claimed, agent_run: completed_run)
         volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -353,7 +354,7 @@ RSpec.describe DockerOrphanCleanupJob do
         retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
         entry = create(:container_pool_entry, :claimed, agent_run: retained_run)
         volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -363,7 +364,7 @@ RSpec.describe DockerOrphanCleanupJob do
       it "removes stale warming pool volumes" do
         entry = create(:container_pool_entry, :warming, created_at: 1.hour.ago)
         volume = instance_double(Docker::Volume, id: entry.workspace_volume, remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -372,7 +373,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
       it "removes volumes with no matching agent run" do
         volume = instance_double(Docker::Volume, id: "paid-workspace-nonexistent-id", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -382,7 +383,7 @@ RSpec.describe DockerOrphanCleanupJob do
       it "skips volumes for retained agent runs" do
         retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{retained_run.id}", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -392,7 +393,7 @@ RSpec.describe DockerOrphanCleanupJob do
       it "removes volumes for agent runs with expired retention" do
         expired_run = create(:agent_run, :failed, container_retained_until: 1.hour.ago)
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{expired_run.id}", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -401,7 +402,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
       it "skips volumes not matching the paid-workspace prefix" do
         volume = instance_double(Docker::Volume, id: "other-volume-123", remove: true)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -412,7 +413,7 @@ RSpec.describe DockerOrphanCleanupJob do
         completed_run = create(:agent_run, :completed)
         volume = instance_double(Docker::Volume, id: "paid-workspace-#{completed_run.id}")
         allow(volume).to receive(:remove).and_raise(Docker::Error::NotFoundError)
-        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
 
         job.perform
 
@@ -425,7 +426,7 @@ RSpec.describe DockerOrphanCleanupJob do
         volume1 = instance_double(Docker::Volume, id: "paid-workspace-#{completed1.id}")
         volume2 = instance_double(Docker::Volume, id: "paid-workspace-#{completed2.id}", remove: true)
         allow(volume1).to receive(:remove).and_raise(Docker::Error::DockerError, "volume in use")
-        allow(Docker::Volume).to receive(:all).and_return([ volume1, volume2 ])
+        allow(backend).to receive(:list_volumes).and_return([ volume1, volume2 ])
 
         job.perform
 
@@ -433,7 +434,7 @@ RSpec.describe DockerOrphanCleanupJob do
       end
 
       it "handles Docker errors when listing volumes" do
-        allow(Docker::Volume).to receive(:all).and_raise(Docker::Error::DockerError, "daemon error")
+        allow(backend).to receive(:list_volumes).and_raise(Docker::Error::DockerError, "daemon error")
 
         expect { job.perform }.not_to raise_error
       end

@@ -75,7 +75,7 @@ class ServiceContainerReconciliationJob < ApplicationJob
   def docker_container_status(container_id)
     return :not_running if container_id.blank?
 
-    container = Docker::Container.get(container_id)
+    container = Containers.backend.get_container(container_id)
     container.json.dig("State", "Running") == true ? :running : :not_running
   rescue Docker::Error::NotFoundError
     :not_running

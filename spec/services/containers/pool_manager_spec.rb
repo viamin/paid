@@ -95,6 +95,7 @@ RSpec.describe Containers::PoolManager do
 
       expect(result).to be_success
       expect(result[:container_id]).to eq(entry.container_id)
+      expect(result[:container_host]).to eq(entry.container_host)
       expect(entry.reload.status).to eq("claimed")
       expect(entry.agent_run).to eq(agent_run)
       expect(Containers::Provision).to have_received(:reconnect).with(
@@ -206,7 +207,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-1")
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local")
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -227,7 +228,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-2")
+        provision: Containers::Provision::Result.success(container_id: "warm-2", container_host: "local")
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -245,7 +246,7 @@ RSpec.describe Containers::PoolManager do
       allow(Containers::Provision).to receive(:new).and_return(provision)
       allow(provision).to receive_messages(
         network_name: "paid_agent",
-        provision: Containers::Provision::Result.success(container_id: "warm-3")
+        provision: Containers::Provision::Result.success(container_id: "warm-3", container_host: "local")
       )
 
       described_class.new(project: project, target_size: 1).replenish
@@ -283,14 +284,19 @@ RSpec.describe Containers::PoolManager do
       container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
       volume = instance_double(Docker::Volume, remove: true)
       network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+      backend = Containers.backend
 
       allow(Docker::Container).to receive(:get).with(entry.container_id).and_return(container)
       allow(Docker::Volume).to receive(:get).with(entry.workspace_volume).and_return(volume)
       allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+      allow(backend).to receive(:stop_container).and_call_original
+      allow(backend).to receive(:delete_container).and_call_original
 
       described_class.new(project: project, target_size: 0).replenish
 
       expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+      expect(backend).to have_received(:stop_container).with(container, timeout: 0)
+      expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
       expect(container).to have_received(:delete).with(force: true, v: true)
       expect(volume).to have_received(:remove)
     end
@@ -302,16 +308,21 @@ RSpec.describe Containers::PoolManager do
       newer_container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
       volume = instance_double(Docker::Volume, remove: true)
       network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+      backend = Containers.backend
 
       allow(Docker::Container).to receive(:get).with(older_entry.container_id).and_return(older_container)
       allow(Docker::Container).to receive(:get).with(newer_entry.container_id).and_return(newer_container)
       allow(Docker::Volume).to receive(:get).with(older_entry.workspace_volume).and_return(volume)
       allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+      allow(backend).to receive(:stop_container).and_call_original
+      allow(backend).to receive(:delete_container).and_call_original
 
       described_class.new(project: project, target_size: 1).replenish
 
       expect(ContainerPoolEntry.exists?(older_entry.id)).to be(false)
       expect(ContainerPoolEntry.exists?(newer_entry.id)).to be(true)
+      expect(backend).to have_received(:stop_container).with(older_container, timeout: 0)
+      expect(backend).to have_received(:delete_container).with(older_container, force: true, v: true)
       expect(older_container).to have_received(:delete).with(force: true, v: true)
     end
 
@@ -335,18 +346,23 @@ RSpec.describe Containers::PoolManager do
     container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
     volume = instance_double(Docker::Volume, remove: true)
     provision = instance_double(Containers::Provision)
+    backend = Containers.backend
     allow(Docker::Container).to receive(:get).with(stale_entry.container_id).and_return(container)
     allow(Docker::Volume).to receive(:get).with(stale_entry.workspace_volume).and_return(volume)
     allow(Containers::Provision).to receive(:new).and_return(provision)
     allow(provision).to receive_messages(
       network_name: "paid_agent",
-      provision: Containers::Provision::Result.success(container_id: "warm-4")
+      provision: Containers::Provision::Result.success(container_id: "warm-4", container_host: "local")
     )
+    allow(backend).to receive(:stop_container).and_call_original
+    allow(backend).to receive(:delete_container).and_call_original
 
     described_class.new(project: project, target_size: 1).replenish
 
     expect(ContainerPoolEntry.exists?(stale_entry.id)).to be(false)
     expect(project.container_pool_entries.warm.sole.container_id).to eq("warm-4")
+    expect(backend).to have_received(:stop_container).with(container, timeout: 0)
+    expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
     expect(container).to have_received(:delete).with(force: true, v: true)
     expect(volume).to have_received(:remove)
   end

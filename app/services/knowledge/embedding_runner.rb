@@ -30,7 +30,7 @@ module Knowledge
     end
 
     def self.available?
-      Docker.ping == "OK"
+      Containers.backend.ping == "OK"
     rescue Excon::Error, Docker::Error::DockerError
       false
     end
@@ -67,8 +67,8 @@ module Knowledge
       cleanup_input_dir!
       NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
-      @container = Docker::Container.create(container_config)
-      @container.start
+      @container = Containers.backend.create_container(container_config)
+      Containers.backend.start_container(@container)
       apply_network_restrictions!
     rescue Docker::Error::DockerError => e
       cleanup!
@@ -81,12 +81,12 @@ module Knowledge
     def cleanup_container!
       return unless @container
 
-      @container.stop(timeout: 5)
+      Containers.backend.stop_container(@container, timeout: 5)
     rescue Docker::Error::DockerError
       nil
     ensure
       begin
-        @container&.delete(force: true)
+        Containers.backend.delete_container(@container, force: true) if @container
       rescue Docker::Error::DockerError
         nil
       end
@@ -120,11 +120,11 @@ module Knowledge
           next if exec_completed
 
           timed_out = true
-          @container&.stop(timeout: 0)
+          Containers.backend.stop_container(@container, timeout: 0) if @container
         end
       end
 
-      result = @container.exec(cmd, exec_options)
+      result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
       raise TimeoutError, "Embedding generation timed out after #{timeout}s" if mutex.synchronize { timed_out }
 
       stdout = Array(result[0]).join
