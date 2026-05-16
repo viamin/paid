@@ -20,6 +20,7 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
       active_run_exists: false,
       operational_failure_breaker: false,
       failure_streak_limit_reached: true,
+      review_goal_retry_limit_requires_escalation: false,
       escalation_dismissed: false,
       owner_reviewer_login: "alice",
       escalation_reason: "Automatic PR failure streak reached",
@@ -62,6 +63,15 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
     )
   end
 
+  def escalation_result(reason)
+    instance_double(
+      Coordination::EscalationService::Result,
+      escalate?: true,
+      auto_resolve?: false,
+      reason: reason
+    )
+  end
+
   it "delegates to AutoReview instead of escalating when a review-goal retry is pending" do
     context = Automation::Context.build(record: pull_request, project: project, metadata: { lifecycle:, scan: })
 
@@ -80,6 +90,29 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
 
     expect(decision_types(result)).to eq([ "queue_review_run", "record_review_goal_retry" ])
     expect(Coordination::EscalationService).not_to have_received(:call)
+  end
+
+  it "escalates once the review-goal retry path itself requires escalation" do
+    reason = "Review-goal retry limit reached (3 consecutive failures)"
+    context = Automation::Context.build(
+      record: pull_request,
+      project: project,
+      metadata: {
+        lifecycle: lifecycle.merge(
+          review_goal_retry_limit_requires_escalation: true,
+          escalation_reason: reason
+        ),
+        scan:
+      }
+    )
+
+    allow(Coordination::EscalationService).to receive(:call)
+      .with(project: project, issue: pull_request, signals: kind_of(Automation::Strategies::AutoContinue::Signals))
+      .and_return(escalation_result(reason))
+
+    result = strategy.evaluate(context)
+
+    expect(decision_types(result)).to eq([ "escalate" ])
   end
 
   it "continues into AutoReview when escalation service decides auto_resolve" do
