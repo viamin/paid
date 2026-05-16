@@ -64,6 +64,11 @@ gem "agent-harness", "~> 0.18.1"
 # Defer loading — invoked as CLI binary, not via Ruby API.
 gem "ruby-maat", require: false
 
+# Catch unsafe migrations anywhere migrations can run. Phase-1 bridge
+# migrations call `safety_assured`, so the gem cannot be limited to
+# development/test only.
+gem "strong_migrations"
+
 # Runtime feature flags for staged rollouts
 gem "flipper"
 gem "flipper-active_record"
@@ -103,9 +108,6 @@ group :development, :test do
 
   # Additional RuboCop extensions
   gem "rubocop-rspec", require: false
-
-  # Catch unsafe migrations at dev time [https://github.com/ankane/strong_migrations]
-  gem "strong_migrations"
 
   # Performance suggestions for Ruby code [https://github.com/fasterer/fasterer]
   gem "fasterer", require: false
