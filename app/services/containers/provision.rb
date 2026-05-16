@@ -187,7 +187,7 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
-      prepare_heartbeat_dir!
+      prepare_heartbeat_dir! unless backend.identifier == "swarm"
       prepare_workspace!
       ensure_network!
       @container = create_container
@@ -201,7 +201,7 @@ module Containers
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
-      Result.success(container_id: container.id, container_host: backend.identifier)
+      Result.success(container_id: container.id, container_host: backend.container_host_for(container))
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
       cleanup
@@ -1601,7 +1601,7 @@ module Containers
       volume_name ||= "paid-workspace-#{agent_run.id}" if host_worktree_path.blank? && agent_run.present? && !pooled_container?
       return unless volume_name
 
-      backend.delete_volume(backend.get_volume(volume_name))
+      backend.delete_volume(backend.get_volume(volume_name, host: volume_host))
     rescue Docker::Error::NotFoundError
       # Volume already removed
     rescue => e
@@ -1620,6 +1620,14 @@ module Containers
 
       pool_entry.destroy!
       @pool_entry = nil
+    end
+
+    def volume_host
+      return agent_run.container_host if agent_run&.container_host.present?
+      return pool_entry.container_host if pool_entry&.container_host.present?
+      return backend.container_host_for(container) if container
+
+      nil
     end
 
     def volume_options

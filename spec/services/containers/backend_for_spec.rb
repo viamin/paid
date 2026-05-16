@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Containers, ".backend_for", :no_db do
-  let(:local_backend) { instance_double(Containers::Backends::LocalDocker, identifier: "local") }
+  let(:local_backend) { instance_double(Containers::Backends::LocalDocker, identifier: "local", owns_host?: false) }
 
   before do
     allow(described_class).to receive(:backend).and_return(local_backend)
@@ -19,6 +19,12 @@ RSpec.describe Containers, ".backend_for", :no_db do
 
   it "returns the process-global backend when host matches the active backend identifier" do
     expect(described_class.backend_for("local")).to eq(local_backend)
+  end
+
+  it "returns the process-global backend when the active backend owns the persisted host" do
+    allow(local_backend).to receive(:owns_host?).with("worker-1").and_return(true)
+
+    expect(described_class.backend_for("worker-1")).to eq(local_backend)
   end
 
   it "resolves a registered backend by host name" do

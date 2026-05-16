@@ -7,8 +7,16 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      def owns_host?(_host)
+        false
+      end
+
       def ping
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
+      def container_host_for(_container)
+        identifier
       end
 
       def get_container(_id)
@@ -63,11 +71,11 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def create_volume(_name, _options = {})
+      def create_volume(_name, _options = {}, host: nil)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def get_volume(_name)
+      def get_volume(_name, host: nil)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
