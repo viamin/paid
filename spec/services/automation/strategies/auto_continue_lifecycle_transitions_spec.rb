@@ -36,13 +36,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
       phase: phase,
       active_run_exists: false,
       operational_failure_breaker: false,
-      draft_review_limit_reached: false,
-      consecutive_draft_failures_breaker: false,
-      review_goal_retry_limit_requires_escalation: false,
-      followup_limit_reached: false,
+      failure_streak_limit_reached: false,
       escalation_dismissed: false,
       owner_reviewer_login: "alice",
       escalation_reason: nil,
+      consecutive_unsuccessful_automatic_runs: 0,
+      consecutive_operational_failures: 0,
+      last_meaningful_progress_at: nil,
       draft: phase == "draft" || phase == "restarted"
     }.merge(overrides)
   end
@@ -61,17 +61,16 @@ RSpec.describe Automation::Strategies::AutoContinue do
       expect(decision_types(result)).to eq([ "noop" ])
     end
 
-    it "operational_failure_breaker trumps escalation_dismissed" do
+    it "dismisses escalation when the owner removes the label" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "escalated",
-          operational_failure_breaker: true,
           escalation_dismissed: true,
-          escalation_reason: "Consecutive operational failures"
+          draft: false
         )
       )
 
-      expect(result.to_h[:decisions].first).to include(type: "escalate")
+      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
     end
 
     it "escalation_dismissed trumps phase-specific gates" do
@@ -79,7 +78,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         lifecycle: base_lifecycle(
           phase: "escalated",
           escalation_dismissed: true,
-          draft_review_limit_reached: true,
+          failure_streak_limit_reached: true,
           draft: false
         )
       )
@@ -89,38 +88,28 @@ RSpec.describe Automation::Strategies::AutoContinue do
   end
 
   describe "draft phase gates" do
-    it "escalates on review_goal_retry_limit" do
+    it "escalates on the unified failure streak limit" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "draft",
-          review_goal_retry_limit_requires_escalation: true,
-          escalation_reason: "Review-goal retry limit reached"
+          failure_streak_limit_reached: true,
+          consecutive_unsuccessful_automatic_runs: 3,
+          escalation_reason: "Automatic PR failure streak reached"
         )
       )
 
       decisions = result.to_h[:decisions]
       expect(decisions.first[:type]).to eq("escalate")
-      expect(decisions.first[:reason]).to eq("Review-goal retry limit reached")
+      expect(decisions.first[:reason]).to eq("Automatic PR failure streak reached")
     end
 
-    it "escalates on draft_review_limit" do
+    it "escalates on draft-phase streak exhaustion" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "draft",
-          draft_review_limit_reached: true,
-          escalation_reason: "Draft review limit reached"
-        )
-      )
-
-      expect(result.to_h[:decisions].first[:type]).to eq("escalate")
-    end
-
-    it "escalates on consecutive_draft_failures" do
-      result = evaluate(
-        lifecycle: base_lifecycle(
-          phase: "draft",
-          consecutive_draft_failures_breaker: true,
-          escalation_reason: "Consecutive draft follow-up failures"
+          failure_streak_limit_reached: true,
+          consecutive_unsuccessful_automatic_runs: 3,
+          escalation_reason: "Automatic PR failure streak reached"
         )
       )
 
@@ -149,8 +138,9 @@ RSpec.describe Automation::Strategies::AutoContinue do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "restarted",
-          draft_review_limit_reached: true,
-          escalation_reason: "Draft review limit reached"
+          failure_streak_limit_reached: true,
+          consecutive_unsuccessful_automatic_runs: 3,
+          escalation_reason: "Automatic PR failure streak reached"
         )
       )
 
@@ -159,24 +149,22 @@ RSpec.describe Automation::Strategies::AutoContinue do
   end
 
   describe "ready phase gates" do
-    it "returns noop when followup_limit_reached" do
+    it "delegates to AutoReview when no unified gate is active" do
       result = evaluate(
-        lifecycle: base_lifecycle(
-          phase: "ready",
-          followup_limit_reached: true
-        ),
+        lifecycle: base_lifecycle(phase: "ready"),
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
       )
 
-      expect(decision_types(result)).to eq([ "noop" ])
+      expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
     end
 
-    it "escalates on review_goal_retry_limit" do
+    it "escalates on the unified failure streak limit" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "ready",
-          review_goal_retry_limit_requires_escalation: true,
-          escalation_reason: "Review-goal retry limit reached"
+          failure_streak_limit_reached: true,
+          consecutive_unsuccessful_automatic_runs: 3,
+          escalation_reason: "Automatic PR failure streak reached"
         )
       )
 
@@ -199,24 +187,22 @@ RSpec.describe Automation::Strategies::AutoContinue do
   end
 
   describe "escalated phase gates" do
-    it "returns noop when followup_limit_reached" do
+    it "delegates to AutoReview when no unified gate is active" do
       result = evaluate(
-        lifecycle: base_lifecycle(
-          phase: "escalated",
-          followup_limit_reached: true
-        ),
+        lifecycle: base_lifecycle(phase: "escalated"),
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
       )
 
-      expect(decision_types(result)).to eq([ "noop" ])
+      expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
     end
 
-    it "escalates on review_goal_retry_limit" do
+    it "escalates on the unified failure streak limit" do
       result = evaluate(
         lifecycle: base_lifecycle(
           phase: "escalated",
-          review_goal_retry_limit_requires_escalation: true,
-          escalation_reason: "Review-goal retry limit reached"
+          failure_streak_limit_reached: true,
+          consecutive_unsuccessful_automatic_runs: 3,
+          escalation_reason: "Automatic PR failure streak reached"
         )
       )
 

@@ -21,7 +21,15 @@ module ConfigurationExperiments
         configuration_experiment: configuration_experiment,
         agent_run: agent_run
       )
-      return existing if existing
+      if existing
+        return existing unless variant.present?
+
+        selected_variant = validate_variant!(variant)
+        return existing if existing.configuration_experiment_variant_id == selected_variant.id
+
+        existing.update!(configuration_experiment_variant: selected_variant)
+        return existing
+      end
 
       variant = select_variant
 

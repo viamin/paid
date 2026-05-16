@@ -107,6 +107,20 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       expect(service.call).to eq(bundle)
     end
 
+    it "reuses an existing optimizer assignment even before Active Record has checked out a connection" do
+      optimized_definition, selection, assignment_class = setup_existing_assignment_reuse
+
+      expect(ConfigurationExperiments::Assign).not_to receive(:call)
+      expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
+      expect(agent_run).to receive(:update!).with(expected_update_arguments)
+
+      expect(service.call).to eq(bundle)
+      expect(assignment_class.find_by_arguments).to eq(
+        configuration_experiment: experiment,
+        agent_run: agent_run
+      )
+    end
+
     it "accepts string experiment ids in optimizer definitions when the variant map is missing" do
       optimized_definition = experiment_definition_for(selected_variant.parsed_value)
       optimized_definition.dig("experiments", "knowledge.token_budget")["configuration_experiment_id"] = experiment.id.to_s
@@ -460,6 +474,39 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
     ).and_return(assignment)
     expect_bundle_lookup(definition: optimized_definition, fingerprint: selection.fingerprint)
     expect(agent_run).to receive(:update!).with(expected_update_arguments)
+  end
+
+  def setup_existing_assignment_reuse
+    optimized_definition = experiment_definition_for(selected_variant.parsed_value)
+    selection = optimizer_selection(
+      definition: optimized_definition,
+      variant_by_experiment_id: { experiment.id => build_assignment_variant(selected_variant.id, selected_variant.parsed_value) }
+    )
+    persisted_variant = build_assignment_variant(selected_variant.id, selected_variant.parsed_value)
+    existing_assignment = Struct.new(:configuration_experiment_variant).new(persisted_variant)
+    assignment_class = build_assignment_lookup_class(existing_assignment)
+
+    allow(service).to receive_messages(
+      optimizer_selection: selection,
+      active_experiments: [ experiment ]
+    )
+    stub_const("ConfigurationExperimentAssignment", assignment_class)
+    allow(ActiveRecord::Base).to receive(:connected?).and_return(false)
+
+    [ optimized_definition, selection, assignment_class ]
+  end
+
+  def build_assignment_lookup_class(result)
+    Class.new do
+      class << self
+        attr_accessor :find_by_arguments, :result
+
+        def find_by(**kwargs)
+          self.find_by_arguments = kwargs
+          result
+        end
+      end
+    end.tap { |klass| klass.result = result }
   end
 
   def setup_optional_identity_keys_omitted_selection

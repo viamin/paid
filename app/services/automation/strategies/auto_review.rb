@@ -200,15 +200,20 @@ module Automation
       end
 
       def review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
-        decisions = [
-          Automation::Decision.record_review_goal_retry(
-            issue_id: signals.issue_id,
-            expected_review_goal_retry_count: signals.review_goal_retry_count
-          )
-        ]
-
         paid_decision = plugins.find { |p| p.name == :paid_agent }&.decision
+        retry_decision = Automation::Decision.record_review_goal_retry(
+          issue_id: signals.issue_id,
+          expected_review_goal_retry_count: signals.review_goal_retry_count
+        )
+        decisions =
+          if trigger_types.include?(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+            [ retry_decision ]
+          else
+            []
+          end
+
         decisions << paid_decision if paid_decision
+        decisions << retry_decision unless decisions.include?(retry_decision)
 
         if trigger_types.include?("ready_for_owner")
           sans_paid = without_trigger(signals, Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)

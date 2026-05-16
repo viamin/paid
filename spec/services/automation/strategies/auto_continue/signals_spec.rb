@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Automation::Strategies::AutoContinue::Signals do
+RSpec.describe Automation::Strategies::AutoContinue::Signals, :no_db do
   def lifecycle_payload(**overrides)
     {
       issue_id: 1,
@@ -10,18 +10,33 @@ RSpec.describe Automation::Strategies::AutoContinue::Signals do
       phase: "ready",
       active_run_exists: false,
       operational_failure_breaker: false,
-      draft_review_limit_reached: false,
-      consecutive_draft_failures_breaker: false,
-      review_goal_retry_limit_requires_escalation: false,
-      followup_limit_reached: false,
+      failure_streak_limit_reached: false,
       escalation_dismissed: false,
       owner_reviewer_login: nil,
       escalation_reason: nil,
+      consecutive_unsuccessful_automatic_runs: 0,
+      consecutive_operational_failures: 0,
+      last_meaningful_progress_at: nil,
       draft_review_count: 0,
       review_goal_retry_count: 0,
       pr_followup_count: 0,
       draft: false
     }.merge(overrides)
+  end
+
+  def string_keyed_metadata(lifecycle:, scan: nil)
+    { "lifecycle" => lifecycle.transform_keys(&:to_s), "scan" => scan }
+  end
+
+  def draft_string_keyed_payload
+    {
+      phase: "draft",
+      active_run_exists: true,
+      failure_streak_limit_reached: true,
+      consecutive_unsuccessful_automatic_runs: 2,
+      draft: true,
+      scan: { "triggers" => [] }
+    }
   end
 
   describe ".from_metadata" do
@@ -34,34 +49,53 @@ RSpec.describe Automation::Strategies::AutoContinue::Signals do
     end
 
     it "builds signals from lifecycle metadata" do
-      lifecycle = lifecycle_payload(
-        phase: "draft",
-        active_run_exists: true,
-        owner_reviewer_login: "alice",
-        draft_review_count: 2,
-        review_goal_retry_count: 1,
-        pr_followup_count: 3,
-        draft: true
-      )
+      lifecycle = lifecycle_payload(phase: "draft", active_run_exists: true, owner_reviewer_login: "alice",
+        consecutive_unsuccessful_automatic_runs: 2, draft_review_count: 2,
+        review_goal_retry_count: 1, pr_followup_count: 3, draft: true)
       scan = { triggers: [] }
       signals = described_class.from_metadata(lifecycle: lifecycle, scan: scan)
 
-      expect(signals).to have_attributes(
-        issue_id: 1, pr_number: 42, phase: "draft",
-        active_run_exists: true, operational_failure_breaker: false,
-        owner_reviewer_login: "alice",
-        draft_review_count: 2,
-        review_goal_retry_count: 1,
-        pr_followup_count: 3,
-        scan: scan
+      expect(signals.to_h.slice(
+        :issue_id, :pr_number, :phase, :active_run_exists, :operational_failure_breaker,
+        :owner_reviewer_login, :consecutive_unsuccessful_automatic_runs, :draft_review_count,
+        :review_goal_retry_count, :pr_followup_count, :scan
+      )).to eq(
+        issue_id: 1, pr_number: 42, phase: "draft", active_run_exists: true,
+        operational_failure_breaker: false, owner_reviewer_login: "alice",
+        consecutive_unsuccessful_automatic_runs: 2, draft_review_count: 2,
+        review_goal_retry_count: 1, pr_followup_count: 3, scan: scan
       )
+    end
+
+    it "accepts string-keyed metadata from serialized workflow payloads" do
+      payload = draft_string_keyed_payload
+      signals = described_class.from_metadata(string_keyed_metadata(
+        lifecycle: lifecycle_payload(
+          phase: payload[:phase],
+          active_run_exists: payload[:active_run_exists],
+          failure_streak_limit_reached: payload[:failure_streak_limit_reached],
+          consecutive_unsuccessful_automatic_runs: payload[:consecutive_unsuccessful_automatic_runs],
+          draft: payload[:draft]
+        ),
+        scan: payload[:scan]
+      ))
+
+      expect(signals.to_h.slice(
+        :phase,
+        :active_run_exists,
+        :failure_streak_limit_reached,
+        :consecutive_unsuccessful_automatic_runs,
+        :draft,
+        :scan
+      )).to eq(payload)
     end
 
     it "coerces boolean fields strictly" do
       lifecycle = lifecycle_payload(
         active_run_exists: nil,
         operational_failure_breaker: "yes",
-        draft_review_limit_reached: 1,
+        failure_streak_limit_reached: 1,
+        consecutive_unsuccessful_automatic_runs: "4",
         draft_review_count: "4",
         review_goal_retry_count: "2",
         pr_followup_count: "1",
@@ -72,7 +106,8 @@ RSpec.describe Automation::Strategies::AutoContinue::Signals do
 
       expect(signals.active_run_exists).to be false
       expect(signals.operational_failure_breaker).to be false
-      expect(signals.draft_review_limit_reached).to be false
+      expect(signals.failure_streak_limit_reached).to be false
+      expect(signals.consecutive_unsuccessful_automatic_runs).to eq(4)
       expect(signals.draft_review_count).to eq(4)
       expect(signals.review_goal_retry_count).to eq(2)
       expect(signals.pr_followup_count).to eq(1)
