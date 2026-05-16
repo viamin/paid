@@ -14,6 +14,7 @@ module Containers
     def backend_for(host)
       resolved_backend = backend
       return resolved_backend if host.blank? || host.to_s == resolved_backend.identifier
+      return resolved_backend if resolved_backend.owns_host?(host)
 
       Backends::Resolver.for(host.to_sym)
     end

@@ -187,7 +187,8 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
-      prepare_heartbeat_dir!
+      validate_backend_mount_support!
+      prepare_heartbeat_dir! if backend.supports_host_paths?
       prepare_workspace!
       ensure_network!
       @container = create_container
@@ -201,7 +202,7 @@ module Containers
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
-      Result.success(container_id: container.id, container_host: backend.identifier)
+      Result.success(container_id: container.id, container_host: backend.container_host_for(container))
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
       cleanup
@@ -1525,6 +1526,11 @@ module Containers
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
     def prepare_workspace!
       if host_worktree_path.present?
+        unless backend.supports_host_paths?
+          raise ProvisionError,
+            "Backend #{backend.identifier} does not support host-backed worktree paths: #{host_worktree_path}"
+        end
+
         raise ProvisionError, "Worktree path does not exist: #{host_worktree_path}" unless File.directory?(host_worktree_path)
       else
         @workspace_volume ||= pooled_container? ? "paid-pool-workspace-#{pool_entry.id}" : "paid-workspace-#{agent_run.id}"
@@ -1601,7 +1607,7 @@ module Containers
       volume_name ||= "paid-workspace-#{agent_run.id}" if host_worktree_path.blank? && agent_run.present? && !pooled_container?
       return unless volume_name
 
-      backend.delete_volume(backend.get_volume(volume_name))
+      backend.delete_volume(backend.get_volume(volume_name, host: volume_host))
     rescue Docker::Error::NotFoundError
       # Volume already removed
     rescue => e
@@ -1620,6 +1626,14 @@ module Containers
 
       pool_entry.destroy!
       @pool_entry = nil
+    end
+
+    def volume_host
+      return agent_run.container_host if agent_run&.container_host.present?
+      return pool_entry.container_host if pool_entry&.container_host.present?
+      return backend.container_host_for(container) if container
+
+      nil
     end
 
     def volume_options
@@ -1662,7 +1676,7 @@ module Containers
 
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
-    #   /paid-heartbeat     - bind mount of host temp dir (rw, for heartbeat file shared with watchdog)
+    #   /paid-heartbeat     - host bind mount when supported, otherwise tmpfs (rw, for heartbeat touches)
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
@@ -1700,7 +1714,7 @@ module Containers
       binds = []
       if @workspace_volume
         binds << "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
-      elsif host_worktree_path.present?
+      elsif backend.supports_host_paths? && host_worktree_path.present?
         binds << "#{host_worktree_path}:#{options[:workspace_mount]}:rw"
       end
 
@@ -1709,29 +1723,40 @@ module Containers
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs
       # by seed_claude_credentials! after container start.
-      if claude_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         claude_config_host_path.present? &&
          File.directory?(claude_config_host_path) &&
          File.file?(File.join(claude_config_host_path, ".credentials.json"))
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
-      if codex_subscription_auth_host_mount_path.present?
+      if backend.supports_host_paths? && codex_subscription_auth_host_mount_path.present?
         binds.concat(codex_subscription_auth_file_binds)
       end
 
-      if gemini_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         gemini_config_host_path.present? &&
          File.directory?(gemini_config_host_path) &&
          File.file?(File.join(gemini_config_host_path, "oauth_creds.json")) &&
          gemini_subscription_auth?
         binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro"
       end
 
-      if copilot_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         copilot_config_host_path.present? &&
          File.directory?(copilot_config_host_path) &&
          File.file?(File.join(copilot_config_host_path, "config.json")) &&
          copilot_subscription_auth?
         binds << "#{copilot_config_host_path}:/home/agent/.copilot-host:ro"
       end
+
+      # /paid-heartbeat carries agent heartbeat touches used by the watchdog.
+      # When the backend supports host paths we bind-mount a host temp dir so
+      # both host and container can observe the same file. Backends like Swarm
+      # cannot expose host paths, so keep the in-container contract intact with
+      # a writable tmpfs at the same path.
+      tmpfs = {}
+      tmpfs[HEARTBEAT_MOUNT_POINT] = "size=#{1024 * 1024},mode=0777" unless heartbeat_dir_host
 
       # /tmp must be `exec` because every coding/review/rebase prompt has the
       # agent run `bundle install` as step 1, and review-goal runs additionally
@@ -1744,10 +1769,10 @@ module Containers
       # /home/agent/.cache needs exec because some providers (e.g. GitHub Copilot)
       # download native Node.js addons (pty.node) into ~/.cache/copilot/pkg/ at
       # runtime; dlopen() requires mmap(PROT_EXEC), which fails on a noexec mount.
-      tmpfs = {
+      tmpfs.merge!(
         "/tmp" => "exec,size=#{options[:tmpfs_tmp_size]},mode=1777",
         "/home/agent/.cache" => "exec,size=#{options[:tmpfs_cache_size]},mode=0755"
-      }
+      )
 
       # Claude CLI needs to write session data, project indexes, todos, debug
       # logs, and stats under ~/.claude. A writable tmpfs lets it do so without
@@ -2026,6 +2051,35 @@ module Containers
       proxy_port = Rails.application.config.x.paid_proxy_port
       proxy_host = network_contract.restricted? ? "paid-proxy" : "web"
       "http://#{proxy_host}:#{proxy_port}"
+    end
+
+    def validate_backend_mount_support!
+      return if backend.supports_host_paths?
+
+      unsupported_mounts = []
+      unsupported_mounts << "worktree path #{host_worktree_path}" if host_worktree_path.present?
+      if host_only_auth_source?(claude_config_host_path, ".credentials.json", claude_local_config_path)
+        unsupported_mounts << "Claude subscription auth at #{claude_config_host_path}"
+      end
+      if codex_subscription_auth_host_mount_path.present?
+        unsupported_mounts << "Codex subscription auth at #{codex_subscription_auth_host_mount_path}"
+      end
+      if host_only_auth_source?(gemini_config_host_path, "oauth_creds.json", gemini_local_config_path)
+        unsupported_mounts << "Gemini subscription auth at #{gemini_config_host_path}"
+      end
+      if host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path)
+        unsupported_mounts << "Copilot subscription auth at #{copilot_config_host_path}"
+      end
+      return if unsupported_mounts.empty?
+
+      raise ProvisionError,
+        "Backend #{backend.identifier} does not support required host paths: #{unsupported_mounts.join(', ')}"
+    end
+
+    def host_only_auth_source?(host_path, marker_file, local_path)
+      return false unless host_path.present? && File.file?(File.join(host_path, marker_file))
+
+      local_path.blank? || !File.file?(File.join(local_path, marker_file))
     end
 
     # Returns the Docker-host path to the Claude config directory.

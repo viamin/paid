@@ -60,7 +60,7 @@ RSpec.describe Containers::Provision, ".reconnect", :no_db do
     expect(remote_backend).to have_received(:get_container).with(container_id)
     expect(remote_backend).to have_received(:stop_container).with(container, timeout: 0)
     expect(remote_backend).to have_received(:delete_container).with(container, force: true, v: true)
-    expect(remote_backend).to have_received(:get_volume).with("paid-workspace-456")
+    expect(remote_backend).to have_received(:get_volume).with("paid-workspace-456", host: "remote")
     expect(remote_backend).to have_received(:delete_volume).with(volume)
   end
 end
