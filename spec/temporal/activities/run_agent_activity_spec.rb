@@ -2971,6 +2971,53 @@ expect(container_service).to receive(:execute).with(
         expect(result[:success]).to be true
       end
 
+      it "detects a short standalone rate limit error returned with exit code 0" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "Free model usage limit reached. Please try again later.", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "detects a weekly limit error returned with exit code 0" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "detects a short rate limit line wrapped in otherwise successful output" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "OK.\nWeekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
       it "detects ProviderModelNotFoundError returned with exit code 0" do
         model_not_found_stderr = <<~ERR
           Error: Model not found: glm-5.1/.
@@ -3080,6 +3127,38 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.rate_limited_until).to be_present
       end
 
+      it "classifies kilocode glm free model usage limit wording as a rate limit" do
+        glm_rate_limit = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", stderr: "Free model usage limit reached. Please try again later.", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(glm_rate_limit)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
+      it "classifies weekly limit wording as a rate limit" do
+        weekly_rate_limit = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", stderr: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(weekly_rate_limit)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
       it "executes a rate-limit fallback entry for the same runner key" do
         fallback_provider = create_claude_rate_limit_fallback_provider
 
@@ -3093,7 +3172,7 @@ expect(container_service).to receive(:execute).with(
         expect_same_provider_rate_limit_fallback_execution(fallback_provider)
       end
 
-      it "skips a rate-limit fallback entry whose ProviderState is already rate limited" do
+      it "skips a rate-limit fallback entry whose RunnerState is already rate limited" do
         fallback_provider = create_claude_rate_limit_fallback_provider
         fallback_provider.user.runner_states.find_or_create_by!(runner_name: fallback_provider.routing_key).update!(
           rate_limited_until: 2.hours.from_now
@@ -3493,10 +3572,10 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "executes without MCP flags when no servers are configured" do
-expect(container_service).to receive(:execute).with(
-            satisfy { |cmd| cmd.is_a?(Array) && !cmd[2].include?("--mcp-config") },
-            hash_including(timeout: anything)
-          ).and_return(exec_success)
+        expect(container_service).to receive(:execute).with(
+          satisfy { |cmd| cmd.is_a?(Array) && !cmd[2].include?("--mcp-config") },
+          hash_including(timeout: anything)
+        ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
