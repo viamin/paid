@@ -7,6 +7,10 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      def supports_host_paths?
+        true
+      end
+
       def owns_host?(_host)
         false
       end

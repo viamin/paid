@@ -89,6 +89,10 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.identifier).to eq("swarm")
   end
 
+  it "does not advertise host path support" do
+    expect(backend.supports_host_paths?).to be(false)
+  end
+
   it "treats the landing node hostname as belonging to the active swarm backend" do
     expect(backend.owns_host?("worker-1")).to be(true)
     expect(backend.owns_host?("other-host")).to be(false)
@@ -123,6 +127,14 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
 
     expect(service.info.dig("State", "Running")).to be(true)
     expect(service.info.dig("Config", "Labels", "paid.agent_run_id")).to eq("42")
+  end
+
+  it "builds service handles from provided payloads without re-fetching immediately" do
+    backend.get_container(service_id)
+
+    expect(a_request(:get, "#{manager_url}/services/#{service_id}")).to have_been_made.once
+    expect(a_request(:get, "#{manager_url}/tasks")
+      .with(query: hash_including("filters" => /#{service_id}/))).to have_been_made.once
   end
 
   def stub_manager_get(path, response, query: nil)

@@ -16,7 +16,7 @@ module Containers
       end
 
       class ServiceHandle
-        attr_reader :backend, :id, :info
+        attr_reader :backend, :id, :info, :task
 
         def initialize(backend:, service:, task: nil)
           @backend = backend
@@ -24,7 +24,7 @@ module Containers
           @service = service
           @task = task
           @info = {}
-          refresh!
+          rebuild_info!
         end
 
         def exec(command, options = {}, &block)
@@ -34,7 +34,7 @@ module Containers
         def refresh!
           @service = backend.inspect_service(id)
           @task = backend.primary_task_for(id)
-          @info = backend.service_info(@service, @task)
+          rebuild_info!
           self
         end
 
@@ -42,8 +42,10 @@ module Containers
           id
         end
 
-        def task
-          @task
+        private
+
+        def rebuild_info!
+          @info = backend.service_info(@service, @task)
         end
       end
 
@@ -74,6 +76,10 @@ module Containers
 
       def identifier
         "swarm"
+      end
+
+      def supports_host_paths?
+        false
       end
 
       def owns_host?(host)

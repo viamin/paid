@@ -46,6 +46,19 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  def stub_provision_steps(provision)
+    allow(provision).to receive(:log_system)
+    allow(provision).to receive(:prepare_workspace!)
+    allow(provision).to receive(:ensure_network!)
+    allow(provision).to receive(:fix_all_ownership!)
+    allow(provision).to receive(:seed_opencode_database!)
+    allow(provision).to receive(:seed_codex_credentials!)
+    allow(provision).to receive(:seed_gemini_credentials!)
+    allow(provision).to receive(:seed_copilot_credentials!)
+    allow(provision).to receive(:seed_claude_credentials!)
+    allow(provision).to receive(:apply_network_restrictions!)
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -221,6 +234,27 @@ RSpec.describe Containers::Provision do
 
         expect(result).to be_success
         expect(result[:container_id]).to eq("abc123container")
+      end
+
+      it "prepares heartbeat directories only when the backend supports host paths" do
+        backend = instance_double(
+          Containers::Backends::Base,
+          supports_host_paths?: false,
+          create_container: mock_container,
+          start_container: true,
+          container_host_for: "worker-1"
+        )
+        provision = described_class.new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
+
+        stub_provision_steps(provision)
+        allow(provision).to receive(:prepare_heartbeat_dir!)
+
+        result = provision.provision
+
+        expect(result).to be_success
+        expect(provision).not_to have_received(:prepare_heartbeat_dir!)
+        expect(backend).to have_received(:create_container)
+        expect(backend).to have_received(:start_container).with(mock_container)
       end
 
       it "logs the provision start and success" do

@@ -187,7 +187,7 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
-      prepare_heartbeat_dir! unless backend.identifier == "swarm"
+      prepare_heartbeat_dir! if backend.supports_host_paths?
       prepare_workspace!
       ensure_network!
       @container = create_container
