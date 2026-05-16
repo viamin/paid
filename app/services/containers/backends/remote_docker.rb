@@ -42,6 +42,10 @@ module Containers
         false
       end
 
+      def owns_host?(host)
+        host.present? && host.to_s == remote_host
+      end
+
       def ping
         Docker.ping(connection)
       end
@@ -142,6 +146,12 @@ module Containers
 
       def derive_identifier(url)
         URI.parse(url).host
+      rescue URI::InvalidURIError
+        nil
+      end
+
+      def remote_host
+        @remote_host ||= URI.parse(@docker_url).host
       rescue URI::InvalidURIError
         nil
       end

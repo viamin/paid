@@ -35,6 +35,13 @@ RSpec.describe Containers, ".backend_for", :no_db do
     expect(described_class.backend_for("worker-1")).to eq(swarm_backend)
   end
 
+  it "keeps routing persisted remote docker hostnames back to the active backend" do
+    remote_backend = instance_double(Containers::Backends::Base, identifier: "remote", owns_host?: true)
+    allow(described_class).to receive(:backend).and_return(remote_backend)
+
+    expect(described_class.backend_for("nas.internal")).to eq(remote_backend)
+  end
+
   it "routes blank legacy hosts to the local backend even when a remote backend is active" do
     remote_backend = instance_double(Containers::Backends::Base, identifier: "remote", owns_host?: false)
     allow(described_class).to receive(:backend).and_return(remote_backend)
