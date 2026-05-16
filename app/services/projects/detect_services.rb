@@ -92,7 +92,20 @@ module Projects
     # no ServiceContainer exists with an exactly-matching name. Allows containers
     # named "Screenshot Postgres" or "Dev Redis" to be matched to the
     # "postgres" / "redis" services detected from the repo.
-    IMAGE_SERVICE_PATTERNS = COMPOSE_IMAGE_PATTERNS.invert.freeze
+    #
+    # Defined explicitly (rather than derived from COMPOSE_IMAGE_PATTERNS.invert)
+    # so that adding a second regex for the same service (e.g. /\bpg\b/ for
+    # "postgres") does not silently drop entries — Hash#invert keeps only the
+    # last key when values collide.
+    IMAGE_SERVICE_PATTERNS = {
+      "postgres" => /postgres/,
+      "redis" => /redis/,
+      "mysql" => /mysql|mariadb/,
+      "mongodb" => /mongo/,
+      "elasticsearch" => /elasticsearch|opensearch/,
+      "memcached" => /memcache/,
+      "selenium" => /selenium/
+    }.freeze
 
     attr_reader :project
 

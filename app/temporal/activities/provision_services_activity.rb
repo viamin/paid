@@ -48,8 +48,8 @@ module Activities
 
       added = result.apply(project)
 
+      project.service_containers.reset if result.matched.any?
       if added.any?
-        project.service_containers.reset
         logger.info(
           message: "agent_execution.service_containers_auto_linked",
           project_id: project.id,
