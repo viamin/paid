@@ -6098,13 +6098,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 5)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true, reviews: [])
       end
 
@@ -6204,13 +6198,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 5)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true,
           checks: [ { name: "rspec", conclusion: "failure" } ])
       end
@@ -6251,13 +6239,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 3)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true, reviews: [])
       end
 
@@ -6629,13 +6611,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 3)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true, reviews: [])
       end
 
