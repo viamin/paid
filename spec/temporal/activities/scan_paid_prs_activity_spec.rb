@@ -4604,7 +4604,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             project: project,
             goal: "create_pr",
             source_pull_request_number: 42,
-            created_at: 2.hours.ago)
+            created_at: 2.hours.ago,
+            updated_at: 2.hours.ago,
+            completed_at: 2.hours.ago)
         end
         stub_github_for_pr(draft: true)
       end
@@ -4625,7 +4627,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             project: project,
             goal: "create_pr",
             source_pull_request_number: 42,
-            created_at: i.minutes.ago)
+            created_at: i.minutes.ago,
+            updated_at: i.minutes.ago,
+            completed_at: i.minutes.ago)
         end
 
         result = activity.execute(project_id: project.id)
@@ -4665,7 +4669,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: goal,
           status: status,
           iterations: iterations,
-          created_at: created_at)
+          created_at: created_at,
+          updated_at: created_at,
+          completed_at: created_at)
       end
 
       it "escalates after 3 consecutive unsuccessful draft runs once the PR is stuck past the no-progress window" do
