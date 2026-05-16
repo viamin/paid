@@ -84,9 +84,9 @@ module Coordination
       {
         error_message: current_error_message.to_s.truncate(1000),
         status: current_status,
-        final_provider: current_final_provider,
-        providers_attempted: current_providers_attempted,
-        provider_switches: current_provider_switches,
+        final_runner: current_final_runner,
+        runners_attempted: current_runners_attempted,
+        runner_switches: current_runner_switches,
         guardrail_violation_type: current_guardrail_violation_type
       }.compact_blank
     end
@@ -98,11 +98,11 @@ module Coordination
 
         case action
         when "retry_alternate_provider"
-          params[:exclude_providers] = attempted_provider_identifiers
+          params[:exclude_runners] = attempted_runner_identifiers
         when "escalate_model"
-          params[:current_provider] = preferred_provider_identifier
+          params[:current_runner] = preferred_runner_identifier
         when "retry_same_provider"
-          params[:runner] = preferred_provider_identifier
+          params[:runner] = preferred_runner_identifier
         end
       end
     end
@@ -117,14 +117,16 @@ module Coordination
       }.compact
     end
 
-    def attempted_provider_identifiers
-      Array(current_providers_attempted).filter_map do |attempt|
-        attempt.is_a?(Hash) ? attempt["provider"] : attempt
+    def attempted_runner_identifiers
+      Array(current_runners_attempted).filter_map do |attempt|
+        next attempt unless attempt.is_a?(Hash)
+
+        attempt["runner"] || attempt["provider"]
       end
     end
 
-    def preferred_provider_identifier
-      attempted_provider_identifiers.last || current_final_provider || agent_run.effective_provider
+    def preferred_runner_identifier
+      attempted_runner_identifiers.last || current_final_runner || agent_run.effective_runner
     end
 
     def current_status
@@ -139,22 +141,30 @@ module Coordination
       snapshot_value(:guardrail_violation_type)
     end
 
-    def current_final_provider
-      snapshot_value(:final_provider)
+    def current_final_runner
+      snapshot_value(:final_runner, :final_provider)
     end
 
-    def current_providers_attempted
-      snapshot_value(:providers_attempted)
+    def current_runners_attempted
+      snapshot_value(:runners_attempted, :providers_attempted)
     end
 
-    def current_provider_switches
-      snapshot_value(:provider_switches)
+    def current_runner_switches
+      snapshot_value(:runner_switches, :provider_switches)
     end
 
-    def snapshot_value(key)
-      return run_snapshot[key] if run_snapshot.key?(key)
+    def snapshot_value(key, *legacy_keys)
+      keys = [ key, *legacy_keys ]
+      keys.each do |candidate|
+        return run_snapshot[candidate] if run_snapshot.key?(candidate)
 
-      agent_run.public_send(key)
+        string_key = candidate.to_s
+        return run_snapshot[string_key] if run_snapshot.key?(string_key)
+      end
+
+      keys.each do |candidate|
+        return agent_run.public_send(candidate) if agent_run.respond_to?(candidate)
+      end
     end
 
     class Result

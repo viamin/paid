@@ -4,7 +4,7 @@ module Projects
   class AgentRunsController < ApplicationController
     include AgentRunCancellable
 
-    NoRunnableProviderError = Class.new(StandardError)
+    NoRunnableRunnerError = Class.new(StandardError)
 
     before_action :set_project
     before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate ]
@@ -391,7 +391,7 @@ module Projects
         decision_point: "manual_retry",
         signals: {
           selected_agent_type: agent_type,
-          selected_provider: retry_runner&.routing_key || retry_runner&.runner_key
+          selected_runner: retry_runner&.routing_key || retry_runner&.runner_key
         },
         result: { new_agent_run_id: new_run.id }
       )
@@ -405,7 +405,7 @@ module Projects
         decision_point: "manual_retry",
         signals: {
           selected_agent_type: agent_type,
-          selected_provider: retry_runner&.routing_key || retry_runner&.runner_key
+          selected_runner: retry_runner&.routing_key || retry_runner&.runner_key
         },
         error: e
       )
@@ -626,7 +626,7 @@ module Projects
         requested_runner_identifier: requested_runner_identifier,
         goal: goal
       )
-      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_runner
+      raise NoRunnableRunnerError, "No runnable runner could be resolved for this project." unless resolved_runner
 
       resolved_agent_type = runner_key_to_agent_type(resolved_runner.runner_key)
 
@@ -653,7 +653,7 @@ module Projects
       )
       ProcessRunQueueJob.perform_later
       :enqueued
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       Rails.logger.warn(
         message: "agent_execution.resume_run_skipped",
         reason: e.message,
@@ -710,7 +710,7 @@ module Projects
       end
 
       redirect_to project_path(@project), notice: notice
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordInvalid => e
       redirect_to on_error_path, alert: e.message
@@ -951,7 +951,7 @@ module Projects
         "#{prs.size} agent runs queued for PR review."
       end
       redirect_to project_path(@project), notice: notice
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       # Only proxy_token has a unique index; duplicate PR runs are caught
@@ -1008,7 +1008,7 @@ module Projects
         "#{issues.size} agent runs queued for issue enhancement."
       end
       redirect_to project_path(@project), notice: notice
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."

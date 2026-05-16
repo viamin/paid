@@ -1764,7 +1764,7 @@ RSpec.describe "AgentRuns" do
         pr.update!(auto_continue_paused: true)
 
         allow(AgentRun).to receive(:create!)
-          .and_raise(Projects::AgentRunsController::NoRunnableProviderError, "No runnable runner")
+          .and_raise(Projects::AgentRunsController::NoRunnableRunnerError, "No runnable runner")
 
         expect {
           expect {
