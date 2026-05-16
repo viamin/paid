@@ -30,7 +30,10 @@ module Knowledge
     end
 
     def self.available?
-      Containers.backend.ping == "OK"
+      backend = Containers.backend
+      return false unless backend.supports_host_paths?
+
+      backend.ping == "OK"
     rescue Excon::Error, Docker::Error::DockerError
       false
     end
@@ -63,6 +66,9 @@ module Knowledge
 
     def ensure_container!
       return if @container
+      unless Containers.backend.supports_host_paths?
+        raise ContainerError, "Embedding containers require a backend with host path support"
+      end
 
       cleanup_input_dir!
       NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)

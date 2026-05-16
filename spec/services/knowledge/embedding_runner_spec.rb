@@ -5,12 +5,28 @@ require "rails_helper"
 RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   let(:project) { Struct.new(:id).new(42) }
   let(:remote_backend) { instance_double(Containers::Backends::Base, remote?: true) }
+  let(:local_backend) { instance_double(Containers::Backends::Base, supports_host_paths?: true, ping: "OK") }
   let(:knowledge_run) do
     Struct.new(:id) do
       def ensure_proxy_token!
         "proxy-token"
       end
     end.new(7)
+  end
+
+  describe ".available?" do
+    it "returns false when the backend cannot mount host paths" do
+      backend = instance_double(Containers::Backends::Base, supports_host_paths?: false)
+      allow(Containers).to receive(:backend).and_return(backend)
+
+      expect(described_class.available?).to be(false)
+    end
+
+    it "checks Docker availability when host paths are supported" do
+      allow(Containers).to receive(:backend).and_return(local_backend)
+
+      expect(described_class.available?).to be(true)
+    end
   end
 
   describe "#container_config" do
@@ -47,13 +63,25 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   end
 
   describe "#ensure_container!" do
+    it "fails fast when the backend cannot mount host paths" do
+      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      allow(Containers).to receive(:backend).and_return(remote_backend)
+      allow(remote_backend).to receive(:supports_host_paths?).and_return(false)
+
+      expect {
+        runner.send(:ensure_container!)
+      }.to raise_error(described_class::ContainerError, /host path support/)
+    end
+
     it "applies firewall rules after the container starts" do
       runner = described_class.new(project: project, knowledge_run: knowledge_run)
       container = instance_double(Docker::Container, start: true)
 
+      allow(Containers).to receive(:backend).and_return(local_backend)
+      allow(local_backend).to receive(:create_container).and_return(container)
+      allow(local_backend).to receive(:start_container)
       allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-embedding-runner-test")
       allow(NetworkPolicy).to receive(:ensure_network!)
-      allow(Docker::Container).to receive(:create).and_return(container)
       allow(NetworkPolicy).to receive(:apply_firewall_rules)
 
       runner.send(:ensure_container!)
