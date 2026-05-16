@@ -1643,6 +1643,8 @@ class AgentRun < ApplicationRecord
   end
   private :log_orchestration_decision
 
+  public
+
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
@@ -1658,6 +1660,7 @@ class AgentRun < ApplicationRecord
   def base_prompt
     prompt_for_goal
   end
+  private :base_prompt
 
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures
