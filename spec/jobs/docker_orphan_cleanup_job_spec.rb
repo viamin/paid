@@ -43,6 +43,33 @@ RSpec.describe DockerOrphanCleanupJob do
   end
 
   describe "#perform" do
+    it "cleans up resources across all registered backends" do
+      local_backend = instance_double(Containers::Backends::Base, identifier: "local")
+      remote_backend = instance_double(Containers::Backends::Base, identifier: "worker-1")
+      local_container = make_container(labels: { "paid.agent_run_id" => "999999" })
+      remote_container = make_container(labels: { "paid.agent_run_id" => "888888" })
+
+      allow(Containers).to receive(:all_backends).and_return([ local_backend, remote_backend ])
+      allow(local_backend).to receive(:list_containers).with(all: true, filters: agent_filter).and_return([ local_container ])
+      allow(local_backend).to receive(:list_containers).with(all: true, filters: pool_filter).and_return([])
+      allow(local_backend).to receive(:list_containers).with(all: true, filters: service_filter).and_return([])
+      allow(local_backend).to receive(:list_volumes).and_return([])
+      allow(local_backend).to receive(:stop_container).with(local_container, timeout: 10)
+      allow(local_backend).to receive(:delete_container).with(local_container, force: true, v: true)
+
+      allow(remote_backend).to receive(:list_containers).with(all: true, filters: agent_filter).and_return([ remote_container ])
+      allow(remote_backend).to receive(:list_containers).with(all: true, filters: pool_filter).and_return([])
+      allow(remote_backend).to receive(:list_containers).with(all: true, filters: service_filter).and_return([])
+      allow(remote_backend).to receive(:list_volumes).and_return([])
+      allow(remote_backend).to receive(:stop_container).with(remote_container, timeout: 10)
+      allow(remote_backend).to receive(:delete_container).with(remote_container, force: true, v: true)
+
+      job.perform
+
+      expect(local_backend).to have_received(:delete_container).with(local_container, force: true, v: true)
+      expect(remote_backend).to have_received(:delete_container).with(remote_container, force: true, v: true)
+    end
+
     context "with agent containers" do
       before do
         stub_no_volumes

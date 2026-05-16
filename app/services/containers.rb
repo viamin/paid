@@ -17,5 +17,21 @@ module Containers
 
       Backends::Resolver.for(host.to_sym)
     end
+
+    def all_backends
+      active_backend = backend
+      backends = { active_backend.identifier => active_backend }
+
+      Backends::Resolver.backend_types.each do |backend_type|
+        candidate = Backends::Resolver.for(backend_type)
+        backends[candidate.identifier] = candidate
+      end
+
+      backends.values
+    end
+
+    def remote_backend_active?
+      backend.remote?
+    end
   end
 end

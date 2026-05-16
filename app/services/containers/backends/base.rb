@@ -3,6 +3,10 @@
 module Containers
   module Backends
     class Base
+      def remote?
+        false
+      end
+
       def identifier
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end

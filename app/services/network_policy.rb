@@ -2,8 +2,9 @@
 
 require "docker-api"
 require "ipaddr"
-require "net/http"
 require "json"
+require "net/http"
+require "uri"
 
 # Manages Docker network selection and isolation for agent containers.
 #
@@ -100,19 +101,19 @@ class NetworkPolicy
     #
     # @return [Docker::Network] the agent network
     # @raise [Error] if network creation fails
-    def ensure_network!(network: NETWORK_NAME)
-      Containers.backend.get_network(network)
+    def ensure_network!(network: NETWORK_NAME, backend: Containers.backend)
+      backend.get_network(network)
     rescue Docker::Error::NotFoundError
       raise Error, "Docker network #{network} does not exist" unless network == NETWORK_NAME
 
-      create_network
+      create_network(backend: backend)
     end
 
     # Checks whether the agent network exists.
     #
     # @return [Boolean]
-    def network_exists?
-      Containers.backend.get_network(NETWORK_NAME)
+    def network_exists?(backend: Containers.backend)
+      backend.get_network(NETWORK_NAME)
       true
     rescue Docker::Error::NotFoundError
       false
@@ -133,9 +134,9 @@ class NetworkPolicy
     # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
     # @param service_destinations [Array<Hash>] service containers to allow,
     #   each with :ip and :port keys (e.g., { ip: "172.28.0.5", port: 5432 })
-    def apply_firewall_rules(container, github_ips: nil, proxy_host: nil, service_destinations: [])
+    def apply_firewall_rules(container, github_ips: nil, proxy_host: nil, service_destinations: [], backend: Containers.backend)
       github_ips ||= DEFAULT_GITHUB_IPS
-      proxy_host ||= default_proxy_host
+      proxy_host ||= default_proxy_host(backend: backend)
 
       validated_ips = github_ips.map { |cidr| validate_cidr!(cidr) }
       validated_host = validate_host!(proxy_host)
@@ -146,7 +147,7 @@ class NetworkPolicy
         service_destinations: service_destinations
       )
 
-      _stdout, stderr, exit_code = container.exec([ "sh", "-c", script ])
+      _stdout, stderr, exit_code = backend.exec_in_container(container, [ "sh", "-c", script ])
 
       return if exit_code == 0
 
@@ -294,7 +295,7 @@ class NetworkPolicy
       ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
     end
 
-    def create_network
+    def create_network(backend:)
       Rails.logger.info(
         message: "network_policy.create_network",
         network: NETWORK_NAME,
@@ -315,7 +316,7 @@ class NetworkPolicy
         }
       end
 
-      Containers.backend.create_network(NETWORK_NAME, config)
+      backend.create_network(NETWORK_NAME, config)
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create agent network: #{e.message}"
     end
@@ -336,10 +337,23 @@ class NetworkPolicy
       host
     end
 
-    def default_proxy_host
+    def default_proxy_host(backend: Containers.backend)
+      if backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].present?
+        return external_proxy_host
+      end
+
       # Default to the hostname used by agents to reach the secrets proxy.
       # This keeps firewall rules aligned with the container environment.
       "paid-proxy"
+    end
+
+    def external_proxy_host
+      uri = URI.parse(ENV.fetch("PAID_PROXY_EXTERNAL_URL"))
+      host = uri.host.presence or raise Error, "Invalid PAID_PROXY_EXTERNAL_URL: missing host"
+
+      host
+    rescue URI::InvalidURIError => e
+      raise Error, "Invalid PAID_PROXY_EXTERNAL_URL: #{e.message}"
     end
 
     def build_firewall_script(github_ips:, proxy_host:, service_destinations: [])

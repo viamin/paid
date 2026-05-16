@@ -16,7 +16,7 @@ RSpec.describe NetworkPolicy do
   end
 
   let(:mock_container) do
-    instance_double(Docker::Container, id: "abc123", exec: [ [], [], 0 ])
+    instance_double(Docker::Container, id: "abc123")
   end
 
   describe ".ensure_network!" do
@@ -155,11 +155,11 @@ RSpec.describe NetworkPolicy do
   describe ".apply_firewall_rules" do
     context "when rules apply successfully" do
       before do
-        allow(mock_container).to receive(:exec).and_return([ [], [], 0 ])
+        allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
       end
 
       it "executes a shell script via exec" do
-        expect(mock_container).to receive(:exec) do |cmd|
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           expect(cmd.length).to eq(3)
           expect(cmd[0]).to eq("sh")
           expect(cmd[1]).to eq("-c")
@@ -171,7 +171,7 @@ RSpec.describe NetworkPolicy do
       end
 
       it "includes all required iptables rules in the script" do
-        expect(mock_container).to receive(:exec) do |cmd|
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           script = cmd[2]
           expect(script).to include("iptables -P OUTPUT DROP")
           expect(script).to include("iptables -A OUTPUT -o lo -j ACCEPT")
@@ -186,7 +186,7 @@ RSpec.describe NetworkPolicy do
       end
 
       it "includes GitHub IP rules" do
-        expect(mock_container).to receive(:exec) do |cmd|
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           script = cmd[2]
           described_class::DEFAULT_GITHUB_IPS.each do |cidr|
             expect(script).to include("-d #{cidr} -p tcp --dport 443")
@@ -201,7 +201,7 @@ RSpec.describe NetworkPolicy do
       it "accepts custom GitHub IPs" do
         custom_ips = [ "10.0.0.0/8" ]
 
-        expect(mock_container).to receive(:exec) do |cmd|
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           script = cmd[2]
           expect(script).to include("-d 10.0.0.0/8 -p tcp --dport 443")
           expect(script).not_to include("140.82.112.0/20")
@@ -212,7 +212,7 @@ RSpec.describe NetworkPolicy do
       end
 
       it "accepts custom proxy host" do
-        expect(mock_container).to receive(:exec) do |cmd|
+        expect(backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           script = cmd[2]
           expect(script).to include("-d 10.0.0.1 -p tcp --dport #{described_class::SECRETS_PROXY_PORT}")
           [ [], [], 0 ]
@@ -220,11 +220,24 @@ RSpec.describe NetworkPolicy do
 
         described_class.apply_firewall_rules(mock_container, proxy_host: "10.0.0.1")
       end
+
+      it "uses PAID_PROXY_EXTERNAL_URL for remote backends" do
+        remote_backend = instance_double(Containers::Backends::Base, remote?: true, exec_in_container: [ [], [], 0 ])
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("https://proxy.example.test:3443")
+
+        expect(remote_backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
+          expect(cmd[2]).to include("-d proxy.example.test -p tcp --dport #{described_class::SECRETS_PROXY_PORT}")
+          [ [], [], 0 ]
+        end
+
+        described_class.apply_firewall_rules(mock_container, backend: remote_backend)
+      end
     end
 
     context "when rules fail to apply" do
       before do
-        allow(mock_container).to receive(:exec)
+        allow(backend).to receive(:exec_in_container)
           .and_return([ [], [ "iptables: Permission denied" ], 1 ])
       end
 
@@ -255,6 +268,15 @@ RSpec.describe NetworkPolicy do
       it "raises NetworkPolicy::Error for backtick injection" do
         expect { described_class.apply_firewall_rules(mock_container, proxy_host: "`whoami`") }
           .to raise_error(described_class::Error, /Invalid proxy host/)
+      end
+
+      it "raises NetworkPolicy::Error for invalid PAID_PROXY_EXTERNAL_URL" do
+        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("not a url")
+
+        expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
+          .to raise_error(described_class::Error, /Invalid PAID_PROXY_EXTERNAL_URL/)
       end
     end
   end
