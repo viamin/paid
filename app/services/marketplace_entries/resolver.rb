@@ -52,6 +52,8 @@ module MarketplaceEntries
     def attach_manual_entries!(selections)
       return if effective_manual_entry_ids.empty?
 
+      # Preserve the user's explicit selection order instead of the database
+      # relation order so attachment positions remain stable in the run snapshot.
       compatible_entries_by_id = compatible_entries.index_by(&:id)
       resolved_manual_entry_ids = []
 

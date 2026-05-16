@@ -84,6 +84,22 @@ RSpec.describe MarketplaceEntries::Resolver do
     )
   end
 
+  it "preserves explicit manual selection order instead of candidate relation order" do
+    project = create(:project)
+    z_entry = create_manual_entry_for(project.account, name: "Zed skill")
+    a_entry = create_manual_entry_for(project.account, name: "Alpha skill")
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      manual_entry_ids: [ z_entry.id, a_entry.id ]
+    )
+
+    expect(results.map(&:entry)).to eq([ z_entry, a_entry ])
+    expect(results.map(&:source)).to eq([ "manual", "manual" ])
+  end
+
   def create_automatic_entry_for(account)
     entry = create(:marketplace_entry, account: account, name: "Shared skill")
     version = create(:marketplace_entry_version,
@@ -94,6 +110,18 @@ RSpec.describe MarketplaceEntries::Resolver do
       })
     entry.update!(current_version: version)
     create(:marketplace_entry_rule, marketplace_entry: entry, mode: "automatic", conditions: {})
+    entry
+  end
+
+  def create_manual_entry_for(account, name:)
+    entry = create(:marketplace_entry, account: account, name: name)
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "attachment_strategy" => "prompt_append",
+        "content" => "#{name} instructions"
+      })
+    entry.update!(current_version: version)
     entry
   end
 end
