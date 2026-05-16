@@ -21,7 +21,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       stub_const("ProjectDouble", Class.new)
       stub_const("GithubClientDouble", Class.new)
-      stub_const("ProgressStateDouble", Class.new)
+      stub_const("ProgressStateDouble", Class.new do
+        def latest_unsuccessful_review?; end
+        def escalation_worthy?(limit:); end
+      end)
       stub_const("IssueDouble", Class.new)
       stub_const("PrDataDouble", Class.new do
         def [](key); end
@@ -246,6 +249,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result).to eq(:dismissed)
         expect(activity).not_to have_received(:escalate_trigger)
       end
+    end
+  end
+
+  describe "#failure_streak_limit_reached?", :no_db do
+    before do
+      stub_const("FailureStreakProjectStub", Class.new)
+      stub_const("FailureStreakIssueStub", Class.new)
+      stub_const("FailureStreakProgressStateStub", Class.new do
+        def escalation_worthy?(limit:); end
+        def latest_unsuccessful_review?; end
+      end)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(FailureStreakProjectStub, max_draft_review_rounds: 3) }
+    let(:issue) { instance_double(FailureStreakIssueStub, pr_review_phase: "draft") }
+    let(:progress_state) do
+      instance_double(
+        FailureStreakProgressStateStub,
+        escalation_worthy?: true,
+        latest_unsuccessful_review?: true
+      )
+    end
+
+    it "suppresses the unified streak gate when a retryable review failure can still be retried" do
+      allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(true)
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?).with(project, issue, progress_state:).and_return(false)
+
+      expect(activity.send(:failure_streak_limit_reached?, project, issue, progress_state)).to be(false)
+    end
+
+    it "keeps the unified streak gate active once the review retry path itself requires escalation" do
+      allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(true)
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?).with(project, issue, progress_state:).and_return(true)
+
+      expect(activity.send(:failure_streak_limit_reached?, project, issue, progress_state)).to be(true)
     end
   end
 

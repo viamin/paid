@@ -1105,7 +1105,10 @@ module Activities
     end
 
     def failure_streak_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
-      progress_state.escalation_worthy?(limit: pr_failure_limit(project, issue))
+      return false unless progress_state.escalation_worthy?(limit: pr_failure_limit(project, issue))
+      return false if suppress_failure_streak_for_review_retry?(project, issue, progress_state)
+
+      true
     end
 
     def failure_streak_reason(project, issue, progress_state = pr_progress_state(project, issue))
@@ -1129,6 +1132,18 @@ module Activities
 
     def suppress_followup_limit_for_review_failures?(project, issue, progress_state)
       return false unless progress_state.latest_unsuccessful_review?
+
+      !review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
+    end
+
+    # When the newest failed automatic PR run was a paid_agent review-goal run
+    # that still has retry budget remaining, let the retry flow continue rather
+    # than escalating on the broader unified PR streak. This preserves the
+    # single cross-phase streak for true "stuck" PRs while still giving the
+    # review-goal retry path a chance to recover first.
+    def suppress_failure_streak_for_review_retry?(project, issue, progress_state)
+      return false unless progress_state.latest_unsuccessful_review?
+      return false unless review_goal_retry_needed?(project, issue, progress_state:)
 
       !review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
     end
