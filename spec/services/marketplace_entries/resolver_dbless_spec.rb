@@ -58,7 +58,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(results.map(&:source)).to eq([ "automatic", "team_default" ])
   end
 
-  it "does not treat manual selections as consent for unrelated team-default entries" do
+  it "still attaches unrelated team-default entries when the user also makes manual selections" do
     project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :provider, :agent_run_marketplace_entries)
@@ -81,8 +81,8 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
 
     results = resolver.call
 
-    expect(results.map(&:entry)).to eq([ automatic_entry, manual_entry ])
-    expect(results.map(&:source)).to eq([ "automatic", "manual" ])
+    expect(results.map(&:entry)).to eq([ automatic_entry, team_default_entry, manual_entry ])
+    expect(results.map(&:source)).to eq([ "automatic", "team_default", "manual" ])
   end
 
   it "upgrades to manual when the user explicitly selects an automatically matched entry" do
