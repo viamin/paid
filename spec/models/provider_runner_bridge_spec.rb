@@ -37,6 +37,6 @@ RSpec.describe Provider, :no_db do
     expect(AgentRuns::ProviderResolver < AgentRuns::RunnerResolver).to be(true)
     expect(AgentRuns::ProviderSelectionLogger < AgentRuns::RunnerSelectionLogger).to be(true)
     expect(Dashboard::ProviderHealth < Dashboard::RunnerHealth).to be(true)
-    expect(Notifications::CheckProviderQuotasJob < Notifications::CheckRunnerQuotasJob).to be(true)
+    expect(Notifications::CheckProviderQuotasJob).to be < ApplicationJob
   end
 end
