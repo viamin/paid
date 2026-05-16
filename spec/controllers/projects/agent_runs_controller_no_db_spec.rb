@@ -178,8 +178,9 @@ RSpec.describe Projects::AgentRunsController, :no_db do
   describe "#marketplace_auto_attach_required_for_current_account?" do
     let(:controller) { described_class.new }
 
-    it "returns false when the current account has no tenant settings" do
-      allow(controller).to receive(:current_account).and_return(double(tenant_setting: nil))
+    it "uses the project account and returns false when that account has no tenant settings" do
+      project_account = double(tenant_setting: nil)
+      controller.instance_variable_set(:@project, double(account: project_account))
 
       expect(controller.send(:marketplace_auto_attach_required_for_current_account?)).to be(false)
     end
@@ -222,8 +223,29 @@ RSpec.describe Projects::AgentRunsController, :no_db do
       ordered_scope = instance_double(ordered_scope_class)
       result_scope = Object.new
       account = instance_double(account_class, marketplace_entries: association)
+      project = double(account: account)
 
-      allow(controller).to receive(:current_account).and_return(account)
+      controller.instance_variable_set(:@project, project)
+      allow(association).to receive(:active).and_return(active_scope)
+      allow(active_scope).to receive(:where).and_return(where_chain)
+      allow(where_chain).to receive(:not).with(current_version_id: nil).and_return(filtered_scope)
+      allow(filtered_scope).to receive(:ordered).and_return(ordered_scope)
+      allow(ordered_scope).to receive(:includes).with(:current_version).and_return(result_scope)
+
+      expect(controller.send(:marketplace_entries_for_new_run)).to eq(result_scope)
+    end
+
+    it "does not rely on the ambient current_account" do
+      association = instance_double(association_class)
+      active_scope = instance_double(active_scope_class)
+      where_chain = instance_double(where_chain_class)
+      filtered_scope = instance_double(filtered_scope_class)
+      ordered_scope = instance_double(ordered_scope_class)
+      result_scope = Object.new
+      project_account = instance_double(account_class, marketplace_entries: association)
+
+      controller.instance_variable_set(:@project, double(account: project_account))
+      allow(controller).to receive(:current_account).and_raise("should not use current_account")
       allow(association).to receive(:active).and_return(active_scope)
       allow(active_scope).to receive(:where).and_return(where_chain)
       allow(where_chain).to receive(:not).with(current_version_id: nil).and_return(filtered_scope)

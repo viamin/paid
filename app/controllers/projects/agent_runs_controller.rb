@@ -705,11 +705,11 @@ module Projects
     end
 
     def marketplace_auto_attach_required_for_current_account?
-      current_account&.tenant_setting&.marketplace_auto_attach_required? || false
+      marketplace_account&.tenant_setting&.marketplace_auto_attach_required? || false
     end
 
     def marketplace_entries_for_new_run
-      current_account.marketplace_entries.active
+      marketplace_account.marketplace_entries.active
         .where.not(current_version_id: nil)
         .ordered
         .includes(:current_version)
@@ -953,6 +953,10 @@ module Projects
 
     def settings_owner
       @settings_owner ||= @project.effective_owner
+    end
+
+    def marketplace_account
+      @project.account
     end
 
     def enabled_retry_providers
