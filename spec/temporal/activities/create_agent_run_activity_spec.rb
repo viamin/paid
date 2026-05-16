@@ -356,6 +356,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       activity.execute(agent_run_id: queued_run.id)
 
+      queued_run.reload
       expect(queued_run.provider).to eq(codex_provider)
       expect(MarketplaceEntries::RerenderForRun).to have_received(:call).with(agent_run: queued_run)
       expect_provider_switch_resume_attachments(
