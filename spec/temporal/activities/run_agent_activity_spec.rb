@@ -2827,10 +2827,28 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      def insert_bounded_timeout_logs(agent_run)
+        now = Time.current
+        rows = [ {
+          agent_run_id: agent_run.id,
+          log_type: "stderr",
+          content: "Free tier limit reached. Please upgrade for higher usage.",
+          created_at: now - 5.minutes
+        } ]
+        rows.concat(Array.new(201) do |index|
+          {
+            agent_run_id: agent_run.id,
+            log_type: "stdout",
+            content: "runner still warming up: #{index}",
+            created_at: now - index.seconds
+          }
+        end)
+        AgentRunLog.insert_all!(rows)
+      end
+
       it "does not reclassify timeout when quota message falls outside the bounded log scan window" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
-          agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
-          250.times { |index| agent_run.log!("stdout", "runner still warming up: #{index}") }
+          insert_bounded_timeout_logs(agent_run)
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 

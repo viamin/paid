@@ -268,11 +268,12 @@ RSpec.describe AgentRun do
       end
 
       it "does not treat completed healthy-history runs as stale running" do
-        create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
-          :completed,
-          :review_goal,
-          duration_seconds: 120,
-          completed_at: 1.day.ago)
+        allow(described_class).to receive(:healthy_successful_runtime_stats_by_goal).and_return(
+          "review" => {
+            count: described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+            p95: 120.0
+          }
+        )
 
         stale_review = create(:agent_run, :running, :review_goal,
           started_at: described_class.stale_running_cutoff(goal: "review") - 1.minute)
