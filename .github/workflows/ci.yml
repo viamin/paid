@@ -96,6 +96,7 @@ jobs:
           test_prof=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/test_prof.yml | head -1 | awk '{print $NF}')
           screenshots=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/pr-screenshots.yml | head -1 | awk '{print $NF}')
           ephemeral=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ephemeral_tests.yml | head -1 | awk '{print $NF}')
+          claude_review=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/claude-code-review.yml | head -1 | awk '{print $NF}')
           version=${compose#postgres:}
           major=${version%%.*}
           bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
@@ -109,14 +110,15 @@ jobs:
           echo ".github/workflows/test_prof.yml: ${test_prof:-<none>}"
           echo ".github/workflows/pr-screenshots:${screenshots:-<none>}"
           echo ".github/workflows/ephemeral:     ${ephemeral:-<none>}"
+          echo ".github/workflows/claude-review: ${claude_review:-<none>}"
           echo "expected Bookworm client:        ${bookworm_client}"
           echo "expected Trixie client:          ${trixie_client}"
           echo "expected Noble client:           ${noble_client}"
-          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$ephemeral" ]; then
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$ephemeral" ] || [ -z "$claude_review" ]; then
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ] || [ "$screenshots" != "$ephemeral" ]; then
+          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ] || [ "$screenshots" != "$ephemeral" ] || [ "$ephemeral" != "$claude_review" ]; then
             echo "::error::Postgres image pins are out of sync. Update all workflow and compose references together."
             exit 1
           fi
