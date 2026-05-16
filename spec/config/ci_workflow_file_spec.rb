@@ -22,7 +22,8 @@ RSpec.describe CiWorkflowFile, :no_db do
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
     )
     expect(jobs.fetch("performance").fetch("env")).to include(
-      "SECRET_KEY_BASE" => "test-secret-key-base"
+      "SECRET_KEY_BASE" => "test-secret-key-base",
+      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
     )
   end
 end
