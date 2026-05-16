@@ -32,7 +32,7 @@ RSpec.describe AgentRunResourceJanitorJob do
       it "removes the workspace volume for non-worktree runs" do
         volume = instance_double(Docker::Volume, remove: true)
         allow(backend).to receive(:get_volume)
-          .with("paid-workspace-#{agent_run.id}")
+          .with("paid-workspace-#{agent_run.id}", host: agent_run.container_host)
           .and_return(volume)
         allow(backend).to receive(:delete_volume).with(volume)
 

@@ -13,6 +13,10 @@ module Containers
         Docker.ping
       end
 
+      def container_host_for(_container)
+        identifier
+      end
+
       def get_container(id)
         Docker::Container.get(id)
       end
@@ -65,16 +69,22 @@ module Containers
         Docker::Volume.all
       end
 
-      def create_volume(name, options = {})
-        Docker::Volume.create(name, options)
+      def create_volume(name, options = nil, host: nil, **keyword_options)
+        Docker::Volume.create(name, normalize_volume_options(options, keyword_options))
       end
 
-      def get_volume(name)
+      def get_volume(name, host: nil)
         Docker::Volume.get(name)
       end
 
       def delete_volume(volume, **options)
         volume.remove(**options)
+      end
+
+      private
+
+      def normalize_volume_options(options, keyword_options)
+        (options || {}).merge(keyword_options.transform_keys(&:to_s))
       end
     end
   end

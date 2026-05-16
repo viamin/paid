@@ -2088,7 +2088,7 @@ class AgentRun < ApplicationRecord
 
     volume_name = "paid-workspace-#{id}"
     backend = Containers.backend_for(container_host)
-    volume = backend.get_volume(volume_name)
+    volume = backend.get_volume(volume_name, host: container_host)
     backend.delete_volume(volume)
   rescue Docker::Error::NotFoundError
     # Volume already removed, nothing to do
