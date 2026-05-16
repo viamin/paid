@@ -14,6 +14,26 @@ RSpec.describe Activities::MarkEscalatedActivity do
     allow(github_client).to receive(:recent_issue_comments).and_return([])
   end
 
+  describe "#default_reason", :no_db do
+    let(:project) { double(max_draft_review_rounds: 4, max_pr_followup_runs: 3) }
+
+    it "uses the draft-phase limit for draft PRs" do
+      issue = double(draft_phase?: true)
+
+      reason = activity.send(:default_reason, project, issue)
+
+      expect(reason).to include("(4 consecutive unsuccessful runs)")
+    end
+
+    it "uses the ready-phase limit for non-draft PRs" do
+      issue = double(draft_phase?: false)
+
+      reason = activity.send(:default_reason, project, issue)
+
+      expect(reason).to include("(3 consecutive unsuccessful runs)")
+    end
+  end
+
   describe "#execute" do
     context "when issue exists" do
       let(:issue) do
@@ -46,11 +66,20 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(issue.project.full_name, issue.github_number, a_string_including("Escalation Note"))
       end
 
-      it "includes the default reason when no reason is provided" do
+      it "includes the unified default reason when no reason is provided" do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_comment)
-          .with(anything, anything, a_string_including("automated draft review limit"))
+          .with(anything, anything, a_string_including("automatic PR failure limit"))
+      end
+
+      it "uses the ready-phase limit in the fallback reason outside draft" do
+        issue.update!(pr_review_phase: "ready")
+
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("(#{issue.project.max_pr_followup_runs} consecutive unsuccessful runs)"))
       end
 
       it "includes resolution instructions in the escalation comment" do

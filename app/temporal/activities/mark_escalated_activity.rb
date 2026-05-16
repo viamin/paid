@@ -127,10 +127,15 @@ module Activities
     end
 
     def default_reason(project, issue)
-      "the automated draft review limit " \
-        "(#{project.max_draft_review_rounds} rounds) " \
-        "has been reached after #{issue.draft_review_count} review cycles " \
-        "and the PR requires human intervention"
+      limit = if issue.draft_phase?
+        project.max_draft_review_rounds
+      else
+        project.max_pr_followup_runs
+      end
+
+      "the automatic PR failure limit " \
+        "(#{limit} consecutive unsuccessful runs) " \
+        "has been reached without meaningful progress and the PR requires human intervention"
     end
   end
 end
