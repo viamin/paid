@@ -20,4 +20,10 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
       "cancel-in-progress" => true
     )
   end
+
+  it "pins a stable test database name for the capture job" do
+    expect(workflow.fetch("jobs").fetch("capture").fetch("env")).to include(
+      "PAID_TEST_DATABASE" => "paid_test"
+    )
+  end
 end

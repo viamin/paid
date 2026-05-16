@@ -14,6 +14,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
       .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
       .github/workflows/test_prof.yml
+      .github/workflows/ephemeral_tests.yml
     ]
   end
 
@@ -44,6 +45,13 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     workflow_paths.each do |path|
       expect(test_env_blocks_for(path)).to all(include("SECRET_KEY_BASE" => "test-secret-key-base")),
         "expected #{path} test env blocks to set SECRET_KEY_BASE explicitly"
+    end
+  end
+
+  it "pins a stable test database name anywhere Rails boots in test mode" do
+    workflow_paths.each do |path|
+      expect(test_env_blocks_for(path)).to all(include("PAID_TEST_DATABASE" => "paid_test")),
+        "expected #{path} test env blocks to pin PAID_TEST_DATABASE explicitly"
     end
   end
 end

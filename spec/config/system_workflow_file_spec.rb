@@ -17,7 +17,8 @@ RSpec.describe SystemWorkflowFile, :no_db do
 
     expect(system_job.fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
-      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}"
+      "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
+      "PAID_TEST_DATABASE" => "paid_test"
     )
     expect(locate_step.fetch("run")).to include('command -v chromium)')
     expect(locate_step.fetch("run")).to include("falling back to rack_test")
