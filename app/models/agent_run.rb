@@ -14,6 +14,7 @@ class AgentRun < ApplicationRecord
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
+  MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
   RUNNER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
     [ /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/, "[REDACTED:github_token]" ],
@@ -1616,12 +1617,12 @@ class AgentRun < ApplicationRecord
     status == "auth_expired"
   end
 
-  def auth_expire!(error: nil, runner_key: nil)
+  def auth_expire!(error: nil, runner: nil, runner_key: nil)
     update!(
       status: "auth_expired",
       completed_at: Time.current,
       error_message: error,
-      auth_provider: runner_key,
+      auth_provider: runner || runner_key,
       duration_seconds: duration
     )
   end
@@ -1788,6 +1789,8 @@ class AgentRun < ApplicationRecord
 
     owner.runners.with_discarded.where(id: routing_ids).index_by(&:routing_key)
   end
+
+  alias_method :attempted_providers_by_routing_key, :attempted_runners_by_routing_key
 
   # Records a runner attempt in the runners_attempted array.
   #

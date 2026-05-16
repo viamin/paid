@@ -19,11 +19,13 @@ RSpec.describe AgentRun do
   end
 
   describe "provider bridge columns" do
-    let(:runner) { create(:runner, user: create(:user), runner_key: "cursor") }
+    let(:owner) { create(:user) }
+    let(:runner) { create(:runner, user: owner, runner_key: "cursor") }
 
     it "keeps legacy provider columns synchronized when runner-named attributes change" do
       agent_run = create(
         :agent_run,
+        project: create(:project, account: owner.account, created_by: owner),
         runner: runner,
         runner_switches: 2,
         runners_attempted: [ { "runner" => runner.routing_key } ],
@@ -1342,7 +1344,7 @@ RSpec.describe AgentRun do
           output: "Done",
           exit_code: 0,
           duration: 10.0,
-          runner: :claude
+          provider: :claude
         )
       end
 
@@ -2694,7 +2696,7 @@ RSpec.describe AgentRun do
     it "bulk-loads routed runner filter options without N+1 queries" do
       project = create(:project)
       providers = %w[opencode cursor gemini].map.with_index do |provider_key, index|
-        create(:runner, user: project.effective_owner, runner_key:, name: "Routed Runner #{index}")
+        create(:runner, user: project.effective_owner, runner_key: provider_key, name: "Routed Runner #{index}")
       end
       providers.each do |runner|
         create(:agent_run, :completed, project: project, final_runner: runner.routing_key)
@@ -3353,7 +3355,7 @@ RSpec.describe AgentRun do
       envelope = { type: "result", subtype: "success", is_error: false,
                    result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }.to_json
       mock_provider = instance_double(AgentHarness::Providers::Base)
-      allow(AgentHarness).to receive(:runner).and_return(mock_provider)
+      allow(AgentHarness).to receive(:provider).and_return(mock_provider)
       allow(mock_provider).to receive(:parse_container_output).and_return(
         double(error: nil, output: "")
       )
