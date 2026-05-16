@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "socket"
 require "uri"
 
 module Containers
@@ -106,7 +105,7 @@ module Containers
       return {} if service_containers.empty?
 
       @network = network
-      NetworkPolicy.ensure_network!(network: @network)
+      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)
@@ -418,6 +417,7 @@ module Containers
     def wait_for_health!(service_container)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
       has_healthcheck = nil # nil = unknown, true/false once determined
+      docker_container = Containers.backend.get_container(service_container.docker_container_id)
 
       loop do
         # Only query Docker HEALTHCHECK when we haven't confirmed its absence.
@@ -434,7 +434,9 @@ module Containers
         end
 
         # Fall back to TCP probe when no Docker HEALTHCHECK is configured.
-        if has_healthcheck == false && tcp_port_open?(runtime_name(service_container), service_container.port)
+        # Service containers (postgres, redis) should always have probe tools,
+        # so we pass fallback_on_missing_tools: false to avoid false-healthy.
+        if has_healthcheck == false && tcp_port_open?(service_container, docker_container: docker_container)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -464,11 +466,16 @@ module Containers
       nil
     end
 
-    def tcp_port_open?(host, port)
-      socket = Socket.tcp(host, port, connect_timeout: HEALTH_CHECK_INTERVAL)
-      socket.close
-      true
-    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ETIMEDOUT, SocketError
+    def tcp_port_open?(service_container, docker_container: nil, fallback_on_missing_tools: false)
+      docker_container ||= Containers.backend.get_container(service_container.docker_container_id)
+      Containers::TcpHealthProbe.open?(
+        backend: Containers.backend,
+        container: docker_container,
+        host: runtime_name(service_container),
+        port: service_container.port,
+        fallback_on_missing_tools: fallback_on_missing_tools
+      )
+    rescue Docker::Error::DockerError, Excon::Error
       false
     end
 
