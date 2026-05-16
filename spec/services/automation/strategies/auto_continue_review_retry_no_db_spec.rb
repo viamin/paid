@@ -102,4 +102,25 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
 
     expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
   end
+
+  it "dismisses escalation before evaluating operational failure breakers" do
+    context = Automation::Context.build(
+      record: pull_request,
+      project: project,
+      metadata: {
+        lifecycle: lifecycle.merge(
+          phase: "escalated",
+          operational_failure_breaker: true,
+          escalation_dismissed: true
+        )
+      }
+    )
+
+    allow(Coordination::EscalationService).to receive(:call)
+
+    result = strategy.evaluate(context)
+
+    expect(decision_types(result)).to eq([ "dismiss_escalation" ])
+    expect(Coordination::EscalationService).not_to have_received(:call)
+  end
 end

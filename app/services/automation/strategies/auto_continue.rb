@@ -79,6 +79,12 @@ module Automation
       private
 
       def check_lifecycle_gates(context:, signals:)
+        # Escalation dismissal must win before any breaker can re-escalate
+        # the PR in the same cycle after the owner removes the label.
+        if signals.escalation_dismissed
+          return dismiss_escalation_result(signals)
+        end
+
         # Operational failure breaker — fires for any phase. The check
         # runs before phase-specific gates so that persistent provider
         # exhaustion/timeout failures always surface an escalation.
@@ -87,11 +93,6 @@ module Automation
             signals,
             evaluate_escalation(context:, signals:)
           )
-        end
-
-        # Escalation dismissal — owner removed the escalated label.
-        if signals.escalation_dismissed
-          return dismiss_escalation_result(signals)
         end
 
         if (service_result = evaluate_escalation(context:, signals:))
