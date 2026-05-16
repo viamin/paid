@@ -8073,12 +8073,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     it "retries failed review runs linked only by pull_request_number" do
       project.agent_runs.where(goal: "review").delete_all
-      create(:agent_run,
+      run = create(:agent_run,
         project: project, issue: failed_review_issue,
-        source_pull_request_number: nil,
+        source_pull_request_number: 42,
         pull_request_number: 42,
         goal: "review", status: "failed",
         started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      run.update_column(:source_pull_request_number, nil)
 
       result = activity.execute(project_id: project.id)
 

@@ -118,10 +118,11 @@ module ConfigurationBundles
         experiment = ConfigurationExperiment.active_for(config_key, project: agent_run.project, agent_run: agent_run)
         next unless experiment
 
+        selected_variant = selected_variant_for_experiment(experiment, selected_variants)
         assignment = ConfigurationExperiments::Assign.call(
           configuration_experiment: experiment,
           agent_run: agent_run,
-          variant: selected_variants&.[](experiment.id)
+          variant: selected_variant
         )
         parsed_value = parsed_assignment_value(assignment, experiment:)
         next if parsed_value.equal?(INVALID_EXPERIMENT_VALUE)
@@ -132,6 +133,13 @@ module ConfigurationBundles
           value: parsed_value
         }
       end
+    end
+
+    def selected_variant_for_experiment(experiment, selected_variants)
+      existing_assignment = existing_optimizer_assignment_for(experiment)
+      return existing_assignment.configuration_experiment_variant if existing_assignment
+
+      selected_variants&.[](experiment.id)
     end
 
     def parsed_assignment_value(assignment, experiment:)
