@@ -54,29 +54,31 @@ class ChatMessagesController < ApplicationController
   end
 
   def stream_sse_response
-    response.headers["Content-Type"] = "text/event-stream"
-    response.headers["Cache-Control"] = "no-cache"
-    response.headers["X-Accel-Buffering"] = "no"
+    with_chat_session_tenant_context do
+      response.headers["Content-Type"] = "text/event-stream"
+      response.headers["Cache-Control"] = "no-cache"
+      response.headers["X-Accel-Buffering"] = "no"
 
-    message_id = SecureRandom.uuid
-    llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
+      message_id = SecureRandom.uuid
+      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
 
-    write_sse_event("message_start", { message_id: message_id, model: @chat_session.model })
+      write_sse_event("message_start", { message_id: message_id, model: @chat_session.model })
 
-    assistant_message = ChatSessions::SendMessage.call(
-      chat_session: @chat_session,
-      content: params[:content],
-      llm_client: llm_client,
-      on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) }
-    )
+      assistant_message = ChatSessions::SendMessage.call(
+        chat_session: @chat_session,
+        content: params[:content],
+        llm_client: llm_client,
+        on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) }
+      )
 
-    write_sse_event("message_complete", {
-      message_id: message_id,
-      tokens: {
-        input: assistant_message.tokens_input,
-        output: assistant_message.tokens_output
-      }
-    })
+      write_sse_event("message_complete", {
+        message_id: message_id,
+        tokens: {
+          input: assistant_message.tokens_input,
+          output: assistant_message.tokens_output
+        }
+      })
+    end
   rescue IOError
     # Client disconnected — nothing to send
   rescue NotImplementedError => e
@@ -91,13 +93,16 @@ class ChatMessagesController < ApplicationController
   end
 
   def json_response
-    llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
+    assistant_message = with_chat_session_tenant_context do
+      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
 
-    assistant_message = ChatSessions::SendMessage.call(
-      chat_session: @chat_session,
-      content: params[:content],
-      llm_client: llm_client
-    )
+      ChatSessions::SendMessage.call(
+        chat_session: @chat_session,
+        content: params[:content],
+        llm_client: llm_client
+      )
+    end
+
     render json: message_json(assistant_message), status: :created
   rescue NotImplementedError => e
     render json: { error: e.message }, status: :service_unavailable
@@ -110,6 +115,10 @@ class ChatMessagesController < ApplicationController
 
   def write_sse_event(event, data)
     response.stream.write("event: #{event}\ndata: #{data.to_json}\n\n")
+  end
+
+  def with_chat_session_tenant_context(&)
+    TenantContext.with(@chat_session.account, &)
   end
 
   def message_json(message)

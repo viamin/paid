@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Dashboard orchestration decision metrics", type: :system do
+RSpec.describe "Dashboard orchestration decision metrics", system_driver: :rack_test, type: :system do
   def create_decision(project:, status:, decision_type:, actor:, run_trait:, created_at:)
     create(:orchestration_decision,
       project: project,

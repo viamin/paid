@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Sign up", type: :system do
+RSpec.describe "Sign up", system_driver: :rack_test, type: :system do
   it "creates an account and a user, signs them in, and lands on onboarding" do
     visit new_user_registration_path
 
