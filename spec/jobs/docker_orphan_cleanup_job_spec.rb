@@ -14,7 +14,12 @@ RSpec.describe DockerOrphanCleanupJob do
       Containers::Backends::Base,
       identifier: identifier,
       remote?: remote,
-      all_host_identifiers: [ identifier ]
+      all_host_identifiers: [ identifier ],
+      list_containers: [],
+      list_volumes: [],
+      stop_container: nil,
+      delete_container: nil,
+      delete_volume: nil
     )
   end
 
