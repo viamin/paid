@@ -37,6 +37,8 @@ module Activities
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -64,6 +66,8 @@ module Activities
       /\bstatus[:\s]*429\b/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
@@ -808,6 +812,14 @@ module Activities
         # so treat this as a provider failure to trigger fallback/retry.
         combined_output = [ stdout, stderr ].compact.join("\n")
         sanitized_output = strip_prompt_echo(combined_output, prompt)
+        # Rate-limit classification takes precedence over generic quota
+        # failures because some providers use quota-shaped wording for
+        # retryable usage caps (for example, GLM free-model limits).
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise ProviderExecutionError,
             "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
@@ -828,8 +840,9 @@ module Activities
         }
       end
 
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
       output = (stderr.presence || stdout).to_s.strip
-      rate_limit_output = strip_prompt_echo(output, prompt)
+      rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
       if auth_expired_error?(provider, rate_limit_output)
         raise ProviderAuthExpiredError.new(output.truncate(500), provider: provider)
@@ -924,10 +937,18 @@ module Activities
       )
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
-      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
-      sanitized_output = strip_prompt_echo(output, prompt)
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
+      sanitized_output = strip_prompt_echo(combined_output, prompt)
 
       if result.success?
+        # Keep the same precedence as the main execution path so preflight
+        # retryable limits do not degrade into generic provider failures.
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
@@ -1033,6 +1054,7 @@ module Activities
     end
 
     QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
+    SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH = 500
 
     # Detects provider-level credit/quota exhaustion errors surfaced as
     # agent output. Used in the successful-exit-code path to catch cases
@@ -1050,6 +1072,31 @@ module Activities
 
       ProviderSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    # Detects short standalone rate-limit responses that some providers surface
+    # with exit code 0. We intentionally use the stricter timeout patterns here
+    # instead of the broader execution-failure matcher so substantial agent
+    # output that merely discusses rate limits is not reclassified as a
+    # provider failure.
+    def successful_exit_rate_limit_error?(output)
+      standalone_rate_limit_signal(output).present?
+    end
+
+    def standalone_rate_limit_signal(output)
+      return nil if output.blank?
+
+      normalized_output = normalize_output_text(output)
+      if normalized_output.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| normalized_output.match?(pattern) }
+        return normalized_output
+      end
+
+      normalized_output.each_line.map(&:strip).find do |line|
+        line.present? &&
+          line.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| line.match?(pattern) }
+      end
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000

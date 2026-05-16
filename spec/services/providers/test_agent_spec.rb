@@ -758,6 +758,112 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when kilocode glm reports the free model usage limit wording" do
+      let(:provider_record) do
+        create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false)
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode, status: "error",
+          message: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "classifies the result as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
+    context "when kilocode glm exits 0 but reports the free model usage limit wording in the message" do
+      let(:provider_record) do
+        create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false)
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode, status: "ok",
+          message: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "classifies the result as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
+    context "when a z.ai coding plan provider reports the weekly/monthly limit wording" do
+      let(:provider_record) do
+        create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false)
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode, status: "error",
+          message: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "classifies the result as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32")
+      end
+    end
+
+    context "when opencode on z.ai coding plan reports the weekly/monthly limit wording" do
+      let(:provider_record) do
+        api_key_record = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+        create(
+          :provider,
+          :api_key,
+          user: user,
+          provider_key: "opencode",
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
+        stub_container_smoke_test(
+          name: :opencode, status: "error",
+          message: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
+          latency_ms: 10, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "classifies the result as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32")
+      end
+    end
+
     context "when the harness returns a binary encoded rate limit message" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
@@ -987,6 +1093,32 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
       end
+
+      it "preserves a harness-classified rate limit when the message is not locally classifiable" do
+        stub_container_smoke_test(
+          name: :gemini, status: "error",
+          message: "Provider health check failed",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
+
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+      end
+
+      it "preserves a harness-classified rate limit when the provider exits 0" do
+        stub_container_smoke_test(
+          name: :gemini, status: "ok",
+          message: "Provider health check failed",
+          latency_ms: 10, error_category: :rate_limited, check: :smoke_test
+        )
+
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+      end
     end
 
     context "when the harness marks a noisy provider failure as rate limited" do
@@ -1033,6 +1165,110 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
         expect(result.message).to include("Process exited abnormally")
+      end
+    end
+
+    context "when the harness returns failure details only in output" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode,
+          status: "error",
+          message: "",
+          output: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10,
+          error_category: nil,
+          check: :smoke_test
+        )
+      end
+
+      it "classifies the output-only failure as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
+    context "when the harness exits 0 and returns failure details only in output" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode,
+          status: "ok",
+          message: "",
+          output: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10,
+          error_category: nil,
+          check: :smoke_test
+        )
+      end
+
+      it "classifies the output-only failure as rate limited" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
+    context "when the harness returns OK in one field but a provider failure in the other" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode,
+          status: "ok",
+          message: "OK.",
+          output: "Free model usage limit reached. Please try again later.",
+          latency_ms: 10,
+          error_category: nil,
+          check: :smoke_test
+        )
+      end
+
+      it "treats the smoke test as failed" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Free model usage limit reached. Please try again later.")
+      end
+    end
+
+    context "when the harness returns OK in one field but a weekly limit failure in the other" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        stub_container_smoke_test(
+          name: :kilocode,
+          status: "ok",
+          message: "OK.",
+          output: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
+          latency_ms: 10,
+          error_category: nil,
+          check: :smoke_test
+        )
+      end
+
+      it "surfaces the rate limit message instead of the OK line" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32")
       end
     end
   end

@@ -89,6 +89,45 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("needs_input")
       end
 
+      it "classifies hidden provider quota output as provider_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("provider_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "classifies hidden infrastructure output as infrastructure_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "bwrap: No permissions to create a new namespace")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "classifies hidden provider output from the most recent logs" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        Activities::HandleNoOutputIssueRunActivity::CLASSIFICATION_LOG_LIMIT.times do |i|
+          agent_run.log!("stdout", "progress line #{i}")
+        end
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("provider_error")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
@@ -374,6 +413,40 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(result[:outcome]).to eq("provider_error")
       end
+
+      it "detects free model usage limit wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects provider errors from stderr even when stdout contains trivial output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "OK.")
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects weekly limit wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
     end
 
     context "when output is present but agent hit infrastructure errors" do
@@ -546,7 +619,9 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         agent_run = create(:agent_run, :running, project: project, issue: issue)
         agent_run.log!("stderr", "Some context\nrequires more credits\nMore context")
 
-        activity.execute(agent_run_id: agent_run.id, output_present: false)
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("needs_input")
 
         expect(client).to have_received(:add_comment) do |_repo, _number, body|
           expect(body).to include("Needs Input")
