@@ -253,7 +253,7 @@ RSpec.describe Containers::Provision do
           config = given_config
           mock_container
         end
-        provision = described_class.new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
+        provision = described_class.new(agent_run: agent_run, worktree_path: nil, backend: backend)
 
         stub_provision_steps(provision)
         allow(provision).to receive(:prepare_heartbeat_dir!)
