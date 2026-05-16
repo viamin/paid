@@ -59,7 +59,20 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
   end
 
   def build_agent_run(attachments)
-    relation = Struct.new(:attachments, keyword_init: true) do
+    persistence_relation_class = Struct.new(:updated_snapshot, keyword_init: true) do
+      def update_all(attributes)
+        self.updated_snapshot = attributes.fetch(:mcp_server_snapshot)
+      end
+    end
+    persistence_relation = persistence_relation_class.new
+    fake_model_class = Class.new do
+      define_method(:where) do |conditions|
+        raise "unexpected conditions" unless conditions == { id: 42 }
+
+        persistence_relation
+      end
+    end.new
+    attachments_relation = Struct.new(:attachments, keyword_init: true) do
       def includes(*)
         self
       end
@@ -74,18 +87,23 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
       :agent_run_marketplace_entries,
       :provider,
       :agent_type,
+      :id,
       :mcp_server_snapshot,
+      :persisted_snapshot,
       :updated_snapshot,
+      :fake_model_class,
       keyword_init: true
     ) do
-      def update_columns(attributes)
-        self.updated_snapshot = attributes.fetch(:mcp_server_snapshot)
+      def class
+        fake_model_class
       end
     end.new(
-      agent_run_marketplace_entries: relation,
+      agent_run_marketplace_entries: attachments_relation,
       provider: provider,
+      id: 42,
       agent_type: "codex",
-      mcp_server_snapshot: [ { "name" => "base-server" } ]
+      mcp_server_snapshot: [ { "name" => "base-server" } ],
+      fake_model_class: fake_model_class
     )
   end
 
@@ -101,7 +119,16 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
   end
 
   def expect_updated_snapshot(agent_run)
-    expect(agent_run.updated_snapshot).to include(
+    expect(agent_run.fake_model_class.where(id: agent_run.id).updated_snapshot).to include(
+      { "name" => "base-server" },
+      include(
+        "name" => "repo-docs",
+        "marketplace_attachment" => true,
+        "marketplace_entry_id" => 9,
+        "marketplace_entry_version_id" => 11
+      )
+    )
+    expect(agent_run.mcp_server_snapshot).to include(
       { "name" => "base-server" },
       include(
         "name" => "repo-docs",
