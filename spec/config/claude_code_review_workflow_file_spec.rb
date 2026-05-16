@@ -6,7 +6,7 @@ require "psych"
 class ClaudeCodeReviewWorkflowFile < Pathname
 end
 
-RSpec.describe ClaudeCodeReviewWorkflowFile do
+RSpec.describe ClaudeCodeReviewWorkflowFile, :no_db do
   subject(:workflow) do
     Psych.safe_load_file(
       Rails.root.join(".github/workflows/claude-code-review.yml"),
@@ -15,6 +15,8 @@ RSpec.describe ClaudeCodeReviewWorkflowFile do
   end
 
   let(:job) { workflow.fetch("jobs").fetch("claude-review") }
+  let(:services) { job.fetch("services") }
+  let(:env) { job.fetch("env") }
   let(:permissions) { job.fetch("permissions") }
   let(:steps) { job.fetch("steps") }
 
@@ -24,6 +26,26 @@ RSpec.describe ClaudeCodeReviewWorkflowFile do
 
   it "can write check runs for the PR head sha gate" do
     expect(permissions.fetch("checks")).to eq("write")
+  end
+
+  it "provisions postgres for Docker-based Claude review runs and exposes test env over the service hostname" do
+    expect(services).to include(
+      "postgres" => a_hash_including(
+        "image" => "postgres:16.13",
+        "env" => a_hash_including(
+          "POSTGRES_USER" => "postgres",
+          "POSTGRES_PASSWORD" => "postgres"
+        )
+      )
+    )
+
+    expect(env).to include(
+      "RAILS_ENV" => "test",
+      "SECRET_KEY_BASE" => "test-secret-key-base",
+      "DB_HOST" => "postgres",
+      "DB_USERNAME" => "postgres",
+      "DB_PASSWORD" => "postgres"
+    )
   end
 
   it "creates and completes a Claude Code Review check run on the PR head sha for same-repo PRs" do
