@@ -209,6 +209,24 @@ RSpec.describe Automation::Strategies::AutoContinue do
         expect(decision_types(result)).to eq([ "queue_review_run", "record_review_goal_retry" ])
       end
 
+      it "delegates to AutoReview when review feedback is already pending" do
+        result = evaluate(
+          lifecycle: base_lifecycle.merge(
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
+          ),
+          scan: {
+            issue_id: pull_request.id,
+            pr_number: 42,
+            phase: "ready",
+            triggers: [ { type: "changes_requested" } ]
+          }
+        )
+
+        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
+      end
+
       it "delegates to AutoReview when no unified gate is active" do
         result = evaluate(
           lifecycle: base_lifecycle,

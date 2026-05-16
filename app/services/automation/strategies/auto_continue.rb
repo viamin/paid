@@ -41,6 +41,16 @@ module Automation
     class AutoContinue
       include Automation::Strategy
 
+      REVIEW_FOLLOWUP_TRIGGER_TYPES = %w[
+        changes_requested
+        paid_agent_review_pending
+        review_bot_comments
+        review_bot_review_pending
+        review_bot_threads
+        review_goal_retry
+        review_threads
+      ].freeze
+
       # @param context [Automation::Context]
       # @return [Automation::Result]
       def evaluate(context)
@@ -104,13 +114,14 @@ module Automation
       def escalation_candidate?(signals)
         return true if signals.operational_failure_breaker
         return false unless signals.failure_streak_limit_reached
+        return false if review_followup_pending?(signals)
 
-        !review_goal_retry_pending?(signals)
+        true
       end
 
-      def review_goal_retry_pending?(signals)
+      def review_followup_pending?(signals)
         Array(signals.scan&.dig(:triggers) || signals.scan&.dig("triggers")).any? do |trigger|
-          trigger_type(trigger) == "review_goal_retry"
+          REVIEW_FOLLOWUP_TRIGGER_TYPES.include?(trigger_type(trigger))
         end
       end
 
