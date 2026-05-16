@@ -151,12 +151,17 @@ class ChatSessionsController < ApplicationController
 
   def create_params
     source = params.key?(:chat_session) ? params.require(:chat_session) : params
-    source.permit(:mode, :model, :runner_id, :project_id, :system_prompt, :title)
+    permitted = source.permit(:mode, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title)
       .to_h.symbolize_keys
+    permitted[:runner_id] ||= permitted.delete(:provider_id)
+    permitted
   end
 
   def update_params
-    params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id)
+    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :provider_id)
+      .to_h.symbolize_keys
+    permitted[:runner_id] ||= permitted.delete(:provider_id)
+    permitted
   end
 
   def session_json(session)
