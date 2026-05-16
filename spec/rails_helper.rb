@@ -78,8 +78,11 @@ RSpec.configure do |config|
   # Include ActiveSupport time helpers (freeze_time, travel_to, etc.)
   config.include ActiveSupport::Testing::TimeHelpers
 
-  # Reset memoized provider support data between tests
+  # Reset both legacy provider and new runner support registries between tests.
+  # Phase 1 keeps provider-backed specs and code paths alive, so clearing only
+  # RunnerSupport leaves order-dependent memoized state behind for ProviderSupport.
   config.after do
+    ProviderSupport.reset_supported_provider_keys!
     RunnerSupport.reset_supported_runner_keys!
   end
 
