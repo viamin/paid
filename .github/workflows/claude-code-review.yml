@@ -39,6 +39,8 @@ jobs:
       DB_HOST: postgres
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
     steps:
       - name: Resolve pull request metadata

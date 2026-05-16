@@ -105,6 +105,8 @@ jobs:
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
 
     steps:
@@ -121,7 +123,7 @@ jobs:
           fi
 
       - name: Prepare workspace cache directories
-        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -239,6 +241,8 @@ jobs:
           SECRET_KEY_BASE: test-secret-key-base
           RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
           PAID_TEST_DATABASE: paid_test
+          npm_config_cache: ${{ github.workspace }}/.cache/npm
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
           SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
           SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
           SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}

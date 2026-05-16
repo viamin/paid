@@ -130,12 +130,23 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
       expect(prepare_steps).not_to be_empty, "expected #{path} test jobs to prepare workspace cache directories"
       expect(prepare_steps.map { |item| item.fetch(:step).fetch("run") }).to all(
-        eq('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"')
-      ), "expected #{path} to create workspace-backed cache directories explicitly"
+        eq('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"')
+      ), "expected #{path} to create workspace-backed temp, package, and browser cache directories explicitly"
       expect(prepare_steps).to all(satisfy do |item|
         item.fetch(:prepare_index) < item.fetch(:ruby_index) &&
           item.fetch(:prepare_index) < item.fetch(:node_index)
       end), "expected #{path} to prepare cache directories before Ruby and Node setup"
+    end
+  end
+
+  it "pins npm and Playwright caches into the workspace for test-mode jobs" do
+    workflow_paths.each do |path|
+      expect(test_env_blocks_for(path)).to all(
+        include(
+          "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
+          "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
+        )
+      ), "expected #{path} test env blocks to pin npm and Playwright caches into the workspace"
     end
   end
 end

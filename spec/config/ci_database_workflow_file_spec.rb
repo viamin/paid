@@ -41,7 +41,9 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "DB_PASSWORD" => "postgres",
             "TMPDIR" => "${{ github.workspace }}/.tmp-build",
             "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn",
-            "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache"
+            "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache",
+            "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
+            "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
           )
           expect(step_names).not_to include("Create application database role")
         end
@@ -70,7 +72,9 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           node_index = steps.index { |step| step["name"] == "Set up Node" }
 
           expect(prepare_index).not_to be_nil
-          expect(steps.fetch(prepare_index).fetch("run")).to eq('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"')
+          expect(steps.fetch(prepare_index).fetch("run")).to eq(
+            'mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"'
+          )
           expect(prepare_index).to be < ruby_index
           expect(prepare_index).to be < node_index
         end

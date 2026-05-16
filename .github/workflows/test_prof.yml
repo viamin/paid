@@ -54,6 +54,8 @@ jobs:
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       QDRANT_URL: http://localhost:6333
       COVERAGE: "false"
 
@@ -71,7 +73,7 @@ jobs:
           fi
 
       - name: Prepare workspace cache directories
-        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde

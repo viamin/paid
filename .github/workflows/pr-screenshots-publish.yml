@@ -147,6 +147,8 @@ jobs:
           SECRET_KEY_BASE: test-secret-key-base
           RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
           PAID_TEST_DATABASE: paid_test
+          npm_config_cache: ${{ github.workspace }}/.cache/npm
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
           SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
           SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
           SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
