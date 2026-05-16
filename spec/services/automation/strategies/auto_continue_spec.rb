@@ -82,13 +82,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
         phase: "ready",
         active_run_exists: false,
         operational_failure_breaker: false,
-        draft_review_limit_reached: false,
-        consecutive_draft_failures_breaker: false,
-        review_goal_retry_limit_requires_escalation: false,
-        followup_limit_reached: false,
+        failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
         draft: false
       }
     end
@@ -145,48 +145,31 @@ RSpec.describe Automation::Strategies::AutoContinue do
     context "when in draft phase" do
       let(:draft_lifecycle) { base_lifecycle.merge(phase: "draft", draft: true) }
 
-      it "escalates when review goal retry limit requires escalation" do
+      it "escalates when the unified failure streak limit is reached for draft-phase runs" do
         result = evaluate(
           lifecycle: draft_lifecycle.merge(
-            review_goal_retry_limit_requires_escalation: true,
-            escalation_reason: "Review-goal retry limit reached"
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
           )
         )
 
-        expect(result.to_h[:decisions].first).to include(type: "escalate")
-      end
-
-      it "escalates when draft review limit is reached" do
-        result = evaluate(
-          lifecycle: draft_lifecycle.merge(
-            draft_review_limit_reached: true,
-            escalation_reason: "Draft review limit reached"
-          )
+        expect(result.to_h[:decisions].first).to include(
+          type: "escalate",
+          reason: "Automatic PR failure streak reached"
         )
-
-        expect(result.to_h[:decisions].first).to include(type: "escalate")
-      end
-
-      it "escalates when consecutive draft failures breaker trips" do
-        result = evaluate(
-          lifecycle: draft_lifecycle.merge(
-            consecutive_draft_failures_breaker: true,
-            escalation_reason: "Consecutive draft follow-up failures"
-          )
-        )
-
-        expect(result.to_h[:decisions].first).to include(type: "escalate")
       end
     end
 
     context "when in restarted phase" do
       let(:restarted_lifecycle) { base_lifecycle.merge(phase: "restarted", draft: true) }
 
-      it "escalates when draft review limit is reached" do
+      it "escalates when the unified failure streak limit is reached" do
         result = evaluate(
           lifecycle: restarted_lifecycle.merge(
-            draft_review_limit_reached: true,
-            escalation_reason: "Draft review limit reached"
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
           )
         )
 
@@ -195,77 +178,87 @@ RSpec.describe Automation::Strategies::AutoContinue do
     end
 
     context "when in ready phase" do
-      let(:deferred_service_result) do
-        Coordination::EscalationService::Result.new(
-          action: "defer",
-          reason: "followup_limit_reached",
-          human_value_score: 0.2,
-          interruption_cost: 0.3,
-          net_value: -0.1,
-          threshold: 0.65,
-          explicit_trigger: nil,
-          policy_source: "feature_orchestration"
-        )
-      end
-
-      it "escalates when review goal retry limit requires escalation" do
+      it "escalates when the unified failure streak limit is reached" do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
-            review_goal_retry_limit_requires_escalation: true,
-            escalation_reason: "Review-goal retry limit reached"
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
           )
         )
 
         expect(result.to_h[:decisions].first).to include(type: "escalate")
       end
 
-      it "returns noop when followup limit is reached" do
+      it "delegates to AutoReview when a review-goal retry is pending" do
         result = evaluate(
-          lifecycle: base_lifecycle.merge(followup_limit_reached: true),
-          scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
+          lifecycle: base_lifecycle.merge(
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
+          ),
+          scan: {
+            issue_id: pull_request.id,
+            pr_number: 42,
+            phase: "ready",
+            current_review_goal_retry_count: 1,
+            triggers: [ { type: "review_goal_retry" } ]
+          }
         )
 
-        expect(decision_types(result)).to eq([ "noop" ])
+        expect(decision_types(result)).to eq([ "queue_review_run", "record_review_goal_retry" ])
       end
 
-      it "routes followup limit decisions through the escalation service" do
-        allow(Coordination::EscalationService).to receive(:call).and_return(deferred_service_result)
-
+      it "delegates to AutoReview when review feedback is already pending" do
         result = evaluate(
-          lifecycle: base_lifecycle.merge(followup_limit_reached: true),
+          lifecycle: base_lifecycle.merge(
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
+          ),
+          scan: {
+            issue_id: pull_request.id,
+            pr_number: 42,
+            phase: "ready",
+            triggers: [ { type: "changes_requested" } ]
+          }
+        )
+
+        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
+      end
+
+      it "delegates to AutoReview when no unified gate is active" do
+        result = evaluate(
+          lifecycle: base_lifecycle,
           scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
         )
 
-        expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
-        expect(Coordination::EscalationService).to have_received(:call).with(
-          project: project,
-          issue: pull_request,
-          signals: have_attributes(followup_limit_reached: true)
-        )
+        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
       end
     end
 
     context "when in escalated phase" do
       let(:escalated_lifecycle) { base_lifecycle.merge(phase: "escalated") }
 
-      it "escalates when review goal retry limit requires escalation" do
+      it "escalates when the unified failure streak limit is reached" do
         result = evaluate(
           lifecycle: escalated_lifecycle.merge(
-            review_goal_retry_limit_requires_escalation: true,
-            escalation_reason: "Review-goal retry limit reached"
+            failure_streak_limit_reached: true,
+            consecutive_unsuccessful_automatic_runs: 3,
+            escalation_reason: "Automatic PR failure streak reached"
           )
         )
 
         expect(result.to_h[:decisions].first).to include(type: "escalate")
       end
 
-      it "returns noop when followup limit is reached" do
+      it "delegates to AutoReview when no unified gate is active" do
         result = evaluate(
-          lifecycle: escalated_lifecycle.merge(followup_limit_reached: true),
+          lifecycle: escalated_lifecycle,
           scan: { issue_id: pull_request.id, pr_number: 42, phase: "escalated", triggers: [] }
         )
 
-        expect(decision_types(result)).to eq([ "noop" ])
+        expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
       end
     end
   end
@@ -278,13 +271,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
         phase: "ready",
         active_run_exists: false,
         operational_failure_breaker: false,
-        draft_review_limit_reached: false,
-        consecutive_draft_failures_breaker: false,
-        review_goal_retry_limit_requires_escalation: false,
-        followup_limit_reached: false,
+        failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
         draft: false
       }
     end
@@ -335,13 +328,13 @@ RSpec.describe Automation::Strategies::AutoContinue do
         phase: "draft",
         active_run_exists: false,
         operational_failure_breaker: false,
-        draft_review_limit_reached: false,
-        consecutive_draft_failures_breaker: false,
-        review_goal_retry_limit_requires_escalation: false,
-        followup_limit_reached: false,
+        failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
         draft: true
       }
     end
@@ -359,17 +352,16 @@ RSpec.describe Automation::Strategies::AutoContinue do
       expect(decision_types(result)).to eq([ "noop" ])
     end
 
-    it "operational failure breaker takes priority over escalation dismissed" do
+    it "dismisses escalation when the owner removes the label" do
       result = evaluate(
         lifecycle: base_lifecycle.merge(
           phase: "escalated",
-          operational_failure_breaker: true,
           escalation_dismissed: true,
-          escalation_reason: "Consecutive operational failures"
+          draft: false
         )
       )
 
-      expect(result.to_h[:decisions].first).to include(type: "escalate")
+      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
     end
   end
 end
