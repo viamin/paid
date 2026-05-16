@@ -288,15 +288,9 @@ module Activities
         return dismiss_escalation_trigger(issue, draft: pr_data&.draft)
       end
 
-      # Escalate PRs that are repeatedly failing due to operational issues
-      # (provider exhaustion, timeouts, rate limiting) so they stop blocking
-      # project progress and surface to the owner for attention.
-      if operational_failure_breaker?(project, issue, progress_state)
-        return escalate_trigger(issue,
-          reason: "Consecutive operational failures " \
-                  "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)")
-      end
-
+      # Provider/infrastructure bursts are now a lifecycle-only signal. The
+      # policy layer decides whether stale operational failures should
+      # escalate, back off, or continue through normal scan triggers.
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
       retry_limit_reached = retry_needed && review_goal_retry_limit_reached?(project, issue, progress_state:)
       retry_limit_requires_escalation = retry_limit_reached &&

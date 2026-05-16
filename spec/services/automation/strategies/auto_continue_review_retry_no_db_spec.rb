@@ -73,6 +73,18 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
     )
   end
 
+  def stub_auto_review_followup
+    allow(Automation::Strategies::Select).to receive(:call)
+      .with(strategy_type: :auto_review, project: project)
+      .and_return(selected_strategy)
+    allow(selected_strategy).to receive(:evaluate).and_return(
+      Automation::Result.new(decisions: [
+        Automation::Decision.queue_create_pr_run(issue_id: 10, source_pull_request_number: 42, focus: "ci_fix"),
+        Automation::Decision.record_pr_followup(issue_id: 10, labels_to_remove: [], expected_followup_count: 1)
+      ])
+    )
+  end
+
   it "delegates to AutoReview instead of escalating when a review-goal retry is pending" do
     context = Automation::Context.build(record: pull_request, project: project, metadata: { lifecycle:, scan: })
 
@@ -127,15 +139,31 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
     allow(Coordination::EscalationService).to receive(:call)
       .with(project: project, issue: pull_request, signals: kind_of(Automation::Strategies::AutoContinue::Signals))
       .and_return(auto_resolve_result)
-    allow(Automation::Strategies::Select).to receive(:call)
-      .with(strategy_type: :auto_review, project: project)
-      .and_return(selected_strategy)
-    allow(selected_strategy).to receive(:evaluate).and_return(
-      Automation::Result.new(decisions: [
-        Automation::Decision.queue_create_pr_run(issue_id: 10, source_pull_request_number: 42, focus: "ci_fix"),
-        Automation::Decision.record_pr_followup(issue_id: 10, labels_to_remove: [], expected_followup_count: 1)
-      ])
+    stub_auto_review_followup
+
+    result = strategy.evaluate(context)
+
+    expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
+  end
+
+  it "delegates to AutoReview after soft operational failures when escalation auto-resolves" do
+    context = Automation::Context.build(
+      record: pull_request,
+      project: project,
+      metadata: {
+        lifecycle: lifecycle.merge(
+          operational_failure_breaker: true,
+          no_progress_stuck: true,
+          escalation_reason: "No meaningful progress after operational failures"
+        ),
+        scan: followup_scan
+      }
     )
+
+    allow(Coordination::EscalationService).to receive(:call)
+      .with(project: project, issue: pull_request, signals: kind_of(Automation::Strategies::AutoContinue::Signals))
+      .and_return(auto_resolve_result)
+    stub_auto_review_followup
 
     result = strategy.evaluate(context)
 

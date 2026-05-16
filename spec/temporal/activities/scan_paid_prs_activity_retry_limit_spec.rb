@@ -258,6 +258,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end
+
+    context "when stale operational failures are present on a ready PR" do
+      let(:phase) { "ready" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: false,
+          head: instance_double(PrHeadDouble, sha: "ready123"),
+          updated_at: Time.current)
+      end
+      let(:scan_result) do
+        {
+          issue_id: issue.id,
+          pr_number: issue.github_number,
+          phase: "ready",
+          triggers: [ { type: "ci_failure", details: "test-suite" } ]
+        }
+      end
+
+      it "continues into ready-phase scanning instead of forcing escalate_to_owner" do
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_ready_pr).with(project, client, issue, pr_data: pr_data).and_return(scan_result)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(scan_result)
+        expect(activity).not_to have_received(:escalate_trigger)
+      end
+    end
   end
 
   describe "#failure_streak_limit_reached?", :no_db do
