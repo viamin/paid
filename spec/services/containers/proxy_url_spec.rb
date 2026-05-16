@@ -52,6 +52,14 @@ RSpec.describe Containers::ProxyUrl, :no_db do
       }.to raise_error(ArgumentError, "PAID_PROXY_EXTERNAL_URL must include scheme and host")
     end
 
+    it "raises when the external URL does not use http or https" do
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "ssh://proxy.example.test:3443"
+
+      expect {
+        described_class.resolve(backend: remote_backend, restricted: true)
+      }.to raise_error(ArgumentError, "PAID_PROXY_EXTERNAL_URL must use http or https")
+    end
+
     it "raises when the external URL port is out of range" do
       ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:99999"
 

@@ -360,9 +360,11 @@ class NetworkPolicy
     end
 
     def external_proxy_destination(url)
-      uri = URI.parse(url)
+      uri = URI.parse(Containers::ProxyUrl.validate_external_url!(url))
       host = uri.host.presence or raise Error, "Invalid PAID_PROXY_EXTERNAL_URL: missing host"
       { host: host, port: uri.port }
+    rescue ArgumentError => e
+      raise Error, e.message
     rescue URI::InvalidURIError => e
       raise Error, "Invalid PAID_PROXY_EXTERNAL_URL: #{e.message}"
     end

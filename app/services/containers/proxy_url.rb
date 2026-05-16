@@ -22,6 +22,7 @@ module Containers
     def validate_external_url!(url)
       uri = URI.parse(url)
       raise ArgumentError, "PAID_PROXY_EXTERNAL_URL must include scheme and host" if uri.scheme.blank? || uri.host.blank?
+      raise ArgumentError, "PAID_PROXY_EXTERNAL_URL must use http or https" unless uri.scheme.in?(%w[http https])
       raise ArgumentError, "PAID_PROXY_EXTERNAL_URL port must be between 1 and 65535" unless uri.port.between?(1, 65_535)
 
       url

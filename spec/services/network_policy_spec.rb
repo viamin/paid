@@ -299,6 +299,14 @@ RSpec.describe NetworkPolicy do
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
           .to raise_error(described_class::Error, /Invalid proxy port/)
       end
+
+      it "raises NetworkPolicy::Error for an unsupported PAID_PROXY_EXTERNAL_URL scheme" do
+        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        ENV["PAID_PROXY_EXTERNAL_URL"] = "ssh://proxy.example.test:3443"
+
+        expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
+          .to raise_error(described_class::Error, /must use http or https/)
+      end
     end
 
     context "with invalid service destinations" do
