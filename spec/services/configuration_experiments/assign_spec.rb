@@ -33,6 +33,20 @@ RSpec.describe ConfigurationExperiments::Assign do
       expect(second).to eq(first)
     end
 
+    it "updates an existing assignment when an explicit variant is provided later" do
+      agent_run = create(:agent_run)
+      existing = described_class.call(configuration_experiment: configuration_experiment, agent_run: agent_run)
+
+      assignment = described_class.call(
+        configuration_experiment: configuration_experiment,
+        agent_run: agent_run,
+        variant: variant
+      )
+
+      expect(assignment).to eq(existing)
+      expect(assignment.reload.configuration_experiment_variant).to eq(variant)
+    end
+
     it "raises when the experiment is not running" do
       draft = create(:configuration_experiment, status: "draft")
       create(:configuration_experiment_variant, configuration_experiment: draft, config_value: draft.control_value, is_control: true)

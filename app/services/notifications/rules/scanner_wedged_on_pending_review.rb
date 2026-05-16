@@ -46,13 +46,21 @@ module Notifications
 
       def scoped_issues(scope)
         @scoped_issues ||= begin
-          entries = Array(scope)
-          issues = Issue.where(id: entries.map { |entry| entry[:issue_id] }).index_by(&:id)
+          entries = Array(scope).filter_map do |entry|
+            next unless entry.is_a?(Hash)
+
+            entry.with_indifferent_access
+          end
+          issues = Issue.where(id: entries.map { |entry| entry[:issue_id] }).index_by { |issue| issue_key(issue.id) }
           entries.each_with_object({}) do |entry, result|
-            issue = issues[entry[:issue_id]]
-            result[issue] = entry.with_indifferent_access if issue
+            issue = issues[issue_key(entry[:issue_id])]
+            result[issue] = entry if issue
           end
         end
+      end
+
+      def issue_key(issue_id)
+        issue_id.to_s
       end
 
       def update_state!(issue, entry)
