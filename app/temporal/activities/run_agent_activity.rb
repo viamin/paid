@@ -938,7 +938,6 @@ module Activities
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
       combined_output = [ stderr, stdout ].compact.join("\n").strip
-      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
       sanitized_output = strip_prompt_echo(combined_output, prompt)
 
       if result.success?

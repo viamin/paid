@@ -343,7 +343,9 @@ module Providers
       classified_error_type = classify_failed_response(message)
       return :unexpected if message.match?(/Model not found:/i)
       return classified_error_type if harness_error_type.nil? || harness_error_type == :unexpected
-      return classified_error_type if harness_error_type == :rate_limited && classified_error_type != :rate_limited
+      return classified_error_type if harness_error_type == :rate_limited &&
+        classified_error_type != :rate_limited &&
+        classified_error_type != :unexpected
 
       harness_error_type
     end
