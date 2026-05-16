@@ -288,7 +288,6 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(stale_container).to have_received(:delete).with(force: true, v: true)
-        # DB record should NOT be cleared since it points to the active container on another backend
         expect(sc.reload.docker_container_id).to eq("active-container-on-remote")
         expect(sc.reload.status).to eq("running")
       end

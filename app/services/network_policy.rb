@@ -356,8 +356,6 @@ class NetworkPolicy
         return external_proxy_destination(external_url)
       end
 
-      # Default to the hostname used by agents to reach the secrets proxy.
-      # This keeps firewall rules aligned with the container environment.
       { host: "paid-proxy", port: SECRETS_PROXY_PORT }
     end
 

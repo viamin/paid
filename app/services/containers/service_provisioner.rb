@@ -465,7 +465,7 @@ module Containers
 
     def tcp_port_open?(service_container)
       container = Containers.backend.get_container(service_container.docker_container_id)
-      TcpHealthProbe.open?(
+      Containers::TcpHealthProbe.open?(
         backend: Containers.backend,
         container: container,
         host: runtime_name(service_container),

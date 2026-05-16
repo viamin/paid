@@ -30,9 +30,5 @@ module Containers
 
       backends.values
     end
-
-    def remote_backend_active?
-      backend.remote?
-    end
   end
 end

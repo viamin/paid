@@ -38,12 +38,11 @@ module Knowledge
     # API service types supported for containerized LLM calls.
     SUPPORTED_API_TYPES = %w[anthropic openai].freeze
 
-    attr_reader :project, :knowledge_run, :backend
+    attr_reader :project, :knowledge_run
 
-    def initialize(project:, knowledge_run:, backend: Containers.backend)
+    def initialize(project:, knowledge_run:)
       @project = project
       @knowledge_run = knowledge_run
-      @backend = backend
       @container = nil
     end
 
@@ -97,8 +96,8 @@ module Knowledge
 
     def provision!
       log("provision.start")
-      @container = backend.create_container(container_config)
-      backend.start_container(@container)
+      @container = Containers.backend.create_container(container_config)
+      Containers.backend.start_container(@container)
       log("provision.success", container_id: @container.id)
     rescue Docker::Error::DockerError => e
       cleanup!
@@ -110,12 +109,12 @@ module Knowledge
 
       log("cleanup.start", container_id: @container.id)
       begin
-        backend.stop_container(@container, timeout: 5)
+        Containers.backend.stop_container(@container, timeout: 5)
       rescue Docker::Error::DockerError
         # Container may already be stopped
       end
       begin
-        backend.delete_container(@container, force: true)
+        Containers.backend.delete_container(@container, force: true)
       rescue Docker::Error::DockerError
         # Container may already be removed
       end
@@ -141,7 +140,7 @@ module Knowledge
       end
 
       begin
-        result = backend.exec_in_container(@container, cmd, **exec_options)
+        result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
       rescue Docker::Error::DockerError => e
         raise TimeoutError, "LLM call timed out after #{timeout}s" if mutex.synchronize { timed_out }
         raise ContainerError, "Container execution failed: #{e.message}"
@@ -201,7 +200,6 @@ module Knowledge
 
         uri = URI("#{proxy_url}/api/proxy/anthropic/v1/messages")
         http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 
@@ -245,7 +243,6 @@ module Knowledge
 
         uri = URI("#{proxy_url}/api/proxy/openai/v1/chat/completions")
         http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 
@@ -307,7 +304,7 @@ module Knowledge
     end
 
     def proxy_base_url
-      Containers::ProxyUrl.resolve(backend:, restricted: true)
+      Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: true)
     end
 
     def start_watchdog(timeout)
@@ -317,7 +314,7 @@ module Knowledge
         next unless should_stop
 
         begin
-          backend.stop_container(@container, timeout: 0) if @container
+          Containers.backend.stop_container(@container, timeout: 0) if @container
         rescue Docker::Error::DockerError
           # Container may already be stopped
         end

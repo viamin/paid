@@ -16,7 +16,7 @@ RSpec.describe NetworkPolicy do
   end
 
   let(:mock_container) do
-    instance_double(Docker::Container, id: "abc123")
+    instance_double(Docker::Container, id: "abc123", exec: [ [], [], 0 ])
   end
 
   describe ".ensure_network!" do

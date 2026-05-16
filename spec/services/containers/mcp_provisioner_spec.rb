@@ -280,6 +280,7 @@ RSpec.describe Containers::McpProvisioner do
         before do
           allow(backend).to receive(:remote?).and_return(true)
           allow(Containers).to receive(:backend).and_return(backend)
+          allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
         end
 
         it "probes health from inside the sidecar container" do

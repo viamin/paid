@@ -229,7 +229,7 @@ module Containers
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        return if TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
+        return if Containers::TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
 
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           raise Error, "Health check timeout for MCP sidecar #{hostname}:#{port}"
@@ -238,6 +238,7 @@ module Containers
         sleep HEALTH_CHECK_INTERVAL
       end
     end
+
     def sidecar_hostname(agent_run, name)
       suffix = "run#{agent_run.id}"
       budget = [ MAX_NAME_LENGTH - CONTAINER_NAME_PREFIX.length - suffix.length - 2, 1 ].max

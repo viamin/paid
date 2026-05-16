@@ -70,6 +70,29 @@ RSpec.describe Containers::Provision do
     backend
   end
 
+  def stub_remote_backend_proxy_support(mock_network:, mock_volume:, mock_container:)
+    remote_backend = build_remote_backend(mock_volume:, mock_container:)
+    allow(remote_backend).to receive(:get_volume).and_raise(Docker::Error::NotFoundError)
+    allow(remote_backend).to receive(:get_network).with("paid_agent").and_return(mock_network)
+    allow(NetworkPolicy).to receive(:ensure_network!).with(network: "paid_agent", backend: remote_backend).and_return(mock_network)
+    allow(NetworkPolicy).to receive(:apply_firewall_rules)
+    remote_backend
+  end
+
+  def build_remote_backend(mock_volume:, mock_container:)
+    instance_double(
+      Containers::Backends::RemoteDocker,
+      identifier: "worker-1",
+      remote?: true,
+      create_volume: mock_volume,
+      create_container: mock_container,
+      start_container: true,
+      exec_in_container: [ [], [], 0 ],
+      delete_container: true,
+      delete_volume: true
+    )
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -104,29 +127,6 @@ RSpec.describe Containers::Provision do
 
   after do
     FileUtils.rm_rf(worktree_path) if worktree_path && Dir.exist?(worktree_path)
-  end
-
-  def stub_remote_backend_proxy_support
-    remote_backend = build_remote_backend
-    allow(remote_backend).to receive(:get_volume).and_raise(Docker::Error::NotFoundError)
-    allow(remote_backend).to receive(:get_network).with("paid_agent").and_return(mock_network)
-    allow(NetworkPolicy).to receive(:ensure_network!).with(network: "paid_agent", backend: remote_backend).and_return(mock_network)
-    allow(NetworkPolicy).to receive(:apply_firewall_rules)
-    remote_backend
-  end
-
-  def build_remote_backend
-    instance_double(
-      Containers::Backends::RemoteDocker,
-      identifier: "worker-1",
-      remote?: true,
-      create_volume: mock_volume,
-      create_container: mock_container,
-      start_container: true,
-      exec_in_container: [ [], [], 0 ],
-      delete_container: true,
-      delete_volume: true
-    )
   end
 
   describe "constants" do
@@ -611,7 +611,11 @@ RSpec.describe Containers::Provision do
       end
 
       it "uses PAID_PROXY_EXTERNAL_URL when a remote backend is active" do
-        remote_backend = stub_remote_backend_proxy_support
+        remote_backend = stub_remote_backend_proxy_support(
+          mock_network: mock_network,
+          mock_volume: mock_volume,
+          mock_container: mock_container
+        )
 
         original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
         ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
