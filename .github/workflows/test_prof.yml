@@ -99,7 +99,7 @@ jobs:
           sudo apt-get install -y postgresql-client-16=16.14-1.pgdg24.04+1
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
         run: bin/rails ci:bootstrap_test_defaults
