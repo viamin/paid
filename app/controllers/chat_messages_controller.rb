@@ -118,7 +118,10 @@ class ChatMessagesController < ApplicationController
   end
 
   def with_chat_session_tenant_context(&)
-    TenantContext.with(@chat_session.account, &)
+    account = TenantContext.with_system_access do
+      Account.find(@chat_session.account_id)
+    end
+    TenantContext.with(account, &)
   end
 
   def message_json(message)
