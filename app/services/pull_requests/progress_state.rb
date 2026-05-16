@@ -123,7 +123,7 @@ module PullRequests
       if runs
         ordered_supplied_runs.each do |run|
           boundary_time = explicit_reset_boundary_time(run)
-          break if explicit_reset_at && boundary_time && boundary_time <= explicit_reset_at
+          next if explicit_reset_at && boundary_time && boundary_time <= explicit_reset_at
 
           yield run
         end
@@ -146,19 +146,14 @@ module PullRequests
         batch = ordered_run_scope.limit(RUN_BATCH_SIZE).offset(offset).to_a
         break if batch.empty?
 
-        stop = false
-
         batch.each do |run|
           boundary_time = explicit_reset_boundary_time(run)
-          if explicit_reset_at && boundary_time && boundary_time <= explicit_reset_at
-            stop = true
-            break
-          end
+          next if explicit_reset_at && boundary_time && boundary_time <= explicit_reset_at
 
           yield run
         end
 
-        break if stop || batch.length < RUN_BATCH_SIZE
+        break if batch.length < RUN_BATCH_SIZE
 
         offset += RUN_BATCH_SIZE
       end

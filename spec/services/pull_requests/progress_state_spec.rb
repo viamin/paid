@@ -287,6 +287,23 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.last_meaningful_progress_at).to eq(now - 1.hour)
   end
 
+  it "continues past late-finishing pre-reset runs to count newer current-cycle failures" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    reset_at = now - 10.minutes
+    reset_issue = issue_double(review_goal_retry_reset_at: reset_at)
+    runs = [
+      build_run(goal: "create_pr", status: "failed", at: now - 1.minute, started_at: now - 30.minutes),
+      build_run(goal: "review", status: "failed", at: now - 2.minutes, started_at: now - 3.minutes),
+      build_run(goal: "create_pr", status: "failed", at: now - 4.minutes, started_at: now - 5.minutes)
+    ]
+
+    result = described_class.call(project: project, issue: reset_issue, runs: runs)
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(2)
+    expect(result.latest_unsuccessful_run_goal).to eq("review")
+    expect(result.last_meaningful_progress_at).to eq(reset_at)
+  end
+
   it "does not let phase transitions alone change the counting regime" do
     now = Time.zone.parse("2026-05-15 12:00:00")
     runs = [
