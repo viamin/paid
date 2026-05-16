@@ -102,14 +102,15 @@ module ApplicationHelper
     configured_runners_by_owner_and_key = configured_runners_for_runs(runs)
 
     runs.each_with_object({}) do |run, displays|
+      current_runner = current_runner_record(run)
       displays[run.id] =
         if run.final_runner.present?
           runner_display_for_identifier(
             run.final_runner,
             runner: runner_for_identifier(run, configured_runners_by_owner_and_key, routed_runners_by_owner_and_id)
           )
-        elsif run.runner.present?
-          run.runner.display_name
+        elsif current_runner.present?
+          current_runner.display_name
         else
           Runner.display_name_for(run.effective_runner)
         end
@@ -572,9 +573,10 @@ module ApplicationHelper
     end
 
     normalized_identifier = normalized_runner_identifier(run.final_runner)
+    current_runner = current_runner_record(run)
 
     configured_runners_by_owner_and_key[[ run.project&.effective_owner&.id, normalized_identifier ]] ||
-      (run.runner if run.runner&.matches_identifier?(run.final_runner))
+      (current_runner if current_runner&.matches_identifier?(run.final_runner))
   end
 
   def routed_runners_for_runs(runs)
@@ -609,6 +611,13 @@ module ApplicationHelper
       runner_key: owner_ids_by_runner_key.keys
     ).ordered.group_by { |runner| [ runner.user_id, runner.runner_key ] }
       .transform_values { |runners| runners.find(&:subscription?) || runners.first }
+  end
+
+  def current_runner_record(run)
+    return run.provider if run.association(:provider).loaded?
+    return run.runner if run.association(:runner).loaded?
+
+    run.runner
   end
 
   def safe_asset_tag
