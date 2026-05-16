@@ -20,14 +20,14 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(jobs.fetch("test").fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}",
-      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}",
       "PAID_TEST_DATABASE" => "paid_test"
     )
+    expect(jobs.fetch("test").fetch("env")).not_to have_key("RAILS_MASTER_KEY")
     expect(jobs.fetch("performance").fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}",
-      "RAILS_MASTER_KEY" => "${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}",
       "PAID_TEST_DATABASE" => "paid_test"
     )
+    expect(jobs.fetch("performance").fetch("env")).not_to have_key("RAILS_MASTER_KEY")
   end
 end

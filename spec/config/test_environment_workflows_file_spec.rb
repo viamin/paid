@@ -62,10 +62,12 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     end
   end
 
-  it "passes a direct Rails master key fallback anywhere Rails boots in test mode" do
+  it "relies on config/boot.rb instead of exporting RAILS_MASTER_KEY directly" do
     workflow_paths.each do |path|
-      expect(test_env_blocks_for(path)).to all(include("RAILS_MASTER_KEY" => "${{ secrets.RAILS_TEST_KEY || secrets.RAILS_MASTER_KEY }}")),
-        "expected #{path} test env blocks to pass RAILS_MASTER_KEY explicitly"
+      test_env_blocks_for(path).each do |env|
+        expect(env).not_to have_key("RAILS_MASTER_KEY"),
+          "expected #{path} test env blocks to omit RAILS_MASTER_KEY and rely on config/boot.rb"
+      end
     end
   end
 end

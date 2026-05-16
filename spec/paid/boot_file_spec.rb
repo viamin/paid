@@ -43,4 +43,19 @@ RSpec.describe BootFile, :no_db do
     expect(status.success?).to be(true), stderr
     expect(stdout.strip).to eq("already-set")
   end
+
+  it "treats blank test key env vars as absent" do
+    stdout, stderr, status = Open3.capture3(
+      {
+        "RAILS_ENV" => "test",
+        "RAILS_TEST_KEY" => "",
+        "RAILS_MASTER_KEY" => ""
+      },
+      "bundle", "exec", "ruby", "-e", boot_script,
+      chdir: Rails.root.to_s
+    )
+
+    expect(status.success?).to be(true), stderr
+    expect(stdout.strip).to eq("")
+  end
 end
