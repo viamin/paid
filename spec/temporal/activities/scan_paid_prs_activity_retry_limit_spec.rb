@@ -94,7 +94,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
         allow(progress_state).to receive(:stuck?).and_return(true)
         allow(activity).to receive(:escalate_trigger).with(issue,
-          reason: "Review-goal retry limit reached (3 consecutive failures)").and_return(:escalated)
+          reason: "Review-goal retry budget exhausted with no meaningful progress for 60 minutes " \
+            "(3 consecutive failures)").and_return(:escalated)
 
         result = activity.send(:scan_pr, project, client, issue)
 
@@ -113,7 +114,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
         allow(progress_state).to receive(:stuck?).and_return(true)
         allow(activity).to receive(:escalate_trigger).with(issue,
-          reason: "Review-goal retry limit reached (3 consecutive failures)").and_return(:escalated)
+          reason: "Review-goal retry budget exhausted with no meaningful progress for 60 minutes " \
+            "(3 consecutive failures)").and_return(:escalated)
 
         activity.send(:scan_pr, project, client, issue)
 

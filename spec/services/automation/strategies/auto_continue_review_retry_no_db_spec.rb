@@ -106,7 +106,7 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
   end
 
   it "escalates once the review-goal retry path itself requires escalation" do
-    reason = "Review-goal retry limit reached (3 consecutive failures)"
+    reason = "Review-goal retry budget exhausted with no meaningful progress for 60 minutes (3 consecutive failures)"
     context = Automation::Context.build(
       record: pull_request,
       project: project,

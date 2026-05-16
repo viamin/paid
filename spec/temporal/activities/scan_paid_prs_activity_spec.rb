@@ -7337,7 +7337,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Review-goal retry limit reached")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retry budget exhausted")
       end
 
       it "does not escalate when an automatic review-goal run is still queued" do
@@ -7394,7 +7394,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Review-goal retry limit reached")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retry budget exhausted")
       end
 
       it "does not escalate in ready phase while an automatic review-goal run is still running" do
@@ -8165,7 +8165,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
       details = trigger[:triggers].find { |t| t[:type] == "escalate_to_owner" }[:details]
-      expect(details).to match(/Review-goal retry limit reached/)
+      expect(details).to match(/Review-goal retry budget exhausted/)
     end
 
     it "includes owner_reviewer_login for escalation handling" do

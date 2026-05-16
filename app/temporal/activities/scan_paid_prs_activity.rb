@@ -310,8 +310,7 @@ module Activities
           no_progress_stuck?(project, issue, progress_state) &&
           issue.pr_review_phase.in?(%w[draft restarted])
         return escalate_trigger(issue,
-          reason: "Review-goal retry limit reached " \
-                  "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)")
+          reason: review_goal_retry_escalation_reason(project, issue, progress_state:))
       end
 
       # When a review-goal run has failed but the retry limit hasn't been
@@ -624,8 +623,7 @@ module Activities
       if review_goal_retry_limit_requires_escalation?(project, issue, progress_state:) &&
           no_progress_stuck?(project, issue, progress_state)
         return escalate_trigger(issue,
-          reason: "Review-goal retry limit reached " \
-                  "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)")
+          reason: review_goal_retry_escalation_reason(project, issue, progress_state:))
       end
 
       # Follow-up budget exhausted: inspect the full ready-phase trigger set
@@ -1135,6 +1133,12 @@ module Activities
     def operational_failure_reason
       "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
         "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
+    end
+
+    def review_goal_retry_escalation_reason(project, issue, progress_state: nil)
+      "Review-goal retry budget exhausted with no meaningful progress for " \
+        "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
+        "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
     end
 
     def followup_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
