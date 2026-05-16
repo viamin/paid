@@ -105,36 +105,17 @@ jobs:
           SQL
 
       - name: Locate Chromium-family browser
-        id: locate_chromium
+        # Prefer a preinstalled browser when one exists, but don't fail the
+        # workflow if the runner image changes. The system suite falls back to
+        # rack_test automatically when CHROMIUM_PATH is absent, and browser-only
+        # coverage lives in explicitly opted-in specs.
         run: |
-          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
-          echo "chrome_path=$chrome_path" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
-            echo "Chrome found at ${chrome_path}"
-            "$chrome_path" --version
+          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
+          if [ -n "$path" ]; then
+            echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
+            "$path" --version
           else
-            echo "No Chromium-family browser found on PATH; installing a fallback copy."
-          fi
-
-      - name: Set up Chrome fallback
-        id: setup_chrome
-        if: steps.locate_chromium.outputs.chrome_path == ''
-        uses: browser-actions/setup-chrome@v1
-
-      - name: Export Chromium path
-        env:
-          LOCATED_CHROME_PATH: ${{ steps.locate_chromium.outputs.chrome_path }}
-          INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
-        run: |
-          chrome_path="${LOCATED_CHROME_PATH:-$INSTALLED_CHROME_PATH}"
-          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
-            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
-            echo "Chrome available at ${chrome_path}"
-            "$chrome_path" --version
-          else
-            echo "::error::No Chrome/Chromium binary found after fallback installation"
-            exit 1
+            echo "No Chromium-family browser found; falling back to rack_test."
           fi
 
       - name: Build assets

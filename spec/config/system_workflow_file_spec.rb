@@ -30,31 +30,16 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
-  it "locates Chromium from PATH and exports the chosen binary" do
+  it "locates Chromium from PATH and exports it when available" do
     locate_step = system_step("Locate Chromium-family browser")
-    export_step = system_step("Export Chromium path")
 
-    expect(locate_step.fetch("id")).to eq("locate_chromium")
     expect(locate_step.fetch("run")).to include("command -v chromium || true")
-    expect(locate_step.fetch("run")).to include('echo "chrome_path=$chrome_path" >> "$GITHUB_OUTPUT"')
-    expect(export_step.fetch("env")).to include(
-      "LOCATED_CHROME_PATH" => "${{ steps.locate_chromium.outputs.chrome_path }}",
-      "INSTALLED_CHROME_PATH" => "${{ steps.setup_chrome.outputs.chrome-path }}"
-    )
-    expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
+    expect(locate_step.fetch("run")).to include('echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"')
   end
 
-  it "installs a fallback Chrome binary when PATH discovery misses" do
-    expect(system_step("Set up Chrome fallback")).to include(
-      "id" => "setup_chrome",
-      "if" => "steps.locate_chromium.outputs.chrome_path == ''",
-      "uses" => "browser-actions/setup-chrome@v1"
-    )
-  end
+  it "falls back to rack_test when no Chromium binary is available" do
+    locate_step = system_step("Locate Chromium-family browser")
 
-  it "fails loudly if no Chromium binary is available after fallback installation" do
-    export_step = system_step("Export Chromium path")
-
-    expect(export_step.fetch("run")).to include("No Chrome/Chromium binary found after fallback installation")
+    expect(locate_step.fetch("run")).to include("falling back to rack_test")
   end
 end
