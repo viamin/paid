@@ -383,6 +383,27 @@ module Activities
             )
             logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
+          rescue ProviderInfraExecutionError => e
+            last_error = "error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "error",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
+            logger.warn(
+              message: "agent_execution.provider_infra_failure",
+              provider: provider,
+              agent_run_id: agent_run.id,
+              error: e.message,
+              duration_seconds: attempt_duration
+            )
           rescue ProviderExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -479,6 +500,7 @@ module Activities
     end
 
     class ProviderExecutionError < StandardError; end
+    class ProviderInfraExecutionError < ProviderExecutionError; end
     class ProviderTimeoutError < StandardError
       attr_reader :timeout_type, :diagnostics
 
@@ -490,6 +512,15 @@ module Activities
     end
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
+    CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS = %w[
+      output_received
+      stdout_bytes
+      stderr_bytes
+      heartbeat_supported
+      heartbeat_path_configured
+      heartbeat_active
+      heartbeat_age_seconds
+    ].freeze
 
     private
 
@@ -870,6 +901,17 @@ module Activities
       when Containers::Provision::StartupTimeoutError then "startup"
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
+      end
+      if claude_silent_startup_heartbeat_failure?(
+        provider: provider,
+        timeout_type: timeout_type,
+        diagnostics: e.diagnostics
+      )
+        raise ProviderInfraExecutionError,
+          claude_silent_startup_heartbeat_failure_message(
+            timeout_type: timeout_type,
+            diagnostics: e.diagnostics
+          )
       end
       raise ProviderTimeoutError.new(
         "#{timeout_type}_timeout: #{e.message}",
@@ -2137,6 +2179,28 @@ module Activities
         "heartbeat_supported" => heartbeat&.available? || false,
         "heartbeat_path_configured" => heartbeat&.heartbeat_path.present? || false
       ).compact
+    end
+
+    def claude_silent_startup_heartbeat_failure?(provider:, timeout_type:, diagnostics:)
+      return false unless ProviderSupport.provider_key_for_agent_type(provider).to_s == "claude"
+      return false unless timeout_type == "startup"
+
+      timeout_data = diagnostics.to_h.stringify_keys.slice(*CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS)
+      timeout_data["output_received"] == false &&
+        timeout_data["stdout_bytes"].to_i.zero? &&
+        timeout_data["stderr_bytes"].to_i.zero? &&
+        timeout_data["heartbeat_supported"] == true &&
+        timeout_data["heartbeat_path_configured"] == true &&
+        timeout_data["heartbeat_active"].nil? &&
+        timeout_data["heartbeat_age_seconds"].nil?
+    end
+
+    def claude_silent_startup_heartbeat_failure_message(timeout_type:, diagnostics:)
+      detail = diagnostics.to_h.stringify_keys.slice(*CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS)
+      "Claude #{timeout_type}_timeout reclassified as execution failure: " \
+        "silent startup with configured heartbeat produced no output and no readable heartbeat. " \
+        "This usually indicates the known Claude heartbeat/MCP startup bug rather than a normal provider timeout. " \
+        "diagnostics=#{detail.to_json}"
     end
 
     def error_or_cause_matches?(error, klass, &)
