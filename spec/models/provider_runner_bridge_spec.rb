@@ -22,7 +22,16 @@ RSpec.describe Provider, :no_db do
     expect(AgentRun).to respond_to(:invalidate_provider_options_cache)
     expect(AgentRun).to respond_to(:preload_final_provider_records)
     expect(UserSetting).to respond_to(:fallback_candidate_providers)
-    expect(UserSetting.instance_methods).to include(:provider_priority, :provider_priority_for_goal, :available_providers)
+    expect(UserSetting.instance_methods).to include(
+      :provider_priority,
+      :default_provider_identifier,
+      :default_provider_identifier_for_goal,
+      :select_automated_provider_identifier,
+      :provider_priority_for_goal,
+      :available_providers,
+      :provider_state_for
+    )
+    expect(UserSetting.private_instance_methods).to include(:identifiers_for_provider_token)
   end
 
   it "keeps legacy provider routing-key identifiers readable during the bridge" do

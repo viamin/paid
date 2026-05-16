@@ -286,6 +286,8 @@ class UserSetting < ApplicationRecord
     normalized_default_agent_runner || allowed_runner_identifiers_for_agent_runs.first
   end
 
+  alias_method :default_provider_identifier, :default_runner_identifier
+
   def default_runner_identifier_for_goal(goal)
     goal = goal.to_s
     goal_runner = default_agent_runners_by_goal[goal] if goal.present?
@@ -294,6 +296,8 @@ class UserSetting < ApplicationRecord
     resolved = identifiers_for_runner_token(goal_runner, candidates: allowed_runner_identifiers_for_agent_runs).first
     resolved || default_runner_identifier
   end
+
+  alias_method :default_provider_identifier_for_goal, :default_runner_identifier_for_goal
 
   # Returns the next automated runner identifier to use for an agent run,
   # honoring the configured runner_selection_mode (single, round_robin,
@@ -323,6 +327,8 @@ class UserSetting < ApplicationRecord
     end
   end
 
+  alias_method :select_automated_provider_identifier, :select_automated_runner_identifier
+
   def runner_priority_for_goal(goal, identifiers: false)
     goal_identifier = default_runner_identifier_for_goal(goal)
     default = goal_identifier.present? ? [ goal_identifier ] : []
@@ -350,27 +356,18 @@ class UserSetting < ApplicationRecord
     end.uniq
   end
 
-  # Returns the ordered fallback runners for the given primary runner.
-  # Saved order is respected first, then any other configured fallback runners
-  # are appended so newly added runners participate automatically.
-  #
-  # If the current primary appears in the saved fallback order, fallback wraps
-  # around that position so a goal-specific or manually selected primary lower
-  # in the list still exhausts the runners after it before wrapping to the
-  # runners above it.
-  #
-  # @param primary_runner [String] The runner already being attempted
-  # @return [Array<String>] Fallback runner keys in attempt order
-  def fallback_priority_for(primary_runner:, identifiers: false)
+  def fallback_priority_for(primary_runner: nil, primary_provider: nil, identifiers: false)
+    current_primary = primary_runner || primary_provider
+
     candidates = allowed_runner_identifiers_for_fallback
     saved_order = Array(fallback_runners).flat_map do |runner|
       identifiers_for_runner_token(runner, candidates: candidates)
     end
     ordered_candidates = (saved_order + (candidates - saved_order)).uniq
-    primary_identifiers = identifiers_for_runner_token(primary_runner, candidates: ordered_candidates)
-    primary_index = saved_order.index { |runner| primary_identifiers.include?(runner) || runner == primary_runner }
+    primary_identifiers = identifiers_for_runner_token(current_primary, candidates: ordered_candidates)
+    primary_index = saved_order.index { |runner| primary_identifiers.include?(runner) || runner == current_primary }
     rotated_candidates = primary_index ? ordered_candidates.rotate(primary_index + 1) : ordered_candidates
-    priorities = rotated_candidates.reject { |runner| primary_identifiers.include?(runner) || runner == primary_runner }
+    priorities = rotated_candidates.reject { |runner| primary_identifiers.include?(runner) || runner == current_primary }
     return priorities if identifiers
 
     map_identifiers_to_runner_keys(priorities)
@@ -415,6 +412,8 @@ class UserSetting < ApplicationRecord
   rescue ActiveRecord::RecordNotUnique
     user.runner_states.find_by!(runner_name: runner_name)
   end
+
+  alias_method :provider_state_for, :runner_state_for
 
   private
 
@@ -690,6 +689,8 @@ class UserSetting < ApplicationRecord
 
     candidates.include?(preferred_identifier) ? [ preferred_identifier ] : []
   end
+
+  alias_method :identifiers_for_provider_token, :identifiers_for_runner_token
 
   def map_identifiers_to_runner_keys(identifiers)
     Array(identifiers).map do |identifier|
