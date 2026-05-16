@@ -1080,10 +1080,23 @@ module Activities
     # output that merely discusses rate limits is not reclassified as a
     # provider failure.
     def successful_exit_rate_limit_error?(output)
-      return false if output.blank?
-      return false if output.length > SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH
+      standalone_rate_limit_signal(output).present?
+    end
 
-      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    def standalone_rate_limit_signal(output)
+      return nil if output.blank?
+
+      normalized_output = normalize_output_text(output)
+      if normalized_output.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| normalized_output.match?(pattern) }
+        return normalized_output
+      end
+
+      normalized_output.each_line.map(&:strip).find do |line|
+        line.present? &&
+          line.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| line.match?(pattern) }
+      end
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000

@@ -2983,6 +2983,23 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      it "detects a short rate limit line wrapped in otherwise successful output" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "OK.\nWeekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
       it "detects ProviderModelNotFoundError returned with exit code 0" do
         model_not_found_stderr = <<~ERR
           Error: Model not found: glm-5.1/.
