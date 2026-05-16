@@ -35,21 +35,12 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch(job_name)
           step_names = job.fetch("steps").map { |step| step["name"] }
 
-          if workflow_path == ".github/workflows/pr-screenshots.yml"
-            expect(job.fetch("env")).to include(
-              "PAID_TEST_DATABASE" => "paid_test",
-              "DB_USERNAME" => "paid",
-              "DB_PASSWORD" => "paid"
-            )
-            expect(step_names).to include("Create application database role")
-          else
-            expect(job.fetch("env")).to include(
-              "PAID_TEST_DATABASE" => "paid_test",
-              "DB_USERNAME" => "postgres",
-              "DB_PASSWORD" => "postgres"
-            )
-            expect(step_names).not_to include("Create application database role")
-          end
+          expect(job.fetch("env")).to include(
+            "PAID_TEST_DATABASE" => "paid_test",
+            "DB_USERNAME" => "paid",
+            "DB_PASSWORD" => "paid"
+          )
+          expect(step_names).to include("Create application database role")
         end
 
         it "installs the exact PGDG postgres client package for #{job_name}" do
