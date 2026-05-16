@@ -19,7 +19,10 @@ module LegacyAttributeBridge
     end
   end
 
-  def update_column(name, value)
-    update_columns(name => value)
+  def update_column(name, value, touch: nil)
+    attributes = { name => value }
+    attributes[:touch] = touch unless touch.nil?
+
+    update_columns(attributes)
   end
 end

@@ -50,8 +50,15 @@ RSpec.describe LegacyAttributeBridge, :no_db do
     it "delegates through update_columns so bridge-aware models keep aliases synchronized" do
       record = bridge_host_class.new
 
-      expect(record).to receive(:update_columns).with("runner_key" => "codex")
+      expect(record).to receive(:update_columns).with(a_hash_including("runner_key" => "codex"))
       record.update_column("runner_key", "codex")
+    end
+
+    it "preserves Rails' touch kwarg when delegating to update_columns" do
+      record = bridge_host_class.new
+
+      expect(record).to receive(:update_columns).with(a_hash_including("runner_key" => "codex", touch: true))
+      record.update_column("runner_key", "codex", touch: true)
     end
   end
 end
