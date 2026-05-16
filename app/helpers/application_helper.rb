@@ -2,6 +2,7 @@
 
 module ApplicationHelper
   MISSING_RUNNER_ENTRY_LABEL = "Deleted runner entry"
+  MISSING_PROVIDER_ENTRY_LABEL = MISSING_RUNNER_ENTRY_LABEL
 
   # Dark-mode colors for these badges are handled by the global unlayered
   # overrides in application.tailwind.css (e.g. `.dark .bg-indigo-100`),
@@ -119,6 +120,14 @@ module ApplicationHelper
     return runner_displays.fetch(run.id) if runner_displays
 
     agent_run_runner_displays([ run ]).fetch(run.id)
+  end
+
+  def agent_run_provider_displays(runs)
+    agent_run_runner_displays(runs)
+  end
+
+  def agent_run_provider_display(run, provider_displays = nil)
+    agent_run_runner_display(run, provider_displays)
   end
 
   PAID_STATE_STYLES = {

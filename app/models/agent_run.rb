@@ -34,6 +34,7 @@ class AgentRun < ApplicationRecord
   STDOUT_TAIL_LINES = 500
 
   OPERATIONAL_FAILURE_KEYWORDS = [
+    "providers exhausted",
     "runners exhausted",
     "Docker exec",
     "Activity task timed out",
