@@ -21,6 +21,7 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
     DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS = 3
+    NO_PROGRESS_ESCALATION_WINDOW = 1.hour
     # Floor for re-scanning a PR even when GitHub's `updated_at` has not
     # advanced. `updated_at` does not bump for check-run state changes,
     # unanswered bot review requests, or review-goal retry timers — without
@@ -172,16 +173,18 @@ module Activities
     def build_lifecycle_signals(project, issue)
       progress_state = pr_progress_state(project, issue)
       op_breaker = operational_failure_breaker?(project, issue, progress_state)
+      no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
       reason = if op_breaker
-        "Consecutive operational failures " \
-          "(#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} runs failed due to provider exhaustion/timeout)"
-      elsif retry_escalation
-        "Review-goal retry limit reached " \
+        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+          "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
+      elsif no_progress_stuck && retry_escalation
+        "Review-goal retry budget exhausted with no meaningful progress for " \
+          "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
           "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
-      elsif failure_limit
+      elsif no_progress_stuck && failure_limit
         failure_streak_reason(project, issue, progress_state)
       end
 
@@ -191,6 +194,7 @@ module Activities
         phase: issue.pr_review_phase,
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
+        no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
         escalation_dismissed: escalation_dismissed?(issue),
@@ -258,7 +262,7 @@ module Activities
           current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
         )
 
-        if failure_streak_limit_reached?(project, issue, progress_state) && pr_data.draft
+        if no_progress_stuck?(project, issue, progress_state) && pr_data.draft
           return escalate_trigger(issue, reason: failure_streak_reason(project, issue, progress_state))
         end
       end
@@ -303,7 +307,9 @@ module Activities
       # progress without human intervention. Ready/escalated PRs still fetch
       # live PR state first so a GitHub-side draft conversion or transient
       # fetch failure can short-circuit before we escalate on stale data.
-      if retry_limit_requires_escalation && issue.pr_review_phase.in?(%w[draft restarted])
+      if retry_limit_requires_escalation &&
+          no_progress_stuck?(project, issue, progress_state) &&
+          issue.pr_review_phase.in?(%w[draft restarted])
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
                   "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)")
@@ -380,7 +386,7 @@ module Activities
     # --- Draft phase scanning ---
 
     def draft_review_limit_reached?(project, issue)
-      issue.draft_phase? && failure_streak_limit_reached?(project, issue)
+      issue.draft_phase? && no_progress_stuck?(project, issue)
     end
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
@@ -616,7 +622,8 @@ module Activities
         return owner_approved_trigger(issue)
       end
 
-      if review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
+      if review_goal_retry_limit_requires_escalation?(project, issue, progress_state:) &&
+          no_progress_stuck?(project, issue, progress_state)
         return escalate_trigger(issue,
           reason: "Review-goal retry limit reached " \
                   "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)")
@@ -1115,11 +1122,14 @@ module Activities
       streak = progress_state.consecutive_unsuccessful_automatic_runs
 
       if progress_state.latest_unsuccessful_review?
-        "Automatic PR failure streak reached (#{streak} consecutive unsuccessful runs; latest run was review)"
+        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+          "#{streak} consecutive unsuccessful automatic runs; latest run was review"
       elsif issue.draft_phase?
-        "Automatic PR failure streak reached (#{streak} consecutive unsuccessful runs in the current PR cycle)"
+        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+          "#{streak} consecutive unsuccessful automatic runs in the current PR cycle"
       else
-        "Automatic PR failure streak reached (#{streak} consecutive unsuccessful runs without meaningful progress)"
+        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+          "#{streak} consecutive unsuccessful automatic runs"
       end
     end
 
@@ -1127,7 +1137,7 @@ module Activities
       return false unless issue.pr_review_phase.in?(%w[ready escalated])
       return false if suppress_followup_limit_for_review_failures?(project, issue, progress_state)
 
-      failure_streak_limit_reached?(project, issue, progress_state)
+      no_progress_stuck?(project, issue, progress_state)
     end
 
     def suppress_followup_limit_for_review_failures?(project, issue, progress_state)
@@ -1170,8 +1180,15 @@ module Activities
     # with different code changes might succeed.
     def operational_failure_breaker?(project, issue, progress_state = pr_progress_state(project, issue))
       return false if issue.escalated_phase?
+      return false unless progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES
 
-      progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES
+      no_meaningful_progress_window_elapsed?(progress_state)
+    end
+
+    def no_progress_stuck?(project, issue, progress_state = pr_progress_state(project, issue))
+      return false unless failure_streak_limit_reached?(project, issue, progress_state)
+
+      progress_state.stuck?(limit: pr_failure_limit(project, issue), stale_after: NO_PROGRESS_ESCALATION_WINDOW)
     end
 
     # Returns true when the latest finished automatic review-goal run in the
@@ -2011,6 +2028,13 @@ module Activities
       else
         effective
       end
+    end
+
+    def no_meaningful_progress_window_elapsed?(progress_state)
+      progress_at = progress_state.last_meaningful_progress_at || progress_state.latest_unsuccessful_run_at
+      return false if progress_at.blank?
+
+      progress_at <= NO_PROGRESS_ESCALATION_WINDOW.ago
     end
 
     def review_run_cycle_boundary

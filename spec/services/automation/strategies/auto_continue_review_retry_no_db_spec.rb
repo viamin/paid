@@ -19,6 +19,7 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
       phase: "ready",
       active_run_exists: false,
       operational_failure_breaker: false,
+      no_progress_stuck: false,
       failure_streak_limit_reached: true,
       review_goal_retry_limit_requires_escalation: false,
       escalation_dismissed: false,
@@ -100,6 +101,7 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
       metadata: {
         lifecycle: lifecycle.merge(
           review_goal_retry_limit_requires_escalation: true,
+          no_progress_stuck: true,
           escalation_reason: reason
         ),
         scan:
@@ -116,7 +118,11 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
   end
 
   it "continues into AutoReview when escalation service decides auto_resolve" do
-    context = Automation::Context.build(record: pull_request, project: project, metadata: { lifecycle:, scan: followup_scan })
+    context = Automation::Context.build(
+      record: pull_request,
+      project: project,
+      metadata: { lifecycle: lifecycle.merge(no_progress_stuck: true), scan: followup_scan }
+    )
 
     allow(Coordination::EscalationService).to receive(:call)
       .with(project: project, issue: pull_request, signals: kind_of(Automation::Strategies::AutoContinue::Signals))
@@ -144,6 +150,7 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
         lifecycle: lifecycle.merge(
           phase: "escalated",
           operational_failure_breaker: true,
+          no_progress_stuck: true,
           escalation_dismissed: true
         )
       }

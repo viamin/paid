@@ -82,6 +82,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         phase: "ready",
         active_run_exists: false,
         operational_failure_breaker: false,
+        no_progress_stuck: false,
         failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
@@ -109,7 +110,8 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
             operational_failure_breaker: true,
-            escalation_reason: "Consecutive operational failures (3 runs)"
+            no_progress_stuck: true,
+            escalation_reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
           )
         )
 
@@ -119,7 +121,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
           issue_id: pull_request.id,
           pr_number: 42,
           owner_reviewer_login: "alice",
-          reason: "Consecutive operational failures (3 runs)"
+          reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
         )
       end
     end
@@ -149,6 +151,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: draft_lifecycle.merge(
             failure_streak_limit_reached: true,
+            no_progress_stuck: true,
             consecutive_unsuccessful_automatic_runs: 3,
             escalation_reason: "Automatic PR failure streak reached"
           )
@@ -168,6 +171,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: restarted_lifecycle.merge(
             failure_streak_limit_reached: true,
+            no_progress_stuck: true,
             consecutive_unsuccessful_automatic_runs: 3,
             escalation_reason: "Automatic PR failure streak reached"
           )
@@ -182,6 +186,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
             failure_streak_limit_reached: true,
+            no_progress_stuck: true,
             consecutive_unsuccessful_automatic_runs: 3,
             escalation_reason: "Automatic PR failure streak reached"
           )
@@ -194,6 +199,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
             failure_streak_limit_reached: true,
+            no_progress_stuck: false,
             consecutive_unsuccessful_automatic_runs: 3,
             escalation_reason: "Automatic PR failure streak reached"
           ),
@@ -213,6 +219,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: base_lifecycle.merge(
             failure_streak_limit_reached: true,
+            no_progress_stuck: false,
             consecutive_unsuccessful_automatic_runs: 3,
             escalation_reason: "Automatic PR failure streak reached"
           ),
@@ -244,6 +251,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         result = evaluate(
           lifecycle: escalated_lifecycle.merge(
             failure_streak_limit_reached: true,
+            no_progress_stuck: true,
             consecutive_unsuccessful_automatic_runs: 3,
             escalation_reason: "Automatic PR failure streak reached"
           )
@@ -328,6 +336,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         phase: "draft",
         active_run_exists: false,
         operational_failure_breaker: false,
+        no_progress_stuck: false,
         failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
@@ -344,6 +353,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
         lifecycle: base_lifecycle.merge(
           active_run_exists: true,
           operational_failure_breaker: true,
+          no_progress_stuck: true,
           escalation_reason: "Consecutive operational failures"
         ),
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "draft", triggers: [] }
