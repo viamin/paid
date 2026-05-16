@@ -10,7 +10,12 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:backend) { Containers.backend }
 
   def build_backend(identifier:, remote:)
-    instance_double(Containers::Backends::Base, identifier: identifier, remote?: remote)
+    instance_double(
+      Containers::Backends::Base,
+      identifier: identifier,
+      remote?: remote,
+      all_host_identifiers: [ identifier ]
+    )
   end
 
   def stub_no_containers
