@@ -26,4 +26,13 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
       "PAID_TEST_DATABASE" => "paid_test"
     )
   end
+
+  it "locates Chromium via the runner PATH and exports CHROMIUM_PATH for capture" do
+    locate_step = workflow.fetch("jobs").fetch("capture").fetch("steps").find do |step|
+      step["name"] == "Locate Chromium-family browser"
+    end
+
+    expect(locate_step.fetch("run")).to include("command -v chromium || true")
+    expect(locate_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
+  end
 end
