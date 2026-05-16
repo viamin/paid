@@ -24,7 +24,7 @@ module Activities
       # labels coexist on the same PR.
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
-      post_escalation_comment(client, project, issue, input[:reason])
+      post_escalation_comment(client, project, issue, input[:reason], phase_before:)
 
       logger.info(
         message: "pr_review.marked_escalated",
@@ -72,10 +72,10 @@ module Activities
     # recent 100 comments. On very long-lived PRs with 100+ comments after the
     # escalation note, a retry could post a duplicate. Acceptable because
     # escalation is rare and full pagination would waste API rate limit.
-    def post_escalation_comment(client, project, issue, reason)
+    def post_escalation_comment(client, project, issue, reason, phase_before:)
       return if escalation_comment_exists?(client, project, issue)
 
-      body = build_escalation_comment(reason, project, issue)
+      body = build_escalation_comment(reason, project, issue, phase_before:)
       client.add_comment(project.full_name, issue.github_number, body)
     rescue GithubClient::Error => e
       logger.warn(
@@ -111,8 +111,8 @@ module Activities
       false
     end
 
-    def build_escalation_comment(reason, project, issue)
-      reason = default_reason(project, issue) if reason.blank?
+    def build_escalation_comment(reason, project, issue, phase_before:)
+      reason = default_reason(project, issue, phase_before:) if reason.blank?
       owner = project.owner_reviewer_login
 
       lines = [ COMMENT_MARKER, "**Escalation Note**", "" ]
@@ -126,11 +126,23 @@ module Activities
       lines.join("\n")
     end
 
-    def default_reason(project, issue)
-      "the automated draft review limit " \
-        "(#{project.max_draft_review_rounds} rounds) " \
-        "has been reached after #{issue.draft_review_count} review cycles " \
-        "and the PR requires human intervention"
+    def default_reason(project, issue, phase_before: nil)
+      limit = if draft_originated?(issue, phase_before)
+        project.max_draft_review_rounds
+      else
+        project.max_pr_followup_runs
+      end
+
+      "the automatic PR failure limit " \
+        "(#{limit} consecutive unsuccessful runs) " \
+        "has been reached without meaningful progress and the PR requires human intervention"
+    end
+
+    def draft_originated?(issue, phase_before)
+      return phase_before.in?(%w[draft restarted]) if phase_before.present?
+      return issue.draft_phase? if issue.respond_to?(:draft_phase?)
+
+      issue.pr_review_phase.in?(%w[draft restarted])
     end
   end
 end
