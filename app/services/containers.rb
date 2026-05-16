@@ -26,7 +26,10 @@ module Containers
     def all_backends
       active_backend = backend
       backends = { active_backend.identifier => active_backend }
-      [ local_backend, remote_backend ].compact.each do |candidate|
+      Backends::Resolver.backend_types.each do |backend_type|
+        candidate = resolve_optional_backend(backend_type)
+        next unless candidate
+
         backends[candidate.identifier] = candidate
       end
       backends.values
