@@ -99,6 +99,14 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.owns_host?("other-host")).to be(false)
   end
 
+  it "keeps recognizing persisted node hostnames even when the node is not ready" do
+    down_node = node_payload.deep_dup
+    down_node["Status"]["State"] = "down"
+    stub_manager_get("/nodes", [ down_node ])
+
+    expect(backend.owns_host?("worker-1")).to be(true)
+  end
+
   it "caches node hostnames between owns_host? checks for a short ttl" do
     allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 100.0, 131.0)
 

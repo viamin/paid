@@ -187,6 +187,7 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
+      validate_backend_mount_support!
       prepare_heartbeat_dir! if backend.supports_host_paths?
       prepare_workspace!
       ensure_network!
@@ -1525,6 +1526,11 @@ module Containers
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
     def prepare_workspace!
       if host_worktree_path.present?
+        unless backend.supports_host_paths?
+          raise ProvisionError,
+            "Backend #{backend.identifier} does not support host-backed worktree paths: #{host_worktree_path}"
+        end
+
         raise ProvisionError, "Worktree path does not exist: #{host_worktree_path}" unless File.directory?(host_worktree_path)
       else
         @workspace_volume ||= pooled_container? ? "paid-pool-workspace-#{pool_entry.id}" : "paid-workspace-#{agent_run.id}"
@@ -1708,7 +1714,7 @@ module Containers
       binds = []
       if @workspace_volume
         binds << "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
-      elsif host_worktree_path.present?
+      elsif backend.supports_host_paths? && host_worktree_path.present?
         binds << "#{host_worktree_path}:#{options[:workspace_mount]}:rw"
       end
 
@@ -1717,24 +1723,27 @@ module Containers
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs
       # by seed_claude_credentials! after container start.
-      if claude_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         claude_config_host_path.present? &&
          File.directory?(claude_config_host_path) &&
          File.file?(File.join(claude_config_host_path, ".credentials.json"))
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
-      if codex_subscription_auth_host_mount_path.present?
+      if backend.supports_host_paths? && codex_subscription_auth_host_mount_path.present?
         binds.concat(codex_subscription_auth_file_binds)
       end
 
-      if gemini_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         gemini_config_host_path.present? &&
          File.directory?(gemini_config_host_path) &&
          File.file?(File.join(gemini_config_host_path, "oauth_creds.json")) &&
          gemini_subscription_auth?
         binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro"
       end
 
-      if copilot_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         copilot_config_host_path.present? &&
          File.directory?(copilot_config_host_path) &&
          File.file?(File.join(copilot_config_host_path, "config.json")) &&
          copilot_subscription_auth?
@@ -2042,6 +2051,35 @@ module Containers
       proxy_port = Rails.application.config.x.paid_proxy_port
       proxy_host = network_contract.restricted? ? "paid-proxy" : "web"
       "http://#{proxy_host}:#{proxy_port}"
+    end
+
+    def validate_backend_mount_support!
+      return if backend.supports_host_paths?
+
+      unsupported_mounts = []
+      unsupported_mounts << "worktree path #{host_worktree_path}" if host_worktree_path.present?
+      if host_only_auth_source?(claude_config_host_path, ".credentials.json", claude_local_config_path)
+        unsupported_mounts << "Claude subscription auth at #{claude_config_host_path}"
+      end
+      if codex_subscription_auth_host_mount_path.present?
+        unsupported_mounts << "Codex subscription auth at #{codex_subscription_auth_host_mount_path}"
+      end
+      if host_only_auth_source?(gemini_config_host_path, "oauth_creds.json", gemini_local_config_path)
+        unsupported_mounts << "Gemini subscription auth at #{gemini_config_host_path}"
+      end
+      if host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path)
+        unsupported_mounts << "Copilot subscription auth at #{copilot_config_host_path}"
+      end
+      return if unsupported_mounts.empty?
+
+      raise ProvisionError,
+        "Backend #{backend.identifier} does not support required host paths: #{unsupported_mounts.join(', ')}"
+    end
+
+    def host_only_auth_source?(host_path, marker_file, local_path)
+      return false unless host_path.present? && File.file?(File.join(host_path, marker_file))
+
+      local_path.blank? || !File.file?(File.join(local_path, marker_file))
     end
 
     # Returns the Docker-host path to the Claude config directory.

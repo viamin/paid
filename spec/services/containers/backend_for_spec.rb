@@ -27,6 +27,13 @@ RSpec.describe Containers, ".backend_for", :no_db do
     expect(described_class.backend_for("worker-1")).to eq(local_backend)
   end
 
+  it "keeps routing persisted worker hostnames back to the active backend" do
+    swarm_backend = instance_double(Containers::Backends::Base, identifier: "swarm", owns_host?: true)
+    allow(described_class).to receive(:backend).and_return(swarm_backend)
+
+    expect(described_class.backend_for("worker-1")).to eq(swarm_backend)
+  end
+
   it "resolves a registered backend by host name" do
     remote_backend = instance_double(Containers::Backends::Base, identifier: "remote")
     Containers::Backends::Resolver.register(:remote, -> { remote_backend })

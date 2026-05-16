@@ -419,16 +419,20 @@ module Containers
       end
 
       def healthy_nodes
-        parse_json(manager_connection.get("/nodes")).select do |node|
+        all_nodes.select do |node|
           node.dig("Spec", "Availability") == "active" &&
             node.dig("Status", "State") == "ready"
         end
       end
 
+      def all_nodes
+        parse_json(manager_connection.get("/nodes"))
+      end
+
       def cached_node_hostnames
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         if @node_hostnames_expires_at.nil? || now >= @node_hostnames_expires_at
-          @cached_node_hostnames = healthy_nodes.map { |node| node_hostname(node) }.compact.to_set
+          @cached_node_hostnames = all_nodes.map { |node| node_hostname(node) }.compact.to_set
           @node_hostnames_expires_at = now + NODE_HOSTNAME_CACHE_TTL
         end
 
@@ -440,7 +444,7 @@ module Containers
       end
 
       def node_by_hostname(hostname)
-        healthy_nodes.find { |node| node_hostname(node) == hostname.to_s }
+        all_nodes.find { |node| node_hostname(node) == hostname.to_s }
       end
 
       def node_hostname(node)
