@@ -202,6 +202,7 @@ RSpec.describe AgentRuns::CleanupStale do
     end
 
     it "uses adaptive goal-aware stale thresholds for running runs" do
+      stub_const("AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE", 3)
       create_list(:agent_run, AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
         :completed,
         :review_goal,
