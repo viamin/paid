@@ -21,32 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22.13.0 (pinned version for reproducible builds)
-# Using direct download with pinned checksum verification for supply-chain security
-# Checksums from official release: https://nodejs.org/download/release/v22.13.0/SHASUMS256.txt
-# Keep version in sync with .tool-versions
-RUN NODE_VERSION=22.13.0 \
-    && DEB_ARCH="$(dpkg --print-architecture)" \
-    && case "$DEB_ARCH" in \
-        amd64) NODE_ARCH="x64"; EXPECTED_CHECKSUM="9a33e89093a0d946c54781dcb3ccab4ccf7538a7135286528ca41ca055e9b38f" ;; \
-        arm64) NODE_ARCH="arm64"; EXPECTED_CHECKSUM="e0cc088cb4fb2e945d3d5c416c601e1101a15f73e0f024c9529b964d9f6dce5b" ;; \
-        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
-    esac \
-    && TARBALL="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
-    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${TARBALL}" \
-    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
-    && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
-    && rm "${TARBALL}"
-
-# Install the PGDG apt repository so Ubuntu Noble can install the same pg_dump
-# minor version as the pinned Postgres server image.
-RUN install -d /usr/share/postgresql-common/pgdg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-    && . /etc/os-release \
-    && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources
-
-# Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
-# Keep client tools on the exact Postgres version shipped by the pinned server image.
+# Install Ruby build dependencies first so the expensive Ruby compile layer
+# survives more image rebuilds when Node or PostgreSQL pins change later.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -56,13 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libyaml-dev \
     libffi-dev \
     libgdbm-dev \
-    libpq-dev \
-    postgresql-client-16=16.14-1.pgdg24.04+1 \
     rustc \
-    shellcheck \
-    python3 \
-    python3-pip \
-    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ruby (pinned version for reproducible builds)
@@ -89,6 +59,42 @@ RUN apt-get update && apt-get purge -y --auto-remove \
     autoconf \
     bison \
     rustc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22.13.0 (pinned version for reproducible builds)
+# Using direct download with pinned checksum verification for supply-chain security
+# Checksums from official release: https://nodejs.org/download/release/v22.13.0/SHASUMS256.txt
+# Keep version in sync with .tool-versions
+RUN NODE_VERSION=22.13.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) NODE_ARCH="x64"; EXPECTED_CHECKSUM="9a33e89093a0d946c54781dcb3ccab4ccf7538a7135286528ca41ca055e9b38f" ;; \
+        arm64) NODE_ARCH="arm64"; EXPECTED_CHECKSUM="e0cc088cb4fb2e945d3d5c416c601e1101a15f73e0f024c9529b964d9f6dce5b" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && TARBALL="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${TARBALL}" \
+    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
+    && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
+    && rm "${TARBALL}"
+
+# Install the PGDG apt repository so Ubuntu Noble can install the same pg_dump
+# minor version as the pinned Postgres server image.
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && . /etc/os-release \
+    && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources
+
+# Install runtime deps, Python, PostgreSQL client libs, and ShellCheck after Ruby
+# so routine toolchain pin updates do not force a full Ruby recompilation.
+# Keep client tools on the exact Postgres version shipped by the pinned server image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    postgresql-client-16=16.14-1.pgdg24.04+1 \
+    shellcheck \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bundler (pinned to match Gemfile.lock)
@@ -147,6 +153,12 @@ RUN SCC_VERSION=3.7.0 \
     && tar -xzf "${TARBALL}" -C /usr/local/bin scc \
     && chmod +x /usr/local/bin/scc \
     && rm "${TARBALL}"
+
+# Create non-root user for security before provider-specific setup. Keeping
+# this separate from any one provider narrows the blast radius of future edits.
+RUN useradd -m -s /bin/bash agent \
+    && mkdir -p /workspace /home/agent/.config /home/agent/.local/share \
+    && chown -R agent:agent /workspace /home/agent
 
 # Install Claude Code CLI via agent-harness install contract.
 # The install command and post-install binary path are extracted from
@@ -221,6 +233,24 @@ RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
     fi \
     && npm install -g --ignore-scripts "${OPENCODE_PACKAGE}"
 
+# Pre-seed the OpenCode SQLite database so the first container invocation does
+# not emit "Performing one time database migration, may take a few minutes..."
+# into stdout, which breaks the Test Agent ping response matching.
+# The opencode binary creates its DB on first run; this step discards the
+# network-dependent output and only keeps the migrated SQLite file.
+#
+# The pre-seeded DB is copied to /opt/opencode-seed so it survives the tmpfs
+# mount that Provision#host_config places at /home/agent/.local/share/opencode
+# at runtime. Containers::Provision#seed_opencode_database! copies it from
+# /opt into the tmpfs after the container starts.
+USER agent
+RUN mkdir -p /home/agent/.local/share/opencode \
+    && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
+USER root
+RUN mkdir -p /opt/opencode-seed \
+    && cp -a /home/agent/.local/share/opencode/. /opt/opencode-seed/ \
+    && chown -R agent:agent /opt/opencode-seed
+
 # Pi CLI: version is owned by agent-harness (installation_contract).
 # PI_PACKAGE is extracted from agent-harness at build time by
 # build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
@@ -292,29 +322,6 @@ RUN git config --system init.defaultBranch main \
     && git config --system user.email "agent@paid.dev" \
     && git config --system user.name "Paid Agent" \
     && git config --system credential.helper /usr/local/bin/git-credential-paid
-
-# Create non-root user for security
-RUN useradd -m -s /bin/bash agent \
-    && mkdir -p /workspace /home/agent/.config /home/agent/.local/share \
-    && chown -R agent:agent /workspace /home/agent
-
-# Pre-seed the OpenCode SQLite database so the first container invocation does
-# not emit "Performing one time database migration, may take a few minutes..."
-# into stdout, which breaks the Test Agent ping response matching.
-# The opencode binary creates its DB on first run; this step discards the
-# network-dependent output and only keeps the migrated SQLite file.
-#
-# The pre-seeded DB is copied to /opt/opencode-seed so it survives the tmpfs
-# mount that Provision#host_config places at /home/agent/.local/share/opencode
-# at runtime. Containers::Provision#seed_opencode_database! copies it from
-# /opt into the tmpfs after the container starts.
-USER agent
-RUN mkdir -p /home/agent/.local/share/opencode \
-    && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
-USER root
-RUN mkdir -p /opt/opencode-seed \
-    && cp -a /home/agent/.local/share/opencode/. /opt/opencode-seed/ \
-    && chown -R agent:agent /opt/opencode-seed
 
 # Set up working directory
 WORKDIR /workspace
