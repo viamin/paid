@@ -62,6 +62,7 @@ class Issue < ApplicationRecord
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
   after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
+  after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -561,5 +562,60 @@ class Issue < ApplicationRecord
       .includes(:project)
       .joins(:project)
       .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
+  end
+
+  def auto_pick_recheck_needed?
+    return false if is_pull_request?
+    return false unless saved_change_to_paid_state?
+
+    paid_state.in?(%w[new planning failed completed])
+  end
+
+  def enqueue_self_if_became_auto_pick_eligible
+    return unless Issues::AutoPickProjectGate.call(project)
+
+    wait = auto_pick_reenqueue_delay
+    job = Issues::ReenqueueEligibleJob
+
+    if wait
+      job.set(wait: wait).perform_later(id)
+    else
+      job.perform_later(id)
+    end
+
+    Rails.logger.info(
+      message: "enqueue_eligible.issue_state_changed",
+      issue_id: id,
+      issue_number: github_number,
+      project_id: project_id,
+      paid_state: paid_state,
+      wait_seconds: wait&.to_i
+    )
+  end
+
+  def auto_pick_reenqueue_delay
+    return unless paid_state == "failed"
+
+    case [ consecutive_auto_pick_failure_count, 1 ].max
+    when 1
+      5.minutes
+    when 2
+      15.minutes
+    when 3
+      1.hour
+    else
+      4.hours
+    end
+  end
+
+  def consecutive_auto_pick_failure_count
+    statuses = agent_runs
+      .where(auto_pick: true, goal: %w[create_pr analyze_issue])
+      .finished
+      .order(created_at: :desc, id: :desc)
+      .limit(10)
+      .pluck(:status)
+
+    statuses.take_while { |status| AgentRun::FAILURE_STATUSES.include?(status) }.count
   end
 end

@@ -325,6 +325,80 @@ RSpec.describe Issue do
     end
   end
 
+  describe "after_update_commit on paid_state change" do
+    it "enqueues an immediate recheck when a non-PR issue moves back into an auto-pick eligible state" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      allow(Rails.logger).to receive(:info)
+
+      expect {
+        issue.update!(paid_state: "new")
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "enqueue_eligible.issue_state_changed",
+          issue_id: issue.id,
+          paid_state: "new",
+          wait_seconds: nil
+        )
+      )
+    end
+
+    it "backs off failed issue retries to avoid immediate hot loops" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(5.minutes.from_now)
+      end
+    end
+
+    it "increases failed issue retry backoff for consecutive failures" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      2.times do
+        create(:agent_run, :timeout, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      end
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.minutes.from_now)
+      end
+    end
+
+    it "does not re-enqueue intentional waiting states" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "needs_input")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+
+    it "does not re-enqueue pull requests" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, :pull_request, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+
+    it "does not re-enqueue when the project gate defers auto-pick" do
+      project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+  end
+
   describe "instance methods" do
     describe "#github_url" do
       it "returns the GitHub issue URL for issues" do
