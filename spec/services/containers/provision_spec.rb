@@ -3057,18 +3057,18 @@ RSpec.describe Containers::Provision do
         }.to raise_error(described_class::IdleTimeoutError)
       end
 
-      it "does not start startup heartbeat thread when heartbeat_host_path is absent" do
+      it "returns nil from start_startup_heartbeat when heartbeat_host_path is absent" do
         allow(service).to receive(:heartbeat_host_path).and_return(nil)
 
-        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
-          block.call(:stdout, "output\n") if block
-          [ [ "output\n" ], [], 0 ]
-        end
+        result = service.send(
+          :start_startup_heartbeat,
+          Mutex.new,
+          -> { false },
+          -> { false },
+          1
+        )
 
-        service.execute("claude_remote_backend", timeout: 10, startup_timeout: 2)
-
-        # Verify indirectly: start_startup_heartbeat returns nil when host path is nil.
-        expect(service.heartbeat_host_path).to be_nil
+        expect(result).to be_nil
       end
     end
   end

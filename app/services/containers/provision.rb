@@ -676,7 +676,7 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
-        stop_watchdog(startup_heartbeat)
+        stop_startup_heartbeat(startup_heartbeat)
         # Persist turn metrics even on error paths so partial progress is recorded.
         safe_flush_streaming_metrics(streaming_event_processor)
         if cleanup_steps&.any?
@@ -2809,11 +2809,26 @@ module Containers
 
       Thread.new do
         loop do
-          FileUtils.touch(host_path) rescue nil
-          break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+            log_system("container.startup_heartbeat.deadline_reached",
+              startup_timeout: startup_timeout,
+              message: "Agent produced no output within startup_timeout; falling back to idle timeout")
+            break
+          end
           break if mutex.synchronize { exec_completed_ref.call || output_received_ref.call }
+          FileUtils.touch(host_path) rescue nil
           sleep startup_heartbeat_interval_seconds
         end
+      end
+    end
+
+    def stop_startup_heartbeat(thread)
+      return unless thread&.alive?
+
+      thread.kill
+      unless thread.join(1)
+        log_system("container.startup_heartbeat.zombie",
+          message: "Startup heartbeat thread did not terminate within 1s")
       end
     end
 
