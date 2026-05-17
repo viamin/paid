@@ -712,7 +712,15 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
-      container_service = reconnect_container(agent_run)
+      container_service = begin
+        reconnect_container(agent_run)
+      rescue Temporalio::Error::ApplicationError => e
+        # Container lost after a prior failure cleared container_id. Surface as
+        # ProviderExecutionError so the original failure remains the primary error
+        # rather than ContainerNotProvisioned overwriting it in the activity record.
+        raise ProviderExecutionError, e.message if e.type == "ContainerNotProvisioned"
+        raise
+      end
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
