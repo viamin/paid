@@ -133,8 +133,13 @@ module PaidAgentHarnessPiRuntimePatch
   end
 end
 
-AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
-  AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
+# Drop this patch once agent-harness natively materialises Pi API-key auth.
+# Adjust the version ceiling to whichever harness release ships that support.
+# TODO(#2077): remove when agent-harness >= 0.19.0 ships native Pi API-key support
+if agent_harness_version < Gem::Version.new("0.19.0")
+  AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
+    AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
+end
 
 # Default agent timeout used for AgentHarness boot-time config and as a
 # fallback when per-user settings are unavailable. Runtime code should
