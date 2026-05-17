@@ -19,6 +19,23 @@ RSpec.describe Containers::GitOperations do
     project.effective_owner.providers.find_by!(provider_key: "claude")
   end
 
+  def stub_auto_commit_prerequisites(status_stdout: "M  file.rb\n", staged_stdout: "file.rb\n")
+    status_result = Containers::Provision::Result.success(stdout: status_stdout, stderr: "", exit_code: 0)
+    staged_result = Containers::Provision::Result.success(stdout: staged_stdout, stderr: "", exit_code: 0)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+      .and_return(status_result)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+      .and_return(success_result)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+      .and_return(staged_result)
+  end
+
   describe "#clone_and_setup_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
     let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
@@ -718,6 +735,9 @@ RSpec.describe Containers::GitOperations do
 
     it "stages and commits with --no-verify when there are uncommitted changes" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      issue = create(:issue, project: project, title: "Add queue monitoring dashboard")
+      agent_run.update!(issue: issue)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
         .and_return(status_result)
@@ -732,14 +752,35 @@ RSpec.describe Containers::GitOperations do
         .and_return(staged_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "--no-verify", "-m", "feat: Add queue monitoring dashboard" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
     end
 
     it "appends the co-author trailer to the commit message when configured" do
+      issue = create(:issue, project: project, title: "Resolve stalled worker retries")
+      agent_run.update!(issue: issue)
+      stub_auto_commit_prerequisites
+
+      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(agent_run).to receive(:effective_provider_record).and_return(provider)
+
+      expect(container_service).to receive(:execute)
+        .with(
+          [ "git", "commit", "--no-verify", "-m",
+            "fix: Resolve stalled worker retries\n\nCo-Authored-By: Claude <noreply@anthropic.com>" ],
+          timeout: nil, stream: false
+        )
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "falls back to a chore commit when there is no linked issue" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      agent_run.update!(issue: nil, custom_prompt: "Tidy workspace")
+
       allow(container_service).to receive(:execute)
         .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
         .and_return(status_result)
@@ -753,14 +794,8 @@ RSpec.describe Containers::GitOperations do
         .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
         .and_return(staged_result)
 
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
-
       expect(container_service).to receive(:execute)
-        .with(
-          [ "git", "commit", "--no-verify", "-m",
-            "Apply agent changes\n\nCo-Authored-By: Claude <noreply@anthropic.com>" ],
-          timeout: nil, stream: false
-        )
+        .with([ "git", "commit", "--no-verify", "-m", "chore: apply agent changes" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
@@ -795,7 +830,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(staged_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
@@ -1007,7 +1042,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(staged_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
@@ -1032,7 +1067,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(staged_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
