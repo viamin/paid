@@ -49,6 +49,14 @@ module RunnersHelper
         "If Copilot creds live elsewhere, set <code>COPILOT_HOME</code> (or Paid's legacy <code>COPILOT_CONFIG_DIR</code> override).",
         "Restart the <code>web</code> and <code>worker</code> services after changing credential mounts."
       ]
+    },
+    "pi" => {
+      summary: "Pi API-key auth is supported in Paid today:",
+      items: [
+        "API-key entries use a saved Provider API Key plus a runner-level Pi API Provider selection such as DeepSeek, OpenAI, or Anthropic.",
+        "Paid writes a request-scoped <code>~/.pi/agent/auth.json</code> inside the agent container so Pi uses the selected key deterministically.",
+        "Optional model IDs are passed through as <code>pi --model ...</code>; if left blank, Pi uses its default or previously selected model."
+      ]
     }
   }.freeze
 

@@ -10,7 +10,7 @@ module ProvidersHelper
   private
 
   def provider_auth_instruction_block(provider_key)
-    copy = RunnersHelper::RUNNER_AUTH_INSTRUCTION_COPY[provider_key]
+    copy = provider_instruction_copy_for(provider_key)
     return copy.merge(provider_key: provider_key, title: Provider.display_name(provider_key), fallback: false) if copy
 
     {
@@ -24,5 +24,24 @@ module ProvidersHelper
       ],
       fallback: true
     }
+  end
+
+  def provider_instruction_copy_for(provider_key)
+    copy = RunnersHelper::RUNNER_AUTH_INSTRUCTION_COPY[provider_key]
+    return unless copy
+
+    {
+      summary: providerized_instruction_text(copy[:summary]),
+      items: copy[:items].map { |item| providerized_instruction_text(item) }
+    }
+  end
+
+  def providerized_instruction_text(text)
+    text.to_s
+      .gsub("runner-level", "provider-level")
+      .gsub("runner record", "provider record")
+      .gsub("runner entry", "provider entry")
+      .gsub("runner", "provider")
+      .gsub("Runner", "Provider")
   end
 end

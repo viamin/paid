@@ -85,9 +85,9 @@ module Automation
           return dismiss_escalation_result(signals)
         end
 
-        # Operational failure breaker — fires for any phase. The check
-        # runs before phase-specific gates so that persistent provider
-        # exhaustion/timeout failures always surface an escalation.
+        # Operational failure breaker — provider/infrastructure bursts only
+        # escalate once the PR has also gone stale without meaningful
+        # progress for too long.
         if signals.operational_failure_breaker
           return escalation_service_result(
             signals,
@@ -114,8 +114,9 @@ module Automation
 
       def escalation_candidate?(signals)
         return true if signals.operational_failure_breaker
-        return false unless signals.failure_streak_limit_reached
+        return false unless signals.no_progress_stuck
         return true if signals.review_goal_retry_limit_requires_escalation
+        return false unless signals.failure_streak_limit_reached
         return false if review_followup_pending?(signals)
 
         true

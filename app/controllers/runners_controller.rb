@@ -164,7 +164,8 @@ class RunnersController < ApplicationController
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ], aider: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ], aider: [ :api_provider, :model ],
+                pi: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -238,6 +239,8 @@ class RunnersController < ApplicationController
     elsif @runner.api_key?
       @api_key_runner_options |= [ key ] unless @api_key_runner_options.include?(key)
     end
+
+    assign_legacy_provider_option_ivars
   end
 
   def validate_runner_key_enabled!
@@ -511,16 +514,31 @@ class RunnersController < ApplicationController
     if %w[opencode kilocode aider].include?(runner_key)
       return resource_model_class::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
     end
+    if runner_key == "pi"
+      return resource_model_class::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
+    end
 
     api_key.api_service_type == resource_api_service_type_for(runner_key)
   end
 
   def enabled_agent_runner_identifiers
-    return UserSetting.enabled_agent_providers(current_user, identifiers: true) if legacy_provider_controller?
+    return legacy_enabled_agent_provider_identifiers if legacy_provider_controller?
 
     executable_keys = resource_container_executable_keys
     runners = resource_records.kept_only.for_agent_runs.where(runner_key: executable_keys).ordered
     UserSetting.runner_identifiers_for(runners, identifiers: true)
+  end
+
+  def legacy_enabled_agent_provider_identifiers
+    tokens = UserSetting.enabled_agent_providers(current_user)
+    return [] if tokens.blank?
+
+    providers = resource_records.kept_only.for_agent_runs.ordered.to_a
+    tokens.filter_map do |token|
+      next token if Provider.routing_key?(token)
+
+      providers.find { |provider| provider.matches_identifier?(token) }&.routing_key
+    end
   end
 
   # Returns Runner records corresponding to the given routing-key

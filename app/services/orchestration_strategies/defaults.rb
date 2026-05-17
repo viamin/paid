@@ -153,16 +153,16 @@ module OrchestrationStrategies
         "escalation" => {
           "human_value_threshold" => 0.65,
           "explicit_triggers" => %w[
-            operational_failure_breaker
-            failure_streak_limit_reached
+            no_progress_stuck
           ],
           "auto_resolve_trigger_types" => %w[
             owner_approved
             ready_for_owner
           ],
           "weights" => {
-            "operational_failure_breaker" => 0.45,
-            "unified_failure_pressure" => 0.3,
+            "no_progress_stuck" => 0.55,
+            "operational_failure_breaker" => 0.1,
+            "unified_failure_pressure" => 0.2,
             "blocking_triggers" => 0.15,
             "owner_reviewer_present" => 0.1,
             "escalated_phase" => 0.1

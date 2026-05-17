@@ -101,7 +101,9 @@ module AgentRuns
       return unless base_runner
       return unless runner_runnable?(base_runner)
 
-      service_type = base_runner.required_api_service_type
+      service_type = tenant_api_key_service_type_for(base_runner)
+      return unless service_type
+
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
       return unless api_key
       return unless api_key.compatible_with?(base_runner.runner_key)
@@ -110,13 +112,52 @@ module AgentRuns
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
         provider_api_key: api_key
-      )
+      ) do |runner|
+        runner.config = tenant_api_key_runner_config(base_runner, api_key)
+      end.tap do |runner|
+        config = tenant_api_key_runner_config(base_runner, api_key)
+        runner.update!(config: config) if config != runner.config
+      end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
       owner.runners.kept_only.find_by(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
         provider_api_key: api_key
       )
+    end
+
+    def tenant_api_key_service_type_for(base_runner)
+      return base_runner.aider_required_api_service_type if base_runner.runner_key == "aider"
+      return base_runner.pi_required_api_service_type if base_runner.runner_key == "pi"
+
+      static = support_module.api_service_type_for(base_runner.runner_key)
+      return static if static.present?
+
+      nil
+    end
+
+    def tenant_api_key_runner_config(base_runner, api_key)
+      case base_runner.runner_key
+      when "aider"
+        {
+          "aider" => {
+            "api_provider" => api_key.api_service_type,
+            "model" => base_runner.aider_model_id
+          }.compact
+        }
+      when "pi"
+        config = {
+          "pi" => {
+            "api_provider" => api_key.api_service_type
+          }
+        }
+
+        model = project.account.tenant_setting&.model_preference_for("pi").to_s.presence
+        config["pi"]["model"] = model if model
+        config
+      else
+        {}
+      end
     end
 
     def runner_for_id(runner_id)

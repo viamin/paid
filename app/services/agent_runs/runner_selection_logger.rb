@@ -86,6 +86,7 @@ module AgentRuns
       {
         "runner_id" => resolved_runner_id,
         "runner_key" => runner&.runner_key || Runner.runner_key_for_agent_type(resolved_agent_type),
+        "provider_key" => runner&.runner_key || Runner.runner_key_for_agent_type(resolved_agent_type),
         "auth_type" => runner&.auth_type,
         "agent_type" => resolved_agent_type,
         "effective_runner" => runner&.runner_key || Runner.runner_key_for_agent_type(resolved_agent_type),
@@ -127,6 +128,7 @@ module AgentRuns
         "selected" => selected,
         "runner_id" => runner&.id,
         "runner_key" => runner&.runner_key || Runner.runner_key_for_agent_type(agent_type),
+        "provider_key" => runner&.runner_key || Runner.runner_key_for_agent_type(agent_type),
         "auth_type" => runner&.auth_type,
         "agent_type" => agent_type
       }.compact
@@ -170,11 +172,11 @@ module AgentRuns
 
     def selection_source
       preferred_agent_type = preferences["preferred_agent_type"]
-      return "requested_runner" if requested_runner_selected?
+      return "requested_provider" if requested_runner_selected?
       return "requested_agent_type" if requested_agent_type_selected?
       return "project_preferred_agent_type" if preferred_agent_type.present? && preferred_agent_type == resolved_agent_type
 
-      "runner_selection"
+      "provider_selection"
     end
 
     def requested_runner_selected?

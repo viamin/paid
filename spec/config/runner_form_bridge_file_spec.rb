@@ -18,10 +18,12 @@ RSpec.describe RunnerFormBridgeFile, :no_db do
   end
 
   it "supports aider API-key configuration in both runner and provider form controllers" do
-    expect(runner_controller).to include('const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "aider"])')
-    expect(provider_controller).to include('const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode", "aider"])')
+    expect(runner_controller).to include('const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "aider", "pi"])')
+    expect(provider_controller).to include('const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode", "aider", "pi"])')
     expect(runner_controller).to include('"aiderSettings"')
     expect(provider_controller).to include('"aiderSettings"')
+    expect(runner_controller).to include('"piSettings"')
+    expect(provider_controller).to include('"piSettings"')
   end
 
   it "renders aider model settings in both bridge forms" do
@@ -29,9 +31,14 @@ RSpec.describe RunnerFormBridgeFile, :no_db do
     expect(runner_form).to include('name="runner[config][aider][model]"')
     expect(provider_form).to include('name="provider[config][aider][api_provider]"')
     expect(provider_form).to include('name="provider[config][aider][model]"')
+    expect(runner_form).to include('name="runner[config][pi][api_provider]"')
+    expect(runner_form).to include('name="runner[config][pi][model]"')
+    expect(provider_form).to include('name="provider[config][pi][api_provider]"')
+    expect(provider_form).to include('name="provider[config][pi][model]"')
   end
 
   it "permits aider config through the runners controller bridge" do
     expect(runners_controller).to include("aider: [ :api_provider, :model ]")
+    expect(runners_controller).to include("pi: [ :api_provider, :model ]")
   end
 end

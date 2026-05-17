@@ -411,7 +411,7 @@ RSpec.describe Provider do
 
   describe "provider bridge columns" do
     it "keeps runner_key synchronized when legacy provider columns are updated directly" do
-      provider = create(:provider, provider_key: "claude")
+      provider = create(:user).providers.find_by!(provider_key: "claude")
 
       provider.update_columns(provider_key: "cursor")
 
@@ -907,6 +907,64 @@ RSpec.describe Provider do
     end
   end
 
+  describe "Pi agent-harness runtime helpers" do
+    let(:user) { create(:user) }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "deepseek", api_key: "sk-deepseek-secret") }
+    let(:provider) do
+      create(
+        :provider,
+        user: user,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
+      )
+    end
+
+    it "builds provider runtime inputs for Pi API key auth" do
+      runtime = provider.agent_harness_provider_runtime
+
+      expect(runtime.api_provider).to eq("deepseek")
+      expect(runtime.model).to eq("deepseek-chat")
+      expect(runtime.env).to eq({})
+      expect(runtime.metadata).to include(
+        "paid_pi_auth_entry" => {
+          "provider" => "deepseek",
+          "api_key" => "sk-deepseek-secret"
+        }
+      )
+    end
+
+    it "allows Pi API key entries without a model override" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "deepseek" } }
+      )
+
+      expect(provider).to be_valid
+      expect(provider.pi_model_id).to be_nil
+      expect(provider.agent_harness_provider_runtime.model).to be_nil
+    end
+
+    it "rejects unsupported Pi API provider selections" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "inception" } }
+      )
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config]).to include("must include a supported Pi API provider")
+    end
+  end
+
   describe "#agent_harness_runtime?" do
     it "returns true for copilot providers" do
       provider = build(:provider, provider_key: "copilot")
@@ -924,6 +982,21 @@ RSpec.describe Provider do
         auth_type: "api_key",
         provider_api_key: api_key,
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "test-model" } }
+      )
+
+      expect(provider.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns true for pi API-key providers" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek", api_key: "sk-test")
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
       )
 
       expect(provider.agent_harness_runtime?).to be(true)
