@@ -572,8 +572,6 @@ class Issue < ApplicationRecord
   end
 
   def enqueue_self_if_became_auto_pick_eligible
-    return unless Issues::AutoPickProjectGate.call(project)
-
     wait = auto_pick_reenqueue_delay
     job = Issues::ReenqueueEligibleJob
 
@@ -616,6 +614,6 @@ class Issue < ApplicationRecord
       .limit(10)
       .pluck(:status)
 
-    statuses.take_while { |status| AgentRun::FAILURE_STATUSES.include?(status) }.count
+    statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count
   end
 end

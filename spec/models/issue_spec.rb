@@ -371,6 +371,20 @@ RSpec.describe Issue do
       end
     end
 
+    it "counts no_output runs toward the failure backoff streak" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      2.times do
+        create(:agent_run, :no_output, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      end
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.minutes.from_now)
+      end
+    end
+
     it "does not re-enqueue intentional waiting states" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
@@ -389,13 +403,13 @@ RSpec.describe Issue do
       }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
     end
 
-    it "does not re-enqueue when the project gate defers auto-pick" do
+    it "still enqueues recheck when the project gate defers auto-pick" do
       project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
 
       expect {
         issue.update!(paid_state: "failed")
-      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
     end
   end
 
