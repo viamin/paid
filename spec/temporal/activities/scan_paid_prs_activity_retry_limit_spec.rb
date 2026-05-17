@@ -7,7 +7,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     let(:activity) { described_class.new }
     let(:project) { instance_double(ProjectDouble) }
     let(:client) { instance_double(GithubClientDouble) }
-    let(:progress_state) { instance_double(ProgressStateDouble) }
+    let(:progress_state) { instance_double(ProgressStateDouble, latest_unsuccessful_review?: false) }
     let(:issue) do
       instance_double(IssueDouble,
         pr_review_phase: phase,
@@ -24,6 +24,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("ProgressStateDouble", Class.new do
         def latest_unsuccessful_review?; end
         def escalation_worthy?(limit:); end
+        def stuck?(limit:, stale_after:); end
+        def latest_unsuccessful_run_at; end
       end)
       stub_const("IssueDouble", Class.new)
       stub_const("PrDataDouble", Class.new do
@@ -40,17 +42,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         current_head_sha: anything,
         current_head_updated_at: anything).and_return(progress_state)
       allow(activity).to receive(:pr_head_commit_timestamp).with(client, project, issue, anything).and_return(Time.current)
+      allow(activity).to receive(:pr_failure_limit).with(project, issue).and_return(3)
       allow(activity).to receive(:record_focus_resolution).with(project, client, issue)
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
       allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue).and_return(false)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(false)
       allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
       allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(true)
       allow(activity).to receive(:review_goal_retry_limit_reached?).with(project, issue, progress_state:).and_return(true)
       allow(activity).to receive(:review_goal_retry_limit_requires_escalation?).with(project, issue, progress_state:).and_return(true)
       allow(activity).to receive(:review_goal_consecutive_failure_count).with(project, issue, progress_state:).and_return(3)
+      allow(activity).to receive(:review_goal_max_retries).with(project).and_return(3)
       allow(activity).to receive(:check_rate_budget!).with(client)
       allow(activity).to receive(:fetch_pr_data)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
+      allow(activity).to receive(:focus_for).and_return("review_feedback")
+      allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
     end
 
     context "when a restarted PR already has an active create_pr run" do
@@ -86,8 +93,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "fetches live PR state before escalating at the retry limit" do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
+        allow(progress_state).to receive(:stuck?).and_return(true)
         allow(activity).to receive(:escalate_trigger).with(issue,
-          reason: "Review-goal retry limit reached (3 consecutive failures)").and_return(:escalated)
+          reason: "Review-goal retry budget exhausted with no meaningful progress for 60 minutes " \
+            "(3 consecutive failures)").and_return(:escalated)
 
         result = activity.send(:scan_pr, project, client, issue)
 
@@ -103,8 +113,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           current_head_sha: "abc123",
           current_head_updated_at: head_commit_timestamp
         ).and_return(progress_state)
+        allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
+        allow(progress_state).to receive(:stuck?).and_return(true)
         allow(activity).to receive(:escalate_trigger).with(issue,
-          reason: "Review-goal retry limit reached (3 consecutive failures)").and_return(:escalated)
+          reason: "Review-goal retry budget exhausted with no meaningful progress for 60 minutes " \
+            "(3 consecutive failures)").and_return(:escalated)
 
         activity.send(:scan_pr, project, client, issue)
 
@@ -166,7 +179,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.send(:scan_pr, project, client, issue)
 
-        expect(result).to eq(:draft_scan)
+        expect(result).to include(
+          focus: "review_feedback",
+          triggers: [
+            {
+              type: "review_goal_retry",
+              details: "Retrying failed review-goal run (attempt 4/3)"
+            }
+          ]
+        )
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end
@@ -181,7 +202,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           :[] => true)
       end
 
-      it "reuses the cached progress state instead of refetching the head commit timestamp" do
+      def stub_ready_scan(pr_data, progress_state, activity, project, client, issue)
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
         allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:fetch_check_runs).with(client, project, pr_data).and_return([])
@@ -195,12 +216,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           mergeable: true,
           progress_state: progress_state
         ).and_return(:ready_scan)
+      end
+
+      it "reuses the cached progress state instead of refetching the head commit timestamp" do
+        stub_ready_scan(pr_data, progress_state, activity, project, client, issue)
 
         result = activity.send(:scan_pr, project, client, issue)
 
-        expect(result).to eq(:ready_scan)
+        expect(result).to include(
+          focus: "review_feedback",
+          triggers: [
+            {
+              type: "review_goal_retry",
+              details: "Retrying failed review-goal run (attempt 4/3)"
+            }
+          ]
+        )
         expect(activity).to have_received(:pr_progress_state).with(project, issue).once
         expect(activity).to have_received(:pr_head_commit_timestamp).with(client, project, issue, pr_data).once
+      end
+
+      it "keeps emitting review_goal_retry until the no-progress window is actually exhausted" do
+        stub_ready_scan(pr_data, progress_state, activity, project, client, issue)
+        allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(false)
+        allow(activity).to receive(:scan_bot_authored_ready_pr).and_return(nil)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to include(
+          triggers: [
+            {
+              type: "review_goal_retry",
+              details: "Retrying failed review-goal run (attempt 4/3)"
+            }
+          ],
+          current_review_goal_retry_count: 0
+        )
       end
     end
 
@@ -250,6 +301,73 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end
+
+    context "when stale operational failures are present on a ready PR" do
+      let(:phase) { "ready" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: false,
+          head: instance_double(PrHeadDouble, sha: "ready123"),
+          updated_at: Time.current)
+      end
+      let(:scan_result) do
+        {
+          issue_id: issue.id,
+          pr_number: issue.github_number,
+          phase: "ready",
+          triggers: [ { type: "ci_failure", details: "test-suite" } ]
+        }
+      end
+
+      it "continues into ready-phase scanning instead of forcing escalate_to_owner" do
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_ready_pr).with(project, client, issue, pr_data: pr_data).and_return(scan_result)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(scan_result)
+        expect(activity).not_to have_received(:escalate_trigger)
+      end
+    end
+
+    context "when stale operational failures are present on a draft PR" do
+      let(:phase) { "draft" }
+      let(:pr_data) do
+        instance_double(PrDataDouble,
+          draft: false,
+          head: instance_double(PrHeadDouble, sha: "draft123"),
+          updated_at: Time.current)
+      end
+
+      it "preserves legacy escalate_to_owner when explicit decisions are disabled" do
+        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:operational_failure_reason).and_return("stale operational failures")
+        allow(activity).to receive(:escalate_trigger).with(issue, reason: "stale operational failures").and_return(:escalated)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:escalated)
+      end
+
+      it "keeps operational failures lifecycle-only when explicit decisions are enabled" do
+        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
+        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_draft_pr).with(project, client, issue, pr_data: pr_data).and_return(:draft_scan)
+
+        result = activity.send(:scan_pr, project, client, issue)
+
+        expect(result).to eq(:draft_scan)
+        expect(activity).not_to have_received(:escalate_trigger)
+      end
+    end
   end
 
   describe "#failure_streak_limit_reached?", :no_db do
@@ -259,6 +377,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("FailureStreakProgressStateStub", Class.new do
         def escalation_worthy?(limit:); end
         def latest_unsuccessful_review?; end
+        def stuck?(limit:, stale_after:); end
       end)
     end
 
@@ -269,7 +388,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       instance_double(
         FailureStreakProgressStateStub,
         escalation_worthy?: true,
-        latest_unsuccessful_review?: true
+        latest_unsuccessful_review?: true,
+        stuck?: true
       )
     end
 
@@ -695,10 +815,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "keeps the ready-phase follow-up gate for non-review failure streaks" do
       progress_state = instance_double(
         FollowupLimitProgressStateStub,
-        latest_unsuccessful_review?: false,
-        escalation_worthy?: true
+        latest_unsuccessful_review?: false
       )
-      allow(project).to receive(:max_pr_followup_runs).and_return(3)
+      allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(true)
 
       expect(activity.send(:followup_limit_reached?, project, issue, progress_state)).to be(true)
     end
@@ -736,6 +855,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "reports the unified failure streak even when the ready follow-up gate is suppressed" do
       allow(activity).to receive(:pr_progress_state).with(project, issue).and_return(progress_state)
       allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(false)
       allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
       allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
         .with(project, issue, progress_state:)
@@ -749,10 +869,58 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       expect(signals).to include(
         failure_streak_limit_reached: true,
-        escalation_reason: "Automatic PR failure streak reached",
+        no_progress_stuck: false,
+        escalation_reason: nil,
         consecutive_unsuccessful_automatic_runs: 3,
         review_goal_retry_count: 1
       )
+    end
+  end
+
+  describe "#no_progress_stuck?", :no_db do
+    before do
+      stub_const("NoProgressProjectStub", Class.new)
+      stub_const("NoProgressIssueStub", Class.new)
+      stub_const("NoProgressProgressStateStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(NoProgressProjectStub) }
+    let(:issue) { instance_double(NoProgressIssueStub) }
+    let(:progress_state) { instance_double(NoProgressProgressStateStub, latest_unsuccessful_review?: false) }
+
+    it "stays false until the stale no-progress window has elapsed" do
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
+      allow(activity).to receive(:pr_failure_limit).with(project, issue).and_return(3)
+      expect(progress_state).to receive(:stuck?).with(
+        limit: 3,
+        stale_after: Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+      ).and_return(true)
+
+      expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(true)
+    end
+
+    it "returns false when the PR still has recent progress despite the streak" do
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
+      allow(activity).to receive(:pr_failure_limit).with(project, issue).and_return(3)
+      allow(progress_state).to receive(:stuck?).and_return(false)
+
+      expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(false)
+    end
+
+    it "uses the review-goal retry limit when follow-up streak escalation is disabled" do
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
+        .with(project, issue, progress_state:)
+        .and_return(true)
+      allow(progress_state).to receive(:latest_unsuccessful_review?).and_return(true)
+      allow(activity).to receive(:review_goal_max_retries).with(project).and_return(2)
+      expect(activity).not_to receive(:failure_streak_limit_reached?)
+      expect(progress_state).to receive(:stuck?).with(
+        limit: 2,
+        stale_after: Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+      ).and_return(true)
+
+      expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(true)
     end
   end
 end
