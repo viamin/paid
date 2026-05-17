@@ -108,18 +108,18 @@ module AgentRuns
       return unless api_key
       return unless api_key.compatible_with?(base_provider.provider_key)
 
+      provider_config = tenant_api_key_provider_config(base_provider, api_key)
       owner.providers.kept_only.find_or_create_by!(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
         provider_api_key: api_key
       ) do |provider|
-        provider.config = tenant_api_key_provider_config(base_provider, api_key)
+        provider.config = provider_config
       end.tap do |provider|
         # Config can drift between calls (e.g. tenant changes their Pi model
         # preference in tenant_settings without rotating the API key). Sync it
         # on every materialisation so the next agent run picks up the change.
-        fresh_config = tenant_api_key_provider_config(base_provider, api_key)
-        provider.update!(config: fresh_config) if fresh_config != provider.config
+        provider.update!(config: provider_config) if provider_config != provider.config
       end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
       owner.providers.kept_only.find_by(

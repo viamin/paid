@@ -483,19 +483,7 @@ class ProvidersController < ApplicationController
   end
 
   def compatible_api_key_for_provider?(api_key:, provider_key:)
-    # OpenCode and KiloCode support multiple API key types depending on the
-    # selected api_provider, so check against all compatible service types.
-    if %w[opencode kilocode].include?(provider_key)
-      return Provider::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
-    end
-
-    # Pi also chooses its upstream API provider per-entry, but its supported
-    # service types are narrower than the direct-outbound set above.
-    if provider_key == "pi"
-      return Provider::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
-    end
-
-    api_key.api_service_type == Provider.api_service_type_for(provider_key)
+    api_key.compatible_with?(provider_key)
   end
 
   def enabled_agent_provider_identifiers
