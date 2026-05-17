@@ -4,6 +4,14 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Providers::HarnessExecutionPlan do
+  def build_user_with_account
+    create(
+      :user,
+      email: "harness-execution-plan-#{SecureRandom.hex(6)}@example.com",
+      account: create(:account, slug: "harness-execution-plan-#{SecureRandom.hex(6)}")
+    )
+  end
+
   describe ".for_provider_key" do
     let(:copilot_plan_payload) do
       {
@@ -42,11 +50,7 @@ RSpec.describe Providers::HarnessExecutionPlan do
 
   describe ".call" do
     it "builds the OpenCode execution contract through agent-harness" do
-      user = create(
-        :user,
-        email: "harness-execution-plan-#{SecureRandom.hex(6)}@example.com",
-        account: create(:account, slug: "harness-execution-plan-#{SecureRandom.hex(6)}")
-      )
+      user = build_user_with_account
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       provider = create(
         :provider,
@@ -67,11 +71,7 @@ RSpec.describe Providers::HarnessExecutionPlan do
     end
 
     it "writes opencode.json with provider as record, not string" do
-      user = create(
-        :user,
-        email: "harness-execution-plan-#{SecureRandom.hex(6)}@example.com",
-        account: create(:account, slug: "harness-execution-plan-#{SecureRandom.hex(6)}")
-      )
+      user = build_user_with_account
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       provider = create(
         :provider,
@@ -89,6 +89,31 @@ RSpec.describe Providers::HarnessExecutionPlan do
       expect(parsed["provider"]).to eq({ "openrouter" => {} })
       expect(parsed["model"]).to eq("openrouter/moonshotai/kimi-k2-0905")
       expect(parsed).not_to have_key("baseURL")
+    end
+
+    it "writes Pi auth.json for API-key providers so request-scoped credentials win" do
+      user = build_user_with_account
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek", api_key: "sk-deepseek-secret")
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
+      )
+
+      plan = described_class.call(provider: provider, prompt: "ping")
+
+      expect(plan.command).to include("pi", "--provider", "deepseek", "--model", "deepseek-chat")
+      expect(plan.preparation.file_writes.first.path).to eq("/home/agent/.pi/agent/auth.json")
+      expect(plan.preparation.file_writes.first.mode).to eq(0o600)
+      expect(JSON.parse(plan.preparation.file_writes.first.content)).to eq(
+        "deepseek" => {
+          "type" => "api_key",
+          "key" => "sk-deepseek-secret"
+        }
+      )
     end
 
     it "constructs the harness provider with external sandboxing enabled" do

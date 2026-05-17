@@ -474,6 +474,31 @@ RSpec.describe "Providers" do
       expect(provider.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
+    it "persists nested Pi config for API-key providers" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+
+      post providers_path, params: {
+        provider: {
+          provider_key: "pi",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            pi: {
+              api_provider: "deepseek",
+              model: "deepseek-chat"
+            }
+          }
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      provider = user.providers.find_by!(provider_key: "pi", auth_type: "api_key")
+      expect(provider.pi_api_provider).to eq("deepseek")
+      expect(provider.pi_model_id).to eq("deepseek-chat")
+    end
+
     it "rejects kilocode API-key providers without a model id" do
       api_key = create(:provider_api_key, user: user, api_service_type: "inception")
 
