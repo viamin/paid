@@ -165,6 +165,7 @@ module Coordination
       weights = policy["weights"]
 
       value = 0.0
+      value += weights["no_progress_stuck"] if prediction_signals["no_progress_stuck"]
       value += weights["operational_failure_breaker"] if prediction_signals["operational_failure_breaker"]
       value += weights["unified_failure_pressure"] * prediction_signals["unified_failure_pressure"]
       value += weights["blocking_triggers"] * prediction_signals["blocking_trigger_pressure"]
@@ -176,6 +177,7 @@ module Coordination
 
     def prediction_signals
       {
+        "no_progress_stuck" => signals["no_progress_stuck"] == true,
         "operational_failure_breaker" => signals["operational_failure_breaker"] == true,
         "unified_failure_pressure" => normalized_unified_failure_pressure,
         "blocking_trigger_pressure" => normalized_blocking_trigger_pressure,

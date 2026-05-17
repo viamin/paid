@@ -19,7 +19,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
-        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_at: 2.hours.ago,
         latest_unsuccessful_run_goal: "create_pr",
         latest_unsuccessful_run_status: "failed"
       )
@@ -50,7 +50,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
           consecutive_operational_failures: 0,
           last_meaningful_progress_at: nil,
           latest_automatic_run_at: nil,
-          latest_unsuccessful_run_at: nil,
+          latest_unsuccessful_run_at: 2.hours.ago,
           latest_unsuccessful_run_goal: "create_pr",
           latest_unsuccessful_run_status: "failed"
         )
@@ -109,6 +109,22 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
       expect(issue).not_to have_received(:pr_progress_state)
     end
 
+    it "does not match when the failure count is met but the staleness window has not elapsed" do
+      allow(issue).to receive(:pr_progress_state).and_return(
+        PullRequests::ProgressState::Result.new(
+          consecutive_unsuccessful_automatic_runs: 3,
+          consecutive_operational_failures: 0,
+          last_meaningful_progress_at: nil,
+          latest_automatic_run_at: nil,
+          latest_unsuccessful_run_at: 10.minutes.ago,
+          latest_unsuccessful_run_goal: "create_pr",
+          latest_unsuccessful_run_status: "failed"
+        )
+      )
+
+      expect(rule.send(:detect, [ issue ])).to eq([])
+    end
+
     it "does not match when the latest unsuccessful run was a review failure" do
       allow(issue).to receive(:pr_progress_state).and_return(
         PullRequests::ProgressState::Result.new(
@@ -139,7 +155,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
-        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_at: 2.hours.ago,
         latest_unsuccessful_run_goal: "create_pr",
         latest_unsuccessful_run_status: "failed"
       )
@@ -167,7 +183,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
-        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_at: 2.hours.ago,
         latest_unsuccessful_run_goal: "create_pr",
         latest_unsuccessful_run_status: "failed"
       )

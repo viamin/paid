@@ -23,6 +23,7 @@ RSpec.describe Coordination::EscalationService do
         phase: issue.pr_review_phase,
         active_run_exists: false,
         operational_failure_breaker: false,
+        no_progress_stuck: false,
         failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
@@ -64,6 +65,7 @@ RSpec.describe Coordination::EscalationService do
 
     def persisted_prediction_signals
       {
+        "no_progress_stuck" => true,
         "operational_failure_breaker" => true,
         "unified_failure_pressure" => 0.0,
         "blocking_trigger_pressure" => 0.0,
@@ -87,6 +89,7 @@ RSpec.describe Coordination::EscalationService do
 
     def explicit_trigger_decision_inputs
       {
+        "no_progress_stuck" => true,
         "operational_failure_breaker" => true,
         "prediction_signals" => persisted_prediction_signals,
         "trigger_types" => [],
@@ -116,20 +119,21 @@ RSpec.describe Coordination::EscalationService do
 
     it "escalates on an explicit trigger and records the prediction inputs and outcome" do
       result = call_service(
+        no_progress_stuck: true,
         operational_failure_breaker: true,
-        escalation_reason: "Consecutive operational failures (3 runs)"
+        escalation_reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
       )
 
       expect(result).to be_escalate
-      expect(result.reason).to eq("Consecutive operational failures (3 runs)")
+      expect(result.reason).to eq("No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures")
       expect_logged_decision(
         OrchestrationDecision.last,
         status: "applied",
         inputs: explicit_trigger_decision_inputs,
         outputs: {
           "decision" => "escalate",
-          "reason" => "Consecutive operational failures (3 runs)",
-          "explicit_trigger" => "operational_failure_breaker",
+          "reason" => "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures",
+          "explicit_trigger" => "no_progress_stuck",
           "policy_source" => "defaults"
         }
       )
@@ -209,6 +213,7 @@ RSpec.describe Coordination::EscalationService do
         phase: "ready",
         active_run_exists: false,
         operational_failure_breaker: false,
+        no_progress_stuck: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
         scan: { triggers: [] },

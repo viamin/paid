@@ -119,6 +119,7 @@ RSpec.describe OrchestrationStrategies::Defaults do
         "weights",
         "interruption_cost"
       )
+      expect(config.dig("escalation", "explicit_triggers")).to eq([ "no_progress_stuck" ])
     end
 
     it "includes recovery policy defaults" do
