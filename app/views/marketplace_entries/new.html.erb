@@ -1,0 +1,9 @@
+<% content_for(:title) { "New Marketplace Entry - Paid" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <h1 class="text-2xl font-semibold text-gray-900">New Marketplace Entry</h1>
+  <p class="mt-1 text-sm text-gray-500">Store the exact runtime artifact plus the metadata teammates need to discover and use it.</p>
+  <div class="mt-6 rounded-lg bg-white p-6 shadow">
+    <%= render "form", marketplace_entry: @marketplace_entry %>
+  </div>
+</div>

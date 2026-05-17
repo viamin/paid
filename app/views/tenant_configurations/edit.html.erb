@@ -107,6 +107,11 @@
           <%= check_box_tag "tenant_setting[agent_settings][auto_continue]", "1", agent_settings["auto_continue"] %>
           Auto-continue follow-up runs
         </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 sm:col-span-2">
+          <%= hidden_field_tag "tenant_setting[agent_settings][marketplace_auto_attach_required]", "0" %>
+          <%= check_box_tag "tenant_setting[agent_settings][marketplace_auto_attach_required]", "1", agent_settings["marketplace_auto_attach_required"] %>
+          Require automatic and team-default marketplace attachments on all account runs
+        </label>
       </div>
 
       <div class="mt-4 grid gap-4 sm:grid-cols-2">

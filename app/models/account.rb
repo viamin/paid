@@ -22,6 +22,7 @@ class Account < ApplicationRecord
   has_many :all_strategies, class_name: "Strategy"
   has_many :style_guides, -> { where(project_id: nil) }, dependent: :destroy
   has_many :mcp_server_definitions, dependent: :destroy
+  has_many :marketplace_entries, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :pre_commit_requirements, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy

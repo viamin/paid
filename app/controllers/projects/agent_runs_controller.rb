@@ -46,6 +46,7 @@ module Projects
       end.compact
       @default_provider_identifier = @default_provider_identifiers_by_goal[selected_goal]
       @available_run_provider_options = available_run_provider_options
+      @marketplace_entries = marketplace_entries_for_new_run
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -375,26 +376,31 @@ module Projects
         @agent_run.provider || current_retry_provider_for(@agent_run)
       end
 
-      new_run = AgentRun.create!(
-        project: @project,
-        issue: @agent_run.issue,
-        provider: retry_provider,
-        agent_type: agent_type,
-        custom_prompt: prompt_for_retry(@agent_run),
-        source_pull_request_number: @agent_run.source_pull_request_number,
-        goal: @agent_run.goal,
-        trigger_type: "manual",
-        status: "queued"
-      )
+      new_run = ActiveRecord::Base.transaction do
+        created_run = AgentRun.create!(
+          project: @project,
+          issue: @agent_run.issue,
+          provider: retry_provider,
+          agent_type: agent_type,
+          custom_prompt: prompt_for_retry(@agent_run),
+          source_pull_request_number: @agent_run.source_pull_request_number,
+          goal: @agent_run.goal,
+          trigger_type: "manual",
+          status: "queued"
+        )
+        copy_marketplace_attachments(source_run: @agent_run, target_run: created_run)
 
-      @agent_run.retry!(
-        decision_point: "manual_retry",
-        signals: {
-          selected_agent_type: agent_type,
-          selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
-        },
-        result: { new_agent_run_id: new_run.id }
-      )
+        @agent_run.retry!(
+          decision_point: "manual_retry",
+          signals: {
+            selected_agent_type: agent_type,
+            selected_provider: retry_provider&.routing_key || retry_provider&.provider_key
+          },
+          result: { new_agent_run_id: created_run.id }
+        )
+
+        created_run
+      end
 
       ProcessRunQueueJob.perform_later
 
@@ -457,22 +463,28 @@ module Projects
 
       AgentHarness.refresh_auth(provider, token: token)
 
-      new_run = AgentRun.create!(
-        project: @project,
-        issue: @agent_run.issue,
-        provider: @agent_run.provider,
-        agent_type: @agent_run.agent_type,
-        custom_prompt: prompt_for_retry(@agent_run),
-        source_pull_request_number: @agent_run.source_pull_request_number,
-        goal: @agent_run.goal,
-        trigger_type: "manual",
-        status: "queued"
-      )
-      @agent_run.retry!(
-        decision_point: "refresh_auth_retry",
-        signals: { auth_provider: provider.to_s },
-        result: { new_agent_run_id: new_run.id }
-      )
+      new_run = ActiveRecord::Base.transaction do
+        created_run = AgentRun.create!(
+          project: @project,
+          issue: @agent_run.issue,
+          provider: @agent_run.provider,
+          agent_type: @agent_run.agent_type,
+          custom_prompt: prompt_for_retry(@agent_run),
+          source_pull_request_number: @agent_run.source_pull_request_number,
+          goal: @agent_run.goal,
+          trigger_type: "manual",
+          status: "queued"
+        )
+        copy_marketplace_attachments(source_run: @agent_run, target_run: created_run)
+
+        @agent_run.retry!(
+          decision_point: "refresh_auth_retry",
+          signals: { auth_provider: provider.to_s },
+          result: { new_agent_run_id: created_run.id }
+        )
+
+        created_run
+      end
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),
@@ -630,18 +642,81 @@ module Projects
 
       resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
 
-      AgentRun.create!(
-        project: @project,
-        issue: issue,
-        provider: resolved_provider,
-        agent_type: resolved_agent_type,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pull_request_number,
-        goal: goal,
-        trigger_type: trigger_type,
-        status: "queued",
-        priority_tier: priority_tier
+      ActiveRecord::Base.transaction do
+        agent_run = AgentRun.create!(
+          project: @project,
+          issue: issue,
+          provider: resolved_provider,
+          agent_type: resolved_agent_type,
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pull_request_number,
+          goal: goal,
+          trigger_type: trigger_type,
+          status: "queued",
+          priority_tier: priority_tier
+        )
+        attach_marketplace_entries(agent_run:)
+        agent_run
+      end
+    end
+
+    def attach_marketplace_entries(agent_run:)
+      manual_entry_ids = params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil)
+      account_auto_attach_required = marketplace_auto_attach_required_for_current_account?
+
+      MarketplaceEntries::AttachToRun.call(
+        agent_run:,
+        manual_entry_ids: manual_entry_ids,
+        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
+        account_auto_attach_required: account_auto_attach_required
       )
+    rescue => e
+      Rails.logger.warn(
+        message: "agent_execution.marketplace_attachment_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      raise if account_auto_attach_required || Array(manual_entry_ids).any?
+      raise unless ignorable_marketplace_attachment_error?(e)
+    end
+
+    def copy_marketplace_attachments(source_run:, target_run:)
+      attachments = source_run.agent_run_marketplace_entries.includes(:marketplace_entry, :marketplace_entry_version).ordered.to_a
+      return if attachments.empty?
+
+      attachments.each do |attachment|
+        target_run.agent_run_marketplace_entries.create!(
+          marketplace_entry: attachment.marketplace_entry,
+          marketplace_entry_version: attachment.marketplace_entry_version,
+          attachment_source: attachment.attachment_source,
+          position: attachment.position,
+          selection_reason: attachment.selection_reason,
+          rendered_format: attachment.rendered_format,
+          rendered_payload: attachment.rendered_payload.deep_dup
+        )
+      end
+
+      MarketplaceEntries::RerenderForRun.call(agent_run: target_run)
+    end
+
+    def marketplace_auto_attach_enabled_for_current_user?
+      current_user&.settings&.marketplace_auto_attach_enabled? || false
+    end
+
+    def marketplace_auto_attach_required_for_current_account?
+      marketplace_account&.tenant_setting&.marketplace_auto_attach_required? || false
+    end
+
+    def marketplace_entries_for_new_run
+      marketplace_account.marketplace_entries.active
+        .where.not(current_version_id: nil)
+        .ordered
+        .includes(:current_version)
+    end
+
+    def ignorable_marketplace_attachment_error?(error)
+      error.is_a?(ActiveRecord::RecordNotFound) || error.is_a?(ActiveRecord::RecordInvalid)
     end
 
     def enqueue_resume_run(pr)
@@ -878,6 +953,10 @@ module Projects
 
     def settings_owner
       @settings_owner ||= @project.effective_owner
+    end
+
+    def marketplace_account
+      @project.account
     end
 
     def enabled_retry_providers

@@ -170,6 +170,28 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect_bundle_identity(bundle)
   end
 
+  it "accepts optimizer definitions that include marketplace attachments" do
+    attachment = create(:agent_run_marketplace_entry, agent_run: agent_run)
+    optimized_definition = optimizer_definition_with_value(12_000).merge(
+      "marketplace_entries" => [
+        {
+          "entry_id" => attachment.marketplace_entry_id,
+          "version_id" => attachment.marketplace_entry_version_id,
+          "source" => attachment.attachment_source,
+          "rendered_format" => attachment.rendered_format,
+          "rendered_payload" => attachment.rendered_payload
+        }
+      ]
+    )
+    selection = optimizer_selection(definition: optimized_definition)
+    allow(ConfigurationBundles::Optimizer).to receive(:call).and_return(selection)
+
+    bundle = described_class.call(agent_run: agent_run)
+
+    expect(bundle.definition["marketplace_entries"]).to eq(optimized_definition["marketplace_entries"])
+    expect(agent_run.reload.configuration_bundle_selection_mode).to eq("exploitative")
+  end
+
   it "persists optimizer-selected experiment assignments when reusing the optimizer definition" do
     optimized_definition = optimizer_definition_with_value(12_000)
     optimized_variant = ConfigurationExperimentVariant.find(

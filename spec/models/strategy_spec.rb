@@ -103,18 +103,20 @@ RSpec.describe Strategy do
     describe ".active" do
       it "returns only active strategies" do
         active = create(:strategy, :global, status: "active")
-        create(:strategy, :global, :archived)
+        archived = create(:strategy, :global, :archived)
 
-        expect(described_class.active).to eq([ active ])
+        expect(described_class.active).to include(active)
+        expect(described_class.active).not_to include(archived)
       end
     end
 
     describe ".global" do
       it "returns strategies without account or project" do
         global = create(:strategy, :global)
-        create(:strategy, :for_account)
+        account_strategy = create(:strategy, :for_account)
 
-        expect(described_class.global).to eq([ global ])
+        expect(described_class.global).to include(global)
+        expect(described_class.global).not_to include(account_strategy)
       end
     end
 

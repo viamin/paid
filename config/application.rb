@@ -30,6 +30,15 @@ module Paid
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.1
 
+    if ENV["RAILS_ENV"] == "test" && ENV["RAILS_TEST_KEY"].to_s.empty? && ENV["RAILS_MASTER_KEY"].to_s.empty?
+      # Rails 8's Active Record encryption initializer always probes
+      # app.credentials at boot. Point test runs without credential keys at an
+      # intentionally absent encrypted file so isolated environments can boot
+      # with empty credentials instead of failing during decryption.
+      config.credentials.content_path = Pathname.new(File.expand_path("credentials/.missing-test.yml.enc", __dir__))
+      config.credentials.key_path = Pathname.new(File.expand_path("credentials/.missing-test.key", __dir__))
+    end
+
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.

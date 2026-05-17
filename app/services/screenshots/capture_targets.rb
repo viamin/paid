@@ -6,7 +6,13 @@ module Screenshots
 
     Target = Struct.new(:slug, :path_builder, :requires_auth, keyword_init: true) do
       def path(seed_data)
-        path_builder.respond_to?(:call) ? path_builder.call(seed_data) : path_builder
+        resolved_seed_data = if seed_data.is_a?(Hash)
+          seed_data.transform_keys { |key| key.respond_to?(:to_sym) ? key.to_sym : key }
+        else
+          seed_data
+        end
+
+        path_builder.respond_to?(:call) ? path_builder.call(resolved_seed_data) : path_builder
       end
     end
 
@@ -71,6 +77,10 @@ module Screenshots
       providers: Target.new(slug: "providers", path_builder: "/providers", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/providers/new?auth_type=subscription", requires_auth: true),
       providers_edit: Target.new(slug: "providers_edit", path_builder: ->(seed_data) { "/providers/#{seed_data.fetch(:provider).id}/edit" }, requires_auth: true),
+      marketplace_entries: Target.new(slug: "marketplace_entries", path_builder: "/marketplace_entries", requires_auth: true),
+      marketplace_entry_new: Target.new(slug: "marketplace_entry_new", path_builder: "/marketplace_entries/new", requires_auth: true),
+      marketplace_entry_show: Target.new(slug: "marketplace_entry_show", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}" }, requires_auth: true),
+      marketplace_entry_edit: Target.new(slug: "marketplace_entry_edit", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}/edit" }, requires_auth: true),
       service_containers: Target.new(slug: "service_containers", path_builder: "/service_containers", requires_auth: true),
       service_container_new: Target.new(slug: "service_container_new", path_builder: "/service_containers/new", requires_auth: true),
       service_container_show: Target.new(slug: "service_container_show", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}" }, requires_auth: true),
@@ -177,6 +187,7 @@ module Screenshots
       "strategy_reviews_controller.rb" => %i[strategy_reviews_queue strategy_reviews strategy_review_show],
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
+      "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
@@ -264,6 +275,7 @@ module Screenshots
     def targets_for_javascript_controller(relative_path)
       case relative_path
       when "clarifying_questions_controller.js" then [ :project_issue_clarifying_questions ]
+      when "marketplace_picker_controller.js" then [ :project_agent_run_new ]
       else
         []
       end
@@ -309,8 +321,10 @@ module Screenshots
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
+      when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
+      when "agent_runs/_detail.html.erb", "agent_runs/_detail_actions.html.erb" then [ :project_agent_run_show ]
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
       when /\Astrategy_reviews\// then strategy_review_targets(relative_path.delete_prefix("strategy_reviews/"))

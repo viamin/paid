@@ -87,6 +87,7 @@ Rails.application.routes.draw do
   resources :service_containers
   # MCP server definitions management
   resources :mcp_server_definitions
+  resources :marketplace_entries
 
   # All agent runs across projects
   resources :agent_runs, only: [ :index ] do

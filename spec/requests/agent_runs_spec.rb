@@ -1162,10 +1162,187 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.status).to eq("queued")
       end
 
+      it "attaches selected marketplace entries to the queued run" do
+        entry = create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ entry.id ] }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(entry)
+        expect(attachment.attachment_source).to eq("manual")
+      end
+
+      it "logs and continues when optional marketplace attachment lookup fails" do
+        allow(Rails.logger).to receive(:warn)
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "agent_execution.marketplace_attachment_failed",
+            error_class: "ActiveRecord::RecordNotFound",
+            error: "missing entry"
+          )
+        )
+      end
+
+      it "rolls back the agent run when optional marketplace attachment resolution raises an unexpected error" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.to raise_error(RuntimeError, "boom")
+        }.not_to change(AgentRun, :count)
+      end
+
+      it "rolls back the agent run when a selected marketplace attachment fails" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ "123" ] }
+          }.to raise_error(RuntimeError, "boom")
+        }.not_to change(AgentRun, :count)
+      end
+
+      it "applies automatic marketplace entries without treating that as consent for unrelated team-default entries" do
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+        manual_entry = create_prompt_append_marketplace_entry(name: "Manual skill", content: "Use the manual workflow.")
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ manual_entry.id ] }
+        }.to change(AgentRunMarketplaceEntry, :count).by(2)
+
+        run = AgentRun.last
+        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "automatic", "manual" ])
+      end
+
+      it "shows all active marketplace entries in the run form" do
+        create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
+        create_runtime_marketplace_entry(name: "Tool plugin", entry_type: "plugin")
+        create_runtime_marketplace_entry(name: "Provider preset", entry_type: "provider_config")
+        create_runtime_marketplace_entry(name: "Repo MCP", entry_type: "mcp_server")
+
+        get new_project_agent_run_path(project)
+
+        expect(response.body).to include("Repo skill")
+        expect(response.body).to include("Tool plugin")
+        expect(response.body).to include("Provider preset")
+        expect(response.body).to include("Repo MCP")
+      end
+
+      it "renders marketplace search and filter controls in the run form" do
+        create_runtime_marketplace_entry(name: "Ruby skill", entry_type: "skill", tags: [ "ruby", "backend" ])
+        create_runtime_marketplace_entry(name: "MCP helper", entry_type: "mcp_server", tags: [ "ops" ])
+
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+
+        expect(doc.at_css("[data-controller='marketplace-picker']")).to be_present
+        expect(doc.at_css("input#marketplace-entry-query")).to be_present
+        expect(doc.at_css("select#marketplace-entry-type option[value='skill']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-type option[value='mcp_server']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-tag option[value='ruby']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-tag option[value='ops']")).to be_present
+        expect(doc.css("[data-marketplace-picker-target='group']").size).to eq(2)
+      end
+
+      it "does not show active marketplace entries without a current version" do
+        create(:marketplace_entry, account: account, name: "Unversioned entry")
+
+        get new_project_agent_run_path(project)
+
+        expect(response.body).not_to include("Unversioned entry")
+      end
+
+      it "applies team-default marketplace entries for an opted-in project member" do
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(team_default_entry)
+        expect(attachment.attachment_source).to eq("team_default")
+      end
+
+      it "applies automatic marketplace entries for an opted-in project member" do
+        owner = create(:user, account: account)
+        owner_token = create(:github_token, account: account, created_by: owner)
+        shared_project = create(:project, account: account, github_token: owner_token, created_by: owner)
+        issue = create(:issue, project: shared_project, github_number: 43, title: "Fix the bug")
+        create(:project_membership, project: shared_project, user: user, role: "member")
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+
+        expect {
+          post project_agent_runs_path(shared_project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(automatic_entry)
+        expect(attachment.attachment_source).to eq("automatic")
+      end
+
+      it "applies automatic and team-default marketplace entries when the account requires them" do
+        tenant_setting = account.tenant_setting!
+        tenant_setting.update!(
+          agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true)
+        )
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(2)
+
+        attachments = AgentRun.last.agent_run_marketplace_entries.order(:position)
+        expect(attachments.pluck(:marketplace_entry_id)).to eq([ automatic_entry.id, team_default_entry.id ])
+        expect(attachments.pluck(:attachment_source)).to eq([ "automatic", "team_default" ])
+      end
+
       it "enqueues ProcessRunQueueJob" do
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
         }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      def create_prompt_append_marketplace_entry(name:, content:)
+        entry = create(:marketplace_entry, account: account, name:)
+        version = create(:marketplace_entry_version,
+          marketplace_entry: entry,
+          canonical_artifact: {
+            "attachment_strategy" => "prompt_append",
+            "content" => content
+          })
+        entry.update!(current_version: version)
+        entry
+      end
+
+      def create_runtime_marketplace_entry(name:, entry_type:, tags: [ "team" ])
+        entry = create(:marketplace_entry, account: account, name:, entry_type:, tags:)
+        version = create(:marketplace_entry_version, marketplace_entry: entry)
+        entry.update!(current_version: version)
+        entry
       end
 
       it "persists the selected priority tier and syncs the issue label" do

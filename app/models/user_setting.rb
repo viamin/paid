@@ -256,6 +256,10 @@ class UserSetting < ApplicationRecord
     resolved || default_provider_identifier
   end
 
+  def marketplace_auto_attach_enabled?
+    marketplace_auto_attach_enabled
+  end
+
   # Returns the next automated provider identifier to use for an agent run,
   # honoring the configured provider_selection_mode (single, round_robin,
   # random) and per-provider weights.

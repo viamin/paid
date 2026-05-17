@@ -1,0 +1,46 @@
+<% content_for(:title) { "#{@marketplace_entry.name} - Marketplace - Paid" } %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900"><%= @marketplace_entry.name %></h1>
+      <p class="mt-1 text-sm text-gray-500"><%= @marketplace_entry.description %></p>
+    </div>
+    <div class="flex gap-3">
+      <%= link_to "Edit", edit_marketplace_entry_path(@marketplace_entry), class: "inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50" %>
+      <% if policy(@marketplace_entry).destroy? %>
+        <%= button_to "Delete", marketplace_entry_path(@marketplace_entry), method: :delete, data: { turbo_confirm: "Delete this marketplace entry?" }, class: "inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-6 grid gap-6 md:grid-cols-3">
+    <div class="rounded-lg bg-white p-4 shadow md:col-span-1">
+      <dl class="space-y-3 text-sm">
+        <div><dt class="font-medium text-gray-500">Type</dt><dd class="text-gray-900"><%= @marketplace_entry.entry_type.humanize %></dd></div>
+        <div><dt class="font-medium text-gray-500">Status</dt><dd class="text-gray-900"><%= @marketplace_entry.status.humanize %></dd></div>
+        <div><dt class="font-medium text-gray-500">Provider</dt><dd class="text-gray-900"><%= @marketplace_entry.provider.presence || "-" %></dd></div>
+        <div><dt class="font-medium text-gray-500">Format</dt><dd class="text-gray-900"><%= @marketplace_entry.provider_format %></dd></div>
+        <div><dt class="font-medium text-gray-500">Added By</dt><dd class="text-gray-900"><%= @marketplace_entry.added_by_name %> (<%= @marketplace_entry.added_by_email %>)</dd></div>
+        <div><dt class="font-medium text-gray-500">Current Version</dt><dd class="text-gray-900">v<%= @marketplace_entry.current_version&.version || "-" %></dd></div>
+      </dl>
+    </div>
+
+    <div class="rounded-lg bg-white p-4 shadow md:col-span-2">
+      <h2 class="text-sm font-semibold text-gray-900">Usage Guidance</h2>
+      <p class="mt-2 whitespace-pre-wrap text-sm text-gray-700"><%= @marketplace_entry.usage_guidance.presence || "No usage guidance provided." %></p>
+
+      <% version = @marketplace_entry.current_version %>
+      <% if version %>
+        <h2 class="mt-6 text-sm font-semibold text-gray-900">Canonical Artifact</h2>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-50 p-4 text-xs text-gray-800"><%= JSON.pretty_generate(version.canonical_artifact) %></pre>
+
+        <h2 class="mt-6 text-sm font-semibold text-gray-900">Renderers</h2>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-50 p-4 text-xs text-gray-800"><%= JSON.pretty_generate(version.renderers) %></pre>
+
+        <h2 class="mt-6 text-sm font-semibold text-gray-900">Compatibility</h2>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-50 p-4 text-xs text-gray-800"><%= JSON.pretty_generate(version.compatibility_constraints) %></pre>
+      <% end %>
+    </div>
+  </div>
+</div>

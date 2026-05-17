@@ -144,6 +144,8 @@ class AgentRun < ApplicationRecord
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
+  has_many :agent_run_marketplace_entries, -> { order(:position, :id) }, dependent: :destroy
+  has_many :marketplace_entries, through: :agent_run_marketplace_entries
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -1641,13 +1643,24 @@ class AgentRun < ApplicationRecord
   end
   private :log_orchestration_decision
 
+  public
+
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
-  def effective_prompt
-    custom_prompt.presence || prompt_for_goal
+  def effective_prompt(provider_key: nil)
+    MarketplaceEntries::InjectIntoPrompt.call(
+      agent_run: self,
+      prompt: custom_prompt.presence || base_prompt,
+      provider_key: provider_key
+    )
   end
+
+  def base_prompt
+    prompt_for_goal
+  end
+  private :base_prompt
 
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures

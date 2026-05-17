@@ -81,7 +81,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.13
+        image: postgres:16.14
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -98,14 +98,32 @@ jobs:
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
-      DB_USERNAME: paid
-      DB_PASSWORD: paid
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -123,7 +141,9 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
         run: |
@@ -132,40 +152,38 @@ jobs:
           . /etc/os-release
           printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
+          sudo apt-get install -y postgresql-client-16
 
-      - name: Create application database role
-        env:
-          PGPASSWORD: postgres
+      - name: Locate Chromium-family browser
+        id: locate_chromium
         run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid' CREATEDB NOSUPERUSER NOBYPASSRLS;
-            END IF;
-          END;
-          $$;
-          SQL
+          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
+          echo "chrome_path=$chrome_path" >> "$GITHUB_OUTPUT"
 
-      - name: Verify Chrome binary
-        run: |
-          chrome_path="${CHROMIUM_PATH:-}"
-          if [ -z "$chrome_path" ]; then
-            for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
-              if [ -x "$candidate" ]; then
-                chrome_path="$candidate"
-                break
-              fi
-            done
-          fi
           if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
             echo "Chrome found at ${chrome_path}"
             "$chrome_path" --version
           else
-            echo "::error::No Chrome/Chromium binary found"
+            echo "No Chromium-family browser found on PATH; installing a fallback copy."
+          fi
+
+      - name: Set up Chrome fallback
+        id: setup_chrome
+        if: steps.locate_chromium.outputs.chrome_path == ''
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Export Chromium path
+        env:
+          LOCATED_CHROME_PATH: ${{ steps.locate_chromium.outputs.chrome_path }}
+          INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
+        run: |
+          chrome_path="${LOCATED_CHROME_PATH:-$INSTALLED_CHROME_PATH}"
+          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
+            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
+            echo "Chrome available at ${chrome_path}"
+            "$chrome_path" --version
+          else
+            echo "::error::No Chrome/Chromium binary found after fallback installation"
             exit 1
           fi
 
@@ -179,7 +197,10 @@ jobs:
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Capture screenshots
         id: capture_screenshots
@@ -218,6 +239,10 @@ jobs:
           BUNDLE_FROZEN: "true"
           RAILS_ENV: test
           SECRET_KEY_BASE: test-secret-key-base
+          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+          PAID_TEST_DATABASE: paid_test
+          npm_config_cache: ${{ github.workspace }}/.cache/npm
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
           SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
           SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
           SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
@@ -226,4 +251,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: bin/rails screenshots:cleanup_pr
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"
+          bin/rails screenshots:cleanup_pr
