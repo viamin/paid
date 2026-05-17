@@ -2173,6 +2173,67 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when Claude hits the silent-startup heartbeat bug signature" do
+      let(:heartbeat_bug_diagnostics) do
+        {
+          "elapsed_seconds" => 370.5,
+          "output_received" => false,
+          "stdout_bytes" => 0,
+          "stderr_bytes" => 0,
+          "heartbeat_supported" => true,
+          "heartbeat_path_configured" => true,
+          "heartbeat_active" => nil,
+          "heartbeat_age_seconds" => nil
+        }
+      end
+
+      before do
+        user.runner_states.create!(runner_name: "claude", failure_count: 0, circuit_state: "closed")
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(container_service).to receive(:execute)
+          .and_raise(
+            Containers::Provision::StartupTimeoutError.new(
+              "No output received within 360 seconds",
+              diagnostics: heartbeat_bug_diagnostics
+            )
+          )
+      end
+
+      it "reclassifies the run as an execution failure instead of a timeout" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).to eq("All runners exhausted: claude_code")
+        expect(agent_run.runners_attempted.first).to include(
+          "runner" => "claude_code",
+          "error_type" => "error"
+        )
+        expect(agent_run.runners_attempted.first["error_message"])
+          .to include("known Claude heartbeat/MCP startup bug")
+      end
+
+      it "does not enqueue timeout queue processing for the false-positive timeout" do
+        expect {
+          expect {
+            activity.execute(agent_run_id: agent_run.id)
+          }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "does not increment the Claude runner circuit for the false-positive timeout" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        claude_runner_state = user.runner_states.find_by!(runner_name: "claude")
+        expect(claude_runner_state.failure_count).to eq(0)
+        expect(claude_runner_state.circuit_state).to eq("closed")
+      end
+    end
+
     context "when agent hits idle timeout" do
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
