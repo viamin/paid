@@ -958,10 +958,16 @@ module Containers
     end
 
     def commit_message
-      trailer = agent_run.effective_provider_record&.agent_co_author_trailer.presence
-      return "Apply agent changes" unless trailer
+      subject = if agent_run.issue.present?
+        ConventionalCommitTitle.for_issue(agent_run.issue)
+      else
+        "chore: apply agent changes"
+      end
 
-      "Apply agent changes\n\n#{trailer}"
+      trailer = agent_run.effective_provider_record&.agent_co_author_trailer.presence
+      return subject unless trailer
+
+      "#{subject}\n\n#{trailer}"
     end
 
     def validate_branch_name!

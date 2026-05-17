@@ -73,7 +73,7 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
 
       expect(client).to have_received(:create_pull_request).with(
         anything,
-        hash_including(title: "Feature #99: Big Feature")
+        hash_including(title: "feat: Big Feature")
       )
     end
 
@@ -85,6 +85,17 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       expect(client).to have_received(:create_pull_request).with(
         anything,
         hash_including(title: "feat(scaling): worker pool tuning")
+      )
+    end
+
+    it "uses fix hints when the parent issue is clearly a bug fix" do
+      parent_issue = create(:issue, project: project, github_number: 99, title: "Resolve worker pool deadlock")
+
+      activity.execute(base_input.merge(parent_issue_id: parent_issue.id))
+
+      expect(client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "fix: Resolve worker pool deadlock")
       )
     end
 
