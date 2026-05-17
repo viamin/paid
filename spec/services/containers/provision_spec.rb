@@ -2994,8 +2994,8 @@ RSpec.describe Containers::Provision do
 
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           # Simulate ~0.4s silent startup (MCP init) before producing output,
-          # which is longer than the startup_timeout (0.2s). The startup
-          # heartbeat thread should suppress the timeout by touching host_path.
+          # longer than startup_timeout (0.2s). The startup heartbeat thread
+          # suppresses the timeout by touching host_path within the deadline.
           sleep 0.4
           block.call(:stdout, "finally started\n") if block
           [ [ "finally started\n" ], [], 0 ]
@@ -3027,6 +3027,30 @@ RSpec.describe Containers::Provision do
             "claude_then_idle",
             timeout: 10,
             startup_timeout: 2,
+            idle_timeout: 0.1,
+            heartbeat_path: host_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "allows idle timeout to fire after startup_timeout deadline elapses with no output" do
+        host_path = service.heartbeat_host_path
+        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          # Never produces output — simulates a completely hung MCP initialization.
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [], [], 137 ]
+        end
+
+        # startup_timeout == idle_timeout so the idle timeout fires once the
+        # startup heartbeat deadline passes and the file goes stale.
+        # Total hang bound = startup_timeout + idle_timeout = 0.2 + 0.1s here.
+        expect {
+          service.execute(
+            "claude_mcp_hung",
+            timeout: 10,
+            startup_timeout: 0.2,
             idle_timeout: 0.1,
             heartbeat_path: host_path
           )

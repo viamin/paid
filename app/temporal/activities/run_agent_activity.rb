@@ -715,9 +715,11 @@ module Activities
       container_service = begin
         reconnect_container(agent_run)
       rescue Temporalio::Error::ApplicationError => e
-        # Container lost after a prior failure cleared container_id. Surface as
-        # ProviderExecutionError so the original failure remains the primary error
-        # rather than ContainerNotProvisioned overwriting it in the activity record.
+        # Convert ContainerNotProvisioned into ProviderExecutionError so it is
+        # caught by the per-provider rescue below rather than propagating as the
+        # top-level activity error. This preserves the original failure (recorded
+        # in providers_attempted) as the primary user-visible cause, and lets the
+        # provider loop surface AllProvidersExhausted instead.
         raise ProviderExecutionError, e.message if e.type == "ContainerNotProvisioned"
         raise
       end

@@ -423,7 +423,7 @@ module Containers
 
       begin
         watchdog = start_watchdog(watchdog_ctx)
-        startup_heartbeat = start_startup_heartbeat(watchdog_mutex, -> { output_received }, -> { exec_completed }) if startup_timeout
+        startup_heartbeat = start_startup_heartbeat(watchdog_mutex, -> { output_received }, -> { exec_completed }, startup_timeout) if startup_timeout
 
         exec_result = backend.exec_in_container(container, cmd_array, **exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
@@ -676,7 +676,7 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
-        startup_heartbeat&.kill
+        stop_watchdog(startup_heartbeat)
         # Persist turn metrics even on error paths so partial progress is recorded.
         safe_flush_streaming_metrics(streaming_event_processor)
         if cleanup_steps&.any?
@@ -2795,13 +2795,22 @@ module Containers
     # other repo-local MCP servers starting before the first tool call).
     # Only active when the heartbeat file is accessible on the host filesystem —
     # returns nil for remote/volume-backed backends where heartbeat_host_path is nil.
-    def start_startup_heartbeat(mutex, output_received_ref, exec_completed_ref)
+    #
+    # The thread runs for at most +startup_timeout+ seconds. After that, the
+    # heartbeat file goes stale (no more touches), so the idle timeout can fire
+    # normally once its threshold elapses — bounding total hang time to
+    # startup_timeout + idle_timeout rather than running until Temporal kills
+    # the activity.
+    def start_startup_heartbeat(mutex, output_received_ref, exec_completed_ref, startup_timeout)
       host_path = heartbeat_host_path
       return nil unless host_path.present?
+
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + startup_timeout
 
       Thread.new do
         loop do
           FileUtils.touch(host_path) rescue nil
+          break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
           break if mutex.synchronize { exec_completed_ref.call || output_received_ref.call }
           sleep startup_heartbeat_interval_seconds
         end
