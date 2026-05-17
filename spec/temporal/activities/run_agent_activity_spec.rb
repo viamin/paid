@@ -3026,6 +3026,21 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.providers_attempted.first["error_message"]).to include("credit/quota error")
       end
 
+      it "detects DeepSeek 'Insufficient Balance' as a quota error so provider fallback is triggered" do
+        deepseek_balance_failure = Containers::Provision::Result.success(
+          stdout: "> build · deepseek-v4-pro\nError: Insufficient Balance", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(deepseek_balance_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("credit/quota error")
+      end
+
       it "does not misclassify substantial agent output as a quota error when pattern appears in test descriptions" do
         long_stdout = (1..40).map { |i| "includes test case number #{i} for the billing and rate limit patterns" }.join("\n")
         long_output_success = Containers::Provision::Result.success(

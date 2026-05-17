@@ -441,6 +441,40 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe ".aggregated_error_classification_patterns" do
+    context "with the :quota category" do
+      let(:patterns) { described_class.aggregated_error_classification_patterns(:quota) }
+
+      it "includes DeepSeek 'Insufficient Balance' wording (stopgap until viamin/agent-harness#217 ships)" do
+        expect(patterns.any? { |p| p.match?("Error: Insufficient Balance") }).to be(true)
+      end
+
+      it "matches the underscored API field form 'insufficient_balance'" do
+        expect(patterns.any? { |p| p.match?("insufficient_balance") }).to be(true)
+      end
+
+      it "is case-insensitive for the stopgap pattern" do
+        expect(patterns.any? { |p| p.match?("INSUFFICIENT BALANCE") }).to be(true)
+      end
+
+      it "still includes upstream harness patterns alongside the supplementary stopgaps" do
+        expect(patterns).to include(*described_class.supported_provider_keys.flat_map do |key|
+          described_class.error_classification_patterns_for(key, :quota)
+        end.uniq)
+      end
+
+      it "deduplicates patterns shared between upstream and supplementary lists" do
+        expect(patterns).to eq(patterns.uniq)
+      end
+    end
+
+    context "with an unknown category" do
+      it "returns only upstream patterns and never raises" do
+        expect { described_class.aggregated_error_classification_patterns(:no_such_category) }.not_to raise_error
+      end
+    end
+  end
+
   describe ".command_with_unset_env" do
     it "returns command unchanged when unset_vars is empty" do
       expect(described_class.command_with_unset_env("my_cmd", [])).to eq("my_cmd")
