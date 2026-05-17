@@ -2,7 +2,14 @@
 
 module Issues
   class ReenqueueEligibleJob < ApplicationJob
+    include GoodJob::ActiveJobExtensions::Concurrency
+
     queue_as :default
+
+    good_job_control_concurrency_with(
+      enqueue_limit: 1,
+      key: -> { "reenqueue_eligible_issue_#{arguments.first}" }
+    )
 
     def perform(issue_id)
       issue = Issue.includes(:project).find_by(id: issue_id)

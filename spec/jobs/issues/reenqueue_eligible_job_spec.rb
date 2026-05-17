@@ -3,6 +3,16 @@
 require "rails_helper"
 
 RSpec.describe Issues::ReenqueueEligibleJob do
+  describe "GoodJob concurrency" do
+    it "deduplicates re-enqueue work per issue" do
+      issue = build(:issue)
+      config = described_class.good_job_concurrency_config
+
+      expect(config[:enqueue_limit]).to eq(1)
+      expect(described_class.new(issue.id).good_job_concurrency_key).to eq("reenqueue_eligible_issue_#{issue.id}")
+    end
+  end
+
   describe "#perform" do
     it "rechecks an eligible issue" do
       project = create(:project, auto_pick_enabled: true)
