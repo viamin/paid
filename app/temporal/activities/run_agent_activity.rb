@@ -722,7 +722,17 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
-      container_service = reconnect_container(agent_run)
+      container_service = begin
+        reconnect_container(agent_run)
+      rescue Temporalio::Error::ApplicationError => e
+        # Convert ContainerNotProvisioned into ProviderExecutionError so it is
+        # caught by the per-provider rescue below rather than propagating as the
+        # top-level activity error. This preserves the original failure (recorded
+        # in providers_attempted) as the primary user-visible cause, and lets the
+        # provider loop surface AllProvidersExhausted instead.
+        raise ProviderExecutionError, e.message if e.type == "ContainerNotProvisioned"
+        raise
+      end
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)

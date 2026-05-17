@@ -2418,14 +2418,20 @@ expect(container_service).to receive(:execute).with(
     end
 
     context "when no container is provisioned" do
-      it "raises an ApplicationError" do
+      it "fails the run and raises AllProvidersExhausted" do
         other_issue = create(:issue, project: project)
         run_no_container = create(:agent_run, :with_git_context, project: project, issue: other_issue, container_id: nil)
         allow(AgentRun).to receive(:find).with(run_no_container.id).and_return(run_no_container)
 
         expect {
           activity.execute(agent_run_id: run_no_container.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /No container provisioned/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        # The per-attempt record captures the real cause; the run is marked failed.
+        expect(run_no_container.reload.status).to eq("failed")
+        expect(run_no_container.providers_attempted).to include(
+          a_hash_including("error_type" => "error", "error_message" => a_string_matching(/No container provisioned/))
+        )
       end
     end
 
