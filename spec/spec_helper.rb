@@ -17,7 +17,15 @@ unless defined?(SpecRunMode)
   end
 end
 
-if ENV.fetch("COVERAGE", "true") != "false"
+coverage_enabled = if ENV.key?("COVERAGE")
+  ENV["COVERAGE"] != "false"
+else
+  # DB-less verification runs intentionally execute only a small subset of the
+  # suite, so enforcing the global coverage floor there creates false failures.
+  ENV["ALLOW_DBLESS_SPECS"] != "true"
+end
+
+if coverage_enabled
   require "simplecov"
   SimpleCov.start "rails" do
     minimum_coverage 80 unless SpecRunMode.focused?

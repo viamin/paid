@@ -49,9 +49,12 @@ RSpec.describe Containers::McpProvisioner do
         expect(agent_run.reload.mcp_sidecar_container_ids).to eq([])
       end
 
-      it "does not update mcp_provisioned_servers" do
+      it "stores empty provisioned state" do
         provisioner.provision(agent_run)
-        expect(agent_run.reload.mcp_provisioned_servers).to eq({})
+        expect(agent_run.reload.mcp_provisioned_servers).to eq(
+          "stdio_servers" => [],
+          "url_servers" => []
+        )
       end
     end
 

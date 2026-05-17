@@ -1237,6 +1237,75 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.index ["source_type", "source_id"], name: "index_llm_output_metrics_on_source_type_and_source_id"
   end
 
+  create_table "marketplace_entries", comment: "Team-shareable agent enhancements that can be attached to agent runs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "current_version_id", comment: "Current active content snapshot for this marketplace entry."
+    t.string "name", limit: 255, null: false
+    t.string "entry_type", limit: 50, null: false, comment: "Logical enhancement category such as skill, plugin, or MCP server."
+    t.text "description"
+    t.string "provider", limit: 100, comment: "Primary target runtime or provider family for this entry."
+    t.string "provider_format", limit: 100, default: "canonical_v1", null: false, comment: "Default artifact schema or provider-native format identifier."
+    t.text "usage_guidance", comment: "Human guidance describing when the entry should be used."
+    t.string "added_by_name", limit: 255, null: false
+    t.string "added_by_email", limit: 255, null: false
+    t.jsonb "tags", default: [], null: false, comment: "Searchable labels for browsing and matching."
+    t.string "team_scope", limit: 50, default: "account", null: false, comment: "Marketplace visibility scope within the tenant."
+    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for safe rollout and deprecation."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "entry_type", "status"], name: "idx_marketplace_entries_lookup"
+    t.index ["account_id", "team_scope", "status"], name: "idx_marketplace_entries_scope"
+    t.index ["account_id"], name: "index_marketplace_entries_on_account_id"
+    t.index ["current_version_id"], name: "index_marketplace_entries_on_current_version_id"
+    t.index ["tags"], name: "index_marketplace_entries_on_tags", using: :gin
+  end
+
+  create_table "marketplace_entry_rules", comment: "Account-scoped rules for auto-attaching or defaulting marketplace entries", force: :cascade do |t|
+    t.bigint "marketplace_entry_id", null: false
+    t.string "mode", limit: 50, null: false, comment: "Whether the rule is automatic matching or a team default."
+    t.boolean "enabled", default: true, null: false
+    t.integer "position", default: 0, null: false
+    t.text "rationale"
+    t.jsonb "conditions", default: {}, null: false, comment: "Run-context conditions that must match before the entry attaches."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["marketplace_entry_id", "mode", "position"], name: "index_marketplace_entry_rules_on_entry_mode_position"
+    t.index ["marketplace_entry_id", "mode"], name: "index_marketplace_entry_rules_unique_mode", unique: true
+    t.index ["marketplace_entry_id"], name: "index_marketplace_entry_rules_on_marketplace_entry_id"
+  end
+
+  create_table "marketplace_entry_versions", comment: "Immutable provider-content snapshots for marketplace entries", force: :cascade do |t|
+    t.bigint "marketplace_entry_id", null: false
+    t.integer "version", default: 1, null: false
+    t.text "changelog"
+    t.jsonb "canonical_artifact", default: {}, null: false, comment: "Canonical runtime artifact preserved for rendering into provider-specific payloads."
+    t.jsonb "renderers", default: {}, null: false, comment: "Provider-specific renderers or native payload snapshots keyed by provider."
+    t.jsonb "compatibility_constraints", default: {}, null: false, comment: "Provider, model, runtime, or tool constraints for attachment."
+    t.jsonb "review_metadata", default: {}, null: false, comment: "Optional approval and review metadata for the version."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["marketplace_entry_id", "version"], name: "index_marketplace_entry_versions_unique_version", unique: true
+    t.index ["marketplace_entry_id"], name: "index_marketplace_entry_versions_on_marketplace_entry_id"
+  end
+
+  create_table "agent_run_marketplace_entries", comment: "Marketplace entries attached to a specific agent run with rendered provider payloads", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.bigint "marketplace_entry_id", null: false
+    t.bigint "marketplace_entry_version_id", null: false
+    t.string "attachment_source", limit: 50, null: false, comment: "Whether the attachment came from manual selection, a team default, or automatic matching."
+    t.integer "position", default: 0, null: false
+    t.text "selection_reason"
+    t.string "rendered_format", limit: 100, default: "canonical_v1", null: false, comment: "Exact provider-facing format emitted for this run."
+    t.jsonb "rendered_payload", default: {}, null: false, comment: "Resolved provider-facing payload snapshot used by this run."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "attachment_source", "position"], name: "index_agent_run_marketplace_entries_on_run_source_position"
+    t.index ["agent_run_id", "marketplace_entry_id"], name: "index_agent_run_marketplace_entries_unique_attachment", unique: true
+    t.index ["agent_run_id"], name: "index_agent_run_marketplace_entries_on_agent_run_id"
+    t.index ["marketplace_entry_id"], name: "index_agent_run_marketplace_entries_on_marketplace_entry_id"
+    t.index ["marketplace_entry_version_id"], name: "idx_arm_entries_entry_ver"
+  end
+
   create_table "mcp_server_definitions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "args", default: [], null: false
@@ -2102,6 +2171,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.jsonb "kb_embedding_fallback_providers", default: [], null: false
     t.string "kb_embedding_provider", default: "openai", null: false
     t.jsonb "log_data"
+    t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
     t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
@@ -2285,6 +2355,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
   add_foreign_key "llm_output_metrics", "accounts", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "projects", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_run_marketplace_entries", "agent_runs"
+  add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
+  add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
+  add_foreign_key "marketplace_entries", "accounts"
+  add_foreign_key "marketplace_entries", "marketplace_entry_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "marketplace_entry_rules", "marketplace_entries"
+  add_foreign_key "marketplace_entry_versions", "marketplace_entries"
   add_foreign_key "mcp_server_definitions", "accounts"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
