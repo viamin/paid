@@ -10,7 +10,7 @@ class ProvidersController < ApplicationController
     def circuit_open?  = circuit_state == "open"
     def circuit_half_open? = circuit_state == "half_open"
   end
-  before_action :set_provider, only: [ :edit, :update, :destroy, :test_agent ]
+  before_action :set_provider, only: [ :edit, :update, :destroy, :test_agent, :toggle_agent_runs, :toggle_fallback ]
   before_action :load_provider_options, only: [ :new, :create, :edit, :update ]
 
   def index
@@ -123,6 +123,16 @@ class ProvidersController < ApplicationController
       error_type: result.error_type,
       message: result.message
     }
+  end
+
+  def toggle_agent_runs
+    authorize @provider, :update?
+    toggle_provider_flag(:enabled_for_agent_runs, "providers/agent_runs_toggle_index")
+  end
+
+  def toggle_fallback
+    authorize @provider, :update?
+    toggle_provider_flag(:enabled_for_fallback, "providers/fallback_toggle_index")
   end
 
   def settings
@@ -281,6 +291,62 @@ class ProvidersController < ApplicationController
     if setting_fallback
       @provider.errors.add(:enabled_for_fallback, "cannot be enabled for a provider whose CLI is not installed in the agent container")
     end
+  end
+
+  def toggle_provider_flag(attribute, partial)
+    new_value = !@provider.public_send(:"#{attribute}?")
+    @provider.assign_attributes(attribute => new_value)
+
+    validate_container_executable_for_toggle(attribute)
+
+    respond_to do |format|
+      format.turbo_stream do
+        success = if @provider.errors.none?
+          Provider.transaction do
+            if @provider.save && reconcile_settings!
+              true
+            else
+              raise ActiveRecord::Rollback
+            end
+          end
+        end
+
+        if success
+          render turbo_stream: turbo_stream.replace(
+            ActionView::RecordIdentifier.dom_id(@provider, :"#{attribute}_toggle"),
+            partial: partial,
+            locals: { provider: @provider }
+          )
+        else
+          @provider.reload if @provider.persisted?
+          error_message = @provider.errors.full_messages.to_sentence.presence || "Could not update provider"
+          render turbo_stream: [
+            turbo_stream.replace(
+              ActionView::RecordIdentifier.dom_id(@provider, :"#{attribute}_toggle"),
+              partial: partial,
+              locals: { provider: @provider }
+            ),
+            turbo_stream.prepend("flash", partial: "shared/flash_alert", locals: { message: error_message })
+          ], status: :unprocessable_content
+        end
+      end
+      format.html { redirect_to providers_path }
+    end
+  end
+
+  def validate_container_executable_for_toggle(attribute)
+    return unless @provider.public_send(:"#{attribute}?")
+    return unless @provider.will_save_change_to_attribute?(attribute.to_s, to: true)
+
+    unless Provider.supported_provider_key?(@provider.provider_key)
+      @provider.errors.add(attribute, "must be disabled for an unsupported provider")
+      return
+    end
+
+    return if Provider.addable_provider_key?(@provider.provider_key)
+    return if ProviderSupport.container_executable_provider_keys.include?(@provider.provider_key)
+
+    @provider.errors.add(attribute, "cannot be enabled for a provider whose CLI is not installed in the agent container")
   end
 
   def reconcile_settings!

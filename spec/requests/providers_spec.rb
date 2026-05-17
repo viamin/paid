@@ -819,4 +819,113 @@ RSpec.describe "Providers" do
       expect(Provider.with_discarded.find(provider.id)).to be_discarded
     end
   end
+
+  describe "POST /providers/:id/toggle_agent_runs" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        provider = create(:provider, user: user, provider_key: "cursor")
+
+        post toggle_agent_runs_provider_path(provider)
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "toggles agent runs from enabled to disabled" do
+        provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+        post toggle_agent_runs_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:ok)
+        expect(provider.reload.enabled_for_agent_runs).to be(false)
+      end
+
+      it "toggles agent runs from disabled to enabled" do
+        provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: false)
+
+        post toggle_agent_runs_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:ok)
+        expect(provider.reload.enabled_for_agent_runs).to be(true)
+      end
+
+      it "returns turbo stream response" do
+        provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+        post toggle_agent_runs_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("turbo-stream")
+      end
+
+      it "prevents toggling another user's provider" do
+        other_user = create(:user)
+        other_provider = create(:provider, user: other_user, provider_key: "cursor")
+
+        post toggle_agent_runs_provider_path(other_provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:not_found)
+      end
+
+      it "prevents disabling the last provider enabled for agent runs" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
+        provider = user.providers.find_by!(provider_key: "claude")
+
+        post toggle_agent_runs_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(provider.reload.enabled_for_agent_runs).to be(true)
+      end
+
+      it "handles HTML fallback format" do
+        provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+        post toggle_agent_runs_provider_path(provider)
+
+        expect(response).to redirect_to(providers_path)
+      end
+    end
+  end
+
+  describe "POST /providers/:id/toggle_fallback" do
+    before { sign_in user }
+
+    it "toggles fallback from enabled to disabled" do
+      provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      post toggle_fallback_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:ok)
+      expect(provider.reload.enabled_for_fallback).to be(false)
+    end
+
+    it "toggles fallback from disabled to enabled" do
+      provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+      post toggle_fallback_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:ok)
+      expect(provider.reload.enabled_for_fallback).to be(true)
+    end
+
+    it "returns turbo stream response" do
+      provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      post toggle_fallback_provider_path(provider), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+      expect(response.body).to include("turbo-stream")
+    end
+
+    it "handles HTML fallback format" do
+      provider = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      post toggle_fallback_provider_path(provider)
+
+      expect(response).to redirect_to(providers_path)
+    end
+  end
 end
