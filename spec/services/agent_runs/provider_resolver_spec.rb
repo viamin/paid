@@ -3,6 +3,23 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::ProviderResolver do
+  def create_pi_tenant_key_setup
+    account = create(:account)
+    owner = create(:user, :owner, account: account)
+    project = create(:project, account: account, created_by: owner)
+    pi_provider = create(:provider, user: owner, provider_key: "pi")
+    owner.settings.update!(default_agent_provider: pi_provider.routing_key)
+
+    api_key = create(:provider_api_key, user: owner, api_service_type: "deepseek", api_key: "sk-deepseek")
+    create(:tenant_setting, account: account,
+      provider_preferences: {
+        "api_key_ids" => { "deepseek" => api_key.id },
+        "model_preferences" => { "pi" => "deepseek-chat" }
+      })
+
+    [ project, owner, api_key ]
+  end
+
   describe ".call" do
     it "honors tenant API keys owned by another account member" do
       account = create(:account)
@@ -159,6 +176,22 @@ RSpec.describe AgentRuns::ProviderResolver do
       resolved_provider = Provider.find(provider_id)
       expect(resolved_provider.provider_key).to eq("claude")
       expect(agent_type).to eq("claude_code")
+    end
+
+    it "materializes a Pi tenant API-key provider with matching provider config" do
+      project, owner, api_key = create_pi_tenant_key_setup
+      provider_id, agent_type = described_class.call(project: project, goal: "create_pr")
+      provider = Provider.find(provider_id)
+
+      expect(agent_type).to eq("pi")
+      expect(provider).to have_attributes(
+        user: owner,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key
+      )
+      expect(provider.pi_api_provider).to eq("deepseek")
+      expect(provider.pi_model_id).to eq("deepseek-chat")
     end
 
     it "falls back to a nil provider id with the first runnable agent type when no owner providers are available" do

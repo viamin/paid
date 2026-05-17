@@ -209,6 +209,18 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
 
+    it "returns the Pi API-key unset vars, including GEMINI_API_KEY" do
+      vars = described_class.subscription_auth_unset_vars_for("pi")
+
+      expect(vars).to include(
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY"
+      )
+    end
+
     it "returns an empty array for unknown providers" do
       expect(described_class.subscription_auth_unset_vars_for("unknown_provider")).to eq([])
     end
