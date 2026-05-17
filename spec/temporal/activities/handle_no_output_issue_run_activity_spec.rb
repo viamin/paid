@@ -117,9 +117,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
-        Activities::HandleNoOutputIssueRunActivity::CLASSIFICATION_LOG_LIMIT.times do |i|
-          agent_run.log!("stdout", "progress line #{i}")
-        end
+        5.times { |i| agent_run.log!("stdout", "progress line #{i}") }
         agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: false)
