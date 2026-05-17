@@ -120,7 +120,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "fails closed without persisting a run when the account requires marketplace attachments during creation" do
-      project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+      tenant_setting = project.account.tenant_setting!
+      tenant_setting.update!(agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
       allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "render failed")
 
       expect {
@@ -367,7 +368,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "fails closed when required marketplace attachments cannot be re-rendered during a provider-switch resume" do
-      project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+      tenant_setting = project.account.tenant_setting!
+      tenant_setting.update!(agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
       queued_run = create_automatic_review_run(provider: claude_provider, agent_type: "claude_code")
       attach_required_provider_switching_entry_to(queued_run)
       project.created_by.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
@@ -405,7 +407,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "schema_version" => 1,
         "goal" => "review",
         "agent_type" => "claude_code",
-        "provider_id" => claude_provider.id
+        "provider_id" => claude_provider.id,
+        "marketplace_entries" => []
       }
     end
 
@@ -499,6 +502,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "goal" => "create_pr",
         "agent_type" => "claude_code",
         "provider_id" => claude_provider.id,
+        "marketplace_entries" => [],
         "experiments" => {}
       }
     end
@@ -1013,7 +1017,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
 
       it "applies team-default marketplace entries when the account requires them during resume" do
-        project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+        tenant_setting = project.account.tenant_setting!
+        tenant_setting.update!(agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
         entry = create(:marketplace_entry, account: project.account, name: "Resume default skill")
         version = create(:marketplace_entry_version,
           marketplace_entry: entry,
@@ -1077,7 +1082,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
 
       it "fails when required marketplace attachment creation fails during resume" do
-        project.account.tenant_setting.update!(agent_settings: project.account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
+        tenant_setting = project.account.tenant_setting!
+        tenant_setting.update!(agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true))
         queued_run = create(:agent_run, :queued, project: project, issue: issue)
         allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(StandardError, "resume failed")
 

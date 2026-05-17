@@ -4,7 +4,7 @@ class MarketplaceEntryVersion < ApplicationRecord
   belongs_to :marketplace_entry
   has_many :agent_run_marketplace_entries, dependent: :restrict_with_error
 
-  before_destroy :prevent_destroy_when_attached_to_runs
+  before_destroy :prevent_destroy_when_attached_to_runs, prepend: true
 
   validates :version, presence: true,
     numericality: { only_integer: true, greater_than: 0 },

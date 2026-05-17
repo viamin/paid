@@ -5,8 +5,8 @@ require "rails_helper"
 RSpec.describe AgentRunMarketplaceEntry do
   it "requires the version to belong to the selected marketplace entry" do
     run = create(:agent_run)
-    entry = create(:marketplace_entry, account: run.account)
-    other_entry = create(:marketplace_entry, account: run.account)
+    entry = create(:marketplace_entry, account: run.project.account)
+    other_entry = create(:marketplace_entry, account: run.project.account)
     other_version = create(:marketplace_entry_version, marketplace_entry: other_entry)
 
     attachment = described_class.new(

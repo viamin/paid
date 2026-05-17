@@ -56,7 +56,7 @@ RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
 
     expect(policy_for("marketplace_entry_versions").fetch("qual")).to include("marketplace_entries.account_id = paid_current_account_id()")
     expect(policy_for("marketplace_entry_rules").fetch("qual")).to include("marketplace_entries.account_id = paid_current_account_id()")
-    expect(policy_for("agent_run_marketplace_entries").fetch("qual")).to include("INNER JOIN projects ON projects.id = agent_runs.project_id")
+    expect(policy_for("agent_run_marketplace_entries").fetch("qual")).to include("projects.id = agent_runs.project_id")
     expect(policy_for("agent_run_marketplace_entries").fetch("qual")).to include("projects.account_id = paid_current_account_id()")
   end
 

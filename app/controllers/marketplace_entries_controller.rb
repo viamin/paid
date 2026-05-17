@@ -8,7 +8,7 @@ class MarketplaceEntriesController < ApplicationController
   def index
     base_scope = policy_scope(MarketplaceEntry).includes(:current_version)
     @q = base_scope.ransack(params[:q])
-    @q.sorts = "updated_at desc" if @q.sorts.empty?
+    @q.sorts = [ "updated_at desc", "id desc" ] if @q.sorts.empty?
     @pagy, @marketplace_entries = pagy(@q.result)
   end
 

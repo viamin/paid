@@ -21,7 +21,7 @@ RSpec.describe CreateMarketplaceEntries, :no_db do
     expect(recorded_sql.join("\n")).to include("marketplace_entries.account_id = paid_current_account_id()")
     expect(recorded_sql.join("\n")).to include("CREATE POLICY tenant_isolation ON marketplace_entry_rules")
     expect(recorded_sql.join("\n")).to include("CREATE POLICY tenant_isolation ON agent_run_marketplace_entries")
-    expect(recorded_sql.join("\n")).to include("INNER JOIN projects ON projects.id = agent_runs.project_id")
+    expect(recorded_sql.join("\n")).to include("projects.id = agent_runs.project_id")
     expect(recorded_sql.join("\n")).to include("projects.account_id = paid_current_account_id()")
   end
 

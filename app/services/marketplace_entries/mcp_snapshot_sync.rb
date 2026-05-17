@@ -13,7 +13,11 @@ module MarketplaceEntries
       # AgentRun marks the creation-time snapshot as readonly, so persistence
       # must bypass instance-level update APIs that enforce readonly guards.
       agent_run.class.where(id: agent_run.id).update_all(mcp_server_snapshot: merged_snapshot)
-      agent_run.mcp_server_snapshot = merged_snapshot
+      if agent_run.respond_to?(:reload)
+        agent_run.reload
+      else
+        agent_run.mcp_server_snapshot = merged_snapshot
+      end
     end
   end
 end

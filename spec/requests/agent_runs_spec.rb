@@ -1302,8 +1302,9 @@ RSpec.describe "AgentRuns" do
       end
 
       it "applies automatic and team-default marketplace entries when the account requires them" do
-        account.tenant_setting.update!(
-          agent_settings: account.tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true)
+        tenant_setting = account.tenant_setting!
+        tenant_setting.update!(
+          agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true)
         )
         automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
         team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")

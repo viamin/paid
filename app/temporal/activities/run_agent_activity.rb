@@ -1638,7 +1638,7 @@ module Activities
     end
 
     def base_prompt_for(agent_run)
-      agent_run.custom_prompt.presence || agent_run.base_prompt
+      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
     end
 
     def effective_prompt_for(agent_run:, base_prompt:, provider_key:)
@@ -1657,6 +1657,8 @@ module Activities
     end
 
     def marketplace_runtime_env(provider_key)
+      return {} unless @agent_run
+
       @marketplace_runtime_env ||= {}
       @marketplace_runtime_env[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
         @agent_run,
@@ -1665,6 +1667,8 @@ module Activities
     end
 
     def marketplace_runtime_preparation(provider_key)
+      return unless @agent_run
+
       @marketplace_runtime_preparation ||= {}
       @marketplace_runtime_preparation[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
         @agent_run,

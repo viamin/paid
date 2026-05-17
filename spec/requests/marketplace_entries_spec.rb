@@ -17,14 +17,16 @@ RSpec.describe "MarketplaceEntries" do
     end
 
     it "paginates entries" do
-      21.times do |index|
+      page_limit = Pagy::OPTIONS[:limit]
+
+      (page_limit + 1).times do |index|
         create(:marketplace_entry, account: account, name: format("Entry %03d", index + 1))
       end
 
       get marketplace_entries_path
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Entry 021")
+      expect(response.body).to include(format("Entry %03d", page_limit + 1))
       expect(response.body).not_to include("Entry 001")
 
       get marketplace_entries_path(page: 2)
@@ -158,6 +160,10 @@ RSpec.describe "MarketplaceEntries" do
 
   describe "DELETE /marketplace_entries/:id" do
     it "redirects with an alert when the entry has historical run attachments" do
+      admin = create(:user, :admin, account: account)
+      sign_out user
+      sign_in admin
+
       entry = create(:marketplace_entry, account: account, name: "Shared skill")
       version = create(:marketplace_entry_version, marketplace_entry: entry)
       entry.update!(current_version: version)
