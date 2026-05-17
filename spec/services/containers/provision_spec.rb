@@ -975,6 +975,22 @@ RSpec.describe Containers::Provision do
 
         service.provision
       end
+
+      it "does not copy settings.json into the container even when present on host" do
+        File.write(File.join(claude_config_dir, "settings.json"), '{"model":"claude-sonnet-4-20250514"}')
+
+        service.provision
+
+        exec_calls = []
+        expect(mock_container).to have_received(:exec).at_least(:once) do |cmd, **_opts|
+          exec_calls << cmd
+        end
+
+        copy_commands = exec_calls.select { |cmd| cmd.is_a?(Array) && cmd.last.to_s.include?("cp ") }
+        copy_commands.each do |cmd|
+          expect(cmd.last).not_to include("settings.json")
+        end
+      end
     end
 
     context "with fallback providers" do
