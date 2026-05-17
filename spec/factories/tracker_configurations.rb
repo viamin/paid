@@ -22,6 +22,7 @@ FactoryBot.define do
 
     trait :linear do
       tracker_type { "linear" }
+      base_url { "https://linear.app" }
       project_mapping { { "team_id" => "team-abc-123" } }
     end
 
