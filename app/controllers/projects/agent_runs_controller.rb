@@ -46,6 +46,7 @@ module Projects
       end.compact
       @default_runner_identifier = @default_runner_identifiers_by_goal[selected_goal]
       @available_run_runner_options = available_run_runner_options
+      @marketplace_entries = MarketplaceEntry.where(account: @project.account).where.not(current_version_id: nil).ordered.to_a
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -228,7 +229,7 @@ module Projects
         when :already_active
           "Auto-continue resumed for PR ##{pr.github_number}. An agent run is already queued or in progress."
         else
-          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a provider is available."
+          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a runner is available."
         end
         redirect_to project_path(@project), notice: notice
       end
@@ -441,7 +442,7 @@ module Projects
           agent_type: @agent_run.agent_type
         )
         redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Unable to determine authentication provider for this run."
+          alert: "Unable to determine authentication runner for this run."
         return
       end
 
@@ -507,7 +508,7 @@ module Projects
         error_message: e.message
       )
       redirect_to project_agent_run_path(@project, @agent_run),
-        alert: "Re-authentication is not supported for this provider."
+        alert: "Re-authentication is not supported for this runner."
     rescue ActiveRecord::RecordNotUnique => e
       log_failed_retry_decision(
         decision_point: "refresh_auth_retry",
@@ -630,18 +631,43 @@ module Projects
 
       resolved_agent_type = runner_key_to_agent_type(resolved_runner.runner_key)
 
-      AgentRun.create!(
-        project: @project,
-        issue: issue,
-        runner: resolved_runner,
-        agent_type: resolved_agent_type,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pull_request_number,
-        goal: goal,
-        trigger_type: trigger_type,
-        status: "queued",
-        priority_tier: priority_tier
+      ActiveRecord::Base.transaction do
+        agent_run = AgentRun.create!(
+          project: @project,
+          issue: issue,
+          runner: resolved_runner,
+          agent_type: resolved_agent_type,
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pull_request_number,
+          goal: goal,
+          trigger_type: trigger_type,
+          status: "queued",
+          priority_tier: priority_tier
+        )
+        attach_marketplace_entries(agent_run: agent_run)
+        agent_run
+      end
+    end
+
+    def attach_marketplace_entries(agent_run:)
+      manual_entry_ids = params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil)
+      account_auto_attach_required = @project.account.tenant_setting&.agent_settings&.dig("marketplace_auto_attach_required").present?
+
+      MarketplaceEntries::AttachToRun.call(
+        agent_run: agent_run,
+        manual_entry_ids: manual_entry_ids,
+        auto_attach_enabled: current_user.settings.marketplace_auto_attach_enabled?,
+        account_auto_attach_required: account_auto_attach_required
       )
+    rescue => e
+      Rails.logger.warn(
+        message: "agent_execution.marketplace_attachment_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      raise if account_auto_attach_required || Array(manual_entry_ids).any?
+      raise unless e.is_a?(ActiveRecord::RecordNotFound)
     end
 
     def enqueue_resume_run(pr)

@@ -162,6 +162,10 @@ class TenantSetting < ApplicationRecord
     effective_agent_settings["auto_continue"] == true
   end
 
+  def marketplace_auto_attach_required?
+    effective_agent_settings["marketplace_auto_attach_required"] == true
+  end
+
   def default_goal
     goal = effective_agent_settings["default_goal"].presence
     return goal if AgentRun::GOALS.include?(goal)
@@ -369,6 +373,7 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       normalized["auto_continue"] = ActiveModel::Type::Boolean.new.cast(normalized["auto_continue"]) if normalized.key?("auto_continue")
+      normalized["marketplace_auto_attach_required"] = ActiveModel::Type::Boolean.new.cast(normalized["marketplace_auto_attach_required"]) if normalized.key?("marketplace_auto_attach_required")
     end
   end
 
