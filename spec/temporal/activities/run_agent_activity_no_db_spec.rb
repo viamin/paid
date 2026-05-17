@@ -191,8 +191,6 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       )
       allow(activity).to receive(:provider_entry_for).and_return(
         first_provider,
-        first_provider,
-        second_provider,
         second_provider
       )
 

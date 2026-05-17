@@ -60,7 +60,7 @@ module Models
     attr_reader :agent_run
 
     def build_candidates(complexity:, tier:)
-      scope = LlmModel.active
+      scope = compatible_model_scope(LlmModel.active)
 
       # Exclude models the project has excluded
       excluded = agent_run.project.model_preferences["excluded_model_ids"]

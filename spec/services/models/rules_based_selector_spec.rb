@@ -196,5 +196,20 @@ RSpec.describe Models::RulesBasedSelector do
         expect(result[:model]).not_to eq(custom_low)
       end
     end
+
+    describe "provider compatibility" do
+      it "limits candidates to the selected provider family when no explicit tier pin exists" do
+        anthropic_low = create(:llm_model, :cheap, model_id: "anthropic-low", provider: "anthropic", tier: "low", capability_score: 4.0)
+        create(:llm_model, :cheap, model_id: "openai-low", provider: "openai", tier: "low", capability_score: 4.5)
+        provider = agent_run.project.effective_owner.providers.find_by!(provider_key: "claude")
+        agent_run.update!(provider: provider)
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:tier]).to eq("low")
+        expect(result[:model]).to eq(anthropic_low)
+        expect(result[:candidates]).to all(have_attributes(provider: "anthropic"))
+      end
+    end
   end
 end

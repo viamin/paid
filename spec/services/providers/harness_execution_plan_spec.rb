@@ -46,6 +46,23 @@ RSpec.describe Providers::HarnessExecutionPlan do
       expect(plan.command).to eq(%w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping])
       expect(plan.env).to include("COPILOT_ALLOW_ALL" => "true")
     end
+
+    it "forwards a run-scoped provider_runtime override" do
+      runtime = AgentHarness::ProviderRuntime.new(model: "claude-sonnet-4-6")
+
+      described_class.for_provider_key(
+        provider_key: "copilot",
+        prompt: "ping",
+        options: { dangerous_mode: true },
+        provider_runtime: runtime
+      )
+
+      expect(harness_provider).to have_received(:plan_execution).with(
+        prompt: "ping",
+        dangerous_mode: true,
+        provider_runtime: runtime
+      )
+    end
   end
 
   describe ".call" do
@@ -137,6 +154,30 @@ RSpec.describe Providers::HarnessExecutionPlan do
       end
 
       described_class.call(provider: provider, prompt: "ping")
+    end
+
+    it "prefers an explicit provider_runtime override over the provider record runtime" do
+      provider_runtime = AgentHarness::ProviderRuntime.new(model: "claude-haiku-4-5")
+      override_runtime = AgentHarness::ProviderRuntime.new(model: "claude-sonnet-4-6")
+      provider = instance_double(Provider, provider_key: "claude", agent_harness_provider_runtime: provider_runtime)
+      harness_provider = instance_double(
+        AgentHarness::Providers::Anthropic,
+        plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
+      )
+      provider_class = class_double(AgentHarness::Providers::Anthropic)
+
+      allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(provider_class)
+      allow(AgentHarness).to receive(:build_config).with(:claude).and_return(
+        AgentHarness::ProviderConfig.new(:claude)
+      )
+      allow(provider_class).to receive(:new).with(config: kind_of(AgentHarness::ProviderConfig)).and_return(harness_provider)
+
+      described_class.call(provider: provider, prompt: "ping", provider_runtime: override_runtime)
+
+      expect(harness_provider).to have_received(:plan_execution).with(
+        prompt: "ping",
+        provider_runtime: override_runtime
+      )
     end
   end
 end
