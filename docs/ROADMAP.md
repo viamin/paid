@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Provider Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Phase 5 (Account Administration) is next.
+**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Provider Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) is next.
 
 ## Phase Overview
 
@@ -544,7 +544,7 @@ Deliverables:
 
 **Objective**: Lay groundwork for automatic worker scaling.
 
-**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, and `docs/rdrs/RDR-033`.
+**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Remote container execution is also complete: `Containers::Provision` routes through backend abstractions with `LocalDocker`, `RemoteDocker`, and `Swarm` backends, `container_host` tracking persists backend placement, and operator guides live in `docs/guides/remote-docker-setup.md` and `docs/guides/swarm-setup.md`. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, `docs/rdrs/RDR-033`, and `docs/rdrs/RDR-019`.
 
 Tasks:
 
@@ -553,12 +553,14 @@ Tasks:
 - [x] Scaling algorithm design (#726)
 - [x] Integration points for orchestrators (K8s, etc.) (#727)
 - [x] Documentation for scaling (#728)
+- [x] Remote container execution across local Docker, remote Docker, and Docker Swarm backends (#2029)
 
 Deliverables:
 
 - Metrics available for scaling decisions
 - Clear scaling recommendations
 - Ready for auto-scaling implementation
+- Agent containers can run on local Docker, a single remote Docker host, or a Docker Swarm cluster
 
 ### 3.7 Multi-Tenancy Preparation
 

@@ -61,21 +61,21 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates, :no_db do
       mutation = instance_double(
         StrategyEvolution::Mutate::Mutation,
         configuration: {
-          "explicit_triggers" => %w[operational_failure_breaker],
+          "explicit_triggers" => %w[no_progress_stuck],
           "auto_resolve_trigger_types" => %w[owner_approved],
           "human_value_threshold" => 0.45,
-          "weights" => { "review_goal_retry_pressure" => 0.6 },
+          "weights" => { "unified_failure_pressure" => 0.6 },
           "interruption_cost" => { "base" => 0.2 }
         }
       )
 
       expect(service.send(:candidate_rules, mutation)).to eq(
-        "explicit_triggers" => %w[operational_failure_breaker],
+        "explicit_triggers" => %w[no_progress_stuck],
         "auto_resolve_trigger_types" => %w[owner_approved]
       )
       expect(service.send(:candidate_parameters, mutation)).to eq(
         "human_value_threshold" => 0.45,
-        "weights" => { "review_goal_retry_pressure" => 0.6 },
+        "weights" => { "unified_failure_pressure" => 0.6 },
         "interruption_cost" => { "base" => 0.2 }
       )
     end
@@ -84,7 +84,7 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates, :no_db do
       service = build_service("escalation", {
         "escalation" => {
           "human_value_threshold" => 0.65,
-          "explicit_triggers" => %w[operational_failure_breaker],
+          "explicit_triggers" => %w[no_progress_stuck],
           "auto_resolve_trigger_types" => %w[owner_approved]
         }
       })
@@ -94,7 +94,7 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates, :no_db do
       )
 
       expect(service.send(:candidate_rules, mutation)).to eq(
-        "explicit_triggers" => %w[operational_failure_breaker],
+        "explicit_triggers" => %w[no_progress_stuck],
         "auto_resolve_trigger_types" => %w[owner_approved]
       )
       expect(service.send(:candidate_parameters, mutation)).to eq(

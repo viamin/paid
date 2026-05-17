@@ -144,6 +144,8 @@ class AgentRun < ApplicationRecord
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
+  has_many :agent_run_marketplace_entries, -> { order(:position, :id) }, dependent: :destroy
+  has_many :marketplace_entries, through: :agent_run_marketplace_entries
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -192,6 +194,7 @@ class AgentRun < ApplicationRecord
   validates :temporal_run_id, length: { maximum: 255 }
   validates :parent_workflow_id, length: { maximum: 255 }
   validates :container_id, length: { maximum: 128 }
+  validates :container_host, length: { maximum: 64 }, allow_nil: true
   validates :iterations, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -1640,13 +1643,24 @@ class AgentRun < ApplicationRecord
   end
   private :log_orchestration_decision
 
+  public
+
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
-  def effective_prompt
-    custom_prompt.presence || prompt_for_goal
+  def effective_prompt(provider_key: nil)
+    MarketplaceEntries::InjectIntoPrompt.call(
+      agent_run: self,
+      prompt: custom_prompt.presence || base_prompt,
+      provider_key: provider_key
+    )
   end
+
+  def base_prompt
+    prompt_for_goal
+  end
+  private :base_prompt
 
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures
@@ -1775,7 +1789,7 @@ class AgentRun < ApplicationRecord
     pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
     if pooled_result&.success?
       @container_service = pooled_result[:service]
-      update!(container_id: pooled_result[:container_id])
+      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
       return pooled_result
     end
 
@@ -1786,7 +1800,7 @@ class AgentRun < ApplicationRecord
     )
     result = @container_service.provision
     if result.success?
-      update!(container_id: result[:container_id])
+      update!(container_id: result[:container_id], container_host: result[:container_host])
       PoolReplenishmentJob.perform_later(project_id)
     end
     result
@@ -2076,7 +2090,9 @@ class AgentRun < ApplicationRecord
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
     volume_name = "paid-workspace-#{id}"
-    Docker::Volume.get(volume_name).remove
+    backend = Containers.backend_for(container_host)
+    volume = backend.get_volume(volume_name, host: container_host)
+    backend.delete_volume(volume)
   rescue Docker::Error::NotFoundError
     # Volume already removed, nothing to do
   rescue Docker::Error::DockerError => e

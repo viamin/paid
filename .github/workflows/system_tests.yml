@@ -21,7 +21,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.13
+        image: postgres:16.14
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -38,14 +38,32 @@ jobs:
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       COVERAGE: "false"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -63,7 +81,9 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
         run: |
@@ -72,7 +92,7 @@ jobs:
           . /etc/os-release
           printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
+          sudo apt-get install -y postgresql-client-16
 
       - name: Locate Chromium-family browser
         # Prefer a preinstalled browser when one exists, but don't fail the
@@ -80,7 +100,7 @@ jobs:
         # rack_test automatically when CHROMIUM_PATH is absent, and browser-only
         # coverage lives in explicitly opted-in specs.
         run: |
-          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
           if [ -n "$path" ]; then
             echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
             "$path" --version
@@ -92,7 +112,10 @@ jobs:
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run system specs
         run: bin/rspec spec/system

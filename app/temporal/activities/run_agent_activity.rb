@@ -37,6 +37,8 @@ module Activities
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -64,6 +66,8 @@ module Activities
       /\bstatus[:\s]*429\b/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
@@ -115,14 +119,12 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      @agent_run = agent_run
+      @has_marketplace_attachments = nil
+      @marketplace_runtime_env = {}
+      @marketplace_runtime_preparation = {}
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
-        prompt = agent_run.effective_prompt
-        unless prompt
-          raise Temporalio::Error::ApplicationError.new(
-            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
-          )
-        end
-
+        base_prompt = base_prompt_for(agent_run)
         user_settings = resolve_user_settings(agent_run)
         providers = build_provider_order(agent_run, user_settings)
         provider_states = load_provider_state_cache(user_settings.user, providers)
@@ -165,6 +167,7 @@ module Activities
           provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
           attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
           provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
+          provider_key = marketplace_provider_key(provider_candidate, provider, user_settings.user)
           heartbeat("provider_attempt", provider, index)
 
           # Skip unavailable providers, tracking rate-limited skips separately
@@ -185,6 +188,17 @@ module Activities
             )
             index += 1
             next
+          end
+
+          prompt = effective_prompt_for(
+            agent_run: agent_run,
+            base_prompt: base_prompt,
+            provider_key: provider_key
+          )
+          unless prompt
+            raise Temporalio::Error::ApplicationError.new(
+              "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+            )
           end
 
           # Log provider switch when we have a previous actually-attempted provider.
@@ -379,6 +393,27 @@ module Activities
             )
             logger.warn(message: "agent_execution.auth_expired", provider: provider, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
+          rescue ProviderInfraExecutionError => e
+            last_error = "error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
+            agent_run.record_provider_attempt(
+              attempt_label,
+              success: false,
+              error_type: "error",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
+            logger.warn(
+              message: "agent_execution.provider_infra_failure",
+              provider: provider,
+              agent_run_id: agent_run.id,
+              error: e.message,
+              duration_seconds: attempt_duration
+            )
           rescue ProviderExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -475,6 +510,7 @@ module Activities
     end
 
     class ProviderExecutionError < StandardError; end
+    class ProviderInfraExecutionError < ProviderExecutionError; end
     class ProviderTimeoutError < StandardError
       attr_reader :timeout_type, :diagnostics
 
@@ -486,6 +522,15 @@ module Activities
     end
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
+    CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS = %w[
+      output_received
+      stdout_bytes
+      stderr_bytes
+      heartbeat_supported
+      heartbeat_path_configured
+      heartbeat_active
+      heartbeat_age_seconds
+    ].freeze
 
     private
 
@@ -677,7 +722,17 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
-      container_service = reconnect_container(agent_run)
+      container_service = begin
+        reconnect_container(agent_run)
+      rescue Temporalio::Error::ApplicationError => e
+        # Convert ContainerNotProvisioned into ProviderExecutionError so it is
+        # caught by the per-provider rescue below rather than propagating as the
+        # top-level activity error. This preserves the original failure (recorded
+        # in providers_attempted) as the primary user-visible cause, and lets the
+        # provider loop surface AllProvidersExhausted instead.
+        raise ProviderExecutionError, e.message if e.type == "ContainerNotProvisioned"
+        raise
+      end
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
@@ -690,6 +745,13 @@ module Activities
       unless self.class.container_executable?(provider)
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
+
+      synchronize_marketplace_mcp_for_provider!(
+        agent_run: agent_run,
+        provider_candidate: provider_candidate,
+        provider: provider,
+        user: user_settings.user
+      )
 
       # Assemble effective MCP servers from the run's provisioned state so
       # harness_execution_plan_for can pass them to agent-harness for
@@ -808,6 +870,14 @@ module Activities
         # so treat this as a provider failure to trigger fallback/retry.
         combined_output = [ stdout, stderr ].compact.join("\n")
         sanitized_output = strip_prompt_echo(combined_output, prompt)
+        # Rate-limit classification takes precedence over generic quota
+        # failures because some providers use quota-shaped wording for
+        # retryable usage caps (for example, GLM free-model limits).
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise ProviderExecutionError,
             "Provider credit/quota error from #{provider}: #{sanitized_output.truncate(500)}"
@@ -828,8 +898,9 @@ module Activities
         }
       end
 
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
       output = (stderr.presence || stdout).to_s.strip
-      rate_limit_output = strip_prompt_echo(output, prompt)
+      rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
       if auth_expired_error?(provider, rate_limit_output)
         raise ProviderAuthExpiredError.new(output.truncate(500), provider: provider)
@@ -857,6 +928,17 @@ module Activities
       when Containers::Provision::StartupTimeoutError then "startup"
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
+      end
+      if claude_silent_startup_heartbeat_failure?(
+        provider: provider,
+        timeout_type: timeout_type,
+        diagnostics: e.diagnostics
+      )
+        raise ProviderInfraExecutionError,
+          claude_silent_startup_heartbeat_failure_message(
+            timeout_type: timeout_type,
+            diagnostics: e.diagnostics
+          )
       end
       raise ProviderTimeoutError.new(
         "#{timeout_type}_timeout: #{e.message}",
@@ -924,10 +1006,18 @@ module Activities
       )
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
-      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
-      sanitized_output = strip_prompt_echo(output, prompt)
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
+      sanitized_output = strip_prompt_echo(combined_output, prompt)
 
       if result.success?
+        # Keep the same precedence as the main execution path so preflight
+        # retryable limits do not degrade into generic provider failures.
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
@@ -1033,6 +1123,7 @@ module Activities
     end
 
     QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
+    SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH = 500
 
     # Detects provider-level credit/quota exhaustion errors surfaced as
     # agent output. Used in the successful-exit-code path to catch cases
@@ -1050,6 +1141,31 @@ module Activities
 
       ProviderSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    # Detects short standalone rate-limit responses that some providers surface
+    # with exit code 0. We intentionally use the stricter timeout patterns here
+    # instead of the broader execution-failure matcher so substantial agent
+    # output that merely discusses rate limits is not reclassified as a
+    # provider failure.
+    def successful_exit_rate_limit_error?(output)
+      standalone_rate_limit_signal(output).present?
+    end
+
+    def standalone_rate_limit_signal(output)
+      return nil if output.blank?
+
+      normalized_output = normalize_output_text(output)
+      if normalized_output.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| normalized_output.match?(pattern) }
+        return normalized_output
+      end
+
+      normalized_output.each_line.map(&:strip).find do |line|
+        line.present? &&
+          line.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| line.match?(pattern) }
+      end
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000
@@ -1495,21 +1611,31 @@ module Activities
     end
 
     def command_env_for(command_context, prompt)
+      provider_key = marketplace_provider_key(command_context.provider_candidate, command_context.provider, command_context.user)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt).env if provider_entry&.agent_harness_runtime?
-      return {} unless provider_entry
+      if provider_entry&.agent_harness_runtime?
+        return marketplace_runtime_env(provider_key).merge(
+          direct_outbound_execution_plan(provider_entry, prompt).env
+        )
+      end
+      return marketplace_runtime_env(provider_key) unless provider_entry
 
-      env = {}
+      env = marketplace_runtime_env(provider_key).dup
       env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
       env
     end
 
     def command_preparation_for(command_context, prompt)
+      provider_key = marketplace_provider_key(command_context.provider_candidate, command_context.provider, command_context.user)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.agent_harness_runtime?
+      runtime_preparation = marketplace_runtime_preparation(provider_key)
+      return runtime_preparation unless provider_entry&.agent_harness_runtime?
 
-      direct_outbound_execution_plan(provider_entry, prompt).preparation
+      merge_preparations(
+        direct_outbound_execution_plan(provider_entry, prompt).preparation,
+        runtime_preparation
+      )
     end
 
     # Assembles the effective MCP server list from the agent run's
@@ -1561,6 +1687,73 @@ module Activities
       AgentHarness::ExecutionPreparation.new(
         file_writes: base.file_writes + additional.file_writes
       )
+    end
+
+    def base_prompt_for(agent_run)
+      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+    end
+
+    def effective_prompt_for(agent_run:, base_prompt:, provider_key:)
+      MarketplaceEntries::InjectIntoPrompt.call(
+        agent_run: agent_run,
+        prompt: base_prompt,
+        provider_key: provider_key
+      )
+    end
+
+    def marketplace_provider_key(provider_candidate, provider, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.provider_key if provider_entry
+
+      ProviderSupport.provider_key_for_agent_type(provider)
+    end
+
+    def marketplace_runtime_env(provider_key)
+      return {} unless @agent_run
+
+      @marketplace_runtime_env ||= {}
+      @marketplace_runtime_env[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
+        @agent_run,
+        provider_key: provider_key
+      )
+    end
+
+    def marketplace_runtime_preparation(provider_key)
+      return unless @agent_run
+
+      @marketplace_runtime_preparation ||= {}
+      @marketplace_runtime_preparation[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
+        @agent_run,
+        provider_key: provider_key
+      )
+    end
+
+    def synchronize_marketplace_mcp_for_provider!(agent_run:, provider_candidate:, provider:, user:)
+      return unless marketplace_attachments_attached?(agent_run)
+
+      provider_key = marketplace_provider_key(provider_candidate, provider, user)
+      previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
+
+      AgentRun.transaction do
+        MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider_key)
+
+        next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
+
+        Containers::McpProvisioner.new.provision(
+          agent_run,
+          network: Containers::Provision.network_for(agent_run: agent_run)
+        )
+      end
+    rescue => e
+      raise e if e.is_a?(ProviderExecutionError)
+
+      raise ProviderExecutionError, "Failed to synchronize marketplace MCP servers for #{provider_key}: #{e.message}"
+    end
+
+    def marketplace_attachments_attached?(agent_run)
+      return @has_marketplace_attachments unless @has_marketplace_attachments.nil?
+
+      @has_marketplace_attachments = agent_run.agent_run_marketplace_entries.exists?
     end
 
     # Builds an execution plan for providers that use the agent-harness
@@ -2090,6 +2283,28 @@ module Activities
         "heartbeat_supported" => heartbeat&.available? || false,
         "heartbeat_path_configured" => heartbeat&.heartbeat_path.present? || false
       ).compact
+    end
+
+    def claude_silent_startup_heartbeat_failure?(provider:, timeout_type:, diagnostics:)
+      return false unless ProviderSupport.provider_key_for_agent_type(provider).to_s == "claude"
+      return false unless timeout_type == "startup"
+
+      timeout_data = diagnostics.to_h.stringify_keys.slice(*CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS)
+      timeout_data["output_received"] == false &&
+        timeout_data["stdout_bytes"].to_i.zero? &&
+        timeout_data["stderr_bytes"].to_i.zero? &&
+        timeout_data["heartbeat_supported"] == true &&
+        timeout_data["heartbeat_path_configured"] == true &&
+        timeout_data["heartbeat_active"].nil? &&
+        timeout_data["heartbeat_age_seconds"].nil?
+    end
+
+    def claude_silent_startup_heartbeat_failure_message(timeout_type:, diagnostics:)
+      detail = diagnostics.to_h.stringify_keys.slice(*CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS)
+      "Claude #{timeout_type}_timeout reclassified as execution failure: " \
+        "silent startup with configured heartbeat produced no output and no readable heartbeat. " \
+        "This usually indicates the known Claude heartbeat/MCP startup bug rather than a normal provider timeout. " \
+        "diagnostics=#{detail.to_json}"
     end
 
     def error_or_cause_matches?(error, klass, &)

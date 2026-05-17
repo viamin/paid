@@ -60,6 +60,22 @@ class Provider < ApplicationRecord
   AIDER_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   AIDER_DEFAULT_API_PROVIDER = "openrouter"
 
+  # Pi supports multiple upstream API-key providers selected via --provider.
+  # Keep this list aligned to providers Paid can represent as ProviderApiKey
+  # records and that Pi documents as built-in API-key auth targets.
+  PI_API_PROVIDERS = {
+    "anthropic" => { label: "Anthropic", service_type: "anthropic", env_var: "ANTHROPIC_API_KEY" },
+    "openai" => { label: "OpenAI", service_type: "openai", env_var: "OPENAI_API_KEY" },
+    "deepseek" => { label: "DeepSeek", service_type: "deepseek", env_var: "DEEPSEEK_API_KEY" },
+    "google" => { label: "Google Gemini", service_type: "google", env_var: "GEMINI_API_KEY" },
+    "mistral" => { label: "Mistral", service_type: "mistral", env_var: "MISTRAL_API_KEY" },
+    "xai" => { label: "xAI", service_type: "xai", env_var: "XAI_API_KEY" },
+    "zai" => { label: "z.ai", service_type: "zai", env_var: "ZAI_API_KEY" },
+    "openrouter" => { label: "OpenRouter", service_type: "openrouter", env_var: "OPENROUTER_API_KEY" }
+  }.freeze
+  PI_API_PROVIDER_KEYS = PI_API_PROVIDERS.keys.freeze
+  PI_DEFAULT_API_PROVIDER = "deepseek"
+
   DIRECT_OUTBOUND_MODEL_TIER_HINTS = {
     "glm-5.1" => "high",
     "glm-4.7" => "mid",
@@ -113,6 +129,7 @@ class Provider < ApplicationRecord
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
   validate :aider_api_key_config_must_be_valid
+  validate :pi_api_key_config_must_be_valid
   validate :tier_model_ids_must_be_valid
   validate :complexity_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
@@ -140,6 +157,7 @@ class Provider < ApplicationRecord
     when "opencode" then opencode_model_id
     when "kilocode" then kilocode_model_id
     when "aider" then aider_model_id
+    when "pi" then pi_model_id
     end
     label += " #{model_id}" if model_id.present?
     label += " (API Key)" if api_key?
@@ -228,6 +246,28 @@ class Provider < ApplicationRecord
     return nil unless provider_key == "aider"
 
     aider_config["model"].to_s.presence
+  end
+
+  def pi_config
+    config.is_a?(Hash) ? config.fetch("pi", {}) : {}
+  end
+
+  def pi_api_provider
+    return nil unless provider_key == "pi"
+
+    pi_config["api_provider"].presence || PI_DEFAULT_API_PROVIDER
+  end
+
+  def pi_model_id
+    return nil unless provider_key == "pi"
+
+    pi_config["model"].to_s.presence
+  end
+
+  def pi_required_api_service_type
+    return nil unless provider_key == "pi"
+
+    PI_API_PROVIDERS.dig(pi_api_provider, :service_type)
   end
 
   def aider_required_api_service_type
@@ -332,12 +372,13 @@ class Provider < ApplicationRecord
 
   def agent_harness_provider_runtime
     return opencode_provider_runtime if opencode_direct_outbound?
+    return pi_provider_runtime if pi_agent_harness_runtime?
 
     nil
   end
 
   def agent_harness_runtime?
-    opencode_agent_harness_runtime? || copilot_agent_harness_runtime?
+    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime?
   end
 
   def opencode_agent_harness_runtime?
@@ -346,6 +387,12 @@ class Provider < ApplicationRecord
 
   def copilot_agent_harness_runtime?
     provider_key == "copilot"
+  end
+
+  def pi_agent_harness_runtime?
+    provider_key == "pi" &&
+      api_key? &&
+      PI_API_PROVIDER_KEYS.include?(pi_api_provider)
   end
 
   def direct_outbound_model_id
@@ -361,6 +408,7 @@ class Provider < ApplicationRecord
     when "kilocode" then kilocode_required_api_service_type
     when "opencode" then opencode_required_api_service_type
     when "aider" then aider_required_api_service_type
+    when "pi" then pi_required_api_service_type
     end
   end
 
@@ -649,6 +697,8 @@ class Provider < ApplicationRecord
       config.dig("kilocode", "model")
     when "aider"
       config.dig("aider", "model")
+    when "pi"
+      config.dig("pi", "model")
     end
   end
 
@@ -857,10 +907,20 @@ class Provider < ApplicationRecord
     end
   end
 
+  def pi_api_key_config_must_be_valid
+    return unless provider_key == "pi"
+    return unless api_key?
+
+    unless PI_API_PROVIDER_KEYS.include?(pi_api_provider)
+      errors.add(:config, "must include a supported Pi API provider")
+    end
+  end
+
   def required_api_service_type
     return opencode_required_api_service_type if provider_key == "opencode"
     return kilocode_required_api_service_type if provider_key == "kilocode"
     return aider_required_api_service_type if provider_key == "aider"
+    return pi_required_api_service_type if provider_key == "pi"
 
     self.class.api_service_type_for(provider_key)
   end
@@ -903,6 +963,19 @@ class Provider < ApplicationRecord
       metadata: {
         config: {
           "provider" => { opencode_api_provider => {} }
+        }
+      }
+    )
+  end
+
+  def pi_provider_runtime
+    AgentHarness::ProviderRuntime.new(
+      model: pi_model_id,
+      api_provider: pi_api_provider,
+      metadata: {
+        "paid_pi_auth_entry" => {
+          "provider" => pi_api_provider,
+          "api_key" => provider_api_key&.api_key.to_s
         }
       }
     )

@@ -15,6 +15,12 @@ RSpec.describe DatabaseYmlErb do
 
   around do |example|
     original_env = ENV.to_hash
+    %w[
+      PAID_DEVELOPMENT_DATABASE
+      PAID_DEVELOPMENT_CABLE_DATABASE
+      PAID_TEST_DATABASE
+      PAID_WORKTREE_DB_SUFFIX
+    ].each { |key| ENV.delete(key) }
     example.run
   ensure
     ENV.replace(original_env)

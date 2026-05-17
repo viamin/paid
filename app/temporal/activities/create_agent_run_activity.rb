@@ -22,6 +22,7 @@ module Activities
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
+      manual_marketplace_entry_ids = input[:marketplace_entry_ids]
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
@@ -89,7 +90,16 @@ module Activities
       }
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
-      agent_run = AgentRun.create!(**attrs)
+      agent_run = ActiveRecord::Base.transaction do
+        created_run = AgentRun.create!(**attrs)
+        attach_marketplace_entries(
+          agent_run: created_run,
+          manual_entry_ids: manual_marketplace_entry_ids,
+          auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
+          account_auto_attach_required: marketplace_auto_attach_required?(project)
+        )
+        created_run
+      end
       log_provider_selection(agent_run: agent_run, **provider_selection_options, resolved_provider_id: provider_id, resolved_agent_type: agent_type)
 
       track_phase(
@@ -200,9 +210,11 @@ module Activities
 
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
+      user_settings = resolve_user_settings(agent_run.project)
+      provider_changed = false
 
       if agent_run.queued?
-        validate_and_sync_resumed_provider!(agent_run)
+        provider_changed = validate_and_sync_resumed_provider!(agent_run)
       else
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
@@ -214,6 +226,12 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
+      attach_marketplace_entries_for_resume(
+        agent_run:,
+        user_settings:,
+        force: provider_changed,
+        account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
+      )
       assign_configuration_bundle(agent_run)
 
       logger.info(
@@ -223,7 +241,6 @@ module Activities
         issue_id: agent_run.issue_id
       )
 
-      user_settings = resolve_user_settings(agent_run.project)
       {
         agent_run_id: agent_run.id,
         focus: agent_run.focus,
@@ -238,6 +255,63 @@ module Activities
       return unless issue&.body.present?
 
       ScopeAnalysis::Analyze.call(text: issue.body)
+    end
+
+    def attach_marketplace_entries_for_resume(agent_run:, user_settings:, force: false, account_auto_attach_required: false)
+      attachments = agent_run.agent_run_marketplace_entries
+      return rerender_marketplace_entries_for_resume(
+        agent_run: agent_run,
+        account_auto_attach_required: account_auto_attach_required
+      ) if attachments.exists? && force
+      return if attachments.exists?
+      return unless should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)
+
+      attach_marketplace_entries(
+        agent_run: agent_run,
+        auto_attach_enabled: marketplace_auto_attach_enabled?(user_settings),
+        account_auto_attach_required: account_auto_attach_required
+      )
+    end
+
+    def attach_marketplace_entries(agent_run:, auto_attach_enabled:, manual_entry_ids: nil, account_auto_attach_required: false)
+      MarketplaceEntries::AttachToRun.call(
+        agent_run: agent_run,
+        manual_entry_ids: manual_entry_ids,
+        auto_attach_enabled: auto_attach_enabled,
+        account_auto_attach_required: account_auto_attach_required
+      )
+    rescue => e
+      log_marketplace_attachment_failure(agent_run:, error: e)
+      raise if account_auto_attach_required || Array(manual_entry_ids).any?
+      raise unless ignorable_marketplace_attachment_error?(e)
+    end
+
+    def rerender_marketplace_entries_for_resume(agent_run:, account_auto_attach_required: false)
+      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run)
+    rescue => e
+      log_marketplace_attachment_failure(agent_run:, error: e)
+      raise if account_auto_attach_required
+      raise unless ignorable_marketplace_attachment_error?(e)
+    end
+
+    def should_attach_marketplace_entries_on_resume?(agent_run, account_auto_attach_required)
+      return true if account_auto_attach_required
+      return false if agent_run.manual?
+
+      true
+    end
+
+    def log_marketplace_attachment_failure(agent_run:, error:)
+      logger.warn(
+        message: "agent_execution.marketplace_attachment_failed",
+        agent_run_id: agent_run.id,
+        error_class: error.class.name,
+        error: error.message
+      )
+    end
+
+    def ignorable_marketplace_attachment_error?(error)
+      error.is_a?(ActiveRecord::RecordNotFound) || error.is_a?(ActiveRecord::RecordInvalid)
     end
 
     def log_scope_analysis(agent_run, scope_result)
@@ -298,6 +372,14 @@ module Activities
 
     def effective_max_execution_seconds(project, user_settings)
       user_settings&.max_execution_seconds || project.max_execution_seconds
+    end
+
+    def marketplace_auto_attach_enabled?(user_settings)
+      user_settings&.marketplace_auto_attach_enabled?
+    end
+
+    def marketplace_auto_attach_required?(project)
+      project.account.tenant_setting&.marketplace_auto_attach_required?
     end
 
     def test_command_for(project)

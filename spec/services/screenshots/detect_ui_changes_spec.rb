@@ -387,8 +387,8 @@ RSpec.describe Screenshots::DetectUiChanges do
   describe "standalone Ruby execution" do
     it "works without Rails loading Active Support extensions" do
       command = <<~SH
-        ruby -rjson -e '
-          require_relative "app/services/screenshots/detect_ui_changes"
+        ruby -Iapp/services -rjson -e '
+          require "screenshots/detect_ui_changes"
           result = Screenshots::DetectUiChanges.call(changed_files: ["app/views/projects/index.html.erb"])
           print JSON.dump(result)
         '

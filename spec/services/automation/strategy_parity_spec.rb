@@ -254,10 +254,13 @@ RSpec.describe Automation::Strategy do
     let(:passthrough_lifecycle) do
       { issue_id: pull_request.id, pr_number: 42, phase: "ready",
         active_run_exists: false, operational_failure_breaker: false,
-        draft_review_limit_reached: false, consecutive_draft_failures_breaker: false,
-        review_goal_retry_limit_requires_escalation: false, followup_limit_reached: false,
+        no_progress_stuck: false,
+        failure_streak_limit_reached: false,
+        review_goal_retry_limit_requires_escalation: false,
         escalation_dismissed: false, owner_reviewer_login: "alice",
-        escalation_reason: nil, draft: false }
+        escalation_reason: nil, consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0, last_meaningful_progress_at: nil,
+        draft: false }
     end
 
     it "produces the same merge decision as direct AutoReview evaluation" do

@@ -49,9 +49,12 @@ RSpec.describe Containers::McpProvisioner do
         expect(agent_run.reload.mcp_sidecar_container_ids).to eq([])
       end
 
-      it "does not update mcp_provisioned_servers" do
+      it "stores empty provisioned state" do
         provisioner.provision(agent_run)
-        expect(agent_run.reload.mcp_provisioned_servers).to eq({})
+        expect(agent_run.reload.mcp_provisioned_servers).to eq(
+          "stdio_servers" => [],
+          "url_servers" => []
+        )
       end
     end
 
@@ -123,7 +126,7 @@ RSpec.describe Containers::McpProvisioner do
           .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
       end
 
       it "provisions a sidecar container and returns url server spec" do
@@ -273,6 +276,27 @@ RSpec.describe Containers::McpProvisioner do
           expect(existing_container).not_to have_received(:start)
         end
       end
+
+      context "with a remote backend" do
+        let(:backend) { Containers::Backends::LocalDocker.new }
+
+        before do
+          allow(backend).to receive(:remote?).and_return(true)
+          allow(Containers).to receive(:backend).and_return(backend)
+          allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+        end
+
+        it "probes health from inside the sidecar container" do
+          provisioner.provision(agent_run)
+
+          expect(Containers::TcpHealthProbe).to have_received(:open?).with(
+            backend: backend,
+            container: docker_container,
+            host: a_string_matching(/\Apaid-mcp-/),
+            port: 8080
+          )
+        end
+      end
     end
 
     context "with mixed npx and docker_image definitions" do
@@ -304,7 +328,7 @@ RSpec.describe Containers::McpProvisioner do
           .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
       end
 
       it "provisions both types" do

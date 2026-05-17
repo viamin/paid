@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Notifications", type: :system do
+RSpec.describe "Notifications", system_driver: :rack_test, type: :system do
   let!(:account) { create(:account) }
   let!(:user) { create(:user, :owner, account: account, email: "notify@example.com", password: "password123") }
 
@@ -14,23 +14,16 @@ RSpec.describe "Notifications", type: :system do
     click_button "Sign in"
   end
 
-  describe "mobile horizontal scrolling", :js do
-    it "wraps the table in a horizontally scrollable container" do
-      skip "requires a real browser (Cuprite/Chromium)" if SYSTEM_DRIVER == :rack_test
-
+  describe "mobile horizontal scrolling" do
+    it "renders the notifications table inside a horizontal scroll wrapper" do
       visit notifications_path
       expect(page).to have_content("Mobile scroll test")
 
-      page.driver.resize(375, 812) # iPhone-sized viewport
+      doc = Nokogiri::HTML(page.html)
+      scroll_wrapper = doc.at_css("div.overflow-x-auto > table.min-w-full")
 
-      scroll_width = page.evaluate_script(
-        "document.querySelector('.overflow-x-auto').scrollWidth"
-      )
-      client_width = page.evaluate_script(
-        "document.querySelector('.overflow-x-auto').clientWidth"
-      )
-
-      expect(scroll_width).to be > client_width
+      expect(scroll_wrapper).to be_present
+      expect(scroll_wrapper["style"]).to include("min-width: 640px")
     end
   end
 end

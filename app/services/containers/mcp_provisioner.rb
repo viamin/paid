@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "socket"
-
 module Containers
   # Provisions MCP (Model Context Protocol) servers for agent runs.
   #
@@ -49,13 +47,19 @@ module Containers
     # @return [Hash] with :stdio_servers and :url_servers arrays
     def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       snapshot = agent_run.mcp_server_snapshot
-      return { stdio_servers: [], url_servers: [] } if snapshot.blank?
-
       sidecar_ids = []
 
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
       stale_ids = agent_run.mcp_sidecar_container_ids
       cleanup_containers(stale_ids) if stale_ids.present?
+
+      if snapshot.blank?
+        agent_run.update!(
+          mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
+          mcp_sidecar_container_ids: []
+        )
+        return { stdio_servers: [], url_servers: [] }
+      end
 
       @network = network
       stdio_servers = []
@@ -132,7 +136,7 @@ module Containers
         raise Error, "docker_image MCP server #{definition["name"].inspect} requires transport \"sse\", got #{transport.inspect}"
       end
 
-      NetworkPolicy.ensure_network!(network: @network)
+      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
 
       image = definition["image"]
       name = definition["name"]
@@ -150,8 +154,8 @@ module Containers
       )
 
       begin
-        container.start unless container_running?(container)
-        wait_for_health!(hostname, port)
+        Containers.backend.start_container(container) unless container_running?(container)
+        wait_for_health!(container, hostname, port)
       rescue => e
         remove_container(container)
         raise Error, "Failed to start MCP sidecar #{name}: #{e.message}"
@@ -177,7 +181,7 @@ module Containers
     # Adopts an existing sidecar container (from a prior attempt) or creates
     # a new one. This makes provisioning idempotent across activity retries.
     def adopt_or_create_sidecar(image:, hostname:, port:, env:, agent_run:)
-      Docker::Container.get(hostname)
+      Containers.backend.get_container(hostname)
     rescue Docker::Error::NotFoundError
       create_sidecar_container(image: image, hostname: hostname, port: port, env: env, agent_run: agent_run)
     end
@@ -190,7 +194,7 @@ module Containers
     end
 
     def create_sidecar_container(image:, hostname:, port:, env:, agent_run:)
-      Docker::Container.create(
+      Containers.backend.create_container(
         "Image" => image,
         "name" => hostname,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
@@ -220,18 +224,18 @@ module Containers
     end
 
     def pull_image(image)
-      Docker::Image.create("fromImage" => image)
+      Containers.backend.pull_image("fromImage" => image)
     rescue Docker::Error::NotFoundError
       raise Error, "MCP server image not found: #{image}"
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to pull MCP server image #{image}: #{e.message}"
     end
 
-    def wait_for_health!(hostname, port)
+    def wait_for_health!(container, hostname, port)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        return if tcp_port_open?(hostname, port)
+        return if Containers::TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
 
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           raise Error, "Health check timeout for MCP sidecar #{hostname}:#{port}"
@@ -239,14 +243,6 @@ module Containers
 
         sleep HEALTH_CHECK_INTERVAL
       end
-    end
-
-    def tcp_port_open?(host, port)
-      socket = Socket.tcp(host, port, connect_timeout: HEALTH_CHECK_INTERVAL)
-      socket.close
-      true
-    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ETIMEDOUT, SocketError
-      false
     end
 
     def sidecar_hostname(agent_run, name)
@@ -284,12 +280,12 @@ module Containers
     end
 
     def remove_container(container)
-      container.stop(timeout: 10)
+      Containers.backend.stop_container(container, timeout: 10)
     rescue Docker::Error::NotFoundError, Docker::Error::ClientError, Docker::Error::ServerError
       # Already stopped or daemon error — proceed to force-delete
     ensure
       begin
-        container.delete(force: true, v: true)
+        Containers.backend.delete_container(container, force: true, v: true)
       rescue Docker::Error::NotFoundError
         # Already gone
       rescue Docker::Error::DockerError => e
@@ -299,9 +295,9 @@ module Containers
     end
 
     def remove_container_by_id(container_id)
-      container = Docker::Container.get(container_id)
+      container = Containers.backend.get_container(container_id)
       begin
-        container.stop(timeout: 10)
+        Containers.backend.stop_container(container, timeout: 10)
       rescue Docker::Error::NotFoundError, Docker::Error::ClientError
         # Already stopped
       end
@@ -313,7 +309,7 @@ module Containers
     ensure
       if container
         begin
-          container.delete(force: true, v: true)
+          Containers.backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
         rescue Docker::Error::DockerError => e

@@ -93,7 +93,7 @@ module Knowledge
     def self.available?
       return false if ENV["COLLECTORS_USE_HOST"] == "true"
 
-      Docker.ping == "OK"
+      Containers.backend.ping == "OK"
     rescue Excon::Error, Docker::Error::DockerError
       false
     end
@@ -126,7 +126,7 @@ module Knowledge
       end
 
       log("containerized_runner.network.connect")
-      bridge = Docker::Network.get("bridge")
+      bridge = Containers.backend.get_network("bridge")
       bridge.connect(@container.id)
       @network_connected = true
     rescue Docker::Error::DockerError => e
@@ -142,7 +142,7 @@ module Knowledge
       return unless @network_connected
 
       log("containerized_runner.network.disconnect")
-      bridge = Docker::Network.get("bridge")
+      bridge = Containers.backend.get_network("bridge")
       bridge.disconnect(@container.id)
       @network_connected = false
     rescue Docker::Error::DockerError => e
@@ -181,7 +181,7 @@ module Knowledge
       end
 
       begin
-        result = @container.exec(cmd_array, exec_options)
+        result = Containers.backend.exec_in_container(@container, cmd_array, **exec_options)
       rescue Docker::Error::DockerError => e
         raise TimeoutError, "Command timed out after #{timeout} seconds" if mutex.synchronize { timed_out }
         raise ContainerError, "Command execution failed: #{e.message}"
@@ -235,8 +235,8 @@ module Knowledge
       log("containerized_runner.provision.start")
 
       create_workspace_volume!
-      @container = Docker::Container.create(container_config)
-      @container.start
+      @container = Containers.backend.create_container(container_config)
+      Containers.backend.start_container(@container)
 
       log("containerized_runner.provision.success", container_id: @container.id)
     rescue Docker::Error::DockerError => e
@@ -249,7 +249,7 @@ module Knowledge
     # where bind-mounting host paths would fail.
     def create_workspace_volume!
       @workspace_volume = "paid-collector-#{project.id}-#{SecureRandom.hex(4)}"
-      Docker::Volume.create(
+      Containers.backend.create_volume(
         @workspace_volume,
         "Labels" => {
           "paid.managed" => "true",
@@ -320,7 +320,7 @@ module Knowledge
     # non-zero exit. Centralizes the exec+check pattern so the order and
     # error shape of seed_workspace! is easy to read at a glance.
     def exec_setup!(command, failing_action)
-      _stdout, _stderr, status = @container.exec(command, user: "root")
+      _stdout, _stderr, status = Containers.backend.exec_in_container(@container, command, user: "root")
       return if status.to_i.zero?
 
       raise ContainerError, "Failed to #{failing_action} (exit #{status})"
@@ -464,7 +464,7 @@ module Knowledge
         next unless should_stop
 
         begin
-          @container&.stop(timeout: 0)
+          Containers.backend.stop_container(@container, timeout: 0) if @container
         rescue Docker::Error::DockerError
           # Container may already be stopped
         end
@@ -519,12 +519,12 @@ module Knowledge
 
       log("containerized_runner.cleanup.start", container_id: @container.id)
       begin
-        @container.stop(timeout: 5)
+        Containers.backend.stop_container(@container, timeout: 5)
       rescue Docker::Error::DockerError
         # Container may already be stopped
       end
       begin
-        @container.delete(force: true)
+        Containers.backend.delete_container(@container, force: true)
       rescue Docker::Error::DockerError
         # Container may already be removed
       end
@@ -535,7 +535,7 @@ module Knowledge
     def cleanup_workspace_volume!
       return unless @workspace_volume
 
-      Docker::Volume.get(@workspace_volume).remove(force: true)
+      Containers.backend.delete_volume(Containers.backend.get_volume(@workspace_volume), force: true)
     rescue Docker::Error::NotFoundError
       # Volume already removed
     rescue Docker::Error::DockerError => e

@@ -54,6 +54,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def create_stale_review_runs!(issue, statuses:, trigger_type: "automatic")
+    Array(statuses).each_with_index do |status, index|
+      timestamp = (90 + ((Array(statuses).size - index) * 5)).minutes.ago
+      create(:agent_run,
+        project: project,
+        issue: issue,
+        source_pull_request_number: issue.github_number,
+        goal: "review",
+        status: status,
+        trigger_type: trigger_type,
+        created_at: timestamp,
+        updated_at: timestamp,
+        started_at: timestamp,
+        completed_at: timestamp)
+    end
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
@@ -292,19 +309,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(github_client).not_to have_received(:rate_limit_remaining!)
       end
 
-      it "escalates draft PRs at max review rounds without checking rate budget" do
+      it "skips draft PR escalation when confirming the head state would exceed the rate budget" do
         project.update!(max_draft_review_rounds: 3)
         pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
+        3.times do
+          create(:agent_run, :failed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 99)
+        end
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 99)
           .and_return(OpenStruct.new(draft: true, number: 99, head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: false)), mergeable: true, user: OpenStruct.new(login: "someone-else")))
+        allow(github_client).to receive(:commit)
+          .with(project.full_name, "abc123")
+          .and_return(OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))))
         allow(github_client).to receive(:rate_limit_remaining!).and_return(5)
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(github_client).not_to have_received(:rate_limit_remaining!)
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(github_client).to have_received(:rate_limit_remaining!)
       end
     end
 
@@ -330,6 +355,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_issue
         allow(github_client).to receive_messages(
           pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))),
           check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
           review_threads: [],
           pull_request_reviews: [],
@@ -456,6 +482,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             mergeable: false,
             user: OpenStruct.new(login: "someone-else")
           ),
+          commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))),
           check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
           review_threads: [],
           pull_request_reviews: [],
@@ -1291,6 +1318,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     context "when followup limit is reached" do
+      before do
+        project.update!(max_pr_followup_runs: 3)
+      end
+
       context "without any actionable triggers present" do
         before do
           create(:issue, :pull_request,
@@ -1312,9 +1343,20 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create(:issue, :pull_request,
             project: project, github_number: 42,
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
-            pr_review_phase: "ready", paid_state: "completed",
-            pr_followup_count: 3)
-          stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
+            pr_review_phase: "ready", paid_state: "completed")
+          3.times do
+            create(:agent_run, :failed,
+              project: project,
+              goal: "create_pr",
+              source_pull_request_number: 42,
+              created_at: 90.minutes.ago,
+              updated_at: 90.minutes.ago,
+              completed_at: 90.minutes.ago)
+          end
+          stub_github_for_pr(
+            checks: [ { name: "ci", conclusion: "failure" } ],
+            head_committed_at: 3.hours.ago
+          )
         end
 
         it "escalates rather than silently skipping" do
@@ -1327,17 +1369,61 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
+      context "when draft-phase failures exhaust the unified limit but ready-phase review work remains" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation", "paid-ready" ],
+            pr_review_phase: "ready", paid_state: "completed")
+          3.times do
+            create(:agent_run, :failed,
+              project: project,
+              goal: "create_pr",
+              source_pull_request_number: 42,
+              base_commit_sha: "abc123",
+              created_at: 90.minutes.ago,
+              updated_at: 90.minutes.ago,
+              completed_at: 90.minutes.ago)
+          end
+          stub_github_for_pr(
+            head_committed_at: 3.hours.ago,
+            checks: [ { name: "ci", conclusion: "success" } ],
+            reviews: default_clean_copilot_review + [
+              { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: Time.current }
+            ]
+          )
+        end
+
+        it "escalates instead of silently skipping the ready-phase review signals" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger].size).to eq(1)
+          trigger = result[:prs_to_trigger].first[:triggers].first
+          expect(trigger[:type]).to eq("escalate_to_owner")
+          expect(trigger[:details]).to include("changes_requested")
+        end
+      end
+
       context "when a bot-authored PR still has failing CI" do
         before do
           create(:issue, :pull_request,
             project: project, github_number: 42,
             github_creator_login: "dependabot[bot]",
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
-            pr_review_phase: "ready", paid_state: "completed",
-            pr_followup_count: 3)
+            pr_review_phase: "ready", paid_state: "completed")
+          3.times do
+            create(:agent_run, :failed,
+              project: project,
+              goal: "create_pr",
+              source_pull_request_number: 42,
+              created_at: 90.minutes.ago,
+              updated_at: 90.minutes.ago,
+              completed_at: 90.minutes.ago)
+          end
           stub_github_for_pr(
             author_login: "dependabot[bot]",
-            checks: [ { name: "ci", conclusion: "failure" } ]
+            checks: [ { name: "ci", conclusion: "failure" } ],
+            head_committed_at: 3.hours.ago
           )
         end
 
@@ -4529,16 +4615,43 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 3)
+        3.times do
+          create(:agent_run, :failed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 42,
+            created_at: 2.hours.ago,
+            updated_at: 2.hours.ago,
+            completed_at: 2.hours.ago)
+        end
         stub_github_for_pr(draft: true)
       end
 
-      it "returns escalate_to_owner trigger" do
+      it "still advances to ready_for_owner once the draft is otherwise clean" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:current_draft_review_count]).to eq(3)
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "does not escalate immediately when the failure streak is still recent" do
+        AgentRun.where(project: project, source_pull_request_number: 42).delete_all
+        3.times do |i|
+          create(:agent_run, :failed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 42,
+            created_at: i.minutes.ago,
+            updated_at: i.minutes.ago,
+            completed_at: i.minutes.ago)
+        end
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).not_to eq("escalate_to_owner")
       end
     end
 
@@ -4552,8 +4665,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       before do
+        project.update!(max_draft_review_rounds: 3)
         stub_github_for_pr(
           draft: true,
+          head_committed_at: 4.hours.ago,
           review_threads: [
             { id: "thread_1", is_resolved: false,
              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ] }
@@ -4570,18 +4685,31 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: goal,
           status: status,
           iterations: iterations,
-          created_at: created_at)
+          created_at: created_at,
+          updated_at: created_at,
+          completed_at: created_at)
       end
 
-      it "escalates after 3 consecutive no-output failures with breaker-specific reason" do
-        3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+      it "escalates after 3 consecutive unsuccessful draft runs once the PR is stuck past the no-progress window" do
+        3.times do |i|
+          create_draft_run(status: "no_output", iterations: 0, created_at: 2.hours.ago - i.minutes)
+        end
 
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Consecutive draft follow-up failures")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 60 minutes after")
+      end
+
+      it "does not escalate immediately after 3 consecutive failures when progress might still resume" do
+        3.times { |i| create_draft_run(status: "no_output", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
 
       it "does not escalate when a recent run produced output" do
@@ -4783,7 +4911,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       before do
-        stub_github_for_pr(review_threads: [], reviews: [], checks: [])
+        stub_github_for_pr(review_threads: [], reviews: [], checks: [], head_committed_at: 4.hours.ago)
       end
 
       def create_followup_run(status:, error_message: nil, created_at: Time.current)
@@ -4805,7 +4933,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "failed",
             error_message: "All providers exhausted: claude_code, codex",
-            created_at: i.minutes.ago
+            created_at: 2.hours.ago - i.minutes
           )
         end
 
@@ -4814,7 +4942,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 60 minutes after")
       end
 
       it "escalates after 3 consecutive timeout failures" do
@@ -4822,7 +4950,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create_followup_run(
             status: "timeout",
             error_message: "wall_clock_timeout: exceeded 30 minutes",
-            created_at: i.minutes.ago
+            created_at: 2.hours.ago - i.minutes
           )
         end
 
@@ -4831,13 +4959,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Consecutive operational failures")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 60 minutes after")
       end
 
       it "escalates after 3 consecutive mixed operational failures" do
-        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
-        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
-        create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 3.minutes.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 2.hours.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.hours.ago - 1.minute)
+        create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 2.hours.ago - 2.minutes)
 
         result = activity.execute(project_id: project.id)
 
@@ -4893,7 +5021,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         triggers = result[:prs_to_trigger]
         escalation_triggers = triggers.select do |t|
-          t[:triggers].any? { |tr| tr[:details]&.include?("Consecutive operational failures") }
+          t[:triggers].any? { |tr| tr[:details]&.include?("No meaningful progress for 60 minutes after") }
         end
         expect(escalation_triggers).to be_empty
       end
@@ -4936,14 +5064,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
-      it "can re-escalate after a fresh post-dismiss streak of operational failures" do
-        pr_issue.update!(operational_failure_reset_at: 10.minutes.ago)
-        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 1.minute.ago)
-        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.minutes.ago)
+      it "can re-escalate after a stale post-dismiss streak of operational failures" do
+        pr_issue.update!(operational_failure_reset_at: 3.hours.ago)
+        create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 2.hours.ago)
+        create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 2.hours.ago - 1.minute)
         create_followup_run(
           status: "failed",
           error_message: "All providers exhausted: claude_code",
-          created_at: 3.minutes.ago
+          created_at: 2.hours.ago - 2.minutes
         )
 
         result = activity.execute(project_id: project.id)
@@ -5906,7 +6034,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     context "when PR is in merged phase" do
-      before do
+      let!(:merged_pr) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -5914,10 +6042,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_state: "open")
       end
 
-      it "does not scan merged PRs" do
+      before do
+        allow(github_client).to receive(:pull_request)
+      end
+
+      it "does not scan merged PRs but still returns their ids for downstream notification resolution" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+        expect(result[:pr_issue_ids]).to contain_exactly(merged_pr.id)
+        expect(github_client).not_to have_received(:pull_request)
       end
     end
 
@@ -5986,13 +6120,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 5)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true, reviews: [])
       end
 
@@ -6040,6 +6168,46 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a ready PR with a unified failure streak is converted back to draft on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          draft_review_count: 5,
+          pr_followup_count: 3)
+      end
+
+      before do
+        3.times do |index|
+          create(:agent_run, :automatic,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42,
+            goal: "create_pr", status: "failed",
+            created_at: (3.hours.ago + index.minutes),
+            started_at: (3.hours.ago + index.minutes),
+            completed_at: (3.hours.ago + index.minutes))
+        end
+
+        stub_github_for_pr(draft: true,
+          checks: [ { name: "rspec", conclusion: "failure" } ])
+      end
+
+      it "restarts the draft cycle before enforcing the ready-phase streak gate" do
+        result = activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(pr_issue.draft_review_count).to eq(0)
+        expect(pr_issue.pr_followup_count).to eq(0)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger[:triggers].map { |entry| entry[:type] }).to eq([ "ci_failure" ])
+      end
+    end
+
     context "when a ready PR at review-goal retry limit is converted back to draft" do
       let!(:pr_issue) do
         create(:issue, :pull_request,
@@ -6052,13 +6220,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 5)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true,
           checks: [ { name: "rspec", conclusion: "failure" } ])
       end
@@ -6099,13 +6261,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 3)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true, reviews: [])
       end
 
@@ -6477,13 +6633,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         enable_paid_agent_review!(project, max_review_rounds: 3)
-        3.times do
-          create(:agent_run,
-            project: project, issue: pr_issue,
-            source_pull_request_number: 42,
-            goal: "review", status: "failed",
-            started_at: 1.hour.ago, completed_at: 1.hour.ago)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: true, reviews: [])
       end
 
@@ -6906,6 +7056,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still skips ready PRs at the follow-up limit when auto-fix is enabled" do
         project.update!(auto_fix_merge_conflicts: true, max_pr_followup_runs: 1)
         unchanged_pr.update!(pr_review_phase: "ready", pr_followup_count: 1)
+        create(:agent_run, :failed,
+          project: project,
+          goal: "create_pr",
+          source_pull_request_number: 42,
+          completed_at: 90.minutes.ago,
+          updated_at: 90.minutes.ago,
+          created_at: 90.minutes.ago)
 
         result = activity.execute(project_id: project.id)
 
@@ -7189,29 +7346,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "escalates when retry limit is reached" do
         pr_issue.update!(review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Review-goal retry limit reached")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retry budget exhausted")
       end
 
       it "does not escalate when an automatic review-goal run is still queued" do
         pr_issue.update!(review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         create(:agent_run, :automatic,
           project: project,
           goal: "review",
@@ -7231,12 +7378,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "escalated",
           labels: pr_issue.labels + [ "paid-escalated" ]
         )
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         result = activity.execute(project_id: project.id)
 
@@ -7247,12 +7389,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "detects draft conversion before escalating at retry limit in ready phase" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         stub_github_for_pr(draft: true, reviews: [])
 
@@ -7265,12 +7402,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "escalates at retry limit in ready phase when PR is not draft" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: false, reviews: [])
 
         result = activity.execute(project_id: project.id)
@@ -7278,17 +7410,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("Review-goal retry limit reached")
+        expect(trigger[:triggers].first[:details]).to include("Review-goal retry budget exhausted")
       end
 
       it "does not escalate in ready phase while an automatic review-goal run is still running" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         create(:agent_run, :automatic,
           project: project,
           goal: "review",
@@ -7306,10 +7433,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not escalate in ready phase while a manual review-goal run is still running" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed, project: project, goal: "review",
-            source_pull_request_number: 42, trigger_type: "automatic")
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         create(:agent_run, project: project, goal: "review",
           status: "running", trigger_type: "manual", source_pull_request_number: 42)
         stub_github_for_pr(draft: false, reviews: [])
@@ -7325,12 +7449,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "skips escalation when pr_data fetch fails in ready phase at retry limit" do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 42)
@@ -7430,7 +7549,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
-      it "does not escalate at retry limit when paid_agent is not the sole review method" do
+      it "keeps retry pressure soft when paid_agent is not the sole review method" do
         project.update!(review_settings: {
           "enabled" => true,
           "methods" => {
@@ -7439,18 +7558,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue.update!(review_goal_retry_count: 3)
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
 
         result = activity.execute(project_id: project.id)
 
         triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
-        expect(triggered_types).not_to include("review_goal_retry")
+        expect(triggered_types).to include("review_goal_retry")
+        expect(triggered_types).to include("review_bot_review_pending")
         expect(triggered_types).not_to include("paid_agent_review_pending")
       end
 
@@ -7513,12 +7628,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(
           reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                      body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
@@ -7557,12 +7667,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
       end
 
@@ -7594,12 +7699,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         })
         pr_issue
-        3.times do
-          create(:agent_run, :failed,
-            project: project,
-            goal: "review",
-            source_pull_request_number: 42)
-        end
+        create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
       end
 
@@ -7956,6 +8056,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(triggered_types).not_to include("paid_agent_review_pending")
     end
 
+    it "retries failed review runs linked only by pull_request_number" do
+      project.agent_runs.where(goal: "review").delete_all
+      run = create(:agent_run,
+        project: project, issue: failed_review_issue,
+        source_pull_request_number: 42,
+        pull_request_number: 42,
+        goal: "review", status: "failed",
+        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      run.update_column(:source_pull_request_number, nil)
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).to include("paid_agent_review_pending")
+    end
+
     it "re-triggers review when a newer create_pr run exists after a posted-but-failed review" do
       run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
       run.update!(review_posted_at: 30.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
@@ -7963,6 +8079,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       create(:agent_run,
         project: project, issue: failed_review_issue,
         source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        trigger_type: "automatic",
+        started_at: 10.minutes.ago, completed_at: 10.minutes.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      expect(triggered_types).to include("paid_agent_review_pending")
+    end
+
+    it "re-triggers review when the newer create_pr run is linked only by pull_request_number" do
+      run = project.agent_runs.where(goal: "review", source_pull_request_number: 42).first
+      run.update!(review_posted_at: 30.minutes.ago, review_url: "https://github.com/example/repo/pull/42#pullrequestreview-1")
+
+      create(:agent_run,
+        project: project, issue: failed_review_issue,
+        source_pull_request_number: nil,
+        pull_request_number: 42,
         goal: "create_pr", status: "completed",
         trigger_type: "automatic",
         started_at: 10.minutes.ago, completed_at: 10.minutes.ago)
@@ -8013,6 +8147,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(triggers).not_to include("review_goal_retry")
       expect(triggers).not_to include("paid_agent_review_pending")
     end
+
+    it "does not escalate just because an older retryable failure exists" do
+      enable_paid_agent_review!(project, max_review_rounds: 1)
+
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("escalate_to_owner")
+    end
   end
 
   context "when paid_agent review-goal retry limit is reached" do
@@ -8026,13 +8169,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project, max_review_rounds: 3)
-      3.times do
-        create(:agent_run,
-          project: project, issue: retry_limit_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(retry_limit_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8045,7 +8182,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
       details = trigger[:triggers].find { |t| t[:type] == "escalate_to_owner" }[:details]
-      expect(details).to match(/Review-goal retry limit reached/)
+      expect(details).to match(/Review-goal retry budget exhausted/)
     end
 
     it "includes owner_reviewer_login for escalation handling" do
@@ -8150,11 +8287,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project, max_review_rounds: 1)
-      create(:agent_run,
-        project: project, issue: low_rounds_issue,
-        source_pull_request_number: 42,
-        goal: "review", status: "failed",
-        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      create_stale_review_runs!(low_rounds_issue, statuses: [ "failed" ])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8180,13 +8313,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: ready_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(ready_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr
     end
 
@@ -8211,13 +8338,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project)
       project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
-      3.times do
-        create(:agent_run,
-          project: project, issue: approved_ready_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(approved_ready_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(
         reviews: [
           { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
@@ -8250,13 +8371,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: dismissed_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(dismissed_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(reviews: [])
     end
 
@@ -8265,6 +8380,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       expect(result[:prs_to_trigger]).to be_empty
       expect(dismissed_retry_issue.reload.pr_review_phase).to eq("ready")
+    end
+  end
+
+  context "when an escalated PR still has operational failures after dismissal" do
+    let(:dismissed_escalated_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "escalated",
+        pr_followup_count: 0,
+        review_goal_retry_reset_at: Time.current)
+    end
+
+    before do
+      enable_paid_agent_review!(project)
+      create_stale_review_runs!(dismissed_escalated_issue, statuses: %w[failed failed failed])
+      dismissed_escalated_issue.update!(labels: dismissed_escalated_issue.labels - [ "paid-escalated" ])
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "returns a dismiss trigger instead of re-escalating" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |entry| entry[:type] }
+
+      expect(trigger_types).to include("dismiss_escalation")
+      expect(trigger_types).not_to include("escalate_to_owner")
     end
   end
 
@@ -8279,13 +8423,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project)
-      3.times do
-        create(:agent_run,
-          project: project, issue: fetch_fail_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(fetch_fail_issue, statuses: %w[failed failed failed])
       allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
         .and_raise(GithubClient::Error, "transient API failure")
@@ -8340,6 +8478,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
+    end
+  end
+
+  context "when create_pr failures precede the first retryable review failure" do
+    let(:cross_goal_failure_issue) do
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+    end
+
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 5, max_review_goal_retries: 2)
+      create(:agent_run, :failed,
+        project: project, issue: cross_goal_failure_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        started_at: 3.hours.ago,
+        completed_at: 3.hours.ago)
+      create(:agent_run, :failed,
+        project: project, issue: cross_goal_failure_issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        started_at: 2.hours.ago,
+        completed_at: 2.hours.ago)
+      create(:agent_run, :failed,
+        project: project, issue: cross_goal_failure_issue,
+        source_pull_request_number: 42,
+        goal: "review",
+        started_at: 1.hour.ago,
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(draft: true, reviews: [])
+    end
+
+    it "retries the review instead of escalating on the unified PR streak" do
+      result = activity.execute(project_id: project.id)
+
+      trigger = result[:prs_to_trigger].first
+      trigger_types = trigger[:triggers].map { |t| t[:type] }
+      retry_trigger = trigger[:triggers].find { |t| t[:type] == "review_goal_retry" }
+
+      expect(trigger_types).to include("review_goal_retry")
+      expect(trigger_types).not_to include("escalate_to_owner")
+      expect(retry_trigger[:details]).to include("attempt 2/2")
     end
   end
 
@@ -8446,11 +8629,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      create(:agent_run,
-        project: project, issue: custom_retries_issue,
-        source_pull_request_number: 42,
-        goal: "review", status: "failed",
-        started_at: 1.hour.ago, completed_at: 1.hour.ago)
+      create_stale_review_runs!(custom_retries_issue, statuses: [ "failed" ])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8541,13 +8720,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!(project, max_review_rounds: 3)
-      3.times do
-        create(:agent_run,
-          project: project, issue: no_output_retry_limit_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "no_output",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(no_output_retry_limit_issue, statuses: %w[no_output no_output no_output])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8610,13 +8783,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!
-      3.times do
-        create(:agent_run,
-          project: project, issue: escalated_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(escalated_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr
     end
 
@@ -8647,13 +8814,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     before do
       enable_paid_agent_review!
-      3.times do
-        create(:agent_run,
-          project: project, issue: escalated_no_dismiss_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(escalated_no_dismiss_issue, statuses: %w[failed failed failed])
       stub_github_for_pr
     end
 
@@ -8769,13 +8930,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      3.times do
-        create(:agent_run,
-          project: project, issue: mixed_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(mixed_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8855,13 +9010,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      3.times do
-        create(:agent_run,
-          project: project, issue: manual_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(manual_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8898,13 +9047,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         }
       })
-      3.times do
-        create(:agent_run,
-          project: project, issue: ci_retry_issue,
-          source_pull_request_number: 42,
-          goal: "review", status: "failed",
-          started_at: 1.hour.ago, completed_at: 1.hour.ago)
-      end
+      create_stale_review_runs!(ci_retry_issue, statuses: %w[failed failed failed])
       stub_github_for_pr(draft: true, reviews: [])
     end
 
@@ -8933,14 +9076,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     recent_issue_comments: nil,
     reviews: default_clean_copilot_review,
     recent_multi_page: false,
-    head_committed_at: 2.hours.ago
+    head_committed_at: 2.hours.ago,
+    pr_updated_at: nil
   )
     pr_data = OpenStruct.new(
       head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
       number: 42,
-      user: OpenStruct.new(login: author_login)
+      user: OpenStruct.new(login: author_login),
+      updated_at: pr_updated_at
     )
 
     commit_data = OpenStruct.new(

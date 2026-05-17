@@ -40,6 +40,12 @@ module Containers
     # transport error as a timeout. Kept small to avoid false reclassification.
     DOCKER_TIMEOUT_SKEW_TOLERANCE = 0.5
 
+    # How often (seconds) the startup heartbeat thread touches the host-side
+    # heartbeat file before the agent produces its first stdout. Must be well
+    # below DEFAULT_AGENT_STARTUP_TIMEOUT / DEFAULT_*_IDLE_TIMEOUT so a fresh
+    # touch is always visible to the watchdog before either timer fires.
+    STARTUP_HEARTBEAT_INTERVAL_SECONDS = 30
+
     # Base error for all container service errors
     class Error < StandardError; end
 
@@ -135,7 +141,7 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host
+    attr_reader :agent_run, :project, :worktree_path, :container, :options, :workspace_volume, :pool_entry, :heartbeat_dir_host, :backend
 
     def self.network_for(agent_run:)
       new(agent_run: agent_run).network_name
@@ -154,7 +160,7 @@ module Containers
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
     # @option options [String] :image Docker image to use
-    def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil, **options)
+    def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil, backend: Containers.backend, **options)
       raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil?
 
       if options.key?(:network)
@@ -172,6 +178,7 @@ module Containers
       @workspace_volume = workspace_volume
       @pool_mode = options.delete(:pool_mode) { false }
       @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
+      @backend = backend
       @container = nil
       @heartbeat_age_cache = {}
       @heartbeat_age_cache_mutex = Mutex.new
@@ -186,7 +193,8 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
-      prepare_heartbeat_dir!
+      validate_backend_mount_support!
+      prepare_heartbeat_dir! if backend.supports_host_paths?
       prepare_workspace!
       ensure_network!
       @container = create_container
@@ -200,7 +208,7 @@ module Containers
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
-      Result.success(container_id: container.id)
+      Result.success(container_id: container.id, container_host: backend.container_host_for(container))
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
       cleanup
@@ -381,6 +389,7 @@ module Containers
       abort_matched_output = nil # set when an abort_pattern matches stderr
       stdout_abort_buffer = +""
       watchdog = nil
+      startup_heartbeat = nil
       streaming_event_processor = build_streaming_event_processor(command)
       streaming_abort_triggered = false
       streaming_abort_event_type = nil
@@ -414,8 +423,9 @@ module Containers
 
       begin
         watchdog = start_watchdog(watchdog_ctx)
+        startup_heartbeat = start_startup_heartbeat(watchdog_mutex, -> { output_received }, -> { exec_completed }, startup_timeout) if startup_timeout
 
-        exec_result = container.exec(cmd_array, exec_options) do |stream_type, chunk|
+        exec_result = backend.exec_in_container(container, cmd_array, **exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
             output_received = true
             last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -443,7 +453,7 @@ module Containers
                   log_system("container.execute.streaming_abort",
                     reason: "#{streaming_abort_event_type} event received")
                   begin
-                    container.stop(timeout: 0)
+                    backend.stop_container(container, timeout: 0)
                   rescue Docker::Error::DockerError => e
                     log_system("container.execute.streaming_abort_stop_failed", error: e.message)
                   end
@@ -470,7 +480,7 @@ module Containers
                 stream: stream_type.to_s,
                 output: candidate.truncate(200))
               begin
-                container.stop(timeout: 0)
+                backend.stop_container(container, timeout: 0)
               rescue Docker::Error::DockerError => e
                 log_system("container.execute.abort_stop_failed", error: e.message)
               end
@@ -487,7 +497,7 @@ module Containers
               stream: "stdout",
               output: candidate.truncate(200))
             begin
-              container.stop(timeout: 0)
+              backend.stop_container(container, timeout: 0)
             rescue Docker::Error::DockerError => e
               log_system("container.execute.abort_stop_failed", error: e.message)
             end
@@ -666,6 +676,7 @@ module Containers
       ensure
         watchdog_mutex.synchronize { exec_completed = true }
         stop_watchdog(watchdog)
+        stop_startup_heartbeat(startup_heartbeat)
         # Persist turn metrics even on error paths so partial progress is recorded.
         safe_flush_streaming_metrics(streaming_event_processor)
         if cleanup_steps&.any?
@@ -693,12 +704,12 @@ module Containers
 
       begin
         stop_container(force: force)
-        container.delete(force: force, v: true)
+        backend.delete_container(container, force: force, v: true)
         log_system("container.cleanup.success")
       rescue Docker::Error::DockerError => e
         log_system("container.cleanup.failed", error: e.message)
         begin
-          container.delete(force: true, v: true)
+          backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::DockerError
           # Container may already be gone
         end
@@ -749,11 +760,20 @@ module Containers
     # @return [Provision] The reconnected service instance
     # @raise [ProvisionError] When container cannot be found
     def self.reconnect(agent_run:, container_id:, worktree_path: nil, workspace_volume: nil, pool_entry: nil, **options)
-      container = Docker::Container.get(container_id)
       pool_entry ||= ContainerPoolEntry.claimed.find_by(agent_run: agent_run, container_id: container_id)
+      host = pool_entry&.container_host || agent_run.container_host
+      backend = Containers.backend_for(host)
+      container = backend.get_container(container_id)
       workspace_volume ||= pool_entry&.workspace_volume
 
-      new(agent_run: agent_run, worktree_path: worktree_path, workspace_volume: workspace_volume, pool_entry: pool_entry, **options)
+      new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        workspace_volume: workspace_volume,
+        pool_entry: pool_entry,
+        backend: backend,
+        **options
+      )
         .with_existing_container(container, workspace_volume: workspace_volume, pool_entry: pool_entry)
     rescue Docker::Error::NotFoundError
       raise ProvisionError, "Container #{container_id} not found"
@@ -860,7 +880,7 @@ module Containers
       preparation_env = env.merge(script_env)
       exec_options = { wait: options[:timeout_seconds] }
       exec_options[:Env] = preparation_env.map { |key, value| "#{key}=#{value}" }
-      stdout, stderr, exit_code = container.exec([ "sh", "-lc", script ], exec_options)
+      stdout, stderr, exit_code = backend.exec_in_container(container, [ "sh", "-lc", script ], **exec_options)
 
       return if exit_code.to_i.zero?
 
@@ -969,7 +989,7 @@ module Containers
     def stop_container(force: false)
       return unless container_running?
 
-      container.stop(timeout: force ? 0 : 10)
+      backend.stop_container(container, timeout: force ? 0 : 10)
     rescue Docker::Error::NotFoundError
       # Container was already removed between running? check and stop
     end
@@ -1085,7 +1105,8 @@ module Containers
     # Creates config.toml when subscription auth only provided auth.json.
     def seed_codex_notify_hook!
       escaped_notify = Shellwords.escape(codex_notify_line)
-      result = container.exec(
+      result = backend.exec_in_container(
+        container,
         [ "sh", "-lc", codex_notify_rewrite_script(escaped_notify) ],
         user: "agent"
       )
@@ -1178,7 +1199,8 @@ module Containers
     def seed_opencode_database!
       return unless opencode_provider_requested?
 
-      result = container.exec(
+      result = backend.exec_in_container(
+        container,
         [ "sh", "-c",
           "if [ -d /opt/opencode-seed ]; then " \
           "cp -a /opt/opencode-seed/. /home/agent/.local/share/opencode/ && " \
@@ -1317,15 +1339,15 @@ module Containers
         "cp #{Shellwords.escape("#{staging_path}/#{filename}")} #{Shellwords.escape("#{target_path}/#{filename}")} 2>/dev/null"
       end
 
-      container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
-      container.exec([ "sh", "-c", "#{copy_commands.join('; ')}; true" ], user: "agent")
+      backend.exec_in_container(container, [ "chown", "-R", "agent:agent", target_path ], user: "root")
+      backend.exec_in_container(container, [ "sh", "-c", "#{copy_commands.join('; ')}; true" ], user: "agent")
       log_system(success_log_key)
     rescue Docker::Error::DockerError => e
       log_system(failure_log_key, error: e.message)
     end
 
     def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
-      container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
+      backend.exec_in_container(container, [ "chown", "-R", "agent:agent", target_path ], user: "root")
 
       write_commands = []
       files.each do |filename|
@@ -1338,7 +1360,7 @@ module Containers
       end
 
       if write_commands.any?
-        container.exec([ "sh", "-lc", write_commands.join("; ") ], user: "agent")
+        backend.exec_in_container(container, [ "sh", "-lc", write_commands.join("; ") ], user: "agent")
         log_system(success_log_key, files_copied: write_commands.size)
       end
     rescue Docker::Error::DockerError, SystemCallError => e
@@ -1369,7 +1391,7 @@ module Containers
       recursive_script = dirs.map { |d| "chown -R agent:agent #{Shellwords.escape(d)}" }.join("; ")
       script = "#{recursive_script}; chown agent:agent /home/agent/.codex"
 
-      container.exec([ "sh", "-c", script ], user: "root")
+      backend.exec_in_container(container, [ "sh", "-c", script ], user: "root")
       log_system("container.ownership_batch_fixed", dirs_count: dirs.size + 1)
     rescue Docker::Error::DockerError => e
       log_system("container.ownership_batch_failed", error: e.message)
@@ -1399,7 +1421,8 @@ module Containers
     # Docker bind mounts inherit host ownership which may not match the container
     # user. Running chown as root inside the container fixes this portably.
     def fix_workspace_ownership!
-      container.exec(
+      backend.exec_in_container(
+        container,
         [ "chown", "-R", "agent:agent", options[:workspace_mount] ],
         user: "root"
       )
@@ -1411,7 +1434,8 @@ module Containers
     # write to it. Tmpfs mounts are created as root-owned; tools like Codex CLI,
     # npm, and others expect to cache data here.
     def fix_cache_tmpfs_ownership!
-      container.exec(
+      backend.exec_in_container(
+        container,
         [ "chown", "-R", "agent:agent", "/home/agent/.cache" ],
         user: "root"
       )
@@ -1424,7 +1448,8 @@ module Containers
     # Only chown the directory entry itself so host-backed auth/config file
     # binds keep their original ownership.
     def fix_codex_tmpfs_ownership!
-      container.exec(
+      backend.exec_in_container(
+        container,
         [ "chown", "agent:agent", "/home/agent/.codex" ],
         user: "root"
       )
@@ -1495,7 +1520,8 @@ module Containers
     #   (e.g. ".config/opencode" → "config_opencode", ".local/share/opencode" → "local_share_opencode").
     def fix_tmpfs_ownership!(subdir, log_key: nil)
       log_key ||= subdir.delete_prefix(".").tr("/", "_")
-      container.exec(
+      backend.exec_in_container(
+        container,
         [ "chown", "-R", "agent:agent", "/home/agent/#{subdir}" ],
         user: "root"
       )
@@ -1509,13 +1535,18 @@ module Containers
     # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
     def prepare_workspace!
       if host_worktree_path.present?
+        unless backend.supports_host_paths?
+          raise ProvisionError,
+            "Backend #{backend.identifier} does not support host-backed worktree paths: #{host_worktree_path}"
+        end
+
         raise ProvisionError, "Worktree path does not exist: #{host_worktree_path}" unless File.directory?(host_worktree_path)
       else
         @workspace_volume ||= pooled_container? ? "paid-pool-workspace-#{pool_entry.id}" : "paid-workspace-#{agent_run.id}"
         begin
-          Docker::Volume.get(@workspace_volume)
+          backend.get_volume(@workspace_volume)
         rescue Docker::Error::NotFoundError
-          Docker::Volume.create(@workspace_volume, volume_options)
+          backend.create_volume(@workspace_volume, volume_options)
         end
       end
     end
@@ -1530,7 +1561,7 @@ module Containers
     def write_container_file(path, content)
       encoded = Base64.strict_encode64(content)
       cmd = "echo #{Shellwords.escape(encoded)} | base64 -d > #{Shellwords.escape(path)}"
-      container.exec([ "sh", "-lc", cmd ], user: "agent")
+      backend.exec_in_container(container, [ "sh", "-lc", cmd ], user: "agent")
     end
 
     def prepare_heartbeat_dir!
@@ -1585,7 +1616,7 @@ module Containers
       volume_name ||= "paid-workspace-#{agent_run.id}" if host_worktree_path.blank? && agent_run.present? && !pooled_container?
       return unless volume_name
 
-      Docker::Volume.get(volume_name).remove
+      backend.delete_volume(backend.get_volume(volume_name, host: volume_host))
     rescue Docker::Error::NotFoundError
       # Volume already removed
     rescue => e
@@ -1604,6 +1635,14 @@ module Containers
 
       pool_entry.destroy!
       @pool_entry = nil
+    end
+
+    def volume_host
+      return agent_run.container_host if agent_run&.container_host.present?
+      return pool_entry.container_host if pool_entry&.container_host.present?
+      return backend.container_host_for(container) if container
+
+      nil
     end
 
     def volume_options
@@ -1637,16 +1676,16 @@ module Containers
     end
 
     def create_container
-      Docker::Container.create(container_config)
+      backend.create_container(container_config)
     end
 
     def start_container
-      container.start
+      backend.start_container(container)
     end
 
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
-    #   /paid-heartbeat     - bind mount of host temp dir (rw, for heartbeat file shared with watchdog)
+    #   /paid-heartbeat     - host bind mount when supported, otherwise tmpfs (rw, for heartbeat touches)
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
@@ -1684,7 +1723,7 @@ module Containers
       binds = []
       if @workspace_volume
         binds << "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
-      elsif host_worktree_path.present?
+      elsif backend.supports_host_paths? && host_worktree_path.present?
         binds << "#{host_worktree_path}:#{options[:workspace_mount]}:rw"
       end
 
@@ -1693,29 +1732,40 @@ module Containers
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs
       # by seed_claude_credentials! after container start.
-      if claude_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         claude_config_host_path.present? &&
          File.directory?(claude_config_host_path) &&
          File.file?(File.join(claude_config_host_path, ".credentials.json"))
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
-      if codex_subscription_auth_host_mount_path.present?
+      if backend.supports_host_paths? && codex_subscription_auth_host_mount_path.present?
         binds.concat(codex_subscription_auth_file_binds)
       end
 
-      if gemini_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         gemini_config_host_path.present? &&
          File.directory?(gemini_config_host_path) &&
          File.file?(File.join(gemini_config_host_path, "oauth_creds.json")) &&
          gemini_subscription_auth?
         binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro"
       end
 
-      if copilot_config_host_path.present? &&
+      if backend.supports_host_paths? &&
+         copilot_config_host_path.present? &&
          File.directory?(copilot_config_host_path) &&
          File.file?(File.join(copilot_config_host_path, "config.json")) &&
          copilot_subscription_auth?
         binds << "#{copilot_config_host_path}:/home/agent/.copilot-host:ro"
       end
+
+      # /paid-heartbeat carries agent heartbeat touches used by the watchdog.
+      # When the backend supports host paths we bind-mount a host temp dir so
+      # both host and container can observe the same file. Backends like Swarm
+      # cannot expose host paths, so keep the in-container contract intact with
+      # a writable tmpfs at the same path.
+      tmpfs = {}
+      tmpfs[HEARTBEAT_MOUNT_POINT] = "size=#{1024 * 1024},mode=0777" unless heartbeat_dir_host
 
       # /tmp must be `exec` because every coding/review/rebase prompt has the
       # agent run `bundle install` as step 1, and review-goal runs additionally
@@ -1728,10 +1778,10 @@ module Containers
       # /home/agent/.cache needs exec because some providers (e.g. GitHub Copilot)
       # download native Node.js addons (pty.node) into ~/.cache/copilot/pkg/ at
       # runtime; dlopen() requires mmap(PROT_EXEC), which fails on a noexec mount.
-      tmpfs = {
+      tmpfs.merge!(
         "/tmp" => "exec,size=#{options[:tmpfs_tmp_size]},mode=1777",
         "/home/agent/.cache" => "exec,size=#{options[:tmpfs_cache_size]},mode=0755"
-      }
+      )
 
       # Claude CLI needs to write session data, project indexes, todos, debug
       # logs, and stats under ~/.claude. A writable tmpfs lets it do so without
@@ -2007,9 +2057,36 @@ module Containers
     end
 
     def proxy_base_url
-      proxy_port = Rails.application.config.x.paid_proxy_port
-      proxy_host = network_contract.restricted? ? "paid-proxy" : "web"
-      "http://#{proxy_host}:#{proxy_port}"
+      Containers::ProxyUrl.resolve(backend:, restricted: network_contract.restricted?)
+    end
+
+    def validate_backend_mount_support!
+      return if backend.supports_host_paths?
+
+      unsupported_mounts = []
+      unsupported_mounts << "worktree path #{host_worktree_path}" if host_worktree_path.present?
+      if host_only_auth_source?(claude_config_host_path, ".credentials.json", claude_local_config_path)
+        unsupported_mounts << "Claude subscription auth at #{claude_config_host_path}"
+      end
+      if codex_subscription_auth_host_mount_path.present?
+        unsupported_mounts << "Codex subscription auth at #{codex_subscription_auth_host_mount_path}"
+      end
+      if host_only_auth_source?(gemini_config_host_path, "oauth_creds.json", gemini_local_config_path)
+        unsupported_mounts << "Gemini subscription auth at #{gemini_config_host_path}"
+      end
+      if host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path)
+        unsupported_mounts << "Copilot subscription auth at #{copilot_config_host_path}"
+      end
+      return if unsupported_mounts.empty?
+
+      raise ProvisionError,
+        "Backend #{backend.identifier} does not support required host paths: #{unsupported_mounts.join(', ')}"
+    end
+
+    def host_only_auth_source?(host_path, marker_file, local_path)
+      return false unless host_path.present? && File.file?(File.join(host_path, marker_file))
+
+      local_path.blank? || !File.file?(File.join(local_path, marker_file))
     end
 
     # Returns the Docker-host path to the Claude config directory.
@@ -2215,7 +2292,7 @@ module Containers
 
     def detected_config_mount(suffix)
       hostname = Socket.gethostname
-      container = Docker::Container.get(hostname)
+      container = local_runtime_backend.get_container(hostname)
       mounts = container.info["Mounts"] || []
       mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
     rescue Docker::Error::DockerError
@@ -2247,7 +2324,7 @@ module Containers
       return @current_container_mounts if defined?(@current_container_mounts)
 
       hostname = Socket.gethostname
-      container = Docker::Container.get(hostname)
+      container = local_runtime_backend.get_container(hostname)
       @current_container_mounts = container.info["Mounts"] || []
     rescue Docker::Error::DockerError
       @current_container_mounts = nil
@@ -2276,7 +2353,7 @@ module Containers
     end
 
     def docker_container_ip(docker_id)
-      info = Docker::Container.get(docker_id).info
+      info = backend.get_container(docker_id).info
       networks = info.dig("NetworkSettings", "Networks") || {}
       network_info = networks[container_network]
       network_info&.dig("IPAddress")
@@ -2290,7 +2367,7 @@ module Containers
     end
 
     def ensure_network!
-      NetworkPolicy.ensure_network!(network: network_name)
+      NetworkPolicy.ensure_network!(network: network_name, backend: backend)
       log_system("container.network.ready", network: network_name, mode: network_contract.mode)
     rescue NetworkPolicy::Error => e
       raise ProvisionError, "Network setup failed: #{e.message}"
@@ -2301,7 +2378,8 @@ module Containers
 
       NetworkPolicy.apply_firewall_rules(
         container,
-        service_destinations: resolve_service_destinations
+        service_destinations: resolve_service_destinations,
+        backend: backend
       )
       log_system("container.firewall.applied", container_id: container.id)
     rescue NetworkPolicy::Error => e
@@ -2326,6 +2404,12 @@ module Containers
         agent_run: agent_run,
         logger: method(:log_system)
       )
+    end
+
+    def local_runtime_backend
+      @local_runtime_backend ||= Containers.backend_for("local")
+    rescue Containers::Backends::Resolver::UnknownBackendError
+      Containers.backend
     end
 
     def streaming_event_command?(command)
@@ -2577,7 +2661,7 @@ module Containers
             break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
 
             begin
-              ctx.container.stop(timeout: 0)
+              backend.stop_container(ctx.container, timeout: 0)
             rescue Docker::Error::DockerError => e
               log_system("container.watchdog.stop_failed", error: e.message)
             end
@@ -2681,7 +2765,8 @@ module Containers
     end
 
     def container_heartbeat_mtime(heartbeat_path)
-      stdout, = container.exec(
+      stdout, = backend.exec_in_container(
+        container,
         [ "sh", "-lc", "test -e #{Shellwords.escape(heartbeat_path)} && stat -c %Y #{Shellwords.escape(heartbeat_path)}" ],
         wait: 5,
         user: "agent"
@@ -2702,6 +2787,53 @@ module Containers
       unless watchdog.join(1)
         log_system("container.watchdog.zombie", message: "Watchdog thread did not terminate within 1s")
       end
+    end
+
+    # Periodically touches the host-side heartbeat file until the agent produces
+    # its first stdout or the exec completes. Prevents the startup timeout from
+    # firing during Claude's silent MCP initialization phase (e.g. Playwright or
+    # other repo-local MCP servers starting before the first tool call).
+    # Only active when the heartbeat file is accessible on the host filesystem —
+    # returns nil for remote/volume-backed backends where heartbeat_host_path is nil.
+    #
+    # The thread runs for at most +startup_timeout+ seconds. After that, the
+    # heartbeat file goes stale (no more touches), so the idle timeout can fire
+    # normally once its threshold elapses — bounding total hang time to
+    # startup_timeout + idle_timeout rather than running until Temporal kills
+    # the activity.
+    def start_startup_heartbeat(mutex, output_received_ref, exec_completed_ref, startup_timeout)
+      host_path = heartbeat_host_path
+      return nil unless host_path.present?
+
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + startup_timeout
+
+      Thread.new do
+        loop do
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+            log_system("container.startup_heartbeat.deadline_reached",
+              startup_timeout: startup_timeout,
+              message: "Agent produced no output within startup_timeout; falling back to idle timeout")
+            break
+          end
+          break if mutex.synchronize { exec_completed_ref.call || output_received_ref.call }
+          FileUtils.touch(host_path) rescue nil
+          sleep startup_heartbeat_interval_seconds
+        end
+      end
+    end
+
+    def stop_startup_heartbeat(thread)
+      return unless thread&.alive?
+
+      thread.kill
+      unless thread.join(1)
+        log_system("container.startup_heartbeat.zombie",
+          message: "Startup heartbeat thread did not terminate within 1s")
+      end
+    end
+
+    def startup_heartbeat_interval_seconds
+      STARTUP_HEARTBEAT_INTERVAL_SECONDS
     end
 
     # Simple result object for method returns

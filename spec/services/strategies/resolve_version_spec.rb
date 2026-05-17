@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Strategies::ResolveVersion do
   describe ".call" do
-    let(:slug) { Strategies::BaselineOrchestration::PLANNING_OUTCOME_SLUG }
+    let(:slug) { "#{Strategies::BaselineOrchestration::PLANNING_OUTCOME_SLUG}.#{SecureRandom.hex(4)}" }
 
     it "returns the project-scoped current version first" do
       project = create(:project)

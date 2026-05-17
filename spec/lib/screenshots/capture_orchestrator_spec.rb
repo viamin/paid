@@ -145,6 +145,29 @@ RSpec.describe Screenshots::CaptureOrchestrator do
     expect(result.paths).to eq([ "#{output_dir}/project_show.png" ])
   end
 
+  it "normalizes string-keyed seed data for legacy target objects" do
+    target = Screenshots::CaptureTargets::Target.new(
+      slug: "project_show",
+      path_builder: ->(records) { "/projects/#{records.fetch(:project).id}" },
+      requires_auth: true
+    )
+    allow(Screenshots::Driver::Cuprite).to receive(:new).and_return(driver)
+
+    orchestrator = build_orchestrator(
+      config: config,
+      targets: [ target ],
+      seed_runner_double: instance_double(
+        Screenshots::SeedRunner,
+        call: { "project" => OpenStruct.new(id: 1), "user" => OpenStruct.new(email: "screenshot@example.com", password: "secret") }
+      )
+    )
+
+    result = orchestrator.call
+
+    expect(driver).to have_received(:visit).with("/projects/1")
+    expect(result.paths).to eq([ "#{output_dir}/project_show.png" ])
+  end
+
   context "with literal percent signs in credentials" do
     let(:percent_config) do
       Screenshots::Configuration.from_hash(

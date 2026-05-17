@@ -149,9 +149,9 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates do
           configuration: OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.tap do |config|
             config["escalation"] = config.fetch("escalation", {}).merge(
               "human_value_threshold" => 0.45,
-              "explicit_triggers" => %w[operational_failure_breaker],
+              "explicit_triggers" => %w[no_progress_stuck],
               "auto_resolve_trigger_types" => %w[owner_approved],
-              "weights" => { "review_goal_retry_pressure" => 0.6 },
+              "weights" => { "unified_failure_pressure" => 0.6 },
               "interruption_cost" => { "base" => 0.2 }
             )
           end,
@@ -180,12 +180,12 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates do
 
       it "persists escalation candidates using escalation-specific rule and parameter keys" do
         expect(escalation_candidate.rules).to include(
-          "explicit_triggers" => %w[operational_failure_breaker],
+          "explicit_triggers" => %w[no_progress_stuck],
           "auto_resolve_trigger_types" => %w[owner_approved]
         )
         expect(escalation_candidate.parameters).to include(
           "human_value_threshold" => 0.45,
-          "weights" => { "review_goal_retry_pressure" => 0.6 }
+          "weights" => { "unified_failure_pressure" => 0.6 }
         )
       end
     end

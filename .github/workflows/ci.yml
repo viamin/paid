@@ -74,9 +74,11 @@ jobs:
       - name: Run lint checks
         run: bin/lint
 
-      - name: Verify Postgres image pins are in sync
+      - name: Verify Postgres image pins and client install sources are in sync
         # Keep the Postgres server image pin aligned across compose, devcontainer,
-        # and CI, and ensure installed client tools use the exact matching pg_dump version.
+        # and CI. Docker images pin the exact client package version because they
+        # build once, while GitHub-hosted workflow jobs install the matching
+        # major client package from PGDG at runtime.
         run: |
           check_contains() {
             local file="$1"
@@ -96,8 +98,10 @@ jobs:
           test_prof=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/test_prof.yml | head -1 | awk '{print $NF}')
           screenshots=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/pr-screenshots.yml | head -1 | awk '{print $NF}')
           ephemeral=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ephemeral_tests.yml | head -1 | awk '{print $NF}')
+          claude_review=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/claude-code-review.yml | head -1 | awk '{print $NF}')
           version=${compose#postgres:}
           major=${version%%.*}
+          workflow_client="postgresql-client-${major}"
           bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
           trixie_client="postgresql-client-${major}=${version}-1.pgdg13+1"
           noble_client="postgresql-client-${major}=${version}-1.pgdg24.04+1"
@@ -109,14 +113,16 @@ jobs:
           echo ".github/workflows/test_prof.yml: ${test_prof:-<none>}"
           echo ".github/workflows/pr-screenshots:${screenshots:-<none>}"
           echo ".github/workflows/ephemeral:     ${ephemeral:-<none>}"
+          echo ".github/workflows/claude-review: ${claude_review:-<none>}"
+          echo "expected workflow client:        ${workflow_client}"
           echo "expected Bookworm client:        ${bookworm_client}"
           echo "expected Trixie client:          ${trixie_client}"
           echo "expected Noble client:           ${noble_client}"
-          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$ephemeral" ]; then
+          if [ -z "$dev" ] || [ -z "$compose" ] || [ -z "$ci" ] || [ -z "$systest" ] || [ -z "$test_prof" ] || [ -z "$screenshots" ] || [ -z "$ephemeral" ] || [ -z "$claude_review" ]; then
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ] || [ "$screenshots" != "$ephemeral" ]; then
+          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ] || [ "$screenshots" != "$ephemeral" ] || [ "$ephemeral" != "$claude_review" ]; then
             echo "::error::Postgres image pins are out of sync. Update all workflow and compose references together."
             exit 1
           fi
@@ -125,11 +131,16 @@ jobs:
           check_contains docker/agent/Dockerfile "$noble_client" "docker/agent/Dockerfile is not pinned to $noble_client"
           check_contains docker/agent/Dockerfile "apt.postgresql.org/pub/repos/apt" "docker/agent/Dockerfile must install from PGDG"
           check_contains Dockerfile "apt.postgresql.org/pub/repos/apt" "Dockerfile must install from PGDG"
-          check_contains .github/workflows/ci.yml "$noble_client" ".github/workflows/ci.yml is not pinned to $noble_client"
-          check_contains .github/workflows/system_tests.yml "$noble_client" ".github/workflows/system_tests.yml is not pinned to $noble_client"
-          check_contains .github/workflows/test_prof.yml "$noble_client" ".github/workflows/test_prof.yml is not pinned to $noble_client"
-          check_contains .github/workflows/pr-screenshots.yml "$noble_client" ".github/workflows/pr-screenshots.yml is not pinned to $noble_client"
-          check_contains .github/workflows/ephemeral_tests.yml "$noble_client" ".github/workflows/ephemeral_tests.yml is not pinned to $noble_client"
+          check_contains .github/workflows/ci.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ci.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/system_tests.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/system_tests.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/test_prof.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/test_prof.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/pr-screenshots.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/pr-screenshots.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/ephemeral_tests.yml "apt.postgresql.org/pub/repos/apt" ".github/workflows/ephemeral_tests.yml must install PostgreSQL client tools from PGDG"
+          check_contains .github/workflows/ci.yml "$workflow_client" ".github/workflows/ci.yml must install $workflow_client"
+          check_contains .github/workflows/system_tests.yml "$workflow_client" ".github/workflows/system_tests.yml must install $workflow_client"
+          check_contains .github/workflows/test_prof.yml "$workflow_client" ".github/workflows/test_prof.yml must install $workflow_client"
+          check_contains .github/workflows/pr-screenshots.yml "$workflow_client" ".github/workflows/pr-screenshots.yml must install $workflow_client"
+          check_contains .github/workflows/ephemeral_tests.yml "$workflow_client" ".github/workflows/ephemeral_tests.yml must install $workflow_client"
 
   test:
     runs-on: ubuntu-24.04
@@ -137,7 +148,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.13
+        image: postgres:16.14
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -158,14 +169,32 @@ jobs:
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       QDRANT_URL: http://localhost:6333
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -183,10 +212,15 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install ast-grep
-        run: bin/install-ast-grep
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep
 
       - name: Install PostgreSQL client
         run: |
@@ -195,13 +229,16 @@ jobs:
           . /etc/os-release
           printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
+          sudo apt-get install -y postgresql-client-16
 
       - name: Build assets
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Verify Qdrant health
         run: |
@@ -238,7 +275,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16.13
+        image: postgres:16.14
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -258,14 +295,33 @@ jobs:
       BUNDLE_FROZEN: "true"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       QDRANT_URL: http://localhost:6333
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -283,7 +339,9 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
         run: |
@@ -292,10 +350,13 @@ jobs:
           . /etc/os-release
           printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-16=16.13-1.pgdg24.04+1
+          sudo apt-get install -y postgresql-client-16
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run performance benchmarks
         run: >
