@@ -1618,9 +1618,8 @@ module Activities
       end
       return env unless provider_entry
 
-      provider_env_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      env.merge!(provider_env_entry.direct_outbound_exec_env) if provider_env_entry&.requires_direct_outbound?
-      env.merge!(api_key_command_env(provider_env_entry)) if provider_env_entry&.api_key?
+      env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
+      env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
       env
     end
 
@@ -1760,6 +1759,10 @@ module Activities
         agent_run,
         network: Containers::Provision.network_for(agent_run: agent_run)
       )
+    rescue => e
+      raise e if e.is_a?(ProviderExecutionError)
+
+      raise ProviderExecutionError, "Failed to synchronize marketplace MCP servers: #{e.message}"
     end
 
     def marketplace_has_attachments?(agent_run)

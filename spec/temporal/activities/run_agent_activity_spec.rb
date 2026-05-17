@@ -3670,6 +3670,56 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    describe "#synchronize_marketplace_mcp_for_provider!" do
+      let(:provisioner) { instance_double(Containers::McpProvisioner) }
+
+      before do
+        mcp_server_snapshot = []
+        mcp_provisioned_servers = nil
+
+        allow(activity).to receive(:marketplace_has_attachments?).with(agent_run).and_return(true)
+        allow(agent_run).to receive(:mcp_server_snapshot) { mcp_server_snapshot }
+        allow(agent_run).to receive(:mcp_provisioned_servers) { mcp_provisioned_servers }
+        allow(MarketplaceEntries::RerenderForRun).to receive(:call) do
+          mcp_server_snapshot << { "name" => "fs" }
+        end
+        allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return("paid-network")
+        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+      end
+
+      it "wraps provisioning failures in ProviderExecutionError" do
+        allow(provisioner).to receive(:provision).and_raise(StandardError, "boom")
+
+        expect {
+          activity.send(
+            :synchronize_marketplace_mcp_for_provider!,
+            agent_run: agent_run,
+            provider_candidate: "claude_code",
+            provider: "claude",
+            user: user
+          )
+        }.to raise_error(
+          Activities::RunAgentActivity::ProviderExecutionError,
+          "Failed to synchronize marketplace MCP servers: boom"
+        )
+      end
+
+      it "re-raises ProviderExecutionError unchanged" do
+        allow(provisioner).to receive(:provision)
+          .and_raise(Activities::RunAgentActivity::ProviderExecutionError, "provider failed")
+
+        expect {
+          activity.send(
+            :synchronize_marketplace_mcp_for_provider!,
+            agent_run: agent_run,
+            provider_candidate: "claude_code",
+            provider: "claude",
+            user: user
+          )
+        }.to raise_error(Activities::RunAgentActivity::ProviderExecutionError, "provider failed")
+      end
+    end
+
     context "when executing with MCP servers" do
       before do
         allow(container_service).to receive(:execute).and_return(exec_success)
