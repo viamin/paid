@@ -270,12 +270,6 @@ class Provider < ApplicationRecord
     PI_API_PROVIDERS.dig(pi_api_provider, :service_type)
   end
 
-  def pi_api_key_env_var
-    return nil unless provider_key == "pi"
-
-    PI_API_PROVIDERS.dig(pi_api_provider, :env_var)
-  end
-
   def aider_required_api_service_type
     return nil unless provider_key == "aider"
 
