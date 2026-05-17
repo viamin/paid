@@ -994,11 +994,12 @@ module Containers
       # Container was already removed between running? check and stop
     end
 
-    # Copies credentials and settings from the read-only host mount into the
-    # writable ~/.claude tmpfs. Only the files Claude CLI needs for auth and
-    # configuration are copied; session/project data is created fresh each run.
+    # Copies credentials from the read-only host mount into the writable
+    # ~/.claude tmpfs. Only `.credentials.json` is needed for subscription auth;
+    # `settings.json` is intentionally excluded to prevent interactive model
+    # defaults from leaking into agent runs.
     def seed_claude_credentials!
-      source_files = %w[.credentials.json settings.json]
+      source_files = %w[.credentials.json]
       return unless claude_subscription_auth?
 
       # Prefer the source that actually contains the required credential file
