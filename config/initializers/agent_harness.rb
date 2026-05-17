@@ -76,20 +76,13 @@ end
 # - keep credentials off the command line (Pi supports --api-key, but that
 #   would leak raw secrets via process args/logging)
 module PaidAgentHarnessPiRuntimePatch
-  PI_API_KEY_ENV_VARS = %w[
-    ANTHROPIC_API_KEY
-    OPENAI_API_KEY
-    DEEPSEEK_API_KEY
-    GEMINI_API_KEY
-    MISTRAL_API_KEY
-    XAI_API_KEY
-    ZAI_API_KEY
-    OPENROUTER_API_KEY
-  ].freeze
+  # Derived lazily via a method so that Provider (an autoloaded model) is
+  # guaranteed to be available regardless of initializer load order.
+  def pi_api_key_env_vars = Provider::PI_API_PROVIDERS.values.map { |c| c[:env_var] }.freeze
 
-  def api_key_env_var_names = PI_API_KEY_ENV_VARS
+  def api_key_env_var_names = pi_api_key_env_vars
 
-  def subscription_unset_vars = PI_API_KEY_ENV_VARS
+  def subscription_unset_vars = pi_api_key_env_vars
 
   protected
 
