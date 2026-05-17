@@ -256,7 +256,7 @@ RSpec.describe Activities::RunAgentActivity do
       allow(activity).to receive(:heartbeat)
       allow(activity).to receive(:record_runner_failure)
       allow(activity).to receive(:run_agent_with_runner)
-        .and_raise(Activities::RunAgentActivity::ProviderTimeoutError, "wall clock timeout")
+        .and_raise(Activities::RunAgentActivity::RunnerTimeoutError, "wall clock timeout")
       allow(ProcessRunQueueJob).to receive(:perform_later)
     end
 
@@ -266,7 +266,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All providers exhausted")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All runners exhausted")
 
       expect(Notifications::Rules::ZeroIterationTimeout).to have_received(:call).with(scope: agent_run)
     end
@@ -297,12 +297,12 @@ RSpec.describe Activities::RunAgentActivity do
       call_count = 0
       allow(activity).to receive(:run_agent_with_runner) do
         call_count += 1
-        raise Activities::RunAgentActivity::ProviderTimeoutError, "idle timeout"
+        raise Activities::RunAgentActivity::RunnerTimeoutError, "idle timeout"
       end
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All providers exhausted")
+      }.to raise_error(Temporalio::Error::ApplicationError, "All runners exhausted")
 
       # Both runners should have been attempted
       expect(call_count).to eq(2)
@@ -484,7 +484,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "builds an API-key wrapper for anthropic-backed fallback entries" do
       api_key = create(:runner_api_key, user: user, api_service_type: "anthropic", api_key: "sk-anthropic-secret")
-      provider = create(:runner, :api_key, user: user, runner_key: "claude", provider_api_key: api_key)
+      runner = create(:runner, :api_key, user: user, runner_key: "claude", provider_api_key: api_key)
       context = described_class::CommandContext.new(
         runner_candidate: runner.routing_key,
         runner: "claude",
@@ -503,12 +503,12 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[2]).not_to include("sk-anthropic-secret")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("ping")
-      expect(env).to eq("PAID_PROVIDER_ID" => provider.id.to_s)
+      expect(env).to eq("PAID_PROVIDER_ID" => runner.id.to_s)
     end
 
     it "builds an API-key wrapper for OpenAI-backed fallback entries without injecting the runner key" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openai", api_key: "sk-openai-secret")
-      provider = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: api_key)
+      runner = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: api_key)
       context = described_class::CommandContext.new(
         runner_candidate: runner.routing_key,
         runner: "codex",
@@ -521,12 +521,12 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[2]).to include('OPENAI_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID"')
       expect(command[2]).to include('OPENAI_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
       expect(command[2]).not_to include("sk-openai-secret")
-      expect(env).to eq("PAID_PROVIDER_ID" => provider.id.to_s)
+      expect(env).to eq("PAID_PROVIDER_ID" => runner.id.to_s)
     end
 
     it "builds an API-key wrapper for Google-backed fallback entries without injecting the runner key" do
       api_key = create(:runner_api_key, user: user, api_service_type: "google", api_key: "google-secret")
-      provider = create(:runner, :api_key, user: user, runner_key: "gemini", provider_api_key: api_key)
+      runner = create(:runner, :api_key, user: user, runner_key: "gemini", provider_api_key: api_key)
       context = described_class::CommandContext.new(
         runner_candidate: runner.routing_key,
         runner: "gemini",
@@ -541,7 +541,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[2]).to include('GEMINI_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
       expect(command[2]).to include('GOOGLE_API_KEY="paid-run:$AGENT_RUN_ID:$PROXY_TOKEN"')
       expect(command[2]).not_to include("google-secret")
-      expect(env).to eq("PAID_PROVIDER_ID" => provider.id.to_s)
+      expect(env).to eq("PAID_PROVIDER_ID" => runner.id.to_s)
     end
 
     it "uses canonical runner state keys for subscription entries" do
@@ -592,7 +592,7 @@ RSpec.describe Activities::RunAgentActivity do
         expect(env).to have_key("PAID_PROVIDER_ID")
         config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
         expect(config_json["model"]).to eq("anthropic/claude-sonnet-4-20250514")
-        expect(config_json["runner"]).to eq(expected_kilocode_model_config)
+        expect(config_json["provider"]).to eq(expected_kilocode_model_config)
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode runners" do
@@ -1046,7 +1046,7 @@ RSpec.describe Activities::RunAgentActivity do
 
   def build_opencode_context(user, api_provider: "openrouter", model: "moonshotai/kimi-k2-0905", service_type: "openrouter", api_key: "sk-openrouter-secret")
     provider_api_key = create(:runner_api_key, user: user, api_service_type: service_type, api_key: api_key)
-    provider = create_opencode_provider_entry(user: user, api_key: provider_api_key, name: nil, model: model, api_provider: api_provider)
+    runner = create_opencode_provider_entry(user: user, api_key: provider_api_key, name: nil, model: model, api_provider: api_provider)
 
     described_class::CommandContext.new(
       runner_candidate: runner.routing_key,
@@ -1172,7 +1172,7 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
-  def create_opencode_provider_entry(user:, api_key:, name:, model:, api_provider: "openrouter")
+  def create_opencode_runner_entry(user:, api_key:, name:, model:, api_provider: "openrouter")
     create(
       :runner,
       user: user,
@@ -1184,6 +1184,8 @@ RSpec.describe Activities::RunAgentActivity do
       config: { "opencode" => { "api_provider" => api_provider, "model" => model } }
     )
   end
+
+  alias_method :create_opencode_provider_entry, :create_opencode_runner_entry
 
   def expect_change_detection_retry_logs(logger, operation:)
     expect(logger).to have_received(:warn).with(hash_including(
@@ -1713,7 +1715,7 @@ expect(container_service).to receive(:execute).with(
       it "raises AllProvidersExhausted when all runners fail" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
 
       it "marks the agent run as failed" do
@@ -1816,12 +1818,12 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
 
         expect(agent_run.status).to eq("failed")
-        expect(agent_run.error_message).to include("All providers exhausted")
+        expect(agent_run.error_message).to include("All runners exhausted")
         expect(agent_run.error_message).not_to include("rate limited")
 
         provider_state = user.runner_states.find_by(runner_name: "claude")
@@ -1836,7 +1838,7 @@ expect(container_service).to receive(:execute).with(
       it "marks the agent run as rate_limited" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -1847,7 +1849,7 @@ expect(container_service).to receive(:execute).with(
       it "detects Claude-specific usage limit error" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         expect(agent_run.reload.status).to eq("rate_limited")
       end
@@ -1863,7 +1865,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -1930,7 +1932,7 @@ expect(container_service).to receive(:execute).with(
         allow(activity).to receive(:preflight_provider_instance) { (preflight_calls += 1) == 1 ? codex_harness : nil }
         allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
         allow(activity).to receive(:run_harness_preflight!).and_raise(
-          Activities::RunAgentActivity::ProviderExecutionError, "Preflight check failed: Auth token expired: refresh_token_reused"
+          Activities::RunAgentActivity::RunnerExecutionError, "Preflight check failed: Auth token expired: refresh_token_reused"
         )
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
@@ -1974,7 +1976,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("auth_expired")
@@ -2107,7 +2109,7 @@ expect(container_service).to receive(:execute).with(
       it "raises AllProvidersExhausted after timeout" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
 
       it "marks the agent run as timed out with wall_clock type" do
@@ -2169,7 +2171,7 @@ expect(container_service).to receive(:execute).with(
       it "raises AllProvidersExhausted" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
     end
 
@@ -2263,7 +2265,7 @@ expect(container_service).to receive(:execute).with(
       it "raises AllProvidersExhausted" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
     end
 
@@ -2377,7 +2379,7 @@ expect(container_service).to receive(:execute).with(
       it "preserves the timeout instead of failing the fallback with no container" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
@@ -2480,7 +2482,7 @@ expect(container_service).to receive(:execute).with(
 
       expect {
         activity.execute(agent_run_id: unsupported_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+      }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
     end
 
     context "when goal is create_issue" do
@@ -2841,7 +2843,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
           .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
@@ -2863,7 +2865,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -2880,7 +2882,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -2915,7 +2917,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
           .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
@@ -2932,7 +2934,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -2948,7 +2950,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -2963,7 +2965,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -2978,7 +2980,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
           .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
@@ -2995,7 +2997,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
           .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
@@ -3014,7 +3016,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3030,7 +3032,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("failed")
@@ -3058,7 +3060,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3073,7 +3075,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3090,7 +3092,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3114,7 +3116,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("failed")
@@ -3136,7 +3138,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("failed")
@@ -3162,7 +3164,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
           .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
@@ -3175,7 +3177,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
 
       it "marks run as rate_limited when all runners hit rate limits" do
@@ -3183,7 +3185,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3198,7 +3200,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3214,7 +3216,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3230,7 +3232,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3314,7 +3316,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -3335,7 +3337,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
           .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
@@ -3511,7 +3513,7 @@ expect(container_service).to receive(:execute).with(
     before do
       allow(RunnerSupport).to receive(:runner_key_for_agent_type).with("claude_code").and_return("claude")
       allow(RunnerSupport).to receive(:harness_runner_key_for).with("claude").and_return("claude")
-      allow(AgentHarness).to receive(:runner).with(:claude).and_return(harness_provider)
+      allow(AgentHarness).to receive(:provider).with(:claude).and_return(harness_provider)
     end
 
     it "falls back when agent-harness parses a stale reset time" do
@@ -3605,12 +3607,12 @@ expect(container_service).to receive(:execute).with(
         }.not_to raise_error
       end
 
-      it "raises ProviderExecutionError for runners that do not support MCP" do
+      it "raises RunnerExecutionError for runners that do not support MCP" do
         expect {
           activity.send(:validate_provider_mcp_support!, "opencode",
             [ { name: "t", transport: "stdio", command: "echo" } ])
         }.to raise_error(
-          Activities::RunAgentActivity::ProviderExecutionError,
+          Activities::RunAgentActivity::RunnerExecutionError,
           /does not support MCP/
         )
       end

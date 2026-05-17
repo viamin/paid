@@ -9,11 +9,15 @@ RSpec.describe UserSetting do
   end
 
   describe "provider bridge columns" do
+    let(:user) { create(:user) }
+    let(:goal_runner_identifier) { user.runners.kept_only.for_agent_runs.ordered.first.routing_key }
+
     let(:runner_backed_setting) do
       create(
         :user_setting,
+        user: user,
         default_agent_runner: "cursor",
-        default_agent_runners_by_goal: { "review" => "runner:2" },
+        default_agent_runners_by_goal: { "review" => goal_runner_identifier },
         fallback_runners: [ "claude", "cursor" ],
         runner_selection_mode: "round_robin",
         runner_round_robin_state: { "review" => 1 },
@@ -26,7 +30,7 @@ RSpec.describe UserSetting do
 
     it "keeps legacy provider-named settings synchronized with runner-named settings" do
       expect(runner_backed_setting.read_attribute(:default_agent_provider)).to eq("cursor")
-      expect(runner_backed_setting.read_attribute(:default_agent_providers_by_goal)).to eq({ "review" => "runner:2" })
+      expect(runner_backed_setting.read_attribute(:default_agent_providers_by_goal)).to eq({ "review" => goal_runner_identifier })
       expect(runner_backed_setting.read_attribute(:fallback_providers)).to eq([ "claude", "cursor" ])
       expect(runner_backed_setting.read_attribute(:provider_selection_mode)).to eq("round_robin")
       expect(runner_backed_setting.read_attribute(:provider_round_robin_state)).to eq({ "review" => 1 })
@@ -37,10 +41,10 @@ RSpec.describe UserSetting do
     end
 
     it "updates runner-named settings when legacy provider setters are used" do
-      setting = build(:user_setting)
+      setting = build(:user_setting, user: user)
 
       setting.default_agent_provider = "cursor"
-      setting.default_agent_providers_by_goal = { "review" => "runner:2" }
+      setting.default_agent_providers_by_goal = { "review" => goal_runner_identifier }
       setting.fallback_providers = [ "claude", "cursor" ]
       setting.provider_selection_mode = "round_robin"
       setting.provider_round_robin_state = { "review" => 1 }
@@ -50,7 +54,7 @@ RSpec.describe UserSetting do
       setting.kb_embedding_fallback_providers = [ "openai" ]
 
       expect(setting.default_agent_runner).to eq("cursor")
-      expect(setting.default_agent_runners_by_goal).to eq({ "review" => "runner:2" })
+      expect(setting.default_agent_runners_by_goal).to eq({ "review" => goal_runner_identifier })
       expect(setting.fallback_runners).to eq([ "claude", "cursor" ])
       expect(setting.runner_selection_mode).to eq("round_robin")
       expect(setting.runner_round_robin_state).to eq({ "review" => 1 })
@@ -842,14 +846,14 @@ RSpec.describe UserSetting do
       new_user = build(:user)
       setting = build(:user_setting, user: new_user)
 
-      expect(setting.send(:allowed_provider_identifiers_for_agent_runs)).to match_array(%w[claude cursor aider])
+      expect(setting.send(:allowed_runner_identifiers_for_agent_runs)).to match_array(%w[claude cursor aider])
     end
 
     it "uses the new user when resolving fallback runners" do
       new_user = build(:user)
       setting = build(:user_setting, user: new_user)
 
-      expect(setting.send(:allowed_provider_identifiers_for_fallback)).to match_array(%w[claude cursor aider])
+      expect(setting.send(:allowed_runner_identifiers_for_fallback)).to match_array(%w[claude cursor aider])
     end
   end
 end

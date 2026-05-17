@@ -501,6 +501,7 @@ module Activities
 
     class RunnerExecutionError < StandardError; end
     class RunnerInfraExecutionError < RunnerExecutionError; end
+    ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
       attr_reader :timeout_type, :diagnostics
 
@@ -510,6 +511,8 @@ module Activities
         super(message)
       end
     end
+    ProviderTimeoutError = RunnerTimeoutError
+    ProviderRateLimitError = RunnerRateLimitError
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:runner_candidate, :runner, :user, keyword_init: true)
     CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS = %w[
@@ -847,8 +850,8 @@ module Activities
         # failures because some providers use quota-shaped wording for
         # retryable usage caps (for example, GLM free-model limits).
         if successful_exit_rate_limit_error?(sanitized_output)
-          reset_at = rate_limit_reset_at(provider, sanitized_output)
-          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+          reset_at = rate_limit_reset_at(runner, sanitized_output)
+          raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
 
         if insufficient_credits_error?(sanitized_output)
@@ -986,9 +989,9 @@ module Activities
         # Keep the same precedence as the main execution path so preflight
         # retryable limits do not degrade into generic provider failures.
         if successful_exit_rate_limit_error?(sanitized_output)
-          reset_at = rate_limit_reset_at(provider, sanitized_output)
-          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
-          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+          reset_at = rate_limit_reset_at(runner, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
+          raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
 
         if insufficient_credits_error?(sanitized_output)
@@ -1699,6 +1702,7 @@ module Activities
 
       @runner_entry_cache[cache_key] = Runner.for_identifier(user, runner_candidate)
     end
+    alias_method :provider_entry_for, :runner_entry_for
 
     def deduplicate_runner_candidates(primary_runner:, fallback_runners:, user:)
       runners = [ primary_runner ]
@@ -2018,6 +2022,7 @@ module Activities
         )
       end
     end
+    alias_method :validate_provider_mcp_support!, :validate_runner_mcp_support!
 
     def transient_container_error?(error)
       return true if error_or_cause_matches?(error, Containers::Provision::ExecutionError)

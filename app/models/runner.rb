@@ -463,9 +463,16 @@ class Runner < ApplicationRecord
     key = default_runner_key
     return unless key
 
-    user.runners.kept_only.find_or_create_by!(runner_key: key, auth_type: "subscription")
-  rescue ActiveRecord::RecordNotUnique
-    user.runners.kept_only.find_by!(runner_key: key, auth_type: "subscription")
+    relation = user.runners.kept_only
+
+    relation.find_or_create_by!(runner_key: key, auth_type: "subscription")
+  rescue ActiveRecord::RecordNotUnique => e
+    if primary_key_conflict?(e)
+      connection.reset_pk_sequence!(table_name)
+      retry
+    end
+
+    relation.find_by!(runner_key: key, auth_type: "subscription")
   end
 
   def self.first_enabled_for_owner(owner)
@@ -520,6 +527,11 @@ class Runner < ApplicationRecord
   def self.agent_type_for(runner_key)
     RunnerSupport.agent_type_for(runner_key)
   end
+
+  def self.primary_key_conflict?(error)
+    [ error.message, error.cause&.message ].compact.any? { |message| message.include?("#{table_name}_pkey") }
+  end
+  private_class_method :primary_key_conflict?
 
   def self.api_service_type_for(runner_key)
     RunnerSupport.api_service_type_for(runner_key)

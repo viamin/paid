@@ -471,6 +471,30 @@ RSpec.describe Runner do
       expect { described_class.ensure_default_for(user) }
         .not_to change { user.runners.where(runner_key: default_key).count }
     end
+
+    it "resets the providers sequence and retries on primary key conflicts" do
+      default_key = described_class.default_runner_key
+      relation = user.runners.kept_only
+      conflict = ActiveRecord::RecordNotUnique.new
+      calls = 0
+      connection = instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter, reset_pk_sequence!: true)
+
+      allow(user.runners).to receive(:kept_only).and_return(relation)
+      allow(relation).to receive(:find_or_create_by!).and_wrap_original do |original, *args, **kwargs|
+        calls += 1
+        raise conflict if calls == 1
+
+        original.call(*args, **kwargs)
+      end
+      allow(described_class).to receive(:connection).and_return(connection)
+      allow(described_class).to receive(:primary_key_conflict?).with(conflict).and_return(true)
+
+      described_class.ensure_default_for(user)
+
+      expect(connection).to have_received(:reset_pk_sequence!).with("providers")
+      expect(relation).to have_received(:find_or_create_by!)
+        .with(runner_key: default_key, auth_type: "subscription").twice
+    end
   end
 
   describe ".display_name" do
