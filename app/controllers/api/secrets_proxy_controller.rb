@@ -290,7 +290,7 @@ module Api
       keys = keys.compact.uniq
       return keys if keys.any? || @knowledge_run.operation_type != "embedding"
 
-      Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: @knowledge_run.project).map(&:provider)
+      Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: @knowledge_run.project).map(&:runner)
     end
 
     def openai_provider_path(base_path, request_path)

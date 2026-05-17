@@ -3322,7 +3322,7 @@ RSpec.describe AgentRun do
       envelope = { type: "result", subtype: "success", is_error: false,
                    result: "OK", duration_ms: 2769, total_cost_usd: 0.06 }.to_json
       mock_provider = instance_double(AgentHarness::Providers::Base)
-      allow(AgentHarness).to receive(:runner).and_return(mock_provider)
+      allow(AgentHarness).to receive(:provider).and_return(mock_provider)
       allow(mock_provider).to receive(:parse_container_output).and_return(
         double(error: nil, output: "")
       )

@@ -2036,7 +2036,7 @@ module Containers
     def runner_cli_env_overrides
       RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS.flat_map do |key|
         harness_key = RunnerSupport.harness_runner_key_for(key).to_sym
-        AgentHarness.runner(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
+        AgentHarness.provider(harness_key).cli_env_overrides.map { |k, v| "#{k}=#{v}" }
       end
     end
 
@@ -2251,7 +2251,7 @@ module Containers
     end
 
     def codex_harness_provider
-      AgentHarness.runner(:codex)
+      AgentHarness.provider(:codex)
     end
 
     # Single source of truth for the Codex heartbeat notify line used in both

@@ -6,8 +6,8 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
   let(:project) { create(:project) }
   let(:provider_configs) do
     [
-      Knowledge::ProviderConfiguration::Result.new(provider: "openrouter"),
-      Knowledge::ProviderConfiguration::Result.new(provider: "openai")
+      Knowledge::RunnerConfiguration::Result.new(runner: "openrouter"),
+      Knowledge::RunnerConfiguration::Result.new(runner: "openai")
     ]
   end
   let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
@@ -37,10 +37,10 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
           "X-Paid-Knowledge-Provider" => "openrouter"
         )
       )
-      expect(knowledge_run.reload.final_runner).to eq("openrouter")
-      expect(knowledge_run.runner_attempts.size).to eq(1)
-      expect(knowledge_run.runner_attempts.first).to include("provider" => "openrouter")
-      expect(knowledge_run.runner_attempts.first["attempted_at"]).to match(/\A.+\z/)
+      expect(knowledge_run.reload.final_provider).to eq("openrouter")
+      expect(knowledge_run.provider_attempts.size).to eq(1)
+      expect(knowledge_run.provider_attempts.first).to include("provider" => "openrouter")
+      expect(knowledge_run.provider_attempts.first["attempted_at"]).to match(/\A.+\z/)
       expect(knowledge_run.status).to eq("completed")
     end
 
@@ -57,8 +57,8 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       generator.close
 
       expect(results).to eq([ result ])
-      expect(knowledge_run.reload.final_runner).to eq("openai")
-      expect(knowledge_run.runner_attempts).to contain_exactly(
+      expect(knowledge_run.reload.final_provider).to eq("openai")
+      expect(knowledge_run.provider_attempts).to contain_exactly(
         hash_including("provider" => "openrouter", "attempted_at" => be_present),
         hash_including("provider" => "openai", "attempted_at" => be_present)
       )
@@ -68,7 +68,7 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
 
       generator.call(texts: [ "hello" ])
-      expect(knowledge_run.reload.final_runner).to eq("openrouter")
+      expect(knowledge_run.reload.final_provider).to eq("openrouter")
 
       allow(knowledge_run).to receive(:update!).and_call_original
       generator.call(texts: [ "again" ])

@@ -116,7 +116,7 @@ RSpec.describe Runners::UsageStats do
 
     context "with timeout and error attempts for a routed provider entry" do
       let(:owner) { project.effective_owner }
-      let(:api_key) { create(:runner_api_key, user: owner, api_service_type: "zai_coding") }
+      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "zai_coding") }
       let!(:provider) do
         create(:runner, :api_key, user: owner, runner_key: "kilocode",
           provider_api_key: api_key, name: "Kilocode GLM 5.1",

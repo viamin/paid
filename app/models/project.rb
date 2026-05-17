@@ -391,13 +391,13 @@ class Project < ApplicationRecord
   end
 
   def knowledge_embedding_provider_configuration
-    Knowledge::ProviderConfiguration.for_embedding(project: self)
+    Knowledge::RunnerConfiguration.for_embedding(project: self)
   end
 
   # Returns true when at least one configured embedding provider can be
   # resolved by the proxy-backed provider selection flow.
   def semantic_search_available?
-    Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: self).present?
+    Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: self).present?
   end
 
   def trusted_github_user?(login)

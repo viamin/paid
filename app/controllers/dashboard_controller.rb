@@ -71,9 +71,9 @@ class DashboardController < ApplicationController
     render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: @knowledge_stats }
   end
 
-  def provider_health
-    @provider_health = Dashboard::ProviderHealth.call(account: current_account)
-    render partial: "dashboard/provider_health", locals: @provider_health
+  def runner_health
+    @runner_health = Dashboard::RunnerHealth.call(account: current_account)
+    render partial: "dashboard/runner_health", locals: @runner_health
   end
 
   def queue_health

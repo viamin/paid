@@ -22,13 +22,13 @@ RSpec.describe Runners::HarnessExecutionPlan do
     end
 
     let(:harness_runner) do
-      instance_double(AgentHarness::Runners::GithubCopilot, plan_execution: copilot_plan_payload)
+      instance_double(AgentHarness::Providers::GithubCopilot, plan_execution: copilot_plan_payload)
     end
 
-    let(:runner_class) { class_double(AgentHarness::Runners::GithubCopilot) }
+    let(:runner_class) { class_double(AgentHarness::Providers::GithubCopilot) }
 
     before do
-      allow(AgentHarness).to receive(:runner_class).with(:github_copilot).and_return(runner_class)
+      allow(AgentHarness).to receive(:provider_class).with(:github_copilot).and_return(runner_class)
       allow(AgentHarness).to receive(:build_config).with(:github_copilot).and_return(
         AgentHarness::ProviderConfig.new(:github_copilot)
       )
@@ -119,12 +119,12 @@ RSpec.describe Runners::HarnessExecutionPlan do
     it "constructs the harness runner with external sandboxing enabled" do
       runner = instance_double(Runner, runner_key: "claude", agent_harness_runner_runtime: nil)
       harness_runner = instance_double(
-        AgentHarness::Runners::Anthropic,
+        AgentHarness::Providers::Anthropic,
         plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
       )
-      runner_class = class_double(AgentHarness::Runners::Anthropic)
+      runner_class = class_double(AgentHarness::Providers::Anthropic)
 
-      allow(AgentHarness).to receive(:runner_class).with(:claude).and_return(runner_class)
+      allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(runner_class)
       allow(AgentHarness).to receive(:build_config).with(:claude).and_return(
         AgentHarness::ProviderConfig.new(:claude)
       )

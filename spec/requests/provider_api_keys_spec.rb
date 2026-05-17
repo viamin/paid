@@ -286,7 +286,7 @@ RSpec.describe "ProviderApiKeys" do
 
       it "blocks deletion when providers reference the key" do
         api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
-        create(:provider, user: user, provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
+        create(:runner, user: user, runner_key: "claude", auth_type: "api_key", provider_api_key: api_key)
         delete provider_api_key_path(api_key)
         expect(response).to redirect_to(provider_api_key_path(api_key))
         expect(flash[:alert]).to include("Cannot delete")
@@ -294,7 +294,7 @@ RSpec.describe "ProviderApiKeys" do
 
       it "allows deletion after the referencing provider has been soft deleted" do
         api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
-        provider = create(:provider, :api_key, user: user, provider_key: "cursor", provider_api_key: api_key)
+        provider = create(:runner, :api_key, user: user, runner_key: "cursor", provider_api_key: api_key)
         provider.discard!
 
         expect {

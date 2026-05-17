@@ -175,8 +175,8 @@ RSpec.describe "Dashboard" do
       it "shows knowledge runner health and pipeline metrics" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, user: user, runner_name: user.settings.kb_chat_runner, failure_count: 2)
-        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_runner: "openai")
-        create(:knowledge_run, :failed, :decision_drafting, project: project, runner_attempts: [ { "runner" => "claude" } ])
+        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
+        create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "runner" => "claude" } ])
 
         get dashboard_knowledge_stats_path
 
@@ -626,7 +626,7 @@ RSpec.describe "Dashboard" do
     end
   end
 
-  describe "GET /dashboard/provider_health" do
+  describe "GET /dashboard/runner_health" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
 
@@ -654,7 +654,7 @@ RSpec.describe "Dashboard" do
 
       [ first_provider, second_provider ].each do |runner|
         create(
-          :provider_state,
+          :runner_state,
           :circuit_open,
           user: user,
           runner_name: runner.state_key,
@@ -664,7 +664,7 @@ RSpec.describe "Dashboard" do
 
       get dashboard_runner_health_path
 
-      expect(response.body).to include("2 providers are recovering in half-open mode.")
+      expect(response.body).to include("2 runners are recovering in half-open mode.")
     end
   end
 

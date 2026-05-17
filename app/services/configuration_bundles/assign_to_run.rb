@@ -135,8 +135,8 @@ module ConfigurationBundles
     end
 
     def marketplace_provider_key
-      @marketplace_provider_key ||= agent_run.provider&.provider_key ||
-        ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
+      @marketplace_provider_key ||= agent_run.runner&.runner_key ||
+        RunnerSupport.runner_key_for_agent_type(agent_run.agent_type)
     end
 
     def experiment_definitions(selected_variants = nil)

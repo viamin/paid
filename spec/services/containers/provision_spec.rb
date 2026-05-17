@@ -643,8 +643,8 @@ RSpec.describe Containers::Provision do
           AgentHarness::Providers::Gemini,
           cli_env_overrides: { "GEMINI_SANDBOX" => "false", "GEMINI_CLI_DISABLE_RETRIES" => "true" }
         )
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini).and_return(gemini_runner)
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_return(gemini_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -663,8 +663,8 @@ RSpec.describe Containers::Provision do
           config_file_content: "model_provider = \"paid\"\n",
           auth_lock_config: { path: "/tmp/codex-auth.lock" }
         )
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:codex).and_return(codex_provider)
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -679,15 +679,15 @@ RSpec.describe Containers::Provision do
       end
 
       it "raises when a known runner is missing from agent-harness" do
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini).and_raise(KeyError, "missing gemini")
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(KeyError, "missing gemini")
 
         expect { service.provision }.to raise_error(KeyError, /missing gemini/)
       end
 
       it "raises when runner CLI env overrides are misconfigured in agent-harness" do
-        allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini)
+        allow(AgentHarness).to receive(:provider).and_call_original
+        allow(AgentHarness).to receive(:provider).with(:gemini)
           .and_raise(AgentHarness::ConfigurationError, "broken gemini")
 
         expect { service.provision }
@@ -1082,8 +1082,8 @@ RSpec.describe Containers::Provision do
         copilot_runner = create(:runner, user: project.created_by, runner_key: "copilot")
         agent_run.update!(runner: copilot_runner, agent_type: "copilot")
         project.created_by.settings.update!(default_agent_runner: direct_outbound_runner.routing_key, fallback_enabled: false)
-        allow(RunnerSupport.container_executable_runner_key?).and_call_original
-        allow(RunnerSupport.container_executable_runner_key?).with("copilot").and_return(false)
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
@@ -1097,9 +1097,9 @@ RSpec.describe Containers::Provision do
         copilot_runner = create(:runner, user: project.created_by, runner_key: "copilot")
         claude_api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
         claude_fallback = create(:runner, :api_key, user: project.created_by,
-          provider_key: "claude", provider_api_key: claude_api_key)
-        allow(RunnerSupport.container_executable_runner_key?).and_call_original
-        allow(RunnerSupport.container_executable_runner_key?).with("copilot").and_return(false)
+          runner_key: "claude", provider_api_key: claude_api_key)
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
         direct_outbound_runner.update!(enabled_for_fallback: false)
         project.created_by.runners.subscription.find_by!(runner_key: "claude")
@@ -1154,8 +1154,8 @@ RSpec.describe Containers::Provision do
         copilot_runner = create(:runner, user: project.created_by, runner_key: "copilot")
         agent_run.update!(runner: copilot_runner, agent_type: "copilot")
         project.created_by.settings.update!(default_agent_runner: direct_outbound_runner.routing_key, fallback_enabled: false)
-        allow(RunnerSupport.container_executable_runner_key?).and_call_original
-        allow(RunnerSupport.container_executable_runner_key?).with("copilot").and_return(false)
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
         container_network = nil
 
@@ -1507,7 +1507,7 @@ RSpec.describe Containers::Provision do
 
       it "does not fail for an API-key-backed Codex default when local auth is not bind-mountable" do
         api_key = create(:provider_api_key, user: project.created_by, api_service_type: "openai")
-        codex_provider = create(:provider, :api_key, user: project.created_by, provider_key: "codex", provider_api_key: api_key)
+        codex_runner = create(:runner, :api_key, user: project.created_by, runner_key: "codex", provider_api_key: api_key)
         project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
         agent_run.update!(agent_type: "codex")
         current_container = instance_double(Docker::Container, info: { "Mounts" => [] })

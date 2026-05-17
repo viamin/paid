@@ -95,12 +95,12 @@ RSpec.describe "Api::SecretsProxy" do
           api_service_type: "anthropic",
           api_key: "sk-stored-anthropic-key"
         )
-        provider = create(:provider, :api_key, user: project.effective_owner, provider_key: "claude", provider_api_key: api_key)
+        runner = create(:runner, :api_key, user: project.effective_owner, runner_key: "claude", provider_api_key: api_key)
 
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
           headers: valid_headers.merge(
-            "X-Paid-Provider-Id" => provider.id.to_s,
+            "X-Paid-Provider-Id" => runner.id.to_s,
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 
@@ -119,7 +119,7 @@ RSpec.describe "Api::SecretsProxy" do
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
           headers: valid_headers.merge(
-            "X-Paid-Provider-Id" => provider.id.to_s,
+            "X-Paid-Provider-Id" => runner.id.to_s,
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 
@@ -136,7 +136,7 @@ RSpec.describe "Api::SecretsProxy" do
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
           headers: valid_headers.merge(
-            "X-Paid-Provider-Id" => provider.id.to_s,
+            "X-Paid-Provider-Id" => runner.id.to_s,
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 
@@ -147,12 +147,12 @@ RSpec.describe "Api::SecretsProxy" do
       it "rejects runner ids that are not available to the agent run owner" do
         other_user = create(:user)
         api_key = create(:provider_api_key, user: other_user, api_service_type: "anthropic")
-        provider = create(:provider, :api_key, user: other_user, provider_key: "claude", provider_api_key: api_key)
+        runner = create(:runner, :api_key, user: other_user, runner_key: "claude", provider_api_key: api_key)
 
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
           headers: valid_headers.merge(
-            "X-Paid-Provider-Id" => provider.id.to_s,
+            "X-Paid-Provider-Id" => runner.id.to_s,
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 
@@ -288,7 +288,7 @@ RSpec.describe "Api::SecretsProxy" do
 
       before do
         create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-owner-key")
-        knowledge_run.update!(final_runner: "anthropic")
+        knowledge_run.update!(final_provider: "anthropic")
         allow(Rails.application.credentials).to receive(:dig)
           .with(:llm, :anthropic_api_key).and_return("sk-ant-test-key")
       end
@@ -342,7 +342,7 @@ RSpec.describe "Api::SecretsProxy" do
     end
 
     it "accepts knowledge-run authentication" do
-      knowledge_run.update!(final_runner: "openai")
+      knowledge_run.update!(final_provider: "openai")
 
       post "/api/proxy/openai/v1/chat/completions",
         params: {}.to_json,
@@ -356,7 +356,7 @@ RSpec.describe "Api::SecretsProxy" do
     it "uses the knowledge run owner's configured runner key when a knowledge runner header is present" do
       create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-old")
       latest_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-new")
-      knowledge_run.update!(runner_attempts: [ { "runner" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
+      knowledge_run.update!(provider_attempts: [ { "provider" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
 
       openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
       stub_request(:post, openrouter_url)
@@ -373,7 +373,7 @@ RSpec.describe "Api::SecretsProxy" do
 
     it "preserves runner-specific versioned paths for OpenAI-compatible providers" do
       api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "zai", api_key: "sk-zai")
-      knowledge_run.update!(runner_attempts: [ { "runner" => "zai", "attempted_at" => Time.current.iso8601 } ])
+      knowledge_run.update!(provider_attempts: [ { "provider" => "zai", "attempted_at" => Time.current.iso8601 } ])
 
       zai_url = "https://api.z.ai/api/paas/v4/embeddings"
       stub_request(:post, zai_url)
@@ -390,7 +390,7 @@ RSpec.describe "Api::SecretsProxy" do
 
     it "rejects knowledge runner headers outside the run's allowed providers" do
       create(:provider_api_key, user: project.effective_owner, api_service_type: "zai", api_key: "sk-zai")
-      knowledge_run.update!(runner_attempts: [ { "runner" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
+      knowledge_run.update!(provider_attempts: [ { "provider" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
 
       post "/api/proxy/openai/v1/chat/completions",
         params: {}.to_json,
@@ -402,7 +402,7 @@ RSpec.describe "Api::SecretsProxy" do
 
     it "uses the knowledge run final runner for the upstream base URL when the header is omitted" do
       api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter")
-      knowledge_run.update!(final_runner: "openrouter")
+      knowledge_run.update!(final_provider: "openrouter")
 
       openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
       stub_request(:post, openrouter_url)
@@ -474,12 +474,12 @@ RSpec.describe "Api::SecretsProxy" do
         api_service_type: "google",
         api_key: "stored-google-key"
       )
-      provider = create(:provider, :api_key, user: project.effective_owner, provider_key: "gemini", provider_api_key: api_key)
+      runner = create(:runner, :api_key, user: project.effective_owner, runner_key: "gemini", provider_api_key: api_key)
 
       post "/api/proxy/google/v1beta/models/gemini-2.0-flash:generateContent",
         params: {}.to_json,
         headers: valid_headers.merge(
-          "X-Paid-Provider-Id" => provider.id.to_s,
+          "X-Paid-Provider-Id" => runner.id.to_s,
           "x-goog-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
         )
 

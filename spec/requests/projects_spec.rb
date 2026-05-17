@@ -588,9 +588,9 @@ RSpec.describe "Projects" do
         expect(row.text).to include(Runner.display_name_for("cursor"))
       end
 
-      it "renders unsupported provider identifiers in recent agent runs without error" do
+      it "renders unsupported runner identifiers in recent agent runs without error" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        run = create(:agent_run, project: project, provider: nil, final_runner: "api", agent_type: "api")
+        run = create(:agent_run, project: project, runner: nil, final_runner: "api", agent_type: "api")
 
         get project_path(project)
 

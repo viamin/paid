@@ -87,7 +87,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a successful result" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).to be_success
         expect(result.message).to eq("Agent is healthy")
@@ -95,7 +95,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "delegates to AgentHarness.check_provider with a container executor" do
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(AgentHarness).to have_received(:check_provider).with(
           :claude,
@@ -119,7 +119,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "treats the result as a successful smoke test" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).to be_success
         expect(result.message).to eq("Agent is healthy")
@@ -139,7 +139,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "maps the harness error category to an authentication error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -161,7 +161,7 @@ RSpec.describe Runners::TestAgent do
 
       it "persists the provider rate limit state" do
         freeze_time do
-          result = described_class.call(runner: provider)
+          result = described_class.call(runner: runner_record)
 
           expect(result).not_to be_success
           expect(result.error_type).to eq(:rate_limited)
@@ -186,7 +186,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the result as rate limited and persists provider state" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -209,7 +209,7 @@ RSpec.describe Runners::TestAgent do
 
       it "classifies the result as rate limited and parses the reset time" do
         travel_to Time.utc(2026, 4, 5, 12, 0, 0) do
-          result = described_class.call(runner: provider)
+          result = described_class.call(runner: runner_record)
 
           expect(result).not_to be_success
           expect(result.error_type).to eq(:rate_limited)
@@ -221,7 +221,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when codex has a Paid-managed OpenAI API key configured" do
-      let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
+      let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
       let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "ok", message: "All checks passed", latency_ms: 12 } }
 
@@ -233,7 +233,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "uses agent-harness for the health check" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).to be_success
         expect(AgentHarness).to have_received(:check_provider).with(:codex, timeout: 60)
@@ -241,7 +241,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when agent-harness returns a binary-encoded failure message" do
-      let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
+      let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
       let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "error", message: "bad \xFF auth\x00".b, latency_ms: 12 } }
 
@@ -253,7 +253,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "normalizes the message before classification and response" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -262,7 +262,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when agent-harness returns valid UTF-8 bytes tagged as binary" do
-      let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
+      let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
       let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
       let(:health_result) { { name: :codex, status: "error", message: "caf\xC3\xA9 auth".b, latency_ms: 12 } }
 
@@ -274,7 +274,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "preserves the original UTF-8 text before classifying the failure" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -291,7 +291,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "clears the stale provider state" do
-        codex_provider = create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:runner_api_key, user: user, api_service_type: "openai"))
+        codex_provider = create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"))
         provider_state = create(
           :provider_state,
           :rate_limited,
@@ -300,7 +300,7 @@ RSpec.describe Runners::TestAgent do
           runner_name: codex_provider.state_key
         )
 
-        result = described_class.call(runner: codex_provider)
+        result = described_class.call(runner: codex_runner)
 
         expect(result).to be_success
 
@@ -321,7 +321,7 @@ RSpec.describe Runners::TestAgent do
 
       it "persists the provider rate limit state using the absolute reset timestamp" do
         travel_to Time.utc(2026, 4, 5, 12, 0, 0) do
-          codex_provider = create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:runner_api_key, user: user, api_service_type: "openai"))
+          codex_provider = create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"))
           reset_at = Time.utc(2026, 4, 6, 10, 0, 0)
           allow(AgentHarness).to receive(:check_provider).and_return(
             name: :codex,
@@ -330,7 +330,7 @@ RSpec.describe Runners::TestAgent do
             latency_ms: 12
           )
 
-          result = described_class.call(runner: codex_provider)
+          result = described_class.call(runner: codex_runner)
 
           expect(result).not_to be_success
           expect(result.error_type).to eq(:rate_limited)
@@ -342,7 +342,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when gemini has a Paid-managed Google API key configured" do
-      let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:runner_api_key, user: user, api_service_type: "google")) }
+      let(:provider_record) { create(:runner, :api_key, user: user, runner_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: create(:provider_api_key, user: user, api_service_type: "google")) }
       let(:health_result) { { name: :gemini, status: "ok", message: "All checks passed", latency_ms: 12 } }
 
       before do
@@ -353,7 +353,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "uses agent-harness for the health check" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).to be_success
         expect(AgentHarness).to have_received(:check_provider).with(:gemini, timeout: 60)
@@ -372,7 +372,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "delegates to the harness smoke test contract" do
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(AgentHarness).to have_received(:check_provider).with(
           :codex,
@@ -404,7 +404,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "clears the stale provider state" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).to be_success
 
@@ -430,7 +430,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns an authentication error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -452,7 +452,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a concise authentication error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -474,7 +474,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a concise authentication error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -496,7 +496,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a concise authentication error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -518,7 +518,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns the translated auth error instead of ansi noise" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -540,7 +540,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a concise installation error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:installation)
@@ -566,7 +566,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a user-friendly message instead of raw MCP JSON" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -580,7 +580,7 @@ RSpec.describe Runners::TestAgent do
           { name: :github_copilot, status: "error", message: multi_mcp, latency_ms: 3000, error_category: nil, check: :smoke_test }
         )
 
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
@@ -595,7 +595,7 @@ RSpec.describe Runners::TestAgent do
           { name: :github_copilot, status: "error", message: loaded_event, latency_ms: 3000, error_category: nil, check: :smoke_test }
         )
 
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.message).to eq("Agent started but did not produce a response. Verify the provider credentials and connectivity.")
@@ -614,7 +614,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "delegates to the harness smoke test" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).to be_success
         expect(AgentHarness).to have_received(:check_provider).with(
@@ -627,7 +627,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when direct-outbound opencode is tested" do
-      let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter") }
+      let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
       let(:runner_record) do
         create(
           :provider,
@@ -650,7 +650,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "passes the provider runtime to the harness check" do
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(AgentHarness).to have_received(:check_provider).with(
           :opencode,
@@ -664,7 +664,7 @@ RSpec.describe Runners::TestAgent do
         routing_state = create(:runner_state, user: user, runner_name: provider.state_key, failure_count: 2)
         provider_key_state = create(:runner_state, user: user, runner_name: provider.runner_key, failure_count: 3)
 
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(routing_state.reload.failure_count).to eq(0)
         expect(provider_key_state.reload.failure_count).to eq(3)
@@ -672,7 +672,7 @@ RSpec.describe Runners::TestAgent do
     end
 
     context "when direct-outbound kilocode is tested" do
-      let(:api_key) { create(:runner_api_key, user: user, api_service_type: "anthropic") }
+      let(:api_key) { create(:provider_api_key, user: user, api_service_type: "anthropic") }
       let(:runner_record) do
         create(
           :provider,
@@ -702,7 +702,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "passes a provider runtime with the upstream API key" do
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(AgentHarness).to have_received(:check_provider).with(
           :kilocode,
@@ -713,7 +713,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "materializes the kilocode config file before the smoke test" do
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(test_run).to have_received(:execute_in_container).with(
           [ "sh", "-c", a_string_including("mkdir -p /home/agent/.config/kilo") ],
@@ -728,7 +728,7 @@ RSpec.describe Runners::TestAgent do
           prep_result
         end
 
-        described_class.call(runner: provider)
+        described_class.call(runner: runner_record)
 
         expect(captured_env).to include("KILOCODE_CONFIG_B64")
         expect(decoded_kilocode_config(captured_env["KILOCODE_CONFIG_B64"])).to eq(expected_anthropic_kilocode_config)
@@ -749,7 +749,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a rate limited error with the provider message" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -763,8 +763,8 @@ RSpec.describe Runners::TestAgent do
       end
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode, status: "error",
           message: "Free model usage limit reached. Please try again later.",
@@ -773,7 +773,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the result as rate limited" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -787,8 +787,8 @@ RSpec.describe Runners::TestAgent do
       end
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode, status: "ok",
           message: "Free model usage limit reached. Please try again later.",
@@ -797,7 +797,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the result as rate limited" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -811,8 +811,8 @@ RSpec.describe Runners::TestAgent do
       end
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode, status: "error",
           message: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
@@ -821,7 +821,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the result as rate limited" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -845,8 +845,8 @@ RSpec.describe Runners::TestAgent do
       end
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "opencode")
         stub_container_smoke_test(
           name: :opencode, status: "error",
           message: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
@@ -855,7 +855,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the result as rate limited" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -877,7 +877,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "normalizes the output before classification" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -897,7 +897,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a connection error because provision failures are infrastructure errors" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:connection)
@@ -919,7 +919,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "normalizes the message before classification" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
@@ -939,7 +939,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a timeout error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:timeout)
@@ -959,7 +959,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a connection error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:connection)
@@ -979,7 +979,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "normalizes the rescued exception message" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:connection)
@@ -993,7 +993,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns an unexpected error indicating the provider is unrecognized" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -1008,7 +1008,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns an installation error indicating the CLI is not installed" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:installation)
@@ -1026,7 +1026,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns a helpful error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -1045,7 +1045,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "returns an unexpected error" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -1064,7 +1064,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "normalizes the rescued exception message" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -1087,7 +1087,7 @@ RSpec.describe Runners::TestAgent do
           latency_ms: 10, error_category: :rate_limited, check: :smoke_test
         )
 
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1100,7 +1100,7 @@ RSpec.describe Runners::TestAgent do
           latency_ms: 10, error_category: :rate_limited, check: :smoke_test
         )
 
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1113,7 +1113,7 @@ RSpec.describe Runners::TestAgent do
           latency_ms: 10, error_category: :rate_limited, check: :smoke_test
         )
 
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1137,7 +1137,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "uses the extracted provider failure instead of the noisy rate-limit classification" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -1159,7 +1159,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "falls back to pattern-based classification" do
-        result = described_class.call(runner: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
@@ -1171,8 +1171,8 @@ RSpec.describe Runners::TestAgent do
       let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode,
           status: "error",
@@ -1185,7 +1185,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the output-only failure as rate limited" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1197,8 +1197,8 @@ RSpec.describe Runners::TestAgent do
       let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode,
           status: "ok",
@@ -1211,7 +1211,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "classifies the output-only failure as rate limited" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1223,8 +1223,8 @@ RSpec.describe Runners::TestAgent do
       let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode,
           status: "ok",
@@ -1237,7 +1237,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "treats the smoke test as failed" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1249,8 +1249,8 @@ RSpec.describe Runners::TestAgent do
       let(:provider_record) { create(:provider, user: user, provider_key: "kilocode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
-        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_container_smoke_test(
           name: :kilocode,
           status: "ok",
@@ -1263,7 +1263,7 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "surfaces the rate limit message instead of the OK line" do
-        result = described_class.call(provider: provider)
+        result = described_class.call(runner: runner_record)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:rate_limited)
@@ -1288,7 +1288,7 @@ RSpec.describe Runners::TestAgent do
         name: :claude, status: "error", message: message,
         latency_ms: 10, error_category: nil, check: :smoke_test
       )
-      described_class.call(runner: provider)
+      described_class.call(runner: runner_record)
     end
 
     it "does not misclassify 'unexpected token' JSON parse errors as authentication" do
@@ -1334,7 +1334,7 @@ RSpec.describe Runners::TestAgent do
 
   describe "smoke test timeout forwarding (issue #1538)" do
     let(:provider_class) do
-      Class.new(AgentHarness::Runners::Base) do
+      Class.new(AgentHarness::Providers::Base) do
         class << self
           attr_accessor :contract_timeout, :provider_instance
 
@@ -1381,10 +1381,10 @@ RSpec.describe Runners::TestAgent do
     end
 
     def run_health_check(provider_instance:, contract_timeout:, caller_timeout:)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:get).with(:kilocode).and_return(provider_class)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
-      allow(AgentHarness::Runners::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: contract_timeout })
+      allow(AgentHarness::Providers::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:get).with(:kilocode).and_return(provider_class)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
+      allow(AgentHarness::Providers::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: contract_timeout })
       provider_class.contract_timeout = contract_timeout
       provider_class.provider_instance = provider_instance
 
@@ -1485,7 +1485,7 @@ RSpec.describe Runners::TestAgent do
       allow(AgentHarness).to receive(:provider).with(:claude).and_return(harness_provider)
 
       freeze_time do
-        service = described_class.new(provider: provider)
+        service = described_class.new(runner: runner_record)
         reset_at = service.send(:rate_limit_reset_at, "Rate limit exceeded. Reset at: 1")
 
         expect(reset_at).to eq(1.hour.from_now)
@@ -1497,7 +1497,7 @@ RSpec.describe Runners::TestAgent do
     let(:runner_record) { user.runners.find_or_create_by!(runner_key: "claude") }
 
     it "increments agent_runs_count for the lifetime of the callback-bypassed row" do
-      service = described_class.new(provider: provider)
+      service = described_class.new(runner: runner_record)
 
       test_run = service.send(:build_test_run)
       expect(project.reload.agent_runs_count).to eq(1)

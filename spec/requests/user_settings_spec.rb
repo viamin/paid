@@ -322,7 +322,7 @@ RSpec.describe "UserSettings" do
         expect(settings.kb_chat_fallback_runners).to eq([ "cursor" ])
       end
 
-      it "renders errors for unsupported knowledge embedding providers" do
+      it "renders errors for unsupported knowledge embedding runners" do
         user.settings.update!(
           kb_embedding_runner: "openai",
           kb_embedding_fallback_runners: [ "openrouter" ]
@@ -331,13 +331,13 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             kb_embedding_runner: "anthropic",
-            kb_embedding_fallback_runners: [ "openai", "also-not-a-provider" ]
+            kb_embedding_fallback_runners: [ "openai", "also-not-a-runner" ]
           }
         }
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.body).to include("supported knowledge embedding provider")
-        expect(response.body).to match(/unsupported providers: also-not-a-provider/i)
+        expect(response.body).to include("supported knowledge embedding runner")
+        expect(response.body).to match(/unsupported runners: also-not-a-runner/i)
 
         settings = user.reload.settings
         expect(settings.kb_embedding_runner).to eq("openai")

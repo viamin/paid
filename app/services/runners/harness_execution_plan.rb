@@ -4,8 +4,8 @@ module Runners
   class HarnessExecutionPlan
     Result = Struct.new(:command, :env, :preparation, keyword_init: true)
 
-    def initialize(provider:, prompt:, options: {})
-      @provider = provider
+    def initialize(runner:, prompt:, options: {})
+      @runner = runner
       @prompt = prompt
       @options = options
     end
@@ -14,28 +14,28 @@ module Runners
       new(...).call
     end
 
-    # Builds an execution plan for a provider identified by its app-level key
+    # Builds an execution plan for a runner identified by its app-level key
     # (e.g. "claude", "codex") without requiring a Runner model record.
-    # Used for subscription-auth and standard providers that don't have a
+    # Used for subscription-auth and standard runners that don't have a
     # per-user Runner entry.
     #
-    # Container-executed providers are always externally sandboxed (the
+    # Container-executed runners are always externally sandboxed (the
     # agent Docker container is the sandbox), so this is passed through to
     # the harness provider so provider-specific nested sandbox mechanisms
     # (e.g. Codex bubblewrap) are bypassed automatically.
     #
-    # @param provider_key [String] app-level provider key
+    # @param runner_key [String] app-level runner key
     # @param prompt [String] the prompt to execute
     # @param options [Hash] options forwarded to the harness provider
     # @return [Result] command, env, and preparation
-    def self.for_provider_key(provider_key:, prompt:, options: {})
-      harness_key = RunnerSupport.harness_runner_key_for(provider_key).to_sym
+    def self.for_runner_key(runner_key:, prompt:, options: {})
+      harness_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym
       provider_instance = build_harness_provider(harness_key)
       Result.new(**provider_instance.plan_execution(prompt: prompt, **options))
     end
 
     def call
-      Result.new(**harness_provider.plan_execution(prompt: @prompt, provider_runtime: provider_runtime, **@options))
+      Result.new(**harness_provider.plan_execution(prompt: @prompt, provider_runtime: runner_runtime, **@options))
     end
 
     private
@@ -54,11 +54,11 @@ module Runners
     end
 
     def harness_provider_name
-      RunnerSupport.harness_runner_key_for(@provider.runner_key).to_sym
+      RunnerSupport.harness_runner_key_for(@runner.runner_key).to_sym
     end
 
-    def provider_runtime
-      @provider.agent_harness_provider_runtime
+    def runner_runtime
+      @runner.agent_harness_runner_runtime
     end
   end
 end

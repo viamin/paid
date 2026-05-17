@@ -235,7 +235,7 @@ module Activities
             # Do not run infinite-loop detection here: the agent is no longer
             # producing output, so re-scanning the same stdout snapshots during
             # git bookkeeping can falsely classify a successful run as looping.
-            bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", provider) do
+            bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", runner) do
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
               if agent_run.repo_cloned?
@@ -786,7 +786,7 @@ module Activities
       end
 
       heartbeat = Containers::HeartbeatSetup.new(
-        runner: runner,
+        provider: runner,
         worktree_path: agent_run.worktree_path,
         host_heartbeat_path: container_service.heartbeat_host_path,
         harness_provider: resolved_harness_provider
@@ -874,8 +874,8 @@ module Activities
         # failures because some providers use quota-shaped wording for
         # retryable usage caps (for example, GLM free-model limits).
         if successful_exit_rate_limit_error?(sanitized_output)
-          reset_at = rate_limit_reset_at(provider, sanitized_output)
-          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+          reset_at = rate_limit_reset_at(runner, sanitized_output)
+          raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
 
         if insufficient_credits_error?(sanitized_output)
@@ -1013,9 +1013,9 @@ module Activities
         # Keep the same precedence as the main execution path so preflight
         # retryable limits do not degrade into generic provider failures.
         if successful_exit_rate_limit_error?(sanitized_output)
-          reset_at = rate_limit_reset_at(provider, sanitized_output)
-          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
-          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+          reset_at = rate_limit_reset_at(runner, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
+          raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
 
         if insufficient_credits_error?(sanitized_output)
@@ -1411,7 +1411,7 @@ module Activities
     end
 
     def runner_runtime_model(runner_candidate, user)
-      runner_entry_for(runner_candidate, user)&.agent_harness_provider_runtime&.model
+      runner_entry_for(runner_candidate, user)&.agent_harness_runner_runtime&.model
     end
 
     def harness_duration(execution_started_at)
@@ -1583,21 +1583,21 @@ module Activities
     # build_command can share the same capture without re-running the
     # harness provider. The boolean discriminator ensures calls with
     # and without a runner_entry that has an
-    # agent_harness_provider_runtime are never conflated. The MCP
+    # agent_harness_runner_runtime are never conflated. The MCP
     # servers are included so that a later execution on the same
     # activity instance with a different MCP setup does not reuse a
     # stale plan.
     def harness_execution_plan_for(runner_key, prompt, runner_entry: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ runner_key, prompt, runner_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
+      cache_key = [ runner_key, prompt, runner_entry&.agent_harness_runner_runtime.present?, @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
       options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
-      @harness_plan_cache[cache_key] = if runner_entry&.agent_harness_provider_runtime
+      @harness_plan_cache[cache_key] = if runner_entry&.agent_harness_runner_runtime
         Runners::HarnessExecutionPlan.call(
-          provider: runner_entry,
+          runner: runner_entry,
           prompt: prompt,
           options: options
         )
@@ -1770,7 +1770,7 @@ module Activities
       return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
 
       @direct_outbound_execution_plan_cache[cache_key] = Runners::HarnessExecutionPlan.call(
-        provider: runner_entry,
+        runner: runner_entry,
         prompt: prompt,
         options: { dangerous_mode: true }
       )

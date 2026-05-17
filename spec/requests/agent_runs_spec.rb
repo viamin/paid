@@ -787,7 +787,7 @@ RSpec.describe "AgentRuns" do
       it "marks only one retry option current for legacy runs without runner_id" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
-        api_key = create(:runner_api_key, user: owner, api_service_type: "openrouter")
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
         create_opencode_runner_entry(user: owner, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
         create_opencode_runner_entry(user: owner, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode", runner: nil)
@@ -2265,7 +2265,7 @@ RSpec.describe "AgentRuns" do
       it "rejects retrying with a disabled explicit runner identifier" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
-        api_key = create(:runner_api_key, user: owner, api_service_type: "openrouter")
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
         disabled_runner = create_opencode_runner_entry(user: owner, api_key: api_key, name: "Disabled Kimi",
           model: "moonshotai/kimi-k2-0905", enabled_for_agent_runs: false)
         create_opencode_runner_entry(user: owner, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
@@ -2283,7 +2283,7 @@ RSpec.describe "AgentRuns" do
       it "resolves plain runner keys against enabled retry providers" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
-        api_key = create(:runner_api_key, user: owner, api_service_type: "openrouter")
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
         owner.runners.create!(runner_key: "opencode", enabled_for_agent_runs: false)
         enabled_runner = create_opencode_runner_entry(
           user: owner,
@@ -2613,7 +2613,7 @@ RSpec.describe "AgentRuns" do
   end
 
   def create_opencode_fallback_runner(user:, name:, model:)
-    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
     create_opencode_runner_entry(user: user, api_key: api_key, name: name, model: model)
   end
 

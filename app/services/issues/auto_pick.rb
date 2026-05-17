@@ -111,7 +111,7 @@ module Issues
 
     def create_agent_run(issue, goal: "create_pr")
       provider = resolve_provider(goal)
-      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless provider
+      raise NoRunnableProviderError, "No runnable runner could be resolved for this project." unless provider
 
       AgentRun.create!(
         project: @project,

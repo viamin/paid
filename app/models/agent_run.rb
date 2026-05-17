@@ -2288,9 +2288,9 @@ class AgentRun < ApplicationRecord
       "status" => status,
       "error_message" => error_message,
       "guardrail_violation_type" => guardrail_violation_type,
-      "final_provider" => final_provider,
-      "providers_attempted" => providers_attempted,
-      "provider_switches" => provider_switches,
+      "final_runner" => final_runner,
+      "runners_attempted" => runners_attempted,
+      "runner_switches" => runner_switches,
       "parent_workflow_id" => parent_workflow_id
     }
   end

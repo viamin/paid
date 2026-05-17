@@ -5,8 +5,8 @@ FactoryBot.define do
     project
     operation_type { "embedding" }
     status { "pending" }
-    final_runner { nil }
-    runner_attempts { [] }
+    final_provider { nil }
+    provider_attempts { [] }
     total_tokens { 0 }
     proxy_token { SecureRandom.hex(32) }
     token_limit_status { nil }

@@ -254,19 +254,19 @@ class Runner < ApplicationRecord
   end
 
   def pi_api_provider
-    return nil unless provider_key == "pi"
+    return nil unless runner_key == "pi"
 
     pi_config["api_provider"].presence || PI_DEFAULT_API_PROVIDER
   end
 
   def pi_model_id
-    return nil unless provider_key == "pi"
+    return nil unless runner_key == "pi"
 
     pi_config["model"].to_s.presence
   end
 
   def pi_required_api_service_type
-    return nil unless provider_key == "pi"
+    return nil unless runner_key == "pi"
 
     PI_API_PROVIDERS.dig(pi_api_provider, :service_type)
   end
@@ -391,7 +391,7 @@ class Runner < ApplicationRecord
   end
 
   def pi_agent_harness_runtime?
-    provider_key == "pi" &&
+    runner_key == "pi" &&
       api_key? &&
       PI_API_PROVIDER_KEYS.include?(pi_api_provider)
   end
@@ -909,7 +909,7 @@ class Runner < ApplicationRecord
   end
 
   def pi_api_key_config_must_be_valid
-    return unless provider_key == "pi"
+    return unless runner_key == "pi"
     return unless api_key?
 
     unless PI_API_PROVIDER_KEYS.include?(pi_api_provider)

@@ -177,7 +177,7 @@ module Runners
     rescue StandardError => e
       Rails.logger.error(
         message: "runners.test_agent.unexpected_error",
-        runner_key: provider&.runner_key,
+        runner_key: runner&.runner_key,
         error_class: e.class.name,
         error_message: normalize_output_text(e.message)
       )
@@ -375,7 +375,7 @@ module Runners
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
-      runner.agent_harness_provider_runtime
+      runner.agent_harness_runner_runtime
     end
 
     def subscription_provider_runtime?

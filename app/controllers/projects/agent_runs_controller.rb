@@ -229,7 +229,7 @@ module Projects
         when :already_active
           "Auto-continue resumed for PR ##{pr.github_number}. An agent run is already queued or in progress."
         else
-          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a provider is available."
+          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a runner is available."
         end
         redirect_to project_path(@project), notice: notice
       end
@@ -366,7 +366,7 @@ module Projects
       agent_type = retry_agent_type_for(@agent_run)
       if agent_type.nil?
         redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "The selected provider is not available for retries."
+          alert: "The selected runner is not available for retries."
         return
       end
 
@@ -447,7 +447,7 @@ module Projects
           agent_type: @agent_run.agent_type
         )
         redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Unable to determine authentication provider for this run."
+          alert: "Unable to determine authentication runner for this run."
         return
       end
 
@@ -519,7 +519,7 @@ module Projects
         error_message: e.message
       )
       redirect_to project_agent_run_path(@project, @agent_run),
-        alert: "Re-authentication is not supported for this provider."
+        alert: "Re-authentication is not supported for this runner."
     rescue ActiveRecord::RecordNotUnique => e
       log_failed_retry_decision(
         decision_point: "refresh_auth_retry",
@@ -638,7 +638,7 @@ module Projects
         requested_runner_identifier: requested_runner_identifier,
         goal: goal
       )
-      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_runner
+      raise NoRunnableProviderError, "No runnable runner could be resolved for this project." unless resolved_runner
 
       resolved_agent_type = runner_key_to_agent_type(resolved_runner.runner_key)
 
@@ -881,8 +881,8 @@ module Projects
       owner = settings_owner
       return unless owner
 
-      configured_identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
-      priority_identifiers = owner.settings.provider_priority_for_goal(goal, identifiers: true)
+      configured_identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
+      priority_identifiers = owner.settings.runner_priority_for_goal(goal, identifiers: true)
       default_identifier = priority_identifiers.first
 
       if requested_runner_identifier.present?
@@ -918,7 +918,7 @@ module Projects
         unless owner
           []
         else
-          identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
+          identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
 
           routing_ids = []
           plain_keys = []

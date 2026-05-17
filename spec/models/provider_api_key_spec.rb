@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe ProviderApiKey do
   describe "associations" do
     it { is_expected.to belong_to(:user) }
-    it { is_expected.to have_many(:providers).dependent(:restrict_with_error) }
+    it { is_expected.to have_many(:runners).dependent(:restrict_with_error) }
   end
 
   describe "validations" do
@@ -55,7 +55,7 @@ RSpec.describe ProviderApiKey do
 
     context "with dynamic API provider keys (opencode, kilocode, pi)" do
       it "returns true when service type is in DIRECT_OUTBOUND_SERVICE_TYPES" do
-        Provider::DIRECT_OUTBOUND_SERVICE_TYPES.each do |service_type|
+        Runner::DIRECT_OUTBOUND_SERVICE_TYPES.each do |service_type|
           key = build(:provider_api_key, api_service_type: service_type)
           expect(key.compatible_with?("opencode")).to be(true), "expected #{service_type} to be compatible with opencode"
           expect(key.compatible_with?("kilocode")).to be(true), "expected #{service_type} to be compatible with kilocode"
@@ -63,7 +63,7 @@ RSpec.describe ProviderApiKey do
       end
 
       it "returns true for Pi-supported service types" do
-        Provider::PI_API_PROVIDERS.each_value do |config|
+        Runner::PI_API_PROVIDERS.each_value do |config|
           key = build(:provider_api_key, api_service_type: config.fetch(:service_type))
           expect(key.compatible_with?("pi")).to be(true), "expected #{config.fetch(:service_type)} to be compatible with pi"
         end
@@ -93,7 +93,7 @@ RSpec.describe ProviderApiKey do
   describe "destroy restriction" do
     it "prevents deletion when providers are associated" do
       api_key = create(:provider_api_key)
-      create(:provider, user: api_key.user, provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
+      create(:runner, user: api_key.user, runner_key: "claude", auth_type: "api_key", provider_api_key: api_key)
 
       expect(api_key.destroy).to be(false)
       expect(api_key.errors[:base]).to be_present
@@ -107,10 +107,10 @@ RSpec.describe ProviderApiKey do
 
     it "allows deletion after the referencing provider has been discarded" do
       api_key = create(:provider_api_key, api_service_type: "anthropic")
-      provider = create(:provider, :api_key, user: api_key.user, provider_key: "cursor", provider_api_key: api_key)
+      provider = create(:runner, :api_key, user: api_key.user, runner_key: "cursor", provider_api_key: api_key)
       provider.discard!
 
-      expect(api_key.providers).to be_empty
+      expect(api_key.runners).to be_empty
       expect(api_key.destroy).to be_truthy
     end
   end
