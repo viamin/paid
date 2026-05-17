@@ -64,6 +64,78 @@ if agent_harness_version == Gem::Version.new("0.17.0")
   AgentHarness::ProviderHealthCheck.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
 end
 
+# Backport Pi API-key runtime support that agent-harness 0.18.1 does not yet
+# expose consistently. Pi itself supports API keys via env vars or auth.json,
+# but its harness adapter still reports oauth-only auth semantics and does not
+# materialize request-scoped auth.json content from ProviderRuntime metadata.
+#
+# Paid uses this patch to:
+# - advertise the API-key env vars that subscription runs must unset
+# - write a minimal ~/.pi/agent/auth.json for request-scoped API-key entries so
+#   Pi's own auth precedence cannot pick a stale local credential instead
+# - keep credentials off the command line (Pi supports --api-key, but that
+#   would leak raw secrets via process args/logging)
+module PaidAgentHarnessPiRuntimePatch
+  PI_API_KEY_ENV_VARS = %w[
+    ANTHROPIC_API_KEY
+    OPENAI_API_KEY
+    DEEPSEEK_API_KEY
+    GEMINI_API_KEY
+    MISTRAL_API_KEY
+    XAI_API_KEY
+    ZAI_API_KEY
+    OPENROUTER_API_KEY
+  ].freeze
+
+  def api_key_env_var_names = PI_API_KEY_ENV_VARS
+
+  def subscription_unset_vars = PI_API_KEY_ENV_VARS
+
+  protected
+
+  def build_execution_preparation(options)
+    base = super
+    runtime = options[:provider_runtime]
+    auth_entry = runtime&.metadata&.dig("paid_pi_auth_entry")
+    return base unless auth_entry.is_a?(Hash)
+
+    provider = auth_entry["provider"].to_s.strip
+    api_key = auth_entry["api_key"].to_s
+    return base if provider.empty? || api_key.empty?
+
+    auth_json = JSON.generate(
+      provider => {
+        type: "api_key",
+        key: api_key
+      }
+    )
+
+    pi_auth = AgentHarness::ExecutionPreparation.new(
+      file_writes: [
+        {
+          path: "/home/agent/.pi/agent/auth.json",
+          content: auth_json,
+          mode: 0o600
+        }
+      ]
+    )
+
+    merge_execution_preparations(base, pi_auth)
+  end
+
+  private
+
+  def merge_execution_preparations(base, extra)
+    return extra if base.nil?
+    return base if extra.nil?
+
+    AgentHarness::ExecutionPreparation.new(file_writes: base.file_writes + extra.file_writes)
+  end
+end
+
+AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
+  AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
+
 # Default agent timeout used for AgentHarness boot-time config and as a
 # fallback when per-user settings are unavailable. Runtime code should
 # prefer UserSetting#agent_timeout_seconds resolved via

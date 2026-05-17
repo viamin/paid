@@ -163,7 +163,7 @@ class ProvidersController < ApplicationController
     end
     attrs = params.require(:provider).permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ], pi: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Provider::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -487,6 +487,12 @@ class ProvidersController < ApplicationController
     # selected api_provider, so check against all compatible service types.
     if %w[opencode kilocode].include?(provider_key)
       return Provider::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
+    end
+
+    # Pi also chooses its upstream API provider per-entry, but its supported
+    # service types are narrower than the direct-outbound set above.
+    if provider_key == "pi"
+      return Provider::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
     end
 
     api_key.api_service_type == Provider.api_service_type_for(provider_key)

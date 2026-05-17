@@ -101,7 +101,9 @@ module AgentRuns
       return unless base_provider
       return unless provider_runnable?(base_provider)
 
-      service_type = ProviderSupport.api_service_type_for(base_provider.provider_key)
+      service_type = tenant_api_key_service_type_for(base_provider)
+      return unless service_type
+
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
       return unless api_key
       return unless api_key.compatible_with?(base_provider.provider_key)
@@ -110,13 +112,37 @@ module AgentRuns
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
         provider_api_key: api_key
-      )
+      ) do |provider|
+        provider.config = tenant_api_key_provider_config(base_provider, api_key)
+      end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
       owner.providers.kept_only.find_by(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
         provider_api_key: api_key
       )
+    end
+
+    def tenant_api_key_service_type_for(base_provider)
+      static = ProviderSupport.api_service_type_for(base_provider.provider_key)
+      return static if static.present?
+      return base_provider.pi_required_api_service_type if base_provider.provider_key == "pi"
+
+      nil
+    end
+
+    def tenant_api_key_provider_config(base_provider, api_key)
+      return {} unless base_provider.provider_key == "pi"
+
+      config = {
+        "pi" => {
+          "api_provider" => api_key.api_service_type
+        }
+      }
+
+      model = project.account.tenant_setting&.model_preference_for("pi").to_s.presence
+      config["pi"]["model"] = model if model
+      config
     end
 
     def provider_for_id(provider_id)
