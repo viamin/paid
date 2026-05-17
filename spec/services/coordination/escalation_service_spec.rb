@@ -23,13 +23,14 @@ RSpec.describe Coordination::EscalationService do
         phase: issue.pr_review_phase,
         active_run_exists: false,
         operational_failure_breaker: false,
-        draft_review_limit_reached: false,
-        consecutive_draft_failures_breaker: false,
-        review_goal_retry_limit_requires_escalation: false,
-        followup_limit_reached: false,
+        no_progress_stuck: false,
+        failure_streak_limit_reached: false,
         escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil,
         draft_review_count: 0,
         review_goal_retry_count: 0,
         pr_followup_count: 0,
@@ -64,10 +65,9 @@ RSpec.describe Coordination::EscalationService do
 
     def persisted_prediction_signals
       {
+        "no_progress_stuck" => true,
         "operational_failure_breaker" => true,
-        "review_goal_retry_pressure" => 0.0,
-        "draft_review_pressure" => 0.0,
-        "followup_pressure" => 0.0,
+        "unified_failure_pressure" => 0.0,
         "blocking_trigger_pressure" => 0.0,
         "owner_reviewer_present" => true,
         "escalated_phase" => false
@@ -89,6 +89,7 @@ RSpec.describe Coordination::EscalationService do
 
     def explicit_trigger_decision_inputs
       {
+        "no_progress_stuck" => true,
         "operational_failure_breaker" => true,
         "prediction_signals" => persisted_prediction_signals,
         "trigger_types" => [],
@@ -110,7 +111,7 @@ RSpec.describe Coordination::EscalationService do
       {
         "human_value_threshold" => 0.15,
         "weights" => {
-          "review_goal_retry_pressure" => 0.7,
+          "unified_failure_pressure" => 0.7,
           "blocking_triggers" => 0.4
         }
       }
@@ -118,33 +119,34 @@ RSpec.describe Coordination::EscalationService do
 
     it "escalates on an explicit trigger and records the prediction inputs and outcome" do
       result = call_service(
+        no_progress_stuck: true,
         operational_failure_breaker: true,
-        escalation_reason: "Consecutive operational failures (3 runs)"
+        escalation_reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
       )
 
       expect(result).to be_escalate
-      expect(result.reason).to eq("Consecutive operational failures (3 runs)")
+      expect(result.reason).to eq("No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures")
       expect_logged_decision(
         OrchestrationDecision.last,
         status: "applied",
         inputs: explicit_trigger_decision_inputs,
         outputs: {
           "decision" => "escalate",
-          "reason" => "Consecutive operational failures (3 runs)",
-          "explicit_trigger" => "operational_failure_breaker",
+          "reason" => "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures",
+          "explicit_trigger" => "no_progress_stuck",
           "policy_source" => "defaults"
         }
       )
     end
 
-    it "defers when the interruption is not worth it yet" do
-      result = call_service(followup_limit_reached: true, pr_followup_count: 3)
+    it "auto-resolves when no explicit trigger and no strong retry pressure exist" do
+      result = call_service
 
-      expect(result).to be_defer
-      expect(result.reason).to eq("followup_limit_reached")
+      expect(result).to be_auto_resolve
+      expect(result.reason).to eq("automation_can_finish_without_human")
       expect(OrchestrationDecision.last.outputs).to include(
-        "decision" => "defer",
-        "reason" => "followup_limit_reached",
+        "decision" => "auto_resolve",
+        "reason" => "automation_can_finish_without_human",
         "policy_source" => "defaults"
       )
     end
@@ -167,7 +169,7 @@ RSpec.describe Coordination::EscalationService do
         parameters: low_threshold_parameters)
 
       result = call_service(
-        review_goal_retry_count: 3,
+        consecutive_unsuccessful_automatic_runs: 3,
         scan: { triggers: [ { type: "ci_failure" }, { type: "merge_conflicts" } ] }
       )
 
@@ -186,12 +188,66 @@ RSpec.describe Coordination::EscalationService do
         rules: { "explicit_triggers" => [] },
         parameters: { "human_value_threshold" => 0.9 })
 
-      result = call_service(review_goal_retry_count: 3)
+      result = call_service(consecutive_unsuccessful_automatic_runs: 3)
 
       expect(result).to be_auto_resolve
       expect(OrchestrationDecision.last.inputs).to include(
         "coordination_policy_id" => scoped_policy.id,
         "coordination_policy_version_id" => scoped_policy.current_version.id
+      )
+    end
+  end
+
+  describe ".call without unified failure count", :no_db do
+    let(:recorded_calls) { [] }
+    let(:project) { instance_double(EscalationServiceProjectStub, owner_reviewer_login: "alice") }
+    let(:issue) { instance_double(EscalationServiceIssueStub) }
+    let(:policy) do
+      Coordination::EscalationPolicy::DEFAULT_POLICY.merge(
+        "source" => "defaults",
+        "policy_key" => Coordination::EscalationPolicy::POLICY_KEY
+      )
+    end
+    let(:signals) do
+      {
+        phase: "ready",
+        active_run_exists: false,
+        operational_failure_breaker: false,
+        no_progress_stuck: false,
+        escalation_dismissed: false,
+        owner_reviewer_login: "alice",
+        scan: { triggers: [] },
+        draft_review_count: 4,
+        review_goal_retry_count: 3,
+        pr_followup_count: 2
+      }
+    end
+
+    before do
+      stub_const("EscalationServiceProjectStub", Class.new)
+      stub_const("EscalationServiceIssueStub", Class.new)
+      stub_const("OrchestrationDecision", Class.new do
+        class << self
+          attr_accessor :recorded_calls
+
+          def record(payload)
+            recorded_calls << payload
+          end
+        end
+      end)
+      OrchestrationDecision.recorded_calls = recorded_calls
+      allow(Coordination::EscalationPolicy).to receive(:call).with(project: project).and_return(policy)
+    end
+
+    it "ignores legacy phase counters when the unified signal is absent" do
+      result = described_class.call(project: project, issue: issue, signals: signals)
+
+      expect(result).to be_auto_resolve
+      expect(recorded_calls.last).to include(
+        signals: hash_including(
+          "prediction_signals" => hash_including("unified_failure_pressure" => 0.0)
+        ),
+        result: hash_including("decision" => "auto_resolve")
       )
     end
   end

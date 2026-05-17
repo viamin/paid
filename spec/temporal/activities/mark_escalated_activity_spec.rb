@@ -10,7 +10,28 @@ RSpec.describe Activities::MarkEscalatedActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:remove_label_from_issue)
     allow(github_client).to receive(:recent_issue_comments).and_return([])
+  end
+
+  describe "#default_reason", :no_db do
+    let(:project) { double(max_draft_review_rounds: 4, max_pr_followup_runs: 3) }
+
+    it "uses the draft-phase limit for draft PRs" do
+      issue = double(draft_phase?: true)
+
+      reason = activity.send(:default_reason, project, issue)
+
+      expect(reason).to include("(4 consecutive unsuccessful runs)")
+    end
+
+    it "uses the ready-phase limit for non-draft PRs" do
+      issue = double(draft_phase?: false)
+
+      reason = activity.send(:default_reason, project, issue)
+
+      expect(reason).to include("(3 consecutive unsuccessful runs)")
+    end
   end
 
   describe "#execute" do
@@ -45,11 +66,27 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(issue.project.full_name, issue.github_number, a_string_including("Escalation Note"))
       end
 
-      it "includes the default reason when no reason is provided" do
+      it "includes the unified default reason when no reason is provided" do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_comment)
-          .with(anything, anything, a_string_including("automated draft review limit"))
+          .with(anything, anything, a_string_including("automatic PR failure limit"))
+      end
+
+      it "uses the draft-phase limit in the fallback reason for draft-originated escalations" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("(#{issue.project.max_draft_review_rounds} consecutive unsuccessful runs)"))
+      end
+
+      it "uses the ready-phase limit in the fallback reason outside draft" do
+        issue.update!(pr_review_phase: "ready")
+
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("(#{issue.project.max_pr_followup_runs} consecutive unsuccessful runs)"))
       end
 
       it "includes resolution instructions in the escalation comment" do
@@ -169,6 +206,52 @@ RSpec.describe Activities::MarkEscalatedActivity do
         result = activity.execute(issue_id: issue.id)
 
         expect(result[:updated]).to be true
+      end
+    end
+
+    context "when issue carries the paid-ready label" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "ready",
+          labels: [ "paid-generated", "paid-automation", "paid-ready" ])
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      it "removes the paid-ready label so the label reflects the escalated state" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:remove_label_from_issue)
+          .with(issue.project.full_name, issue.github_number, "paid-ready")
+      end
+
+      it "still adds paid-escalated even if removing paid-ready fails" do
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::Error, "transient")
+
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with(issue.project.full_name, issue.github_number, [ "paid-escalated" ])
+      end
+    end
+
+    context "when issue does not carry the paid-ready label" do
+      let(:issue) do
+        create(:issue, :pull_request, pr_review_phase: "draft", labels: [ "paid-automation" ])
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      it "does not call remove_label_from_issue for paid-ready" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+          .with(anything, anything, "paid-ready")
       end
     end
 

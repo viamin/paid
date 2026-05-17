@@ -139,6 +139,14 @@ RSpec.describe Issue do
         expect(described_class.ready_for_work(project)).to include(issue)
       end
 
+      it "includes issues whose only open dep is paid_state recommend_close" do
+        dep = create(:issue, :recommend_close, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
       it "excludes closed issues" do
         issue = create(:issue, project: project, github_state: "closed")
 
@@ -198,6 +206,122 @@ RSpec.describe Issue do
 
         expect(described_class.ready_for_work(project)).to include(issue)
       end
+    end
+  end
+
+  describe "after_update_commit on github_state change" do
+    it "enqueues a newly unblocked dependent when the blocker closes" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+      allow(Rails.logger).to receive(:info)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolved",
+          blocker_issue_id: blocker.id,
+          dependent_issue_id: dependent.id
+        )
+      )
+    end
+
+    it "does not enqueue a dependent that still has another open dependency" do
+      project = create(:project, auto_pick_enabled: true)
+      closing_blocker = create(:issue, project: project, github_state: "open")
+      other_blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: closing_blocker)
+      create(:issue_dependency, issue: dependent, depends_on_issue: other_blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      closing_blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "does not enqueue anything when the closed issue has no dependents" do
+      issue = create(:issue, github_state: "open")
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "enqueues dependents transitively as blockers close in sequence" do
+      project = create(:project, auto_pick_enabled: true)
+      issue_a = create(:issue, project: project, github_state: "open")
+      issue_b = create(:issue, project: project, github_state: "open")
+      issue_c = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_a)
+      create(:issue_dependency, issue: issue_c, depends_on_issue: issue_b)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue_a.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue_b, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).not_to have_received(:call).with(issue_c, project: project, skip_project_gate: true)
+
+      issue_b.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(issue_c, project: project, skip_project_gate: true)
+    end
+
+    it "enqueues cross-project dependents when their project has auto_pick enabled" do
+      account = create(:account)
+      github_token = create(:github_token, account: account)
+      user = create(:user, account: account)
+      blocker_project = create(:project, account: account, github_token: github_token, created_by: user, auto_pick_enabled: true)
+      dependent_project = create(:project, account: account, github_token: github_token, created_by: user, auto_pick_enabled: true)
+      blocker = create(:issue, project: blocker_project, github_state: "open")
+      dependent = create(:issue, project: dependent_project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(dependent, project: dependent_project, skip_project_gate: true)
+    end
+
+    it "does not enqueue dependents for paused projects" do
+      project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
+      blocker = create(:issue, project: project, github_state: "open")
+      dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
+    end
+
+    it "continues processing later dependents after one enqueue fails" do
+      project = create(:project, auto_pick_enabled: true)
+      blocker = create(:issue, project: project, github_state: "open")
+      first_dependent = create(:issue, project: project, github_state: "open")
+      second_dependent = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: first_dependent, depends_on_issue: blocker)
+      create(:issue_dependency, issue: second_dependent, depends_on_issue: blocker)
+      allow(Rails.logger).to receive(:error)
+      allow(Issues::EnqueueEligible).to receive(:call) { |issue, **| raise StandardError, "transient failure" if issue == first_dependent }
+
+      blocker.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(first_dependent, project: project, skip_project_gate: true)
+      expect(Issues::EnqueueEligible).to have_received(:call).with(second_dependent, project: project, skip_project_gate: true)
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "enqueue_eligible.dependency_resolution_failed",
+          issue_id: blocker.id,
+          dependent_issue_id: first_dependent.id,
+          error: "transient failure"
+        )
+      )
     end
   end
 
@@ -297,6 +421,147 @@ RSpec.describe Issue do
         issue = build(:issue)
 
         expect(issue.sub_issue?).to be false
+      end
+    end
+
+    describe "PR progress helpers", :no_db do
+      let(:issue) { described_class.allocate }
+      let(:project) { Object.new }
+      let(:progress_state) do
+        instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 3,
+          last_meaningful_progress_at: Time.zone.parse("2026-05-15 12:00:00"),
+          escalation_worthy?: true,
+          retryable?: false,
+          stuck?: true
+        )
+      end
+
+      before do
+        allow(issue).to receive(:project).and_return(project)
+      end
+
+      it "does not register a commit callback for PR progress helper state" do
+        after_commit_filters = described_class._commit_callbacks
+          .select { |callback| callback.kind == :after }
+          .map(&:filter)
+
+        expect(after_commit_filters).not_to include(:invalidate_pr_progress_state_cache!)
+      end
+
+      it "recomputes progress state across helper calls" do
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.last_pr_meaningful_progress_at).to eq(Time.zone.parse("2026-05-15 12:00:00"))
+        expect(issue.pr_escalation_worthy?(limit: 3)).to be(true)
+        expect(issue.pr_retryable?(limit: 3)).to be(false)
+        expect(issue.pr_stuck?(limit: 3, stale_after: 3600)).to be(true)
+        expect(PullRequests::ProgressState).to have_received(:call).exactly(5).times
+      end
+
+      it "forwards current_head_sha to ProgressState" do
+        head_aware_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 0
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: anything)
+          .and_return(head_aware_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: Time.current)).to eq(0)
+      end
+
+      it "does not reuse a head-aware result for later default lookups" do
+        head_aware_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 0
+        )
+        fetched_at = Time.zone.parse("2026-05-15 12:00:00")
+
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, progress_state)
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
+          .and_return(head_aware_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: fetched_at)).to eq(0)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+      end
+
+      it "does not reuse a partial head-aware result for later default lookups" do
+        partial_head_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, progress_state)
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+          .and_return(partial_head_state)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+        expect(issue.consecutive_unsuccessful_pr_runs(current_head_sha: "abc123", current_head_updated_at: nil)).to eq(1)
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+      end
+
+      it "continues to recompute progress state when resetting the review-goal breaker" do
+        fresh_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, fresh_progress_state)
+        allow(issue).to receive(:update!).and_return(true)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+
+        issue.reset_review_goal_retry_breaker!
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
+        expect(PullRequests::ProgressState).to have_received(:call).twice
+      end
+
+      it "resets both unified progress reset markers when resetting the review-goal breaker" do
+        allow(issue).to receive(:update!).and_return(true)
+
+        freeze_time do
+          issue.reset_review_goal_retry_breaker!
+
+          expect(issue).to have_received(:update!).with(
+            hash_including(
+              review_goal_retry_reset_at: Time.current,
+              operational_failure_reset_at: Time.current
+            )
+          )
+        end
+      end
+
+      it "continues to recompute progress state when dismissing escalation" do
+        fresh_progress_state = instance_double(
+          PullRequests::ProgressState::Result,
+          consecutive_unsuccessful_automatic_runs: 1
+        )
+        allow(PullRequests::ProgressState).to receive(:call)
+          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+          .and_return(progress_state, fresh_progress_state)
+        issue.define_singleton_method(:labels) { %w[paid-escalated paid-dismiss-escalation] }
+        allow(issue).to receive(:update!).and_return(true)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
+
+        issue.dismiss_escalation!(draft: false)
+
+        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
+        expect(PullRequests::ProgressState).to have_received(:call).twice
       end
     end
 
@@ -850,6 +1115,26 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#needs_input?" do
+    it "returns true when the issue is waiting on user answers" do
+      project = build(:project, enhance_issue_needs_input_label_name: "paid-enhance-needs-input")
+      issue = build(:issue, :needs_input, project: project, labels: [ "paid-enhance-needs-input" ])
+
+      expect(issue).to be_needs_input
+    end
+
+    it "returns false for other paid states" do
+      expect(build(:issue, paid_state: "planning")).not_to be_needs_input
+    end
+
+    it "returns false for non-enhancement needs-input issues" do
+      project = build(:project, enhance_issue_needs_input_label_name: "paid-enhance-needs-input")
+      issue = build(:issue, :needs_input, project: project, labels: [ "paid-needs-input" ])
+
+      expect(issue).not_to be_needs_input
+    end
+  end
+
   describe "broadcast callbacks" do
     let(:project) { create(:project) }
 
@@ -1278,6 +1563,24 @@ RSpec.describe Issue do
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked for a parent with an open non-PR sub-issue" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when the only open sub-issue is paid_state recommend_close" do
+      parent = create(:issue, project: project, github_state: "open")
+      create(:issue, :recommend_close, project: project, github_state: "open", parent_issue: parent)
+
+      result = described_class.lifecycle_statuses([ parent ])
+
+      expect(result[parent.id]).to eq(:eligible)
     end
 
     it "returns :eligible for an issue with only completed agent runs" do

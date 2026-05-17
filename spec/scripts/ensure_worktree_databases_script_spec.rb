@@ -87,6 +87,7 @@ RSpec.describe EnsureWorktreeDatabasesScript do
   def base_env(dir)
     {
       "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "DATABASE_URL" => "",
       "DB_HOST" => "localhost",
       "DB_PASSWORD" => "paid"
     }

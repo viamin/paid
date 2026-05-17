@@ -31,9 +31,9 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(project.name)
       end
 
-      it "shows each run goal in the index table" do
-        goal_text = "Implement multi-step OAuth token refresh handling for stale sessions"
-        run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: goal_text)
+      it "shows each run goal type label without redundant tooltips" do
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr",
+          custom_prompt: "Implement multi-step OAuth token refresh handling for stale sessions")
 
         get agent_runs_path
 
@@ -42,10 +42,12 @@ RSpec.describe "AgentRuns" do
         expect(goal_column_index(document)).not_to be_nil
 
         goal_cell = goal_cell_for_run(document, run)
+        truncated_label = goal_cell.at_css("span.block.truncate")
 
-        expect(goal_cell.text).to include(goal_text)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_present
+        expect(goal_cell.text).to include("PR Creation")
+        expect(truncated_label["title"]).to be_nil
+        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
       it "aligns the Runner header with runner values in each row" do
@@ -64,6 +66,20 @@ RSpec.describe "AgentRuns" do
         runner_cell = cell_for_run(parsed_html, run, "Runner")
 
         expect(runner_cell.text.squish).to eq(configured_runner.display_name)
+      end
+
+      it "renders exactly one Runner column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr")
+
+        get agent_runs_path
+
+        document = parsed_html
+        runner_headers = document.css("thead th").select { |header| header.text.squish == "Runner" }
+        runner_cells = document.css("tbody tr##{ActionView::RecordIdentifier.dom_id(run)} td")
+          .select { |cell| cell.text.squish == Runner.display_name_for(run.effective_runner) }
+
+        expect(runner_headers.size).to eq(1)
+        expect(runner_cells.size).to eq(1)
       end
 
       it "shows a deleted-runner fallback label in the Runner column" do
@@ -114,87 +130,89 @@ RSpec.describe "AgentRuns" do
         expect(runner_cell.text.squish).to eq(Runner.display_name_for("claude"))
       end
 
-      it "prefers the issue title over custom prompt text" do
+      it "shows distinct goal and context values for create_pr runs" do
         issue = create(:issue, project: project, title: "Fix flaky webhook retry handling")
         run = create(:agent_run, :with_custom_prompt, project: project, issue: issue,
           custom_prompt: "Rendered task instructions that should not appear")
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        document = parsed_html
+        goal_cell = goal_cell_for_run(document, run)
+        context_cell = cell_for_run(document, run, "Context")
 
-        expect(goal_cell.text).to include(issue.title)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(issue.title)
+        expect(goal_cell.text).to include("PR Creation")
+        expect(goal_cell.text).not_to include(issue.title)
+        expect(goal_cell.text).not_to include(run.custom_prompt)
+        expect(context_cell.text).to include("Issue ##{issue.github_number}")
       end
 
-      it "prefers review pull request text over custom prompt text" do
+      it "shows review goal labels separately from review context" do
         run = create(:agent_run, :review_goal, :with_custom_prompt, project: project, issue: nil,
           custom_prompt: "Generated review instructions that should not appear",
           source_pull_request_number: 87)
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        document = parsed_html
+        goal_cell = goal_cell_for_run(document, run)
+        context_cell = cell_for_run(document, run, "Context")
 
-        expect(goal_cell.text).to include("Review PR #87")
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("Review PR #87")
+        expect(goal_cell.text).to include("Code Review")
+        expect(goal_cell.text).not_to include("PR #87")
+        expect(goal_cell.text).not_to include(run.custom_prompt)
+        expect(context_cell.text).to include("PR #87")
       end
 
-      it "shows PR label for create_pr runs targeting an existing pull request" do
-        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr", issue: nil,
-          custom_prompt: "Generated instructions that should not appear",
-          source_pull_request_number: 55)
+      it "shows the source pull request title as a review context tooltip" do
+        source_pull_request = create(:issue, :pull_request, project: project, github_number: 87,
+          title: "Tighten dashboard review context tooltips")
+        run = create(:agent_run, :review_goal, :with_custom_prompt, project: project, issue: nil,
+          source_pull_request_number: source_pull_request.github_number)
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        context_cell = cell_for_run(parsed_html, run, "Context")
+        tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        tooltip_content = tooltip_wrapper&.at_css('span[role="tooltip"]')
 
-        expect(goal_cell.text).to include("PR #55")
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq("PR #55")
+        expect(context_cell.text).to include("PR ##{run.source_pull_request_number}")
+        expect(tooltip_wrapper).to be_present
+        expect(tooltip_content).to be_present
+        expect(tooltip_content.text).to include(source_pull_request.title)
       end
 
-      it "falls back to custom prompt text when no issue or review goal text is available" do
+      it "shows custom prompt context separately from the goal label" do
         goal_text = "Investigate the flaky deploy status check"
-        run = create(:agent_run, :with_custom_prompt, project: project, issue: nil, custom_prompt: goal_text)
+        run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr",
+          issue: nil, custom_prompt: goal_text)
 
         get agent_runs_path
 
-        goal_cell = goal_cell_for_run(parsed_html, run)
+        document = parsed_html
+        goal_cell = goal_cell_for_run(document, run)
+        context_cell = cell_for_run(document, run, "Context")
 
-        expect(goal_cell.text).to include(goal_text)
-        expect(goal_cell.at_css("span.block.truncate")["title"]).to eq(goal_text)
+        expect(goal_cell.text).to include("PR Creation")
+        expect(goal_cell.text).not_to include(goal_text)
+        expect(context_cell.text).to include(goal_text)
+        expect(context_cell.at_css("span[title]")["title"]).to eq(goal_text)
+        expect(context_cell.at_css('[data-controller="tooltip"]')).to be_present
       end
 
-      it "shows a placeholder when a run has no goal text to display" do
+      it "shows a titleized fallback label for unexpected goal values" do
         run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: "Temporary goal")
-        run.update_columns(custom_prompt: nil, issue_id: nil)
+        run.update_columns(goal: "some_new_goal")
 
         get agent_runs_path
 
         goal_cell = goal_cell_for_run(parsed_html, run)
 
-        expect(goal_cell.text.squish).to eq("-")
-        expect(goal_cell.at_css("span")["class"]).to include("text-gray-400")
-      end
-
-      it "redacts secrets from custom goal text in the table cell and tooltip" do
-        token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
-        run = create(:agent_run, :with_custom_prompt, project: project,
-          custom_prompt: "Investigate deploy failure with GITHUB_TOKEN=#{token}")
-
-        get agent_runs_path
-
-        goal_cell = goal_cell_for_run(parsed_html, run)
-        truncated_span = goal_cell.at_css("span.block.truncate")
-
-        expect(truncated_span.text).to include("[REDACTED:github_token]")
-        expect(truncated_span.text).not_to include(token)
-        expect(truncated_span["title"]).to include("[REDACTED:github_token]")
-        expect(truncated_span["title"]).not_to include(token)
+        expect(goal_cell.text).to include("Some New Goal")
       end
 
       it "shows the runner column with the resolved runner name" do
-        runner = create(:runner, user: user, runner_key: "codex")
+        runner = create(:runner, user: project.effective_owner, runner_key: "codex")
         run = create(:agent_run, project: project, runner: runner, final_runner: runner.routing_key)
 
         get agent_runs_path
@@ -214,7 +232,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the final runner label for legacy fallback runs" do
-        initial_runner = create(:runner, user: user, runner_key: "codex")
+        initial_runner = create(:runner, user: project.effective_owner, runner_key: "codex")
         run = create(:agent_run, project: project, runner: initial_runner, final_runner: "cursor")
 
         get agent_runs_path
@@ -598,7 +616,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the runner column with the resolved runner name" do
-        runner = create(:runner, user: user, runner_key: "cursor")
+        runner = create(:runner, user: project.effective_owner, runner_key: "cursor")
         run = create(:agent_run, project: project, runner: runner, final_runner: runner.routing_key)
 
         get project_agent_runs_path(project)
@@ -610,7 +628,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the final runner label for legacy fallback runs" do
-        initial_runner = create(:runner, user: user, runner_key: "codex")
+        initial_runner = create(:runner, user: project.effective_owner, runner_key: "codex")
         run = create(:agent_run, project: project, runner: initial_runner, final_runner: "cursor")
 
         get project_agent_runs_path(project)
@@ -1144,10 +1162,187 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.status).to eq("queued")
       end
 
+      it "attaches selected marketplace entries to the queued run" do
+        entry = create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ entry.id ] }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(entry)
+        expect(attachment.attachment_source).to eq("manual")
+      end
+
+      it "logs and continues when optional marketplace attachment lookup fails" do
+        allow(Rails.logger).to receive(:warn)
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise(ActiveRecord::RecordNotFound, "missing entry")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "agent_execution.marketplace_attachment_failed",
+            error_class: "ActiveRecord::RecordNotFound",
+            error: "missing entry"
+          )
+        )
+      end
+
+      it "rolls back the agent run when optional marketplace attachment resolution raises an unexpected error" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.to raise_error(RuntimeError, "boom")
+        }.not_to change(AgentRun, :count)
+      end
+
+      it "rolls back the agent run when a selected marketplace attachment fails" do
+        allow(MarketplaceEntries::AttachToRun).to receive(:call).and_raise("boom")
+
+        expect {
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ "123" ] }
+          }.to raise_error(RuntimeError, "boom")
+        }.not_to change(AgentRun, :count)
+      end
+
+      it "applies automatic marketplace entries without treating that as consent for unrelated team-default entries" do
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+        manual_entry = create_prompt_append_marketplace_entry(name: "Manual skill", content: "Use the manual workflow.")
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, marketplace_entry_ids: [ manual_entry.id ] }
+        }.to change(AgentRunMarketplaceEntry, :count).by(2)
+
+        run = AgentRun.last
+        expect(run.agent_run_marketplace_entries.order(:position).pluck(:attachment_source)).to eq([ "automatic", "manual" ])
+      end
+
+      it "shows all active marketplace entries in the run form" do
+        create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
+        create_runtime_marketplace_entry(name: "Tool plugin", entry_type: "plugin")
+        create_runtime_marketplace_entry(name: "Provider preset", entry_type: "provider_config")
+        create_runtime_marketplace_entry(name: "Repo MCP", entry_type: "mcp_server")
+
+        get new_project_agent_run_path(project)
+
+        expect(response.body).to include("Repo skill")
+        expect(response.body).to include("Tool plugin")
+        expect(response.body).to include("Provider preset")
+        expect(response.body).to include("Repo MCP")
+      end
+
+      it "renders marketplace search and filter controls in the run form" do
+        create_runtime_marketplace_entry(name: "Ruby skill", entry_type: "skill", tags: [ "ruby", "backend" ])
+        create_runtime_marketplace_entry(name: "MCP helper", entry_type: "mcp_server", tags: [ "ops" ])
+
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+
+        expect(doc.at_css("[data-controller='marketplace-picker']")).to be_present
+        expect(doc.at_css("input#marketplace-entry-query")).to be_present
+        expect(doc.at_css("select#marketplace-entry-type option[value='skill']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-type option[value='mcp_server']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-tag option[value='ruby']")).to be_present
+        expect(doc.at_css("select#marketplace-entry-tag option[value='ops']")).to be_present
+        expect(doc.css("[data-marketplace-picker-target='group']").size).to eq(2)
+      end
+
+      it "does not show active marketplace entries without a current version" do
+        create(:marketplace_entry, account: account, name: "Unversioned entry")
+
+        get new_project_agent_run_path(project)
+
+        expect(response.body).not_to include("Unversioned entry")
+      end
+
+      it "applies team-default marketplace entries for an opted-in project member" do
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(team_default_entry)
+        expect(attachment.attachment_source).to eq("team_default")
+      end
+
+      it "applies automatic marketplace entries for an opted-in project member" do
+        owner = create(:user, account: account)
+        owner_token = create(:github_token, account: account, created_by: owner)
+        shared_project = create(:project, account: account, github_token: owner_token, created_by: owner)
+        issue = create(:issue, project: shared_project, github_number: 43, title: "Fix the bug")
+        create(:project_membership, project: shared_project, user: user, role: "member")
+        user.settings.update!(marketplace_auto_attach_enabled: true)
+
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+
+        expect {
+          post project_agent_runs_path(shared_project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(1)
+
+        attachment = AgentRunMarketplaceEntry.last
+        expect(attachment.marketplace_entry).to eq(automatic_entry)
+        expect(attachment.attachment_source).to eq("automatic")
+      end
+
+      it "applies automatic and team-default marketplace entries when the account requires them" do
+        tenant_setting = account.tenant_setting!
+        tenant_setting.update!(
+          agent_settings: tenant_setting.agent_settings.merge("marketplace_auto_attach_required" => true)
+        )
+        automatic_entry = create_prompt_append_marketplace_entry(name: "Automatic skill", content: "Apply the automatic workflow.")
+        team_default_entry = create_prompt_append_marketplace_entry(name: "Team default skill", content: "Apply the team default workflow.")
+        create(:marketplace_entry_rule, marketplace_entry: automatic_entry, mode: "automatic", conditions: {})
+        create(:marketplace_entry_rule, marketplace_entry: team_default_entry, mode: "team_default", conditions: {})
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRunMarketplaceEntry, :count).by(2)
+
+        attachments = AgentRun.last.agent_run_marketplace_entries.order(:position)
+        expect(attachments.pluck(:marketplace_entry_id)).to eq([ automatic_entry.id, team_default_entry.id ])
+        expect(attachments.pluck(:attachment_source)).to eq([ "automatic", "team_default" ])
+      end
+
       it "enqueues ProcessRunQueueJob" do
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
         }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      def create_prompt_append_marketplace_entry(name:, content:)
+        entry = create(:marketplace_entry, account: account, name:)
+        version = create(:marketplace_entry_version,
+          marketplace_entry: entry,
+          canonical_artifact: {
+            "attachment_strategy" => "prompt_append",
+            "content" => content
+          })
+        entry.update!(current_version: version)
+        entry
+      end
+
+      def create_runtime_marketplace_entry(name:, entry_type:, tags: [ "team" ])
+        entry = create(:marketplace_entry, account: account, name:, entry_type:, tags:)
+        version = create(:marketplace_entry_version, marketplace_entry: entry)
+        entry.update!(current_version: version)
+        entry
       end
 
       it "persists the selected priority tier and syncs the issue label" do
@@ -2512,8 +2707,7 @@ RSpec.describe "AgentRuns" do
   end
 
   def row_for_run(document, run)
-    run_path = project_agent_run_path(run.project, run)
-    row = document.at_css(%(a[href="#{run_path}"]))&.ancestors("tr")&.first
+    row = document.at_css(%(tr##{ActionView::RecordIdentifier.dom_id(run)}))
 
     expect(row).to be_present
     row

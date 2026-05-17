@@ -13,6 +13,7 @@ module MigrationSpecHelpers
       runner_states
       account_memberships
       github_tokens
+      user_settings
       users
       accounts
     ].each { |table| connection.execute("DELETE FROM #{table}") }

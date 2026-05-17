@@ -67,7 +67,7 @@ module Containers
         workspace_volume: workspace_volume,
         state_volume: state_volume
       )
-      @container.start
+      Containers.backend.start_container(@container)
       fix_ownership!
       seed_workspace!(workspace_volume_created:)
 
@@ -112,10 +112,10 @@ module Containers
     def create_workspace_volume
       name = "paid-chat-workspace-#{chat_session.id}"
       begin
-        Docker::Volume.get(name)
+        Containers.backend.get_volume(name)
         [ name, false ]
       rescue Docker::Error::NotFoundError
-        Docker::Volume.create(name, volume_labels("workspace"))
+        Containers.backend.create_volume(name, volume_labels("workspace"))
         [ name, true ]
       end
     end
@@ -123,10 +123,10 @@ module Containers
     def create_state_volume
       name = "paid-chat-state-#{chat_session.id}"
       begin
-        Docker::Volume.get(name)
+        Containers.backend.get_volume(name)
         [ name, false ]
       rescue Docker::Error::NotFoundError
-        Docker::Volume.create(name, volume_labels("state"))
+        Containers.backend.create_volume(name, volume_labels("state"))
         [ name, true ]
       end
     end
@@ -142,7 +142,7 @@ module Containers
     end
 
     def create_container(workspace_volume:, state_volume:)
-      Docker::Container.create(
+      Containers.backend.create_container(
         "Image" => options[:image],
         "name" => container_name,
         "User" => options[:user],
@@ -223,11 +223,11 @@ module Containers
 
       dirs = [ options[:workspace_mount] ] + STATE_VOLUME_DIRS
       cmd_args = [ "chown", "-R", "#{options[:user]}:#{options[:user]}" ] + dirs
-      @container.exec(cmd_args, user: "root")
+      Containers.backend.exec_in_container(@container, cmd_args, user: "root")
     end
 
     def initialize_state_directories!
-      @container.exec([ "mkdir", "-p", *STATE_VOLUME_DIRS ], user: "root")
+      Containers.backend.exec_in_container(@container, [ "mkdir", "-p", *STATE_VOLUME_DIRS ], user: "root")
     end
 
     # Seeds the workspace volume by cloning the project's git repository.
@@ -251,7 +251,8 @@ module Containers
 
       clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git . 2>&1"
 
-      result = @container.exec(
+      result = Containers.backend.exec_in_container(
+        @container,
         [ "sh", "-c", clone_cmd ],
         user: options[:user],
         wait: CLONE_TIMEOUT,
@@ -273,7 +274,8 @@ module Containers
     end
 
     def workspace_empty?
-      result = @container.exec(
+      result = Containers.backend.exec_in_container(
+        @container,
         [ "sh", "-c", "if [ -z \"$(ls -A . 2>/dev/null)\" ]; then exit 0; fi; exit 1" ],
         user: options[:user]
       )
@@ -289,8 +291,8 @@ module Containers
     def cleanup_on_failure(workspace_volume, state_volume, workspace_volume_created:, state_volume_created:)
       if @container
         begin
-          @container.stop(timeout: 0)
-          @container.delete(force: true, v: true)
+          Containers.backend.stop_container(@container, timeout: 0)
+          Containers.backend.delete_container(@container, force: true, v: true)
         rescue Docker::Error::DockerError
           # Container may already be gone
         end
@@ -304,7 +306,7 @@ module Containers
     def remove_volume(name)
       return unless name
 
-      Docker::Volume.get(name).remove
+      Containers.backend.delete_volume(Containers.backend.get_volume(name))
     rescue Docker::Error::DockerError
       # Volume may already be removed or in use
     end

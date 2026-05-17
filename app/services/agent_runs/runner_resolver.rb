@@ -101,22 +101,54 @@ module AgentRuns
       return unless base_runner
       return unless runner_runnable?(base_runner)
 
-      service_type = RunnerSupport.api_service_type_for(base_runner.runner_key)
+      service_type = tenant_api_key_service_type_for(base_runner)
+      return unless service_type
+
       api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
       return unless api_key
       return unless api_key.compatible_with?(base_runner.runner_key)
 
+      runner_config = tenant_api_key_runner_config(base_runner, api_key)
       owner.runners.kept_only.find_or_create_by!(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
         provider_api_key: api_key
-      )
+      ) do |runner|
+        runner.config = runner_config
+      end.tap do |runner|
+        # Config can drift between calls (e.g. tenant changes their Pi model
+        # preference in tenant_settings without rotating the API key). Sync it
+        # on every materialisation so the next agent run picks up the change.
+        runner.update!(config: runner_config) if runner_config != runner.config
+      end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
       owner.runners.kept_only.find_by(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
         provider_api_key: api_key
       )
+    end
+
+    def tenant_api_key_service_type_for(base_runner)
+      static = RunnerSupport.api_service_type_for(base_runner.runner_key)
+      return static if static.present?
+      return base_runner.pi_required_api_service_type if base_runner.runner_key == "pi"
+
+      nil
+    end
+
+    def tenant_api_key_runner_config(base_runner, api_key)
+      return {} unless base_runner.runner_key == "pi"
+
+      config = {
+        "pi" => {
+          "api_provider" => api_key.api_service_type
+        }
+      }
+
+      model = project.account.tenant_setting&.model_preference_for("pi").to_s.presence
+      config["pi"]["model"] = model if model
+      config
     end
 
     def runner_for_id(runner_id)

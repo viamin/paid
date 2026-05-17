@@ -248,7 +248,7 @@ module Screenshots
     end
 
     def start_chrome!
-      @chrome_container = Docker::Container.create(
+      @chrome_container = Containers.backend.create_container(
         "Image" => CHROME_IMAGE,
         "name" => "paid-screenshot-chrome-#{agent_run.id}-#{SecureRandom.hex(4)}",
         "HostConfig" => {
@@ -271,7 +271,7 @@ module Screenshots
           "paid.agent_run_id" => agent_run.id.to_s
         }
       )
-      @chrome_container.start
+      Containers.backend.start_container(@chrome_container)
     rescue Docker::Error::DockerError => e
       raise Screenshots::ConfigError, "unable to start Chrome service container: #{e.message}"
     end
@@ -566,12 +566,12 @@ module Screenshots
 
     def cleanup!
       begin
-        @chrome_container&.stop(timeout: 0)
+        Containers.backend.stop_container(@chrome_container, timeout: 0) if @chrome_container
       rescue Docker::Error::DockerError
       end
 
       begin
-        @chrome_container&.delete(force: true, v: true)
+        Containers.backend.delete_container(@chrome_container, force: true, v: true) if @chrome_container
       rescue Docker::Error::DockerError => e
         logger.warn(message: "screenshots.chrome_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       end
@@ -594,9 +594,9 @@ module Screenshots
         sc.with_lock do
           next unless sc.capacity_inflight_agent_run_count.zero?
 
-          docker = Docker::Container.get(sc.docker_container_id)
-          docker.stop(timeout: 10)
-          docker.delete(force: true, v: true)
+          docker = Containers.backend.get_container(sc.docker_container_id)
+          Containers.backend.stop_container(docker, timeout: 10)
+          Containers.backend.delete_container(docker, force: true, v: true)
           sc.update!(status: "stopped", docker_container_id: nil)
         end
       rescue Docker::Error::DockerError => e

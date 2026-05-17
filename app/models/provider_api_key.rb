@@ -23,17 +23,17 @@ class ProviderApiKey < ApplicationRecord
 
   # Returns true when this API key's service type is compatible with the
   # given provider. Providers with a fixed service type (claude → anthropic)
-  # are checked against RunnerSupport::RUNNER_API_SERVICE_TYPE. Providers
-  # that support multiple upstream API providers (opencode, kilocode) are
-  # compatible with any service type in DIRECT_OUTBOUND_API_PROVIDERS.
-  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode].to_set.freeze
+  # are checked against RunnerSupport::RUNNER_API_SERVICE_TYPE. Runners that
+  # support multiple upstream API providers (opencode, kilocode, pi) resolve
+  # compatibility from their runner-specific service-type sets.
+  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode pi].to_set.freeze
 
   def compatible_with?(provider_key)
     static_type = RunnerSupport.api_service_type_for(provider_key)
     if static_type
       api_service_type == static_type
     elsif DYNAMIC_API_PROVIDER_KEYS.include?(provider_key.to_s)
-      Runner::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_service_type)
+      compatible_dynamic_service_type?(provider_key)
     else
       false
     end
@@ -57,6 +57,15 @@ class ProviderApiKey < ApplicationRecord
   end
 
   private
+
+  def compatible_dynamic_service_type?(provider_key)
+    case provider_key.to_s
+    when "pi"
+      Runner::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_service_type }
+    else
+      Runner::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_service_type)
+    end
+  end
 
   def api_service_type_must_be_valid
     return if api_service_type.blank?

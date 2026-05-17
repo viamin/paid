@@ -702,9 +702,11 @@ RSpec.describe Activities::RunAgentActivity do
       version = prompt.create_version!(template: "issue {{base_prompt}} {{repo}}")
       run = create(:agent_run, :create_issue_goal, project: project)
 
-      activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
+      rendered = activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
 
       expect(run.reload.prompt_version).to eq(version)
+      expect(rendered).to include("issue Create the issue #{project.full_name}")
+      expect(rendered).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
     end
 
     it "persists prompt_version_id for enhance-issue-goal runs" do
@@ -765,6 +767,16 @@ RSpec.describe Activities::RunAgentActivity do
       expect(Knowledge::ContextBundle::Build).not_to receive(:call)
 
       activity.send(:augment_prompt_for_issue_goal, run, "BuildForIssue-generated prompt with knowledge")
+    end
+
+    it "tells the agent to synthesize the issue instead of asking for drafting fields" do
+      run = create(:agent_run, :create_issue_goal, project: project, issue: issue)
+
+      prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create the issue")
+
+      expect(prompt).to match(/Synthesize the issue title, body,\s+and any appropriate labels/)
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
+      expect(prompt).to match(/When no labels are\s+clearly requested, omit them\./)
     end
   end
 
@@ -840,6 +852,22 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "A/B test goal prompt assignment" do
+    let(:large_decomposition_body) do
+      <<~TEXT
+        ## Feature: User Notification System
+
+        Redesign the notification system to support multiple channels.
+
+        ### Requirements
+        1. Create database migrations for notification preferences
+        2. Build service layer for dispatching notifications
+        3. Add API endpoints for managing preferences
+        4. Build dashboard UI for notification history
+        5. Add background jobs for async delivery
+        6. Implement caching for notification templates
+      TEXT
+    end
+
     it "assigns a running test before rendering the issue-goal prompt" do
       run = create(:agent_run, :create_issue_goal, project: project)
       ab_test = create_running_ab_test(slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
@@ -849,7 +877,8 @@ RSpec.describe Activities::RunAgentActivity do
       assignment = AbTestAssignment.find_by!(ab_test: ab_test, agent_run: run)
       assigned_version = assignment.ab_test_variant.prompt_version
 
-      expect(prompt).to eq(assigned_version.render(base_prompt: "Create a roadmap issue", repo: project.full_name))
+      expect(prompt).to include(assigned_version.render(base_prompt: "Create a roadmap issue", repo: project.full_name))
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(run.reload.prompt_version).to eq(assigned_version)
     end
 
@@ -863,25 +892,13 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
 
-      expect(prompt).to eq("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(run.reload.prompt_version).to eq(variant_version)
     end
 
-    it "appends decomposition instructions for assigned issue-goal variants that predate the placeholder" do
-      large_body = <<~TEXT
-        ## Feature: User Notification System
-
-        Redesign the notification system to support multiple channels.
-
-        ### Requirements
-        1. Create database migrations for notification preferences
-        2. Build service layer for dispatching notifications
-        3. Add API endpoints for managing preferences
-        4. Build dashboard UI for notification history
-        5. Add background jobs for async delivery
-        6. Implement caching for notification templates
-      TEXT
-      decompose_issue = create(:issue, project: project, body: large_body)
+    it "appends drafting and decomposition instructions for assigned issue-goal variants that predate them" do
+      decompose_issue = create(:issue, project: project, body: large_decomposition_body)
       run = create(:agent_run, :create_issue_goal, project: project, issue: decompose_issue)
       create_ab_test_assignment(
         slug: described_class::ISSUE_GOAL_PROMPT_SLUG,
@@ -892,6 +909,7 @@ RSpec.describe Activities::RunAgentActivity do
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
 
       expect(prompt).to include("variant Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(prompt).to include("Feature Decomposition")
       expect(prompt).to include("do NOT create any GitHub issue directly")
     end
@@ -939,7 +957,8 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_issue_goal, run, "Create a roadmap issue")
 
-      expect(prompt).to eq("assigned Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("assigned Create a roadmap issue #{project.full_name}")
+      expect(prompt).to include("Do NOT reply by asking the user to provide the issue type, title, description,")
       expect(run.reload.prompt_version).to eq(variant_version)
     end
   end
@@ -1774,7 +1793,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       def expect_prompt_echo_to_fail_without_rate_limit!(prompt:, output:)
-        allow(agent_run).to receive(:effective_prompt).and_return(prompt)
+        allow(activity).to receive(:effective_prompt_for).and_return(prompt)
         allow(container_service).to receive(:execute).and_return(output)
 
         expect {
@@ -2136,6 +2155,67 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when Claude hits the silent-startup heartbeat bug signature" do
+      let(:heartbeat_bug_diagnostics) do
+        {
+          "elapsed_seconds" => 370.5,
+          "output_received" => false,
+          "stdout_bytes" => 0,
+          "stderr_bytes" => 0,
+          "heartbeat_supported" => true,
+          "heartbeat_path_configured" => true,
+          "heartbeat_active" => nil,
+          "heartbeat_age_seconds" => nil
+        }
+      end
+
+      before do
+        user.provider_states.create!(provider_name: "claude", failure_count: 0, circuit_state: "closed")
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(container_service).to receive(:execute)
+          .and_raise(
+            Containers::Provision::StartupTimeoutError.new(
+              "No output received within 360 seconds",
+              diagnostics: heartbeat_bug_diagnostics
+            )
+          )
+      end
+
+      it "reclassifies the run as an execution failure instead of a timeout" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).to eq("All providers exhausted: claude_code")
+        expect(agent_run.providers_attempted.first).to include(
+          "provider" => "claude_code",
+          "error_type" => "error"
+        )
+        expect(agent_run.providers_attempted.first["error_message"])
+          .to include("known Claude heartbeat/MCP startup bug")
+      end
+
+      it "does not enqueue timeout queue processing for the false-positive timeout" do
+        expect {
+          expect {
+            activity.execute(agent_run_id: agent_run.id)
+          }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "does not increment the Claude provider circuit for the false-positive timeout" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        claude_provider_state = user.provider_states.find_by!(provider_name: "claude")
+        expect(claude_provider_state.failure_count).to eq(0)
+        expect(claude_provider_state.circuit_state).to eq("closed")
+      end
+    end
+
     context "when agent hits idle timeout" do
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
@@ -2156,8 +2236,8 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["diagnostics"]).to include(
           "timeout_type" => "idle",
           "effective_timeout_seconds" => 3600,
-          "startup_timeout_seconds" => 300,
-          "idle_timeout_seconds" => 300,
+          "startup_timeout_seconds" => 360,
+          "idle_timeout_seconds" => 360,
           "heartbeat_supported" => true
         )
       end
@@ -2338,20 +2418,26 @@ expect(container_service).to receive(:execute).with(
     end
 
     context "when no container is provisioned" do
-      it "raises an ApplicationError" do
+      it "fails the run and raises AllProvidersExhausted" do
         other_issue = create(:issue, project: project)
         run_no_container = create(:agent_run, :with_git_context, project: project, issue: other_issue, container_id: nil)
         allow(AgentRun).to receive(:find).with(run_no_container.id).and_return(run_no_container)
 
         expect {
           activity.execute(agent_run_id: run_no_container.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /No container provisioned/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        # The per-attempt record captures the real cause; the run is marked failed.
+        expect(run_no_container.reload.status).to eq("failed")
+        expect(run_no_container.providers_attempted).to include(
+          a_hash_including("error_type" => "error", "error_message" => a_string_matching(/No container provisioned/))
+        )
       end
     end
 
     it "raises an error when no prompt is available" do
       agent_run_no_prompt = create(:agent_run, :with_custom_prompt, project: project, container_id: "abc123")
-      allow(agent_run_no_prompt).to receive(:effective_prompt).and_return(nil)
+      allow(activity).to receive(:effective_prompt_for).and_return(nil)
       allow(AgentRun).to receive(:find).with(agent_run_no_prompt.id).and_return(agent_run_no_prompt)
 
       expect {
@@ -2790,10 +2876,28 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      def insert_bounded_timeout_logs(agent_run)
+        now = Time.current
+        rows = [ {
+          agent_run_id: agent_run.id,
+          log_type: "stderr",
+          content: "Free tier limit reached. Please upgrade for higher usage.",
+          created_at: now - 5.minutes
+        } ]
+        rows.concat(Array.new(201) do |index|
+          {
+            agent_run_id: agent_run.id,
+            log_type: "stdout",
+            content: "provider still warming up: #{index}",
+            created_at: now - index.seconds
+          }
+        end)
+        AgentRunLog.insert_all!(rows)
+      end
+
       it "does not reclassify timeout when quota message falls outside the bounded log scan window" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
-          agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
-          250.times { |index| agent_run.log!("stdout", "runner still warming up: #{index}") }
+          insert_bounded_timeout_logs(agent_run)
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 
@@ -2922,6 +3026,21 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_message"]).to include("credit/quota error")
       end
 
+      it "detects DeepSeek 'Insufficient Balance' as a quota error so provider fallback is triggered" do
+        deepseek_balance_failure = Containers::Provision::Result.success(
+          stdout: "> build · deepseek-v4-pro\nError: Insufficient Balance", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(deepseek_balance_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.providers_attempted.first["error_message"]).to include("credit/quota error")
+      end
+
       it "does not misclassify substantial agent output as a quota error when pattern appears in test descriptions" do
         long_stdout = (1..40).map { |i| "includes test case number #{i} for the billing and rate limit patterns" }.join("\n")
         long_output_success = Containers::Provision::Result.success(
@@ -2932,6 +3051,53 @@ expect(container_service).to receive(:execute).with(
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:success]).to be true
+      end
+
+      it "detects a short standalone rate limit error returned with exit code 0" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "Free model usage limit reached. Please try again later.", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "detects a weekly limit error returned with exit code 0" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32", stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "detects a short rate limit line wrapped in otherwise successful output" do
+        rate_limit_success = Containers::Provision::Result.success(
+          stdout: "OK.\nWeekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(rate_limit_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
       end
 
       it "detects ProviderModelNotFoundError returned with exit code 0" do
@@ -3036,6 +3202,38 @@ expect(container_service).to receive(:execute).with(
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
+      it "classifies kilocode glm free model usage limit wording as a rate limit" do
+        glm_rate_limit = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", stderr: "Free model usage limit reached. Please try again later.", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(glm_rate_limit)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
+      it "classifies weekly limit wording as a rate limit" do
+        weekly_rate_limit = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", stderr: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(weekly_rate_limit)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")

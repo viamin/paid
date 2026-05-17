@@ -89,6 +89,43 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("needs_input")
       end
 
+      it "classifies hidden provider quota output as provider_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("provider_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "classifies hidden infrastructure output as infrastructure_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run.log!("stderr", "bwrap: No permissions to create a new namespace")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "classifies hidden provider output from the most recent logs" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        5.times { |i| agent_run.log!("stdout", "progress line #{i}") }
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("provider_error")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
       it "enqueues ProcessRunQueueJob" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
@@ -101,7 +138,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     context "when output_present is true (recommend_close)" do
       it "sets issue paid_state to recommend_close" do
         issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -110,7 +148,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
       it "posts a recommend-close comment on the issue" do
         issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -120,16 +159,44 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
       it "does not add the paid-needs-input label" do
         issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).not_to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-needs-input" ])
+      end
+
+      it "adds the paid-recommend-close label so the issue surfaces for human review" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      it "uses the project-configured recommend_close label when set" do
+        custom_project = create(:project,
+          label_mappings: { "recommend_close" => "needs-review" },
+          automation_on_label_enabled: false)
+        issue = create(:issue, :in_progress, project: custom_project)
+        agent_run = create(:agent_run, :running, project: custom_project, issue: issue,
+          iterations: 3, cost_cents: 100)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_labels_to_issue)
+          .with(custom_project.full_name, issue.github_number, [ "needs-review" ])
       end
 
       it "returns outcome recommend_close" do
         issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -138,7 +205,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
       it "removes the needs-input label if present" do
         issue = create(:issue, :in_progress, project: project, labels: [ "paid-needs-input" ])
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -148,7 +216,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
       it "does not attempt to remove needs-input label when not present" do
         issue = create(:issue, :in_progress, project: project, labels: [])
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -187,7 +256,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
       it "removes the automation trigger label on recommend_close in batch" do
         issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
-        agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
+        agent_run = create(:agent_run, :running, project: auto_project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
@@ -224,7 +294,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
       it "skips posting recommend-close comment if marker already exists" do
         issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
 
         existing_comment = Struct.new(:body).new("<!-- paid:recommend-close -->\nOld comment")
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
@@ -340,6 +411,51 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(result[:outcome]).to eq("provider_error")
       end
+
+      it "detects free model usage limit wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects provider errors from stderr even when stdout contains trivial output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "OK.")
+        agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects weekly limit wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects DeepSeek insufficient balance wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "> build · deepseek-v4-pro\nError: Insufficient Balance")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
     end
 
     context "when output is present but agent hit infrastructure errors" do
@@ -403,6 +519,93 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(result[:outcome]).to eq("recommend_close")
       end
+
+      it "detects opencode ProviderModelNotFoundError as infrastructure error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Error: Model not found: glm-5.1/.\nProviderModelNotFoundError: ProviderModelNotFoundError")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+      end
+
+      it "transitions misconfigured opencode runs to failed for auto-pick retry" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "Error: Model not found: glm-5.1/.")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "does not match a bare 'model not found' phrase quoted in agent output" do
+        # The colon in /Model not found:/ guards against false-positives on
+        # natural-language mentions of the phrase that the agent might quote
+        # back from issue bodies or web fetches. With zero iterations and
+        # zero cost the agent did no real work, so the correct fallback is
+        # needs_input (not recommend_close).
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "The user reported a model not found bug last week")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("needs_input")
+      end
+
+      it "classifies trivial output with zero iterations and zero cost as needs_input" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "OK.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("needs_input")
+        expect(issue.reload.paid_state).to eq("needs_input")
+      end
+    end
+
+    context "when an issue cycles through outcomes (label hygiene)" do
+      it "clears a stale paid-recommend-close label when the next outcome is needs_input" do
+        issue = create(:issue, :in_progress, project: project,
+          labels: [ "paid-build", "paid-recommend-close" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-recommend-close")
+      end
+
+      it "skips remove_label_from_issue for paid-recommend-close when not present" do
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-build" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).not_to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-recommend-close")
+      end
+
+      it "is re-applied (idempotent) when a re-run produces the same recommend_close outcome" do
+        issue = create(:issue, :in_progress, project: project,
+          labels: [ "paid-build", "paid-recommend-close" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        # Same label is re-added; GitHub's add_labels_to_issue is idempotent.
+        expect(client).to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
     end
 
     context "when GitHub comment would contain provider error text" do
@@ -425,7 +628,9 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         agent_run = create(:agent_run, :running, project: project, issue: issue)
         agent_run.log!("stderr", "Some context\nrequires more credits\nMore context")
 
-        activity.execute(agent_run_id: agent_run.id, output_present: false)
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("needs_input")
 
         expect(client).to have_received(:add_comment) do |_repo, _number, body|
           expect(body).to include("Needs Input")

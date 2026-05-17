@@ -200,15 +200,20 @@ module Automation
       end
 
       def review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
-        decisions = [
-          Automation::Decision.record_review_goal_retry(
-            issue_id: signals.issue_id,
-            expected_review_goal_retry_count: signals.review_goal_retry_count
-          )
-        ]
-
         paid_decision = plugins.find { |p| p.name == :paid_agent }&.decision
+        retry_decision = Automation::Decision.record_review_goal_retry(
+          issue_id: signals.issue_id,
+          expected_review_goal_retry_count: signals.review_goal_retry_count
+        )
+        decisions =
+          if trigger_types.include?(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+            [ retry_decision ]
+          else
+            []
+          end
+
         decisions << paid_decision if paid_decision
+        decisions << retry_decision unless decisions.include?(retry_decision)
 
         if trigger_types.include?("ready_for_owner")
           sans_paid = without_trigger(signals, Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
@@ -254,6 +259,7 @@ module Automation
             Automation::Decision.queue_create_pr_run(
               issue_id: signals.issue_id,
               source_pull_request_number: signals.pr_number,
+              focus: signals.focus,
               count_toward_draft_review_round: true,
               expected_draft_review_count: signals.draft_review_count
             )
@@ -262,7 +268,8 @@ module Automation
           [
             Automation::Decision.queue_create_pr_run(
               issue_id: signals.issue_id,
-              source_pull_request_number: signals.pr_number
+              source_pull_request_number: signals.pr_number,
+              focus: signals.focus
             ),
             Automation::Decision.record_pr_followup(
               issue_id: signals.issue_id,
@@ -290,6 +297,7 @@ module Automation
           pr_number: signals.pr_number,
           phase: signals.phase,
           triggers: filtered.freeze,
+          focus: signals.focus,
           counters: signals.counters,
           owner_reviewer_login: signals.owner_reviewer_login,
           labels_to_remove: signals.labels_to_remove

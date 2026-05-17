@@ -107,6 +107,11 @@
           <%= check_box_tag "tenant_setting[agent_settings][auto_continue]", "1", agent_settings["auto_continue"] %>
           Auto-continue follow-up runs
         </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 sm:col-span-2">
+          <%= hidden_field_tag "tenant_setting[agent_settings][marketplace_auto_attach_required]", "0" %>
+          <%= check_box_tag "tenant_setting[agent_settings][marketplace_auto_attach_required]", "1", agent_settings["marketplace_auto_attach_required"] %>
+          Require automatic and team-default marketplace attachments on all account runs
+        </label>
       </div>
 
       <div class="mt-4 grid gap-4 sm:grid-cols-2">
@@ -115,6 +120,18 @@
           <%= text_field_tag "tenant_setting[self_repo_full_name]", @tenant_setting.self_repo_full_name, placeholder: "owner/repo", class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Repository that triggers auto dev-environment updates (e.g. owner/repo). Leave blank to disable.</p>
         </div>
+      </div>
+
+      <div class="mt-6">
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+          <%= hidden_field_tag "tenant_setting[auto_pick_skip_labels_override]", "0" %>
+          <%= check_box_tag "tenant_setting[auto_pick_skip_labels_override]", "1", @tenant_setting.auto_pick_skip_labels_configured? %>
+          Override Auto-pick Skip Labels
+        </label>
+        <%= text_field_tag "tenant_setting[auto_pick_skip_labels_csv]", @tenant_setting.auto_pick_skip_labels_csv,
+          placeholder: "planning, research",
+          class: "mt-2 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated labels that prevent auto-pick across this tenant. When override is off, Paid uses the built-in default skip labels. When override is on and this field is blank, no labels are skipped.</p>
       </div>
 
       <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">

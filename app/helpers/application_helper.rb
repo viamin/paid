@@ -328,23 +328,25 @@ module ApplicationHelper
     mobile_tooltip_wrapper(inner, context[:tooltip], tooltip_id, aria_label: "Show context details")
   end
 
+  AGENT_RUN_GOAL_LABEL_OVERRIDES = {
+    "create_pr" => "PR Creation",
+    "create_issue" => "Issue Creation",
+    "review" => "Code Review"
+  }.freeze
+
+  AGENT_RUN_GOAL_LABELS = AgentRun::GOALS.index_with do |goal|
+    AGENT_RUN_GOAL_LABEL_OVERRIDES.fetch(goal, goal.to_s.titleize)
+  end.freeze
+
   def agent_run_goal_display(run)
     text = agent_run_goal_text(run)
     return tag.span("-", class: "text-gray-400") if text.blank?
 
-    inner = tag.span(text, class: "min-w-0 block truncate", title: text)
-    mobile_tooltip_wrapper(inner, text, "goal_#{run.id}", aria_label: "Show goal")
+    tag.span(text, class: "min-w-0 block truncate")
   end
 
   def agent_run_goal_text(run)
-    return run.issue&.title if run.issue&.title.present?
-
-    if run.source_pull_request_number.present?
-      prefix = run.review_goal? ? "Review PR" : "PR"
-      return "#{prefix} ##{run.source_pull_request_number}"
-    end
-
-    redacted_goal_text(run.custom_prompt)
+    AGENT_RUN_GOAL_LABELS.fetch(run.goal, run.goal.to_s.titleize)
   end
 
   # Returns the best "back" URL: checks params[:return_to] first, then
@@ -389,13 +391,14 @@ module ApplicationHelper
     if run.issue.present?
       prefix = run.issue.is_pull_request? ? "PR" : "Issue"
       label = "#{prefix} ##{run.issue.github_number}"
-      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title.presence || label)
     elsif run.source_pull_request_number.present?
       url = source_pull_request_url(run)
       label = "PR ##{run.source_pull_request_number}"
-      github_link_or_text(label, label, url)
+      github_link_or_text(label, label, url, tooltip: source_pull_request_tooltip(run) || label)
     elsif run.pull_request_number.present?
-      github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
+      label = "PR ##{run.pull_request_number}"
+      github_link_or_text(label, label, run.pull_request_url, tooltip: label)
     elsif run.custom_prompt.present?
       redacted = redacted_goal_text(run.custom_prompt)
       if redacted.present?
@@ -418,7 +421,7 @@ module ApplicationHelper
   def create_issue_context(run)
     if safe_github_url?(run.created_issue_url)
       label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue"
-      { type: :link, label: label, url: run.created_issue_url }
+      { type: :link, label: label, url: run.created_issue_url, tooltip: created_issue_tooltip(run) || label }
     elsif run.custom_prompt.present?
       redacted = redacted_goal_text(run.custom_prompt)
       if redacted.present?
@@ -437,7 +440,7 @@ module ApplicationHelper
     if run.source_pull_request_number.present?
       url = source_pull_request_url(run)
       label = "PR ##{run.source_pull_request_number}"
-      github_link_or_text(label, label, url)
+      github_link_or_text(label, label, url, tooltip: source_pull_request_tooltip(run) || label)
     else
       { type: :placeholder }
     end
@@ -446,7 +449,7 @@ module ApplicationHelper
   def enhance_issue_context(run)
     if run.issue.present?
       label = "Issue ##{run.issue.github_number}"
-      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title.presence || label)
     else
       { type: :placeholder }
     end
@@ -515,6 +518,34 @@ module ApplicationHelper
     return nil unless run.source_pull_request_number.present? && run.project.present?
 
     "#{run.project.github_url}/pull/#{run.source_pull_request_number}"
+  end
+
+  def source_pull_request_tooltip(run)
+    issue_title_for(run, github_number: run.source_pull_request_number, is_pull_request: true)
+  end
+
+  def created_issue_tooltip(run)
+    issue_title_for(run, github_number: run.created_issue_number, is_pull_request: false)
+  end
+
+  def issue_title_for(run, github_number:, is_pull_request:)
+    return nil if github_number.blank?
+
+    if is_pull_request && run.respond_to?(:source_pull_request_record)
+      title = run.source_pull_request_record&.title
+      return title if title.present?
+
+      return nil
+    end
+
+    if !is_pull_request && run.respond_to?(:created_issue_record)
+      title = run.created_issue_record&.title
+      return title if title.present?
+
+      return nil
+    end
+
+    nil
   end
 
   def runner_display_for_identifier(identifier, runner: nil)

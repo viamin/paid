@@ -44,6 +44,103 @@
       </div>
     </div>
 
+    <% sparse_details = @stats[:sparse_details] %>
+    <% if sparse_details[:sparse_bundle_count].positive? || sparse_details[:sparse_experiment_count].positive? || sparse_details[:sparse_goal_count].positive? %>
+      <div class="mt-6 rounded-lg bg-yellow-50 p-4 ring-1 ring-inset ring-yellow-200">
+        <h2 class="text-sm font-semibold text-yellow-900">Sparse Evidence Summary</h2>
+        <p class="mt-1 text-sm text-yellow-800">
+          <% sparse_notes = [] %>
+          <% if sparse_details[:sparse_bundle_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_bundle_count], 'bundle')} below the 3-sample review threshold" %>
+          <% end %>
+          <% if sparse_details[:sparse_experiment_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_experiment_count], 'active experiment')} still #{sparse_details[:sparse_experiment_count] == 1 ? 'needs' : 'need'} more samples" %>
+          <% end %>
+          <% if sparse_details[:sparse_goal_count].positive? %>
+            <% sparse_notes << "#{pluralize(sparse_details[:sparse_goal_count], 'optimizer goal')} currently #{sparse_details[:sparse_goal_count] == 1 ? 'relies' : 'rely'} on sparse predictions" %>
+          <% end %>
+          <%= sparse_notes.join(". ") %>.
+        </p>
+      </div>
+    <% end %>
+
+    <% improvement = @stats[:outcome_improvement] %>
+    <% if improvement&.sufficient_data %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Outcome Improvement Trends</h2>
+      <p class="mt-1 text-sm text-gray-500">Tracks how the optimizer improves outcome-cost ratios over time by comparing early and recent runs.</p>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Objective Improvement</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.objective_improvement) %>">
+            <%= improvement_delta_label(improvement.objective_improvement) %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            Early <%= format_quality_score(improvement.early_objective_score) %> &rarr; Recent <%= format_quality_score(improvement.recent_objective_score) %>
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Quality / $ Improvement</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.quality_per_dollar_improvement) %>">
+            <%= improvement_delta_label(improvement.quality_per_dollar_improvement) %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            <%= improvement.early_quality_per_dollar ? number_with_precision(improvement.early_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %> &rarr; <%= improvement.recent_quality_per_dollar ? number_with_precision(improvement.recent_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %>
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Cost Change</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.cost_change_fraction, invert: true) %>">
+            <%= improvement_delta_label(improvement.cost_change_fraction) %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            <%= improvement.early_cost_cents ? format_cost_cents(improvement.early_cost_cents) : "--" %> &rarr; <%= improvement.recent_cost_cents ? format_cost_cents(improvement.recent_cost_cents) : "--" %>
+          </p>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Optimizer Learning</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight <%= improvement_delta_color(improvement.optimizer_learning_ratio) %>">
+            <%= improvement.optimizer_learning_ratio ? number_to_percentage(improvement.optimizer_learning_ratio * 100, precision: 1) : "--" %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">
+            Exploitative <%= improvement.exploitative_sample_count %> / Exploratory <%= improvement.exploratory_sample_count %> runs
+          </p>
+        </div>
+      </div>
+
+      <% if improvement.periods.length > 1 %>
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Period</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Outcomes</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Objective</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Quality</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Quality / $</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Success Rate</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% improvement.periods.each do |period| %>
+                <tr>
+                  <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= period.label %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.outcome_count %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(period.avg_objective_score) %>"><%= format_quality_score(period.avg_objective_score) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(period.avg_quality_score) %>"><%= format_quality_score(period.avg_quality_score) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.avg_quality_per_dollar ? number_with_precision(period.avg_quality_per_dollar, precision: 2, strip_insignificant_zeros: true) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= period.avg_cost_cents ? format_cost_cents(period.avg_cost_cents) : "--" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_to_percentage((period.success_rate || 0) * 100, precision: 0) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+    </div>
+    <% end %>
+
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Bundle Performance</h2>
       <p class="mt-1 text-sm text-gray-500">Top bundles ranked by the observed outcome-cost objective, with raw quality and efficiency shown alongside sparse evidence warnings.</p>
@@ -190,7 +287,7 @@
                   <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= bundle[:bundle].name %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_objective_score]) %>"><%= format_quality_score(bundle[:avg_objective_score]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm <%= quality_score_color(bundle[:avg_quality_score]) %>"><%= format_quality_score(bundle[:avg_quality_score]) %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= format_cost_cents(bundle[:avg_cost_cents]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= bundle[:avg_cost_cents] ? format_cost_cents(bundle[:avg_cost_cents]) : "--" %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500"><%= number_with_delimiter(bundle[:avg_tokens_used]) %></td>
                 </tr>
               <% end %>

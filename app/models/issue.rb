@@ -61,6 +61,7 @@ class Issue < ApplicationRecord
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
+  after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -70,12 +71,16 @@ class Issue < ApplicationRecord
   scope :pull_requests_only, -> { where(is_pull_request: true) }
   scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
+    # Match blocking_issues / lifecycle_statuses semantics: open dependencies
+    # excluding recommend_close (treated as effectively resolved pending
+    # human confirmation, so they should not gate downstream work).
     blocked_by_local_open = IssueDependency
       .joins(:issue, :depends_on_issue)
       .where(
         depends_on_issue: { github_state: "open" },
         issues: { project_id: project.id }
       )
+      .where.not(depends_on_issue: { paid_state: "recommend_close" })
       .select(:issue_id)
 
     # Deployment-blocked deps: target PR has merged/closed, but has not
@@ -176,6 +181,37 @@ class Issue < ApplicationRecord
     draft_review_count + pr_followup_count
   end
 
+  # Returns the unified progress state for this PR. Pass +current_head_sha+
+  # and +current_head_updated_at+ (the live PR head commit timestamp) to
+  # enable the "new PR head commit" reset condition. Without those
+  # parameters, only explicit reset markers and successful-run resets apply.
+  def pr_progress_state(current_head_sha: nil, current_head_updated_at: nil)
+    PullRequests::ProgressState.call(
+      project:, issue: self,
+      current_head_sha:, current_head_updated_at:
+    )
+  end
+
+  def consecutive_unsuccessful_pr_runs(**kwargs)
+    pr_progress_state(**kwargs).consecutive_unsuccessful_automatic_runs
+  end
+
+  def last_pr_meaningful_progress_at(**kwargs)
+    pr_progress_state(**kwargs).last_meaningful_progress_at
+  end
+
+  def pr_escalation_worthy?(limit:, **kwargs)
+    pr_progress_state(**kwargs).escalation_worthy?(limit:)
+  end
+
+  def pr_retryable?(limit:, **kwargs)
+    pr_progress_state(**kwargs).retryable?(limit:)
+  end
+
+  def pr_stuck?(limit:, stale_after:, **kwargs)
+    pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
+  end
+
   def associated_pull_request
     if sub_issues.loaded?
       open_prs = sub_issues.select { |si| si.is_pull_request? && si.github_state == "open" }
@@ -190,6 +226,10 @@ class Issue < ApplicationRecord
         .order(github_updated_at: :desc, updated_at: :desc)
         .first
     end
+  end
+
+  def needs_input?
+    paid_state == "needs_input" && has_label?(project.enhance_issue_needs_input_label_name)
   end
 
   def draft_phase?
@@ -209,10 +249,13 @@ class Issue < ApplicationRecord
   end
 
   def reset_review_goal_retry_breaker!
+    reset_at = Time.current
+
     update!(
       pr_review_phase: "ready",
       review_goal_retry_count: 0,
-      review_goal_retry_reset_at: Time.current
+      review_goal_retry_reset_at: reset_at,
+      operational_failure_reset_at: reset_at
     )
   end
 
@@ -316,7 +359,18 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
-    blocked_ids = blocked_by_local | blocked_by_deployment_pending | blocked_by_external
+    # Match auto-pick's without_open_non_pr_subissues semantics: a parent is
+    # blocked while it still has open non-PR sub-issues. Mirrors the
+    # dependency rule above by exempting recommend_close sub-issues.
+    blocked_by_open_subissues = where(
+      parent_issue_id: issue_ids,
+      is_pull_request: false,
+      github_state: "open"
+    ).where.not(paid_state: "recommend_close")
+      .pluck(:parent_issue_id)
+      .to_set
+
+    blocked_ids = blocked_by_local | blocked_by_deployment_pending | blocked_by_external | blocked_by_open_subissues
 
     active_run_ids = AgentRun
       .where(issue_id: issue_ids, status: AgentRun::UNFINISHED_STATUSES)
@@ -396,6 +450,13 @@ class Issue < ApplicationRecord
     self.class.open_paid_generated_prs_by_issue_id(project: project, issue_ids: [ id ])[id]
   end
 
+  def invalidate_pr_progress_state_cache!
+    # Progress is derived from agent-run history, so Issue-level memoization
+    # would go stale whenever runs change while the same Issue instance is
+    # still in memory. Keep the compatibility hook, but make it a no-op.
+    nil
+  end
+
   private
 
   CLOSING_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b/i
@@ -464,5 +525,41 @@ class Issue < ApplicationRecord
     else
       project.broadcast_issues_update
     end
+  end
+
+  def github_just_closed?
+    saved_change_to_github_state? && github_state == "closed"
+  end
+
+  def enqueue_newly_unblocked_dependents
+    auto_pick_enabled_dependents.find_each do |dependent|
+      next unless Issues::AutoPickProjectGate.call(dependent.project)
+      next unless Issue.ready_for_work(dependent.project).where(id: dependent.id).exists?
+
+      Rails.logger.info(
+        message: "enqueue_eligible.dependency_resolved",
+        blocker_issue_id: id,
+        blocker_issue_number: github_number,
+        dependent_issue_id: dependent.id,
+        dependent_issue_number: dependent.github_number,
+        project_id: dependent.project_id
+      )
+
+      Issues::EnqueueEligible.call(dependent, project: dependent.project, skip_project_gate: true)
+    rescue => e
+      Rails.logger.error(
+        message: "enqueue_eligible.dependency_resolution_failed",
+        issue_id: id,
+        dependent_issue_id: dependent.id,
+        error: e.message
+      )
+    end
+  end
+
+  def auto_pick_enabled_dependents
+    Issue
+      .includes(:project)
+      .joins(:project)
+      .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
   end
 end

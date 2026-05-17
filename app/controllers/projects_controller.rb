@@ -21,11 +21,14 @@ class ProjectsController < ApplicationController
 
   def show
     authorize @project
+    tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)
+    @external_links = @project.header_external_links(tracker_configuration: tracker_configuration)
     @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
     AgentRun.preload_final_runner_records(@recent_agent_runs)
     @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
     AgentRun.preload_source_pull_requests(@recent_agent_runs)
+    AgentRun.preload_created_issue_records(@recent_agent_runs)
     settings = current_user.settings
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
     @issues = open_items.issues_only.includes(:sub_issues).limit(settings.max_issues_per_page)
@@ -141,6 +144,7 @@ class ProjectsController < ApplicationController
 
     update_params = project_params
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
+    update_params = update_params.merge(auto_pick_skip_labels: parse_auto_pick_skip_labels) if auto_pick_skip_labels_param_submitted?
     update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
     update_params = update_params.merge(screenshot_settings: build_screenshot_settings) if params.dig(:project, :screenshot_settings)
     if screenshot_action_requested?
@@ -337,6 +341,7 @@ class ProjectsController < ApplicationController
       :auto_enhance_enabled,
       :knowledge_evolution_enabled,
       :auto_release_granularity,
+      auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)
   end
@@ -489,6 +494,21 @@ class ProjectsController < ApplicationController
 
   def parse_usernames_csv
     params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
+  def auto_pick_skip_labels_param_submitted?
+    raw = params[:project]
+    raw&.key?(:auto_pick_skip_labels) ||
+      raw&.key?(:auto_pick_skip_labels_csv) ||
+      raw&.key?(:auto_pick_skip_labels_override)
+  end
+
+  def parse_auto_pick_skip_labels
+    raw = params.require(:project)
+    return AutoPickSkipLabels.normalize(raw[:auto_pick_skip_labels]) if raw.key?(:auto_pick_skip_labels)
+    return nil unless ActiveModel::Type::Boolean.new.cast(raw[:auto_pick_skip_labels_override])
+
+    AutoPickSkipLabels.parse_csv(raw[:auto_pick_skip_labels_csv])
   end
 
   def load_screenshot_settings_context

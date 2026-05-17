@@ -1,9 +1,34 @@
 # frozen_string_literal: true
 
-if ENV.fetch("COVERAGE", "true") != "false"
+unless defined?(SpecRunMode)
+  module SpecRunMode
+    module_function
+
+    def focused?
+      scoped_args = ARGV.reject { |arg| arg == "--" }
+      return true if scoped_args.intersect?(%w[--only-failures --next-failure -e --example])
+
+      scoped_args.any? { |arg| spec_target?(arg) }
+    end
+
+    def spec_target?(arg)
+      arg.match?(%r{\A(?:\./)?(?:spec|\.ephemeral-tests)/.+(?:\.rb)?(?::\d+(?::\d+)?)?\z})
+    end
+  end
+end
+
+coverage_enabled = if ENV.key?("COVERAGE")
+  ENV["COVERAGE"] != "false"
+else
+  # DB-less verification runs intentionally execute only a small subset of the
+  # suite, so enforcing the global coverage floor there creates false failures.
+  ENV["ALLOW_DBLESS_SPECS"] != "true"
+end
+
+if coverage_enabled
   require "simplecov"
   SimpleCov.start "rails" do
-    minimum_coverage 80
+    minimum_coverage 80 unless SpecRunMode.focused?
     add_filter "/spec/"
     add_filter "/config/"
     add_filter "/vendor/"

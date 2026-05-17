@@ -25,9 +25,10 @@ function loadRunnerApiServiceType() {
 
 const RUNNER_API_SERVICE_TYPE = loadRunnerApiServiceType()
 
-// OpenCode and KiloCode support multiple upstream API providers, each with its
-// own API key type. The mapping is derived from data-service-type attributes on
-// the <option> elements rendered by the backend (Runner::DIRECT_OUTBOUND_API_PROVIDERS),
+// OpenCode, KiloCode, and Pi support multiple upstream API providers, each
+// with its own API key type. The mapping is derived from data-service-type
+// attributes on the <option> elements rendered by the backend
+// (Runner::DIRECT_OUTBOUND_API_PROVIDERS and Runner::PI_API_PROVIDERS),
 // keeping the backend as the single source of truth.
 function loadDirectOutboundApiProviderServiceTypes() {
   const selects = document.querySelectorAll(
@@ -51,7 +52,7 @@ function loadDirectOutboundApiProviderServiceTypes() {
 }
 
 // Runner keys that use dynamic api_provider selection.
-const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode"])
+const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "pi"])
 
 export default class extends Controller {
   static values = {
@@ -68,6 +69,7 @@ export default class extends Controller {
     "apiKeyOption",
     "opencodeSettings",
     "kilocodeSettings",
+    "piSettings",
     "directOutboundApiProviderSelect",
     "tierSettings",
     "tierSelect",
@@ -118,6 +120,7 @@ export default class extends Controller {
     const isApiKey = this.runnerApiKeyMode()
     const showOpenCodeSettings = isApiKey && runnerKey === "opencode"
     const showKiloCodeSettings = isApiKey && runnerKey === "kilocode"
+    const showPiSettings = isApiKey && runnerKey === "pi"
 
     this.opencodeSettingsTargets.forEach((el) => {
       el.hidden = !showOpenCodeSettings
@@ -130,6 +133,13 @@ export default class extends Controller {
       el.hidden = !showKiloCodeSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showKiloCodeSettings
+      })
+    })
+
+    this.piSettingsTargets.forEach((el) => {
+      el.hidden = !showPiSettings
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !showPiSettings
       })
     })
 
@@ -189,7 +199,7 @@ export default class extends Controller {
   requiredApiServiceTypeFor(runnerKey) {
     if (!runnerKey) return null
 
-    // OpenCode and KiloCode determine their required API key type from
+    // OpenCode, KiloCode, and Pi determine their required API key type from
     // the selected api_provider dropdown.
     if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
       const apiProvider = this.currentDirectOutboundApiProvider(runnerKey)

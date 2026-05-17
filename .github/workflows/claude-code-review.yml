@@ -6,16 +6,41 @@ on:
   repository_dispatch:
     types: [claude-review]
 
+concurrency:
+  group: claude-review-${{ github.event.client_payload.pr_number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     name: Claude Code Review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       checks: write
       contents: read
       pull-requests: write
       issues: write
       id-token: write
+    services:
+      postgres:
+        image: postgres:16.14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
+      DB_HOST: postgres
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
     steps:
       - name: Resolve pull request metadata
@@ -83,7 +108,7 @@ jobs:
       - name: Run Claude Code Review
         if: steps.pr.outputs.head_repo_fork != 'true'
         id: claude-review
-        uses: anthropics/claude-code-action@dde2242db6af13460b916652159b6ba19a598f30 # v1
+        uses: anthropics/claude-code-action@51ea8ea73a139f2a74ff649e3092c25a904aed7e # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
@@ -94,6 +119,8 @@ jobs:
           # share commit SHAs with the action repo.
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
+          # The action runs in a Docker container, so the Rails test database
+          # must be addressed by the service hostname rather than localhost.
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.client_payload.pr_number }}'
           allowed_bots: 'dependabot[bot]'
 

@@ -300,11 +300,14 @@ module Workflows
     def run_notification_rules(project_id, issue_ids:, pr_scan_result:)
       return unless Temporalio::Workflow.patched("notification-rules-v1")
 
+      pr_scan_result = normalize_scan_result(pr_scan_result)
+
       run_activity(Activities::EvaluateNotificationRulesActivity, {
         project_id: project_id,
         issue_ids: issue_ids,
         pr_issue_ids: Array(pr_scan_result&.dig(:pr_issue_ids)),
-        pending_review_states: Array(pr_scan_result&.dig(:pending_review_states))
+        pending_review_states: Array(pr_scan_result&.dig(:pending_review_states)),
+        pr_progress_states: Array(pr_scan_result&.dig(:pr_progress_states))
       }, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise
@@ -315,6 +318,12 @@ module Workflows
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    def normalize_scan_result(pr_scan_result)
+      return unless pr_scan_result.respond_to?(:with_indifferent_access)
+
+      pr_scan_result.with_indifferent_access
     end
 
     def handle_automation_result(result, project_id)
@@ -332,6 +341,7 @@ module Workflows
         count_toward_draft_review_round: decision.fetch(:count_toward_draft_review_round, false),
         expected_draft_review_count: decision[:expected_draft_review_count]
       }.compact
+      queue_input[:focus] = decision[:focus] || "general" if decision[:source_pull_request_number].present?
       queue_input.delete(:count_toward_draft_review_round) unless queue_input[:count_toward_draft_review_round]
 
       run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
@@ -344,7 +354,8 @@ module Workflows
         project_id: project_id,
         issue_id: decision[:issue_id],
         source_pull_request_number: decision[:source_pull_request_number],
-        goal: "review"
+        goal: "review",
+        focus: decision[:focus] || "general"
       }, timeout: 30)
     end
 
@@ -566,7 +577,8 @@ module Workflows
       run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: pr_data[:issue_id],
           source_pull_request_number: pr_data[:pr_number],
-          goal: "review" }, timeout: 30)
+          goal: "review",
+          focus: pr_data[:focus] || "general" }, timeout: 30)
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
@@ -641,7 +653,8 @@ module Workflows
         project_id: project_id,
         issue_id: issue_id,
         source_pull_request_number: pr_number,
-        goal: "review"
+        goal: "review",
+        focus: pr_data[:focus] || "general"
       }, timeout: 30)
 
       if trigger_types.include?("ready_for_owner")
@@ -781,6 +794,7 @@ module Workflows
         legacy_input = { project_id: project_id, issue_id: issue_id,
           source_pull_request_number: pr_number }
         legacy_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
+        legacy_input[:focus] = pr_data[:focus] if pr_data[:focus].present?
         run_activity(Activities::QueueAgentRunActivity, legacy_input, timeout: 30)
         run_activity(Activities::RecordDraftReviewActivity,
           {
@@ -794,6 +808,7 @@ module Workflows
         project_id: project_id,
         issue_id: issue_id,
         source_pull_request_number: pr_number,
+        focus: pr_data[:focus] || "general",
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
@@ -814,7 +829,8 @@ module Workflows
       }
 
       followup_queue_input = { project_id: project_id, issue_id: issue_id,
-        source_pull_request_number: pr_number }
+        source_pull_request_number: pr_number,
+        focus: pr_data[:focus] || "general" }
       followup_queue_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
       run_activity(Activities::QueueAgentRunActivity, followup_queue_input, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)

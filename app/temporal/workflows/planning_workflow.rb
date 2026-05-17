@@ -64,6 +64,7 @@ module Workflows
       tasks = []
       created_issues = []
       prompt_source = nil
+      policy_metadata = {}
       decision_step = "fetch_planning_context"
 
       # Step 1: Fetch knowledge base context for informed decomposition
@@ -89,6 +90,7 @@ module Workflows
 
       tasks = Array(decompose_result[:tasks])
       prompt_source = decompose_result[:prompt_source]
+      policy_metadata = decomposition_policy_metadata(decompose_result)
 
       # Step 3: Create sub-issues from the plan (skip if single-task or empty)
       if tasks.present? && tasks.size > 1
@@ -136,6 +138,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **policy_metadata,
           failed_step: nil,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity
@@ -155,6 +158,8 @@ module Workflows
       }
 
     rescue => e
+      policy_metadata = policy_metadata.presence || decomposition_policy_metadata_from_error(e)
+
       safe_log_decomposition_decision(
         project_id: project_id,
         issue_id: issue_id,
@@ -174,6 +179,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **policy_metadata,
           failed_step: decision_step,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity

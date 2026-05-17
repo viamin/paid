@@ -1,12 +1,13 @@
 <%= turbo_frame_tag "dashboard-decision-metrics" do %>
   <% summary = report[:summary] %>
   <% total_count = summary[:total_count].to_i %>
-  <% applied_count = summary[:applied_count].to_i %>
+  <% successful_count = summary[:successful_count].to_i %>
   <% noop_count = summary[:noop_count].to_i %>
   <% failed_count = summary[:failed_count].to_i %>
   <% project_count = summary[:project_count].to_i %>
   <% actor_count = summary[:actor_count].to_i %>
   <% daily_volume = report[:daily_volume] %>
+  <% status_breakdown = report[:status_breakdown] %>
   <% low_data = total_count.positive? && (total_count < 5 || project_count < 2 || daily_volume.size < 3) %>
 
   <div>
@@ -38,8 +39,9 @@
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= number_with_delimiter(total_count) %></dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-          <dt class="truncate text-sm font-medium text-gray-500">Applied</dt>
-          <dd class="mt-1 text-3xl font-semibold tracking-tight text-emerald-600"><%= number_with_delimiter(applied_count) %></dd>
+          <dt class="truncate text-sm font-medium text-gray-500">Successful</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-emerald-600"><%= number_with_delimiter(successful_count) %></dd>
+          <p class="mt-2 text-xs text-gray-500">Includes applied, deferred, and auto-resolved decisions.</p>
         </div>
         <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">No-op</dt>
@@ -70,7 +72,7 @@
             <p class="mt-1 text-sm text-gray-500">How often orchestration paths apply, skip work, or fail.</p>
             <div class="mt-4 space-y-4">
               <% [
-                [ "applied", applied_count ],
+                [ "successful", successful_count ],
                 [ "noop", noop_count ],
                 [ "failed", failed_count ]
               ].each do |status, count| %>
@@ -78,7 +80,7 @@
                 <div>
                   <div class="flex items-center justify-between gap-3">
                     <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= decision_status_badge_classes(status) %>">
-                      <%= status.titleize %>
+                      <%= status == "noop" ? "No-op" : status.titleize %>
                     </span>
                     <span class="text-sm font-medium text-gray-900"><%= number_with_delimiter(count) %> · <%= number_to_percentage(share, precision: 0) %></span>
                   </div>
@@ -129,14 +131,14 @@
         <div class="overflow-hidden rounded-lg bg-white shadow">
           <div class="px-4 py-5 sm:p-6">
             <h3 class="text-sm font-semibold text-gray-900">Outcomes by Decision Type</h3>
-            <p class="mt-1 text-sm text-gray-500">Where each decision category is landing across applied, no-op, and failed outcomes.</p>
+            <p class="mt-1 text-sm text-gray-500">Where each decision category is landing across successful, no-op, and failed outcomes.</p>
           </div>
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Applied</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Successful</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">No-op</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Failed</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
@@ -146,7 +148,7 @@
                 <% report[:outcome_by_decision_type].first(5).each do |row| %>
                   <tr>
                     <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= decision_type_label(row[:decision_type]) %></td>
-                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:applied_count]) %></td>
+                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:successful_count]) %></td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:noop_count]) %></td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:failed_count]) %></td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:total_count]) %></td>
@@ -170,7 +172,7 @@
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Decisions</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Projects</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Types</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Applied</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Successful</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Failed</th>
                 </tr>
               </thead>
@@ -181,7 +183,7 @@
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:total_count]) %></td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:project_count]) %></td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:decision_type_count]) %></td>
-                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:applied_count]) %></td>
+                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:successful_count]) %></td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:failed_count]) %></td>
                   </tr>
                 <% end %>
@@ -204,7 +206,7 @@
                 <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Decisions</th>
                 <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Types</th>
                 <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Actors</th>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Applied</th>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Successful</th>
                 <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Failed</th>
               </tr>
             </thead>
@@ -218,7 +220,7 @@
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:total_count]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:decision_type_count]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:actor_count]) %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:applied_count]) %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:successful_count]) %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:failed_count]) %></td>
                 </tr>
               <% end %>
@@ -227,12 +229,45 @@
         </div>
       </div>
 
+      <% if status_breakdown.any? %>
+        <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-sm font-semibold text-gray-900">Recorded Decision Statuses</h3>
+            <p class="mt-1 text-sm text-gray-500">Raw statuses preserve orchestration-specific states such as deferred or auto-resolved decisions for later policy learning.</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Grouped As</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Decisions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% status_breakdown.each do |row| %>
+                  <tr>
+                    <td class="px-4 py-3 text-sm text-gray-900">
+                      <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= decision_status_badge_classes(decision_status_group(row[:decision_status])) %>">
+                        <%= decision_status_label(row[:decision_status]) %>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-600"><%= row[:analytics_group] == "noop" ? "No-op" : row[:analytics_group].titleize %></td>
+                    <td class="px-4 py-3 text-sm text-gray-600"><%= number_with_delimiter(row[:total_count]) %></td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      <% end %>
+
       <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
         <div class="px-4 py-5 sm:p-6">
           <h3 class="text-sm font-semibold text-gray-900">Decision Volume Over Time</h3>
           <p class="mt-1 text-sm text-gray-500">
             <% if daily_volume.size >= 2 %>
-              Daily decision counts split by applied, no-op, and failed outcomes.
+              Daily decision counts split by successful, no-op, and failed outcomes.
             <% else %>
               Not enough daily history yet for a useful trend view.
             <% end %>
@@ -241,8 +276,8 @@
             <div class="mt-4">
               <%= column_chart [
                 {
-                  name: "Applied",
-                  data: daily_volume.to_h { |row| [row[:day], row[:applied_count]] }
+                  name: "Successful",
+                  data: daily_volume.to_h { |row| [row[:day], row[:successful_count]] }
                 },
                 {
                   name: "No-op",

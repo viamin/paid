@@ -17,6 +17,7 @@ class DashboardController < ApplicationController
       .limit(20)
     AgentRun.preload_final_runner_records(@active_runs)
     AgentRun.preload_source_pull_requests(@active_runs)
+    AgentRun.preload_created_issue_records(@active_runs)
     @paused_runs = live_agent_runs.paused.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order(paused_at: :desc, created_at: :desc)
       .limit(20)

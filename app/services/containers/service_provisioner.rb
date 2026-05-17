@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "socket"
 require "uri"
 
 module Containers
@@ -106,7 +105,7 @@ module Containers
       return {} if service_containers.empty?
 
       @network = network
-      NetworkPolicy.ensure_network!(network: @network)
+      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)
@@ -215,7 +214,7 @@ module Containers
         adopted = true
         ensure_connected_to_network!(service_container)
       else
-        docker_container.start
+        Containers.backend.start_container(docker_container)
         service_container.update!(docker_container_id: docker_container.id, status: "running")
       end
 
@@ -235,13 +234,13 @@ module Containers
     def stop_container!(service_container)
       if service_container.docker_container_id.present?
         begin
-          container = Docker::Container.get(service_container.docker_container_id)
+          container = Containers.backend.get_container(service_container.docker_container_id)
           begin
-            container.stop(timeout: 10)
+            Containers.backend.stop_container(container, timeout: 10)
           rescue Docker::Error::NotFoundError, Docker::Error::ClientError
             # Already stopped or gone
           end
-          container.delete(force: true, v: true)
+          Containers.backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
         rescue Docker::Error::DockerError => e
@@ -258,13 +257,13 @@ module Containers
       container_id = docker_container&.id || service_container.docker_container_id
       if container_id.present?
         begin
-          container = Docker::Container.get(container_id)
+          container = Containers.backend.get_container(container_id)
           begin
-            container.stop(timeout: 10)
+            Containers.backend.stop_container(container, timeout: 10)
           rescue Docker::Error::NotFoundError, Docker::Error::ClientError
             # Already stopped or gone
           end
-          container.delete(force: true, v: true)
+          Containers.backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Container already gone
         rescue Docker::Error::DockerError => docker_err
@@ -288,7 +287,7 @@ module Containers
     end
 
     def resolve_name_conflict!(service_container)
-      existing = Docker::Container.get(runtime_name(service_container))
+      existing = Containers.backend.get_container(runtime_name(service_container))
       info = existing.json
       labels = info.dig("Config", "Labels") || {}
 
@@ -317,14 +316,14 @@ module Containers
 
     def remove_stale_container!(existing, name)
       begin
-        existing.stop(timeout: 10)
+        Containers.backend.stop_container(existing, timeout: 10)
       rescue Docker::Error::NotFoundError
         # Already gone
       rescue Docker::Error::DockerError => e
         log_warn("service_provisioner.stale_container_stop_failed",
           name: name, error: e.message)
       end
-      existing.delete(force: true, v: true)
+      Containers.backend.delete_container(existing, force: true, v: true)
       log_info("service_provisioner.stale_container_removed", name: name)
     rescue Docker::Error::NotFoundError
       # Container disappeared during cleanup; already removed.
@@ -363,7 +362,7 @@ module Containers
       healthcheck = healthcheck_for(service_container, env)
       options["Healthcheck"] = healthcheck if healthcheck
 
-      Docker::Container.create(options)
+      Containers.backend.create_container(options)
     end
 
     def container_env_for(service_container)
@@ -408,7 +407,7 @@ module Containers
     end
 
     def pull_image(image)
-      Docker::Image.create("fromImage" => image)
+      Containers.backend.pull_image("fromImage" => image)
     rescue Docker::Error::NotFoundError
       raise Error, "Image not found: #{image}"
     rescue Docker::Error::DockerError => e
@@ -418,6 +417,7 @@ module Containers
     def wait_for_health!(service_container)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
       has_healthcheck = nil # nil = unknown, true/false once determined
+      docker_container = Containers.backend.get_container(service_container.docker_container_id)
 
       loop do
         # Only query Docker HEALTHCHECK when we haven't confirmed its absence.
@@ -434,7 +434,9 @@ module Containers
         end
 
         # Fall back to TCP probe when no Docker HEALTHCHECK is configured.
-        if has_healthcheck == false && tcp_port_open?(runtime_name(service_container), service_container.port)
+        # Service containers (postgres, redis) should always have probe tools,
+        # so we pass fallback_on_missing_tools: false to avoid false-healthy.
+        if has_healthcheck == false && tcp_port_open?(service_container, docker_container: docker_container)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -455,7 +457,7 @@ module Containers
     def docker_healthcheck_status(service_container)
       return nil if service_container.docker_container_id.blank?
 
-      container = Docker::Container.get(service_container.docker_container_id)
+      container = Containers.backend.get_container(service_container.docker_container_id)
       health_status = container.json.dig("State", "Health", "Status")
       return nil if health_status.nil?
 
@@ -464,25 +466,30 @@ module Containers
       nil
     end
 
-    def tcp_port_open?(host, port)
-      socket = Socket.tcp(host, port, connect_timeout: HEALTH_CHECK_INTERVAL)
-      socket.close
-      true
-    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ETIMEDOUT, SocketError
+    def tcp_port_open?(service_container, docker_container: nil, fallback_on_missing_tools: false)
+      docker_container ||= Containers.backend.get_container(service_container.docker_container_id)
+      Containers::TcpHealthProbe.open?(
+        backend: Containers.backend,
+        container: docker_container,
+        host: runtime_name(service_container),
+        port: service_container.port,
+        fallback_on_missing_tools: fallback_on_missing_tools
+      )
+    rescue Docker::Error::DockerError, Excon::Error
       false
     end
 
     def docker_container_alive?(container_id)
       return false if container_id.blank?
 
-      container = Docker::Container.get(container_id)
+      container = Containers.backend.get_container(container_id)
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError, Excon::Error
       false
     end
 
     def ensure_connected_to_network!(service_container)
-      container = Docker::Container.get(service_container.docker_container_id)
+      container = Containers.backend.get_container(service_container.docker_container_id)
       networks = container.info.dig("NetworkSettings", "Networks") || {}
       endpoint = networks.fetch(@network, nil)
       host = runtime_name(service_container)
@@ -491,7 +498,7 @@ module Containers
         return
       end
 
-      network = Docker::Network.get(@network)
+      network = Containers.backend.get_network(@network)
       network.disconnect(container.id) if endpoint
       network.connect(
         container.id,
@@ -560,8 +567,8 @@ module Containers
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
       admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
-      container = Docker::Container.get(service_container.docker_container_id)
-      stdout, stderr, status = container.exec([
+      container = Containers.backend.get_container(service_container.docker_container_id)
+      stdout, stderr, status = Containers.backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT 1 FROM pg_database WHERE datname = #{postgres_string_literal(db_name)}"
       ])
@@ -572,7 +579,7 @@ module Containers
 
       # Create only if it doesn't already exist (idempotent for retries)
       if stdout.join.exclude?("1 row")
-        stdout, stderr, status = container.exec([
+        stdout, stderr, status = Containers.backend.exec_in_container(container, [
           "psql", "-U", user, "-d", admin_db, "-c",
           "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(user)}"
         ])
@@ -651,15 +658,15 @@ module Containers
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
       admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
-      container = Docker::Container.get(service_container.docker_container_id)
+      container = Containers.backend.get_container(service_container.docker_container_id)
 
       # Terminate active connections before dropping
-      container.exec([
+      Containers.backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{postgres_string_literal(db_name)} AND pid <> pg_backend_pid()"
       ])
 
-      _stdout, stderr, status = container.exec([
+      _stdout, stderr, status = Containers.backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "DROP DATABASE IF EXISTS #{postgres_identifier(db_name)}"
       ])

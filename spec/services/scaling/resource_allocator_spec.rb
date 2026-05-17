@@ -33,6 +33,82 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
     )
   end
 
+  def measured_return_summary(agent_count: 2, sample_count: 18, reason: "best_success_rate_before_threshold")
+    {
+      "dimension" => "parallelism",
+      "sample_count" => sample_count,
+      "parallelism_analysis" => {
+        "status" => "ready",
+        "sample_count" => sample_count,
+        "allocator_decision" => {
+          "requested_agent_count" => agent_count,
+          "max_batch_size" => agent_count,
+          "reason" => reason
+        }
+      }
+    }
+  end
+
+  def experiment_value_summary(
+    assigned_value:,
+    success_rate:,
+    avg_duration_seconds:,
+    sample_count:,
+    avg_agent_count_planned: nil,
+    agent_launch_success_rate: nil,
+    blocked_task_rate: nil,
+    avg_agent_count_launched: nil,
+    avg_agent_count_blocked: nil
+  )
+    {
+      "assigned_value" => assigned_value,
+      "success_rate" => success_rate,
+      "avg_duration_seconds" => avg_duration_seconds,
+      "sample_count" => sample_count,
+      "avg_agent_count_planned" => avg_agent_count_planned,
+      "agent_launch_success_rate" => agent_launch_success_rate,
+      "blocked_task_rate" => blocked_task_rate,
+      "avg_agent_count_launched" => avg_agent_count_launched,
+      "avg_agent_count_blocked" => avg_agent_count_blocked
+    }.compact
+  end
+
+  def measured_return_experiment_summary(values:, **overrides)
+    measured_return_summary.deep_merge(
+      {
+        "status" => "ready_for_analysis",
+        "values" => values
+      }.merge(overrides)
+    )
+  end
+
+  def measured_return_experiment_values
+    [
+      experiment_value_summary(
+        assigned_value: 2,
+        success_rate: 0.95,
+        avg_duration_seconds: 140,
+        sample_count: 9,
+        avg_agent_count_planned: 2.0,
+        agent_launch_success_rate: 1.0,
+        blocked_task_rate: 0.0,
+        avg_agent_count_launched: 2.0,
+        avg_agent_count_blocked: 0.0
+      ),
+      experiment_value_summary(
+        assigned_value: 4,
+        success_rate: 1.0,
+        avg_duration_seconds: 120,
+        sample_count: 9,
+        avg_agent_count_planned: 4.0,
+        agent_launch_success_rate: 0.7,
+        blocked_task_rate: 0.25,
+        avg_agent_count_launched: 2.8,
+        avg_agent_count_blocked: 1.0
+      )
+    ]
+  end
+
   def observation_class
     Struct.new(
       :workflow_id,
@@ -70,7 +146,7 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.source).to eq(:fallback)
         expect(result.agent_count).to be_positive
         expect(result.max_iterations).to be_positive
-        expect(result.reason).to include("insufficient observations")
+        expect(result.reason).to include("insufficient fresh observations")
       end
 
       it "clamps agent count to task_count as a safe default" do
@@ -103,6 +179,19 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         result = described_class.call(inputs: default_inputs, observations: observations)
         expect(result.source).to eq(:fallback)
       end
+
+      it "uses experiment guidance when fresh observations are too sparse to score safely" do
+        observations = 5.times.map.with_index(1) do |_index, agent_count|
+          build_observation(agent_count: agent_count, success: true, duration_seconds: 120 + agent_count)
+        end
+        summaries = [ measured_return_summary ]
+
+        result = described_class.call(inputs: default_inputs, observations: observations, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("measured returns")
+      end
     end
 
     context "with stale observations" do
@@ -131,6 +220,22 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
 
         expect(result.source).to eq(:observations)
         expect(result.agent_count).to eq(2)
+      end
+    end
+
+    context "with sparse leading cohorts" do
+      it "ignores under-supported cohorts when deriving return signals" do
+        observations = [
+          build_observation(agent_count: 1, success: true, total_cost_cents: 50, duration_seconds: 60),
+          *3.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 120, duration_seconds: 120) },
+          *3.times.map { build_observation(agent_count: 4, success: true, total_cost_cents: 150, duration_seconds: 90) }
+        ]
+
+        result = described_class.call(inputs: default_inputs, observations: observations)
+
+        expect(result.source).to eq(:observations)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("signals=none")
       end
     end
 
@@ -181,6 +286,95 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
     end
 
     context "with experiment summaries but no observations" do
+      it "prefers measured-return allocator guidance from experiment analysis" do
+        summaries = [
+          measured_return_experiment_summary(values: measured_return_experiment_values)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("measured returns recommended agent_count=2")
+      end
+
+      it "prefers cached measured-return analysis over mirrored top-level allocator decisions" do
+        summaries = [
+          measured_return_experiment_summary(
+            values: measured_return_experiment_values,
+            "allocator_decision" => {
+              "requested_agent_count" => 4,
+              "max_batch_size" => 4,
+              "sample_count" => 9,
+              "confidence" => "high"
+            }
+          )
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("measured returns recommended agent_count=2")
+      end
+
+      it "combines agent-count, parallelism, and iteration experiment decisions" do
+        result = described_class.call(
+          inputs: default_inputs,
+          experiment_summaries: experiment_decision_summaries
+        )
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(3)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.max_iterations).to eq(4)
+        expect(result.reason).to include("agent_count decision")
+        expect(result.reason).to include("parallelism decision")
+        expect(result.reason).to include("iteration_count decision")
+      end
+
+      it "picks the strongest decision per dimension when duplicates exist" do
+        low_confidence = build_experiment_decision_summary("agent_count",
+          recommended_value: 9, requested_agent_count: 9,
+          sample_count: 6, confidence: "low")
+        high_confidence = build_experiment_decision_summary("agent_count",
+          recommended_value: 2, requested_agent_count: 2,
+          sample_count: 10, confidence: "high")
+        parallelism = build_experiment_decision_summary("parallelism",
+          recommended_value: 3, requested_agent_count: 2, max_batch_size: 3,
+          sample_count: 6, confidence: "medium")
+
+        result = described_class.call(
+          inputs: default_inputs,
+          experiment_summaries: [ low_confidence, high_confidence, parallelism ]
+        )
+
+        expect(result.agent_count).to eq(2)
+      end
+
+      it "normalizes string allocator decisions from measured-return analyses" do
+        summaries = [
+          measured_return_experiment_summary(
+            values: measured_return_experiment_values,
+            "parallelism_analysis" => {
+              "status" => "ready",
+              "sample_count" => 18,
+              "allocator_decision" => {
+                "requested_agent_count" => "2",
+                "max_batch_size" => "2",
+                "reason" => "best_success_rate_before_threshold"
+              }
+            }
+          )
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.parallelism_level).to eq(2)
+      end
+
       it "allocates based on the experiment's leading value" do
         summaries = [
           { assigned_value: 1, success_rate: 0.4, avg_duration_seconds: 300, sample_count: 10 },
@@ -199,6 +393,30 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         summaries = [
           { "assigned_value" => 1, "success_rate" => 0.4, "avg_duration_seconds" => 300, "sample_count" => 10 },
           { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 10 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+      end
+
+      it "normalizes string agent-count values from experiment summaries" do
+        summaries = [
+          { "assigned_value" => "1", "success_rate" => 0.4, "avg_duration_seconds" => 300, "sample_count" => 10 },
+          { "assigned_value" => "2", "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 10 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+      end
+
+      it "normalizes string sample counts from experiment summaries" do
+        summaries = [
+          { "assigned_value" => 1, "success_rate" => 0.4, "avg_duration_seconds" => 300, "sample_count" => "10" },
+          { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => "10" }
         ]
 
         result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
@@ -248,9 +466,228 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.agent_count).to eq(1)
       end
 
+      it "avoids experiment values that show blocked capacity and launch shortfalls" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.95, avg_duration_seconds: 140, sample_count: 10, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0, avg_agent_count_launched: 2.0, avg_agent_count_blocked: 0.0 },
+          { assigned_value: 4, success_rate: 1.0, avg_duration_seconds: 100, sample_count: 10, agent_launch_success_rate: 0.7, blocked_task_rate: 0.25, avg_agent_count_launched: 2.8, avg_agent_count_blocked: 1.0 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "derives capacity thresholds from planned-versus-launched counts when experiment rates use different denominators" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.95, avg_duration_seconds: 140, sample_count: 10, avg_agent_count_planned: 2.0, avg_agent_count_launched: 2.0, avg_agent_count_blocked: 0.0 },
+          { assigned_value: 4, success_rate: 1.0, avg_duration_seconds: 100, sample_count: 10, avg_agent_count_planned: 4.0, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0, avg_agent_count_launched: 2.0, avg_agent_count_blocked: 2.0 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "uses planned agent counts instead of assigned values for non-agent-count experiments" do
+        summaries = [
+          {
+            "status" => "ready_for_analysis",
+            "dimension" => "parallelism",
+            "sample_count" => 20,
+            "values" => [
+              { "assigned_value" => 2, "success_rate" => 0.95, "avg_duration_seconds" => 140, "sample_count" => 10, "avg_agent_count_planned" => 4.0, "avg_agent_count_launched" => 4.0, "avg_agent_count_blocked" => 0.0 },
+              { "assigned_value" => 4, "success_rate" => 1.0, "avg_duration_seconds" => 100, "sample_count" => 10, "avg_agent_count_planned" => 4.0, "avg_agent_count_launched" => 2.0, "avg_agent_count_blocked" => 2.0 }
+            ]
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("leading value=2")
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "falls back to explicit experiment rates when count metrics are absent" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.95, avg_duration_seconds: 140, sample_count: 10, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0 },
+          { assigned_value: 4, success_rate: 1.0, avg_duration_seconds: 100, sample_count: 10, agent_launch_success_rate: 0.7, blocked_task_rate: 0.25 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "falls back to explicit experiment rates when summarized planned counts are zero" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.95, avg_duration_seconds: 140, sample_count: 10, avg_agent_count_planned: 0.0, avg_agent_count_launched: 2.0, avg_agent_count_blocked: 0.0, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0 },
+          { assigned_value: 4, success_rate: 1.0, avg_duration_seconds: 100, sample_count: 10, avg_agent_count_planned: 0.0, avg_agent_count_launched: 2.8, avg_agent_count_blocked: 1.0, agent_launch_success_rate: 0.7, blocked_task_rate: 0.25 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "ignores partial count metrics when older experiment summaries only provide explicit rates" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.9, avg_duration_seconds: 140, sample_count: 10, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0 },
+          { assigned_value: 4, success_rate: 0.95, avg_duration_seconds: 100, sample_count: 20, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0 },
+          { assigned_value: 4, success_rate: 0.95, avg_duration_seconds: 100, sample_count: 1, avg_agent_count_launched: 2.0, avg_agent_count_blocked: 2.0 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(4)
+        expect(result.reason).to include("leading value=4")
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "does not dilute explicit threshold signals with older summaries that omit the rate metrics" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.9, avg_duration_seconds: 140, sample_count: 10, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0 },
+          { assigned_value: 4, success_rate: 0.95, avg_duration_seconds: 100, sample_count: 10, agent_launch_success_rate: 0.7, blocked_task_rate: 0.25 },
+          { assigned_value: 4, success_rate: 0.95, avg_duration_seconds: 100, sample_count: 10 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("leading value=2")
+        expect(result.reason).to include("signals=none")
+      end
+
+      it "weights duplicate experiment summaries by sample count when collapsing a value" do
+        summaries = [
+          { assigned_value: 2, success_rate: 0.98, avg_duration_seconds: 130, avg_cost_cents: 200, avg_parallelism_observed: 2.0, sample_count: 100, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0, avg_agent_count_launched: 2.0, avg_agent_count_blocked: 0.0 },
+          { assigned_value: 2, success_rate: 0.05, avg_duration_seconds: 400, avg_cost_cents: 600, avg_parallelism_observed: 1.0, sample_count: 5, agent_launch_success_rate: 0.5, blocked_task_rate: 0.5, avg_agent_count_launched: 1.0, avg_agent_count_blocked: 1.0 },
+          { assigned_value: 4, success_rate: 0.85, avg_duration_seconds: 120, avg_cost_cents: 450, avg_parallelism_observed: 4.0, sample_count: 40, agent_launch_success_rate: 1.0, blocked_task_rate: 0.0, avg_agent_count_launched: 4.0, avg_agent_count_blocked: 0.0 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("leading value=2")
+        expect(result.reason).to include("signals=none")
+      end
+
       it "falls back when experiment sample counts are too low" do
         summaries = [
           { assigned_value: 2, success_rate: 0.9, avg_duration_seconds: 100, sample_count: 2 }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+      end
+
+      it "ignores measured-return decisions from experiments still collecting" do
+        summaries = [
+          {
+            "dimension" => "parallelism",
+            "status" => "collecting",
+            "sample_count" => 18,
+            "parallelism_analysis" => {
+              "status" => "ready",
+              "sample_count" => 18,
+              "allocator_decision" => {
+                "requested_agent_count" => 6,
+                "max_batch_size" => 6,
+                "reason" => "best_success_rate_before_threshold"
+              }
+            }
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+      end
+
+      it "ignores measured-return decisions from sparse parallelism analyses" do
+        summaries = [
+          {
+            "dimension" => "parallelism",
+            "sample_count" => 3,
+            "parallelism_analysis" => {
+              "status" => "ready",
+              "sample_count" => 3,
+              "allocator_decision" => {
+                "requested_agent_count" => 6,
+                "max_batch_size" => 6,
+                "reason" => "best_success_rate_before_threshold"
+              }
+            }
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+      end
+
+      it "ignores measured-return decisions whose winning candidate is under-supported" do
+        summaries = [
+          {
+            "dimension" => "parallelism",
+            "sample_count" => 12,
+            "parallelism_analysis" => {
+              "status" => "ready",
+              "sample_count" => 12,
+              "allocator_decision" => {
+                "requested_agent_count" => 6,
+                "max_batch_size" => 6,
+                "sample_count" => 2,
+                "reason" => "best_success_rate_before_threshold"
+              }
+            }
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+      end
+
+      it "falls back when measured-return decisions use malformed count values" do
+        summaries = [
+          {
+            "dimension" => "parallelism",
+            "status" => "ready_for_analysis",
+            "sample_count" => 12,
+            "parallelism_analysis" => {
+              "status" => "ready",
+              "sample_count" => "twelve",
+              "allocator_decision" => {
+                "requested_agent_count" => "many",
+                "max_batch_size" => "many",
+                "sample_count" => "twelve"
+              }
+            }
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+      end
+
+      it "falls back when all usable experiment summaries produce an empty grouped hash" do
+        summaries = [
+          { success_rate: 0.8, avg_duration_seconds: 100, sample_count: 10 }
         ]
 
         result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
@@ -287,7 +724,45 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.source).to eq(:experiment)
         expect(result.agent_count).to eq(4)
         expect(result.parallelism_level).to eq(2)
-        expect(result.reason).to include("parallelism allocator decision")
+        expect(result.reason).to include("parallelism decision")
+      end
+
+      it "uses top-level allocator decisions even when value summaries are too sparse to rank safely" do
+        summaries = [
+          parallelism_experiment_summary.deep_merge(
+            "values" => [
+              { "assigned_value" => 2, "success_rate" => 0.8, "avg_duration_seconds" => 150, "sample_count" => 2, "avg_cost_cents" => 100.0 }
+            ]
+          )
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(4)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("parallelism decision")
+      end
+
+      it "normalizes string sample counts in top-level allocator decisions" do
+        summaries = [
+          parallelism_experiment_summary.deep_merge(
+            "sample_count" => "12",
+            "allocator_decision" => {
+              "requested_agent_count" => "4",
+              "max_batch_size" => "2",
+              "sample_count" => "6",
+              "confidence" => "high"
+            }
+          )
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(4)
+        expect(result.parallelism_level).to eq(2)
+        expect(result.reason).to include("parallelism decision")
       end
 
       it "ignores allocator decisions whose winning candidate is under-supported even when the summary total is sufficient" do
@@ -340,6 +815,34 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.reason).not_to include("allocator decision")
       end
 
+      it "ignores measured-return decisions from non-parallelism dimensions even when parallelism analysis is cached" do
+        result = described_class.call(
+          inputs: default_inputs,
+          experiment_summaries: [ non_parallelism_summary_with_cached_parallelism_analysis ]
+        )
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).not_to eq(8)
+        expect(result.reason).not_to include("measured returns")
+        expect(result.reason).not_to include("allocator decision")
+      end
+
+      it "ignores malformed experiment value identifiers and falls back safely" do
+        summaries = [
+          {
+            "status" => "ready_for_analysis",
+            "values" => [
+              { "assigned_value" => "two", "success_rate" => 0.95, "avg_duration_seconds" => 140, "sample_count" => 10 },
+              { "assigned_value" => "four", "success_rate" => 1.0, "avg_duration_seconds" => 100, "sample_count" => 10 }
+            ]
+          }
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:fallback)
+      end
+
       it "ignores allocator decisions from summaries that are not ready_for_analysis" do
         summaries = [
           parallelism_experiment_summary.merge("status" => "collecting"),
@@ -351,6 +854,24 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         expect(result.source).to eq(:experiment)
         expect(result.agent_count).to eq(2)
         expect(result.reason).not_to include("allocator decision")
+      end
+
+      it "ignores grouped experiment values from summaries that are still collecting" do
+        summaries = [
+          parallelism_experiment_summary.merge(
+            "status" => "collecting",
+            "values" => [
+              { "assigned_value" => 4, "success_rate" => 1.0, "avg_duration_seconds" => 100, "sample_count" => 10, "avg_cost_cents" => 100.0 }
+            ]
+          ),
+          experiment_summary(value: 2, success_rate: 0.8, avg_duration_seconds: 150, sample_count: 10, avg_cost_cents: 100.0)
+        ]
+
+        result = described_class.call(inputs: default_inputs, experiment_summaries: summaries)
+
+        expect(result.source).to eq(:experiment)
+        expect(result.agent_count).to eq(2)
+        expect(result.reason).to include("experiment leading value=2")
       end
 
       it "ignores allocator decisions that do not meet the minimum sample threshold" do
@@ -434,6 +955,24 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
         result = described_class.call(inputs: inputs, observations: observations)
 
         expect(result.agent_count).to eq(1)
+      end
+
+      it "ignores stale observation costs when applying the budget cap" do
+        inputs = Scaling::AllocationInputs.new(task_count: 4, max_agent_count: 8, budget_cents: 50)
+        observations = 6.times.map do
+          build_observation(
+            agent_count: 2,
+            success: true,
+            total_cost_cents: 200,
+            duration_seconds: 120,
+            created_at: 10.days.ago
+          )
+        end
+
+        result = described_class.call(inputs: inputs, observations: observations)
+
+        expect(result.source).to eq(:fallback)
+        expect(result.agent_count).to eq(2)
       end
 
       it "never returns zero agents when the budget is below observed per-agent cost" do
@@ -616,6 +1155,47 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       end
     end
 
+    context "with observations where planned differs from launched" do
+      def build_partial_launch_observation(planned:, launched:)
+        build_observation(agent_count: planned, success: true, total_cost_cents: 300, duration_seconds: 100).tap do |obs|
+          obs.agent_count_launched = launched
+          obs.agent_count_blocked = planned - launched
+        end
+      end
+
+      it "groups by agent_count_planned so partial launches are attributed correctly" do
+        observations = [
+          *3.times.map { build_partial_launch_observation(planned: 4, launched: 3) },
+          *3.times.map { build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120) }
+        ]
+
+        result = described_class.call(inputs: default_inputs, observations: observations)
+
+        expect(result.source).to eq(:observations)
+        expect(result.reason).not_to include("agent_count=3")
+      end
+
+      it "falls back to launched counts when older observations do not record planned counts" do
+        observations = [
+          *3.times.map do
+            build_observation(agent_count: 2, success: true, total_cost_cents: 100, duration_seconds: 120).tap do |obs|
+              obs.agent_count_planned = 0
+            end
+          end,
+          *3.times.map do
+            build_observation(agent_count: 4, success: false, total_cost_cents: 300, duration_seconds: 180).tap do |obs|
+              obs.agent_count_planned = 0
+            end
+          end
+        ]
+
+        result = described_class.call(inputs: default_inputs, observations: observations)
+
+        expect(result.source).to eq(:observations)
+        expect(result.agent_count).to eq(2)
+      end
+    end
+
     context "with observations having zero cost" do
       it "still produces a valid allocation" do
         observations = 6.times.map do
@@ -686,6 +1266,32 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
     )
   end
 
+  def non_parallelism_summary_with_cached_parallelism_analysis
+    {
+      "status" => "ready_for_analysis",
+      "dimension" => "iteration_count",
+      "sample_count" => 12,
+      "allocator_decision" => {
+        "requested_agent_count" => 8,
+        "max_batch_size" => 8,
+        "confidence" => "high"
+      },
+      "parallelism_analysis" => {
+        "status" => "ready",
+        "sample_count" => 12,
+        "allocator_decision" => {
+          "requested_agent_count" => 8,
+          "max_batch_size" => 8,
+          "reason" => "best_success_rate_before_threshold"
+        }
+      },
+      "values" => [
+        { "assigned_value" => 3, "success_rate" => 0.9, "avg_duration_seconds" => 200, "sample_count" => 6, "avg_cost_cents" => 100.0 },
+        { "assigned_value" => 5, "success_rate" => 0.8, "avg_duration_seconds" => 250, "sample_count" => 6, "avg_cost_cents" => 110.0 }
+      ]
+    }
+  end
+
   def experiment_summary(value:, **attributes)
     {
       "status" => "ready_for_analysis",
@@ -693,6 +1299,36 @@ RSpec.describe Scaling::ResourceAllocator, :no_db do
       "values" => [
         { "assigned_value" => value }.merge(attributes.transform_keys(&:to_s))
       ]
+    }
+  end
+
+  def experiment_decision_summaries
+    [
+      build_experiment_decision_summary("agent_count",
+        recommended_value: 3,
+        requested_agent_count: 3,
+        sample_count: 6,
+        confidence: "high"),
+      build_experiment_decision_summary("parallelism",
+        recommended_value: 2,
+        requested_agent_count: 3,
+        max_batch_size: 2,
+        sample_count: 6,
+        confidence: "high"),
+      build_experiment_decision_summary("iteration_count",
+        recommended_value: 4,
+        requested_iteration_count: 4,
+        max_iterations: 4,
+        sample_count: 6,
+        confidence: "medium")
+    ]
+  end
+
+  def build_experiment_decision_summary(dimension, **decision)
+    {
+      dimension: dimension,
+      status: "ready_for_analysis",
+      allocator_decision: decision
     }
   end
 end

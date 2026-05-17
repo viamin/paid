@@ -100,7 +100,7 @@ module OrchestrationStrategies
         "issue_goal_timeout_seconds" => 600,
         "issue_goal_idle_timeout_seconds" => 120,
         "review_goal_idle_timeout_seconds" => 300,
-        "create_pr_idle_timeout_seconds" => 300,
+        "create_pr_idle_timeout_seconds" => 360,
         "preflight_timeout_seconds" => 10,
         "feature_orchestration_timeout_seconds" => 7200
       }
@@ -153,20 +153,16 @@ module OrchestrationStrategies
         "escalation" => {
           "human_value_threshold" => 0.65,
           "explicit_triggers" => %w[
-            operational_failure_breaker
-            review_goal_retry_limit_requires_escalation
-            draft_review_limit_reached
-            consecutive_draft_failures_breaker
+            no_progress_stuck
           ],
           "auto_resolve_trigger_types" => %w[
             owner_approved
             ready_for_owner
           ],
           "weights" => {
-            "operational_failure_breaker" => 0.45,
-            "review_goal_retry_pressure" => 0.3,
-            "draft_review_pressure" => 0.2,
-            "followup_pressure" => 0.15,
+            "no_progress_stuck" => 0.55,
+            "operational_failure_breaker" => 0.1,
+            "unified_failure_pressure" => 0.2,
             "blocking_triggers" => 0.15,
             "owner_reviewer_present" => 0.1,
             "escalated_phase" => 0.1
@@ -177,6 +173,10 @@ module OrchestrationStrategies
             "draft_phase_discount" => 0.05,
             "escalated_phase_discount" => 0.1
           }
+        },
+        "recovery" => {
+          "actions" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTIONS.deep_dup,
+          "default_action" => Coordination::FailureRecoveryPolicy::DEFAULT_ACTION
         },
         "decomposition" => {
           "enabled" => true,

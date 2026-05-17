@@ -4,9 +4,11 @@ module Activities
   # Handles issue-based agent runs that complete without producing a PR or commit.
   #
   # Classifies the outcome as either:
-  # - `recommend_close`: agent produced output but no code changes (issue may be
-  #   already satisfied, obsolete, or not actionable)
-  # - `needs_input`: agent produced no output and no changes (issue is likely
+  # - `recommend_close`: agent performed real work (iterations/cost > 0) but
+  #   produced no code changes (issue may be already satisfied, obsolete, or
+  #   not actionable)
+  # - `needs_input`: agent produced no output, or produced output with zero
+  #   iterations and zero cost (no evidence of real work; issue is likely
   #   underspecified or ambiguous)
   # - `provider_error`: provider returned an error (e.g. credit/quota exhaustion)
   #   before the agent actually ran. The run is failed so retry / provider
@@ -18,7 +20,9 @@ module Activities
   class HandleNoOutputIssueRunActivity < BaseActivity
     activity_name "HandleNoOutputIssueRun"
 
+    CLASSIFICATION_LOG_LIMIT = 500
     PAID_NEEDS_INPUT_LABEL = "paid-needs-input"
+    PAID_RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
     NEEDS_INPUT_COMMENT_MARKER = "<!-- paid:needs-input -->"
     RECOMMEND_CLOSE_COMMENT_MARKER = "<!-- paid:recommend-close -->"
 
@@ -27,6 +31,20 @@ module Activities
       /rate.?limit/i,
       /too many requests/i,
       /\b429\b/,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
+      /requires more credits,? or fewer max_tokens/i,
+      /can only afford \d+/i,
+      %r{visit .*/credits .*add more credits}i,
+      /add more credits/i,
+      /not enough credits/i,
+      /purchase (?:more )?credits/i,
+      /buy (?:more )?credits/i,
+      /requires? more credits/i
+    ].freeze
+
+    COMMENT_REDACTION_ONLY_PATTERNS = [
+      /requires more credits/i,
       /add more credits/i,
       /not enough credits/i,
       /purchase (?:more )?credits/i,
@@ -45,7 +63,17 @@ module Activities
       /failed to create container/i,
       /sandbox.*error/i,
       /docker.*permission denied/i,
-      /exec format error/i
+      /exec format error/i,
+      # Agent CLI misconfiguration: the agent process started but its
+      # configured model is not resolvable (e.g. opencode's
+      # ProviderModelNotFoundError when the configured provider/model
+      # pair is missing). The agent does no work, so this must not be
+      # misclassified as recommend_close. The trailing colon in the
+      # `Model not found:` pattern matches opencode's actual output
+      # (`Error: Model not found: glm-5.1/.`) and avoids false-positives
+      # on agents that simply quote that phrase from an issue body.
+      /ProviderModelNotFoundError/,
+      /Model not found:/i
     ].freeze
 
     def execute(input)
@@ -64,7 +92,8 @@ module Activities
       project = agent_run.project
       client = project.github_token.client
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
-      outcome = classify_outcome(agent_run, output_present, agent_summary)
+      diagnostic_output = classification_text_for(agent_run)
+      outcome = classify_outcome(agent_run, output_present, diagnostic_output)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: outcome }) do
         case outcome
@@ -101,16 +130,25 @@ module Activities
     # and evidence that the agent actually performed work. Defense in depth:
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
-    def classify_outcome(agent_run, output_present, agent_summary)
-      return "needs_input" unless output_present
+    def classify_outcome(agent_run, output_present, diagnostic_output)
+      unless output_present
+        return "provider_error" if provider_error_output?(diagnostic_output)
+        return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
+
+        return "needs_input"
+      end
 
       # Guard: if the agent produced output but shows no evidence of having
       # actually run (zero iterations AND zero cost), the "output" is likely
-      # a provider-level error (e.g. credit exhaustion) rather than a real
-      # agent response. Confirm by checking the output for error patterns.
+      # a provider-level error (e.g. credit exhaustion) or trivial CLI
+      # boilerplate rather than a real agent response. Confirm by checking
+      # the output for error patterns; if neither matches, classify as
+      # needs_input since the agent did not perform meaningful work.
       if agent_run.iterations.to_i.zero? && agent_run.cost_cents.to_i.zero?
-        return "provider_error" if provider_error_output?(agent_summary)
-        return "infrastructure_error" if infrastructure_error_output?(agent_summary)
+        return "provider_error" if provider_error_output?(diagnostic_output)
+        return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
+
+        return "needs_input"
       end
 
       "recommend_close"
@@ -119,7 +157,13 @@ module Activities
     def provider_error_output?(text)
       return false if text.blank?
 
-      provider_error_patterns.any? { |pattern| text.match?(pattern) }
+      normalized_text(text).each_line.any? { |line| provider_error_signal_line?(line) }
+    end
+
+    def provider_error_redaction_line?(text)
+      return false if text.blank?
+
+      provider_error_redaction_patterns.any? { |pattern| text.match?(pattern) }
     end
 
     def infrastructure_error_output?(text)
@@ -128,9 +172,52 @@ module Activities
       INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| text.match?(pattern) }
     end
 
-    def provider_error_patterns
-      @provider_error_patterns ||= RunnerSupport.aggregated_error_classification_patterns(:quota) +
+    def classification_text_for(agent_run)
+      recent_output = agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .order(created_at: :desc, id: :desc)
+        .limit(CLASSIFICATION_LOG_LIMIT)
+        .pluck(:content)
+        .reverse
+        .join("\n")
+
+      normalized_text(recent_output)
+    end
+
+    def provider_error_classification_patterns
+      @provider_error_classification_patterns ||= begin
+        combined = RunnerSupport.aggregated_error_classification_patterns(:quota) + SUPPLEMENTARY_ERROR_PATTERNS
+        combined.reject { |pattern| redaction_only_pattern?(pattern) }.uniq
+      end
+    end
+
+    def provider_error_upstream_patterns
+      @provider_error_upstream_patterns ||= RunnerSupport.aggregated_error_classification_patterns(:quota)
+    end
+
+    def provider_error_redaction_patterns
+      @provider_error_redaction_patterns ||= RunnerSupport.aggregated_error_classification_patterns(:quota) +
         SUPPLEMENTARY_ERROR_PATTERNS
+    end
+
+    def provider_error_signal_line?(line)
+      normalized_line = normalized_text(line)
+      return false if normalized_line.blank?
+
+      return true if provider_error_classification_patterns.any? { |pattern| normalized_line.match?(pattern) }
+
+      provider_error_upstream_patterns.any? { |pattern| normalized_line.match?(pattern) } &&
+        !provider_error_redaction_line?(normalized_line)
+    end
+
+    def redaction_only_pattern?(pattern)
+      COMMENT_REDACTION_ONLY_PATTERNS.any? do |redaction_pattern|
+        pattern.source == redaction_pattern.source && pattern.options == redaction_pattern.options
+      end
+    end
+
+    def normalized_text(text)
+      text.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "\uFFFD").strip
     end
 
     def handle_provider_error(agent_run, agent_summary)
@@ -161,6 +248,7 @@ module Activities
       issue = agent_run.issue
       issue.update!(paid_state: "needs_input")
       add_needs_input_label(client, project, issue)
+      remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
       post_needs_input_comment(client, project, issue, agent_summary)
     end
@@ -171,6 +259,7 @@ module Activities
       issue.update!(paid_state: "recommend_close")
       remove_trigger_labels(client, project, issue, agent_run.id)
       remove_needs_input_label(client, project, issue, agent_run.id)
+      add_recommend_close_label(client, project, issue)
       post_recommend_close_comment(client, project, issue, agent_summary)
     end
 
@@ -194,6 +283,11 @@ module Activities
       add_phase_label(client, project, issue.github_number, label)
     end
 
+    def add_recommend_close_label(client, project, issue)
+      label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
+      add_phase_label(client, project, issue.github_number, label)
+    end
+
     def remove_needs_input_label(client, project, issue, agent_run_id)
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       return unless issue.has_label?(label)
@@ -202,6 +296,21 @@ module Activities
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.remove_needs_input_label_failed",
+        agent_run_id: agent_run_id,
+        issue_number: issue.github_number,
+        label: label,
+        error: e.message
+      )
+    end
+
+    def remove_recommend_close_label(client, project, issue, agent_run_id)
+      label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
+      return unless issue.has_label?(label)
+
+      client.remove_label_from_issue(project.full_name, issue.github_number, label)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.remove_recommend_close_label_failed",
         agent_run_id: agent_run_id,
         issue_number: issue.github_number,
         label: label,
@@ -237,7 +346,7 @@ module Activities
     def sanitize_summary_for_github(text)
       return text if text.blank?
 
-      text.each_line.reject { |line| provider_error_output?(line) }.join.strip
+      text.each_line.reject { |line| provider_error_redaction_line?(line) }.join.strip
     end
 
     def post_needs_input_comment(client, project, issue, agent_summary)

@@ -95,6 +95,20 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "#marketplace_auto_attach_required?" do
+    it "reads the tenant-level marketplace auto-attach override from agent settings" do
+      setting = build(:tenant_setting, agent_settings: { "marketplace_auto_attach_required" => true })
+
+      expect(setting.marketplace_auto_attach_required?).to be(true)
+    end
+
+    it "falls back to false when the tenant does not require marketplace attachments" do
+      setting = build(:tenant_setting)
+
+      expect(setting.marketplace_auto_attach_required?).to be(false)
+    end
+  end
+
   describe "#default_cost_budget_attributes" do
     it "returns enabled tenant budget defaults" do
       setting = build(:tenant_setting, default_budgets: {
@@ -116,6 +130,43 @@ RSpec.describe TenantSetting do
           "grace_buffer_percent" => 10
         )
       )
+    end
+  end
+
+  describe "#auto_pick_skip_labels_csv" do
+    it "returns labels as a comma-separated string" do
+      setting = build(:tenant_setting, auto_pick_skip_labels: %w[planning research])
+
+      expect(setting.auto_pick_skip_labels_csv).to eq("planning, research")
+    end
+
+    it "returns an empty string when labels are not configured" do
+      setting = build(:tenant_setting, auto_pick_skip_labels: nil)
+
+      expect(setting.auto_pick_skip_labels_csv).to eq("")
+    end
+  end
+
+  describe "#auto_pick_skip_labels_csv=" do
+    it "parses comma-separated labels into a deduplicated array" do
+      setting = build(:tenant_setting)
+      setting.auto_pick_skip_labels_csv = " planning, research, planning "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "normalizes labels to lowercase before deduplicating" do
+      setting = build(:tenant_setting)
+      setting.auto_pick_skip_labels_csv = " Planning, research, PLANNING "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "allows configuring an empty skip-label list" do
+      setting = build(:tenant_setting)
+      setting.auto_pick_skip_labels_csv = ""
+
+      expect(setting.auto_pick_skip_labels).to eq([])
     end
   end
 

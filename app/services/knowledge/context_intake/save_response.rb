@@ -23,7 +23,7 @@ module Knowledge
 
         ActiveRecord::Base.transaction do
           response.update!(
-            answer_text: skipped ? nil : answer_text,
+            answer_text: skipped ? nil : normalized_answer_text,
             skipped: skipped,
             provenance: "human"
           )
@@ -49,6 +49,12 @@ module Knowledge
                                 .answered
                                 .count
         session.update!(current_step: answered_count)
+      end
+
+      def normalized_answer_text
+        return if answer_text.to_s.strip.empty?
+
+        answer_text
       end
     end
   end

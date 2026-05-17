@@ -30,7 +30,10 @@ module Knowledge
     end
 
     def self.available?
-      Docker.ping == "OK"
+      backend = Containers.backend
+      return false unless backend.supports_host_paths?
+
+      backend.ping == "OK"
     rescue Excon::Error, Docker::Error::DockerError
       false
     end
@@ -63,12 +66,15 @@ module Knowledge
 
     def ensure_container!
       return if @container
+      unless Containers.backend.supports_host_paths?
+        raise ContainerError, "Embedding containers require a backend with host path support"
+      end
 
       cleanup_input_dir!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::NETWORK_NAME, backend: Containers.backend)
       @input_dir = Dir.mktmpdir("paid-embedding-runner-")
-      @container = Docker::Container.create(container_config)
-      @container.start
+      @container = Containers.backend.create_container(container_config)
+      Containers.backend.start_container(@container)
       apply_network_restrictions!
     rescue Docker::Error::DockerError => e
       cleanup!
@@ -81,12 +87,12 @@ module Knowledge
     def cleanup_container!
       return unless @container
 
-      @container.stop(timeout: 5)
+      Containers.backend.stop_container(@container, timeout: 5)
     rescue Docker::Error::DockerError
       nil
     ensure
       begin
-        @container&.delete(force: true)
+        Containers.backend.delete_container(@container, force: true) if @container
       rescue Docker::Error::DockerError
         nil
       end
@@ -120,11 +126,11 @@ module Knowledge
           next if exec_completed
 
           timed_out = true
-          @container&.stop(timeout: 0)
+          Containers.backend.stop_container(@container, timeout: 0) if @container
         end
       end
 
-      result = @container.exec(cmd, exec_options)
+      result = Containers.backend.exec_in_container(@container, cmd, **exec_options)
       raise TimeoutError, "Embedding generation timed out after #{timeout}s" if mutex.synchronize { timed_out }
 
       stdout = Array(result[0]).join
@@ -150,12 +156,12 @@ module Knowledge
     end
 
     def apply_network_restrictions!
-      NetworkPolicy.apply_firewall_rules(@container)
+      NetworkPolicy.apply_firewall_rules(@container, backend: Containers.backend)
     end
 
     def script_env(provider:, model:, dimensions:, timeout:)
       {
-        "PROXY_BASE_URL" => "http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}",
+        "PROXY_BASE_URL" => Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: true),
         "KNOWLEDGE_RUN_ID" => knowledge_run.id.to_s,
         "PROXY_TOKEN" => knowledge_run.ensure_proxy_token!,
         "EMBEDDING_PROVIDER" => provider,
@@ -184,6 +190,7 @@ module Knowledge
         texts = JSON.parse(File.read(input_path))
         uri = URI("#{proxy_url}/api/proxy/openai/v1/embeddings")
         http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
         http.open_timeout = 10
         http.read_timeout = timeout
 

@@ -13,7 +13,7 @@ module Automation
       # - Open, non-PR issues with all structured dependencies satisfied
       # - No unfinished agent run already attached to the issue
       # - No open PR linked back to the issue via +parent_issue_id+
-      # - Not labeled with any of {EXCLUDED_LABELS}
+      # - Not labeled with any configured auto-pick skip labels
       # - Not a parent issue with still-open sub-issues, and not a tracker /
       #   meta issue whose body still references open work items
       # - Issue creator is in the project's trusted allowlist when one is
@@ -30,10 +30,6 @@ module Automation
       #   get starved by newer issues)
       module DefaultCandidateSource
         extend CandidateSource
-
-        # Each label here must also exist as a GitHub label in the repo so
-        # it can be applied to issues.
-        EXCLUDED_LABELS = %w[planning research waiting tracking epic needs-manual-setup].freeze
 
         # SQL ILIKE patterns used to pre-filter potential tracker issues
         # before applying the full Ruby-level +Issue#tracker_issue?+
@@ -93,14 +89,17 @@ module Automation
             scope
           end
 
-          def next_candidate(project)
+          def ordered_scope(project)
             eligible_scope(project)
               .order(
-                Arel.sql("#{priority_label_order_sql(project)} ASC"),
-                Arel.sql("#{dependency_tree_order_sql} ASC"),
-                Arel.sql("issues.github_number ASC")
+                Arel::Nodes::Ascending.new(priority_label_order_node(project)),
+                Arel::Nodes::Ascending.new(dependency_tree_order_node),
+                Issue.arel_table[:github_number].asc
               )
-              .first
+          end
+
+          def next_candidate(project)
+            ordered_scope(project).first
           end
 
           # Identifies tracker issues whose body references other issues
@@ -190,7 +189,7 @@ module Automation
             trusted_usernames = Array(project.allowed_github_usernames).presence
             base = base.where(github_creator_login: trusted_usernames) if trusted_usernames
 
-            EXCLUDED_LABELS.reduce(base) do |scope, label|
+            project.effective_auto_pick_skip_labels.reduce(base) do |scope, label|
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
           end
@@ -204,38 +203,46 @@ module Automation
                   AND sub_issues.project_id = issues.project_id
                   AND sub_issues.is_pull_request = FALSE
                   AND sub_issues.github_state = 'open'
+                  AND sub_issues.paid_state IS DISTINCT FROM 'recommend_close'
               )
             SQL
           end
 
-          # Returns a CASE expression that maps each issue to a numeric
+          # Returns a CASE node that maps each issue to a numeric
           # priority rank based on the project's configured priority
           # labels (+Project#effective_priority_labels+). Lower rank sorts
           # first, so P1-labeled issues beat P2/P3/unlabeled, P2 beats
-          # P3/unlabeled, and P3 beats unlabeled. Label names are
-          # interpolated via +connection.quote+ to keep the CASE safe
-          # for use with +Arel.sql+.
-          def priority_label_order_sql(project)
+          # P3/unlabeled, and P3 beats unlabeled.
+          def priority_label_order_node(project)
             effective = project.effective_priority_labels
-            conn = Issue.connection
-            cases = Project::PRIORITY_TIERS.each_with_index.filter_map do |tier, index|
+            issues = Issue.arel_table
+            priority_case = Arel::Nodes::Case.new
+            configured_tiers = 0
+
+            Project::PRIORITY_TIERS.each_with_index do |tier, index|
               label_name = effective[tier]
               next if label_name.blank?
 
-              quoted = conn.quote([ label_name ].to_json)
-              "WHEN issues.labels @> #{quoted}::jsonb THEN #{index + 1}"
+              configured_tiers += 1
+              condition = Arel::Nodes::InfixOperation.new(
+                "@>",
+                issues[:labels],
+                Arel::Nodes::NamedFunction.new("jsonb_build_array", [ Arel::Nodes.build_quoted(label_name) ])
+              )
+              priority_case.when(condition).then(index + 1)
             end
-            return (Project::PRIORITY_TIERS.size + 1).to_s if cases.empty?
 
-            "CASE #{cases.join(' ')} ELSE #{Project::PRIORITY_TIERS.size + 1} END"
+            return Arel.sql((Project::PRIORITY_TIERS.size + 1).to_s) if configured_tiers.zero?
+
+            priority_case.else(Project::PRIORITY_TIERS.size + 1)
           end
 
           # Among already-eligible issues, prefer runnable roots of a
           # dependency tree over standalone work. Count dependents across the
           # same-account local graph, not just the current project, because
           # IssueDependency supports cross-project links within an account.
-          def dependency_tree_order_sql
-            <<~SQL.squish
+          def dependency_tree_order_node
+            Arel.sql(<<~SQL.squish)
               CASE WHEN EXISTS (
                 SELECT 1 FROM issue_dependencies id_dep
                 JOIN issues dep_issue ON dep_issue.id = id_dep.issue_id

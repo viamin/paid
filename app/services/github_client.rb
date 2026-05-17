@@ -760,7 +760,7 @@ class GithubClient
   # @raise [NotFoundError] if the pull request does not exist
   def pull_request_reviews(repo, number)
     handle_errors do
-      reviews = client.pull_request_reviews(repo, number)
+      reviews = with_auto_paginate { client.pull_request_reviews(repo, number, per_page: 100) }
       reviews.map do |r|
         {
           id: r.id,
@@ -771,6 +771,19 @@ class GithubClient
           commit_id: r.commit_id
         }
       end
+    end
+  end
+
+  # Dismisses a pull request review. Requires write access on the repository
+  # and the review must be in CHANGES_REQUESTED state.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pull_number [Integer] Pull request number
+  # @param review_id [Integer] The review ID to dismiss
+  # @param message [String] Reason for dismissal
+  def dismiss_pull_request_review(repo, pull_number, review_id, message:)
+    handle_errors do
+      client.dismiss_pull_request_review(repo, pull_number, review_id, message)
     end
   end
 

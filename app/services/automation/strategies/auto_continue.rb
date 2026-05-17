@@ -41,6 +41,16 @@ module Automation
     class AutoContinue
       include Automation::Strategy
 
+      REVIEW_FOLLOWUP_TRIGGER_TYPES = %w[
+        changes_requested
+        paid_agent_review_pending
+        review_bot_comments
+        review_bot_review_pending
+        review_bot_threads
+        review_goal_retry
+        review_threads
+      ].freeze
+
       # @param context [Automation::Context]
       # @return [Automation::Result]
       def evaluate(context)
@@ -69,19 +79,20 @@ module Automation
       private
 
       def check_lifecycle_gates(context:, signals:)
-        # Operational failure breaker — fires for any phase. The check
-        # runs before phase-specific gates so that persistent provider
-        # exhaustion/timeout failures always surface an escalation.
+        # Escalation dismissal must win before any breaker can re-escalate
+        # the PR in the same cycle after the owner removes the label.
+        if signals.escalation_dismissed
+          return dismiss_escalation_result(signals)
+        end
+
+        # Operational failure breaker — provider/infrastructure bursts only
+        # escalate once the PR has also gone stale without meaningful
+        # progress for too long.
         if signals.operational_failure_breaker
           return escalation_service_result(
             signals,
             evaluate_escalation(context:, signals:)
           )
-        end
-
-        # Escalation dismissal — owner removed the escalated label.
-        if signals.escalation_dismissed
-          return dismiss_escalation_result(signals)
         end
 
         if (service_result = evaluate_escalation(context:, signals:))
@@ -102,15 +113,30 @@ module Automation
       end
 
       def escalation_candidate?(signals)
-        signals.operational_failure_breaker ||
-          signals.draft_review_limit_reached ||
-          signals.consecutive_draft_failures_breaker ||
-          signals.review_goal_retry_limit_requires_escalation ||
-          signals.followup_limit_reached
+        return true if signals.operational_failure_breaker
+        return false unless signals.no_progress_stuck
+        return true if signals.review_goal_retry_limit_requires_escalation
+        return false unless signals.failure_streak_limit_reached
+        return false if review_followup_pending?(signals)
+
+        true
+      end
+
+      def review_followup_pending?(signals)
+        Array(signals.scan&.dig(:triggers) || signals.scan&.dig("triggers")).any? do |trigger|
+          REVIEW_FOLLOWUP_TRIGGER_TYPES.include?(trigger_type(trigger))
+        end
+      end
+
+      def trigger_type(trigger)
+        return unless trigger.is_a?(Hash)
+
+        trigger[:type] || trigger["type"]
       end
 
       def escalation_service_result(signals, service_result)
         return escalate_result(signals, reason: service_result.reason) if service_result.escalate?
+        return nil if service_result.auto_resolve?
 
         noop_result
       end

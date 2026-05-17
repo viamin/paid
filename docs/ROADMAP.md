@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) is next.
+**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) is next.
 
 ## Phase Overview
 
@@ -544,7 +544,7 @@ Deliverables:
 
 **Objective**: Lay groundwork for automatic worker scaling.
 
-**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, and `docs/rdrs/RDR-024`.
+**Status**: Complete — `Scaling::WorkerPoolAdvisor` implements hybrid reactive/predictive algorithm with cost caps and cooldown. `Scaling::QueueMonitor` + `QueueMonitorJob` track GoodJob, Temporal, and agent-run queues. `Scaling::Orchestrator` now exposes concrete adapters for Kubernetes, Docker Swarm, ECS, and Docker Compose. Remote container execution is also complete: `Containers::Provision` routes through backend abstractions with `LocalDocker`, `RemoteDocker`, and `Swarm` backends, `container_host` tracking persists backend placement, and operator guides live in `docs/guides/remote-docker-setup.md` and `docs/guides/swarm-setup.md`. Scaling documentation in `docs/SCALING.md`, `docs/runbooks/scaling.md`, `docs/rdrs/RDR-033`, and `docs/rdrs/RDR-019`.
 
 Tasks:
 
@@ -553,12 +553,14 @@ Tasks:
 - [x] Scaling algorithm design (#726)
 - [x] Integration points for orchestrators (K8s, etc.) (#727)
 - [x] Documentation for scaling (#728)
+- [x] Remote container execution across local Docker, remote Docker, and Docker Swarm backends (#2029)
 
 Deliverables:
 
 - Metrics available for scaling decisions
 - Clear scaling recommendations
 - Ready for auto-scaling implementation
+- Agent containers can run on local Docker, a single remote Docker host, or a Docker Swarm cluster
 
 ### 3.7 Multi-Tenancy Preparation
 
@@ -1063,20 +1065,24 @@ Deliverables:
 
 **Goal**: The system learns and improves its own orchestration through data, applying the Bitter Lesson to agent coordination itself.
 
+**Status**: Complete as of 2026-05-14. Tracked by umbrella issue #1818.
+
 This phase represents Paid's evolution from a well-engineered orchestration platform to a genuinely self-improving system. The core insight: if general methods that leverage computation beat hand-crafted approaches for LLMs, the same may be true for LLM orchestration.
 
 ### 4.1 Orchestration Decision Logging
 
 **Objective**: Capture all orchestration decisions with full context for later learning.
 
+**Status**: Complete — orchestration decisions are stored as analyzable records with workflow context, analysis queries, and dashboard visibility.
+
 Tasks:
 
-- [ ] Create `orchestration_decisions` table
-- [ ] Instrument workflows to log decomposition decisions
-- [ ] Log agent selection decisions with context
-- [ ] Log retry and escalation decisions
-- [ ] Build analysis queries for decision patterns
-- [ ] Dashboard showing orchestration metrics by context
+- [x] Create `orchestration_decisions` table
+- [x] Instrument workflows to log decomposition decisions
+- [x] Log agent selection decisions with context
+- [x] Log retry and escalation decisions
+- [x] Build analysis queries for decision patterns
+- [x] Dashboard showing orchestration metrics by context
 
 Deliverables:
 
@@ -1090,14 +1096,16 @@ Related: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
 
 **Objective**: Orchestration strategies stored as data and evolved based on outcomes.
 
+**Status**: Complete — strategies are versioned data, selected by context, evolved through workflow automation, and reviewed before promotion.
+
 Tasks:
 
-- [ ] Create `strategies` and `strategy_versions` tables
-- [ ] Extract current hardcoded workflows into database strategies
-- [ ] Implement context-aware strategy selection
-- [ ] Create strategy evolution workflow (LLM-based mutation)
-- [ ] A/B test evolved strategies against baseline
-- [ ] Human review gate for strategy changes
+- [x] Create `strategies` and `strategy_versions` tables
+- [x] Extract current hardcoded workflows into database strategies
+- [x] Implement context-aware strategy selection
+- [x] Create strategy evolution workflow (LLM-based mutation)
+- [x] A/B test evolved strategies against baseline
+- [x] Human review gate for strategy changes
 
 Deliverables:
 
@@ -1111,14 +1119,16 @@ Related: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
 
 **Objective**: Optimize entire configuration bundles (prompts + models + strategies) based on final outcomes.
 
+**Status**: Complete — configuration bundles are tracked end-to-end, optimized with a Bayesian selector, and exposed through performance analysis tooling.
+
 Tasks:
 
-- [ ] Create `configuration_bundles` and `bundle_outcomes` tables
-- [ ] Implement configuration bundle tracking per agent run
-- [ ] Build surrogate model (Random Forest initially, GP later)
-- [ ] Implement Bayesian optimization for bundle selection
-- [ ] Exploration/exploitation balance with context awareness
-- [ ] Dashboard for bundle performance analysis
+- [x] Create `configuration_bundles` and `bundle_outcomes` tables
+- [x] Implement configuration bundle tracking per agent run
+- [x] Build surrogate model (Random Forest initially, GP later)
+- [x] Implement Bayesian optimization for bundle selection
+- [x] Exploration/exploitation balance with context awareness
+- [x] Dashboard for bundle performance analysis
 
 Deliverables:
 
@@ -1132,14 +1142,16 @@ Related: [RDR-015](rdrs/RDR-015-end-to-end-optimization.md)
 
 **Objective**: Coordination policies (decomposition, assignment, retry, escalation) evolve from outcomes.
 
+**Status**: Complete — coordination policies are explicit data, evolved from results, and validated through experiment-driven promotion paths.
+
 Tasks:
 
-- [ ] Create coordination policy data model
-- [ ] Implement `DecompositionService` with policy-based rules
-- [ ] Implement `FailureRecoveryService` with learned failure classification
-- [ ] Implement `EscalationService` with human-value prediction
-- [ ] Create policy evolution workflow
-- [ ] A/B test evolved policies
+- [x] Create coordination policy data model
+- [x] Implement `DecompositionService` with policy-based rules
+- [x] Implement `FailureRecoveryService` with learned failure classification
+- [x] Implement `EscalationService` with human-value prediction
+- [x] Create policy evolution workflow
+- [x] A/B test evolved policies
 
 Deliverables:
 
@@ -1153,14 +1165,16 @@ Related: [RDR-016](rdrs/RDR-016-self-improving-coordination.md)
 
 **Objective**: Discover and apply scaling laws for agent orchestration.
 
+**Status**: Complete — scaling experiments, confidence intervals, and a scaling-aware allocator now inform orchestration resource decisions.
+
 Tasks:
 
-- [ ] Create scaling observation instrumentation
-- [ ] Design controlled experiments for scaling dimensions
-- [ ] Run agent count scaling experiment
-- [ ] Run iteration count scaling experiment
-- [ ] Analyze parallelism effects
-- [ ] Implement scaling-based resource allocator
+- [x] Create scaling observation instrumentation
+- [x] Design controlled experiments for scaling dimensions
+- [x] Run agent count scaling experiment
+- [x] Run iteration count scaling experiment
+- [x] Analyze parallelism effects
+- [x] Implement scaling-based resource allocator
 
 Deliverables:
 
@@ -1172,12 +1186,14 @@ Related: [RDR-017](rdrs/RDR-017-orchestration-scaling-laws.md)
 
 ### Phase 4 Completion Criteria
 
-- [ ] All orchestration decisions logged and analyzable
-- [ ] At least one orchestration strategy evolved and promoted via A/B test
-- [ ] End-to-end optimization shows measurable improvement
-- [ ] Coordination policies adapt based on measured outcomes
-- [ ] Scaling laws documented with confidence intervals
-- [ ] System demonstrably improves with more data/compute
+- [x] All orchestration decisions logged and analyzable
+- [x] At least one orchestration strategy evolved and promoted via A/B test
+- [x] End-to-end optimization shows measurable improvement
+- [x] Coordination policies adapt based on measured outcomes
+- [x] Scaling laws documented with confidence intervals
+- [x] System demonstrably improves with more data/compute
+
+**Phase 4 completed**: All AI-native orchestration objectives verified as of 2026-05-14.
 
 ---
 

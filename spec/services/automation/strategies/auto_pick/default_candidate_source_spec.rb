@@ -129,6 +129,67 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(scope.pluck(:id)).to contain_exactly(child.id, standalone.id)
     end
+
+    it "keeps a parent eligible when its only open sub-issue is recommend_close" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, :recommend_close, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to include(parent.id)
+    end
+
+    it "uses project skip labels before user, tenant, and defaults" do
+      project.update!(auto_pick_skip_labels: %w[blocked])
+      project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+      project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+      create(:issue, project: project, labels: [ "blocked" ])
+      eligible = create(:issue, project: project, labels: [ "planning" ])
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(eligible.id)
+    end
+
+    it "falls back to user skip labels when the project does not override them" do
+      project.update!(auto_pick_skip_labels: nil)
+      project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+      project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+      create(:issue, project: project, labels: [ "user-skip" ])
+      eligible = create(:issue, project: project, labels: [ "planning" ])
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(eligible.id)
+    end
+
+    it "falls back to tenant skip labels when neither project nor user override them" do
+      project.update!(auto_pick_skip_labels: nil)
+      project.created_by.settings.update!(auto_pick_skip_labels: nil)
+      project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+      create(:issue, project: project, labels: [ "tenant-skip" ])
+      eligible = create(:issue, project: project, labels: [ "planning" ])
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(eligible.id)
+    end
+
+    it "falls back to the built-in skip labels when no overrides exist" do
+      project.update!(auto_pick_skip_labels: nil)
+      project.created_by.settings.update!(auto_pick_skip_labels: nil)
+      project.account.tenant_setting!.update!(auto_pick_skip_labels: nil)
+      create(:issue, project: project, labels: [ "planning" ])
+
+      expect(described_class.eligible_scope(project)).to be_empty
+    end
+
+    it "allows an explicit empty override to disable skip labels entirely" do
+      project.update!(auto_pick_skip_labels: [])
+      create(:issue, project: project, labels: [ "planning" ])
+
+      expect(described_class.eligible_scope(project).pluck(:labels)).to include([ "planning" ])
+    end
   end
 
   describe ".eligible_issue_ids" do

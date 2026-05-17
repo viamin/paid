@@ -5,6 +5,8 @@ class AgentRun < ApplicationRecord
 
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
+  attribute :focus, :string, default: "general"
+
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   RUNNER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
@@ -14,6 +16,7 @@ class AgentRun < ApplicationRecord
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode pi api].freeze
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -48,7 +51,6 @@ class AgentRun < ApplicationRecord
     "No container provisioned",
     "commit_uncommitted_changes failed"
   ].freeze
-
   INFRA_FAILURE_KEYWORDS = [
     "Validation failed:",
     "ProviderAuthExpiredError",
@@ -144,6 +146,8 @@ class AgentRun < ApplicationRecord
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
+  has_many :agent_run_marketplace_entries, -> { order(:position, :id) }, dependent: :destroy
+  has_many :marketplace_entries, through: :agent_run_marketplace_entries
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -177,6 +181,7 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validates :focus, presence: true, inclusion: { in: FOCUSES }
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
@@ -191,6 +196,7 @@ class AgentRun < ApplicationRecord
   validates :temporal_run_id, length: { maximum: 255 }
   validates :parent_workflow_id, length: { maximum: 255 }
   validates :container_id, length: { maximum: 128 }
+  validates :container_host, length: { maximum: 64 }, allow_nil: true
   validates :iterations, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -734,7 +740,7 @@ class AgentRun < ApplicationRecord
   end
   private :compute_label_priority_tier
 
-  attr_writer :source_pull_request_record
+  attr_writer :source_pull_request_record, :created_issue_record
 
   # The Issue row representing this run's source pull request, used by
   # label_priority_tier. Falls back to a per-row find_by, but callers
@@ -772,6 +778,42 @@ class AgentRun < ApplicationRecord
 
     targets.each do |run|
       run.source_pull_request_record = records[[ run.project_id, run.source_pull_request_number ]]
+    end
+  end
+
+  # The Issue row representing this run's created issue, used for tooltip
+  # display. Falls back to a per-row find_by, but callers rendering many
+  # runs should call AgentRun.preload_created_issue_records first to
+  # avoid an N+1.
+  def created_issue_record
+    return @created_issue_record if defined?(@created_issue_record)
+    return nil if created_issue_number.blank? || project.nil?
+
+    @created_issue_record = project.issues.find_by(
+      github_number: created_issue_number, is_pull_request: false
+    )
+  end
+
+  # Batch-loads created-issue Issue rows for a collection of runs, mirroring
+  # preload_source_pull_requests. Call from controllers rendering context
+  # tooltips for many runs.
+  def self.preload_created_issue_records(runs)
+    targets = Array(runs).select do |r|
+      r.created_issue_number.present? && r.project_id.present? &&
+        !r.instance_variable_defined?(:@created_issue_record)
+    end
+    return if targets.empty?
+
+    records = {}
+    targets.group_by(&:project_id).each do |project_id, group|
+      numbers = group.map(&:created_issue_number).uniq
+      Issue.where(is_pull_request: false, project_id: project_id, github_number: numbers).each do |issue|
+        records[[ issue.project_id, issue.github_number ]] = issue
+      end
+    end
+
+    targets.each do |run|
+      run.created_issue_record = records[[ run.project_id, run.created_issue_number ]]
     end
   end
 
@@ -1090,6 +1132,10 @@ class AgentRun < ApplicationRecord
 
   def analyze_issue_goal?
     goal == "analyze_issue"
+  end
+
+  def focused?
+    focus != "general"
   end
 
   # Whether this run has a cloned git repository in its container.
@@ -1599,13 +1645,24 @@ class AgentRun < ApplicationRecord
   end
   private :log_orchestration_decision
 
+  public
+
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
-  def effective_prompt
-    custom_prompt.presence || prompt_for_goal
+  def effective_prompt(provider_key: nil)
+    MarketplaceEntries::InjectIntoPrompt.call(
+      agent_run: self,
+      prompt: custom_prompt.presence || base_prompt,
+      provider_key: provider_key
+    )
   end
+
+  def base_prompt
+    prompt_for_goal
+  end
+  private :base_prompt
 
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures
@@ -1734,7 +1791,7 @@ class AgentRun < ApplicationRecord
     pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
     if pooled_result&.success?
       @container_service = pooled_result[:service]
-      update!(container_id: pooled_result[:container_id])
+      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
       return pooled_result
     end
 
@@ -1745,7 +1802,7 @@ class AgentRun < ApplicationRecord
     )
     result = @container_service.provision
     if result.success?
-      update!(container_id: result[:container_id])
+      update!(container_id: result[:container_id], container_host: result[:container_host])
       PoolReplenishmentJob.perform_later(project_id)
     end
     result
@@ -2035,7 +2092,9 @@ class AgentRun < ApplicationRecord
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
     volume_name = "paid-workspace-#{id}"
-    Docker::Volume.get(volume_name).remove
+    backend = Containers.backend_for(container_host)
+    volume = backend.get_volume(volume_name, host: container_host)
+    backend.delete_volume(volume)
   rescue Docker::Error::NotFoundError
     # Volume already removed, nothing to do
   rescue Docker::Error::DockerError => e

@@ -47,6 +47,7 @@ module Dashboard
         .to_a
       AgentRun.preload_final_runner_records(active_runs)
       AgentRun.preload_source_pull_requests(active_runs)
+      AgentRun.preload_created_issue_records(active_runs)
 
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,

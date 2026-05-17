@@ -206,6 +206,42 @@ RSpec.describe "Api::GithubProxy" do
       allow(Rails.logger).to receive(:warn).and_call_original
     end
 
+    def stub_review_list_response(reviews = [])
+      stub_request(:get, target_url)
+        .with(
+          headers: { "Authorization" => "token ghs_review_bot_token" },
+          query: hash_including("per_page" => "100")
+        )
+        .to_return(
+          status: 200,
+          body: reviews.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    def stub_stale_review_dismissal(review_id: 101)
+      dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/#{review_id}/dismissals"
+
+      stub_request(:put, dismiss_url)
+        .with(
+          headers: { "Authorization" => "token ghs_review_bot_token" },
+          body: { message: "Subsequent review found no remaining actionable issues." }.to_json
+        )
+        .to_return(status: 200, body: {}.to_json, headers: { "Content-Type" => "application/json" })
+
+      dismiss_url
+    end
+
+    def clean_review_response_body
+      {
+        id: 999,
+        body: "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented",
+        comments: []
+      }.to_json
+    end
+
     it "proxies review creation" do
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: { body: "Looks good", event: "COMMENT" }.to_json,
@@ -441,6 +477,7 @@ RSpec.describe "Api::GithubProxy" do
           "enabled" => true,
           "methods" => { "paid_agent" => { "enabled" => true } }
         })
+        stub_review_list_response
       end
 
       it "forwards review creation with the review bot token" do
@@ -465,6 +502,135 @@ RSpec.describe "Api::GithubProxy" do
               headers: valid_headers
           }.not_to change { github_token.reload.last_used_at }
         end
+      end
+
+      context "when older paid-code-reviewer change requests exist" do
+        it "dismisses the stale bot change request" do
+          stub_review_list_response([
+            { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 102, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Looks good" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" },
+            { id: 103, user: { login: "human-reviewer" }, state: "CHANGES_REQUESTED", body: "Human request" }
+          ])
+          dismiss_url = stub_stale_review_dismissal
+          allow(Rails.logger).to receive(:info)
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).to have_requested(:put, dismiss_url).once
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "github_proxy.dismissed_stale_review", review_id: 101, pr_number: 10)
+          )
+        end
+
+        it "dismisses stale bot change requests even when the review was already tracked on the run" do
+          agent_run.update!(
+            review_posted_at: 1.hour.ago,
+            review_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-previous"
+          )
+          stub_review_list_response([
+            { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
+          ])
+          dismiss_url = stub_stale_review_dismissal
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).to have_requested(:put, dismiss_url).once
+          expect(agent_run.reload.review_url)
+            .to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-previous")
+        end
+
+        it "does not dismiss newer bot change requests" do
+          stub_review_list_response([
+            { id: 1001, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
+          ])
+          dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/1001/dismissals"
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).not_to have_requested(:put, dismiss_url)
+        end
+
+        it "does not dismiss stale change requests from other enabled review bots" do
+          project.update!(review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true },
+              "copilot" => { "enabled" => true }
+            }
+          })
+          stub_review_list_response([
+            { id: 101, user: { login: "copilot-pull-request-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Copilot request" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
+          ])
+          dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/101/dismissals"
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).not_to have_requested(:put, dismiss_url)
+        end
+
+        it "does not dismiss stale change requests when paid_agent bot logins resolve empty" do
+          allow(ProviderSupport).to receive(:provider_bot_usernames_for).with("paid_agent").and_return(Set.new)
+          stub_review_list_response([
+            { id: 101, user: { login: "paid-code-reviewer[bot]" }, state: "CHANGES_REQUESTED", body: "Needs work" },
+            { id: 999, user: { login: "paid-code-reviewer[bot]" }, state: "COMMENTED", body: "Latest review" }
+          ])
+          dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/101/dismissals"
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).not_to have_requested(:put, dismiss_url)
+        end
+      end
+
+      it "does not dismiss reviews when the latest review requests changes" do
+        changes_requested_response = {
+          id: 999,
+          body: "Needs fixes",
+          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+          state: "CHANGES_REQUESTED"
+        }.to_json
+        dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/101/dismissals"
+
+        stub_request(:post, target_url)
+          .to_return(status: 200, body: changes_requested_response, headers: { "Content-Type" => "application/json" })
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Needs fixes", event: "REQUEST_CHANGES" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).not_to have_requested(:put, dismiss_url)
+      end
+
+      it "does not query or dismiss stale reviews when the review response lacks an id" do
+        no_id_response = {
+          body: "Looks good",
+          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+          state: "commented"
+        }.to_json
+        review_list_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews"
+
+        stub_request(:post, target_url)
+          .to_return(status: 200, body: no_id_response, headers: { "Content-Type" => "application/json" })
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).not_to have_requested(:get, review_list_url)
       end
 
       it "returns 503 when the review bot is not configured" do
@@ -517,13 +683,6 @@ RSpec.describe "Api::GithubProxy" do
 
       it "does not log a warning for the clean review body-only format" do
         allow(Rails.logger).to receive(:warn)
-        clean_review_response_body = {
-          id: 999,
-          body: "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
-          html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
-          state: "commented",
-          comments: []
-        }.to_json
         stub_request(:post, target_url)
           .to_return(status: 200, body: clean_review_response_body, headers: { "Content-Type" => "application/json" })
 

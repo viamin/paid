@@ -81,9 +81,11 @@ module Workflows
       parallel_result = nil
       planning_context = {}
       prompt_source = nil
+      planning_policy_metadata = {}
       coordination_policy = nil
       coordination_assignment_id = nil
       scaling_assignments = []
+      learned_scaling_allocation = nil
       decision_phase = "planning"
       decision_step = "fetch_planning_context"
       @decision_step = decision_step
@@ -103,6 +105,7 @@ module Workflows
       created_issues = planning_result[:created_issues]
       planning_context = planning_result[:context] || {}
       prompt_source = planning_result[:prompt_source]
+      planning_policy_metadata = decomposition_policy_metadata(planning_result)
 
       scaling_experiment_context = safely_resolve_scaling_experiment(
         project_id: project_id,
@@ -111,7 +114,12 @@ module Workflows
         task_count: tasks.size
       )
       scaling_assignments = Array(scaling_experiment_context[:assignments])
-      coordination_policy = apply_scaling_execution_plans(coordination_policy, scaling_assignments)
+      learned_scaling_allocation = scaling_experiment_context[:learned_allocation]
+      coordination_policy = apply_scaling_execution_plans(
+        coordination_policy,
+        scaling_assignments,
+        learned_scaling_allocation:
+      )
 
       # Update labels/state immediately after planning completes (mirrors PlanningWorkflow step 4)
       decision_step = "update_planning_labels"
@@ -141,6 +149,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: nil,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity
@@ -169,6 +178,7 @@ module Workflows
           },
           metadata: {
             prompt_source: prompt_source,
+            **planning_policy_metadata,
             failed_step: nil,
             activity_boundaries: [ "Workflows::ParallelAgentExecutionWorkflow" ]
           }
@@ -197,7 +207,8 @@ module Workflows
           metadata: {
             prompt_source: prompt_source,
             created_issues: created_issues,
-            scaling_experiments: scaling_metadata(scaling_assignments)
+            scaling_experiments: scaling_metadata(scaling_assignments),
+            learned_allocation: learned_allocation_metadata(learned_scaling_allocation)
           }
         )
         safely_record_scaling_experiment_results(
@@ -216,7 +227,12 @@ module Workflows
       # Phase 2: Launch parallel execution on all sub-tasks
       decision_step = "build_sub_tasks"
       @decision_step = decision_step
-      sub_tasks = build_sub_tasks(tasks, created_issues, scaling_assignments: scaling_assignments)
+      sub_tasks = build_sub_tasks(
+        tasks,
+        created_issues,
+        scaling_assignments: scaling_assignments,
+        learned_scaling_allocation:
+      )
 
       safe_log_decomposition_decision(
         project_id: project_id,
@@ -234,6 +250,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: nil,
           activity_boundaries: [ "Workflows::ParallelAgentExecutionWorkflow" ]
         }
@@ -276,7 +293,8 @@ module Workflows
         metadata: {
           prompt_source: prompt_source,
           created_issues: created_issues,
-          scaling_experiments: scaling_metadata(scaling_assignments)
+          scaling_experiments: scaling_metadata(scaling_assignments),
+          learned_allocation: learned_allocation_metadata(learned_scaling_allocation)
         }
       )
       safely_record_scaling_experiment_results(
@@ -296,6 +314,7 @@ module Workflows
         aggregated_pr: parallel_result[:aggregated_pr]
       }
     rescue => e
+      planning_policy_metadata = planning_policy_metadata.presence || decomposition_policy_metadata_from_error(e)
       failed_step = @decision_step || decision_step
 
       safe_log_decomposition_decision(
@@ -317,6 +336,7 @@ module Workflows
         },
         metadata: {
           prompt_source: prompt_source,
+          **planning_policy_metadata,
           failed_step: failed_step
         }
       )
@@ -337,7 +357,8 @@ module Workflows
         metadata: {
           prompt_source: prompt_source,
           created_issues: created_issues,
-          scaling_experiments: scaling_metadata(scaling_assignments)
+          scaling_experiments: scaling_metadata(scaling_assignments),
+          learned_allocation: learned_allocation_metadata(learned_scaling_allocation)
         }
       )
       safely_record_scaling_experiment_results(
@@ -400,6 +421,7 @@ module Workflows
 
       tasks = decompose_result[:tasks]
       prompt_source = decompose_result[:prompt_source]
+      policy_metadata = decomposition_policy_metadata(decompose_result)
       created_issues = []
 
       # Step 3: Create sub-issues if multiple tasks
@@ -426,11 +448,20 @@ module Workflows
         created_issues = create_result[:created_issues]
       end
 
-      { tasks: tasks, created_issues: created_issues, context: context_result[:context], prompt_source: prompt_source }
+      {
+        tasks: tasks,
+        created_issues: created_issues,
+        context: context_result[:context],
+        prompt_source: prompt_source,
+        policy_metadata: policy_metadata
+      }
     end
 
-    def build_sub_tasks(tasks, created_issues, scaling_assignments:)
-      iteration_prompt_suffix = iteration_prompt_suffix_for(scaling_assignments)
+    def build_sub_tasks(tasks, created_issues, scaling_assignments:, learned_scaling_allocation:)
+      iteration_prompt_suffix = iteration_prompt_suffix_for(
+        scaling_assignments,
+        learned_scaling_allocation:
+      )
       created_issues_by_index = created_issues.each_with_index.each_with_object({}) do |(issue, fallback_index), memo|
         memo[issue.fetch(:index, fallback_index)] = issue
       end
@@ -616,13 +647,14 @@ module Workflows
       end
     end
 
-    def apply_scaling_execution_plans(policy, scaling_assignments)
+    def apply_scaling_execution_plans(policy, scaling_assignments, learned_scaling_allocation:)
       normalized_policy = (policy || {}).deep_dup
+      apply_learned_allocation!(normalized_policy, learned_scaling_allocation)
 
       Array(scaling_assignments).each do |assignment|
         execution_plan = assignment[:execution_plan] || assignment["execution_plan"] || {}
         dimension = execution_plan[:dimension] || execution_plan["dimension"]
-        next unless dimension == "agent_count"
+        next unless %w[agent_count parallelism].include?(dimension)
 
         requested_agent_count = execution_plan[:max_batch_size] || execution_plan["max_batch_size"]
         next unless requested_agent_count
@@ -632,6 +664,17 @@ module Workflows
       end
 
       normalized_policy.presence || policy
+    end
+
+    def apply_learned_allocation!(policy, learned_scaling_allocation)
+      return unless learned_scaling_allocation
+
+      max_batch_size = learned_scaling_allocation[:parallelism_level] || learned_scaling_allocation["parallelism_level"] ||
+        learned_scaling_allocation[:agent_count] || learned_scaling_allocation["agent_count"]
+      return unless max_batch_size
+
+      policy["parallel_execution"] ||= {}
+      policy["parallel_execution"]["max_batch_size"] = max_batch_size
     end
 
     def scaling_metadata(scaling_assignments)
@@ -652,16 +695,37 @@ module Workflows
       end
     end
 
-    def iteration_prompt_suffix_for(scaling_assignments)
+    def learned_allocation_metadata(learned_scaling_allocation)
+      return unless learned_scaling_allocation
+
+      {
+        agent_count: learned_scaling_allocation[:agent_count] || learned_scaling_allocation["agent_count"],
+        max_iterations: learned_scaling_allocation[:max_iterations] || learned_scaling_allocation["max_iterations"],
+        parallelism_level: learned_scaling_allocation[:parallelism_level] || learned_scaling_allocation["parallelism_level"],
+        source: learned_scaling_allocation[:source] || learned_scaling_allocation["source"],
+        reason: learned_scaling_allocation[:reason] || learned_scaling_allocation["reason"]
+      }.compact
+    end
+
+    def iteration_prompt_suffix_for(scaling_assignments, learned_scaling_allocation:)
       iteration_assignment = Array(scaling_assignments).find do |assignment|
         execution_plan = assignment[:execution_plan] || assignment["execution_plan"] || {}
         dimension = assignment[:dimension] || assignment["dimension"] || execution_plan[:dimension] || execution_plan["dimension"]
         dimension == "iteration_count"
       end
-      return unless iteration_assignment
+      if iteration_assignment
+        execution_plan = iteration_assignment[:execution_plan] || iteration_assignment["execution_plan"] || {}
+        return execution_plan[:prompt_suffix] || execution_plan["prompt_suffix"]
+      end
 
-      execution_plan = iteration_assignment[:execution_plan] || iteration_assignment["execution_plan"] || {}
-      execution_plan[:prompt_suffix] || execution_plan["prompt_suffix"]
+      learned_iterations = learned_scaling_allocation&.dig(:max_iterations) ||
+        learned_scaling_allocation&.dig("max_iterations")
+      return if learned_iterations.blank?
+
+      <<~PROMPT.strip
+        Iteration budget: aim to complete this task within #{learned_iterations} agent iterations.
+        If you cannot finish safely within that budget, stop and report the blocker instead of continuing indefinitely.
+      PROMPT
     end
 
     def append_scaling_prompt(prompt, prompt_suffix)

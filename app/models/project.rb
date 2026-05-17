@@ -1,6 +1,16 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
+  EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
+    "linear" => "Linear Issues",
+    "jira" => "Jira",
+    "azure_devops" => "Azure DevOps",
+    "mcp" => "MCP",
+    "generic_webhook" => "Issue Tracker"
+  }.freeze
+  DEFAULT_ISSUE_TRACKER_URLS = {
+    "linear" => "https://linear.app"
+  }.freeze
   has_logidze
   MERGE_METHODS = %w[squash merge rebase].freeze
   AUTO_RELEASE_GRANULARITIES = %w[off patch_only minor_only major_only all].freeze
@@ -128,6 +138,7 @@ class Project < ApplicationRecord
   ].freeze
 
   include TenantScoped
+  include AutoPickSkipLabels
 
   belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -231,7 +242,7 @@ class Project < ApplicationRecord
   after_create_commit :enqueue_knowledge_collection
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
-  after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
+  after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
@@ -247,6 +258,12 @@ class Project < ApplicationRecord
     "https://github.com/#{full_name}"
   end
 
+  def header_external_links(tracker_configuration:)
+    links = [ { label: repository_link_label(tracker_configuration), url: github_url } ]
+    issue_tracker_link = external_issue_tracker_link(tracker_configuration)
+    issue_tracker_link ? links << issue_tracker_link : links
+  end
+
   def activate!
     update!(active: true)
   end
@@ -258,6 +275,36 @@ class Project < ApplicationRecord
   def label_for_stage(stage)
     label_mappings[stage.to_s]
   end
+
+  def external_issue_tracker_link(tracker_configuration)
+    return if tracker_configuration.blank? || tracker_configuration.tracker_type == "github_issues"
+
+    url = normalized_external_url(
+      tracker_configuration.base_url.presence || DEFAULT_ISSUE_TRACKER_URLS[tracker_configuration.tracker_type]
+    )
+    return if url.blank?
+
+    {
+      label: EXTERNAL_ISSUE_TRACKER_LINK_LABELS.fetch(tracker_configuration.tracker_type, "Issue Tracker"),
+      url: url
+    }
+  end
+
+  def repository_link_label(tracker_configuration)
+    tracker_configuration&.tracker_type == "github_issues" ? "GitHub" : "GitHub Repo"
+  end
+
+  def normalized_external_url(url)
+    return if url.blank?
+
+    uri = URI.parse(url)
+    return unless uri.is_a?(URI::HTTPS)
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    nil
+  end
+  private :external_issue_tracker_link, :repository_link_label, :normalized_external_url
 
   def set_label_for_stage(stage, label)
     self.label_mappings = label_mappings.merge(stage.to_s => label)
@@ -272,6 +319,18 @@ class Project < ApplicationRecord
     overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
       .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
     DEFAULT_PRIORITY_LABELS.merge(overrides)
+  end
+
+  def effective_auto_pick_skip_labels
+    return auto_pick_skip_labels unless auto_pick_skip_labels.nil?
+
+    owner_labels = effective_owner&.user_setting&.auto_pick_skip_labels
+    return owner_labels unless owner_labels.nil?
+
+    tenant_labels = account&.tenant_setting&.auto_pick_skip_labels
+    return tenant_labels unless tenant_labels.nil?
+
+    AutoPickSkipLabels::DEFAULTS
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.
@@ -480,6 +539,7 @@ class Project < ApplicationRecord
     runs = agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
     AgentRun.preload_final_runner_records(runs)
     AgentRun.preload_source_pull_requests(runs)
+    AgentRun.preload_created_issue_records(runs)
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
@@ -492,6 +552,7 @@ class Project < ApplicationRecord
     runs = agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(50).to_a
     AgentRun.preload_final_runner_records(runs)
     AgentRun.preload_source_pull_requests(runs)
+    AgentRun.preload_created_issue_records(runs)
     broadcast_replace_to(
       self, :agent_runs_list,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
@@ -863,10 +924,12 @@ class Project < ApplicationRecord
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
   end
 
-  def trigger_auto_pick
-    ProcessRunQueueJob.perform_later
+  def seed_eligible_issues
+    return unless Issues::AutoPickProjectGate.call(self)
+
+    Issues::BulkEnqueueEligible.call(project: self, skip_project_gate: true)
   rescue => e
-    Rails.logger.error(message: "auto_pick.trigger_failed", project_id: id, error: e.message)
+    Rails.logger.error(message: "auto_pick.bulk_seed_failed", project_id: id, error: e.message)
   end
 
   def enqueue_knowledge_collection

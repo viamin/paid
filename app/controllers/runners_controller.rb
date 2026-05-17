@@ -160,7 +160,7 @@ class RunnersController < ApplicationController
     end
     attrs = params.require(:runner).permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ], pi: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -480,13 +480,7 @@ class RunnersController < ApplicationController
   end
 
   def compatible_api_key_for_runner?(api_key:, runner_key:)
-    # OpenCode and KiloCode support multiple API key types depending on the
-    # selected api_provider, so check against all compatible service types.
-    if %w[opencode kilocode].include?(runner_key)
-      return Runner::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
-    end
-
-    api_key.api_service_type == Runner.api_service_type_for(runner_key)
+    api_key.compatible_with?(runner_key)
   end
 
   def enabled_agent_runner_identifiers

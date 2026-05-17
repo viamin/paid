@@ -64,11 +64,14 @@ RSpec.describe "ChatSessions" do
       end
 
       it "auto-creates a new session when no active sessions exist" do
+        existing_ids = ChatSession.pluck(:id)
+
         expect {
           get chat_sessions_path
         }.to change(ChatSession, :count).by(1)
 
-        expect(response).to redirect_to(chat_session_path(ChatSession.last))
+        created_session = ChatSession.where.not(id: existing_ids).sole
+        expect(response).to redirect_to(chat_session_path(created_session))
       end
 
       it "defaults wildcard accept requests to the existing json API" do
@@ -128,9 +131,12 @@ RSpec.describe "ChatSessions" do
       end
 
       it "redirects to the session page for html requests" do
+        existing_ids = ChatSession.pluck(:id)
+
         post chat_sessions_path, params: { mode: "api", title: "UI Chat" }
 
-        expect(response).to redirect_to(chat_session_path(ChatSession.last))
+        created_session = ChatSession.where.not(id: existing_ids).sole
+        expect(response).to redirect_to(chat_session_path(created_session))
       end
 
       it "defaults wildcard accept create requests to json" do
@@ -210,6 +216,21 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
+      end
+
+      it "renders mobile archive controls without expanding the sidebar by default" do
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+        mobile_toggle = doc.at_css("button[data-chat-session-list-target='mobileButton']")
+        sidebar = doc.at_css("#chat-sessions-sidebar[data-chat-session-list-target='mobileMenu']")
+
+        expect(mobile_toggle).to be_present
+        expect(mobile_toggle.text).to include("Previous chats")
+        expect(sidebar).to be_present
+        expect(sidebar["aria-hidden"]).to eq("true")
+        expect(sidebar["class"].split).to include("hidden", "lg:block")
       end
 
       it "defaults wildcard accept show requests to the existing json API" do

@@ -31,13 +31,6 @@ class ProcessRunQueueJob < ApplicationJob
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
 
-  # Sanity ceiling on auto-pick rows seeded per perform invocation.
-  # Capacity is enforced at execution, not at queueing — but a project
-  # with thousands of eligible issues could otherwise tie up this job
-  # with unbounded INSERTs in a single pass. The next perform will pick
-  # up where this one left off.
-  MAX_SEEDS_PER_PERFORM = 200
-
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -58,8 +51,6 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_user_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
-
-      seed_auto_pick_queue
 
       loop do
         iterations += 1
@@ -149,79 +140,6 @@ class ProcessRunQueueJob < ApplicationJob
   def record_started_run(user)
     cap = @user_capacity[user.id]
     cap[:active] += 1 if cap
-  end
-
-  # Seeds the queue with every eligible auto-pickable issue across projects.
-  # Capacity is enforced at start-time, not at queueing — so a project with
-  # many P3/auto-pick issues will queue them all up rather than starving on
-  # higher-priority work elsewhere. MAX_SEEDS_PER_PERFORM bounds DB load if a
-  # project has thousands of eligible issues; subsequent performs catch up.
-  #
-  # The project list is sorted once and reused across passes. Each pass seeds
-  # at most one issue per project, so projects round-robin naturally; the
-  # cross-project fair-share at start-time (QUEUE_ORDER PROJECT_ACTIVE_COUNT)
-  # handles the actual interleaving, not the seed order.
-  def seed_auto_pick_queue
-    seeded = 0
-    loop do
-      created_in_pass = false
-
-      ordered_auto_pick_projects.each do |project|
-        break if seeded >= MAX_SEEDS_PER_PERFORM
-        next unless project.effective_owner
-
-        run = Issues::AutoPick.new(project).call
-        next unless run
-
-        seeded += 1
-        created_in_pass = true
-      end
-
-      break if !created_in_pass || seeded >= MAX_SEEDS_PER_PERFORM
-    end
-  end
-
-  # Memoized within a single perform so repeated auto-pick passes
-  # don't re-query the project list and aggregate stats each time.
-  def ordered_auto_pick_projects
-    @ordered_auto_pick_projects ||= begin
-      projects = Project.active.where(auto_pick_enabled: true, quality_paused_at: nil, scheduler_paused_at: nil)
-        .includes(:created_by, :account)
-        .joins(:account).where(accounts: { scheduler_paused_at: nil })
-        .order(:id).to_a
-      return projects if projects.empty?
-
-      project_ids = projects.map(&:id)
-      auto_pick_scope = AgentRun.where(
-        project_id: project_ids,
-        trigger_type: "automatic",
-        source_pull_request_number: nil
-      ).where.not(issue_id: nil)
-
-      active_counts = auto_pick_scope.where(
-        status: AgentRun::UNFINISHED_STATUSES
-      ).group(:project_id).count
-
-      # Collapse the two aggregate queries (max created_at, max id)
-      # into a single grouped pluck to reduce DB round-trips.
-      last_stats = {}
-      auto_pick_scope
-        .group(:project_id)
-        .pluck(:project_id, Arel.sql("MAX(created_at)"), Arel.sql("MAX(id)"))
-        .each do |project_id, max_created_at, max_id|
-          last_stats[project_id] = { at: max_created_at, id: max_id }
-        end
-
-      projects.sort_by do |project|
-        stats = last_stats[project.id]
-        [
-          active_counts.fetch(project.id, 0),
-          stats ? stats[:at] : Time.at(0),
-          stats ? stats[:id] : 0,
-          project.id
-        ]
-      end
-    end
   end
 
   def start_claimed_run(agent_run)

@@ -554,10 +554,10 @@ RSpec.describe "Projects" do
         expect(response.body).to include(project_agent_run_path(project, run))
       end
 
-      it "shows the provider column for recent agent runs" do
+      it "shows the runner column for recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        provider = create(:runner, user: user, runner_key: "codex")
-        run = create(:agent_run, project: project, provider: provider, final_runner: provider.routing_key)
+        runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+        run = create(:agent_run, project: project, runner: runner, final_runner: runner.routing_key)
 
         get project_path(project)
 
@@ -570,13 +570,13 @@ RSpec.describe "Projects" do
         row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
 
         expect(row).to be_present
-        expect(row.text).to include(provider.display_name)
+        expect(row.text).to include(runner.display_name)
       end
 
-      it "shows the final provider label for legacy fallback runs in recent agent runs" do
+      it "shows the final runner label for legacy fallback runs in recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        initial_provider = create(:runner, user: user, runner_key: "codex")
-        run = create(:agent_run, project: project, provider: initial_provider, final_runner: "cursor")
+        initial_runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+        run = create(:agent_run, project: project, runner: initial_runner, final_runner: "cursor")
 
         get project_path(project)
 
@@ -669,20 +669,30 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Clean Up Stale Runs")
       end
 
-      it "shows the Goal column with PR label for create_pr runs" do
+      it "shows the Goal column with the PR Creation label for create_pr runs" do
         project = create(:project, account: account, github_token: github_token)
         agent_run = create(:agent_run, project: project, status: "completed", goal: "create_pr")
         get project_path(project)
-        expect(response.body).to include(">Goal</th>")
-        expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*PR\s*<\/td>/m)
+        document = Nokogiri::HTML(response.body)
+        goal_index = document.css("table thead th").find_index { |header| header.text.squish == "Goal" }
+        row = document.at_css(%(tr#agent_run_#{agent_run.id}))
+
+        expect(goal_index).not_to be_nil
+        expect(row).to be_present
+        expect(row.css("td")[goal_index].text).to include("PR Creation")
       end
 
-      it "shows the Goal column with Issue label for create_issue runs" do
+      it "shows the Goal column with the Issue Creation label for create_issue runs" do
         project = create(:project, account: account, github_token: github_token)
         agent_run = create(:agent_run, :create_issue_goal, project: project, status: "completed")
         get project_path(project)
-        expect(response.body).to include(">Goal</th>")
-        expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*Issue\s*<\/td>/m)
+        document = Nokogiri::HTML(response.body)
+        goal_index = document.css("table thead th").find_index { |header| header.text.squish == "Goal" }
+        row = document.at_css(%(tr#agent_run_#{agent_run.id}))
+
+        expect(goal_index).not_to be_nil
+        expect(row).to be_present
+        expect(row.css("td")[goal_index].text).to include("Issue Creation")
       end
 
       it "shows issue link when created_issue_url is present" do
@@ -703,6 +713,34 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
         get project_path(project)
         expect(response.body).to include("https://github.com/octocat/hello")
+      end
+
+      it "shows a single GitHub link when GitHub handles both repo and issues" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        links = document.css('[data-testid="project-external-link"]')
+
+        expect(links.size).to eq(1)
+        expect(links.first.text).to include("GitHub")
+        expect(links.first["href"]).to eq("https://github.com/octocat/hello")
+      end
+
+      it "shows separate repository and issue tracker links when the tracker is external" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+        create(:tracker_configuration, :linear, configurable: project)
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        links = document.css('[data-testid="project-external-link"]')
+
+        expect(links.size).to eq(2)
+        expect(links.map(&:text).join(" ")).to include("GitHub Repo")
+        expect(links.map(&:text).join(" ")).to include("Linear Issues")
+        expect(links.map { |link| link["href"] }).to include("https://github.com/octocat/hello", "https://linear.app")
       end
 
       it "shows Quick Run buttons next to issues" do
@@ -1223,6 +1261,22 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Config Conflicts")
         expect(response.body).to include("driver: cuprite")
       end
+
+      it "wires Enter in settings inputs to the save submitter" do
+        project = create(:project, account: account, github_token: github_token)
+
+        get edit_project_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        form = doc.at_css("form[action='#{project_path(project)}']")
+        save_button = form.at_css("input[data-project-settings-form-target='saveButton']")
+        auto_detect_button = doc.at_css("button[name='screenshot_action'][value='detect']")
+
+        expect(form["data-controller"]).to include("project-settings-form")
+        expect(form["data-action"]).to include("keydown->project-settings-form#submitOnEnter")
+        expect(save_button).to be_present
+        expect(auto_detect_button["type"]).to eq("submit")
+      end
     end
   end
 
@@ -1287,6 +1341,26 @@ RSpec.describe "Projects" do
         expect(project.reload.auto_fix_merge_conflicts).to be true
       end
 
+      it "persists max draft review rounds" do
+        project = create(:project, account: account, github_token: github_token, max_draft_review_rounds: 10)
+
+        expect {
+          patch project_path(project), params: { project: { max_draft_review_rounds: 4 } }
+        }.to change { project.reload.max_draft_review_rounds }.from(10).to(4)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "persists zero max draft review rounds" do
+        project = create(:project, account: account, github_token: github_token, max_draft_review_rounds: 10)
+
+        expect {
+          patch project_path(project), params: { project: { max_draft_review_rounds: 0 } }
+        }.to change { project.reload.max_draft_review_rounds }.from(10).to(0)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
       it "persists screenshot settings" do
         project = create(:project, account: account, github_token: github_token)
         patch project_path(project), params: screenshot_update_params
@@ -1319,6 +1393,48 @@ RSpec.describe "Projects" do
         }
         expect(response).to redirect_to(project)
         expect(project.reload.priority_labels).to eq("P1" => "urgent", "P2" => "normal", "P3" => "low")
+      end
+
+      it "allows updating project auto-pick skip labels" do
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: {
+          project: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.auto_pick_skip_labels).to eq(%w[planning research])
+      end
+
+      it "allows a project override to skip no labels" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_skip_labels: %w[planning])
+
+        patch project_path(project), params: {
+          project: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: ""
+          }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.auto_pick_skip_labels).to eq([])
+      end
+
+      it "clears the project skip-label override when override is disabled" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_skip_labels: %w[planning])
+
+        patch project_path(project), params: {
+          project: {
+            auto_pick_skip_labels_override: "0",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.auto_pick_skip_labels).to be_nil
       end
 
       it "rejects blank priority label values" do
@@ -1517,18 +1633,22 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Auto-Pick Issues")
       end
 
-      it "enqueues ProcessRunQueueJob when enabling auto_pick" do
+      it "bulk seeds eligible issues when enabling auto_pick" do
         project = create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
-        expect {
-          post toggle_auto_pick_project_path(project)
-        }.to have_enqueued_job(ProcessRunQueueJob)
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+
+        post toggle_auto_pick_project_path(project)
+
+        expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
       end
 
-      it "does not enqueue ProcessRunQueueJob when disabling auto_pick" do
+      it "does not bulk seed when disabling auto_pick" do
         project = create(:project, account: account, github_token: github_token, auto_pick_enabled: true)
-        expect {
-          post toggle_auto_pick_project_path(project)
-        }.not_to have_enqueued_job(ProcessRunQueueJob)
+        allow(Issues::BulkEnqueueEligible).to receive(:call)
+
+        post toggle_auto_pick_project_path(project)
+
+        expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
       end
     end
 

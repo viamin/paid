@@ -103,18 +103,20 @@ RSpec.describe Strategy do
     describe ".active" do
       it "returns only active strategies" do
         active = create(:strategy, :global, status: "active")
-        create(:strategy, :global, :archived)
+        archived = create(:strategy, :global, :archived)
 
-        expect(described_class.active).to eq([ active ])
+        expect(described_class.active).to include(active)
+        expect(described_class.active).not_to include(archived)
       end
     end
 
     describe ".global" do
       it "returns strategies without account or project" do
         global = create(:strategy, :global)
-        create(:strategy, :for_account)
+        account_strategy = create(:strategy, :for_account)
 
-        expect(described_class.global).to eq([ global ])
+        expect(described_class.global).to include(global)
+        expect(described_class.global).not_to include(account_strategy)
       end
     end
 
@@ -184,6 +186,40 @@ RSpec.describe Strategy do
         version = strategy.create_version!(content: { "mode" => "single" }, version: 99)
 
         expect(version.version).to eq(1)
+      end
+    end
+
+    describe "#create_pending_version!" do
+      it "creates a candidate version without promoting it" do
+        strategy = create(:strategy, :global)
+
+        version = strategy.create_pending_version!(content: { "mode" => "single" })
+
+        expect(version.version).to eq(1)
+        expect(version.promotion_state).to eq("candidate")
+        expect(strategy.reload.current_version).to be_nil
+      end
+
+      it "ignores caller-supplied promotion state" do
+        strategy = create(:strategy, :global)
+
+        version = strategy.create_pending_version!(
+          content: { "mode" => "single" },
+          promotion_state: "active"
+        )
+
+        expect(version.promotion_state).to eq("candidate")
+        expect(version).to be_pending_review
+      end
+    end
+
+    describe "#pending_reviews" do
+      it "returns candidate versions awaiting review" do
+        strategy = create(:strategy, :global)
+        candidate = create(:strategy_version, :candidate, strategy: strategy)
+        create(:strategy_version, :rejected, strategy: strategy)
+
+        expect(strategy.pending_reviews).to contain_exactly(candidate)
       end
     end
   end

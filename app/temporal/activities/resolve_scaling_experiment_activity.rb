@@ -10,6 +10,7 @@ module Activities
       task_count = input[:task_count].to_i
       issue = input[:issue_id] ? project.issues.find(input[:issue_id]) : nil
 
+      learned_allocation = resolve_learned_allocation(project:, task_count:)
       assignments = ScalingExperiment.running
         .where(project: project)
         .order(:id)
@@ -37,7 +38,39 @@ module Activities
 
       {
         assignment_ids: assignments.map { |assignment| assignment[:assignment_id] },
-        assignments: assignments
+        assignments: assignments,
+        learned_allocation: serialize_allocation(learned_allocation)
+      }
+    end
+
+    private
+
+    def resolve_learned_allocation(project:, task_count:)
+      allocation = Scaling::ResourceAllocator.call(
+        inputs: Scaling::AllocationInputs.new(task_count: task_count, max_agent_count: task_count),
+        observations: ScalingObservation.for_project(project)
+          .by_observation_type("feature_orchestration")
+          .recent
+          .to_a,
+        experiment_summaries: ScalingExperiment
+          .where(project: project, status: %w[running completed])
+          .where.not(cached_summary: nil)
+          .pluck(:cached_summary)
+      )
+
+      allocation unless allocation.source == :fallback
+    end
+
+    def serialize_allocation(allocation)
+      return unless allocation
+
+      {
+        agent_count: allocation.agent_count,
+        max_iterations: allocation.max_iterations,
+        parallelism_level: allocation.parallelism_level,
+        source: allocation.source,
+        reason: allocation.reason,
+        metrics: allocation.metrics
       }
     end
   end

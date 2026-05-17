@@ -43,6 +43,15 @@ RSpec.describe "TenantConfigurations" do
       expect(setting.features["explicit_pr_automation_decisions"]).to be(true)
     end
 
+    it "updates the tenant marketplace auto-attach override" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+
+      patch tenant_configuration_path, params: tenant_configuration_params(api_key)
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.marketplace_auto_attach_required?).to be(true)
+    end
+
     it "updates feature flag rollout percentages" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 
@@ -55,6 +64,46 @@ RSpec.describe "TenantConfigurations" do
       )
     end
 
+    it "updates tenant-level auto-pick skip labels" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          auto_pick_skip_labels_override: "1",
+          auto_pick_skip_labels_csv: "planning, research"
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "allows an empty tenant-level skip-label override" do
+      account.tenant_setting!.update!(auto_pick_skip_labels: %w[planning])
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          auto_pick_skip_labels_override: "1",
+          auto_pick_skip_labels_csv: ""
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.auto_pick_skip_labels).to eq([])
+    end
+
+    it "clears the tenant-level override when skip labels are not overridden" do
+      account.tenant_setting!.update!(auto_pick_skip_labels: %w[planning])
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          auto_pick_skip_labels_override: "0",
+          auto_pick_skip_labels_csv: "planning, research"
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.auto_pick_skip_labels).to be_nil
+    end
+
     it "disables auto-continue when the checkbox submits its hidden false value" do
       account.tenant_setting!.update!(agent_settings: { "auto_continue" => true })
 
@@ -62,7 +111,8 @@ RSpec.describe "TenantConfigurations" do
         tenant_setting: {
           agent_settings: {
             default_goal: "create_pr",
-            auto_continue: "0"
+            auto_continue: "0",
+            marketplace_auto_attach_required: "0"
           }
         }
       }
@@ -76,7 +126,8 @@ RSpec.describe "TenantConfigurations" do
         tenant_setting: {
           agent_settings: {
             default_goal: "typo",
-            auto_continue: "1"
+            auto_continue: "1",
+            marketplace_auto_attach_required: "0"
           }
         }
       }
@@ -98,7 +149,7 @@ RSpec.describe "TenantConfigurations" do
       sign_in admin
 
       patch tenant_configuration_path, params: {
-        tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
+        tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1", marketplace_auto_attach_required: "0" } },
         feature_flag_rollouts: {
           explicit_pr_automation_decisions: { percentage_of_actors: "50", percentage_of_time: "0" }
         },
@@ -147,7 +198,7 @@ RSpec.describe "TenantConfigurations" do
       FeatureFlags.enable_percentage_of_actors(:explicit_pr_automation_decisions, 25)
 
       patch tenant_configuration_path, params: {
-        tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
+        tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1", marketplace_auto_attach_required: "0" } },
         feature_flag_rollouts: {
           explicit_pr_automation_decisions: { percentage_of_actors: "0", percentage_of_time: "0" }
         },
@@ -235,13 +286,14 @@ RSpec.describe "TenantConfigurations" do
   def agent_settings
     {
       default_goal: "review",
-      auto_continue: "1"
+      auto_continue: "1",
+      marketplace_auto_attach_required: "1"
     }
   end
 
   def rollout_params(percentage_of_actors: "0", percentage_of_time: "0")
     {
-      tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1" } },
+      tenant_setting: { agent_settings: { default_goal: "review", auto_continue: "1", marketplace_auto_attach_required: "0" } },
       feature_flag_rollouts: {
         explicit_pr_automation_decisions: {
           percentage_of_actors: percentage_of_actors, percentage_of_time: percentage_of_time

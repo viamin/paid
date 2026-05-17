@@ -18,13 +18,15 @@ module Automation
         :phase,
         :active_run_exists,
         :operational_failure_breaker,
-        :draft_review_limit_reached,
-        :consecutive_draft_failures_breaker,
+        :no_progress_stuck,
+        :failure_streak_limit_reached,
         :review_goal_retry_limit_requires_escalation,
-        :followup_limit_reached,
         :escalation_dismissed,
         :owner_reviewer_login,
         :escalation_reason,
+        :consecutive_unsuccessful_automatic_runs,
+        :consecutive_operational_failures,
+        :last_meaningful_progress_at,
         :draft_review_count,
         :review_goal_retry_count,
         :pr_followup_count,
@@ -35,29 +37,36 @@ module Automation
           def from_metadata(metadata)
             return nil unless metadata
 
-            lifecycle = metadata[:lifecycle]
+            lifecycle = value_for(metadata, :lifecycle)
             return nil unless lifecycle
 
             new(
-              issue_id: lifecycle[:issue_id],
-              pr_number: lifecycle[:pr_number],
-              phase: lifecycle[:phase]&.to_s,
-              active_run_exists: lifecycle[:active_run_exists] == true,
-              operational_failure_breaker: lifecycle[:operational_failure_breaker] == true,
-              draft_review_limit_reached: lifecycle[:draft_review_limit_reached] == true,
-              consecutive_draft_failures_breaker: lifecycle[:consecutive_draft_failures_breaker] == true,
-              review_goal_retry_limit_requires_escalation:
-                lifecycle[:review_goal_retry_limit_requires_escalation] == true,
-              followup_limit_reached: lifecycle[:followup_limit_reached] == true,
-              escalation_dismissed: lifecycle[:escalation_dismissed] == true,
-              owner_reviewer_login: lifecycle[:owner_reviewer_login],
-              escalation_reason: lifecycle[:escalation_reason],
-              draft_review_count: lifecycle[:draft_review_count].to_i,
-              review_goal_retry_count: lifecycle[:review_goal_retry_count].to_i,
-              pr_followup_count: lifecycle[:pr_followup_count].to_i,
-              draft: lifecycle[:draft] == true,
-              scan: metadata[:scan]
+              issue_id: value_for(lifecycle, :issue_id),
+              pr_number: value_for(lifecycle, :pr_number),
+              phase: value_for(lifecycle, :phase)&.to_s,
+              active_run_exists: value_for(lifecycle, :active_run_exists) == true,
+              operational_failure_breaker: value_for(lifecycle, :operational_failure_breaker) == true,
+              no_progress_stuck: value_for(lifecycle, :no_progress_stuck) == true,
+              failure_streak_limit_reached: value_for(lifecycle, :failure_streak_limit_reached) == true,
+              review_goal_retry_limit_requires_escalation: value_for(lifecycle, :review_goal_retry_limit_requires_escalation) == true,
+              escalation_dismissed: value_for(lifecycle, :escalation_dismissed) == true,
+              owner_reviewer_login: value_for(lifecycle, :owner_reviewer_login),
+              escalation_reason: value_for(lifecycle, :escalation_reason),
+              consecutive_unsuccessful_automatic_runs: value_for(lifecycle, :consecutive_unsuccessful_automatic_runs).to_i,
+              consecutive_operational_failures: value_for(lifecycle, :consecutive_operational_failures).to_i,
+              last_meaningful_progress_at: value_for(lifecycle, :last_meaningful_progress_at),
+              draft_review_count: value_for(lifecycle, :draft_review_count).to_i,
+              review_goal_retry_count: value_for(lifecycle, :review_goal_retry_count).to_i,
+              pr_followup_count: value_for(lifecycle, :pr_followup_count).to_i,
+              draft: value_for(lifecycle, :draft) == true,
+              scan: value_for(metadata, :scan)
             )
+          end
+
+          private
+
+          def value_for(hash, key)
+            hash[key] || hash[key.to_s]
           end
         end
 

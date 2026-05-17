@@ -136,6 +136,27 @@ RSpec.describe Project do
       end
     end
 
+    describe "#header_external_links" do
+      it "returns a single GitHub link when GitHub handles both repo and issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        tracker_configuration = build(:tracker_configuration, configurable: project, tracker_type: "github_issues")
+
+        expect(project.header_external_links(tracker_configuration: tracker_configuration)).to eq([
+          { label: "GitHub", url: "https://github.com/viamin/paid" }
+        ])
+      end
+
+      it "returns separate repository and issue tracker links when the tracker is external" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        tracker_configuration = build(:tracker_configuration, :linear, configurable: project)
+
+        expect(project.header_external_links(tracker_configuration: tracker_configuration)).to eq([
+          { label: "GitHub Repo", url: "https://github.com/viamin/paid" },
+          { label: "Linear Issues", url: "https://linear.app" }
+        ])
+      end
+    end
+
     describe "#activate!" do
       it "sets active to true" do
         project = create(:project, :inactive)
@@ -379,41 +400,56 @@ RSpec.describe Project do
     before do
       allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
       allow(temporal_client).to receive(:start_workflow)
+      allow(Issues::BulkEnqueueEligible).to receive(:call)
     end
 
-    it "enqueues ProcessRunQueueJob when auto_pick is enabled" do
+    it "bulk seeds eligible issues when auto_pick is enabled" do
       project = create(:project, auto_pick_enabled: false)
 
-      expect {
-        project.update!(auto_pick_enabled: true)
-      }.to have_enqueued_job(ProcessRunQueueJob)
+      project.update!(auto_pick_enabled: true)
+
+      expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
     end
 
-    it "does not enqueue ProcessRunQueueJob when auto_pick is disabled" do
-      project = create(:project, auto_pick_enabled: true)
-
-      expect {
-        project.update!(auto_pick_enabled: false)
-      }.not_to have_enqueued_job(ProcessRunQueueJob)
-    end
-
-    it "does not enqueue ProcessRunQueueJob when other attributes change" do
-      project = create(:project, auto_pick_enabled: true)
-
-      expect {
-        project.update!(name: "new-name")
-      }.not_to have_enqueued_job(ProcessRunQueueJob)
-    end
-
-    it "logs error when ProcessRunQueueJob fails to enqueue" do
+    it "bulk seeds even when the project has open PRs needing attention" do
       project = create(:project, auto_pick_enabled: false)
-      allow(ProcessRunQueueJob).to receive(:perform_later).and_raise(StandardError, "queue unavailable")
+      create(:issue,
+        project: project,
+        is_pull_request: true,
+        github_state: "open",
+        paid_state: "in_progress",
+        labels: [])
+
+      project.update!(auto_pick_enabled: true)
+
+      expect(Issues::BulkEnqueueEligible).to have_received(:call).with(project: project, skip_project_gate: true)
+    end
+
+    it "does not bulk seed when auto_pick is disabled" do
+      project = create(:project, auto_pick_enabled: true)
+
+      project.update!(auto_pick_enabled: false)
+
+      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
+
+    it "does not bulk seed when other attributes change" do
+      project = create(:project, auto_pick_enabled: true)
+
+      project.update!(name: "new-name")
+
+      expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
+
+    it "logs error when bulk seeding fails" do
+      project = create(:project, auto_pick_enabled: false)
+      allow(Issues::BulkEnqueueEligible).to receive(:call).and_raise(StandardError, "queue unavailable")
       allow(Rails.logger).to receive(:error)
 
       project.update!(auto_pick_enabled: true)
 
       expect(Rails.logger).to have_received(:error).with(
-        hash_including(message: "auto_pick.trigger_failed", project_id: project.id)
+        hash_including(message: "auto_pick.bulk_seed_failed", project_id: project.id)
       )
     end
   end
@@ -928,6 +964,55 @@ RSpec.describe Project do
 
         expect(project.automation_configuration).not_to equal(original)
         expect(project.automation_configuration.auto_review.enabled?).to be true
+      end
+    end
+
+    describe "#effective_auto_pick_skip_labels" do
+      it "uses project labels before user, tenant, and defaults" do
+        project = create(:project, auto_pick_skip_labels: %w[blocked])
+        project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq(%w[blocked])
+      end
+
+      it "falls back to user labels when the project does not override them" do
+        project = create(:project, auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq(%w[user-skip])
+      end
+
+      it "falls back to tenant labels when the project and user do not override them" do
+        project = create(:project, auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: nil)
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: %w[tenant-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq(%w[tenant-skip])
+      end
+
+      it "falls back to built-in defaults when no override exists" do
+        project = create(:project, auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: nil)
+        project.account.tenant_setting!.update!(auto_pick_skip_labels: nil)
+
+        expect(project.effective_auto_pick_skip_labels).to eq(AutoPickSkipLabels::DEFAULTS)
+      end
+
+      it "allows a project override to disable skip labels entirely" do
+        project = create(:project, auto_pick_skip_labels: [])
+        project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])
+
+        expect(project.effective_auto_pick_skip_labels).to eq([])
+      end
+
+      it "does not create a user setting record while resolving fallback labels" do
+        project = create(:project)
+
+        expect(project.created_by.user_setting).to be_nil
+        expect { project.effective_auto_pick_skip_labels }.not_to change(UserSetting, :count)
+        expect(project.effective_auto_pick_skip_labels).to eq(AutoPickSkipLabels::DEFAULTS)
       end
     end
 

@@ -91,11 +91,12 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "uses shorter adaptive thresholds for fast healthy goals" do
-      create_list(:agent_run, AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
-        :completed,
-        :review_goal,
-        duration_seconds: 120,
-        completed_at: 1.day.ago)
+      allow(AgentRun).to receive(:healthy_successful_runtime_stats_by_goal).and_return(
+        "review" => {
+          count: AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
+          p95: 120.0
+        }
+      )
 
       stale_review = create(:agent_run, :running, :review_goal,
         started_at: (AgentRun.stale_running_timeout(goal: "review") + 60).seconds.ago)
@@ -614,9 +615,19 @@ RSpec.describe StaleRunDetectorJob do
         expect(issue.reload.paid_state).to eq("in_progress")
       end
 
-      it "does not reset an in_progress pull request with no active run" do
+      it "resets an orphaned in_progress PR to completed when no active run exists" do
         pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
           updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+
+        described_class.perform_now
+
+        expect(pull_request.reload.paid_state).to eq("completed")
+      end
+
+      it "does not reset an in_progress PR that has an active run" do
+        pull_request = create(:issue, :pull_request, project: project, paid_state: "in_progress",
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        create(:agent_run, :running, project: project, issue: pull_request)
 
         described_class.perform_now
 

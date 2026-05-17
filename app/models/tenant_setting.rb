@@ -3,6 +3,7 @@
 class TenantSetting < ApplicationRecord
   self.ignored_columns = %w[provider_preferences allowed_provider_keys]
 
+  include AutoPickSkipLabels
   has_logidze
   PG_INT_MAX = 2_147_483_647
   BUDGET_TYPES = CostBudget::BUDGET_TYPES
@@ -30,7 +31,8 @@ class TenantSetting < ApplicationRecord
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
     "default_goal" => "create_pr",
-    "auto_continue" => true
+    "auto_continue" => true,
+    "marketplace_auto_attach_required" => false
   }.freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
@@ -139,6 +141,10 @@ class TenantSetting < ApplicationRecord
 
   def auto_continue?
     effective_agent_settings["auto_continue"] == true
+  end
+
+  def marketplace_auto_attach_required?
+    effective_agent_settings["marketplace_auto_attach_required"] == true
   end
 
   def default_goal
@@ -331,6 +337,9 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       normalized["auto_continue"] = ActiveModel::Type::Boolean.new.cast(normalized["auto_continue"]) if normalized.key?("auto_continue")
+      if normalized.key?("marketplace_auto_attach_required")
+        normalized["marketplace_auto_attach_required"] = ActiveModel::Type::Boolean.new.cast(normalized["marketplace_auto_attach_required"])
+      end
     end
   end
 

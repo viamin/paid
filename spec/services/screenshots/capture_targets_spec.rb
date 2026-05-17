@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Screenshots::CaptureTargets do
+RSpec.describe Screenshots::CaptureTargets, :no_db do
   describe ".call" do
     it "maps locale changes to shared UI targets" do
       targets = described_class.call(changed_files: [ "config/locales/devise.en.yml" ])
@@ -22,10 +22,27 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to eq([ "service_container_edit" ])
     end
 
+    it "maps marketplace entry views to their specific screenshot targets" do
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/index.html.erb" ]).map(&:slug))
+        .to eq([ "marketplace_entries" ])
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/show.html.erb" ]).map(&:slug))
+        .to eq([ "marketplace_entry_show" ])
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/edit.html.erb" ]).map(&:slug))
+        .to eq([ "marketplace_entry_edit" ])
+      expect(described_class.call(changed_files: [ "app/views/marketplace_entries/_form.html.erb" ]).map(&:slug))
+        .to contain_exactly("marketplace_entry_new", "marketplace_entry_edit")
+    end
+
     it "maps existing prompt review screens instead of treating them as unmapped UI" do
       targets = described_class.call(changed_files: [ "app/views/prompt_reviews/show.html.erb" ])
 
       expect(targets.map(&:slug)).to eq([ "prompt_review_show" ])
+    end
+
+    it "maps strategy review screens instead of treating them as unmapped UI" do
+      targets = described_class.call(changed_files: [ "app/views/strategy_reviews/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "strategy_review_show" ])
     end
 
     it "maps existing knowledge screens instead of treating them as unmapped UI" do
@@ -46,6 +63,12 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to include("sign_in", "dashboard", "projects")
     end
 
+    it "does not add strategy review pages to the generic shared capture set" do
+      targets = described_class.call(changed_files: [ "app/components/sidebar_component.rb" ])
+
+      expect(targets.map(&:slug)).not_to include("strategy_reviews_queue", "strategy_reviews", "strategy_review_show")
+    end
+
     it "maps knowledge artifact views to the artifact show route" do
       targets = described_class.call(changed_files: [ "app/views/knowledge/artifacts/show.html.erb" ])
 
@@ -58,16 +81,63 @@ RSpec.describe Screenshots::CaptureTargets do
       expect(targets.map(&:slug)).to eq([ "dashboard" ])
     end
 
+    it "maps marketplace entry controllers to representative marketplace routes" do
+      targets = described_class.call(changed_files: [ "app/controllers/marketplace_entries_controller.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly(
+        "marketplace_entries",
+        "marketplace_entry_new",
+        "marketplace_entry_show",
+        "marketplace_entry_edit"
+      )
+    end
+
     it "maps nested controller files to their corresponding page targets" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/cost_dashboards_controller.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "project_cost_dashboard" ])
     end
 
+    it "maps the clarifying-questions wizard controller to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/clarifying_questions_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
+    it "maps the clarifying-questions Stimulus controller to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/javascript/controllers/clarifying_questions_controller.js" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
+    it "maps the marketplace picker Stimulus controller to the project run form" do
+      targets = described_class.call(changed_files: [ "app/javascript/controllers/marketplace_picker_controller.js" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_agent_run_new" ])
+    end
+
+    it "does not broaden screenshot capture when the controller registry changes alongside a mapped Stimulus controller" do
+      targets = described_class.call(
+        changed_files: [
+          "app/javascript/controllers/index.js",
+          "app/javascript/controllers/clarifying_questions_controller.js"
+        ]
+      )
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
+    end
+
     it "maps projects/agent_runs_controller to include the new action target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/agent_runs_controller.rb" ])
 
       expect(targets.map(&:slug)).to contain_exactly("project_agent_runs", "project_agent_run_new", "project_agent_run_show")
+    end
+
+    it "maps the project run form and run detail partials to the relevant project agent run pages" do
+      expect(described_class.call(changed_files: [ "app/views/projects/agent_runs/new.html.erb" ]).map(&:slug))
+        .to eq([ "project_agent_run_new" ])
+      expect(described_class.call(changed_files: [ "app/views/agent_runs/_detail.html.erb" ]).map(&:slug))
+        .to eq([ "project_agent_run_show" ])
     end
 
     it "maps public assets to shared UI targets" do
@@ -152,6 +222,12 @@ RSpec.describe Screenshots::CaptureTargets do
       targets = described_class.call(changed_files: [ "app/views/projects/_issues.html.erb" ])
 
       expect(targets.map(&:slug)).to eq([ "project_show" ])
+    end
+
+    it "maps the clarifying-questions wizard view to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/clarifying_questions/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
     end
 
     it "maps project index partials to projects target" do

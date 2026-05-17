@@ -46,6 +46,56 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  def stub_provision_steps(provision)
+    allow(provision).to receive(:log_system)
+    allow(provision).to receive(:prepare_workspace!)
+    allow(provision).to receive(:ensure_network!)
+    allow(provision).to receive(:fix_all_ownership!)
+    allow(provision).to receive(:seed_opencode_database!)
+    allow(provision).to receive(:seed_codex_credentials!)
+    allow(provision).to receive(:seed_gemini_credentials!)
+    allow(provision).to receive(:seed_copilot_credentials!)
+    allow(provision).to receive(:seed_claude_credentials!)
+    allow(provision).to receive(:apply_network_restrictions!)
+  end
+
+  def build_remote_backend_without_host_paths(container, &create_container)
+    backend = instance_double(
+      Containers::Backends::Base,
+      remote?: false,
+      supports_host_paths?: false,
+      start_container: true,
+      container_host_for: "worker-1"
+    )
+    allow(backend).to receive(:create_container, &create_container || ->(*) { container })
+    backend
+  end
+
+  def stub_remote_backend_proxy_support(mock_network:, mock_volume:, mock_container:)
+    remote_backend = build_remote_backend(mock_volume:, mock_container:)
+    allow(remote_backend).to receive(:get_volume).and_raise(Docker::Error::NotFoundError)
+    allow(remote_backend).to receive(:get_network).with("paid_agent").and_return(mock_network)
+    allow(NetworkPolicy).to receive(:ensure_network!).with(network: "paid_agent", backend: remote_backend).and_return(mock_network)
+    allow(NetworkPolicy).to receive(:apply_firewall_rules)
+    remote_backend
+  end
+
+  def build_remote_backend(mock_volume:, mock_container:)
+    instance_double(
+      Containers::Backends::RemoteDocker,
+      identifier: "worker-1",
+      remote?: true,
+      supports_host_paths?: false,
+      container_host_for: "worker-1",
+      create_volume: mock_volume,
+      create_container: mock_container,
+      start_container: true,
+      exec_in_container: [ [], [], 0 ],
+      delete_container: true,
+      delete_volume: true
+    )
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -185,6 +235,30 @@ RSpec.describe Containers::Provision do
       expect(Docker::Volume).to have_received(:get).with(entry.workspace_volume)
       expect(Docker::Volume).not_to have_received(:get).with("paid-workspace-#{agent_run.id}")
     end
+
+    it "uses the resolved backend for later lifecycle calls after reconnect" do
+      agent_run.update!(container_host: "remote")
+      remote_volume = instance_double(Docker::Volume, remove: true)
+      remote_backend = instance_double(
+        Containers::Backends::Base,
+        get_container: mock_container,
+        stop_container: true,
+        delete_container: true,
+        get_volume: remote_volume,
+        delete_volume: true
+      )
+      allow(Containers).to receive(:backend_for).with("remote").and_return(remote_backend)
+
+      reconnected = described_class.reconnect(agent_run: agent_run, container_id: container_id, pool_entry: nil)
+      reconnected.cleanup(force: true)
+
+      expect(Containers).to have_received(:backend_for).with("remote")
+      expect(remote_backend).to have_received(:get_container).with(container_id)
+      expect(remote_backend).to have_received(:stop_container).with(mock_container, timeout: 0)
+      expect(remote_backend).to have_received(:delete_container).with(mock_container, force: true, v: true)
+      expect(remote_backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
+      expect(remote_backend).to have_received(:delete_volume).with(remote_volume)
+    end
   end
 
   describe "#provision" do
@@ -197,6 +271,28 @@ RSpec.describe Containers::Provision do
 
         expect(result).to be_success
         expect(result[:container_id]).to eq("abc123container")
+      end
+
+      it "mounts a tmpfs heartbeat directory when the backend lacks host path support" do
+        config = nil
+        backend = build_remote_backend_without_host_paths(mock_container) do |given_config|
+          config = given_config
+          mock_container
+        end
+        provision = described_class.new(agent_run: agent_run, worktree_path: nil, backend: backend)
+
+        stub_provision_steps(provision)
+        allow(provision).to receive(:prepare_heartbeat_dir!)
+
+        result = provision.provision
+
+        expect(result).to be_success
+        expect(provision).not_to have_received(:prepare_heartbeat_dir!)
+        expect(config.dig("HostConfig", "Tmpfs")).to include(
+          described_class::HEARTBEAT_MOUNT_POINT => "size=1048576,mode=0777"
+        )
+        expect(config.dig("HostConfig", "Binds").grep(/#{Regexp.escape(described_class::HEARTBEAT_MOUNT_POINT)}/)).to be_empty
+        expect(backend).to have_received(:start_container).with(mock_container)
       end
 
       it "logs the provision start and success" do
@@ -517,13 +613,38 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "uses PAID_PROXY_EXTERNAL_URL when a remote backend is active" do
+        remote_backend = stub_remote_backend_proxy_support(
+          mock_network: mock_network,
+          mock_volume: mock_volume,
+          mock_container: mock_container
+        )
+
+        original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+        ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+
+        remote_service = described_class.new(agent_run: agent_run, backend: remote_backend)
+
+        expect(remote_backend).to receive(:create_container) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_PROXY_URL=https://proxy.example.test:3443")
+          expect(env).to include("OPENAI_BASE_URL=https://proxy.example.test:3443/api/proxy/openai")
+          expect(env).to include("GOOGLE_GEMINI_BASE_URL=https://proxy.example.test:3443/api/proxy/google")
+          mock_container
+        end
+
+        remote_service.provision
+      ensure
+        ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+      end
+
       it "includes runner CLI env overrides from agent-harness" do
         gemini_runner = instance_double(
           AgentHarness::Providers::Gemini,
           cli_env_overrides: { "GEMINI_SANDBOX" => "false", "GEMINI_CLI_DISABLE_RETRIES" => "true" }
         )
         allow(AgentHarness).to receive(:runner).and_call_original
-        allow(AgentHarness).to receive(:runner).with(:gemini).and_return(gemini_provider)
+        allow(AgentHarness).to receive(:runner).with(:gemini).and_return(gemini_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -689,7 +810,10 @@ RSpec.describe Containers::Provision do
 
     context "with network integration" do
       it "ensures the agent network exists before provisioning" do
-        expect(NetworkPolicy).to receive(:ensure_network!).with(network: NetworkPolicy::NETWORK_NAME).ordered
+        expect(NetworkPolicy).to receive(:ensure_network!).with(
+          network: NetworkPolicy::NETWORK_NAME,
+          backend: service.backend
+        ).ordered
         expect(Docker::Container).to receive(:create).ordered.and_return(mock_container)
 
         service.provision
@@ -730,7 +854,11 @@ RSpec.describe Containers::Provision do
 
       it "applies firewall rules after container start" do
         expect(mock_container).to receive(:start).ordered
-        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(mock_container, service_destinations: []).ordered
+        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(
+          mock_container,
+          service_destinations: [],
+          backend: service.backend
+        ).ordered
 
         service.provision
       end
@@ -834,7 +962,10 @@ RSpec.describe Containers::Provision do
       end
 
       it "ensures the infrastructure network exists" do
-        expect(NetworkPolicy).to receive(:ensure_network!).with(network: NetworkPolicy::INFRA_NETWORK_NAME)
+        expect(NetworkPolicy).to receive(:ensure_network!).with(
+          network: NetworkPolicy::INFRA_NETWORK_NAME,
+          backend: service.backend
+        )
 
         service.provision
       end
@@ -2849,6 +2980,95 @@ RSpec.describe Containers::Provision do
         )
         expect(result).to be_success
         expect(container_stopped.true?).to be false
+      end
+    end
+
+    context "with startup heartbeat thread" do
+      before do
+        allow(service).to receive(:startup_heartbeat_interval_seconds).and_return(0.01)
+      end
+
+      it "prevents startup timeout during silent MCP initialization by touching heartbeat_host_path" do
+        host_path = service.heartbeat_host_path
+        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          # Simulate ~0.4s silent startup (MCP init) before producing output,
+          # longer than startup_timeout (0.2s). The startup heartbeat thread
+          # suppresses the timeout by touching host_path within the deadline.
+          sleep 0.4
+          block.call(:stdout, "finally started\n") if block
+          [ [ "finally started\n" ], [], 0 ]
+        end
+
+        result = service.execute(
+          "claude_with_mcp",
+          timeout: 10,
+          startup_timeout: 0.2,
+          heartbeat_path: host_path
+        )
+        expect(result).to be_success
+        expect(container_stopped.true?).to be false
+      end
+
+      it "stops touching once first stdout is received, allowing idle timeout to apply normally" do
+        host_path = service.heartbeat_host_path
+        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          # Simulate long idle after first output — idle timeout should fire
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [ "initial output\n" ], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "claude_then_idle",
+            timeout: 10,
+            startup_timeout: 2,
+            idle_timeout: 0.1,
+            heartbeat_path: host_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "allows idle timeout to fire after startup_timeout deadline elapses with no output" do
+        host_path = service.heartbeat_host_path
+        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
+
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          # Never produces output — simulates a completely hung MCP initialization.
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [], [], 137 ]
+        end
+
+        # startup_timeout == idle_timeout so the idle timeout fires once the
+        # startup heartbeat deadline passes and the file goes stale.
+        # Total hang bound = startup_timeout + idle_timeout = 0.2 + 0.1s here.
+        expect {
+          service.execute(
+            "claude_mcp_hung",
+            timeout: 10,
+            startup_timeout: 0.2,
+            idle_timeout: 0.1,
+            heartbeat_path: host_path
+          )
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "returns nil from start_startup_heartbeat when heartbeat_host_path is absent" do
+        allow(service).to receive(:heartbeat_host_path).and_return(nil)
+
+        result = service.send(
+          :start_startup_heartbeat,
+          Mutex.new,
+          -> { false },
+          -> { false },
+          1
+        )
+
+        expect(result).to be_nil
       end
     end
   end

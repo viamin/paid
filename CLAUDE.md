@@ -9,14 +9,14 @@ This file provides guidance to AI coding assistants when working with code in th
 
 Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI agents to build software. It watches GitHub repos for labeled issues, plans implementations via LLM, and runs agents in isolated Docker containers to create pull requests.
 
-**Status**: Phase 3 (Scale) complete as of 2026-05-07. The system has multi-agent orchestration, guardrails, prompt evolution, quality gates, performance optimization, auto-scaling preparation, and multi-tenancy preparation. Phase 4 (AI-Native Evolution) is next.
+**Status**: Phase 4 (AI-Native Evolution) complete as of 2026-05-14. The system now logs orchestration decisions, evolves strategies and coordination policies from outcomes, optimizes end-to-end bundles, and applies orchestration scaling laws. Phase 5 (Account Administration) is next.
 
 ## Git Workflow
 
 - **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
 - **Never commit build artifacts or tool caches** - Do not `git add` directories created by setup/install commands (e.g., `.corepack/`, `.pg-install/`, `.apt-cache/`, `.cache-pkg/`, `vendor/bundle/`, `.tmp-build/`, `.venv/`, `__pycache__/`, `.bundle-pr-*/`, `.cache-yarn/`). If `bin/setup`, `bundle install`, `yarn install`, or similar commands create new dotfile directories in the workspace root, those are build artifacts — not source code. Check `.gitignore` and `.git/info/exclude` before staging. **Always use `git add <specific files>`** — never use `git add -A` or `git add .` as these can stage artifact files that bypass exclude rules. The pre-commit hook rejects commits with more than 100 staged files.
 - **Conventional Commits are required** - Commits must use Conventional Commit format so release automation can generate semantic release notes correctly.
-- **Use git worktrees for concurrent branch work** - When working on multiple branches (e.g., making a PR while another branch has uncommitted changes), use `git worktree add` instead of stashing and switching branches. This avoids lost edits, stash conflicts, and accidental branch mix-ups. Remove worktrees when done with `git worktree remove`.
+- **Always use git worktrees when switching branches** — Never `git stash` + `git checkout` to switch branches. Always `git worktree add <path> <branch>` and work in the worktree instead. Stashing and switching risks losing uncommitted changes, stash conflicts, and accidental branch mix-ups. Remove worktrees when done with `git worktree remove <path>`.
 
 ## GitHub Issues
 
@@ -252,6 +252,7 @@ record.diff_from(version: 2)             # diff between versions
 - Test behavior/interfaces, not implementation details
 - Mock external dependencies only, never application code
 - Pending specs require issue reference: `pending "supports feature (#45)"`
+- **Ephemeral PR tests** — One-off system/integration tests for the PR that don't need to persist in the permanent suite. Add `*_spec.rb` files to `.ephemeral-tests/` on the PR branch. CI runs them automatically (same-repo PRs only). Remove test files before merge; a CI guard rejects stray test files on `main`. See `.ephemeral-tests/README.md`.
 
 ## Logging
 

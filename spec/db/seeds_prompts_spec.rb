@@ -112,6 +112,25 @@ RSpec.describe Prompt, type: :model do
         .to include('Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []')
     end
 
+    it "seeded template forbids REQUEST_CHANGES and APPROVE review events" do
+      template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+      expect(template).to include('Always use `"event": "COMMENT"`')
+      expect(template).to include('"REQUEST_CHANGES"')
+      expect(template).to include('"APPROVE"')
+      expect(template).to include("will be automatically dismissed")
+    end
+
+    it "FALLBACK_REVIEW_GOAL_PROMPT forbids REQUEST_CHANGES and APPROVE review events" do
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('Always use `"event": "COMMENT"`')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('"REQUEST_CHANGES"')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include('"APPROVE"')
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("will be automatically dismissed")
+    end
+
     it "seeded template tells reviewers to install bundled gems before Ruby validation" do
       template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
       expect(template).to include(
@@ -180,6 +199,42 @@ RSpec.describe Prompt, type: :model do
       it "FALLBACK_REVIEW_GOAL_PROMPT warns against inline JSON payloads" do
         expect(fallback_template).to match(/Do NOT pass .*inline/i)
       end
+    end
+  end
+
+  describe "goal.create_github_issue drafting guidance" do
+    let(:seed_template) do
+      described_class.global.find_by(slug: Prompts::GoalCreateGithubIssue::PROMPT_SLUG).current_version.template
+    end
+
+    it "seeded template tells the agent to synthesize the issue from existing context" do
+      expect(seed_template).to include(
+        "Treat the request and repository context already provided above as the full source"
+      )
+      expect(seed_template).to include(
+        "Do NOT reply by asking the user to provide the issue type, title, description,"
+      )
+      expect(seed_template).to match(/When no labels are\s+clearly requested, omit them\./)
+    end
+
+    it "FALLBACK_ISSUE_GOAL_PROMPT matches the seeded drafting guidance" do
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT).to include(
+        "Treat the request and repository context already provided above as the full source"
+      )
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT).to include(
+        "Do NOT reply by asking the user to provide the issue type, title, description,"
+      )
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT)
+        .to match(/When no labels are\s+clearly requested, omit them\./)
+    end
+
+    it "seeded template matches the shared template source exactly" do
+      expect(seed_template).to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
+    end
+
+    it "FALLBACK_ISSUE_GOAL_PROMPT matches the shared template source exactly" do
+      expect(Activities::RunAgentActivity::FALLBACK_ISSUE_GOAL_PROMPT)
+        .to eq(Prompts::GoalCreateGithubIssue::TEMPLATE)
     end
   end
 

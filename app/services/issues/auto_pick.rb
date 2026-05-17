@@ -5,8 +5,6 @@ module Issues
   # {Automation::Strategies::AutoPick}.
   #
   # Responsibilities kept here (orchestration):
-  # - Collecting project-level guard signals (count of open PRs that still
-  #   need attention, configured WIP limit).
   # - Running the pure-policy strategy and executing the resulting
   #   decision — resolving a runnable provider and creating the queued
   #   {AgentRun}.
@@ -27,10 +25,9 @@ module Issues
     PAID_READY_LABEL = "paid-ready"
 
     # Returns the Set of issue IDs from +displayed_issues+ that are
-    # currently eligible for auto-picking (per-issue criteria only;
-    # ignores transient project-level guards like active runs or PRs
-    # needing attention). Scoping to the displayed issues helps limit
-    # query cost and focuses results on the currently displayed subset.
+    # currently eligible for auto-picking. Scoping to the displayed
+    # issues helps limit query cost and focuses results on the currently
+    # displayed subset.
     def self.eligible_issue_ids(displayed_issues)
       Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_issue_ids(displayed_issues)
@@ -41,7 +38,7 @@ module Issues
     end
 
     def call
-      result = strategy.evaluate(build_context)
+      result = strategy.evaluate(Automation::Context.build(record: nil, project: @project, metadata: {}))
       decision = result.decisions.first
       return nil if decision.nil? || decision.type == "noop"
 
@@ -110,54 +107,6 @@ module Issues
         strategy_type: :auto_pick,
         project: @project
       )
-    end
-
-    def build_context
-      context = Automation::Context.build(record: nil, project: @project, metadata: {})
-      # Avoid expensive PR-attention query when early guards will noop.
-      return context unless @project.auto_pick_enabled? && !@project.quality_paused?
-
-      context.with_metadata(
-        Automation::Strategies::AutoPick::PR_ATTENTION_COUNT_KEY => prs_needing_attention_count,
-        Automation::Strategies::AutoPick::PR_ATTENTION_LIMIT_KEY => max_auto_pick_open_prs
-      )
-    end
-
-    # Returns the count of open PRs that still need Paid's attention.
-    # A PR "needs attention" if it is failed, or in_progress but not
-    # yet handed off (missing the automation/ready labels, or still in
-    # draft/restarted phase).
-    #
-    # Escalated PRs are excluded because they have already been surfaced
-    # to the owner for attention — keeping them in the count would let
-    # operationally stalled PRs (e.g. provider exhaustion, repeated
-    # timeouts) block auto-pick indefinitely even after escalation.
-    #
-    # Uses a single COUNT query. The handed_off subquery only matches
-    # in_progress rows, so failed PRs are never excluded by it.
-    def prs_needing_attention_count
-      base = Issue.where(
-        project: @project,
-        is_pull_request: true,
-        github_state: "open",
-        paid_state: %w[in_progress failed]
-      )
-
-      handed_off = base
-        .where(paid_state: "in_progress")
-        .where("labels @> ?::jsonb", [ @project.automation_label_name, PAID_READY_LABEL ].to_json)
-        .where.not(pr_review_phase: %w[draft restarted])
-
-      escalated = base.where(pr_review_phase: "escalated")
-
-      base.where.not(id: handed_off).where.not(id: escalated).count
-    end
-
-    def max_auto_pick_open_prs
-      owner = @project.effective_owner
-      return 1 unless owner
-
-      owner.settings.max_auto_pick_open_prs
     end
 
     def create_agent_run(issue, goal: "create_pr")

@@ -7,6 +7,7 @@ class UserSetting < ApplicationRecord
     kb_chat_fallback_providers kb_embedding_provider kb_embedding_fallback_providers
   ]
 
+  include AutoPickSkipLabels
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647
@@ -55,6 +56,8 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_parallel_agents_per_project,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 20 }
+  # Deprecated: retained only for migration safety. Auto-pick no longer
+  # uses this setting; max_concurrent_runs is the capacity control.
   validates :max_auto_pick_open_prs,
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
@@ -257,6 +260,10 @@ class UserSetting < ApplicationRecord
 
     resolved = identifiers_for_runner_token(goal_runner, candidates: allowed_runner_identifiers_for_agent_runs).first
     resolved || default_runner_identifier
+  end
+
+  def marketplace_auto_attach_enabled?
+    marketplace_auto_attach_enabled
   end
 
   # Returns the next automated runner identifier to use for an agent run,

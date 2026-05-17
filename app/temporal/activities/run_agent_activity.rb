@@ -37,6 +37,8 @@ module Activities
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -64,6 +66,8 @@ module Activities
       /\bstatus[:\s]*429\b/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /free model usage limit reached/i,
+      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
@@ -79,8 +83,8 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
-    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 300   # 5 minutes without output = stuck
-    DEFAULT_AGENT_STARTUP_TIMEOUT = 300    # 5 minutes without first output = stuck
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
+    DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
     PREFLIGHT_TIMEOUT_SECONDS = 10
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
@@ -115,14 +119,12 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      @agent_run = agent_run
+      @has_marketplace_attachments = nil
+      @marketplace_runtime_env = {}
+      @marketplace_runtime_preparation = {}
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
-        prompt = agent_run.effective_prompt
-        unless prompt
-          raise Temporalio::Error::ApplicationError.new(
-            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
-          )
-        end
-
+        base_prompt = base_prompt_for(agent_run)
         user_settings = resolve_user_settings(agent_run)
         runners = build_runner_order(agent_run, user_settings)
         runner_states = load_runner_state_cache(user_settings.user, runners)
@@ -165,6 +167,7 @@ module Activities
           runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
           attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
+          runner_key = marketplace_runner_key(runner_candidate, runner, user_settings.user)
           heartbeat("runner_attempt", runner, index)
 
           # Skip unavailable runners, tracking rate-limited skips separately
@@ -185,6 +188,17 @@ module Activities
             )
             index += 1
             next
+          end
+
+          prompt = effective_prompt_for(
+            agent_run: agent_run,
+            base_prompt: base_prompt,
+            runner_key: runner_key
+          )
+          unless prompt
+            raise Temporalio::Error::ApplicationError.new(
+              "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+            )
           end
 
           # Log runner switch when we have a previous actually-attempted runner.
@@ -379,6 +393,27 @@ module Activities
             )
             logger.warn(message: "agent_execution.auth_expired", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
+          rescue RunnerInfraExecutionError => e
+            last_error = "error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              break
+            end
+            agent_run.record_runner_attempt(
+              attempt_label,
+              success: false,
+              error_type: "error",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
+            logger.warn(
+              message: "agent_execution.runner_infra_failure",
+              runner: runner,
+              agent_run_id: agent_run.id,
+              error: e.message,
+              duration_seconds: attempt_duration
+            )
           rescue RunnerExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -475,6 +510,7 @@ module Activities
     end
 
     class RunnerExecutionError < StandardError; end
+    class RunnerInfraExecutionError < RunnerExecutionError; end
     class RunnerTimeoutError < StandardError
       attr_reader :timeout_type, :diagnostics
 
@@ -486,6 +522,15 @@ module Activities
     end
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:runner_candidate, :runner, :user, keyword_init: true)
+    CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS = %w[
+      output_received
+      stdout_bytes
+      stderr_bytes
+      heartbeat_supported
+      heartbeat_path_configured
+      heartbeat_active
+      heartbeat_age_seconds
+    ].freeze
 
     private
 
@@ -677,7 +722,17 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
-      container_service = reconnect_container(agent_run)
+      container_service = begin
+        reconnect_container(agent_run)
+      rescue Temporalio::Error::ApplicationError => e
+        # Convert ContainerNotProvisioned into RunnerExecutionError so it is
+        # caught by the per-runner rescue below rather than propagating as the
+        # top-level activity error. This preserves the original failure (recorded
+        # in runners_attempted) as the primary user-visible cause, and lets the
+        # runner loop surface AllRunnersExhausted instead.
+        raise RunnerExecutionError, e.message if e.type == "ContainerNotProvisioned"
+        raise
+      end
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
@@ -690,6 +745,13 @@ module Activities
       unless self.class.container_executable?(runner)
         raise RunnerExecutionError, "Unsupported runner: #{runner}"
       end
+
+      synchronize_marketplace_mcp_for_runner!(
+        agent_run: agent_run,
+        runner_candidate: runner_candidate,
+        runner: runner,
+        user: user_settings.user
+      )
 
       # Assemble effective MCP servers from the run's provisioned state so
       # harness_execution_plan_for can pass them to agent-harness for
@@ -808,6 +870,14 @@ module Activities
         # so treat this as a runner failure to trigger fallback/retry.
         combined_output = [ stdout, stderr ].compact.join("\n")
         sanitized_output = strip_prompt_echo(combined_output, prompt)
+        # Rate-limit classification takes precedence over generic quota
+        # failures because some providers use quota-shaped wording for
+        # retryable usage caps (for example, GLM free-model limits).
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise RunnerExecutionError,
             "Runner credit/quota error from #{runner}: #{sanitized_output.truncate(500)}"
@@ -828,8 +898,9 @@ module Activities
         }
       end
 
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
       output = (stderr.presence || stdout).to_s.strip
-      rate_limit_output = strip_prompt_echo(output, prompt)
+      rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
       if auth_expired_error?(runner, rate_limit_output)
         raise RunnerAuthExpiredError.new(output.truncate(500), runner: runner)
@@ -857,6 +928,17 @@ module Activities
       when Containers::Provision::StartupTimeoutError then "startup"
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
+      end
+      if claude_silent_startup_heartbeat_failure?(
+        runner: runner,
+        timeout_type: timeout_type,
+        diagnostics: e.diagnostics
+      )
+        raise RunnerInfraExecutionError,
+          claude_silent_startup_heartbeat_failure_message(
+            timeout_type: timeout_type,
+            diagnostics: e.diagnostics
+          )
       end
       raise RunnerTimeoutError.new(
         "#{timeout_type}_timeout: #{e.message}",
@@ -924,10 +1006,18 @@ module Activities
       )
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
-      output = [ stderr.presence, stdout.presence ].compact.first.to_s.strip
-      sanitized_output = strip_prompt_echo(output, prompt)
+      combined_output = [ stderr, stdout ].compact.join("\n").strip
+      sanitized_output = strip_prompt_echo(combined_output, prompt)
 
       if result.success?
+        # Keep the same precedence as the main execution path so preflight
+        # retryable limits do not degrade into generic provider failures.
+        if successful_exit_rate_limit_error?(sanitized_output)
+          reset_at = rate_limit_reset_at(provider, sanitized_output)
+          log_preflight_failure(agent_run: agent_run, provider: provider, reason: "Rate limited by #{provider} during preflight")
+          raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+        end
+
         if insufficient_credits_error?(sanitized_output)
           raise_preflight_failure!(
             agent_run: agent_run,
@@ -1033,6 +1123,7 @@ module Activities
     end
 
     QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
+    SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH = 500
 
     # Detects runner-level credit/quota exhaustion errors surfaced as
     # agent output. Used in the successful-exit-code path to catch cases
@@ -1050,6 +1141,31 @@ module Activities
 
       RunnerSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    # Detects short standalone rate-limit responses that some providers surface
+    # with exit code 0. We intentionally use the stricter timeout patterns here
+    # instead of the broader execution-failure matcher so substantial agent
+    # output that merely discusses rate limits is not reclassified as a
+    # provider failure.
+    def successful_exit_rate_limit_error?(output)
+      standalone_rate_limit_signal(output).present?
+    end
+
+    def standalone_rate_limit_signal(output)
+      return nil if output.blank?
+
+      normalized_output = normalize_output_text(output)
+      if normalized_output.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| normalized_output.match?(pattern) }
+        return normalized_output
+      end
+
+      normalized_output.each_line.map(&:strip).find do |line|
+        line.present? &&
+          line.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
+          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| line.match?(pattern) }
+      end
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000
@@ -1495,21 +1611,31 @@ module Activities
     end
 
     def command_env_for(command_context, prompt)
+      runner_key = marketplace_runner_key(command_context.runner_candidate, command_context.runner, command_context.user)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
-      return direct_outbound_execution_plan(runner_entry, prompt).env if runner_entry&.agent_harness_runtime?
-      return {} unless runner_entry
+      if runner_entry&.agent_harness_runtime?
+        return marketplace_runtime_env(runner_key).merge(
+          direct_outbound_execution_plan(runner_entry, prompt).env
+        )
+      end
+      return marketplace_runtime_env(runner_key) unless runner_entry
 
-      env = {}
+      env = marketplace_runtime_env(runner_key).dup
       env.merge!(runner_entry.direct_outbound_exec_env) if runner_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(runner_entry)) if runner_entry.api_key?
       env
     end
 
     def command_preparation_for(command_context, prompt)
+      runner_key = marketplace_runner_key(command_context.runner_candidate, command_context.runner, command_context.user)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
-      return nil unless runner_entry&.agent_harness_runtime?
+      runtime_preparation = marketplace_runtime_preparation(runner_key)
+      return runtime_preparation unless runner_entry&.agent_harness_runtime?
 
-      direct_outbound_execution_plan(runner_entry, prompt).preparation
+      merge_preparations(
+        direct_outbound_execution_plan(runner_entry, prompt).preparation,
+        runtime_preparation
+      )
     end
 
     # Assembles the effective MCP server list from the agent run's
@@ -1561,6 +1687,73 @@ module Activities
       AgentHarness::ExecutionPreparation.new(
         file_writes: base.file_writes + additional.file_writes
       )
+    end
+
+    def base_prompt_for(agent_run)
+      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+    end
+
+    def effective_prompt_for(agent_run:, base_prompt:, runner_key:)
+      MarketplaceEntries::InjectIntoPrompt.call(
+        agent_run: agent_run,
+        prompt: base_prompt,
+        provider_key: runner_key
+      )
+    end
+
+    def marketplace_runner_key(runner_candidate, runner, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_entry.runner_key if runner_entry
+
+      RunnerSupport.runner_key_for_agent_type(runner)
+    end
+
+    def marketplace_runtime_env(runner_key)
+      return {} unless @agent_run
+
+      @marketplace_runtime_env ||= {}
+      @marketplace_runtime_env[runner_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
+        @agent_run,
+        provider_key: runner_key
+      )
+    end
+
+    def marketplace_runtime_preparation(runner_key)
+      return unless @agent_run
+
+      @marketplace_runtime_preparation ||= {}
+      @marketplace_runtime_preparation[runner_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
+        @agent_run,
+        provider_key: runner_key
+      )
+    end
+
+    def synchronize_marketplace_mcp_for_runner!(agent_run:, runner_candidate:, runner:, user:)
+      return unless marketplace_attachments_attached?(agent_run)
+
+      runner_key = marketplace_runner_key(runner_candidate, runner, user)
+      previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
+
+      AgentRun.transaction do
+        MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: runner_key)
+
+        next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
+
+        Containers::McpProvisioner.new.provision(
+          agent_run,
+          network: Containers::Provision.network_for(agent_run: agent_run)
+        )
+      end
+    rescue => e
+      raise e if e.is_a?(RunnerExecutionError)
+
+      raise RunnerExecutionError, "Failed to synchronize marketplace MCP servers for #{runner_key}: #{e.message}"
+    end
+
+    def marketplace_attachments_attached?(agent_run)
+      return @has_marketplace_attachments unless @has_marketplace_attachments.nil?
+
+      @has_marketplace_attachments = agent_run.agent_run_marketplace_entries.exists?
     end
 
     # Builds an execution plan for runners that use the agent-harness
@@ -2092,6 +2285,28 @@ module Activities
       ).compact
     end
 
+    def claude_silent_startup_heartbeat_failure?(runner:, timeout_type:, diagnostics:)
+      return false unless RunnerSupport.runner_key_for_agent_type(runner).to_s == "claude"
+      return false unless timeout_type == "startup"
+
+      timeout_data = diagnostics.to_h.stringify_keys.slice(*CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS)
+      timeout_data["output_received"] == false &&
+        timeout_data["stdout_bytes"].to_i.zero? &&
+        timeout_data["stderr_bytes"].to_i.zero? &&
+        timeout_data["heartbeat_supported"] == true &&
+        timeout_data["heartbeat_path_configured"] == true &&
+        timeout_data["heartbeat_active"].nil? &&
+        timeout_data["heartbeat_age_seconds"].nil?
+    end
+
+    def claude_silent_startup_heartbeat_failure_message(timeout_type:, diagnostics:)
+      detail = diagnostics.to_h.stringify_keys.slice(*CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS)
+      "Claude #{timeout_type}_timeout reclassified as execution failure: " \
+        "silent startup with configured heartbeat produced no output and no readable heartbeat. " \
+        "This usually indicates the known Claude heartbeat/MCP startup bug rather than a normal provider timeout. " \
+        "diagnostics=#{detail.to_json}"
+    end
+
     def error_or_cause_matches?(error, klass, &)
       current = error
 
@@ -2124,49 +2339,9 @@ module Activities
     # FALLBACK_* constants below are the safety net used when the seeded
     # row is missing or deactivated; they must stay in sync with the seeds.
     # spec/db/seeds_prompts_spec.rb asserts both pairs match.
-    ISSUE_GOAL_PROMPT_SLUG = "goal.create_github_issue"
+    ISSUE_GOAL_PROMPT_SLUG = Prompts::GoalCreateGithubIssue::PROMPT_SLUG
 
-    FALLBACK_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
-      {{base_prompt}}
-
-      ---
-      IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
-
-      You have access to the GitHub API via a proxy. Use curl to create the issue.
-
-      IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
-      markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
-      Instead, write the JSON payload to a temporary file and use --data-binary @file:
-
-      ```bash
-      tmpfile=$(mktemp)
-      cat > "$tmpfile" <<'ISSUE_JSON'
-      {
-        "title": "Issue title",
-        "body": "Issue description with `code` and apostrophes",
-        "labels": []
-      }
-      ISSUE_JSON
-      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues" \
-        -H "Content-Type: application/json" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN" \
-        --data-binary @"$tmpfile"
-      rm -f "$tmpfile"
-      ```
-
-      Available endpoints:
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues — list issues
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get issue
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues — create issue
-      - PATCH $GITHUB_API_URL/repos/{{repo}}/issues/{number} — update issue
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/comments — add comment
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{number}/labels — add labels
-
-      Do NOT push code or create a pull request. Only create the GitHub issue.
-
-      {{decomposition_instructions}}
-    AUGMENTED
+    FALLBACK_ISSUE_GOAL_PROMPT = Prompts::GoalCreateGithubIssue::TEMPLATE
 
     NO_DECOMPOSE_LABEL = "no-decompose"
 
@@ -2377,6 +2552,12 @@ module Activities
       - Case A: "comments" array is NON-EMPTY, each entry has "path", "line", and "body"
       - Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []
 
+      CRITICAL: Always use `"event": "COMMENT"` — never use `"event":
+      "REQUEST_CHANGES"` or `"event": "APPROVE"`. Change requests are
+      expressed through inline comments in the "comments" array, not
+      through the review event. Using REQUEST_CHANGES blocks PR merging
+      and will be automatically dismissed.
+
       IMPORTANT: You MUST post exactly one PR review via the
       `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
       actionable comments) or Case B (clean review). This is how your review is
@@ -2545,7 +2726,7 @@ module Activities
     def resolve_and_persist_goal_prompt(agent_run:, slug:, variables:, fallback_template:)
       prompt_version = Prompts::Resolve.call(slug: slug, project: agent_run.project)
 
-      if prompt_version
+      rendered = if prompt_version
         agent_run.update!(prompt_version: prompt_version) unless agent_run.prompt_version_id
         prompt_version.render(variables)
       else
@@ -2557,6 +2738,8 @@ module Activities
         )
         Prompts::Render.interpolate(fallback_template, variables)
       end
+
+      append_missing_issue_goal_runtime_instructions(rendered, slug, variables)
     end
 
     def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)
@@ -2571,14 +2754,15 @@ module Activities
       append_missing_issue_goal_runtime_instructions(rendered_variant, slug, vars)
     end
 
-    # Older running A/B variants may predate runtime-only additions such as
-    # decomposition instructions. Keep those runs aligned with the current
-    # issue-goal contract by appending required guidance when the stored
-    # variant template cannot render it itself.
+    # Older stored issue-goal prompts may predate runtime-only additions such as
+    # decomposition instructions or the non-interactive drafting guidance. Keep
+    # those runs aligned with the current issue-goal contract by appending the
+    # required guidance when the stored template cannot render it itself.
     def append_missing_issue_goal_runtime_instructions(rendered, slug, vars)
       return rendered unless slug == ISSUE_GOAL_PROMPT_SLUG
 
-      append_prompt_section(rendered, vars[:decomposition_instructions])
+      prompt = append_prompt_section(rendered, Prompts::GoalCreateGithubIssue::DRAFTING_GUIDANCE)
+      append_prompt_section(prompt, vars[:decomposition_instructions])
     end
 
     def append_prompt_section(rendered, addition)

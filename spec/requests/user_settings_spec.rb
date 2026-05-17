@@ -52,6 +52,13 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("Project Defaults")
         expect(response.body).to include("Advanced Settings")
       end
+
+      it "does not render the deprecated auto-pick PR limit setting" do
+        get edit_user_settings_path
+
+        expect(response.body).not_to include("Max Auto-Pick Open PRs")
+        expect(response.body).not_to include('name="user_setting[max_auto_pick_open_prs]"')
+      end
     end
   end
 
@@ -90,6 +97,17 @@ RSpec.describe "UserSettings" do
         expect(settings.default_agent_runner).to eq(cursor.routing_key)
       end
 
+      it "updates marketplace auto-attach consent" do
+        patch user_settings_path, params: {
+          user_setting: {
+            marketplace_auto_attach_enabled: "1"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.marketplace_auto_attach_enabled?).to be(true)
+      end
+
       it "allows clearing the max execution time override" do
         user.settings.update!(max_execution_seconds: 5400)
 
@@ -118,6 +136,22 @@ RSpec.describe "UserSettings" do
         expect(settings.container_timeout_seconds).to eq(3600)
       end
 
+      it "ignores the deprecated auto-pick PR limit setting" do
+        original_limit = user.settings.max_auto_pick_open_prs
+
+        patch user_settings_path, params: {
+          user_setting: {
+            max_concurrent_runs: 4,
+            max_auto_pick_open_prs: 9
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        settings = user.reload.settings
+        expect(settings.max_concurrent_runs).to eq(4)
+        expect(settings.max_auto_pick_open_prs).to eq(original_limit)
+      end
+
       it "updates allowed service images setting" do
         patch user_settings_path, params: {
           user_setting: {
@@ -142,6 +176,46 @@ RSpec.describe "UserSettings" do
         expect(settings.default_branch).to eq("develop")
         expect(settings.default_project_active).to be(false)
         expect(settings.default_allowed_github_usernames).to eq(%w[alice bob])
+      end
+
+      it "updates auto-pick skip labels for the user" do
+        patch user_settings_path, params: {
+          user_setting: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.auto_pick_skip_labels).to eq(%w[planning research])
+      end
+
+      it "allows the user to override defaults with an empty skip-label list" do
+        user.settings.update!(auto_pick_skip_labels: %w[planning])
+
+        patch user_settings_path, params: {
+          user_setting: {
+            auto_pick_skip_labels_override: "1",
+            auto_pick_skip_labels_csv: ""
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.auto_pick_skip_labels).to eq([])
+      end
+
+      it "clears the user override when auto-pick skip labels are not overridden" do
+        user.settings.update!(auto_pick_skip_labels: %w[planning])
+
+        patch user_settings_path, params: {
+          user_setting: {
+            auto_pick_skip_labels_override: "0",
+            auto_pick_skip_labels_csv: "planning, research"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.auto_pick_skip_labels).to be_nil
       end
 
       it "updates advanced settings" do

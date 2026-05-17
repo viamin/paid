@@ -85,5 +85,109 @@ RSpec.describe CoordinationPolicyEvolution::CreateCandidates do
 
       expect(candidate.reload).to be_activatable
     end
+
+    context "with recovery mutations" do
+      let(:recovery_policy) do
+        create(:coordination_policy, :active,
+          account: account,
+          policy_type: "recovery",
+          policy_key: Coordination::FailureRecoveryPolicy::POLICY_KEY,
+          name: "Failure Recovery")
+      end
+      let(:recovery_mutation) do
+        StrategyEvolution::Mutate::Mutation.new(
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.merge(
+            "recovery" => {
+              "actions" => {
+                "timeout" => "retry_same_provider",
+                "provider_error" => "retry_alternate_provider"
+              },
+              "default_action" => "pause_and_notify"
+            }
+          ),
+          strategy: "recovery_refinement",
+          reasoning: "Tighten learned timeout handling",
+          expected_improvement: "Higher successful retries",
+          diff: [ { "path" => "/recovery/actions/timeout", "from" => nil, "to" => "retry_same_provider" } ],
+          provenance: {}
+        )
+      end
+      let(:recovery_candidate) do
+        described_class.call(
+          policy_snapshot: {
+            id: recovery_policy.id,
+            policy_type: "recovery",
+            policy_key: recovery_policy.policy_key,
+            name: recovery_policy.name,
+            version_id: recovery_policy.current_version.id,
+            version: recovery_policy.current_version.version,
+            configuration: recovery_mutation.configuration
+          },
+          account: account,
+          mutations: [ recovery_mutation ]
+        ).first
+      end
+
+      it "persists recovery candidates using recovery-specific rule and parameter keys" do
+        expect(recovery_candidate.rules).to include(
+          "failure_actions" => include("timeout" => "retry_same_provider")
+        )
+        expect(recovery_candidate.parameters).to include("default_action" => "pause_and_notify")
+      end
+    end
+
+    context "with escalation mutations" do
+      let(:escalation_policy) do
+        create(:coordination_policy, :active,
+          account: account,
+          policy_type: "escalation",
+          policy_key: Coordination::EscalationPolicy::POLICY_KEY,
+          name: "Human Intervention")
+      end
+      let(:escalation_mutation) do
+        StrategyEvolution::Mutate::Mutation.new(
+          configuration: OrchestrationStrategies::Defaults.feature_orchestration.deep_dup.tap do |config|
+            config["escalation"] = config.fetch("escalation", {}).merge(
+              "human_value_threshold" => 0.45,
+              "explicit_triggers" => %w[no_progress_stuck],
+              "auto_resolve_trigger_types" => %w[owner_approved],
+              "weights" => { "unified_failure_pressure" => 0.6 },
+              "interruption_cost" => { "base" => 0.2 }
+            )
+          end,
+          strategy: "escalation_refinement",
+          reasoning: "Lower threshold where humans historically help",
+          expected_improvement: "Faster handoff on genuinely blocked PRs",
+          diff: [ { "path" => "/escalation/human_value_threshold", "from" => 0.65, "to" => 0.45 } ],
+          provenance: {}
+        )
+      end
+      let(:escalation_candidate) do
+        described_class.call(
+          policy_snapshot: {
+            id: escalation_policy.id,
+            policy_type: "escalation",
+            policy_key: escalation_policy.policy_key,
+            name: escalation_policy.name,
+            version_id: escalation_policy.current_version.id,
+            version: escalation_policy.current_version.version,
+            configuration: escalation_mutation.configuration
+          },
+          account: account,
+          mutations: [ escalation_mutation ]
+        ).first
+      end
+
+      it "persists escalation candidates using escalation-specific rule and parameter keys" do
+        expect(escalation_candidate.rules).to include(
+          "explicit_triggers" => %w[no_progress_stuck],
+          "auto_resolve_trigger_types" => %w[owner_approved]
+        )
+        expect(escalation_candidate.parameters).to include(
+          "human_value_threshold" => 0.45,
+          "weights" => { "unified_failure_pressure" => 0.6 }
+        )
+      end
+    end
   end
 end

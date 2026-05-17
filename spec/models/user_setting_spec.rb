@@ -50,6 +50,7 @@ RSpec.describe UserSetting do
     # Concurrency
     it { is_expected.to validate_numericality_of(:max_concurrent_runs).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:max_parallel_agents_per_project).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(20) }
+    it { is_expected.to validate_numericality_of(:max_auto_pick_open_prs).only_integer.is_greater_than_or_equal_to(0).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
 
     # Project Defaults
@@ -298,6 +299,43 @@ RSpec.describe UserSetting do
       setting = build(:user_setting)
       setting.allowed_service_images_csv = "postgres:16, redis:7-alpine, postgres:16"
       expect(setting.allowed_service_images).to eq([ "postgres:16", "redis:7-alpine" ])
+    end
+  end
+
+  describe "#auto_pick_skip_labels_csv" do
+    it "returns labels as a comma-separated string" do
+      setting = build(:user_setting, auto_pick_skip_labels: %w[planning research])
+
+      expect(setting.auto_pick_skip_labels_csv).to eq("planning, research")
+    end
+
+    it "returns an empty string when labels are not configured" do
+      setting = build(:user_setting, auto_pick_skip_labels: nil)
+
+      expect(setting.auto_pick_skip_labels_csv).to eq("")
+    end
+  end
+
+  describe "#auto_pick_skip_labels_csv=" do
+    it "parses comma-separated labels into a deduplicated array" do
+      setting = build(:user_setting)
+      setting.auto_pick_skip_labels_csv = " planning, research, planning "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "normalizes labels to lowercase before deduplicating" do
+      setting = build(:user_setting)
+      setting.auto_pick_skip_labels_csv = " Planning, research, PLANNING "
+
+      expect(setting.auto_pick_skip_labels).to eq(%w[planning research])
+    end
+
+    it "allows configuring an empty skip-label list" do
+      setting = build(:user_setting)
+      setting.auto_pick_skip_labels_csv = ""
+
+      expect(setting.auto_pick_skip_labels).to eq([])
     end
   end
 

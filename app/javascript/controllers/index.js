@@ -28,6 +28,9 @@ application.register("chat-session-list", ChatSessionListController)
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
+import ClarifyingQuestionsController from "./clarifying_questions_controller"
+application.register("clarifying-questions", ClarifyingQuestionsController)
+
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
 
@@ -58,6 +61,9 @@ application.register("local-time", LocalTimeController)
 import LogTruncateController from "./log_truncate_controller"
 application.register("log-truncate", LogTruncateController)
 
+import MarketplacePickerController from "./marketplace_picker_controller"
+application.register("marketplace-picker", MarketplacePickerController)
+
 import MobileMenuController from "./mobile_menu_controller"
 application.register("mobile-menu", MobileMenuController)
 
@@ -69,6 +75,9 @@ application.register("notification-dropdown", NotificationDropdownController)
 
 import RunnerFormController from "./runner_form_controller"
 application.register("runner-form", RunnerFormController)
+
+import ProjectSettingsFormController from "./project_settings_form_controller"
+application.register("project-settings-form", ProjectSettingsFormController)
 
 import RepositorySelectorController from "./repository_selector_controller"
 application.register("repository-selector", RepositorySelectorController)

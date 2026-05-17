@@ -66,7 +66,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Final | High |
-| [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Draft | High |
+| [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Implemented | High |
 
 ### Service Infrastructure
 
@@ -78,44 +78,46 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Draft | High |
+| [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
 
 ### Scaling & Distribution
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Draft | Medium |
+| [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Implemented | Medium |
+| [RDR-033](RDR-033-worker-pool-scaling-algorithm.md) | Worker Pool Scaling Algorithm | Implemented | Medium |
 
 ### Quality & Automation
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Draft | High |
+| [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Implemented | High |
 | [RDR-022](RDR-022-auto-merge-pr-strategy.md) | Auto-Merge PR Merge Strategy | Final | Medium |
-| [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Draft | High |
+| [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Implemented | High |
+| [RDR-031](RDR-031-focused-agent-runs.md) | Focused Agent Runs — Single-Problem-Per-Run | Implemented | P1 |
 
 ### Runner Intelligence
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Draft | Medium |
+| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Implemented | Medium |
 
 ### Semantic Understanding
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + MeiliSearch) | Draft | Medium |
+| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + MeiliSearch) | Implemented | Medium |
 | [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Final | High |
-| [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Draft | High |
+| [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Implemented | High |
 
 ### AI-Native Evolution (Phase 4)
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-014](RDR-014-learned-orchestration.md) | Learned Orchestration Strategies | Draft | Medium |
-| [RDR-015](RDR-015-end-to-end-optimization.md) | End-to-End Outcome Optimization | Draft | Medium |
-| [RDR-016](RDR-016-self-improving-coordination.md) | Self-Improving Agent Coordination | Draft | Medium |
-| [RDR-017](RDR-017-orchestration-scaling-laws.md) | Orchestration Scaling Laws | Draft | Low |
+| [RDR-014](RDR-014-learned-orchestration.md) | Learned Orchestration Strategies | Implemented | Medium |
+| [RDR-015](RDR-015-end-to-end-optimization.md) | End-to-End Outcome Optimization | Implemented | Medium |
+| [RDR-016](RDR-016-self-improving-coordination.md) | Self-Improving Agent Coordination | Implemented | Medium |
+| [RDR-017](RDR-017-orchestration-scaling-laws.md) | Orchestration Scaling Laws | Implemented | Low |
 
 ## Decision Summary
 
@@ -186,6 +188,7 @@ Key sections:
 
 ## Related Documents
 
+- [GLOSSARY.md](../GLOSSARY.md) - Paid-specific terminology and naming conventions
 - [VISION.md](../VISION.md) - Project philosophy and principles
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture overview
 - [ROADMAP.md](../ROADMAP.md) - Implementation phases
