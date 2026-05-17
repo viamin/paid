@@ -304,7 +304,7 @@ class Project < ApplicationRecord
   rescue URI::InvalidURIError
     nil
   end
-  private :repository_link_label, :normalized_external_url
+  private :external_issue_tracker_link, :repository_link_label, :normalized_external_url
 
   def set_label_for_stage(stage, label)
     self.label_mappings = label_mappings.merge(stage.to_s => label)
