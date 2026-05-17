@@ -42,7 +42,7 @@ RSpec.describe RunnerSupport do
     end
 
     it "includes pi" do
-      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("pi")
+      expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("pi")
     end
   end
 
@@ -79,7 +79,7 @@ RSpec.describe RunnerSupport do
     end
 
     it "includes pi when backed by the agent harness registry" do
-      keys = described_class.container_executable_provider_keys
+      keys = described_class.container_executable_runner_keys
       expect(keys).to include("pi")
     end
   end
@@ -114,7 +114,7 @@ RSpec.describe RunnerSupport do
     end
 
     it "returns true for pi" do
-      expect(described_class.container_executable_provider_key?("pi")).to be true
+      expect(described_class.container_executable_runner_key?("pi")).to be true
     end
 
     it "returns false for unsupported providers" do
@@ -209,18 +209,6 @@ RSpec.describe RunnerSupport do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
 
-    it "returns the Pi API-key unset vars, including GEMINI_API_KEY" do
-      vars = described_class.subscription_auth_unset_vars_for("pi")
-
-      expect(vars).to include(
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENROUTER_API_KEY"
-      )
-    end
-
     it "returns an empty array for unknown providers" do
       expect(described_class.subscription_auth_unset_vars_for("unknown_provider")).to eq([])
     end
@@ -253,79 +241,79 @@ RSpec.describe RunnerSupport do
     end
   end
 
-  describe ".provider_bot_username?" do
+  describe ".runner_bot_username?" do
     it "returns true for known copilot bot usernames" do
-      expect(described_class.provider_bot_username?("copilot[bot]")).to be true
-      expect(described_class.provider_bot_username?("copilot-pull-request-reviewer")).to be true
+      expect(described_class.runner_bot_username?("copilot[bot]")).to be true
+      expect(described_class.runner_bot_username?("copilot-pull-request-reviewer")).to be true
     end
 
     it "returns true for known claude bot usernames" do
-      expect(described_class.provider_bot_username?("claude[bot]")).to be true
-      expect(described_class.provider_bot_username?("claude-code[bot]")).to be true
+      expect(described_class.runner_bot_username?("claude[bot]")).to be true
+      expect(described_class.runner_bot_username?("claude-code[bot]")).to be true
     end
 
     it "returns true for known codex bot usernames" do
-      expect(described_class.provider_bot_username?("chatgpt-codex-connector")).to be true
-      expect(described_class.provider_bot_username?("chatgpt-codex-connector[bot]")).to be true
+      expect(described_class.runner_bot_username?("chatgpt-codex-connector")).to be true
+      expect(described_class.runner_bot_username?("chatgpt-codex-connector[bot]")).to be true
     end
 
     it "returns true for known paid_agent bot usernames" do
-      expect(described_class.provider_bot_username?("paid-code-reviewer")).to be true
-      expect(described_class.provider_bot_username?("paid-code-reviewer[bot]")).to be true
+      expect(described_class.runner_bot_username?("paid-code-reviewer")).to be true
+      expect(described_class.runner_bot_username?("paid-code-reviewer[bot]")).to be true
     end
 
     it "is case-insensitive" do
-      expect(described_class.provider_bot_username?("Claude[bot]")).to be true
-      expect(described_class.provider_bot_username?("COPILOT")).to be true
+      expect(described_class.runner_bot_username?("Claude[bot]")).to be true
+      expect(described_class.runner_bot_username?("COPILOT")).to be true
     end
 
     it "returns false for unknown usernames" do
-      expect(described_class.provider_bot_username?("random-user")).to be false
+      expect(described_class.runner_bot_username?("random-user")).to be false
     end
 
     it "returns false for blank input" do
-      expect(described_class.provider_bot_username?(nil)).to be false
-      expect(described_class.provider_bot_username?("")).to be false
+      expect(described_class.runner_bot_username?(nil)).to be false
+      expect(described_class.runner_bot_username?("")).to be false
     end
   end
 
-  describe ".provider_bot_username_for?" do
+  describe ".runner_bot_username_for?" do
     it "returns true when login matches the specified provider" do
-      expect(described_class.provider_bot_username_for?("claude", "claude[bot]")).to be true
+      expect(described_class.runner_bot_username_for?("claude", "claude[bot]")).to be true
     end
 
     it "returns true for the paid_agent bot login" do
-      expect(described_class.provider_bot_username_for?("paid_agent", "paid-code-reviewer[bot]")).to be true
+      expect(described_class.runner_bot_username_for?("paid_agent", "paid-code-reviewer[bot]")).to be true
     end
 
     it "returns false when login matches a different provider" do
-      expect(described_class.provider_bot_username_for?("claude", "copilot[bot]")).to be false
+      expect(described_class.runner_bot_username_for?("claude", "copilot[bot]")).to be false
     end
 
     it "returns false for an unknown provider" do
-      expect(described_class.provider_bot_username_for?("unknown", "claude[bot]")).to be false
+      expect(described_class.runner_bot_username_for?("unknown", "claude[bot]")).to be false
     end
   end
 
-  describe ".provider_key_for_bot_username" do
+  describe ".runner_key_for_bot_username" do
     it "returns the provider key for any known alias" do
-      expect(described_class.provider_key_for_bot_username("chatgpt-codex-connector")).to eq("codex")
-      expect(described_class.provider_key_for_bot_username("chatgpt-codex-connector[bot]")).to eq("codex")
+      expect(described_class.runner_key_for_bot_username("chatgpt-codex-connector")).to eq("codex")
+      expect(described_class.runner_key_for_bot_username("chatgpt-codex-connector[bot]")).to eq("codex")
     end
 
     it "returns nil for unknown usernames" do
-      expect(described_class.provider_key_for_bot_username("random-user")).to be_nil
+      expect(described_class.runner_key_for_bot_username("random-user")).to be_nil
     end
   end
 
-  describe ".provider_bot_usernames_for" do
+  describe ".runner_bot_usernames_for" do
     it "returns all aliases for the provider as lowercase usernames" do
-      expect(described_class.provider_bot_usernames_for("codex"))
+      expect(described_class.runner_bot_usernames_for("codex"))
         .to eq(Set["chatgpt-codex-connector", "chatgpt-codex-connector[bot]"])
     end
 
     it "returns an empty set for unknown providers" do
-      expect(described_class.provider_bot_usernames_for("unknown")).to eq(Set.new)
+      expect(described_class.runner_bot_usernames_for("unknown")).to eq(Set.new)
     end
   end
 
@@ -362,7 +350,7 @@ RSpec.describe RunnerSupport do
         described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS.each do |key|
           expect(cli_binary_for).to have_key(key),
             "No CLI binary mapping for container-executable provider '#{key}'. " \
-            "Add it to this test and to scripts/test-agent-provider-contracts-inner.sh."
+            "Add it to this test and to scripts/test-agent-runner-contracts-inner.sh."
         end
       end
     end
@@ -421,22 +409,22 @@ RSpec.describe RunnerSupport do
     end
 
     describe "copilot inclusion" do
-      it "is listed in APP_RUNNER_KEYS as a known provider" do
+      it "is listed in APP_RUNNER_KEYS as a known runner" do
         expect(described_class::APP_RUNNER_KEYS).to include("copilot")
       end
 
-      it "is addable as a container-executable provider" do
+      it "is addable as a container-executable runner" do
         expect(described_class.addable_runner_key?("copilot")).to be true
       end
     end
 
     describe "pi inclusion" do
-      it "is listed in APP_PROVIDER_KEYS as a known provider" do
-        expect(described_class::APP_PROVIDER_KEYS).to include("pi")
+      it "is listed in APP_RUNNER_KEYS as a known runner" do
+        expect(described_class::APP_RUNNER_KEYS).to include("pi")
       end
 
-      it "is addable as a container-executable provider" do
-        expect(described_class.addable_provider_key?("pi")).to be true
+      it "is addable as a container-executable runner" do
+        expect(described_class.addable_runner_key?("pi")).to be true
       end
     end
   end

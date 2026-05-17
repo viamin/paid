@@ -97,17 +97,6 @@ RSpec.describe "UserSettings" do
         expect(settings.default_agent_runner).to eq(cursor.routing_key)
       end
 
-      it "updates marketplace auto-attach consent" do
-        patch user_settings_path, params: {
-          user_setting: {
-            marketplace_auto_attach_enabled: "1"
-          }
-        }
-
-        expect(response).to redirect_to(edit_user_settings_path)
-        expect(user.reload.settings.marketplace_auto_attach_enabled?).to be(true)
-      end
-
       it "allows clearing the max execution time override" do
         user.settings.update!(max_execution_seconds: 5400)
 
@@ -331,13 +320,13 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             kb_embedding_runner: "anthropic",
-            kb_embedding_fallback_runners: [ "openai", "also-not-a-runner" ]
+            kb_embedding_fallback_runners: [ "openai", "also-not-a-provider" ]
           }
         }
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include("supported knowledge embedding runner")
-        expect(response.body).to match(/unsupported runners: also-not-a-runner/i)
+        expect(response.body).to match(/unsupported runners: also-not-a-provider/i)
 
         settings = user.reload.settings
         expect(settings.kb_embedding_runner).to eq("openai")

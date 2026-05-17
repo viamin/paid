@@ -60,8 +60,8 @@ module Containers
 
     attr_reader :provider, :worktree_path, :host_heartbeat_path
 
-    def initialize(provider:, worktree_path:, host_heartbeat_path: nil, harness_provider: nil)
-      @provider = provider.to_s
+    def initialize(provider: nil, runner: nil, worktree_path:, host_heartbeat_path: nil, harness_provider: nil)
+      @provider = (provider || runner).to_s
       @worktree_path = worktree_path
       @host_heartbeat_path = host_heartbeat_path
       @harness_provider = harness_provider

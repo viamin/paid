@@ -176,14 +176,14 @@ RSpec.describe Knowledge::DashboardStats do
         expect(embedding[:failed_runs]).to eq(1)
         expect(embedding[:success_rate]).to eq(50.0)
         expect(embedding[:avg_duration_seconds]).to eq(420.0)
-        expect(embedding[:provider_distribution]).to contain_exactly(
+        expect(embedding[:runner_distribution]).to contain_exactly(
           hash_including(runner: "azure_openai", run_count: 1, success_rate: 0.0, avg_duration_seconds: 240.0),
           hash_including(runner: "openai", run_count: 1, success_rate: 100.0, avg_duration_seconds: 600.0)
         )
 
         expect(drafting[:total_runs]).to eq(1)
         expect(drafting[:success_rate]).to eq(100.0)
-        expect(drafting[:provider_distribution]).to contain_exactly(
+        expect(drafting[:runner_distribution]).to contain_exactly(
           hash_including(runner: "claude", run_count: 1, success_rate: 100.0)
         )
       end
@@ -197,7 +197,7 @@ RSpec.describe Knowledge::DashboardStats do
           created_at: 6.minutes.ago,
           updated_at: 3.minutes.ago)
 
-        distribution = stats[:pipeline_metrics]["embedding"][:provider_distribution]
+        distribution = stats[:pipeline_metrics]["embedding"][:runner_distribution]
 
         expect(distribution).to include(
           hash_including(runner: "unknown", run_count: 1, success_rate: 0.0)
@@ -238,7 +238,7 @@ RSpec.describe Knowledge::DashboardStats do
         end
 
         it "excludes unfinished runs from runner distribution counts" do
-          distribution = stats[:pipeline_metrics]["embedding"][:provider_distribution]
+          distribution = stats[:pipeline_metrics]["embedding"][:runner_distribution]
 
           expect(distribution).to contain_exactly(
             hash_including(runner: "azure_openai", run_count: 1, success_rate: 0.0),

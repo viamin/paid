@@ -34,6 +34,16 @@ RSpec.describe RunnerState do
     end
   end
 
+  describe "provider bridge columns" do
+    it "keeps runner_name synchronized when legacy provider columns are updated directly" do
+      state = create(:runner_state, runner_name: "claude")
+
+      state.update_columns(provider_name: "cursor")
+
+      expect(state.reload.runner_name).to eq("cursor")
+    end
+  end
+
   describe "#mark_rate_limited!" do
     it "sets rate_limited_until to the given time" do
       state = create(:runner_state)

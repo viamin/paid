@@ -173,18 +173,18 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result.chosen_action).to eq("retry_same_provider")
       end
 
-      it "uses the last attempted provider when final_runner is unavailable" do
+      it "uses the last attempted runner when final_runner is unavailable" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result.classification.action_params["provider"]).to eq("anthropic")
+        expect(result.classification.action_params["runner"]).to eq("anthropic")
       end
 
-      it "falls back to the effective provider when no provider metadata was recorded" do
+      it "falls back to the effective runner when no runner metadata was recorded" do
         agent_run.update!(runners_attempted: [], final_runner: nil, agent_type: "codex")
 
         result = described_class.call(agent_run: agent_run)
 
-        expect(result.classification.action_params["provider"]).to eq("codex")
+        expect(result.classification.action_params["runner"]).to eq("codex")
       end
 
       it "classifies from the enqueued snapshot even if the row was later retried" do
@@ -195,7 +195,7 @@ RSpec.describe Coordination::FailureRecovery do
           run_snapshot: {
             status: "timeout",
             error_message: "Agent execution timed out",
-            providers_attempted: [ anthropic_attempt ]
+            runners_attempted: [ anthropic_attempt ]
           }
         )
 
@@ -229,10 +229,10 @@ RSpec.describe Coordination::FailureRecovery do
         expect(result.chosen_action).to eq("retry_alternate_provider")
       end
 
-      it "includes runners_attempted in action_params" do
+      it "includes attempted runners in action_params" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result.classification.action_params["exclude_providers"]).to eq(%w[anthropic openai])
+        expect(result.classification.action_params["exclude_runners"]).to eq(%w[anthropic openai])
       end
     end
 

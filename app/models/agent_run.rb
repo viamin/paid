@@ -1,13 +1,20 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  self.ignored_columns = %w[provider_id provider_switches providers_attempted final_provider]
+  include LegacyAttributeBridge
 
-  attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_id" => "runner_id",
+    "provider_switches" => "runner_switches",
+    "providers_attempted" => "runners_attempted",
+    "final_provider" => "final_runner"
+  }.freeze
 
   attribute :focus, :string, default: "general"
+  attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
+  MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
   RUNNER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
     [ /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/, "[REDACTED:github_token]" ],
@@ -28,6 +35,7 @@ class AgentRun < ApplicationRecord
   STDOUT_TAIL_LINES = 500
 
   OPERATIONAL_FAILURE_KEYWORDS = [
+    "providers exhausted",
     "runners exhausted",
     "Docker exec",
     "Activity task timed out",
@@ -127,6 +135,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
+  belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
 
@@ -146,8 +155,6 @@ class AgentRun < ApplicationRecord
   has_one :decision_record, dependent: :nullify
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
-  has_many :agent_run_marketplace_entries, -> { order(:position, :id) }, dependent: :destroy
-  has_many :marketplace_entries, through: :agent_run_marketplace_entries
   has_many :sent_coordination_signals,
     class_name: "AgentCoordinationSignal",
     foreign_key: :source_agent_run_id,
@@ -161,6 +168,7 @@ class AgentRun < ApplicationRecord
 
   attr_readonly :mcp_server_snapshot
 
+  before_validation :sync_legacy_provider_bridge_columns
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
@@ -220,6 +228,23 @@ class AgentRun < ApplicationRecord
   validate :has_prompt_source, on: :create
   validate :draft_review_round_tracking_is_consistent
 
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+    define_method(legacy_name) do
+      self[runner_name]
+    end
+
+    define_method("#{legacy_name}=") do |value|
+      self[runner_name] = value
+      self[legacy_name] = value
+    end
+  end
+
+  def provider=(value)
+    return self.runner = value if value.is_a?(Runner) || value.nil?
+
+    super
+  end
+
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
   scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
@@ -238,6 +263,10 @@ class AgentRun < ApplicationRecord
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+  end
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
@@ -264,6 +293,11 @@ class AgentRun < ApplicationRecord
     "NULLIF(final_runner, '')",
     "attempt->>'runner'"
   ].freeze
+  LEGACY_PROVIDER_NORMALIZABLE_COLUMNS = {
+    "final_provider" => "final_runner",
+    "NULLIF(final_provider, '')" => "NULLIF(final_runner, '')",
+    "attempt->>'provider'" => "COALESCE(attempt->>'runner', attempt->>'provider')"
+  }.freeze
 
   # SQL CASE expression that normalizes a column's value to its canonical
   # runner key (e.g. "claude_code" → "claude") so SQL aggregations match
@@ -280,16 +314,14 @@ class AgentRun < ApplicationRecord
       raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe"
     end
 
-    remapped = AGENT_TYPES.filter_map do |agent_type|
-      runner_key = RunnerSupport.runner_key_for_agent_type(agent_type)
-      next if runner_key == agent_type
+    build_normalized_runner_sql(column)
+  end
 
-      "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(runner_key)}"
-    end
+  def self.normalize_provider_sql(column = "agent_type")
+    normalized_column = LEGACY_PROVIDER_NORMALIZABLE_COLUMNS.fetch(column, column)
+    raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe" unless trusted_provider_normalizable_column?(column, normalized_column)
 
-    return column if remapped.empty?
-
-    "CASE #{column} #{remapped.join(" ")} ELSE #{column} END"
+    build_normalized_runner_sql(normalized_column)
   end
 
   def self.normalized_agent_type_sql
@@ -301,6 +333,10 @@ class AgentRun < ApplicationRecord
   # both SQL aggregations and Ruby code share the same logic.
   def self.effective_runner_sql
     "COALESCE(#{normalize_runner_sql("NULLIF(final_runner, '')")}, #{normalized_agent_type_sql})"
+  end
+
+  def self.effective_provider_sql
+    "COALESCE(#{normalize_provider_sql("NULLIF(final_provider, '')")}, #{normalized_agent_type_sql})"
   end
 
   ransacker :tokens_total, type: :integer do
@@ -317,6 +353,24 @@ class AgentRun < ApplicationRecord
 
   def self.ransackable_associations(auth_object = nil)
     %w[project]
+  end
+
+  class << self
+    def distinct_effective_provider_options(...)
+      distinct_effective_runner_options(...)
+    end
+
+    def provider_options_cache_key_for(...)
+      runner_options_cache_key_for(...)
+    end
+
+    def invalidate_provider_options_cache(...)
+      invalidate_runner_options_cache(...)
+    end
+
+    def preload_final_provider_records(...)
+      preload_final_runner_records(...)
+    end
   end
 
   RUNNER_OPTIONS_CACHE_TTL = 5.minutes
@@ -455,6 +509,30 @@ class AgentRun < ApplicationRecord
     Runner.with_discarded.where(id: runner_ids, user_id: owner_ids).index_by { |runner| [ runner.user_id, runner.routing_key ] }
   end
   private_class_method :final_runner_records_by_lookup
+
+  def self.build_normalized_runner_sql(column)
+    remapped = AGENT_TYPES.filter_map do |agent_type|
+      runner_key = RunnerSupport.runner_key_for_agent_type(agent_type)
+      next if runner_key == agent_type
+
+      "WHEN #{quote_sql_literal(agent_type)} THEN #{quote_sql_literal(runner_key)}"
+    end
+
+    return column if remapped.empty?
+
+    "CASE #{column} #{remapped.join(" ")} ELSE #{column} END"
+  end
+  private_class_method :build_normalized_runner_sql
+
+  def self.trusted_provider_normalizable_column?(original_column, normalized_column)
+    LEGACY_PROVIDER_NORMALIZABLE_COLUMNS.key?(original_column) || NORMALIZABLE_COLUMNS.include?(normalized_column)
+  end
+  private_class_method :trusted_provider_normalizable_column?
+
+  def self.quote_sql_literal(value)
+    "'#{value.to_s.gsub("'", "''")}'"
+  end
+  private_class_method :quote_sql_literal
 
   def self.effective_owner_id_for(run, fallback_owner_ids)
     project = run.project
@@ -1539,12 +1617,12 @@ class AgentRun < ApplicationRecord
     status == "auth_expired"
   end
 
-  def auth_expire!(error: nil, runner_key: nil)
+  def auth_expire!(error: nil, runner: nil, runner_key: nil)
     update!(
       status: "auth_expired",
       completed_at: Time.current,
       error_message: error,
-      auth_provider: runner_key,
+      auth_provider: runner || runner_key,
       duration_seconds: duration
     )
   end
@@ -1645,24 +1723,13 @@ class AgentRun < ApplicationRecord
   end
   private :log_orchestration_decision
 
-  public
-
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
-  def effective_prompt(provider_key: nil)
-    MarketplaceEntries::InjectIntoPrompt.call(
-      agent_run: self,
-      prompt: custom_prompt.presence || base_prompt,
-      provider_key: provider_key
-    )
+  def effective_prompt
+    custom_prompt.presence || prompt_for_goal
   end
-
-  def base_prompt
-    prompt_for_goal
-  end
-  private :base_prompt
 
   # Returns the base prompt for the review goal.
   # The review_goal_requires_pull_request validation ensures
@@ -1683,6 +1750,8 @@ class AgentRun < ApplicationRecord
   def effective_runner
     RunnerSupport.runner_key_for_agent_type(final_runner.presence || agent_type)
   end
+
+  alias_method :effective_provider, :effective_runner
 
   def final_runner_record
     return preloaded_final_runner_record if preloaded_final_runner_record_loaded
@@ -1707,6 +1776,8 @@ class AgentRun < ApplicationRecord
       Runner.with_discarded.find_by(id: runner_id)
   end
 
+  alias_method :effective_provider_record, :effective_runner_record
+
   def attempted_runners_by_routing_key
     owner = project&.effective_owner
     return {} unless owner
@@ -1718,6 +1789,8 @@ class AgentRun < ApplicationRecord
 
     owner.runners.with_discarded.where(id: routing_ids).index_by(&:routing_key)
   end
+
+  alias_method :attempted_providers_by_routing_key, :attempted_runners_by_routing_key
 
   # Records a runner attempt in the runners_attempted array.
   #
@@ -1749,6 +1822,8 @@ class AgentRun < ApplicationRecord
     log!("system", "Runner fallback: #{from} -> #{to} (#{reason})")
     increment!(:runner_switches)
   end
+
+  alias_method :log_provider_switch!, :log_runner_switch!
 
   def sanitize_runner_attempt_diagnostics(diagnostics)
     return unless diagnostics.is_a?(Hash)
@@ -1889,6 +1964,23 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def sync_legacy_provider_bridge_columns
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      runner_value = self[runner_name]
+      legacy_value = self[legacy_name]
+
+      if will_save_change_to_attribute?(runner_name)
+        self[legacy_name] = runner_value
+      elsif will_save_change_to_attribute?(legacy_name)
+        self[runner_name] = legacy_value
+      elsif runner_value.nil? && !legacy_value.nil?
+        self[runner_name] = legacy_value
+      elsif legacy_value.nil? && !runner_value.nil?
+        self[legacy_name] = runner_value
+      end
+    end
+  end
 
   # Guard: only fires when these specific columns are being changed, so unrelated
   # saves skip this check. Safe because no code path clears expected_draft_review_count
@@ -2288,9 +2380,9 @@ class AgentRun < ApplicationRecord
       "status" => status,
       "error_message" => error_message,
       "guardrail_violation_type" => guardrail_violation_type,
-      "final_runner" => final_runner,
-      "runners_attempted" => runners_attempted,
-      "runner_switches" => runner_switches,
+      "final_provider" => final_provider,
+      "providers_attempted" => providers_attempted,
+      "provider_switches" => provider_switches,
       "parent_workflow_id" => parent_workflow_id
     }
   end

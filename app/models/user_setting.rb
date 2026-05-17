@@ -1,13 +1,20 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
-  self.ignored_columns = %w[
-    default_agent_provider default_agent_providers_by_goal fallback_providers
-    provider_selection_mode provider_round_robin_state kb_chat_provider
-    kb_chat_fallback_providers kb_embedding_provider kb_embedding_fallback_providers
-  ]
-
   include AutoPickSkipLabels
+  include LegacyAttributeBridge
+
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "default_agent_provider" => "default_agent_runner",
+    "default_agent_providers_by_goal" => "default_agent_runners_by_goal",
+    "fallback_providers" => "fallback_runners",
+    "provider_selection_mode" => "runner_selection_mode",
+    "provider_round_robin_state" => "runner_round_robin_state",
+    "kb_chat_provider" => "kb_chat_runner",
+    "kb_chat_fallback_providers" => "kb_chat_fallback_runners",
+    "kb_embedding_provider" => "kb_embedding_runner",
+    "kb_embedding_fallback_providers" => "kb_embedding_fallback_runners"
+  }.freeze
   has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647
@@ -26,9 +33,21 @@ class UserSetting < ApplicationRecord
 
   belongs_to :user
   has_many :runner_states, through: :user
+  before_validation :sync_legacy_provider_bridge_columns
 
   # Theme
   validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
+
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+    define_method(legacy_name) do
+      self[runner_name]
+    end
+
+    define_method("#{legacy_name}=") do |value|
+      self[runner_name] = value
+      self[legacy_name] = value
+    end
+  end
 
   # Polling & Timing
   validates :default_poll_interval_seconds,
@@ -138,6 +157,10 @@ class UserSetting < ApplicationRecord
     []
   end
 
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+  end
+
   def self.parse_runner_array_param(value)
     return value unless value.is_a?(String)
 
@@ -168,6 +191,10 @@ class UserSetting < ApplicationRecord
     )
   end
 
+  def self.enabled_agent_providers(user = nil, identifiers: false)
+    enabled_agent_runners(user, identifiers: identifiers)
+  end
+
   # Returns runners that can be used as fallback for a user.
   # Filtered to container-executable runners only, since non-executable
   # runners would cause immediate failures during fallback in RunAgentActivity.
@@ -180,6 +207,10 @@ class UserSetting < ApplicationRecord
       user.runners.kept_only.for_fallback.where(runner_key: executable_keys).ordered,
       identifiers: identifiers
     )
+  end
+
+  class << self
+    alias_method :fallback_candidate_providers, :fallback_candidate_runners
   end
 
   # Returns canonical runner keys that have API-key-based entries configured
@@ -249,9 +280,13 @@ class UserSetting < ApplicationRecord
     map_identifiers_to_runner_keys(priorities)
   end
 
+  alias_method :provider_priority, :runner_priority
+
   def default_runner_identifier
     normalized_default_agent_runner || allowed_runner_identifiers_for_agent_runs.first
   end
+
+  alias_method :default_provider_identifier, :default_runner_identifier
 
   def default_runner_identifier_for_goal(goal)
     goal = goal.to_s
@@ -262,9 +297,7 @@ class UserSetting < ApplicationRecord
     resolved || default_runner_identifier
   end
 
-  def marketplace_auto_attach_enabled?
-    marketplace_auto_attach_enabled
-  end
+  alias_method :default_provider_identifier_for_goal, :default_runner_identifier_for_goal
 
   # Returns the next automated runner identifier to use for an agent run,
   # honoring the configured runner_selection_mode (single, round_robin,
@@ -294,6 +327,8 @@ class UserSetting < ApplicationRecord
     end
   end
 
+  alias_method :select_automated_provider_identifier, :select_automated_runner_identifier
+
   def runner_priority_for_goal(goal, identifiers: false)
     goal_identifier = default_runner_identifier_for_goal(goal)
     default = goal_identifier.present? ? [ goal_identifier ] : []
@@ -307,6 +342,8 @@ class UserSetting < ApplicationRecord
     map_identifiers_to_runner_keys(priorities)
   end
 
+  alias_method :provider_priority_for_goal, :runner_priority_for_goal
+
   def sanitize_runner_tokens(tokens, candidates:)
     Array(tokens).flat_map do |token|
       token = token.to_s
@@ -319,27 +356,18 @@ class UserSetting < ApplicationRecord
     end.uniq
   end
 
-  # Returns the ordered fallback runners for the given primary runner.
-  # Saved order is respected first, then any other configured fallback runners
-  # are appended so newly added runners participate automatically.
-  #
-  # If the current primary appears in the saved fallback order, fallback wraps
-  # around that position so a goal-specific or manually selected primary lower
-  # in the list still exhausts the runners after it before wrapping to the
-  # runners above it.
-  #
-  # @param primary_runner [String] The runner already being attempted
-  # @return [Array<String>] Fallback runner keys in attempt order
-  def fallback_priority_for(primary_runner:, identifiers: false)
+  def fallback_priority_for(primary_runner: nil, primary_provider: nil, identifiers: false)
+    current_primary = primary_runner || primary_provider
+
     candidates = allowed_runner_identifiers_for_fallback
     saved_order = Array(fallback_runners).flat_map do |runner|
       identifiers_for_runner_token(runner, candidates: candidates)
     end
     ordered_candidates = (saved_order + (candidates - saved_order)).uniq
-    primary_identifiers = identifiers_for_runner_token(primary_runner, candidates: ordered_candidates)
-    primary_index = saved_order.index { |runner| primary_identifiers.include?(runner) || runner == primary_runner }
+    primary_identifiers = identifiers_for_runner_token(current_primary, candidates: ordered_candidates)
+    primary_index = saved_order.index { |runner| primary_identifiers.include?(runner) || runner == current_primary }
     rotated_candidates = primary_index ? ordered_candidates.rotate(primary_index + 1) : ordered_candidates
-    priorities = rotated_candidates.reject { |runner| primary_identifiers.include?(runner) || runner == primary_runner }
+    priorities = rotated_candidates.reject { |runner| primary_identifiers.include?(runner) || runner == current_primary }
     return priorities if identifiers
 
     map_identifiers_to_runner_keys(priorities)
@@ -373,6 +401,8 @@ class UserSetting < ApplicationRecord
     map_identifiers_to_runner_keys(available)
   end
 
+  alias_method :available_providers, :available_runners
+
   # Returns the RunnerState for a given runner, creating one if it doesn't exist.
   #
   # @param runner_name [String] The runner name
@@ -383,7 +413,26 @@ class UserSetting < ApplicationRecord
     user.runner_states.find_by!(runner_name: runner_name)
   end
 
+  alias_method :provider_state_for, :runner_state_for
+
   private
+
+  def sync_legacy_provider_bridge_columns
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      runner_value = self[runner_name]
+      legacy_value = self[legacy_name]
+
+      if will_save_change_to_attribute?(runner_name)
+        self[legacy_name] = runner_value
+      elsif will_save_change_to_attribute?(legacy_name)
+        self[runner_name] = legacy_value
+      elsif runner_value.nil? && !legacy_value.nil?
+        self[runner_name] = legacy_value
+      elsif legacy_value.nil? && !runner_value.nil?
+        self[legacy_name] = runner_value
+      end
+    end
+  end
 
   # Picks a candidate at random, weighted by each runner's weight column.
   # Falls back to uniform random when weights cannot be resolved (e.g. no
@@ -608,6 +657,17 @@ class UserSetting < ApplicationRecord
     return exact if exact.any?
     return [] unless user
 
+    if Runner.routing_key?(token)
+      runner_id = Runner.id_from_routing_key(token)
+      return [] unless runner_id
+
+      canonical_identifier = "#{Runner::ROUTING_KEY_PREFIX}#{runner_id}"
+      return [ canonical_identifier ] if candidates.include?(canonical_identifier) &&
+        user.runners.kept_only.exists?(id: runner_id)
+
+      return [ token ] if candidates.include?(token) && user.runners.kept_only.exists?(id: runner_id)
+    end
+
     runner_index_by_id = {}
     routing_ids = candidates.filter_map.with_index do |candidate, index|
       runner_id = Runner.id_from_routing_key(candidate)
@@ -629,6 +689,8 @@ class UserSetting < ApplicationRecord
 
     candidates.include?(preferred_identifier) ? [ preferred_identifier ] : []
   end
+
+  alias_method :identifiers_for_provider_token, :identifiers_for_runner_token
 
   def map_identifiers_to_runner_keys(identifiers)
     Array(identifiers).map do |identifier|

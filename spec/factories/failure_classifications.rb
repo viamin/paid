@@ -4,8 +4,8 @@ FactoryBot.define do
   factory :failure_classification do
     agent_run
     project { agent_run.project }
-    failure_category { "runner_error" }
-    chosen_action { "retry_alternate_runner" }
+    failure_category { "provider_error" }
+    chosen_action { "retry_alternate_provider" }
     action_status { "pending" }
     failure_context { {} }
     action_params { {} }
@@ -13,7 +13,7 @@ FactoryBot.define do
 
     trait :timeout do
       failure_category { "timeout" }
-      chosen_action { "retry_same_runner" }
+      chosen_action { "retry_same_provider" }
     end
 
     trait :auth_failure do
@@ -23,7 +23,7 @@ FactoryBot.define do
 
     trait :rate_limit do
       failure_category { "rate_limit" }
-      chosen_action { "retry_alternate_runner" }
+      chosen_action { "retry_alternate_provider" }
     end
 
     trait :executing do

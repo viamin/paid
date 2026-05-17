@@ -188,7 +188,6 @@ Key sections:
 
 ## Related Documents
 
-- [GLOSSARY.md](../GLOSSARY.md) - Paid-specific terminology and naming conventions
 - [VISION.md](../VISION.md) - Project philosophy and principles
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture overview
 - [ROADMAP.md](../ROADMAP.md) - Implementation phases

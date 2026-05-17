@@ -434,6 +434,7 @@ module Runners
         result = AgentRun.insert_all!(
           [ {
             project_id: test_project.id,
+            provider_id: runner.id,
             runner_id: runner.id,
             agent_type: Runner.agent_type_for(runner.runner_key),
             status: "queued",
@@ -528,7 +529,7 @@ module Runners
     end
 
     def translate_and_extract_error(error_message)
-      translated = translate_known_provider_errors(error_message)
+      translated = translate_known_runner_errors(error_message)
       return translated if translated
 
       extract_user_facing_error(error_message)

@@ -1706,10 +1706,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.string "circuit_state", limit: 20, default: "closed", null: false
     t.datetime "created_at", null: false
     t.integer "failure_count", default: 0, null: false
+    t.string "provider_name", limit: 50
     t.datetime "rate_limited_until"
     t.string "runner_name", limit: 50, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["user_id", "provider_name"], name: "index_provider_states_on_user_id_and_provider_name", unique: true
     t.index ["user_id", "runner_name"], name: "index_provider_states_on_user_id_and_runner_name", unique: true
   end
 
@@ -1726,6 +1728,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.jsonb "log_data"
     t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
+    t.string "provider_key", limit: 50
     t.string "runner_key", limit: 50, null: false
     t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
@@ -1735,6 +1738,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_173653) do
     t.index ["discarded_at"], name: "index_providers_on_discarded_at"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
     t.index ["user_id", "runner_key", "provider_api_key_id", "name"], name: "idx_runners_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
     t.index ["user_id", "runner_key"], name: "idx_runners_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
     t.index ["user_id"], name: "index_providers_on_user_id"

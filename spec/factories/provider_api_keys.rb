@@ -7,4 +7,6 @@ FactoryBot.define do
     api_key { "sk-test-#{SecureRandom.hex(16)}" }
     api_service_type { "anthropic" }
   end
+
+  factory :runner_api_key, parent: :provider_api_key
 end

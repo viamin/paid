@@ -14,7 +14,7 @@ class RunnersController < ApplicationController
   before_action :load_runner_options, only: [ :new, :create, :edit, :update ]
 
   def index
-    authorize Runner
+    authorize resource_model_class
     load_index_context
   end
 
@@ -28,21 +28,23 @@ class RunnersController < ApplicationController
       auth_type = "subscription" if @api_key_runner_options.blank?
     end
 
-    @runner = current_user.runners.new(auth_type: auth_type)
+    @runner = resource_records.new(auth_type: auth_type)
+    assign_legacy_provider_ivars(@runner)
     authorize @runner
   end
 
   def create
-    @runner = current_user.runners.new(runner_params)
+    @runner = resource_records.new(runner_params)
+    assign_legacy_provider_ivars(@runner)
     authorize @runner
     validate_runner_key_enabled!
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
       if reconcile_settings!
-        redirect_to runners_path, notice: "Runner created successfully."
+        redirect_to resource_index_path, notice: resource_created_notice
       else
-        redirect_to runners_path, alert: "Runner created, but settings reconciliation failed. Please review settings."
+        redirect_to resource_index_path, alert: resource_reconciliation_alert(action: "created")
       end
     else
       preserve_submitted_runner_key_in_options
@@ -65,9 +67,9 @@ class RunnersController < ApplicationController
 
     if @runner.errors.none? && @runner.save
       if reconcile_settings!
-        redirect_to runners_path, notice: "Runner updated successfully."
+        redirect_to resource_index_path, notice: resource_updated_notice
       else
-        redirect_to runners_path, alert: "Runner updated, but settings reconciliation failed. Please review settings."
+        redirect_to resource_index_path, alert: resource_reconciliation_alert(action: "updated")
       end
     else
       render :edit, status: :unprocessable_content
@@ -79,12 +81,12 @@ class RunnersController < ApplicationController
 
     if @runner.discard
       if reconcile_settings!
-        redirect_to runners_path, notice: "Runner deleted successfully."
+        redirect_to resource_index_path, notice: resource_deleted_notice
       else
-        redirect_to runners_path, alert: "Runner deleted, but settings reconciliation failed. Please review settings."
+        redirect_to resource_index_path, alert: resource_reconciliation_alert(action: "deleted")
       end
     else
-      redirect_to runners_path, alert: @runner.errors.full_messages.to_sentence
+      redirect_to resource_index_path, alert: translated_resource_errors(@runner.errors.full_messages.to_sentence)
     end
   end
 
@@ -108,12 +110,12 @@ class RunnersController < ApplicationController
 
     unless acquired
       render json: { success: false, error_type: "rate_limited",
-                     message: "Please wait before testing this runner again." },
+                     message: "Please wait before testing this #{resource_noun} again." },
              status: :too_many_requests
       return
     end
 
-    result = Runners::TestAgent.call(runner: @runner)
+    result = resource_test_agent_service.call(resource_test_agent_arguments)
 
     render json: {
       success: result.success?,
@@ -133,7 +135,7 @@ class RunnersController < ApplicationController
     attrs[:default_agent_runners_by_goal] = goal_default_runner_attrs(attrs)
 
     if weights_ok && @user_setting.update(attrs)
-      redirect_to runners_path, notice: "Runner settings saved successfully."
+      redirect_to resource_index_path, notice: resource_settings_saved_notice
     else
       load_index_context
       render :index, status: :unprocessable_content
@@ -146,21 +148,24 @@ class RunnersController < ApplicationController
   # Extracted to make it clear to static analyzers (CodeQL) that the raw
   # query param is never used directly — only the sanitized value propagates.
   def sanitize_auth_type(raw)
-    Runner::AUTH_TYPES.include?(raw) ? raw : "subscription"
+    resource_model_class::AUTH_TYPES.include?(raw) ? raw : "subscription"
   end
 
   def set_runner
-    @runner = policy_scope(Runner).find(params[:id])
+    @runner = policy_scope(resource_model_class).find(params[:id])
+    assign_legacy_provider_ivars(@runner)
   end
 
   def runner_params
+    raw_params = params[resource_param_key] || params.fetch(:runner)
     permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer, :weight ]
     if action_name == "create"
-      permitted.push(:runner_key, :auth_type, :provider_api_key_id)
+      permitted.push(:runner_key, :provider_key, :auth_type, :provider_api_key_id)
     end
-    attrs = params.require(:runner).permit(
+    attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ], pi: [ :api_provider, :model ] },
+      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ], aider: [ :api_provider, :model ],
+                pi: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -171,10 +176,11 @@ class RunnersController < ApplicationController
     # which prevents UnfilteredParameters when consumed by the model.
     config = attrs[:config]&.to_h || {}
 
-    runner_key = attrs[:runner_key].presence || @runner&.runner_key
+    runner_key = attrs[:runner_key].presence || attrs[:provider_key].presence || @runner&.runner_key
     config = config.slice(runner_key) if runner_key.present?
 
     result = attrs.to_h.merge("config" => config)
+    result["runner_key"] = result.delete("provider_key") if result.key?("provider_key")
     if result.key?("tier_model_ids")
       result["tier_model_ids"] = result["tier_model_ids"].to_h.compact_blank
     end
@@ -200,8 +206,8 @@ class RunnersController < ApplicationController
   end
 
   def load_runner_options
-    addable_keys = Runner.addable_runner_keys
-    existing_subscription_keys = current_user.runners.kept_only.subscription.pluck(:runner_key)
+    addable_keys = resource_addable_keys
+    existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
 
     # Subscription runners: only show keys not yet added
     @subscription_runner_options = if @runner&.persisted?
@@ -218,6 +224,7 @@ class RunnersController < ApplicationController
 
     # Combined for backward compat
     @runner_options = @subscription_runner_options
+    assign_legacy_provider_option_ivars
   end
 
   # When re-rendering :new after a validation failure, ensure the submitted
@@ -232,14 +239,16 @@ class RunnersController < ApplicationController
     elsif @runner.api_key?
       @api_key_runner_options |= [ key ] unless @api_key_runner_options.include?(key)
     end
+
+    assign_legacy_provider_option_ivars
   end
 
   def validate_runner_key_enabled!
     return if @runner.runner_key.blank?
-    return if Runner.addable_runner_key?(@runner.runner_key)
+    return if resource_addable_key?(@runner.runner_key)
     # Unsupported keys are caught by the model's inclusion validation;
     # here we only flag supported-but-not-yet-installed runners.
-    return unless Runner.supported_runner_key?(@runner.runner_key)
+    return unless resource_supported_key?(@runner.runner_key)
 
     @runner.errors.add(:runner_key, "is not available in paid-agent yet")
   end
@@ -251,7 +260,7 @@ class RunnersController < ApplicationController
     # On update, runner_key is immutable so that validation does not fire —
     # we must explicitly block enabling run/fallback flags for runners whose
     # key has been removed from the supported registry after creation.
-    unless Runner.supported_runner_key?(@runner.runner_key)
+    unless resource_supported_key?(@runner.runner_key)
       return if @runner.new_record?
 
       # Unlike the container-executable check below, unsupported runners
@@ -259,24 +268,24 @@ class RunnersController < ApplicationController
       # whether the user changed it in this request. The message tells the
       # user they need to disable the flag, not that they "cannot enable" it.
       if @runner.enabled_for_agent_runs
-        @runner.errors.add(:enabled_for_agent_runs, "must be disabled for an unsupported runner")
+        @runner.errors.add(:enabled_for_agent_runs, "must be disabled for an unsupported #{resource_noun}")
       end
       if @runner.enabled_for_fallback
-        @runner.errors.add(:enabled_for_fallback, "must be disabled for an unsupported runner")
+        @runner.errors.add(:enabled_for_fallback, "must be disabled for an unsupported #{resource_noun}")
       end
       return
     end
 
-    return if Runner.addable_runner_key?(@runner.runner_key)
+    return if resource_addable_key?(@runner.runner_key)
 
     setting_agent_runs = @runner.enabled_for_agent_runs && (@runner.new_record? || @runner.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
     setting_fallback = @runner.enabled_for_fallback && (@runner.new_record? || @runner.will_save_change_to_attribute?("enabled_for_fallback", to: true))
 
     if setting_agent_runs
-      @runner.errors.add(:enabled_for_agent_runs, "cannot be enabled for a runner whose CLI is not installed in the agent container")
+      @runner.errors.add(:enabled_for_agent_runs, "cannot be enabled for a #{resource_noun} whose CLI is not installed in the agent container")
     end
     if setting_fallback
-      @runner.errors.add(:enabled_for_fallback, "cannot be enabled for a runner whose CLI is not installed in the agent container")
+      @runner.errors.add(:enabled_for_fallback, "cannot be enabled for a #{resource_noun} whose CLI is not installed in the agent container")
     end
   end
 
@@ -310,10 +319,10 @@ class RunnersController < ApplicationController
     run_identifiers = enabled_agent_runner_identifiers
     return run_identifiers if run_identifiers.present?
 
-    default_key = Runner.default_runner_key
+    default_key = resource_default_key
     return [] unless default_key
 
-    default = current_user.runners.kept_only.find_or_initialize_by(runner_key: default_key, auth_type: "subscription")
+    default = resource_records.kept_only.find_or_initialize_by(runner_key: default_key, auth_type: "subscription")
     default.enabled_for_agent_runs = true
     default.enabled_for_fallback = true if default.new_record?
 
@@ -328,13 +337,13 @@ class RunnersController < ApplicationController
   end
 
   def load_index_context
-    @runners = policy_scope(Runner).ordered
+    @runners = policy_scope(resource_model_class).ordered
     @runner_states = cached_runner_states
     @user_setting = current_user.settings
 
     # Derive enabled/fallback identifiers from the already-loaded @runners
     # collection to avoid 2 extra queries.
-    executable_keys = RunnerSupport.container_executable_runner_keys.to_set
+    executable_keys = resource_container_executable_keys.to_set
     enabled_runners = @runners.select { |r| r.enabled_for_agent_runs? && executable_keys.include?(r.runner_key) }
     fallback_runners = @runners.select { |r| r.enabled_for_fallback? && executable_keys.include?(r.runner_key) }
 
@@ -360,7 +369,7 @@ class RunnersController < ApplicationController
     @runner_state_aliases = @runners.each_with_object({}) do |runner, aliases|
       aliases[runner.routing_key] = runner.runner_key
     end
-    @usage_stats = Runners::UsageStats.call(user: current_user)
+    @usage_stats = resource_usage_stats_service.call(user: current_user)
     # Pre-index stats per runner to avoid duplicate lookups in views
     @runner_stats_by_id = @runners.each_with_object({}) do |runner, hash|
       stats = @usage_stats[runner.routing_key] || @usage_stats[runner.runner_key]
@@ -368,7 +377,7 @@ class RunnersController < ApplicationController
     end
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
-    addable_keys = Runner.addable_runner_keys
+    addable_keys = resource_addable_keys
     api_key_compatible_addable_keys =
       addable_keys.select do |key|
         @available_api_keys.any? { |api_key| compatible_api_key_for_runner?(api_key: api_key, runner_key: key) }
@@ -376,10 +385,12 @@ class RunnersController < ApplicationController
     @addable_runner_options = (
       (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
     ).uniq.presence || []
+    assign_legacy_provider_index_ivars
   end
 
   def update_fallback_runner_flags!
-    raw = params.dig(:user_setting, :enabled_fallback_runner_keys)
+    raw = params.dig(:user_setting, :enabled_fallback_runner_keys) ||
+      params.dig(:user_setting, :enabled_fallback_provider_keys)
     return unless raw
 
     enabled_keys = UserSetting.normalize_fallback_runners_param(raw)
@@ -392,15 +403,30 @@ class RunnersController < ApplicationController
   def runner_settings_params
     permitted = params.require(:user_setting).permit(
       :default_agent_runner,
+      :default_agent_provider,
       :fallback_enabled,
       :fallback_runners,
+      :fallback_providers,
       :runner_selection_mode,
-      default_agent_runners_by_goal: AgentRun::GOALS
+      :provider_selection_mode,
+      default_agent_runners_by_goal: AgentRun::GOALS,
+      default_agent_providers_by_goal: AgentRun::GOALS
     )
 
-    if permitted.key?(:fallback_runners)
-      permitted[:fallback_runners] = UserSetting.normalize_fallback_runners_param(permitted[:fallback_runners])
+    if permitted.key?(:default_agent_provider) && !permitted.key?(:default_agent_runner)
+      permitted[:default_agent_runner] = permitted.delete(:default_agent_provider)
     end
+    if permitted.key?(:default_agent_providers_by_goal) && !permitted.key?(:default_agent_runners_by_goal)
+      permitted[:default_agent_runners_by_goal] = permitted.delete(:default_agent_providers_by_goal)
+    end
+    if permitted.key?(:fallback_providers) && !permitted.key?(:fallback_runners)
+      permitted[:fallback_runners] = permitted.delete(:fallback_providers)
+    end
+    if permitted.key?(:provider_selection_mode) && !permitted.key?(:runner_selection_mode)
+      permitted[:runner_selection_mode] = permitted.delete(:provider_selection_mode)
+    end
+
+    permitted[:fallback_runners] = UserSetting.normalize_fallback_runners_param(permitted[:fallback_runners]) if permitted.key?(:fallback_runners)
 
     if permitted.key?(:runner_selection_mode) && permitted[:runner_selection_mode].present?
       mode = permitted[:runner_selection_mode].to_s
@@ -421,7 +447,9 @@ class RunnersController < ApplicationController
   # for a specific runner, or "round_robin"/"random" for multi-runner
   # distribution.
   def expand_combined_runner_mode!(permitted)
-    combined = params.dig(:user_setting, :runner_mode).to_s.strip
+    combined = params.dig(:user_setting, :runner_mode).presence ||
+      params.dig(:user_setting, :provider_mode).presence
+    combined = combined.to_s.strip
     return if combined.blank?
 
     if combined.start_with?("single:")
@@ -438,7 +466,8 @@ class RunnersController < ApplicationController
   # the settings save so the user sees the failure rather than a silent
   # partial update.
   def update_runner_weights!
-    raw = params.dig(:user_setting, :runner_weights)
+    raw = params.dig(:user_setting, :runner_weights) ||
+      params.dig(:user_setting, :provider_weights)
     return true if raw.blank?
 
     weights = raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw.to_h
@@ -470,7 +499,7 @@ class RunnersController < ApplicationController
 
   def cached_runner_states
     Rails.cache.fetch("runners/states/#{current_user.id}", expires_in: 30.seconds) do
-      current_user.runner_states.each_with_object({}) do |state, hash|
+      resource_states.each_with_object({}) do |state, hash|
         hash[state.runner_name] = CachedState.new(
           circuit_state: state.circuit_state,
           rate_limited_until: state.rate_limited_until
@@ -480,15 +509,36 @@ class RunnersController < ApplicationController
   end
 
   def compatible_api_key_for_runner?(api_key:, runner_key:)
-    api_key.compatible_with?(runner_key)
+    # Direct-outbound runners support multiple API key types depending on the
+    # selected api_provider, so check against all compatible service types.
+    if %w[opencode kilocode aider].include?(runner_key)
+      return resource_model_class::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
+    end
+    if runner_key == "pi"
+      return resource_model_class::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
+    end
+
+    api_key.api_service_type == resource_api_service_type_for(runner_key)
   end
 
   def enabled_agent_runner_identifiers
-    executable_keys = RunnerSupport.container_executable_runner_keys
-    runners = current_user.runners.kept_only.for_agent_runs
-      .where(runner_key: executable_keys)
-      .ordered
+    return legacy_enabled_agent_provider_identifiers if legacy_provider_controller?
+
+    executable_keys = resource_container_executable_keys
+    runners = resource_records.kept_only.for_agent_runs.where(runner_key: executable_keys).ordered
     UserSetting.runner_identifiers_for(runners, identifiers: true)
+  end
+
+  def legacy_enabled_agent_provider_identifiers
+    tokens = UserSetting.enabled_agent_providers(current_user)
+    return [] if tokens.blank?
+
+    providers = resource_records.kept_only.for_agent_runs.ordered.to_a
+    tokens.filter_map do |token|
+      next token if Provider.routing_key?(token)
+
+      providers.find { |provider| provider.matches_identifier?(token) }&.routing_key
+    end
   end
 
   # Returns Runner records corresponding to the given routing-key
@@ -498,15 +548,13 @@ class RunnersController < ApplicationController
     return [] if identifiers.blank?
 
     ids = identifiers.filter_map { |identifier| Runner.id_from_routing_key(identifier) }
-    runners_by_id = current_user.runners.kept_only.where(id: ids).index_by(&:id)
+    runners_by_id = resource_records.kept_only.where(id: ids).index_by(&:id)
     ids.filter_map { |id| runners_by_id[id] }
   end
 
   def fallback_candidate_runner_identifiers
-    executable_keys = RunnerSupport.container_executable_runner_keys
-    runners = current_user.runners.kept_only.for_fallback
-      .where(runner_key: executable_keys)
-      .ordered
+    executable_keys = resource_container_executable_keys
+    runners = resource_records.kept_only.for_fallback.where(runner_key: executable_keys).ordered
     UserSetting.runner_identifiers_for(runners, identifiers: true)
   end
 
@@ -526,7 +574,8 @@ class RunnersController < ApplicationController
     submitted = attrs[:default_agent_runners_by_goal]
     return sanitize_goal_default_runner_identifiers(@user_setting, enabled_agent_runner_identifiers) unless submitted
 
-    raw_submitted = params.dig(:user_setting, :default_agent_runners_by_goal)
+    raw_submitted = params.dig(:user_setting, :default_agent_runners_by_goal) ||
+      params.dig(:user_setting, :default_agent_providers_by_goal)
     return sanitize_goal_default_runner_identifiers(@user_setting, enabled_agent_runner_identifiers) if submitted.empty? && raw_goal_defaults_filtered_out?(raw_submitted)
 
     submitted
@@ -536,5 +585,130 @@ class RunnersController < ApplicationController
     return true unless raw_submitted.respond_to?(:keys)
 
     raw_submitted.keys.map(&:to_s).intersection(AgentRun::GOALS).empty?
+  end
+
+  def legacy_provider_controller?
+    controller_name == "providers"
+  end
+
+  def resource_param_key
+    return :provider if params.key?(:provider)
+
+    :runner
+  end
+
+  def resource_index_path
+    legacy_provider_controller? ? providers_path : runners_path
+  end
+
+  def resource_created_notice
+    legacy_provider_controller? ? "Provider created successfully." : "Runner created successfully."
+  end
+
+  def resource_updated_notice
+    legacy_provider_controller? ? "Provider updated successfully." : "Runner updated successfully."
+  end
+
+  def resource_deleted_notice
+    legacy_provider_controller? ? "Provider deleted successfully." : "Runner deleted successfully."
+  end
+
+  def resource_settings_saved_notice
+    legacy_provider_controller? ? "Provider settings saved successfully." : "Runner settings saved successfully."
+  end
+
+  def resource_reconciliation_alert(action:)
+    resource_name = legacy_provider_controller? ? "Provider" : "Runner"
+    "#{resource_name} #{action}, but settings reconciliation failed. Please review settings."
+  end
+
+  def resource_model_class
+    legacy_provider_controller? ? Provider : Runner
+  end
+
+  def resource_records
+    legacy_provider_controller? ? current_user.providers : current_user.runners
+  end
+
+  def resource_states
+    legacy_provider_controller? ? current_user.provider_states : current_user.runner_states
+  end
+
+  def resource_usage_stats_service
+    legacy_provider_controller? ? Providers::UsageStats : Runners::UsageStats
+  end
+
+  def resource_test_agent_service
+    legacy_provider_controller? ? Providers::TestAgent : Runners::TestAgent
+  end
+
+  def resource_test_agent_arguments
+    legacy_provider_controller? ? { provider: @runner } : { runner: @runner }
+  end
+
+  def resource_container_executable_keys
+    legacy_provider_controller? ? ProviderSupport.container_executable_provider_keys : RunnerSupport.container_executable_runner_keys
+  end
+
+  def resource_noun
+    legacy_provider_controller? ? "provider" : "runner"
+  end
+
+  def resource_addable_keys
+    legacy_provider_controller? ? Provider.addable_provider_keys : Runner.addable_runner_keys
+  end
+
+  def resource_addable_key?(runner_key)
+    legacy_provider_controller? ? Provider.addable_provider_key?(runner_key) : Runner.addable_runner_key?(runner_key)
+  end
+
+  def resource_supported_key?(runner_key)
+    legacy_provider_controller? ? Provider.supported_provider_key?(runner_key) : Runner.supported_runner_key?(runner_key)
+  end
+
+  def resource_api_service_type_for(runner_key)
+    legacy_provider_controller? ? Provider.api_service_type_for(runner_key) : Runner.api_service_type_for(runner_key)
+  end
+
+  def resource_default_key
+    legacy_provider_controller? ? ProviderSupport.container_executable_provider_keys.first : Runner.default_runner_key
+  end
+
+  def translated_resource_errors(message)
+    return message unless legacy_provider_controller?
+
+    message.gsub("last runner enabled for agent runs", "last provider enabled for agent runs")
+  end
+
+  def assign_legacy_provider_ivars(record)
+    return unless legacy_provider_controller?
+
+    @provider = record
+  end
+
+  def assign_legacy_provider_option_ivars
+    return unless legacy_provider_controller?
+
+    @subscription_provider_options = @subscription_runner_options
+    @api_key_provider_options = @api_key_runner_options
+  end
+
+  def assign_legacy_provider_index_ivars
+    return unless legacy_provider_controller?
+
+    @providers = @runners
+    @provider_states = @runner_states
+    @enabled_agent_providers = @enabled_agent_runners
+    @run_enabled_providers = @run_enabled_runners
+    @fallback_candidate_providers = @fallback_candidate_runners
+    @default_provider_identifier = @default_runner_identifier
+    @goal_provider_labels = @goal_runner_labels
+    @explicit_goal_default_providers = @explicit_goal_default_runners
+    @saved_fallback_provider_tokens = @saved_fallback_runner_tokens
+    @provider_labels = @runner_labels
+    @subscription_provider_identifiers = @subscription_runner_identifiers
+    @provider_state_aliases = @runner_state_aliases
+    @provider_stats_by_id = @runner_stats_by_id
+    @addable_provider_options = @addable_runner_options
   end
 end

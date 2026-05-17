@@ -15,13 +15,13 @@ RSpec.describe Runners::TestAgent, :provider_smoke do
       result =
         if scenario.diagnostic?
           described_class.call(
-            provider: provider,
+            runner: runner,
             diagnostic_prompt: scenario.diagnostic_prompt,
             diagnostic_timeout: scenario.diagnostic_timeout,
             diagnostic_success_pattern: scenario.diagnostic_success_pattern
           )
         else
-          described_class.call(provider: provider)
+          described_class.call(runner: runner)
         end
 
       expect(result).to be_success, "#{scenario.name} smoke test failed: #{result.error_type} - #{result.message}"

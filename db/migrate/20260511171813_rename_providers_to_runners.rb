@@ -52,11 +52,14 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
     backfill "UPDATE providers SET runner_key = provider_key"
 
     safety_assured { change_column_null :providers, :runner_key, false }
+    safety_assured { change_column_null :providers, :provider_key, true }
     add_runner_unique_indexes
   end
 
   def down_providers_columns
     remove_runner_unique_indexes
+    backfill "UPDATE providers SET provider_key = runner_key"
+    safety_assured { change_column_null :providers, :provider_key, false }
     safety_assured { remove_column :providers, :runner_key }
 
     rename_constraint(:providers,
@@ -75,6 +78,7 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
     backfill "UPDATE provider_states SET runner_name = provider_name"
 
     safety_assured { change_column_null :provider_states, :runner_name, false }
+    safety_assured { change_column_null :provider_states, :provider_name, true }
     safety_assured do
       add_index :provider_states, [ :user_id, :runner_name ],
         unique: true, name: "index_provider_states_on_user_id_and_runner_name"
@@ -83,6 +87,8 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
 
   def down_provider_states_columns
     safety_assured { remove_index :provider_states, name: "index_provider_states_on_user_id_and_runner_name" }
+    backfill "UPDATE provider_states SET provider_name = runner_name"
+    safety_assured { change_column_null :provider_states, :provider_name, false }
     safety_assured { remove_column :provider_states, :runner_name }
   end
 
@@ -113,6 +119,14 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
   end
 
   def down_agent_runs_columns
+    backfill <<~SQL
+      UPDATE agent_runs
+      SET provider_id = runner_id,
+          provider_switches = runner_switches,
+          providers_attempted = runners_attempted,
+          final_provider = final_runner
+    SQL
+
     safety_assured { remove_foreign_key :agent_runs, name: "fk_agent_runs_runner_id" }
     change_column_null :agent_runs, :runners_attempted, true
     change_column_null :agent_runs, :runner_switches, true
@@ -138,6 +152,7 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
   end
 
   def down_chat_sessions_columns
+    backfill "UPDATE chat_sessions SET provider_id = runner_id"
     safety_assured { remove_foreign_key :chat_sessions, name: "fk_chat_sessions_runner_id" }
     safety_assured { remove_column :chat_sessions, :runner_id }
   end
@@ -186,6 +201,19 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
   end
 
   def down_user_settings_columns
+    backfill <<~SQL
+      UPDATE user_settings
+      SET default_agent_provider = default_agent_runner,
+          default_agent_providers_by_goal = default_agent_runners_by_goal,
+          fallback_providers = fallback_runners,
+          provider_selection_mode = runner_selection_mode,
+          provider_round_robin_state = runner_round_robin_state,
+          kb_chat_provider = kb_chat_runner,
+          kb_chat_fallback_providers = kb_chat_fallback_runners,
+          kb_embedding_provider = kb_embedding_runner,
+          kb_embedding_fallback_providers = kb_embedding_fallback_runners
+    SQL
+
     remove_check_constraint :user_settings, name: "chk_runner_selection_mode"
 
     change_column_null :user_settings, :kb_embedding_runner, true
@@ -225,6 +253,12 @@ class RenameProvidersToRunners < ActiveRecord::Migration[8.1]
   end
 
   def down_tenant_settings_columns
+    backfill <<~SQL
+      UPDATE tenant_settings
+      SET provider_preferences = runner_preferences,
+          allowed_provider_keys = allowed_runner_keys
+    SQL
+
     change_column_null :tenant_settings, :runner_preferences, true
     safety_assured { remove_column :tenant_settings, :allowed_runner_keys }
     safety_assured { remove_column :tenant_settings, :runner_preferences }

@@ -61,6 +61,17 @@ RSpec.describe ChatSessions::Create do
       expect(session.model).to eq("gpt-4o")
     end
 
+    it "accepts provider_id as a legacy alias for runner_id" do
+      runner = create(:runner, user: user)
+      session = described_class.call(
+        account: account,
+        user: user,
+        provider_id: runner.id
+      )
+
+      expect(session.runner).to eq(runner)
+    end
+
     it "raises when runner belongs to a different account" do
       other_account = create(:account)
       other_user = create(:user, account: other_account)

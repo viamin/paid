@@ -175,8 +175,8 @@ RSpec.describe "Dashboard" do
       it "shows knowledge runner health and pipeline metrics" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, user: user, runner_name: user.settings.kb_chat_runner, failure_count: 2)
-        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
-        create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "runner" => "claude" } ])
+        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_runner: "openai")
+        create(:knowledge_run, :failed, :decision_drafting, project: project, runner_attempts: [ { "runner" => "claude" } ])
 
         get dashboard_knowledge_stats_path
 
@@ -187,14 +187,14 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Embedding")
       end
 
-      it "shows unavailable helper copy when both provider groups are down" do
+      it "shows unavailable helper copy when both runner groups are down" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, :circuit_open, user: user, runner_name: user.settings.kb_chat_runner)
 
         get dashboard_knowledge_stats_path
 
-        expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
-        expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
+        expect(response.body).to include("Knowledge capabilities are unavailable because both runner groups are down.")
+        expect(response.body).not_to include("Knowledge capabilities are degraded while one runner group remains available.")
       end
 
       it "shows the runner column in the active runs table" do
@@ -240,6 +240,17 @@ RSpec.describe "Dashboard" do
         expect(row.text).to include("2 - P1")
       end
 
+      it "shows the final runner label for legacy fallback runs in the active runs table" do
+        initial_runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :running, project: project, runner: initial_runner, final_runner: "cursor")
+
+        get dashboard_path
+
+        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        expect(row).to be_present
+        expect(row.text).to include(Runner.display_name_for("cursor"))
+      end
+
       it "shows review context tooltips in the active runs table" do
         source_pull_request = create(:issue, :pull_request, project: project, github_number: 87,
           title: "Tighten dashboard review context tooltips")
@@ -282,17 +293,6 @@ RSpec.describe "Dashboard" do
         expect(goal_label["title"]).to be_nil
         expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
-      end
-
-      it "shows the final runner label for legacy fallback runs in the active runs table" do
-        initial_runner = create(:runner, user: user, runner_key: "codex")
-        run = create(:agent_run, :running, project: project, runner: initial_runner, final_runner: "cursor")
-
-        get dashboard_path
-
-        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
-        expect(row).to be_present
-        expect(row.text).to include(Runner.display_name_for("cursor"))
       end
 
       it "renders unsupported runner identifiers in the active runs table without error" do
@@ -646,7 +646,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Configured")
     end
 
-    it "uses plural grammar for multiple recovering providers" do
+    it "uses plural grammar for multiple recovering runners" do
       create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
       first_provider = user.runners.find_by!(runner_key: Runner.default_runner_key, auth_type: "subscription")
       second_provider_key = (RunnerSupport.container_executable_runner_keys - [ first_provider.runner_key ]).first || "cursor"
@@ -654,7 +654,7 @@ RSpec.describe "Dashboard" do
 
       [ first_provider, second_provider ].each do |runner|
         create(
-          :runner_state,
+          :provider_state,
           :circuit_open,
           user: user,
           runner_name: runner.state_key,

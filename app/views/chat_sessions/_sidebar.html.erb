@@ -25,14 +25,6 @@
         </button>
       <% end %>
     </div>
-
-    <% if can_create_chat_session %>
-      <%= render "new_session_modal",
-                 chat_session: chat_session,
-                 available_runners: available_runners,
-                 available_projects: available_projects,
-                 available_models: available_models %>
-    <% end %>
   </div>
 
   <div id="chat-sessions-sidebar"

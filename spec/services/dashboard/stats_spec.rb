@@ -63,19 +63,19 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:cost_and_tokens][:total_tokens]).to eq(0)
       end
 
-      it "returns empty agent type, provider, and project breakdowns" do
+      it "returns empty agent type, runner, and project breakdowns" do
         expect(stats[:runs_by_agent_type]).to be_empty
-        expect(stats[:runs_by_provider]).to be_empty
+        expect(stats[:runs_by_runner]).to be_empty
         expect(stats[:runs_by_project]).to be_empty
       end
 
-      it "returns zero provider fallback stats" do
-        fs = stats[:provider_fallback_stats]
+      it "returns zero runner fallback stats" do
+        fs = stats[:runner_fallback_stats]
         expect(fs[:total_runs]).to eq(0)
         expect(fs[:fallback_count]).to eq(0)
         expect(fs[:fallback_rate]).to eq(0.0)
-        expect(fs[:by_requested_provider]).to be_empty
-        expect(fs[:by_effective_provider]).to be_empty
+        expect(fs[:by_requested_runner]).to be_empty
+        expect(fs[:by_effective_runner]).to be_empty
       end
 
       it "returns zero issue completion stats" do
@@ -434,12 +434,12 @@ RSpec.describe Dashboard::Stats do
         create(:agent_run, :completed, :cursor, project: project)
       end
 
-      it "groups runs_by_provider by effective provider" do
-        providers = stats[:runs_by_provider]
-        provider_hash = providers.to_h
-        expect(provider_hash[Runner.display_name("claude")]).to eq(1)
-        expect(provider_hash[Runner.display_name("codex")]).to eq(1)
-        expect(provider_hash[Runner.display_name("cursor")]).to eq(2)
+      it "groups runs_by_runner by effective runner" do
+        runners = stats[:runs_by_runner]
+        runner_hash = runners.to_h
+        expect(runner_hash[Runner.display_name("claude")]).to eq(1)
+        expect(runner_hash[Runner.display_name("codex")]).to eq(1)
+        expect(runner_hash[Runner.display_name("cursor")]).to eq(2)
       end
 
       it "still groups runs_by_agent_type by requested provider" do
@@ -449,19 +449,19 @@ RSpec.describe Dashboard::Stats do
       end
 
       it "calculates fallback rate" do
-        fs = stats[:provider_fallback_stats]
+        fs = stats[:runner_fallback_stats]
         expect(fs[:total_runs]).to eq(4)
         expect(fs[:fallback_count]).to eq(2)
         expect(fs[:fallback_rate]).to eq(50.0)
       end
 
-      it "breaks down fallbacks by requested provider" do
-        by_requested = stats[:provider_fallback_stats][:by_requested_provider].to_h
+      it "breaks down fallbacks by requested runner" do
+        by_requested = stats[:runner_fallback_stats][:by_requested_runner].to_h
         expect(by_requested["claude_code"]).to eq(2)
       end
 
-      it "breaks down fallbacks by effective provider" do
-        by_effective = stats[:provider_fallback_stats][:by_effective_provider].to_h
+      it "breaks down fallbacks by effective runner" do
+        by_effective = stats[:runner_fallback_stats][:by_effective_runner].to_h
         expect(by_effective[Runner.display_name("codex")]).to eq(1)
         expect(by_effective[Runner.display_name("cursor")]).to eq(1)
       end
@@ -481,13 +481,13 @@ RSpec.describe Dashboard::Stats do
           final_runner: provider_entry.routing_key, runner_switches: 1)
       end
 
-      it "uses the provider entry display name for runs_by_provider" do
-        providers = stats[:runs_by_provider].to_h
-        expect(providers["Opencode Kimi K2"]).to eq(1)
+      it "uses the runner entry display name for runs_by_runner" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners["Opencode Kimi K2"]).to eq(1)
       end
 
-      it "uses the provider entry display name for fallback breakdowns" do
-        by_effective = stats[:provider_fallback_stats][:by_effective_provider].to_h
+      it "uses the runner entry display name for fallback breakdowns" do
+        by_effective = stats[:runner_fallback_stats][:by_effective_runner].to_h
         expect(by_effective["Opencode Kimi K2"]).to eq(1)
       end
     end
@@ -519,9 +519,9 @@ RSpec.describe Dashboard::Stats do
           final_runner: other_deleted_provider_routing_key, runner_switches: 1)
       end
 
-      it "shows a deleted provider entry label in runs_by_provider" do
-        providers = stats[:runs_by_provider].to_h
-        expect(providers["Deleted provider entry"]).to eq(2)
+      it "shows a deleted runner entry label in runs_by_runner" do
+        runners = stats[:runs_by_runner].to_h
+        expect(runners["Deleted runner entry"]).to eq(2)
       end
     end
 
@@ -548,8 +548,8 @@ RSpec.describe Dashboard::Stats do
       end
 
       it "sums counts across identifiers that resolve to the same label" do
-        providers = stats[:runs_by_provider].to_h
-        expect(providers["Shared Label"]).to eq(2)
+        runners = stats[:runs_by_runner].to_h
+        expect(runners["Shared Label"]).to eq(2)
       end
     end
 
@@ -564,16 +564,16 @@ RSpec.describe Dashboard::Stats do
       end
 
       it "counts the skipped-primary run as a fallback" do
-        fs = stats[:provider_fallback_stats]
+        fs = stats[:runner_fallback_stats]
         expect(fs[:total_runs]).to eq(2)
         expect(fs[:fallback_count]).to eq(1)
         expect(fs[:fallback_rate]).to eq(50.0)
       end
 
       it "attributes the skipped-primary run to the effective provider" do
-        providers = stats[:runs_by_provider].to_h
-        expect(providers[Runner.display_name("cursor")]).to eq(1)
-        expect(providers[Runner.display_name("claude")]).to eq(1)
+        runners = stats[:runs_by_runner].to_h
+        expect(runners[Runner.display_name("cursor")]).to eq(1)
+        expect(runners[Runner.display_name("claude")]).to eq(1)
       end
     end
 
@@ -586,15 +586,15 @@ RSpec.describe Dashboard::Stats do
       end
 
       it "does not count normalized provider match as a fallback" do
-        fs = stats[:provider_fallback_stats]
+        fs = stats[:runner_fallback_stats]
         expect(fs[:fallback_count]).to eq(0)
         expect(fs[:fallback_rate]).to eq(0.0)
       end
 
       it "groups under the claude provider" do
-        providers = stats[:runs_by_provider].to_h
-        expect(providers[Runner.display_name("claude")]).to eq(1)
-        expect(providers).not_to have_key("claude_code")
+        runners = stats[:runs_by_runner].to_h
+        expect(runners[Runner.display_name("claude")]).to eq(1)
+        expect(runners).not_to have_key("claude_code")
       end
     end
 
@@ -608,7 +608,7 @@ RSpec.describe Dashboard::Stats do
       end
 
       it "does not count legacy final_runner as a fallback" do
-        fs = stats[:provider_fallback_stats]
+        fs = stats[:runner_fallback_stats]
         expect(fs[:fallback_count]).to eq(0)
         expect(fs[:fallback_rate]).to eq(0.0)
       end

@@ -40,7 +40,7 @@ module AgentRuns
 
     def requested_selection
       runner = runner_for_id(requested_runner_id)
-      return [ runner.id, Runner.agent_type_for(runner.runner_key) ] if runner && runner_runnable?(runner)
+      return [ runner.id, agent_type_for_runner_key(runner.runner_key) ] if runner && runner_runnable?(runner)
       return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
 
       log_unrunnable_requested_runner if requested_runner_id.present? || requested_agent_type.present?
@@ -51,7 +51,7 @@ module AgentRuns
       agent_type = project.model_preferences["preferred_agent_type"]
       return unless agent_type.present? && agent_type_runnable?(agent_type)
 
-      runner_key = Runner.runner_key_for_agent_type(agent_type)
+      runner_key = runner_key_for_agent_type(agent_type)
       owner = project.effective_owner
       return [ nil, agent_type ] unless owner
 
@@ -76,18 +76,18 @@ module AgentRuns
     end
 
     def selected_runner_from_settings(settings, owner)
-      return Runner.ensure_default_for(owner) unless settings
+      return ensure_default_for(owner) unless settings
 
       identifier = settings.select_automated_runner_identifier(goal: goal) ||
         settings.default_runner_identifier_for_goal(goal)
-      Runner.for_identifier(settings.user, identifier)
+      runner_for_identifier(settings.user, identifier)
     end
 
     def configured_runner_from_raw_settings(settings)
       return unless settings
 
       identifier = settings.default_agent_runners_by_goal[goal.to_s].presence || settings.default_agent_runner
-      Runner.for_identifier(settings.user, identifier)
+      runner_for_identifier(settings.user, identifier)
     end
 
     def runnable_runner(runner)
@@ -108,18 +108,15 @@ module AgentRuns
       return unless api_key
       return unless api_key.compatible_with?(base_runner.runner_key)
 
-      runner_config = tenant_api_key_runner_config(base_runner, api_key)
       owner.runners.kept_only.find_or_create_by!(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
         provider_api_key: api_key
       ) do |runner|
-        runner.config = runner_config
+        runner.config = tenant_api_key_runner_config(base_runner, api_key)
       end.tap do |runner|
-        # Config can drift between calls (e.g. tenant changes their Pi model
-        # preference in tenant_settings without rotating the API key). Sync it
-        # on every materialisation so the next agent run picks up the change.
-        runner.update!(config: runner_config) if runner_config != runner.config
+        config = tenant_api_key_runner_config(base_runner, api_key)
+        runner.update!(config: config) if config != runner.config
       end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
       owner.runners.kept_only.find_by(
@@ -130,25 +127,37 @@ module AgentRuns
     end
 
     def tenant_api_key_service_type_for(base_runner)
-      static = RunnerSupport.api_service_type_for(base_runner.runner_key)
-      return static if static.present?
+      return base_runner.aider_required_api_service_type if base_runner.runner_key == "aider"
       return base_runner.pi_required_api_service_type if base_runner.runner_key == "pi"
+
+      static = support_module.api_service_type_for(base_runner.runner_key)
+      return static if static.present?
 
       nil
     end
 
     def tenant_api_key_runner_config(base_runner, api_key)
-      return {} unless base_runner.runner_key == "pi"
-
-      config = {
-        "pi" => {
-          "api_provider" => api_key.api_service_type
+      case base_runner.runner_key
+      when "aider"
+        {
+          "aider" => {
+            "api_provider" => api_key.api_service_type,
+            "model" => base_runner.aider_model_id
+          }.compact
         }
-      }
+      when "pi"
+        config = {
+          "pi" => {
+            "api_provider" => api_key.api_service_type
+          }
+        }
 
-      model = project.account.tenant_setting&.model_preference_for("pi").to_s.presence
-      config["pi"]["model"] = model if model
-      config
+        model = project.account.tenant_setting&.model_preference_for("pi").to_s.presence
+        config["pi"]["model"] = model if model
+        config
+      else
+        {}
+      end
     end
 
     def runner_for_id(runner_id)
@@ -156,14 +165,14 @@ module AgentRuns
     end
 
     def runner_runnable?(runner)
-      RunnerSupport.container_executable_runner_key?(runner.runner_key)
+      container_executable_runner_key?(runner.runner_key)
     end
 
     def agent_type_runnable?(agent_type)
       return false if agent_type.blank?
 
       AgentRun::AGENT_TYPES.include?(agent_type) &&
-        RunnerSupport.container_executable_runner_key?(Runner.runner_key_for_agent_type(agent_type))
+        container_executable_runner_key?(runner_key_for_agent_type(agent_type))
     end
 
     def log_unrunnable_requested_runner
@@ -176,12 +185,51 @@ module AgentRuns
     end
 
     def fallback_from_settings
-      enabled = Runner.first_enabled_for_owner(project.effective_owner)
-      return [ enabled.id, Runner.agent_type_for(enabled.runner_key) ] if enabled
+      enabled = first_enabled_for_owner(project.effective_owner)
+      return [ enabled.id, agent_type_for_runner_key(enabled.runner_key) ] if enabled
 
-      first_key = RunnerSupport.container_executable_runner_keys.first
-      agent_type = first_key ? Runner.agent_type_for(first_key) : "claude_code"
+      first_key = container_executable_runner_keys.first
+      agent_type = first_key ? agent_type_for_runner_key(first_key) : "claude_code"
       [ nil, agent_type ]
+    end
+
+    def support_module
+      RunnerSupport
+    end
+
+    def container_executable_runner_keys
+      support_module.container_executable_runner_keys
+    end
+
+    def container_executable_runner_key?(runner_key)
+      support_module.container_executable_runner_key?(runner_key)
+    end
+
+    def runner_key_for_agent_type(agent_type)
+      support_module.runner_key_for_agent_type(agent_type)
+    end
+
+    def agent_type_for_runner_key(runner_key)
+      support_module.agent_type_for(runner_key)
+    end
+
+    def first_enabled_for_owner(owner)
+      return unless owner
+
+      owner.runners.kept_only.for_agent_runs.where(runner_key: container_executable_runner_keys).ordered.first
+    end
+
+    def ensure_default_for(owner)
+      key = container_executable_runner_keys.first
+      return unless owner && key
+
+      owner.runners.kept_only.find_or_create_by!(runner_key: key, auth_type: "subscription")
+    rescue ActiveRecord::RecordNotUnique
+      owner.runners.kept_only.find_by!(runner_key: key, auth_type: "subscription")
+    end
+
+    def runner_for_identifier(user, identifier)
+      Runner.for_identifier(user, identifier)
     end
   end
 end

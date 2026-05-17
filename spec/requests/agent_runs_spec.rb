@@ -778,6 +778,8 @@ RSpec.describe "AgentRuns" do
 
         expect(response.body).to include("Retry with Anthropic Claude CLI")
         expect(response.body).to include("Retry with Cursor AI")
+        expect(response.body).to include('name="runner"')
+        expect(response.body).to include('value="runner:')
         expect(response.body).to include("Current")
         expect(response.body).to include('aria-haspopup="menu"')
         expect(response.body).to include("aria-controls=")
@@ -1939,7 +1941,7 @@ RSpec.describe "AgentRuns" do
         pr.update!(auto_continue_paused: true)
 
         allow(AgentRun).to receive(:create!)
-          .and_raise(Projects::AgentRunsController::NoRunnableProviderError, "No runnable runner")
+          .and_raise(Projects::AgentRunsController::NoRunnableRunnerError, "No runnable runner")
 
         expect {
           expect {

@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout trusted base-branch code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -41,6 +43,7 @@ jobs:
           require "json"
           require "net/http"
           require "uri"
+          require "time"
 
           repo = ENV.fetch("GITHUB_REPOSITORY")
           pr_number = Integer(ENV.fetch("PR_NUMBER"))
@@ -49,6 +52,7 @@ jobs:
           pr_action = ENV.fetch("PR_ACTION")
           token = ENV.fetch("GITHUB_TOKEN")
           output_path = ENV.fetch("GITHUB_OUTPUT")
+          deadline = Time.now + (25 * 60)
           headers = {
             "Authorization" => "Bearer #{token}",
             "Accept" => "application/vnd.github+json",
@@ -68,63 +72,72 @@ jobs:
           end
 
           run = nil
-          120.times do
-            runs = get_json(
-              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&head_sha=#{head_sha}&per_page=100",
-              headers
-            ).fetch("workflow_runs")
+          artifact_present = false
+          comment_status = "capture_failed"
 
-            run = runs.find do |candidate|
-              next false unless candidate["head_sha"] == head_sha
+          begin
+            while Time.now < deadline
+              runs = get_json(
+                "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&head_sha=#{head_sha}&per_page=100",
+                headers
+              ).fetch("workflow_runs")
 
-              pull_requests = candidate.fetch("pull_requests", [])
-              if pull_requests.any?
-                pull_requests.any? { |pr| pr["number"] == pr_number }
-              else
-                candidate["head_branch"] == head_ref
+              run = runs.find do |candidate|
+                next false unless candidate["head_sha"] == head_sha
+
+                pull_requests = candidate.fetch("pull_requests", [])
+                if pull_requests.any?
+                  pull_requests.any? { |pr| pr["number"] == pr_number }
+                else
+                  candidate["head_branch"] == head_ref
+                end
               end
+
+              break if run && run["status"] == "completed"
+
+              run = nil if run && run["status"] != "completed"
+              sleep 10
             end
 
-            break if run && run["status"] == "completed"
+            if run
+              jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
+              capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
+              detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
+              capture_conclusion =
+                if capture_job
+                  capture_job["conclusion"]
+                elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
+                  "skipped"
+                else
+                  raise "Could not find a successful capture job, and detect did not complete cleanly, for workflow run #{run.fetch("id")}"
+                end
 
-            run = nil if run && run["status"] != "completed"
-            sleep 10
+              artifacts = get_json(
+                "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
+                headers
+              ).fetch("artifacts")
+              artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
+
+              comment_status =
+                case capture_conclusion
+                when "success"
+                  "success"
+                when "skipped"
+                  pr_action == "synchronize" ? "no_ui_changes" : "skip"
+                when "cancelled"
+                  "skip"
+                else
+                  "capture_failed"
+                end
+            else
+              warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}; posting capture_failed status instead."
+            end
+          rescue StandardError => e
+            warn "Failed to resolve PR Screenshots capture workflow: #{e.class}: #{e.message}"
           end
 
-          raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
-
-          jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
-          capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
-          detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
-          capture_conclusion =
-            if capture_job
-              capture_job["conclusion"]
-            elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
-              "skipped"
-            else
-              raise "Could not find a successful capture job, and detect did not complete cleanly, for workflow run #{run.fetch("id")}"
-            end
-
-          artifacts = get_json(
-            "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
-            headers
-          ).fetch("artifacts")
-          artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
-
-          comment_status =
-            case capture_conclusion
-            when "success"
-              "success"
-            when "skipped"
-              pr_action == "synchronize" ? "no_ui_changes" : "skip"
-            when "cancelled"
-              "skip"
-            else
-              "capture_failed"
-            end
-
           File.open(output_path, "a") do |file|
-            file.puts("run_id=#{run.fetch("id")}")
+            file.puts("run_id=#{run&.fetch("id", nil)}")
             file.puts("artifact_present=#{artifact_present}")
             file.puts("comment_status=#{comment_status}")
           end

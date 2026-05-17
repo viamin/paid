@@ -225,11 +225,11 @@ module Knowledge
 
     def build_pipeline_metrics
       operation_summaries = pipeline_operation_summaries.index_by { |summary| summary[:operation_type] }
-      distributions = pipeline_provider_distribution.group_by { |summary| summary[:operation_type] }
+      distributions = pipeline_runner_distribution.group_by { |summary| summary[:operation_type] }
 
       KnowledgeRun::OPERATION_TYPES.index_with do |operation_type|
         summary = operation_summaries[operation_type]
-        provider_distribution = Array(distributions[operation_type]).sort_by { |provider| [ -provider[:run_count], provider[:provider] ] }
+        runner_distribution = Array(distributions[operation_type]).sort_by { |runner| [ -runner[:run_count], runner[:runner] ] }
 
         {
           lookback_days: PIPELINE_LOOKBACK / 1.day,
@@ -239,7 +239,7 @@ module Knowledge
           failed_runs: summary&.fetch(:failed_runs, 0) || 0,
           success_rate: summary&.fetch(:success_rate, 0.0) || 0.0,
           avg_duration_seconds: summary&.fetch(:avg_duration_seconds, 0.0) || 0.0,
-          provider_distribution: provider_distribution
+          runner_distribution: runner_distribution
         }
       end
     end
@@ -268,7 +268,7 @@ module Knowledge
         end
     end
 
-    def pipeline_provider_distribution
+    def pipeline_runner_distribution
       pipeline_runs
         .group(:operation_type, Arel.sql(effective_provider_sql))
         .pluck(
@@ -279,10 +279,10 @@ module Knowledge
           Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'completed')"),
           Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at)))")
         )
-        .map do |operation_type, provider, run_count, finished_runs, successful_runs, avg_duration_seconds|
+        .map do |operation_type, runner, run_count, finished_runs, successful_runs, avg_duration_seconds|
           {
             operation_type: operation_type,
-            provider: provider,
+            runner: runner,
             run_count: run_count,
             success_rate: percentage(successful_runs, finished_runs),
             avg_duration_seconds: avg_duration_seconds.to_f.round(2)

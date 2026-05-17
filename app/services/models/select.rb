@@ -320,6 +320,7 @@ module Models
         agent_type: agent_run.agent_type,
         runner_id: agent_run.runner_id,
         runner_key: agent_run.runner&.runner_key || agent_run.effective_runner,
+        provider_key: agent_run.runner&.runner_key || agent_run.effective_runner,
         effective_runner: agent_run.effective_runner,
         selector_type: selected&.dig(:selector_type) || selection&.selector_type,
         reasoning: selected&.dig(:reasoning) || selection&.reasoning,

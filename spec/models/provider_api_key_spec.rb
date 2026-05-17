@@ -59,6 +59,7 @@ RSpec.describe ProviderApiKey do
           key = build(:provider_api_key, api_service_type: service_type)
           expect(key.compatible_with?("opencode")).to be(true), "expected #{service_type} to be compatible with opencode"
           expect(key.compatible_with?("kilocode")).to be(true), "expected #{service_type} to be compatible with kilocode"
+          expect(key.compatible_with?("aider")).to be(true), "expected #{service_type} to be compatible with aider"
         end
       end
 
@@ -73,6 +74,7 @@ RSpec.describe ProviderApiKey do
         key = build(:provider_api_key, api_service_type: "google")
         expect(key.compatible_with?("opencode")).to be(false)
         expect(key.compatible_with?("kilocode")).to be(false)
+        expect(key.compatible_with?("aider")).to be(false)
       end
 
       it "returns false for Pi-unsupported service types" do

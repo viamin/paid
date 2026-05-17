@@ -41,7 +41,7 @@ fi
 
 # Extract Claude CLI install contract from agent-harness (single source of truth).
 # The helper script outputs key=value pairs; we capture the ones we need.
-CLAUDE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" claude)
+CLAUDE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" claude)
 CLAUDE_INSTALL_COMMAND=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 CLAUDE_POST_INSTALL_BINARY_PATH=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^POST_INSTALL_BINARY_PATH=//p')
 
@@ -57,7 +57,7 @@ fi
 
 # Extract Cursor CLI install contract from agent-harness (single source of truth).
 # Uses the pinned artifact URL + checksum (more stable than the install script).
-CURSOR_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" cursor)
+CURSOR_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" cursor)
 CURSOR_ARTIFACT_URL=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_URL=//p')
 CURSOR_ARTIFACT_SHA256=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_SHA256=//p')
 CURSOR_BINARY_NAME=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^BINARY_NAME=//p')
@@ -85,7 +85,7 @@ fi
 
 # Extract Codex CLI package from agent-harness installation contract.
 # agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
-CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" codex)
+CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" codex)
 CODEX_PACKAGE=$(echo "${CODEX_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 if [ -z "${CODEX_PACKAGE}" ]; then
     echo "ERROR: Could not extract Codex package from agent-harness" >&2
@@ -94,7 +94,7 @@ fi
 
 # Extract OpenCode CLI package from agent-harness installation contract.
 # agent-harness owns the supported OpenCode CLI version; Paid consumes it at build time.
-OPENCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" opencode)
+OPENCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" opencode)
 OPENCODE_PACKAGE=$(echo "${OPENCODE_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 if [ -z "${OPENCODE_PACKAGE}" ]; then
     echo "ERROR: Could not extract OpenCode package from agent-harness" >&2
@@ -103,7 +103,7 @@ fi
 
 # Extract Pi CLI package from agent-harness installation contract.
 # agent-harness owns the supported Pi CLI version; Paid consumes it at build time.
-PI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" pi)
+PI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" pi)
 PI_PACKAGE=$(echo "${PI_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 if [ -z "${PI_PACKAGE}" ]; then
     echo "ERROR: Could not extract Pi package from agent-harness" >&2
@@ -111,7 +111,7 @@ if [ -z "${PI_PACKAGE}" ]; then
 fi
 
 # Extract Kilocode CLI install command from agent-harness (single source of truth).
-KILOCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" kilocode)
+KILOCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" kilocode)
 KILOCODE_INSTALL_COMMAND=$(echo "${KILOCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then
@@ -120,7 +120,7 @@ if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then
 fi
 
 # Extract Gemini CLI install command from agent-harness (single source of truth).
-GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" gemini)
+GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" gemini)
 GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
@@ -130,7 +130,7 @@ fi
 
 # Extract Aider CLI install command from agent-harness (single source of truth).
 # agent-harness owns the uv bootstrap, aider-chat version pin, and install recipe.
-AIDER_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" aider)
+AIDER_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" aider)
 AIDER_INSTALL_COMMAND=$(echo "${AIDER_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${AIDER_INSTALL_COMMAND}" ]; then
@@ -139,7 +139,7 @@ if [ -z "${AIDER_INSTALL_COMMAND}" ]; then
 fi
 
 # Extract Copilot CLI install command from agent-harness (single source of truth).
-COPILOT_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" copilot)
+COPILOT_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" copilot)
 COPILOT_INSTALL_COMMAND=$(echo "${COPILOT_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${COPILOT_INSTALL_COMMAND}" ]; then

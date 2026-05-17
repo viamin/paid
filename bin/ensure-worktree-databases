@@ -4,13 +4,6 @@ set -euo pipefail
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_ROOT" || exit
 
-# When DATABASE_URL is set the user has pinned their checkout to a specific
-# database.  Probing DB_HOST / DB_USERNAME would target the wrong server, so
-# skip automatic database creation entirely — Rails will use DATABASE_URL.
-if [[ -n "${DATABASE_URL:-}" ]]; then
-  echo "DATABASE_URL is set — skipping automatic worktree database creation."
-  exit 0
-fi
 db_names() {
   ruby <<'RUBY'
 require File.expand_path("config/worktree_database_names", Dir.pwd)
@@ -121,6 +114,15 @@ validate_identifier "database name" "$DEV_DB" "PAID_DEVELOPMENT_DATABASE / workt
 validate_identifier "database name" "$CABLE_DB" "PAID_DEVELOPMENT_CABLE_DATABASE / worktree derivation"
 validate_identifier "database name" "$TEST_DB" "PAID_TEST_DATABASE / worktree derivation"
 validate_identifier "role name" "$APP_DB_USER" "DB_USERNAME / DB_USER"
+
+# When DATABASE_URL is set the user has pinned their checkout to a specific
+# database. Validate any explicit identifiers first, then skip automatic
+# database creation entirely — Rails will use DATABASE_URL.
+if [[ -n "${DATABASE_URL:-}" ]]; then
+  echo "DATABASE_URL is set — skipping automatic worktree database creation."
+  exit 0
+fi
+
 if app_can_create_databases; then
   use_creator "$APP_DB_HOST" "$APP_DB_USER" "$APP_DB_PASSWORD"
 elif can_create_databases "$ADMIN_DB_HOST" "$ADMIN_DB_USER" "$ADMIN_DB_PASSWORD"; then

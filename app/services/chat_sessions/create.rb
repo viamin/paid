@@ -17,12 +17,12 @@ module ChatSessions
     attr_reader :account, :user, :mode, :runner_id, :model,
       :project_id, :system_prompt, :title
 
-    def initialize(account:, user:, mode: nil, runner_id: nil, model: nil,
+    def initialize(account:, user:, mode: nil, runner_id: nil, provider_id: nil, model: nil,
       project_id: nil, system_prompt: nil, title: nil)
       @account = account
       @user = user
       @mode = mode.presence || "api"
-      @runner_id = runner_id
+      @runner_id = runner_id || provider_id
       @model = model
       @project_id = project_id
       @system_prompt = system_prompt
@@ -32,6 +32,8 @@ module ChatSessions
     def self.call(...)
       new(...).call
     end
+
+    alias_method :provider_id, :runner_id
 
     def call
       validate!

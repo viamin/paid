@@ -9,8 +9,8 @@ module Coordination
   #   result = Coordination::FailureRecovery.call(agent_run: failed_run)
   #   result.success?            # => true
   #   result.classification      # => FailureClassification record
-  #   result.failure_category    # => "runner_error"
-  #   result.chosen_action       # => "retry_alternate_runner"
+  #   result.failure_category    # => "provider_error"
+  #   result.chosen_action       # => "retry_alternate_provider"
   class FailureRecovery
     def self.call(...)
       new(...).call
@@ -165,18 +165,18 @@ module Coordination
       params = { category: category, action: action }
 
       case action
-      when "retry_alternate_runner"
-        params[:exclude_providers] = attempted_provider_identifiers
+      when "retry_alternate_provider"
+        params[:exclude_runners] = attempted_runner_identifiers
       when "escalate_model"
-        params[:current_provider] = preferred_provider_identifier
-      when "retry_same_runner"
-        params[:provider] = preferred_provider_identifier
+        params[:current_runner] = preferred_runner_identifier
+      when "retry_same_provider"
+        params[:runner] = preferred_runner_identifier
       end
 
       params
     end
 
-    def attempted_provider_identifiers
+    def attempted_runner_identifiers
       Array(current_runners_attempted).filter_map do |attempt|
         next attempt unless attempt.is_a?(Hash)
 
@@ -184,8 +184,8 @@ module Coordination
       end
     end
 
-    def preferred_provider_identifier
-      attempted_provider_identifiers.last || current_final_runner || agent_run.effective_runner
+    def preferred_runner_identifier
+      attempted_runner_identifiers.last || current_final_runner || agent_run.effective_runner
     end
 
     def current_status
@@ -234,7 +234,7 @@ module Coordination
       case action
       when "noop"
         "noop"
-      when "retry_same_runner", "retry_alternate_runner", "reconfigure_and_retry"
+      when "retry_same_provider", "retry_alternate_provider", "reconfigure_and_retry"
         "retry"
       when "pause_and_notify"
         "pause"

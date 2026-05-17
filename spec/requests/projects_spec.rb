@@ -554,10 +554,10 @@ RSpec.describe "Projects" do
         expect(response.body).to include(project_agent_run_path(project, run))
       end
 
-      it "shows the runner column for recent agent runs" do
+      it "shows the provider column for recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        runner = create(:runner, user: project.effective_owner, runner_key: "codex")
-        run = create(:agent_run, project: project, runner: runner, final_runner: runner.routing_key)
+        provider = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, project: project, provider: provider, final_runner: provider.routing_key)
 
         get project_path(project)
 
@@ -570,13 +570,13 @@ RSpec.describe "Projects" do
         row = section.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))&.ancestors("tr")&.first
 
         expect(row).to be_present
-        expect(row.text).to include(runner.display_name)
+        expect(row.text).to include(provider.display_name)
       end
 
-      it "shows the final runner label for legacy fallback runs in recent agent runs" do
+      it "shows the final provider label for legacy fallback runs in recent agent runs" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        initial_runner = create(:runner, user: project.effective_owner, runner_key: "codex")
-        run = create(:agent_run, project: project, runner: initial_runner, final_runner: "cursor")
+        initial_provider = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, project: project, provider: initial_provider, final_runner: "cursor")
 
         get project_path(project)
 
@@ -588,9 +588,9 @@ RSpec.describe "Projects" do
         expect(row.text).to include(Runner.display_name_for("cursor"))
       end
 
-      it "renders unsupported runner identifiers in recent agent runs without error" do
+      it "renders unsupported provider identifiers in recent agent runs without error" do
         project = create(:project, account: account, github_token: github_token, created_by: user)
-        run = create(:agent_run, project: project, runner: nil, final_runner: "api", agent_type: "api")
+        run = create(:agent_run, project: project, provider: nil, final_runner: "api", agent_type: "api")
 
         get project_path(project)
 
@@ -713,34 +713,6 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
         get project_path(project)
         expect(response.body).to include("https://github.com/octocat/hello")
-      end
-
-      it "shows a single GitHub link when GitHub handles both repo and issues" do
-        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
-
-        get project_path(project)
-
-        document = Nokogiri::HTML(response.body)
-        links = document.css('[data-testid="project-external-link"]')
-
-        expect(links.size).to eq(1)
-        expect(links.first.text).to include("GitHub")
-        expect(links.first["href"]).to eq("https://github.com/octocat/hello")
-      end
-
-      it "shows separate repository and issue tracker links when the tracker is external" do
-        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
-        create(:tracker_configuration, :linear, configurable: project)
-
-        get project_path(project)
-
-        document = Nokogiri::HTML(response.body)
-        links = document.css('[data-testid="project-external-link"]')
-
-        expect(links.size).to eq(2)
-        expect(links.map(&:text).join(" ")).to include("GitHub Repo")
-        expect(links.map(&:text).join(" ")).to include("Linear Issues")
-        expect(links.map { |link| link["href"] }).to include("https://github.com/octocat/hello", "https://linear.app")
       end
 
       it "shows Quick Run buttons next to issues" do

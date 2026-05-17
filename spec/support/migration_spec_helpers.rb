@@ -9,8 +9,8 @@ module MigrationSpecHelpers
       service_containers
       workflow_states
       projects
-      runners
-      runner_states
+      providers
+      provider_states
       account_memberships
       github_tokens
       user_settings

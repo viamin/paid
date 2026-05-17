@@ -8,10 +8,15 @@ class Runner < ApplicationRecord
   self.table_name = "providers"
   has_logidze
   include Discard::Model
+  include LegacyAttributeBridge
 
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_key" => "runner_key"
+  }.freeze
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "runner:".freeze
+  LEGACY_ROUTING_KEY_PREFIX = "provider:".freeze
   DEFAULT_WEIGHT = 1
   MAX_WEIGHT = 1000
   # Default cutoffs for mapping a complexity score (1-10) to an LlmModel tier.
@@ -97,6 +102,7 @@ class Runner < ApplicationRecord
   scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :sync_provider_key_bridge
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
   before_discard :prevent_destroying_last_agent_run_runner
@@ -165,6 +171,10 @@ class Runner < ApplicationRecord
     label
   end
 
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+  end
+
   # Returns a merged hash of complexity thresholds (stored values overlaid on
   # defaults) so callers can read a concrete mapping without re-checking for
   # missing keys every time. Integers are coerced so JSONB round-trips (which
@@ -182,7 +192,7 @@ class Runner < ApplicationRecord
 
   def matches_identifier?(identifier)
     id_str = identifier.to_s
-    return true if id_str == routing_key || id_str == runner_key.to_s
+    return true if id_str == routing_key || id_str == legacy_routing_key || id_str == runner_key.to_s
 
     # Also match agent_type identifiers (e.g. "claude_code") that map
     # to this runner's key (e.g. "claude") so that legacy final_runner
@@ -193,6 +203,10 @@ class Runner < ApplicationRecord
 
   def state_key
     subscription? ? runner_key.to_s : routing_key
+  end
+
+  def legacy_routing_key
+    persisted? ? "#{LEGACY_ROUTING_KEY_PREFIX}#{id}" : runner_key.to_s
   end
 
   def opencode_config
@@ -449,9 +463,16 @@ class Runner < ApplicationRecord
     key = default_runner_key
     return unless key
 
-    user.runners.kept_only.find_or_create_by!(runner_key: key, auth_type: "subscription")
-  rescue ActiveRecord::RecordNotUnique
-    user.runners.kept_only.find_by!(runner_key: key, auth_type: "subscription")
+    relation = user.runners.kept_only
+
+    relation.find_or_create_by!(runner_key: key, auth_type: "subscription")
+  rescue ActiveRecord::RecordNotUnique => e
+    if primary_key_conflict?(e)
+      connection.reset_pk_sequence!(table_name)
+      retry
+    end
+
+    relation.find_by!(runner_key: key, auth_type: "subscription")
   end
 
   def self.first_enabled_for_owner(owner)
@@ -507,18 +528,24 @@ class Runner < ApplicationRecord
     RunnerSupport.agent_type_for(runner_key)
   end
 
+  def self.primary_key_conflict?(error)
+    [ error.message, error.cause&.message ].compact.any? { |message| message.include?("#{table_name}_pkey") }
+  end
+  private_class_method :primary_key_conflict?
+
   def self.api_service_type_for(runner_key)
     RunnerSupport.api_service_type_for(runner_key)
   end
 
   def self.routing_key?(identifier)
-    identifier.to_s.start_with?(ROUTING_KEY_PREFIX)
+    routing_key_prefix_for(identifier).present?
   end
 
   def self.id_from_routing_key(identifier)
-    return unless routing_key?(identifier)
+    prefix = routing_key_prefix_for(identifier)
+    return unless prefix
 
-    id_str = identifier.to_s.delete_prefix(ROUTING_KEY_PREFIX)
+    id_str = identifier.to_s.delete_prefix(prefix)
     id = Integer(id_str, exception: false)
     return unless id&.positive?
 
@@ -618,6 +645,18 @@ class Runner < ApplicationRecord
     self.agent_co_author_trailer = stripped.present? ? stripped : nil
   end
 
+  def sync_provider_key_bridge
+    if will_save_change_to_runner_key?
+      self[:provider_key] = runner_key
+    elsif will_save_change_to_provider_key?
+      self[:runner_key] = self[:provider_key]
+    elsif self[:runner_key].blank? && self[:provider_key].present?
+      self[:runner_key] = self[:provider_key]
+    elsif self[:provider_key].blank? && self[:runner_key].present?
+      self[:provider_key] = self[:runner_key]
+    end
+  end
+
   def agent_co_author_trailer_is_single_line
     return if agent_co_author_trailer.blank?
     return unless agent_co_author_trailer.match?(/[\r\n]/)
@@ -707,6 +746,15 @@ class Runner < ApplicationRecord
     matching_runners.subscription.first || matching_runners.first
   end
   private_class_method :preferred_identifier_match
+
+  def self.routing_key_prefix_for(identifier)
+    value = identifier.to_s
+    return ROUTING_KEY_PREFIX if value.start_with?(ROUTING_KEY_PREFIX)
+    return LEGACY_ROUTING_KEY_PREFIX if value.start_with?(LEGACY_ROUTING_KEY_PREFIX)
+
+    nil
+  end
+  private_class_method :routing_key_prefix_for
 
   def api_key_auth_requires_provider_api_key
     return unless api_key?

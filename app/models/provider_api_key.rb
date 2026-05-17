@@ -6,6 +6,7 @@ class ProviderApiKey < ApplicationRecord
   has_logidze
   belongs_to :user
   has_many :runners, -> { kept }, dependent: :restrict_with_error
+  has_many :providers, -> { kept }, class_name: "Provider", dependent: :restrict_with_error
 
   encrypts :api_key
 
@@ -23,19 +24,20 @@ class ProviderApiKey < ApplicationRecord
 
   # Returns true when this API key's service type is compatible with the
   # given provider. Providers with a fixed service type (claude → anthropic)
-  # are checked against RunnerSupport::RUNNER_API_SERVICE_TYPE. Runners that
-  # support multiple upstream API providers (opencode, kilocode, pi) resolve
-  # compatibility from their runner-specific service-type sets.
-  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode pi].to_set.freeze
+  # are checked against ProviderSupport::PROVIDER_API_SERVICE_TYPE. Providers
+  # that support multiple upstream API providers (opencode, kilocode, aider, pi)
+  # resolve compatibility from their provider-specific service-type sets.
+  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode aider pi].to_set.freeze
 
   def compatible_with?(provider_key)
-    static_type = RunnerSupport.api_service_type_for(provider_key)
-    if static_type
-      api_service_type == static_type
-    elsif DYNAMIC_API_PROVIDER_KEYS.include?(provider_key.to_s)
+    if DYNAMIC_API_PROVIDER_KEYS.include?(provider_key.to_s)
       compatible_dynamic_service_type?(provider_key)
     else
-      false
+      static_type = ProviderSupport.api_service_type_for(provider_key)
+      return api_service_type == static_type if static_type
+
+      static_type = RunnerSupport.api_service_type_for(provider_key)
+      static_type.present? && api_service_type == static_type
     end
   end
 
@@ -61,9 +63,9 @@ class ProviderApiKey < ApplicationRecord
   def compatible_dynamic_service_type?(provider_key)
     case provider_key.to_s
     when "pi"
-      Runner::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_service_type }
+      Provider::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_service_type }
     else
-      Runner::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_service_type)
+      Provider::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_service_type)
     end
   end
 

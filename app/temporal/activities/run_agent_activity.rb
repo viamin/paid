@@ -119,12 +119,14 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
-      @agent_run = agent_run
-      @has_marketplace_attachments = nil
-      @marketplace_runtime_env = {}
-      @marketplace_runtime_preparation = {}
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
-        base_prompt = base_prompt_for(agent_run)
+        prompt = agent_run.effective_prompt
+        unless prompt
+          raise Temporalio::Error::ApplicationError.new(
+            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+          )
+        end
+
         user_settings = resolve_user_settings(agent_run)
         runners = build_runner_order(agent_run, user_settings)
         runner_states = load_runner_state_cache(user_settings.user, runners)
@@ -167,7 +169,6 @@ module Activities
           runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
           attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
-          runner_key = marketplace_runner_key(runner_candidate, runner, user_settings.user)
           heartbeat("runner_attempt", runner, index)
 
           # Skip unavailable runners, tracking rate-limited skips separately
@@ -188,17 +189,6 @@ module Activities
             )
             index += 1
             next
-          end
-
-          prompt = effective_prompt_for(
-            agent_run: agent_run,
-            base_prompt: base_prompt,
-            runner_key: runner_key
-          )
-          unless prompt
-            raise Temporalio::Error::ApplicationError.new(
-              "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
-            )
           end
 
           # Log runner switch when we have a previous actually-attempted runner.
@@ -228,7 +218,7 @@ module Activities
             # These runs only interact via the GitHub API proxy — no git repo exists.
             #
             # Keep heartbeats flowing during post-run bookkeeping too. By the
-            # time we reach this block the provider may already have posted a PR
+            # time we reach this block the runner may already have posted a PR
             # review/comment, so a long-running git operation here can otherwise
             # leave the AgentRun stuck in "running" until stale-run cleanup.
             #
@@ -248,8 +238,8 @@ module Activities
                       agent_run_id: agent_run_id,
                       success: false,
                       has_changes: check_for_changes(agent_run, pre_agent_sha),
-                      output_present: provider_result.fetch(:output_present),
-                      final_provider: attempt_label,
+                      output_present: runner_result.fetch(:output_present),
+                      final_runner: attempt_label,
                       error: "pre_commit_requirements_failed"
                     }
                   }
@@ -511,6 +501,7 @@ module Activities
 
     class RunnerExecutionError < StandardError; end
     class RunnerInfraExecutionError < RunnerExecutionError; end
+    ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
       attr_reader :timeout_type, :diagnostics
 
@@ -520,6 +511,8 @@ module Activities
         super(message)
       end
     end
+    ProviderTimeoutError = RunnerTimeoutError
+    ProviderRateLimitError = RunnerRateLimitError
     class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:runner_candidate, :runner, :user, keyword_init: true)
     CLAUDE_SILENT_STARTUP_HEARTBEAT_KEYS = %w[
@@ -722,17 +715,7 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
-      container_service = begin
-        reconnect_container(agent_run)
-      rescue Temporalio::Error::ApplicationError => e
-        # Convert ContainerNotProvisioned into RunnerExecutionError so it is
-        # caught by the per-runner rescue below rather than propagating as the
-        # top-level activity error. This preserves the original failure (recorded
-        # in runners_attempted) as the primary user-visible cause, and lets the
-        # runner loop surface AllRunnersExhausted instead.
-        raise RunnerExecutionError, e.message if e.type == "ContainerNotProvisioned"
-        raise
-      end
+      container_service = reconnect_container(agent_run)
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
@@ -745,13 +728,6 @@ module Activities
       unless self.class.container_executable?(runner)
         raise RunnerExecutionError, "Unsupported runner: #{runner}"
       end
-
-      synchronize_marketplace_mcp_for_runner!(
-        agent_run: agent_run,
-        runner_candidate: runner_candidate,
-        runner: runner,
-        user: user_settings.user
-      )
 
       # Assemble effective MCP servers from the run's provisioned state so
       # harness_execution_plan_for can pass them to agent-harness for
@@ -786,7 +762,7 @@ module Activities
       end
 
       heartbeat = Containers::HeartbeatSetup.new(
-        provider: runner,
+        runner: runner,
         worktree_path: agent_run.worktree_path,
         host_heartbeat_path: container_service.heartbeat_host_path,
         harness_provider: resolved_harness_provider
@@ -875,7 +851,7 @@ module Activities
         # retryable usage caps (for example, GLM free-model limits).
         if successful_exit_rate_limit_error?(sanitized_output)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
-          raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
+          raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
 
         if insufficient_credits_error?(sanitized_output)
@@ -1015,7 +991,7 @@ module Activities
         if successful_exit_rate_limit_error?(sanitized_output)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
-          raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
+          raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
 
         if insufficient_credits_error?(sanitized_output)
@@ -1611,31 +1587,21 @@ module Activities
     end
 
     def command_env_for(command_context, prompt)
-      runner_key = marketplace_runner_key(command_context.runner_candidate, command_context.runner, command_context.user)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
-      if runner_entry&.agent_harness_runtime?
-        return marketplace_runtime_env(runner_key).merge(
-          direct_outbound_execution_plan(runner_entry, prompt).env
-        )
-      end
-      return marketplace_runtime_env(runner_key) unless runner_entry
+      return direct_outbound_execution_plan(runner_entry, prompt).env if runner_entry&.agent_harness_runtime?
+      return {} unless runner_entry
 
-      env = marketplace_runtime_env(runner_key).dup
+      env = {}
       env.merge!(runner_entry.direct_outbound_exec_env) if runner_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(runner_entry)) if runner_entry.api_key?
       env
     end
 
     def command_preparation_for(command_context, prompt)
-      runner_key = marketplace_runner_key(command_context.runner_candidate, command_context.runner, command_context.user)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
-      runtime_preparation = marketplace_runtime_preparation(runner_key)
-      return runtime_preparation unless runner_entry&.agent_harness_runtime?
+      return nil unless runner_entry&.agent_harness_runtime?
 
-      merge_preparations(
-        direct_outbound_execution_plan(runner_entry, prompt).preparation,
-        runtime_preparation
-      )
+      direct_outbound_execution_plan(runner_entry, prompt).preparation
     end
 
     # Assembles the effective MCP server list from the agent run's
@@ -1689,73 +1655,6 @@ module Activities
       )
     end
 
-    def base_prompt_for(agent_run)
-      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
-    end
-
-    def effective_prompt_for(agent_run:, base_prompt:, runner_key:)
-      MarketplaceEntries::InjectIntoPrompt.call(
-        agent_run: agent_run,
-        prompt: base_prompt,
-        provider_key: runner_key
-      )
-    end
-
-    def marketplace_runner_key(runner_candidate, runner, user)
-      runner_entry = runner_entry_for(runner_candidate, user)
-      return runner_entry.runner_key if runner_entry
-
-      RunnerSupport.runner_key_for_agent_type(runner)
-    end
-
-    def marketplace_runtime_env(runner_key)
-      return {} unless @agent_run
-
-      @marketplace_runtime_env ||= {}
-      @marketplace_runtime_env[runner_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
-        @agent_run,
-        provider_key: runner_key
-      )
-    end
-
-    def marketplace_runtime_preparation(runner_key)
-      return unless @agent_run
-
-      @marketplace_runtime_preparation ||= {}
-      @marketplace_runtime_preparation[runner_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
-        @agent_run,
-        provider_key: runner_key
-      )
-    end
-
-    def synchronize_marketplace_mcp_for_runner!(agent_run:, runner_candidate:, runner:, user:)
-      return unless marketplace_attachments_attached?(agent_run)
-
-      runner_key = marketplace_runner_key(runner_candidate, runner, user)
-      previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
-
-      AgentRun.transaction do
-        MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: runner_key)
-
-        next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
-
-        Containers::McpProvisioner.new.provision(
-          agent_run,
-          network: Containers::Provision.network_for(agent_run: agent_run)
-        )
-      end
-    rescue => e
-      raise e if e.is_a?(RunnerExecutionError)
-
-      raise RunnerExecutionError, "Failed to synchronize marketplace MCP servers for #{runner_key}: #{e.message}"
-    end
-
-    def marketplace_attachments_attached?(agent_run)
-      return @has_marketplace_attachments unless @has_marketplace_attachments.nil?
-
-      @has_marketplace_attachments = agent_run.agent_run_marketplace_entries.exists?
-    end
-
     # Builds an execution plan for runners that use the agent-harness
     # runtime directly (e.g. opencode, copilot). MCP servers are
     # intentionally NOT propagated here because none of the runners
@@ -1803,6 +1702,7 @@ module Activities
 
       @runner_entry_cache[cache_key] = Runner.for_identifier(user, runner_candidate)
     end
+    alias_method :provider_entry_for, :runner_entry_for
 
     def deduplicate_runner_candidates(primary_runner:, fallback_runners:, user:)
       runners = [ primary_runner ]
@@ -2122,6 +2022,7 @@ module Activities
         )
       end
     end
+    alias_method :validate_provider_mcp_support!, :validate_runner_mcp_support!
 
     def transient_container_error?(error)
       return true if error_or_cause_matches?(error, Containers::Provision::ExecutionError)

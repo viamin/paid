@@ -142,7 +142,7 @@ module Runners
     end
 
     def provider_attempt_metrics(since)
-      normalized_attempt_runner_sql = AgentRun.normalize_runner_sql("attempt->>'runner'")
+      normalized_attempt_runner_sql = AgentRun.normalize_provider_sql("attempt->>'provider'")
 
       account_runs
         .where(created_at: since..)

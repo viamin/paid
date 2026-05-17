@@ -4,7 +4,7 @@ module Projects
   class AgentRunsController < ApplicationController
     include AgentRunCancellable
 
-    NoRunnableProviderError = Class.new(StandardError)
+    NoRunnableRunnerError = Class.new(StandardError)
 
     before_action :set_project
     before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate ]
@@ -46,7 +46,6 @@ module Projects
       end.compact
       @default_runner_identifier = @default_runner_identifiers_by_goal[selected_goal]
       @available_run_runner_options = available_run_runner_options
-      @marketplace_entries = marketplace_entries_for_new_run
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -229,7 +228,7 @@ module Projects
         when :already_active
           "Auto-continue resumed for PR ##{pr.github_number}. An agent run is already queued or in progress."
         else
-          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a runner is available."
+          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a provider is available."
         end
         redirect_to project_path(@project), notice: notice
       end
@@ -376,31 +375,26 @@ module Projects
         @agent_run.runner || current_retry_runner_for(@agent_run)
       end
 
-      new_run = ActiveRecord::Base.transaction do
-        created_run = AgentRun.create!(
-          project: @project,
-          issue: @agent_run.issue,
-          runner: retry_runner,
-          agent_type: agent_type,
-          custom_prompt: prompt_for_retry(@agent_run),
-          source_pull_request_number: @agent_run.source_pull_request_number,
-          goal: @agent_run.goal,
-          trigger_type: "manual",
-          status: "queued"
-        )
-        copy_marketplace_attachments(source_run: @agent_run, target_run: created_run)
+      new_run = AgentRun.create!(
+        project: @project,
+        issue: @agent_run.issue,
+        runner: retry_runner,
+        agent_type: agent_type,
+        custom_prompt: prompt_for_retry(@agent_run),
+        source_pull_request_number: @agent_run.source_pull_request_number,
+        goal: @agent_run.goal,
+        trigger_type: "manual",
+        status: "queued"
+      )
 
-        @agent_run.retry!(
-          decision_point: "manual_retry",
-          signals: {
-            selected_agent_type: agent_type,
-            selected_provider: retry_runner&.routing_key || retry_runner&.runner_key
-          },
-          result: { new_agent_run_id: created_run.id }
-        )
-
-        created_run
-      end
+      @agent_run.retry!(
+        decision_point: "manual_retry",
+        signals: {
+          selected_agent_type: agent_type,
+          selected_runner: retry_runner&.routing_key || retry_runner&.runner_key
+        },
+        result: { new_agent_run_id: new_run.id }
+      )
 
       ProcessRunQueueJob.perform_later
 
@@ -411,7 +405,7 @@ module Projects
         decision_point: "manual_retry",
         signals: {
           selected_agent_type: agent_type,
-          selected_provider: retry_runner&.routing_key || retry_runner&.runner_key
+          selected_runner: retry_runner&.routing_key || retry_runner&.runner_key
         },
         error: e
       )
@@ -447,7 +441,7 @@ module Projects
           agent_type: @agent_run.agent_type
         )
         redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Unable to determine authentication runner for this run."
+          alert: "Unable to determine authentication provider for this run."
         return
       end
 
@@ -463,28 +457,22 @@ module Projects
 
       AgentHarness.refresh_auth(provider, token: token)
 
-      new_run = ActiveRecord::Base.transaction do
-        created_run = AgentRun.create!(
-          project: @project,
-          issue: @agent_run.issue,
-          runner: @agent_run.runner,
-          agent_type: @agent_run.agent_type,
-          custom_prompt: prompt_for_retry(@agent_run),
-          source_pull_request_number: @agent_run.source_pull_request_number,
-          goal: @agent_run.goal,
-          trigger_type: "manual",
-          status: "queued"
-        )
-        copy_marketplace_attachments(source_run: @agent_run, target_run: created_run)
-
-        @agent_run.retry!(
-          decision_point: "refresh_auth_retry",
-          signals: { auth_provider: provider.to_s },
-          result: { new_agent_run_id: created_run.id }
-        )
-
-        created_run
-      end
+      new_run = AgentRun.create!(
+        project: @project,
+        issue: @agent_run.issue,
+        runner: @agent_run.runner,
+        agent_type: @agent_run.agent_type,
+        custom_prompt: prompt_for_retry(@agent_run),
+        source_pull_request_number: @agent_run.source_pull_request_number,
+        goal: @agent_run.goal,
+        trigger_type: "manual",
+        status: "queued"
+      )
+      @agent_run.retry!(
+        decision_point: "refresh_auth_retry",
+        signals: { auth_provider: provider.to_s },
+        result: { new_agent_run_id: new_run.id }
+      )
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),
@@ -519,7 +507,7 @@ module Projects
         error_message: e.message
       )
       redirect_to project_agent_run_path(@project, @agent_run),
-        alert: "Re-authentication is not supported for this runner."
+        alert: "Re-authentication is not supported for this provider."
     rescue ActiveRecord::RecordNotUnique => e
       log_failed_retry_decision(
         decision_point: "refresh_auth_retry",
@@ -638,85 +626,22 @@ module Projects
         requested_runner_identifier: requested_runner_identifier,
         goal: goal
       )
-      raise NoRunnableProviderError, "No runnable runner could be resolved for this project." unless resolved_runner
+      raise NoRunnableRunnerError, "No runnable runner could be resolved for this project." unless resolved_runner
 
       resolved_agent_type = runner_key_to_agent_type(resolved_runner.runner_key)
 
-      ActiveRecord::Base.transaction do
-        agent_run = AgentRun.create!(
-          project: @project,
-          issue: issue,
-          runner: resolved_runner,
-          agent_type: resolved_agent_type,
-          custom_prompt: custom_prompt,
-          source_pull_request_number: source_pull_request_number,
-          goal: goal,
-          trigger_type: trigger_type,
-          status: "queued",
-          priority_tier: priority_tier
-        )
-        attach_marketplace_entries(agent_run:)
-        agent_run
-      end
-    end
-
-    def attach_marketplace_entries(agent_run:)
-      manual_entry_ids = params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil)
-      account_auto_attach_required = marketplace_auto_attach_required_for_current_account?
-
-      MarketplaceEntries::AttachToRun.call(
-        agent_run:,
-        manual_entry_ids: manual_entry_ids,
-        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
-        account_auto_attach_required: account_auto_attach_required
+      AgentRun.create!(
+        project: @project,
+        issue: issue,
+        runner: resolved_runner,
+        agent_type: resolved_agent_type,
+        custom_prompt: custom_prompt,
+        source_pull_request_number: source_pull_request_number,
+        goal: goal,
+        trigger_type: trigger_type,
+        status: "queued",
+        priority_tier: priority_tier
       )
-    rescue => e
-      Rails.logger.warn(
-        message: "agent_execution.marketplace_attachment_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
-      raise if account_auto_attach_required || Array(manual_entry_ids).any?
-      raise unless ignorable_marketplace_attachment_error?(e)
-    end
-
-    def copy_marketplace_attachments(source_run:, target_run:)
-      attachments = source_run.agent_run_marketplace_entries.includes(:marketplace_entry, :marketplace_entry_version).ordered.to_a
-      return if attachments.empty?
-
-      attachments.each do |attachment|
-        target_run.agent_run_marketplace_entries.create!(
-          marketplace_entry: attachment.marketplace_entry,
-          marketplace_entry_version: attachment.marketplace_entry_version,
-          attachment_source: attachment.attachment_source,
-          position: attachment.position,
-          selection_reason: attachment.selection_reason,
-          rendered_format: attachment.rendered_format,
-          rendered_payload: attachment.rendered_payload.deep_dup
-        )
-      end
-
-      MarketplaceEntries::RerenderForRun.call(agent_run: target_run)
-    end
-
-    def marketplace_auto_attach_enabled_for_current_user?
-      current_user&.settings&.marketplace_auto_attach_enabled? || false
-    end
-
-    def marketplace_auto_attach_required_for_current_account?
-      marketplace_account&.tenant_setting&.marketplace_auto_attach_required? || false
-    end
-
-    def marketplace_entries_for_new_run
-      marketplace_account.marketplace_entries.active
-        .where.not(current_version_id: nil)
-        .ordered
-        .includes(:current_version)
-    end
-
-    def ignorable_marketplace_attachment_error?(error)
-      error.is_a?(ActiveRecord::RecordNotFound) || error.is_a?(ActiveRecord::RecordInvalid)
     end
 
     def enqueue_resume_run(pr)
@@ -728,7 +653,7 @@ module Projects
       )
       ProcessRunQueueJob.perform_later
       :enqueued
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       Rails.logger.warn(
         message: "agent_execution.resume_run_skipped",
         reason: e.message,
@@ -785,7 +710,7 @@ module Projects
       end
 
       redirect_to project_path(@project), notice: notice
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordInvalid => e
       redirect_to on_error_path, alert: e.message
@@ -955,10 +880,6 @@ module Projects
       @settings_owner ||= @project.effective_owner
     end
 
-    def marketplace_account
-      @project.account
-    end
-
     def enabled_retry_runners
       @enabled_retry_runners ||= enabled_retry_runner_entries.map(&:last)
     end
@@ -1030,7 +951,7 @@ module Projects
         "#{prs.size} agent runs queued for PR review."
       end
       redirect_to project_path(@project), notice: notice
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       # Only proxy_token has a unique index; duplicate PR runs are caught
@@ -1087,7 +1008,7 @@ module Projects
         "#{issues.size} agent runs queued for issue enhancement."
       end
       redirect_to project_path(@project), notice: notice
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."

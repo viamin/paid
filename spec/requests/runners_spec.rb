@@ -551,6 +551,18 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("No additional runners are installed in paid-agent yet")
     end
+
+    it "offers aider in the API-key runner list when a compatible key exists" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude aider])
+
+      get new_runner_path(form_variant: "api_key")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('value="api_key"')
+      expect(response.body).to include('id="runner_runner_key_api_key"')
+      expect(response.body).to include('option value="aider"')
+    end
   end
 
   describe "PATCH /runners/:id" do
