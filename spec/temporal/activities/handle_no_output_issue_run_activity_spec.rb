@@ -447,6 +447,17 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(result[:outcome]).to eq("provider_error")
       end
+
+      it "detects DeepSeek insufficient balance wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "> build · deepseek-v4-pro\nError: Insufficient Balance")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
     end
 
     context "when output is present but agent hit infrastructure errors" do

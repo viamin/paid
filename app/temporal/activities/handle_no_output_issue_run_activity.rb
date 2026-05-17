@@ -40,7 +40,10 @@ module Activities
       /not enough credits/i,
       /purchase (?:more )?credits/i,
       /buy (?:more )?credits/i,
-      /requires? more credits/i
+      /requires? more credits/i,
+      # DeepSeek wording for account-balance exhaustion. Stopgap until
+      # agent-harness ProviderSupport recognizes it upstream (#2080).
+      /insufficient balance/i
     ].freeze
 
     COMMENT_REDACTION_ONLY_PATTERNS = [
