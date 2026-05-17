@@ -120,8 +120,8 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
-        prompt = agent_run.effective_prompt
-        unless prompt
+        base_prompt = base_prompt_for(agent_run)
+        unless base_prompt
           raise Temporalio::Error::ApplicationError.new(
             "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
           )
@@ -201,6 +201,7 @@ module Activities
           begin
             last_attempted_label = attempt_label
             attempt_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            prompt = effective_prompt_for(agent_run:, base_prompt:, provider_key: provider)
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
@@ -735,6 +736,13 @@ module Activities
       unless self.class.container_executable?(provider)
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
+
+      synchronize_marketplace_mcp_for_provider!(
+        agent_run: agent_run,
+        provider_candidate: provider_candidate,
+        provider: provider,
+        user: user_settings.user
+      )
 
       # Assemble effective MCP servers from the run's provisioned state so
       # harness_execution_plan_for can pass them to agent-harness for
@@ -1603,21 +1611,28 @@ module Activities
     end
 
     def command_env_for(command_context, prompt, agent_run: nil)
+      env = marketplace_runtime_env(agent_run, provider_key: command_context.provider).dup
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run).env if provider_entry&.agent_harness_runtime?
-      return {} unless provider_entry
+      if provider_entry&.agent_harness_runtime?
+        return env.merge(direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run).env)
+      end
+      return env unless provider_entry
 
-      env = {}
-      env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
-      env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
+      provider_env_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      env.merge!(provider_env_entry.direct_outbound_exec_env) if provider_env_entry&.requires_direct_outbound?
+      env.merge!(api_key_command_env(provider_env_entry)) if provider_env_entry&.api_key?
       env
     end
 
     def command_preparation_for(command_context, prompt, agent_run: nil)
+      preparation = marketplace_runtime_preparation(agent_run, provider_key: command_context.provider)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      return nil unless provider_entry&.agent_harness_runtime?
+      return preparation unless provider_entry&.agent_harness_runtime?
 
-      direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run).preparation
+      merge_preparations(
+        preparation,
+        direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run).preparation
+      )
     end
 
     # Assembles the effective MCP server list from the agent run's
@@ -1691,6 +1706,67 @@ module Activities
         options: { dangerous_mode: true },
         provider_runtime: runtime
       )
+    end
+
+    def base_prompt_for(agent_run)
+      return agent_run.effective_prompt if effective_prompt_overridden?(agent_run)
+
+      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+    end
+
+    def effective_prompt_overridden?(agent_run)
+      agent_run.method(:effective_prompt).owner != AgentRun
+    rescue NameError
+      false
+    end
+
+    def effective_prompt_for(agent_run:, base_prompt:, provider_key:)
+      MarketplaceEntries::InjectIntoPrompt.call(
+        agent_run: agent_run,
+        prompt: base_prompt,
+        provider_key: provider_key
+      )
+    end
+
+    def marketplace_runtime_env(agent_run, provider_key:)
+      return {} unless agent_run
+
+      @marketplace_runtime_env_cache ||= {}
+      @marketplace_runtime_env_cache[[ agent_run.id, provider_key ]] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
+        agent_run,
+        provider_key: provider_key
+      )
+    end
+
+    def marketplace_runtime_preparation(agent_run, provider_key:)
+      return unless agent_run
+
+      @marketplace_runtime_preparation_cache ||= {}
+      @marketplace_runtime_preparation_cache[[ agent_run.id, provider_key ]] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
+        agent_run,
+        provider_key: provider_key
+      )
+    end
+
+    def synchronize_marketplace_mcp_for_provider!(agent_run:, provider_candidate:, provider:, user:)
+      return unless marketplace_has_attachments?(agent_run)
+
+      previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
+      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider)
+
+      return if previous_snapshot == agent_run.mcp_server_snapshot && agent_run.mcp_provisioned_servers.present?
+
+      Containers::McpProvisioner.new.provision(
+        agent_run,
+        network: Containers::Provision.network_for(agent_run: agent_run)
+      )
+    end
+
+    def marketplace_has_attachments?(agent_run)
+      @marketplace_attachments_cache ||= {}
+      return @marketplace_attachments_cache[agent_run.object_id] if @marketplace_attachments_cache.key?(agent_run.object_id)
+
+      @marketplace_attachments_cache[agent_run.object_id] = agent_run.agent_run_marketplace_entries.exists?
     end
 
     def selected_provider_runtime(provider_candidate, user, agent_run)
