@@ -70,7 +70,7 @@ module Models
     attr_reader :agent_run
 
     def available_candidates(tier: nil)
-      scope = LlmModel.active
+      scope = compatible_model_scope(LlmModel.active)
 
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?

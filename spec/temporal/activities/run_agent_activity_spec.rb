@@ -482,6 +482,44 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command.last).to eq("ping")
     end
 
+    it "passes the run-selected model to agent-harness for Claude commands" do
+      llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
+      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+      context = described_class::CommandContext.new(
+        provider_candidate: "claude",
+        provider: "claude",
+        user: nil
+      )
+
+      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
+        provider_key: "claude",
+        prompt: "ping",
+        options: hash_including(dangerous_mode: true),
+        provider_runtime: have_attributes(model: "claude-sonnet-4-6")
+      ).and_call_original
+
+      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
+
+      expect(command.first).to eq("sh")
+    end
+
+    it "raises when the selected model provider is incompatible with the run provider" do
+      llm_model = create(:llm_model, model_id: "gpt-5.4", provider: "openai")
+      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+      context = described_class::CommandContext.new(
+        provider_candidate: "claude",
+        provider: "claude",
+        user: nil
+      )
+
+      expect {
+        activity.send(:build_command, context, "ping", agent_run: agent_run)
+      }.to raise_error(
+        Activities::RunAgentActivity::ProviderExecutionError,
+        /Selected model gpt-5\.4 \(openai\) is not compatible with claude \(expects anthropic\)/
+      )
+    end
+
     it "builds an API-key wrapper for anthropic-backed fallback entries" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-anthropic-secret")
       provider = create(:provider, :api_key, user: user, provider_key: "claude", provider_api_key: api_key)
@@ -638,6 +676,19 @@ RSpec.describe Activities::RunAgentActivity do
         expect(script).not_to include("-u COPILOT_GITHUB_TOKEN")
         expect(script).to include("-u GH_TOKEN")
       end
+    end
+
+    it "raises when a fixed-runtime provider disagrees with the selected model" do
+      opencode_context = build_opencode_context(user)
+      llm_model = create(:llm_model, model_id: "different-model", provider: "openrouter")
+      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+      expect {
+        activity.send(:build_command, opencode_context, "ping", agent_run: agent_run)
+      }.to raise_error(
+        Activities::RunAgentActivity::ProviderExecutionError,
+        /Selected model different-model does not match configured runtime model moonshotai\/kimi-k2-0905/
+      )
     end
   end
 
@@ -1793,7 +1844,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       def expect_prompt_echo_to_fail_without_rate_limit!(prompt:, output:)
-        allow(activity).to receive(:effective_prompt_for).and_return(prompt)
+        allow(agent_run).to receive(:effective_prompt).and_return(prompt)
         allow(container_service).to receive(:execute).and_return(output)
 
         expect {
@@ -2437,7 +2488,7 @@ expect(container_service).to receive(:execute).with(
 
     it "raises an error when no prompt is available" do
       agent_run_no_prompt = create(:agent_run, :with_custom_prompt, project: project, container_id: "abc123")
-      allow(activity).to receive(:effective_prompt_for).and_return(nil)
+      allow(agent_run_no_prompt).to receive(:effective_prompt).and_return(nil)
       allow(AgentRun).to receive(:find).with(agent_run_no_prompt.id).and_return(agent_run_no_prompt)
 
       expect {
@@ -3616,6 +3667,56 @@ expect(container_service).to receive(:execute).with(
           Activities::RunAgentActivity::ProviderExecutionError,
           /does not support MCP/
         )
+      end
+    end
+
+    describe "#synchronize_marketplace_mcp_for_provider!" do
+      let(:provisioner) { instance_double(Containers::McpProvisioner) }
+
+      before do
+        mcp_server_snapshot = []
+        mcp_provisioned_servers = nil
+
+        allow(activity).to receive(:marketplace_has_attachments?).with(agent_run).and_return(true)
+        allow(agent_run).to receive(:mcp_server_snapshot) { mcp_server_snapshot }
+        allow(agent_run).to receive(:mcp_provisioned_servers) { mcp_provisioned_servers }
+        allow(MarketplaceEntries::RerenderForRun).to receive(:call) do
+          mcp_server_snapshot << { "name" => "fs" }
+        end
+        allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return("paid-network")
+        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+      end
+
+      it "wraps provisioning failures in ProviderExecutionError" do
+        allow(provisioner).to receive(:provision).and_raise(StandardError, "boom")
+
+        expect {
+          activity.send(
+            :synchronize_marketplace_mcp_for_provider!,
+            agent_run: agent_run,
+            provider_candidate: "claude_code",
+            provider: "claude",
+            user: user
+          )
+        }.to raise_error(
+          Activities::RunAgentActivity::ProviderExecutionError,
+          "Failed to synchronize marketplace MCP servers: boom"
+        )
+      end
+
+      it "re-raises ProviderExecutionError unchanged" do
+        allow(provisioner).to receive(:provision)
+          .and_raise(Activities::RunAgentActivity::ProviderExecutionError, "provider failed")
+
+        expect {
+          activity.send(
+            :synchronize_marketplace_mcp_for_provider!,
+            agent_run: agent_run,
+            provider_candidate: "claude_code",
+            provider: "claude",
+            user: user
+          )
+        }.to raise_error(Activities::RunAgentActivity::ProviderExecutionError, "provider failed")
       end
     end
 
