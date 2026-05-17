@@ -715,6 +715,34 @@ RSpec.describe "Projects" do
         expect(response.body).to include("https://github.com/octocat/hello")
       end
 
+      it "shows a single GitHub link when GitHub handles both repo and issues" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        links = document.css('[data-testid="project-external-link"]')
+
+        expect(links.size).to eq(1)
+        expect(links.first.text).to include("GitHub")
+        expect(links.first["href"]).to eq("https://github.com/octocat/hello")
+      end
+
+      it "shows separate repository and issue tracker links when the tracker is external" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+        create(:tracker_configuration, :linear, configurable: project)
+
+        get project_path(project)
+
+        document = Nokogiri::HTML(response.body)
+        links = document.css('[data-testid="project-external-link"]')
+
+        expect(links.size).to eq(2)
+        expect(links.map(&:text).join(" ")).to include("GitHub Repo")
+        expect(links.map(&:text).join(" ")).to include("Linear Issues")
+        expect(links.map { |link| link["href"] }).to include("https://github.com/octocat/hello", "https://linear.app")
+      end
+
       it "shows Quick Run buttons next to issues" do
         project = create(:project, account: account, github_token: github_token)
         issue = create(:issue, project: project, github_number: 5, title: "Test issue", github_state: "open")
