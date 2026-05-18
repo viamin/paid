@@ -59,6 +59,16 @@ module Integrations
       }
     }.freeze
 
+    EXTRA_LLM_PROVIDER_SERVICES = {
+      "minimax" => {
+        key: "minimax",
+        label: "MiniMax",
+        description: "Stored MiniMax API keys for account-managed credential workflows.",
+        category: :llm_provider,
+        auth_kinds: %w[api_key]
+      }
+    }.freeze
+
     module_function
 
     def provider_services
@@ -74,6 +84,7 @@ module Integrations
             auth_kinds: %w[api_key oauth_token]
           }
         end
+        .merge(EXTRA_LLM_PROVIDER_SERVICES)
         .transform_keys(&:to_s)
     end
 

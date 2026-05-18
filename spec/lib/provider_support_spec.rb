@@ -137,6 +137,7 @@ RSpec.describe ProviderSupport do
         "openai" => "OpenAI",
         "openrouter" => "OpenRouter",
         "google" => "Google AI",
+        "minimax" => "MiniMax",
         "zai" => "z.ai",
         "zai_coding" => "z.ai (Coding Plan)"
       )
@@ -177,6 +178,7 @@ RSpec.describe ProviderSupport do
     it "returns the human-readable label for known types" do
       expect(described_class.api_service_type_label("openrouter")).to eq("OpenRouter")
       expect(described_class.api_service_type_label("anthropic")).to eq("Anthropic")
+      expect(described_class.api_service_type_label("minimax")).to eq("MiniMax")
     end
 
     it "titleizes unknown types" do

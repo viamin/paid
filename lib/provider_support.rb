@@ -173,6 +173,7 @@ module ProviderSupport
     "inception" => "InceptionLabs",
     "deepseek" => "DeepSeek",
     "mistral" => "Mistral",
+    "minimax" => "MiniMax",
     "xai" => "xAI",
     "zai" => "z.ai",
     "zai_coding" => "z.ai (Coding Plan)"

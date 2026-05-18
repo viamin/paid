@@ -612,6 +612,31 @@ RSpec.describe Provider do
       })
       expect(config["model"]).to eq("zai-coding-plan/glm-5.1")
     end
+
+    it "uses Anthropic auth env vars for MiniMax backends" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+      provider.update!(
+        provider_api_key: minimax_key,
+        config: { "kilocode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.5" } }
+      )
+
+      config = JSON.parse(provider.kilocode_config_json)
+      options = config.fetch("provider").fetch("anthropic").fetch("options")
+      models = config.fetch("provider").fetch("anthropic").fetch("models")
+
+      expect(options).to eq(
+        "apiKey" => "{env:ANTHROPIC_API_KEY}",
+        "baseURL" => "https://api.minimax.io/anthropic"
+      )
+      expect(models).to eq(
+        "MiniMax-M2.5" => {
+          "name" => "MiniMax-M2.5",
+          "id" => "MiniMax-M2.5",
+          "tool_call" => true
+        }
+      )
+      expect(config["model"]).to eq("anthropic/MiniMax-M2.5")
+    end
   end
 
   describe "Aider config infrastructure" do
@@ -880,6 +905,27 @@ RSpec.describe Provider do
       expect(runtime.model).to eq("zai/glm-5.1")
     end
 
+    it "uses Anthropic auth env vars for MiniMax OpenCode runtimes" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-secret")
+      minimax_provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.5" } }
+      )
+
+      runtime = minimax_provider.agent_harness_provider_runtime
+
+      expect(runtime.model).to eq("anthropic/MiniMax-M2.5")
+      expect(runtime.env).to include(
+        "ANTHROPIC_API_KEY" => "sk-minimax-secret",
+        "OPENAI_BASE_URL" => "https://api.minimax.io/anthropic"
+      )
+      expect(runtime.metadata[:config]["provider"]).to eq({ "minimax" => {} })
+    end
+
     it "does not enable direct outbound when the OpenCode model id is missing" do
       provider = build(
         :provider,
@@ -952,6 +998,26 @@ RSpec.describe Provider do
 
       expect(provider).not_to be_valid
       expect(provider.errors[:config]).to include("must include a supported Pi API provider")
+    end
+
+    it "accepts MiniMax as a Pi API provider" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-secret")
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.5" } }
+      )
+
+      expect(provider).to be_valid
+      expect(provider.agent_harness_provider_runtime.metadata).to include(
+        "paid_pi_auth_entry" => {
+          "provider" => "minimax",
+          "api_key" => "sk-minimax-secret"
+        }
+      )
     end
   end
 
