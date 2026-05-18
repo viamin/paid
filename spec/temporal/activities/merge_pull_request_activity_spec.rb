@@ -37,6 +37,25 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when issue has the paid-skip-auto-merge label" do
+      before do
+        issue.update!(labels: issue.labels + [ "paid-skip-auto-merge" ])
+      end
+
+      it "returns skipped without calling the provider" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+      end
+
+      it "does not update issue phase" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(issue.reload.pr_review_phase).to eq("ready")
+      end
+    end
+
     context "when PR is not yet merged" do
       let(:pr_data) do
         Automation::Providers::Data::PullRequest.new(

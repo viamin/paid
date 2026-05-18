@@ -76,6 +76,22 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
       end
     end
 
+    context "when skip_auto_merge label is present" do
+      it "returns noop for a human-authored PR" do
+        signals = human_signals(skip_auto_merge: true)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
+
+      it "returns noop for a bot-authored PR" do
+        signals = bot_signals(skip_auto_merge: true)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
+    end
+
     context "with a human-authored PR" do
       it "returns a merge decision when all preconditions are met" do
         result = strategy.evaluate(build_context(signals: human_signals))
