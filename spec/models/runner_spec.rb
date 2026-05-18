@@ -472,7 +472,7 @@ RSpec.describe Runner do
         .not_to change { user.runners.where(runner_key: default_key).count }
     end
 
-    it "resets the providers sequence and retries on primary key conflicts" do
+    it "resets the runners sequence and retries on primary key conflicts" do
       default_key = described_class.default_runner_key
       relation = user.runners.kept_only
       conflict = ActiveRecord::RecordNotUnique.new
@@ -491,7 +491,7 @@ RSpec.describe Runner do
 
       described_class.ensure_default_for(user)
 
-      expect(connection).to have_received(:reset_pk_sequence!).with("providers")
+      expect(connection).to have_received(:reset_pk_sequence!).with("runners")
       expect(relation).to have_received(:find_or_create_by!)
         .with(runner_key: default_key, auth_type: "subscription").twice
     end
