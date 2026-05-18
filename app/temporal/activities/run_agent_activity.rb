@@ -387,7 +387,7 @@ module Activities
             agent_run.record_runner_attempt(
               attempt_label,
               success: false,
-              error_type: "error",
+              error_type: "preflight_timeout",
               error_message: e.message,
               duration_seconds: attempt_duration
             )
