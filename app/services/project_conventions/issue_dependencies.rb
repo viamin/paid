@@ -17,8 +17,7 @@ module ProjectConventions
     end
 
     def convention_value(project)
-      @convention_cache ||= {}
-      @convention_cache[project.id] ||= Resolve.call(project:, key: "issue_dependency_format").fetch(:value)
+      Resolve.call(project:, key: "issue_dependency_format").fetch(:value)
     end
   end
 end
