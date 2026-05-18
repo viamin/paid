@@ -48,4 +48,20 @@ RSpec.describe ProjectConventions::IssueDependencies do
     ).to eq("Awaits acme/repo#34")
     expect(described_class.heading(project: first_project, resolved:)).to eq("## Blockers")
   end
+
+  it "falls back to defaults when convention lookup hits an Active Record error" do
+    error = ActiveRecord::StatementInvalid.new("db unavailable")
+
+    allow(ProjectConventions::Resolve).to receive(:call).and_raise(error)
+    allow(Rails.logger).to receive(:warn)
+
+    expect(described_class.depends_on_line(project: first_project, github_number: 12)).to eq("Depends on #12")
+    expect(described_class.blocked_by_line(project: first_project, repo: "acme/repo", github_number: 34))
+      .to eq("Blocked by acme/repo#34")
+    expect(described_class.heading(project: first_project)).to eq("## Dependencies")
+    expect(Rails.logger).to have_received(:warn).with(
+      message: "issue_dependencies.convention_lookup_failed",
+      error: "db unavailable"
+    ).at_least(:once)
+  end
 end

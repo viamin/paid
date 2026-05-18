@@ -31,7 +31,7 @@ module ProjectConventions
       detections << hook_manager_detection if hook_manager_detection
       detections << ci_entrypoint_detection if ci_entrypoint_detection
       detections << dependency_format_detection if dependency_format_detection
-      detections.compact.uniq { |item| item[:key] }
+      merge_detections(detections.compact)
     end
 
     private
@@ -156,6 +156,29 @@ module ProjectConventions
         detector_key: "project_conventions",
         evidence: evidence.deep_stringify_keys,
         value: value.deep_stringify_keys
+      }
+    end
+
+    def merge_detections(detections)
+      detections
+        .group_by { |item| item[:key] }
+        .values
+        .map { |items| merge_detection_group(items) }
+    end
+
+    def merge_detection_group(items)
+      items.reduce do |merged, item|
+        merged.merge(
+          confidence: [ merged[:confidence], item[:confidence] ].max,
+          evidence: merge_evidence(merged[:evidence], item[:evidence])
+        )
+      end
+    end
+
+    def merge_evidence(left, right)
+      {
+        "paths" => (Array(left["paths"]) + Array(right["paths"])).uniq,
+        "signals" => (Array(left["signals"]) + Array(right["signals"])).uniq
       }
     end
 

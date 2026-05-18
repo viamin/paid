@@ -51,4 +51,17 @@ RSpec.describe ProjectConventions::Detector, :no_db do
       "blocked_by_prefix" => "Blocked by"
     )
   end
+
+  it "merges evidence for duplicate convention keys" do
+    write_repo_file("release-please-config.json", '{"packages":{".":{}}}')
+    write_repo_file("commitlint.config.js", "module.exports = {};\n")
+
+    detection = described_class.call(repo_path:).find { |item| item[:key] == "commit_style" }
+
+    expect(detection[:evidence]).to include(
+      "paths" => contain_exactly("release-please-config.json", "commitlint.config.js"),
+      "signals" => contain_exactly("release_please", "commitlint")
+    )
+    expect(detection[:confidence]).to eq(1.0)
+  end
 end

@@ -18,6 +18,12 @@ module ProjectConventions
 
     def convention_value(project, resolved: nil)
       resolved || Resolve.call(project:, key: "issue_dependency_format").fetch(:value)
+    rescue ActiveRecord::ActiveRecordError => e
+      Rails.logger.warn(
+        message: "issue_dependencies.convention_lookup_failed",
+        error: e.message
+      )
+      Resolve::DEFAULTS.fetch("issue_dependency_format")
     end
   end
 end

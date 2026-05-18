@@ -149,7 +149,7 @@ module Activities
 
         if dependency_lines.any?
           parts << ProjectConventions::IssueDependencies.heading(project: project, resolved:)
-          parts << dependency_lines.join("\n")
+          parts << dependency_lines.map { |line| "- #{line}" }.join("\n")
         end
       end
 
