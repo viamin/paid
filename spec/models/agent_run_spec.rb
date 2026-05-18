@@ -449,6 +449,7 @@ RSpec.describe AgentRun do
 
   describe ".stale_running_timeout" do
     it "falls back to the legacy timeout when healthy history is insufficient" do
+      stub_const("AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE", 3)
       create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE - 1,
         :completed,
         :review_goal,
@@ -460,6 +461,7 @@ RSpec.describe AgentRun do
     end
 
     it "uses no_output runs in the healthy baseline" do
+      stub_const("AgentRun::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE", 3)
       create_list(:agent_run, described_class::STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE,
         :no_output,
         :review_goal,

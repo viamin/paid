@@ -119,12 +119,14 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
-      @agent_run = agent_run
-      @has_marketplace_attachments = nil
-      @marketplace_runtime_env = {}
-      @marketplace_runtime_preparation = {}
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
         base_prompt = base_prompt_for(agent_run)
+        unless base_prompt
+          raise Temporalio::Error::ApplicationError.new(
+            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+          )
+        end
+
         user_settings = resolve_user_settings(agent_run)
         providers = build_provider_order(agent_run, user_settings)
         provider_states = load_provider_state_cache(user_settings.user, providers)
@@ -167,7 +169,6 @@ module Activities
           provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
           attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
           provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
-          provider_key = marketplace_provider_key(provider_candidate, provider, user_settings.user)
           heartbeat("provider_attempt", provider, index)
 
           # Skip unavailable providers, tracking rate-limited skips separately
@@ -190,17 +191,6 @@ module Activities
             next
           end
 
-          prompt = effective_prompt_for(
-            agent_run: agent_run,
-            base_prompt: base_prompt,
-            provider_key: provider_key
-          )
-          unless prompt
-            raise Temporalio::Error::ApplicationError.new(
-              "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
-            )
-          end
-
           # Log provider switch when we have a previous actually-attempted provider.
           # Use attempt_label (per-entry identifier) so entries sharing the same
           # command key (e.g. two OpenCode API-key entries) are distinguishable.
@@ -211,6 +201,7 @@ module Activities
           begin
             last_attempted_label = attempt_label
             attempt_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            prompt = effective_prompt_for(agent_run:, base_prompt:, provider_key: provider)
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
@@ -775,9 +766,9 @@ module Activities
         provider: provider,
         user: user_settings.user
       )
-      command = build_command(command_context, prompt)
-      command_env = command_env_for(command_context, prompt)
-      command_preparation = command_preparation_for(command_context, prompt)
+      command = build_command(command_context, prompt, agent_run: agent_run)
+      command_env = command_env_for(command_context, prompt, agent_run: agent_run)
+      command_preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
 
       resolved_harness_provider = begin
         harness_provider_for(provider)
@@ -992,9 +983,9 @@ module Activities
       end
 
       prompt = provider_preflight_prompt_for(provider)
-      command = build_command(command_context, prompt)
-      env = command_env_for(command_context, prompt)
-      preparation = command_preparation_for(command_context, prompt)
+      command = build_command(command_context, prompt, agent_run: agent_run)
+      env = command_env_for(command_context, prompt, agent_run: agent_run)
+      preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
 
       result = container_service.execute(
         command,
@@ -1297,7 +1288,7 @@ module Activities
     def track_harness_tokens(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
       response =
         begin
-          parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+          parse_harness_response(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
         rescue => e
           logger.warn(
             message: "agent_execution.token_usage_parse_failed",
@@ -1323,7 +1314,7 @@ module Activities
       scope.where("created_at >= ?", execution_started_at)
     end
 
-    def parse_harness_response(provider_candidate, provider_key, user, result, execution_started_at)
+    def parse_harness_response(agent_run, provider_candidate, provider_key, user, result, execution_started_at)
       harness_provider = harness_response_provider(provider_candidate, provider_key, user)
       response = harness_provider.parse_container_output(
         stdout: result[:stdout],
@@ -1331,7 +1322,7 @@ module Activities
         exit_code: result[:exit_code],
         duration: harness_duration(execution_started_at)
       )
-      apply_runtime_model(response, provider_candidate, user)
+      apply_runtime_model(response, provider_candidate, user, agent_run)
     end
 
     def harness_response_provider(provider_candidate, provider_key, user)
@@ -1394,8 +1385,8 @@ module Activities
       config
     end
 
-    def apply_runtime_model(response, provider_candidate, user)
-      model = provider_runtime_model(provider_candidate, user)
+    def apply_runtime_model(response, provider_candidate, user, agent_run = nil)
+      model = provider_runtime_model(provider_candidate, user, agent_run)
       return response if model.blank? || response.model == model
 
       AgentHarness::Response.new(
@@ -1410,8 +1401,8 @@ module Activities
       )
     end
 
-    def provider_runtime_model(provider_candidate, user)
-      provider_entry_for(provider_candidate, user)&.agent_harness_provider_runtime&.model
+    def provider_runtime_model(provider_candidate, user, agent_run = nil)
+      selected_provider_runtime(provider_candidate, user, agent_run)&.model
     end
 
     def harness_duration(execution_started_at)
@@ -1554,22 +1545,28 @@ module Activities
       worker.value unless interrupted
     end
 
-    def build_command(command_context, prompt)
+    def build_command(command_context, prompt, agent_run: nil)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
       if provider_entry&.agent_harness_runtime?
-        harness_runtime_command(provider_entry, prompt)
+        harness_runtime_command(provider_entry, prompt, agent_run: agent_run)
       elsif provider_entry&.requires_direct_outbound?
-        plan = harness_execution_plan_for(command_context.provider, prompt, provider_entry: provider_entry)
+        plan = harness_execution_plan_for(
+          command_context.provider,
+          prompt,
+          provider_entry: provider_entry,
+          user: command_context.user,
+          agent_run: agent_run
+        )
         provider_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif provider_entry&.api_key?
-        plan = harness_execution_plan_for(command_context.provider, prompt)
+        plan = harness_execution_plan_for(command_context.provider, prompt, user: command_context.user, agent_run: agent_run)
         api_key_auth_command(provider_entry, plan.command[0..-2], prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
-        plan = harness_execution_plan_for(command_context.provider, prompt)
+        plan = harness_execution_plan_for(command_context.provider, prompt, user: command_context.user, agent_run: agent_run)
         subscription_auth_command(command_context.provider, plan.command[0..-2], prompt)
       else
-        plan = harness_execution_plan_for(command_context.provider, prompt)
+        plan = harness_execution_plan_for(command_context.provider, prompt, user: command_context.user, agent_run: agent_run)
         plan.command
       end
     end
@@ -1587,54 +1584,53 @@ module Activities
     # servers are included so that a later execution on the same
     # activity instance with a different MCP setup does not reuse a
     # stale plan.
-    def harness_execution_plan_for(provider_key, prompt, provider_entry: nil)
+    def harness_execution_plan_for(provider_key, prompt, provider_entry: nil, user: nil, agent_run: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ provider_key, prompt, provider_entry&.agent_harness_provider_runtime.present?, @effective_mcp_servers ]
+      runtime = selected_provider_runtime(provider_entry || provider_key, user, agent_run)
+      cache_key = [ provider_key, prompt, runtime_cache_key(runtime), @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
       options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
-      @harness_plan_cache[cache_key] = if provider_entry&.agent_harness_provider_runtime
+      @harness_plan_cache[cache_key] = if provider_entry
         Providers::HarnessExecutionPlan.call(
           provider: provider_entry,
           prompt: prompt,
-          options: options
+          options: options,
+          provider_runtime: runtime
         )
       else
         Providers::HarnessExecutionPlan.for_provider_key(
           provider_key: ProviderSupport.provider_key_for_agent_type(provider_key),
           prompt: prompt,
-          options: options
+          options: options,
+          provider_runtime: runtime
         )
       end
     end
 
-    def command_env_for(command_context, prompt)
-      provider_key = marketplace_provider_key(command_context.provider_candidate, command_context.provider, command_context.user)
+    def command_env_for(command_context, prompt, agent_run: nil)
+      env = marketplace_runtime_env(agent_run, provider_key: command_context.provider).dup
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       if provider_entry&.agent_harness_runtime?
-        return marketplace_runtime_env(provider_key).merge(
-          direct_outbound_execution_plan(provider_entry, prompt).env
-        )
+        return env.merge(direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run).env)
       end
-      return marketplace_runtime_env(provider_key) unless provider_entry
+      return env unless provider_entry
 
-      env = marketplace_runtime_env(provider_key).dup
       env.merge!(provider_entry.direct_outbound_exec_env) if provider_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(provider_entry)) if provider_entry.api_key?
       env
     end
 
-    def command_preparation_for(command_context, prompt)
-      provider_key = marketplace_provider_key(command_context.provider_candidate, command_context.provider, command_context.user)
+    def command_preparation_for(command_context, prompt, agent_run: nil)
+      preparation = marketplace_runtime_preparation(agent_run, provider_key: command_context.provider)
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
-      runtime_preparation = marketplace_runtime_preparation(provider_key)
-      return runtime_preparation unless provider_entry&.agent_harness_runtime?
+      return preparation unless provider_entry&.agent_harness_runtime?
 
       merge_preparations(
-        direct_outbound_execution_plan(provider_entry, prompt).preparation,
-        runtime_preparation
+        preparation,
+        direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run).preparation
       )
     end
 
@@ -1689,8 +1685,38 @@ module Activities
       )
     end
 
+    # Builds an execution plan for providers that use the agent-harness
+    # runtime directly (e.g. opencode, copilot). MCP servers are
+    # intentionally NOT propagated here because none of the providers
+    # that route through this path currently support MCP — see
+    # validate_provider_mcp_support! which rejects them earlier. If a
+    # provider gains MCP support in the future, this method (and its
+    # cache key) must be updated to include @effective_mcp_servers,
+    # mirroring harness_execution_plan_for.
+    def direct_outbound_execution_plan(provider_entry, prompt, agent_run: nil)
+      @direct_outbound_execution_plan_cache ||= {}
+      runtime = selected_provider_runtime(provider_entry, nil, agent_run)
+      cache_key = [ provider_entry.id, prompt, runtime_cache_key(runtime) ]
+      return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
+
+      @direct_outbound_execution_plan_cache[cache_key] = Providers::HarnessExecutionPlan.call(
+        provider: provider_entry,
+        prompt: prompt,
+        options: { dangerous_mode: true },
+        provider_runtime: runtime
+      )
+    end
+
     def base_prompt_for(agent_run)
+      return agent_run.effective_prompt if effective_prompt_overridden?(agent_run)
+
       agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+    end
+
+    def effective_prompt_overridden?(agent_run)
+      agent_run.method(:effective_prompt).owner != AgentRun
+    rescue NameError
+      false
     end
 
     def effective_prompt_for(agent_run:, base_prompt:, provider_key:)
@@ -1701,79 +1727,108 @@ module Activities
       )
     end
 
-    def marketplace_provider_key(provider_candidate, provider, user)
-      provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry.provider_key if provider_entry
+    def marketplace_runtime_env(agent_run, provider_key:)
+      return {} unless agent_run
 
-      ProviderSupport.provider_key_for_agent_type(provider)
-    end
-
-    def marketplace_runtime_env(provider_key)
-      return {} unless @agent_run
-
-      @marketplace_runtime_env ||= {}
-      @marketplace_runtime_env[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
-        @agent_run,
+      @marketplace_runtime_env_cache ||= {}
+      @marketplace_runtime_env_cache[[ agent_run.id, provider_key ]] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
+        agent_run,
         provider_key: provider_key
       )
     end
 
-    def marketplace_runtime_preparation(provider_key)
-      return unless @agent_run
+    def marketplace_runtime_preparation(agent_run, provider_key:)
+      return unless agent_run
 
-      @marketplace_runtime_preparation ||= {}
-      @marketplace_runtime_preparation[provider_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
-        @agent_run,
+      @marketplace_runtime_preparation_cache ||= {}
+      @marketplace_runtime_preparation_cache[[ agent_run.id, provider_key ]] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
+        agent_run,
         provider_key: provider_key
       )
     end
 
     def synchronize_marketplace_mcp_for_provider!(agent_run:, provider_candidate:, provider:, user:)
-      return unless marketplace_attachments_attached?(agent_run)
+      return unless marketplace_has_attachments?(agent_run)
 
-      provider_key = marketplace_provider_key(provider_candidate, provider, user)
       previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
+      MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider)
 
-      AgentRun.transaction do
-        MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: provider_key)
+      return if previous_snapshot == agent_run.mcp_server_snapshot && agent_run.mcp_provisioned_servers.present?
 
-        next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
-
-        Containers::McpProvisioner.new.provision(
-          agent_run,
-          network: Containers::Provision.network_for(agent_run: agent_run)
-        )
-      end
+      Containers::McpProvisioner.new.provision(
+        agent_run,
+        network: Containers::Provision.network_for(agent_run: agent_run)
+      )
     rescue => e
       raise e if e.is_a?(ProviderExecutionError)
 
-      raise ProviderExecutionError, "Failed to synchronize marketplace MCP servers for #{provider_key}: #{e.message}"
+      raise ProviderExecutionError, "Failed to synchronize marketplace MCP servers: #{e.message}"
     end
 
-    def marketplace_attachments_attached?(agent_run)
-      return @has_marketplace_attachments unless @has_marketplace_attachments.nil?
+    def marketplace_has_attachments?(agent_run)
+      @marketplace_attachments_cache ||= {}
+      return @marketplace_attachments_cache[agent_run.object_id] if @marketplace_attachments_cache.key?(agent_run.object_id)
 
-      @has_marketplace_attachments = agent_run.agent_run_marketplace_entries.exists?
+      @marketplace_attachments_cache[agent_run.object_id] = agent_run.agent_run_marketplace_entries.exists?
     end
 
-    # Builds an execution plan for providers that use the agent-harness
-    # runtime directly (e.g. opencode, copilot). MCP servers are
-    # intentionally NOT propagated here because none of the providers
-    # that route through this path currently support MCP — see
-    # validate_provider_mcp_support! which rejects them earlier. If a
-    # provider gains MCP support in the future, this method (and its
-    # cache key) must be updated to include @effective_mcp_servers,
-    # mirroring harness_execution_plan_for.
-    def direct_outbound_execution_plan(provider_entry, prompt)
-      @direct_outbound_execution_plan_cache ||= {}
-      cache_key = [ provider_entry.id, prompt ]
-      return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
+    def selected_provider_runtime(provider_candidate, user, agent_run)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      configured_runtime = provider_entry&.agent_harness_provider_runtime
+      selected_model = agent_run&.model_selection&.llm_model
+      selected_model_id = selected_model&.model_id
 
-      @direct_outbound_execution_plan_cache[cache_key] = Providers::HarnessExecutionPlan.call(
-        provider: provider_entry,
-        prompt: prompt,
-        options: { dangerous_mode: true }
-      )
+      if configured_runtime&.model.present? && selected_model_id.present?
+        validate_selected_model_matches_runtime!(provider_entry, selected_model_id, configured_runtime)
+        return configured_runtime
+      end
+
+      return configured_runtime if configured_runtime
+      return nil if selected_model_id.blank?
+
+      validate_selected_model_provider_compatibility!(provider_candidate, provider_entry, selected_model)
+
+      AgentHarness::ProviderRuntime.new(model: selected_model_id)
+    end
+
+    def runtime_cache_key(runtime)
+      return nil unless runtime
+
+      [
+        runtime.model,
+        runtime.api_provider,
+        runtime.base_url,
+        runtime.env,
+        runtime.unset_env,
+        runtime.metadata
+      ]
+    end
+
+    def validate_selected_model_matches_runtime!(provider_entry, selected_model_id, configured_runtime)
+      configured_model_id =
+        if provider_entry&.respond_to?(:direct_outbound_model_id) && provider_entry.direct_outbound_model_id.present?
+          provider_entry.direct_outbound_model_id
+        else
+          configured_runtime.model
+        end
+
+      return if configured_model_id.blank? || configured_model_id == selected_model_id
+
+      provider_label = provider_entry&.display_name || provider_entry&.provider_key || "provider"
+      raise ProviderExecutionError,
+        "Selected model #{selected_model_id} does not match configured runtime model #{configured_model_id} for #{provider_label}"
+    end
+
+    def validate_selected_model_provider_compatibility!(provider_candidate, provider_entry, selected_model)
+      return unless selected_model
+
+      provider_key = provider_entry&.provider_key || ProviderSupport.provider_key_for_agent_type(provider_candidate)
+      compatible_provider = Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider_key.to_s]
+      return if compatible_provider.blank? || selected_model.provider == compatible_provider
+
+      provider_label = provider_entry&.display_name || provider_key
+      raise ProviderExecutionError,
+        "Selected model #{selected_model.model_id} (#{selected_model.provider}) is not compatible with #{provider_label} (expects #{compatible_provider})"
     end
 
     def provider_command_key(provider_candidate, agent_run, user = nil)
@@ -2004,8 +2059,8 @@ module Activities
     # Wraps the harness execution plan command with `env -u` to strip
     # proxy-specific headers inherited from container startup so they
     # are not forwarded to the real provider API.
-    def harness_runtime_command(provider_entry, prompt)
-      plan = direct_outbound_execution_plan(provider_entry, prompt)
+    def harness_runtime_command(provider_entry, prompt, agent_run: nil)
+      plan = direct_outbound_execution_plan(provider_entry, prompt, agent_run: agent_run)
       unset_vars = ProviderSupport.harness_runtime_unset_vars_for(provider_entry.provider_key)
       ProviderSupport.command_with_unset_env(plan.command, unset_vars)
     end

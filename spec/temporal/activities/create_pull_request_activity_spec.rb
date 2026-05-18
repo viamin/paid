@@ -46,11 +46,13 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
   describe "#execute" do
     it "creates a pull request via the GitHub API" do
+      issue.update!(title: "Resolve auth redirect bug")
+
       expect(github_client).to receive(:create_pull_request).with(
         project.full_name,
         base: project.default_branch,
         head: agent_run.branch_name,
-        title: "Fix ##{issue.github_number}: #{issue.title}",
+        title: "fix: Resolve auth redirect bug",
         body: a_string_including("Closes ##{issue.github_number}"),
         draft: true
       ).and_return(pr_response)
@@ -80,6 +82,28 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(github_client).to have_received(:create_pull_request).with(
         anything,
         hash_including(title: "feat(quality): automatic pause on quality threshold breach")
+      )
+    end
+
+    it "infers conventional commit titles from plain-English feature issues" do
+      issue.update!(title: "Add queue monitoring dashboard")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "feat: Add queue monitoring dashboard")
+      )
+    end
+
+    it "falls back to feat for ambiguous issue titles instead of under-versioning them as fixes" do
+      issue.update!(title: "Worker pool tuning")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "feat: Worker pool tuning")
       )
     end
 

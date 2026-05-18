@@ -136,6 +136,27 @@ RSpec.describe Project do
       end
     end
 
+    describe "#header_external_links" do
+      it "returns a single GitHub link when GitHub handles both repo and issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        tracker_configuration = build(:tracker_configuration, configurable: project, tracker_type: "github_issues")
+
+        expect(project.header_external_links(tracker_configuration: tracker_configuration)).to eq([
+          { label: "GitHub", url: "https://github.com/viamin/paid" }
+        ])
+      end
+
+      it "returns separate repository and issue tracker links when the tracker is external" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        tracker_configuration = build(:tracker_configuration, :linear, configurable: project)
+
+        expect(project.header_external_links(tracker_configuration: tracker_configuration)).to eq([
+          { label: "GitHub Repo", url: "https://github.com/viamin/paid" },
+          { label: "Linear Issues", url: "https://linear.app" }
+        ])
+      end
+    end
+
     describe "#activate!" do
       it "sets active to true" do
         project = create(:project, :inactive)

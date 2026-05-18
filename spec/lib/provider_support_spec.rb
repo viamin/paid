@@ -441,6 +441,30 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe ".aggregated_error_classification_patterns" do
+    context "with the :quota category" do
+      let(:patterns) { described_class.aggregated_error_classification_patterns(:quota) }
+
+      it "includes DeepSeek 'Insufficient Balance' wording" do
+        expect(patterns.any? { |p| p.match?("Error: Insufficient Balance") }).to be(true)
+      end
+
+      it "is case-insensitive for the DeepSeek balance pattern" do
+        expect(patterns.any? { |p| p.match?("INSUFFICIENT BALANCE") }).to be(true)
+      end
+
+      it "deduplicates patterns across providers" do
+        expect(patterns).to eq(patterns.uniq)
+      end
+    end
+
+    context "with an unknown category" do
+      it "returns only upstream patterns and never raises" do
+        expect { described_class.aggregated_error_classification_patterns(:no_such_category) }.not_to raise_error
+      end
+    end
+  end
+
   describe ".command_with_unset_env" do
     it "returns command unchanged when unset_vars is empty" do
       expect(described_class.command_with_unset_env("my_cmd", [])).to eq("my_cmd")

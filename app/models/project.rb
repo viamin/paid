@@ -1,6 +1,16 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
+  EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
+    "linear" => "Linear Issues",
+    "jira" => "Jira",
+    "azure_devops" => "Azure DevOps",
+    "mcp" => "MCP",
+    "generic_webhook" => "Issue Tracker"
+  }.freeze
+  DEFAULT_ISSUE_TRACKER_URLS = {
+    "linear" => "https://linear.app"
+  }.freeze
   has_logidze
   MERGE_METHODS = %w[squash merge rebase].freeze
   AUTO_RELEASE_GRANULARITIES = %w[off patch_only minor_only major_only all].freeze
@@ -248,6 +258,12 @@ class Project < ApplicationRecord
     "https://github.com/#{full_name}"
   end
 
+  def header_external_links(tracker_configuration:)
+    links = [ { label: repository_link_label(tracker_configuration), url: github_url } ]
+    issue_tracker_link = external_issue_tracker_link(tracker_configuration)
+    issue_tracker_link ? links << issue_tracker_link : links
+  end
+
   def activate!
     update!(active: true)
   end
@@ -259,6 +275,36 @@ class Project < ApplicationRecord
   def label_for_stage(stage)
     label_mappings[stage.to_s]
   end
+
+  def external_issue_tracker_link(tracker_configuration)
+    return if tracker_configuration.blank? || tracker_configuration.tracker_type == "github_issues"
+
+    url = normalized_external_url(
+      tracker_configuration.base_url.presence || DEFAULT_ISSUE_TRACKER_URLS[tracker_configuration.tracker_type]
+    )
+    return if url.blank?
+
+    {
+      label: EXTERNAL_ISSUE_TRACKER_LINK_LABELS.fetch(tracker_configuration.tracker_type, "Issue Tracker"),
+      url: url
+    }
+  end
+
+  def repository_link_label(tracker_configuration)
+    tracker_configuration&.tracker_type == "github_issues" ? "GitHub" : "GitHub Repo"
+  end
+
+  def normalized_external_url(url)
+    return if url.blank?
+
+    uri = URI.parse(url)
+    return unless uri.is_a?(URI::HTTPS)
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    nil
+  end
+  private :external_issue_tracker_link, :repository_link_label, :normalized_external_url
 
   def set_label_for_stage(stage, label)
     self.label_mappings = label_mappings.merge(stage.to_s => label)

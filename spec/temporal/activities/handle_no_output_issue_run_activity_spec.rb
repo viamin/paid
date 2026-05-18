@@ -117,9 +117,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
-        Activities::HandleNoOutputIssueRunActivity::CLASSIFICATION_LOG_LIMIT.times do |i|
-          agent_run.log!("stdout", "progress line #{i}")
-        end
+        5.times { |i| agent_run.log!("stdout", "progress line #{i}") }
         agent_run.log!("stderr", "Free model usage limit reached. Please try again later.")
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: false)
@@ -442,6 +440,17 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 0)
         agent_run.log!("stdout", "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      it "detects DeepSeek insufficient balance wording as a provider error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 0)
+        agent_run.log!("stdout", "> build · deepseek-v4-pro\nError: Insufficient Balance")
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
