@@ -399,7 +399,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         )
       end
 
-      it "falls back to agent summary when LLM provider fails and logs with context" do
+      it "falls back to agent summary when LLM runner fails and logs with context" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))

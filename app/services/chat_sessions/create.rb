@@ -14,15 +14,15 @@ module ChatSessions
   #     model: "gpt-4o"
   #   )
   class Create
-    attr_reader :account, :user, :mode, :provider_id, :model,
+    attr_reader :account, :user, :mode, :runner_id, :model,
       :project_id, :system_prompt, :title
 
-    def initialize(account:, user:, mode: nil, provider_id: nil, model: nil,
+    def initialize(account:, user:, mode: nil, runner_id: nil, provider_id: nil, model: nil,
       project_id: nil, system_prompt: nil, title: nil)
       @account = account
       @user = user
       @mode = mode.presence || "api"
-      @provider_id = provider_id
+      @runner_id = runner_id || provider_id
       @model = model
       @project_id = project_id
       @system_prompt = system_prompt
@@ -32,6 +32,8 @@ module ChatSessions
     def self.call(...)
       new(...).call
     end
+
+    alias_method :provider_id, :runner_id
 
     def call
       validate!
@@ -57,7 +59,7 @@ module ChatSessions
         account: account,
         created_by: user,
         mode: mode,
-        provider_id: resolved_provider&.id,
+        runner_id: resolved_runner&.id,
         model: resolved_model,
         project_id: project_id,
         system_prompt: system_prompt,
@@ -81,29 +83,29 @@ module ChatSessions
       )
     end
 
-    def resolved_provider
-      @resolved_provider ||= if provider_id.present?
-        Provider.kept_only.find(provider_id).tap do |provider|
-          unless provider.user&.account_id == account.id
-            raise ArgumentError, "provider must belong to the same account"
+    def resolved_runner
+      @resolved_runner ||= if runner_id.present?
+        Runner.kept_only.find(runner_id).tap do |runner|
+          unless runner.user&.account_id == account.id
+            raise ArgumentError, "runner must belong to the same account"
           end
         end
       else
-        default_provider_for_user
+        default_runner_for_user
       end
     end
 
     def resolved_model
       return model if model.present?
 
-      provider = resolved_provider
-      return nil unless provider
+      runner = resolved_runner
+      return nil unless runner
 
-      LlmModel.active.by_provider(provider.provider_key).by_capability.first&.model_id
+      LlmModel.active.by_provider(runner.runner_key).by_capability.first&.model_id
     end
 
-    def default_provider_for_user
-      Provider.first_enabled_for_owner(user)
+    def default_runner_for_user
+      Runner.first_enabled_for_owner(user)
     end
   end
 end

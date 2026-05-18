@@ -242,10 +242,6 @@ module ProviderSupport
   # know about. These must be unset alongside the provider-native vars from
   # agent-harness when running in subscription-auth mode.
   PROXY_HEADER_UNSET_VARS = {
-    "opencode" => %w[
-      OPENAI_HEADER_X_AGENT_RUN_ID
-      OPENAI_HEADER_X_PROXY_TOKEN
-    ].freeze,
     "gemini" => %w[
       GOOGLE_HEADER_X_AGENT_RUN_ID
       GOOGLE_HEADER_X_PROXY_TOKEN
@@ -324,8 +320,7 @@ module ProviderSupport
     []
   end
 
-  # Aggregates error_classification_patterns[category] across all supported
-  # providers.
+  # Aggregates error_classification_patterns[category] across all supported providers.
   def aggregated_error_classification_patterns(category)
     supported_provider_keys.flat_map { |key| error_classification_patterns_for(key, category) }.uniq
   end

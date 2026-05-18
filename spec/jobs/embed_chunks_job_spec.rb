@@ -14,7 +14,7 @@ RSpec.describe EmbedChunksJob do
       expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: nil)
     end
 
-    it "skips the embedding pipeline when no provider is configured for the project" do
+    it "skips the embedding pipeline when no runner is configured for the project" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       allow(project).to receive(:semantic_search_available?).and_return(false)
       allow(Project).to receive(:find).with(project.id).and_return(project)
@@ -24,10 +24,10 @@ RSpec.describe EmbedChunksJob do
       expect(Knowledge::Embeddings::Pipeline).not_to have_received(:call)
     end
 
-    it "runs the embedding pipeline for a project with a configured provider" do
+    it "runs the embedding pipeline for a project with a configured runner" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
+      owner.settings.update!(kb_embedding_runner: "openrouter", kb_embedding_fallback_runners: [ "openai" ])
       create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
 
       described_class.perform_now(project.id)
@@ -38,7 +38,7 @@ RSpec.describe EmbedChunksJob do
     it "runs the embedding pipeline when only a platform OpenAI credential is available" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
       allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
 
       described_class.perform_now(project.id)
@@ -46,11 +46,11 @@ RSpec.describe EmbedChunksJob do
       expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project)
     end
 
-    it "uses a fallback provider when the primary knowledge provider is unavailable" do
+    it "uses a fallback runner when the primary knowledge runner is unavailable" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [ "openrouter" ])
-      create(:provider_state, user: owner, provider_name: "openai", rate_limited_until: 5.minutes.from_now)
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [ "openrouter" ])
+      create(:runner_state, user: owner, runner_name: "openai", rate_limited_until: 5.minutes.from_now)
       create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-openrouter")
 
       described_class.perform_now(project.id)

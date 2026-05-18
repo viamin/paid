@@ -8,7 +8,7 @@
             data: {
               chat_session_list_target: "card",
               session_id: chat_session.id,
-              search_text: "#{session_title} #{session_preview} #{session_projects.map(&:name).join(' ')} #{chat_session.provider&.display_name} #{chat_session.model}".downcase
+              search_text: "#{session_title} #{session_preview} #{session_projects.map(&:name).join(' ')} #{chat_session.runner&.display_name} #{chat_session.model}".downcase
             } do %>
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0 flex-1">
@@ -29,7 +29,7 @@
   </div>
 
   <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
-    <span><%= chat_session.provider&.display_name || "Default provider" %></span>
+    <span><%= chat_session.runner&.display_name || "Default runner" %></span>
     <span><%= local_time(chat_session.updated_at, format: :relative) %></span>
   </div>
 <% end %>

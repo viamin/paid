@@ -6,7 +6,7 @@ module Issues
   #
   # Responsibilities kept here (orchestration):
   # - Running the pure-policy strategy and executing the resulting
-  #   decision — resolving a runnable provider and creating the queued
+  #   decision — resolving a runnable runner and creating the queued
   #   {AgentRun}.
   # - Race-safe handling of the +idx_agent_runs_unique_active_issue+
   #   unique index (returning the run created by a competing picker) and
@@ -18,9 +18,9 @@ module Issues
   #
   # Returns the created (or existing) {AgentRun}, or +nil+ when no
   # eligible issue is found, guards defer the pick, or no runnable
-  # provider can be resolved.
+  # runner can be resolved.
   class AutoPick
-    NoRunnableProviderError = Class.new(StandardError)
+    NoRunnableRunnerError = Class.new(StandardError)
 
     PAID_READY_LABEL = "paid-ready"
 
@@ -91,9 +91,9 @@ module Issues
         )
         nil
       end
-    rescue NoRunnableProviderError => e
+    rescue NoRunnableRunnerError => e
       Rails.logger.warn(
-        message: "auto_pick.no_runnable_provider",
+        message: "auto_pick.no_runnable_runner",
         project_id: @project.id,
         error: e.message
       )
@@ -110,14 +110,14 @@ module Issues
     end
 
     def create_agent_run(issue, goal: "create_pr")
-      provider = resolve_provider(goal)
-      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless provider
+      runner = resolve_runner(goal)
+      raise NoRunnableRunnerError, "No runnable runner could be resolved for this project." unless runner
 
       AgentRun.create!(
         project: @project,
         issue: issue,
-        provider: provider,
-        agent_type: Provider.agent_type_for(provider.provider_key),
+        runner: runner,
+        agent_type: Runner.agent_type_for(runner.runner_key),
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true,
@@ -125,9 +125,9 @@ module Issues
       )
     end
 
-    def resolve_provider(goal)
-      provider_id, = AgentRuns::ProviderResolver.call(project: @project, goal: goal)
-      Provider.kept_only.find_by(id: provider_id) if provider_id
+    def resolve_runner(goal)
+      runner_id, = AgentRuns::RunnerResolver.call(project: @project, goal: goal)
+      Runner.kept_only.find_by(id: runner_id) if runner_id
     end
   end
 end

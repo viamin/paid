@@ -6,12 +6,12 @@ require Rails.root.join("db/migrate/20260416050235_move_co_author_trailer_from_p
 # Guards against regressions in the projects → providers trailer migration.
 # The migration is destructive in structure (it removes the projects column),
 # so these specs verify that existing configured trailers are preserved onto
-# the project owner's default subscription provider before column removal.
+# the project owner's default subscription runner before column removal.
 #
-# Model code (Provider) holds the post-migration schema assumption — it has a
+# Model code (Runner) holds the post-migration schema assumption — it has a
 # before_validation callback that reads `agent_co_author_trailer`. That means
 # spec setup must happen in the post-migration world, using raw SQL to add and
-# populate the legacy project column while the migration runs. Keep the provider
+# populate the legacy project column while the migration runs. Keep the runner
 # column present because current model callbacks read it during factory setup and
 # after-commit broadcasts elsewhere in the suite.
 RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures do
@@ -33,7 +33,7 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
   def run_migration_up
     migration.up
     Project.reset_column_information
-    Provider.reset_column_information
+    Runner.reset_column_information
   end
 
   include MigrationSpecHelpers
@@ -50,14 +50,14 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
       connection.remove_column(:projects, :agent_co_author_trailer)
     end
     Project.reset_column_information
-    Provider.reset_column_information
+    Runner.reset_column_information
     truncate_migration_test_data
   end
 
-  it "copies a project trailer onto the creator's default subscription provider" do
+  it "copies a project trailer onto the creator's default subscription runner" do
     project = create(:project)
     owner = project.effective_owner
-    provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+    runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
 
     restore_legacy_project_column
     ActiveRecord::Base.connection.execute(
@@ -68,25 +68,25 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
 
     run_migration_up
 
-    expect(provider.reload.agent_co_author_trailer).to eq(trailer)
+    expect(runner.reload.agent_co_author_trailer).to eq(trailer)
     expect(ActiveRecord::Base.connection.column_exists?(:projects, :agent_co_author_trailer)).to be false
   end
 
   it "leaves providers untouched when no project has a configured trailer" do
     project = create(:project)
     owner = project.effective_owner
-    provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+    runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
 
     restore_legacy_project_column
     run_migration_up
 
-    expect(provider.reload.agent_co_author_trailer).to be_nil
+    expect(runner.reload.agent_co_author_trailer).to be_nil
   end
 
   it "picks the most recently updated project's trailer when the owner has multiple" do
     older_project = create(:project)
     owner = older_project.effective_owner
-    provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+    runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
     newer_project = create(:project, account: older_project.account, created_by: owner)
 
     restore_legacy_project_column
@@ -105,13 +105,13 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
 
     run_migration_up
 
-    expect(provider.reload.agent_co_author_trailer).to eq(trailer)
+    expect(runner.reload.agent_co_author_trailer).to eq(trailer)
   end
 
   it "ignores blank/whitespace-only trailers" do
     project = create(:project)
     owner = project.effective_owner
-    provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+    runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
 
     restore_legacy_project_column
     ActiveRecord::Base.connection.execute(
@@ -122,15 +122,15 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
 
     run_migration_up
 
-    expect(provider.reload.agent_co_author_trailer).to be_nil
+    expect(runner.reload.agent_co_author_trailer).to be_nil
   end
 
-  it "prefers the claude subscription provider when the owner has multiple providers" do
+  it "prefers the claude subscription runner when the owner has multiple providers" do
     project = create(:project)
     owner = project.effective_owner
-    claude_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-    other_provider = owner.providers.create!(
-      provider_key: "codex",
+    claude_runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+    other_runner = owner.runners.create!(
+      runner_key: "codex",
       auth_type: "subscription",
       enabled_for_agent_runs: false
     )
@@ -144,7 +144,7 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
 
     run_migration_up
 
-    expect(claude_provider.reload.agent_co_author_trailer).to eq(trailer)
-    expect(other_provider.reload.agent_co_author_trailer).to be_nil
+    expect(claude_runner.reload.agent_co_author_trailer).to eq(trailer)
+    expect(other_runner.reload.agent_co_author_trailer).to be_nil
   end
 end

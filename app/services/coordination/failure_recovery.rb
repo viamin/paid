@@ -142,25 +142,99 @@ module Coordination
       )
     end
 
+    def extract_subcategory
+      return current_guardrail_violation_type if current_guardrail_violation_type.present?
+
+      known_types = OrchestrationStrategies::Defaults.feature_orchestration["known_failure_types"]
+      error = current_error_message.to_s
+      known_types&.find { |t| error.include?(t) }
+    end
+
+    def build_failure_context
+      {
+        error_message: current_error_message.to_s.truncate(1000),
+        status: current_status,
+        final_runner: current_final_runner,
+        runners_attempted: current_runners_attempted,
+        runner_switches: current_runner_switches,
+        guardrail_violation_type: current_guardrail_violation_type
+      }.compact_blank
+    end
+
+    def build_action_params(category, action)
+      params = { category: category, action: action }
+
+      case action
+      when "retry_alternate_provider"
+        params[:exclude_runners] = attempted_runner_identifiers
+      when "escalate_model"
+        params[:current_runner] = preferred_runner_identifier
+      when "retry_same_provider"
+        params[:runner] = preferred_runner_identifier
+      end
+
+      params
+    end
+
+    def attempted_runner_identifiers
+      Array(current_runners_attempted).filter_map do |attempt|
+        next attempt unless attempt.is_a?(Hash)
+
+        attempt["runner"] || attempt["provider"]
+      end
+    end
+
+    def preferred_runner_identifier
+      attempted_runner_identifiers.last || current_final_runner || agent_run.effective_runner
+    end
+
     def current_status
       snapshot_value(:status)
+    end
+
+    def current_error_message
+      snapshot_value(:error_message)
+    end
+
+    def current_guardrail_violation_type
+      snapshot_value(:guardrail_violation_type)
+    end
+
+    def current_final_runner
+      snapshot_value(:final_runner, :final_provider)
+    end
+
+    def current_runners_attempted
+      snapshot_value(:runners_attempted, :providers_attempted)
+    end
+
+    def current_runner_switches
+      snapshot_value(:runner_switches, :provider_switches)
     end
 
     def current_parent_workflow_id
       snapshot_value(:parent_workflow_id)
     end
 
-    def snapshot_value(key)
-      return run_snapshot[key] if run_snapshot.key?(key)
+    def snapshot_value(key, *legacy_keys)
+      keys = [ key, *legacy_keys ]
+      keys.each do |candidate|
+        return run_snapshot[candidate] if run_snapshot.key?(candidate)
 
-      agent_run.public_send(key)
+        string_key = candidate.to_s
+        return run_snapshot[string_key] if run_snapshot.key?(string_key)
+      end
+
+      keys.each do |candidate|
+        return agent_run.public_send(candidate) if agent_run.respond_to?(candidate)
+      end
     end
 
     def orchestration_action_for(action)
       case action
       when "noop"
         "noop"
-      when "retry_same_provider", "retry_alternate_provider", "reconfigure_and_retry"
+      when "retry_same_runner", "retry_alternate_runner", "reconfigure_and_retry"
         "retry"
       when "pause_and_notify"
         "pause"

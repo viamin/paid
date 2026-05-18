@@ -67,12 +67,7 @@ module Screenshots
             record.labels = [ project.enhance_issue_needs_input_label_name ]
           end
 
-          provider = user.providers.subscription.first ||
-            user.providers.create!(
-              provider_key: "claude",
-              auth_type: "subscription",
-              name: "Screenshot Claude"
-            )
+          provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
           service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|
@@ -185,59 +180,10 @@ module Screenshots
             record.active = true
           end
 
-          marketplace_entry = account.marketplace_entries.find_or_create_by!(name: "Screenshot Repo Skill") do |record|
-            record.entry_type = "skill"
-            record.description = "Reusable marketplace skill for screenshot coverage."
-            record.provider = "claude"
-            record.provider_format = "canonical_v1"
-            record.usage_guidance = "Attach to implementation runs."
-            record.added_by_name = user.name.presence || user.email
-            record.added_by_email = user.email
-            record.tags = [ "screenshots", "marketplace" ]
-            record.team_scope = "account"
-            record.status = "active"
-          end
-          marketplace_version = marketplace_entry.current_version || marketplace_entry.create_version!(
-            changelog: "Initial screenshot seed",
-            canonical_artifact: {
-              "attachment_strategy" => "prompt_append",
-              "content" => "Follow the screenshot marketplace workflow."
-            },
-            renderers: {
-              "claude" => {
-                "attachment_strategy" => "prompt_append",
-                "provider_format" => "claude_skill_v1",
-                "content" => "Use the screenshot marketplace skill."
-              }
-            },
-            compatibility_constraints: {},
-            review_metadata: {}
-          )
-          marketplace_entry.update!(current_version: marketplace_version) unless marketplace_entry.current_version == marketplace_version
-          attachment = agent_run.agent_run_marketplace_entries.find_or_initialize_by(
-            marketplace_entry: marketplace_entry
-          )
-          attachment.assign_attributes(
-            marketplace_entry_version: marketplace_version,
-            attachment_source: "manual",
-            selection_reason: "Manually attached for screenshot coverage",
-            position: 0,
-            rendered_format: "claude_skill_v1",
-            rendered_payload: {
-              "provider" => "claude",
-              "provider_format" => "claude_skill_v1",
-              "attachment_strategy" => "prompt_append",
-              "payload" => {
-                "content" => "Use the screenshot marketplace skill."
-              }
-            }
-          )
-          attachment.save!
-
           chat_session = ChatSession.where(account: account, title: "Screenshot Chat").first_or_create!(
             created_by: user,
             project: project,
-            provider: provider,
+            runner: provider,
             mode: "workspace",
             status: "active"
           )
@@ -304,7 +250,7 @@ module Screenshots
             "user" => { "id" => user.id, "email" => user.email, "password" => password },
             "project" => { "id" => project.id, "name" => project.name, "slug" => project.repo },
             "clarifying_issue" => { "id" => clarifying_issue.id, "github_number" => clarifying_issue.github_number },
-            "provider" => { "id" => provider.id, "name" => provider.name },
+            "runner" => { "id" => provider.id, "name" => provider.display_name },
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
@@ -318,7 +264,6 @@ module Screenshots
             "pending_strategy_version" => { "id" => pending_strategy_version.id },
             "ab_test" => { "id" => ab_test.id },
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
-            "marketplace_entry" => { "id" => marketplace_entry.id, "name" => marketplace_entry.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
             "knowledge_artifact" => { "id" => knowledge_artifact.id }
           }
@@ -346,8 +291,8 @@ module Screenshots
             review_url: nil, review_posted_at: nil,
             result_commit_sha: nil, base_commit_sha: nil,
             worktree_path: nil, branch_name: nil,
-            provider_id: nil,
-            providers_attempted: [], final_provider: nil, provider_switches: 0,
+            runner_id: nil,
+            runners_attempted: [], final_runner: nil, runner_switches: 0,
             iterations: 0, cost_cents: 0,
             tokens_input: 0, tokens_output: 0,
             trigger_type: "automatic",

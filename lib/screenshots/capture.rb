@@ -39,7 +39,22 @@ module Screenshots
       Screenshots::Configuration.from_hash(
         "driver" => "cuprite",
         "base_url" => "http://localhost:3000",
-        "auth" => { "strategy" => "none" },
+        "auth" => {
+          "strategy" => "form",
+          "login_path" => "/users/sign_in",
+          "fields" => {
+            "email" => "input[name='user[email]']",
+            "password" => "input[name='user[password]']",
+            "submit" => "input[name='commit']"
+          },
+          "credentials" => {
+            "email" => "%{user_email}",
+            "password" => "%{user_password}"
+          }
+        },
+        "seed" => [
+          { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" }
+        ],
         "routes" => [ { "path" => "/", "name" => "placeholder" } ]
       )
     end

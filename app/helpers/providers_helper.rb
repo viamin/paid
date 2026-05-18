@@ -1,91 +1,16 @@
 # frozen_string_literal: true
 
 module ProvidersHelper
-  PROVIDER_AUTH_INSTRUCTION_COPY = {
-    "claude" => {
-      summary: "Use one of these:",
-      items: [
-        "Set <code>ANTHROPIC_API_KEY</code> on the <code>web</code> service for proxy-based auth.",
-        "Or sign in with <code>claude login</code> and make <code>~/.claude/.credentials.json</code> visible to Paid.",
-        "If Claude creds live elsewhere, set <code>CLAUDE_CONFIG_DIR</code>."
-      ]
-    },
-    "codex" => {
-      summary: "Use one of these:",
-      items: [
-        "Set <code>OPENAI_API_KEY</code> on the <code>web</code> service for proxy-based auth.",
-        "Or sign in with the Codex CLI and make <code>~/.codex/auth.json</code> visible to Paid.",
-        "If Codex creds live elsewhere, set <code>CODEX_CONFIG_DIR</code> or <code>CODEX_HOME</code>."
-      ]
-    },
-    "gemini" => {
-      summary: "Use one of these:",
-      items: [
-        "Set <code>GOOGLE_API_KEY</code> on the <code>web</code> service for proxy-based auth.",
-        "Or run <code>gemini auth login</code> and make <code>~/.gemini/oauth_creds.json</code> visible to Paid.",
-        "If Gemini creds live elsewhere, set <code>GEMINI_CONFIG_DIR</code>."
-      ]
-    },
-    "opencode" => {
-      summary: "Choose the auth path that matches the provider entry:",
-      items: [
-        "Set <code>OPENAI_API_KEY</code> on the <code>web</code> service for Paid-managed proxy auth.",
-        "API-key OpenCode entries can also use a saved Provider API Key plus a provider-level model ID for direct outbound calls.",
-        "OpenCode does not currently have a separate local subscription-auth mount in Paid."
-      ]
-    },
-    "kilocode" => {
-      summary: "KiloCode currently relies on provider-level API-key configuration in Paid:",
-      items: [
-        "Create the provider with a compatible Provider API Key for the selected upstream API provider.",
-        "Set a KiloCode model ID on the provider record so Paid can generate the CLI config it mounts into the agent container.",
-        "KiloCode does not currently have a separate local subscription-auth mount in Paid."
-      ]
-    },
-    "copilot" => {
-      summary: "GitHub Copilot currently uses subscription auth in Paid:",
-      items: [
-        "Sign in with the GitHub Copilot CLI and make <code>~/.copilot/config.json</code> visible to Paid.",
-        "If Copilot creds live elsewhere, set <code>COPILOT_HOME</code> (or Paid's legacy <code>COPILOT_CONFIG_DIR</code> override).",
-        "Restart the <code>web</code> and <code>worker</code> services after changing credential mounts."
-      ]
-    },
-    "pi" => {
-      summary: "Pi API-key auth is supported in Paid today:",
-      items: [
-        "API-key entries use a saved Provider API Key plus a provider-level Pi API Provider selection such as DeepSeek, OpenAI, or Anthropic.",
-        "Paid writes a request-scoped <code>~/.pi/agent/auth.json</code> inside the agent container so Pi uses the selected key deterministically.",
-        "Optional model IDs are passed through as <code>pi --model ...</code>; if left blank, Pi uses its default or previously selected model."
-      ]
-    }
-  }.freeze
+  include RunnersHelper
 
   def provider_auth_instruction_blocks
-    Provider.supported_provider_keys.map { |provider_key| provider_auth_instruction_block(provider_key) }
-  end
-
-  def provider_usage_stats_for(provider)
-    return unless @usage_stats
-
-    stats = @usage_stats[provider.provider_key]
-    stats ||= @usage_stats[provider.routing_key]
-    stats
-  end
-
-  def format_token_count(count)
-    if count >= 1_000_000
-      "#{(count / 1_000_000.0).round(1)}M"
-    elsif count >= 1_000
-      "#{(count / 1_000.0).round(1)}k"
-    else
-      count.to_s
-    end
+    ProviderSupport.supported_provider_keys.map { |provider_key| provider_auth_instruction_block(provider_key) }
   end
 
   private
 
   def provider_auth_instruction_block(provider_key)
-    copy = PROVIDER_AUTH_INSTRUCTION_COPY[provider_key]
+    copy = provider_instruction_copy_for(provider_key)
     return copy.merge(provider_key: provider_key, title: Provider.display_name(provider_key), fallback: false) if copy
 
     {
@@ -99,5 +24,24 @@ module ProvidersHelper
       ],
       fallback: true
     }
+  end
+
+  def provider_instruction_copy_for(provider_key)
+    copy = RunnersHelper::RUNNER_AUTH_INSTRUCTION_COPY[provider_key]
+    return unless copy
+
+    {
+      summary: providerized_instruction_text(copy[:summary]),
+      items: copy[:items].map { |item| providerized_instruction_text(item) }
+    }
+  end
+
+  def providerized_instruction_text(text)
+    text.to_s
+      .gsub("runner-level", "provider-level")
+      .gsub("runner record", "provider record")
+      .gsub("runner entry", "provider entry")
+      .gsub("runner", "provider")
+      .gsub("Runner", "Provider")
   end
 end

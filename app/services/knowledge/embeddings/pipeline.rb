@@ -203,7 +203,7 @@ module Knowledge
       end
 
       def provider_configs_for(project)
-        managed_provider_configs[project.id] ||= Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project)
+        managed_provider_configs[project.id] ||= Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: project)
       end
 
       def managed_generators

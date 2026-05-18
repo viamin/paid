@@ -79,6 +79,9 @@ application.register("provider-form", ProviderFormController)
 import ProjectSettingsFormController from "./project_settings_form_controller"
 application.register("project-settings-form", ProjectSettingsFormController)
 
+import RunnerFormController from "./runner_form_controller"
+application.register("runner-form", RunnerFormController)
+
 import RepositorySelectorController from "./repository_selector_controller"
 application.register("repository-selector", RepositorySelectorController)
 

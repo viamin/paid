@@ -2,6 +2,12 @@
 
 class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
   def up
+    safety_assured do
+      perform_up
+    end
+  end
+
+  def perform_up
     add_reference :service_containers, :account, foreign_key: true
     remove_index :service_containers, name: "index_service_containers_on_name"
 
@@ -160,8 +166,13 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
   end
 
   def down
-    drop_service_container_tenant_policies
+    safety_assured do
+      drop_service_container_tenant_policies
+      perform_down
+    end
+  end
 
+  def perform_down
     execute <<~SQL.squish
       WITH primary_service_containers AS (
         SELECT DISTINCT ON (name)

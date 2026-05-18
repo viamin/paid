@@ -151,7 +151,7 @@ module QualityMetrics
           scores: m.scores,
           feedback_source: m.feedback_source,
           agent_run_id: m.agent_run_id,
-          provider: m.agent_run&.effective_provider,
+          provider: m.agent_run&.effective_runner,
           goal: m.agent_run&.goal,
           prompt_version: m.prompt_version&.version,
           tier: selection&.tier,
@@ -301,11 +301,11 @@ module QualityMetrics
         .where(quality_metrics: { composite_score: ..Float::INFINITY })
         .where.not(quality_metrics: { composite_score: nil })
         .select(
-          Arel.sql("#{AgentRun.effective_provider_sql} AS eff_provider"),
+          Arel.sql("#{AgentRun.effective_runner_sql} AS eff_provider"),
           "AVG(quality_metrics.composite_score) AS avg_score",
           "COUNT(quality_metrics.id) AS sample_size"
         )
-        .group(Arel.sql(AgentRun.effective_provider_sql))
+        .group(Arel.sql(AgentRun.effective_runner_sql))
         .to_a
 
       runs_with_metrics.filter_map do |row|

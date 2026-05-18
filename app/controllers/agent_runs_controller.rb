@@ -5,7 +5,7 @@ class AgentRunsController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    base_scope = policy_scope(AgentRun).includes(:provider, project: [ :created_by, :account ], issue: :project)
+    base_scope = policy_scope(AgentRun).includes(:runner, project: [ :created_by, :account ], issue: :project)
     @q = base_scope.ransack(params[:q])
 
     if params[:sort] == "queue" && queue_sort_compatible?
@@ -17,11 +17,11 @@ class AgentRunsController < ApplicationController
     end
 
     @pagy, @agent_runs = pagy(@agent_runs)
-    AgentRun.preload_final_provider_records(@agent_runs)
+    AgentRun.preload_final_runner_records(@agent_runs)
     AgentRun.preload_source_pull_requests(@agent_runs)
     AgentRun.preload_created_issue_records(@agent_runs)
-    cache_key = AgentRun.provider_options_cache_key_for(account_id: current_account.id)
-    @provider_options = base_scope.distinct_effective_provider_options(account_id: current_account.id, cache_key: cache_key)
+    cache_key = AgentRun.runner_options_cache_key_for(account_id: current_account.id)
+    @runner_options = base_scope.distinct_effective_runner_options(account_id: current_account.id, cache_key: cache_key)
   end
 
   def pause_scheduler

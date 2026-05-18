@@ -8,7 +8,7 @@ RSpec.describe ChatSession do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }
-    it { is_expected.to belong_to(:provider).optional }
+    it { is_expected.to belong_to(:runner).optional }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:messages).class_name("ChatMessage").dependent(:destroy) }
     it { is_expected.to have_many(:token_usages).dependent(:destroy) }
@@ -25,14 +25,14 @@ RSpec.describe ChatSession do
       expect(chat_session).to validate_uniqueness_of(:external_id).case_insensitive
     end
 
-    it "rejects a provider from a different account" do
+    it "rejects a runner from a different account" do
       other_account = create(:account)
       other_user = create(:user, account: other_account)
-      other_provider = other_user.providers.first
+      other_runner = other_user.runners.first
 
-      session = build(:chat_session, provider: other_provider)
+      session = build(:chat_session, runner: other_runner)
       expect(session).not_to be_valid
-      expect(session.errors[:provider]).to include("must belong to the same account")
+      expect(session.errors[:runner]).to include("must belong to the same account")
     end
 
     it "rejects a project from a different account" do
@@ -42,6 +42,30 @@ RSpec.describe ChatSession do
       session = build(:chat_session, project: other_project)
       expect(session).not_to be_valid
       expect(session.errors[:project]).to include("must belong to the same account")
+    end
+  end
+
+  describe "provider bridge column" do
+    it "keeps the legacy provider_id synchronized with runner_id" do
+      account = create(:account)
+      user = create(:user, account: account)
+      runner = create(:runner, user: user, runner_key: "cursor")
+      session = create(:chat_session, account: account, created_by: user, runner: runner)
+
+      expect(session.read_attribute(:provider_id)).to eq(runner.id)
+      expect(session.provider_id).to eq(runner.id)
+    end
+
+    it "updates runner_id when the legacy provider_id setter is used" do
+      account = create(:account)
+      user = create(:user, account: account)
+      runner = create(:runner, user: user, runner_key: "cursor")
+      session = build(:chat_session, account: account, created_by: user)
+
+      session.provider_id = runner.id
+
+      expect(session.runner_id).to eq(runner.id)
+      expect(session.read_attribute(:provider_id)).to eq(runner.id)
     end
   end
 

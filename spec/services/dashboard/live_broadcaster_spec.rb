@@ -30,23 +30,23 @@ RSpec.describe Dashboard::LiveBroadcaster do
       )
     end
 
-    it "preloads final provider records for active-run fallback rows" do
-      initial_provider = create(:provider, user: owner, provider_key: "codex")
-      fallback_provider = create(:provider, user: owner, provider_key: "cursor")
+    it "preloads final runner records for active-run fallback rows" do
+      initial_provider = create(:runner, user: owner, runner_key: "codex")
+      fallback_provider = create(:runner, user: owner, runner_key: "cursor")
       active_run = create(:agent_run,
         project: project,
         status: "running",
         started_at: 1.minute.ago,
-        provider: initial_provider,
-        final_provider: fallback_provider.routing_key)
+        runner: initial_provider,
+        final_runner: fallback_provider.routing_key)
 
       described_class.call(account: account, agent_run: active_run)
 
       expect(broadcasted_active_runs).to include(
         have_attributes(
           id: active_run.id,
-          preloaded_final_provider_record: fallback_provider,
-          preloaded_final_provider_record_loaded: true
+          preloaded_final_runner_record: fallback_provider,
+          preloaded_final_runner_record_loaded: true
         )
       )
     end

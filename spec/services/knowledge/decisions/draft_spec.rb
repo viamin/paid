@@ -123,7 +123,7 @@ RSpec.describe Knowledge::Decisions::Draft do
 
     it "does not route non-claude providers through text mode (text transport is Anthropic-only)" do
       allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [])
+      project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [])
 
       described_class.call(agent_run: agent_run)
 
@@ -134,7 +134,7 @@ RSpec.describe Knowledge::Decisions::Draft do
     end
 
     it "uses the configured knowledge chat provider" do
-      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "claude" ])
+      project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [ "claude" ])
 
       described_class.call(agent_run: agent_run)
 
@@ -148,7 +148,7 @@ RSpec.describe Knowledge::Decisions::Draft do
     end
 
     it "falls back to later configured knowledge chat providers" do
-      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "claude" ])
+      project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [ "claude" ])
       failed_response = instance_double(AgentHarness::Response, success?: false, error: "cursor unavailable")
 
       allow(AgentHarness).to receive(:send_message).and_return(failed_response, llm_response)
@@ -174,8 +174,8 @@ RSpec.describe Knowledge::Decisions::Draft do
 
     it "skips legacy unsupported configured chat providers" do
       project.created_by.settings.update_columns(
-        kb_chat_provider: "not-a-provider",
-        kb_chat_fallback_providers: [ "claude" ]
+        kb_chat_runner: "not-a-provider",
+        kb_chat_fallback_runners: [ "claude" ]
       )
 
       described_class.call(agent_run: agent_run)
@@ -269,7 +269,7 @@ RSpec.describe Knowledge::Decisions::Draft do
     end
 
     it "tries fallback providers in container" do
-      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "claude" ])
+      project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [ "claude" ])
       allow(mock_runner).to receive(:call_llm)
         .with(anything, hash_including(provider: "cursor"))
         .and_raise(Knowledge::AnalysisRunner::ContainerError, "proxy error")
@@ -286,7 +286,7 @@ RSpec.describe Knowledge::Decisions::Draft do
     it "skips unsupported providers in containerized path" do
       allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("copilot").and_return(false)
       allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("claude").and_return(true)
-      project.created_by.settings.update!(kb_chat_provider: "copilot", kb_chat_fallback_providers: [ "claude" ])
+      project.created_by.settings.update!(kb_chat_runner: "copilot", kb_chat_fallback_runners: [ "claude" ])
       allow(mock_runner).to receive(:call_llm).and_return(llm_json)
 
       record = described_class.call(agent_run: agent_run)
@@ -332,7 +332,7 @@ RSpec.describe Knowledge::Decisions::Draft do
       allow(Rails.logger).to receive(:warn)
       allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("cursor").and_return(false)
       allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("codex").and_return(false)
-      project.created_by.settings.update!(kb_chat_provider: "cursor", kb_chat_fallback_providers: [ "codex" ])
+      project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [ "codex" ])
 
       result = described_class.call(agent_run: agent_run)
 

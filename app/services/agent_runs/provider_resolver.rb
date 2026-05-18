@@ -1,81 +1,61 @@
 # frozen_string_literal: true
 
 module AgentRuns
-  class ProviderResolver
-    def self.call(...)
-      new(...).call
+  class ProviderResolver < RunnerResolver
+    def self.call(**kwargs)
+      new(**normalize_legacy_kwargs(kwargs)).call
     end
 
     def self.selected_provider(project:, provider_id:)
-      return if provider_id.blank?
-
-      project.effective_owner&.providers&.kept_only&.find_by(id: provider_id)
+      selected_runner(project: project, runner_id: provider_id)
     end
 
-    def initialize(project:, goal:, requested_agent_type: nil, requested_provider_id: nil, respect_requested: true, logger: nil)
-      @project = project
-      @goal = goal
-      @requested_agent_type = requested_agent_type
-      @requested_provider_id = requested_provider_id
-      @respect_requested = respect_requested
-      @logger = logger
+    def self.normalize_legacy_kwargs(kwargs)
+      normalized = kwargs.dup
+      requested_provider_id = normalized.delete(:requested_provider_id)
+      normalized[:requested_runner_id] ||= requested_provider_id
+      normalized
     end
 
-    def call
-      selection = requested_selection if respect_requested
-      return selection if selection
-
-      selection = project_preferred_agent_selection
-      return selection if selection
-
-      provider = default_provider
-      return [ provider.id, Provider.agent_type_for(provider.provider_key) ] if provider
-
-      fallback_from_settings
+    def initialize(**kwargs)
+      super(**self.class.normalize_legacy_kwargs(kwargs))
     end
 
     private
 
-    attr_reader :project, :goal, :requested_agent_type, :requested_provider_id, :respect_requested, :logger
-
-    def requested_selection
-      provider = provider_for_id(requested_provider_id)
-      return [ provider.id, Provider.agent_type_for(provider.provider_key) ] if provider && provider_runnable?(provider)
-      return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
-
-      log_unrunnable_requested_provider if requested_provider_id.present? || requested_agent_type.present?
-      nil
+    def container_executable_runner_keys
+      ProviderSupport.container_executable_provider_keys
     end
 
-    def project_preferred_agent_selection
-      agent_type = project.model_preferences["preferred_agent_type"]
-      return unless agent_type.present? && agent_type_runnable?(agent_type)
-
-      provider_key = Provider.provider_key_for_agent_type(agent_type)
-      owner = project.effective_owner
-      return [ nil, agent_type ] unless owner
-
-      provider = owner.providers.kept_only.find_by(provider_key: provider_key)
-      provider ? [ provider.id, agent_type ] : [ nil, agent_type ]
+    def container_executable_runner_key?(runner_key)
+      ProviderSupport.container_executable_provider_key?(runner_key)
     end
 
-    def default_provider
+    def runner_key_for_agent_type(agent_type)
+      ProviderSupport.provider_key_for_agent_type(agent_type)
+    end
+
+    def agent_type_for_runner_key(runner_key)
+      ProviderSupport.agent_type_for(runner_key)
+    end
+
+    def default_runner
       owner = project.effective_owner
       return unless owner
 
       settings = UserSettingsResolver.call(project: project, strict: false)
-      selected_provider = selected_provider_from_settings(settings, owner)
-      configured_provider = configured_provider_from_raw_settings(settings)
-      base_provider = runnable_provider(selected_provider) || runnable_provider(configured_provider)
+      selected_provider = selected_runner_from_settings(settings, owner)
+      configured_provider = configured_runner_from_raw_settings(settings)
+      base_provider = runnable_runner(selected_provider) || runnable_runner(configured_provider)
       fallback_provider = Provider.first_enabled_for_owner(owner) || Provider.ensure_default_for(owner)
-      tenant_api_key_provider(base_provider, owner) ||
+      tenant_api_key_runner(base_provider, owner) ||
         base_provider ||
-        tenant_api_key_provider(configured_provider, owner) ||
-        tenant_api_key_provider(fallback_provider, owner) ||
+        tenant_api_key_runner(configured_provider, owner) ||
+        tenant_api_key_runner(fallback_provider, owner) ||
         fallback_provider
     end
 
-    def selected_provider_from_settings(settings, owner)
+    def selected_runner_from_settings(settings, owner)
       return Provider.ensure_default_for(owner) unless settings
 
       identifier = settings.select_automated_provider_identifier(goal: goal) ||
@@ -83,23 +63,23 @@ module AgentRuns
       Provider.for_identifier(settings.user, identifier)
     end
 
-    def configured_provider_from_raw_settings(settings)
+    def configured_runner_from_raw_settings(settings)
       return unless settings
 
       identifier = settings.default_agent_providers_by_goal[goal.to_s].presence || settings.default_agent_provider
       Provider.for_identifier(settings.user, identifier)
     end
 
-    def runnable_provider(provider)
+    def runnable_runner(provider)
       return unless provider&.enabled_for_agent_runs?
-      return unless provider_runnable?(provider)
+      return unless runner_runnable?(provider)
 
       provider
     end
 
-    def tenant_api_key_provider(base_provider, owner)
+    def tenant_api_key_runner(base_provider, owner)
       return unless base_provider
-      return unless provider_runnable?(base_provider)
+      return unless runner_runnable?(base_provider)
 
       service_type = tenant_api_key_service_type_for(base_provider)
       return unless service_type
@@ -116,9 +96,7 @@ module AgentRuns
       ) do |provider|
         provider.config = provider_config
       end.tap do |provider|
-        # Config can drift between calls (e.g. tenant changes their Pi model
-        # preference in tenant_settings without rotating the API key). Sync it
-        # on every materialisation so the next agent run picks up the change.
+        # Config can drift between calls (for example, tenant Pi model changes).
         provider.update!(config: provider_config) if provider_config != provider.config
       end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
@@ -151,11 +129,11 @@ module AgentRuns
       config
     end
 
-    def provider_for_id(provider_id)
+    def runner_for_id(provider_id)
       self.class.selected_provider(project: project, provider_id: provider_id)
     end
 
-    def provider_runnable?(provider)
+    def runner_runnable?(provider)
       ProviderSupport.container_executable_provider_key?(provider.provider_key)
     end
 
@@ -166,11 +144,11 @@ module AgentRuns
         ProviderSupport.container_executable_provider_key?(Provider.provider_key_for_agent_type(agent_type))
     end
 
-    def log_unrunnable_requested_provider
+    def log_unrunnable_requested_runner
       logger&.warn(
         message: "agent_execution.requested_provider_not_runnable",
         project_id: project.id,
-        requested_provider_id: requested_provider_id,
+        requested_provider_id: requested_runner_id,
         requested_agent_type: requested_agent_type
       )
     end

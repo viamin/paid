@@ -1664,7 +1664,7 @@ module Activities
     # anti-loop guard in check_review_bot_status because thread resolution
     # cannot be used to detect "already addressed" state.
     BODY_ONLY_REVIEW_BOT_LOGINS = %w[codex paid_agent]
-      .flat_map { |key| ProviderSupport::PROVIDER_BOT_USERNAMES.fetch(key, []) }
+      .flat_map { |key| RunnerSupport::RUNNER_BOT_USERNAMES.fetch(key, []) }
       .map(&:downcase)
       .to_set
       .freeze
@@ -1777,7 +1777,7 @@ module Activities
             # (e.g. a CI schema fix) from clearing review findings.
             if paid_agent_limit_reached_for_latest_review
               body_only_exhausted_triggers
-            elsif ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
+            elsif RunnerSupport.runner_bot_username_for?("paid_agent", latest&.dig(:user_login))
               # Emit paid_agent_review_pending alongside the bot triggers so
               # the workflow queues a review run. Without this, the scanner
               # keeps starting create_pr follow-ups that don't touch the
@@ -1787,7 +1787,7 @@ module Activities
             else
               body_only_pending_triggers
             end
-          elsif ProviderSupport.provider_bot_username_for?("paid_agent", latest&.dig(:user_login))
+          elsif RunnerSupport.runner_bot_username_for?("paid_agent", latest&.dig(:user_login))
             # Thread-based bot with all bot threads resolved, or body-only
             # review already addressed by a subsequent agent run whose diff
             # touches at least one reviewed file. Treat as effectively clean
@@ -2087,7 +2087,7 @@ module Activities
       return nil if login.blank?
 
       BODY_ONLY_REVIEW_PROVIDER_KEYS.find do |provider_key|
-        ProviderSupport.provider_bot_username_for?(provider_key, login)
+        RunnerSupport.runner_bot_username_for?(provider_key, login)
       end
     end
 
@@ -2141,8 +2141,8 @@ module Activities
       return false unless body_only_review_bot?(bot_login)
       return false if client.nil? || project.nil? || issue.nil?
 
-      provider_key = ProviderSupport.provider_key_for_bot_username(bot_login)
-      bot_logins = ProviderSupport.provider_bot_usernames_for(provider_key)
+      provider_key = RunnerSupport.runner_key_for_bot_username(bot_login)
+      bot_logins = RunnerSupport.runner_bot_usernames_for(provider_key)
       body_only_bot_clean_comment_present?(client, project, issue, latest_review, bot_logins)
     rescue GithubClient::Error => e
       log_signal_error("non_enabled_body_only_bot_clean_comment", project, issue, e)
@@ -2513,7 +2513,7 @@ module Activities
     # --- Helpers ---
 
     def review_bot?(login)
-      ProviderSupport.provider_bot_username?(login)
+      RunnerSupport.runner_bot_username?(login)
     end
 
     # Returns the set of bot logins allowed to trigger review runs, or nil
@@ -2533,7 +2533,7 @@ module Activities
       return [] unless project&.address_all_bot_reviews?
 
       enabled_logins = project.enabled_review_bot_logins
-      all_bot_logins = ProviderSupport.all_bot_usernames
+      all_bot_logins = RunnerSupport.all_bot_usernames
       non_enabled_logins = all_bot_logins - enabled_logins
 
       return [] if non_enabled_logins.empty?
@@ -2566,7 +2566,7 @@ module Activities
       return [] if latest.nil?
 
       bot_login = latest[:user_login]&.downcase
-      source_provider = ProviderSupport.provider_key_for_bot_username(bot_login)
+      source_provider = RunnerSupport.runner_key_for_bot_username(bot_login)
       if body_only_bot_clean_comment_supersedes_review?(client, project, issue, bot_login, latest)
         return []
       end
@@ -2621,7 +2621,7 @@ module Activities
 
     def paid_agent_clean_review?(review)
       return false unless review.is_a?(Hash)
-      return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
+      return false unless RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login])
 
       paid_agent_review_clean?(review[:body])
     end
@@ -2634,7 +2634,7 @@ module Activities
 
     def paid_agent_review_limit_reached_for_review?(project, reviews, review, issue = nil)
       return false unless review.is_a?(Hash)
-      return false unless ProviderSupport.provider_bot_username_for?("paid_agent", review[:user_login])
+      return false unless RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login])
 
       paid_agent_review_rounds_exhausted?(project, reviews, issue)
     end
@@ -2659,7 +2659,7 @@ module Activities
       return 0 if reviews.nil?
 
       reviews = paid_agent_reviews_for_current_cycle(reviews, issue)
-      paid_agent_logins = ProviderSupport::PROVIDER_BOT_USERNAMES.fetch("paid_agent", []).map(&:downcase).to_set
+      paid_agent_logins = RunnerSupport::RUNNER_BOT_USERNAMES.fetch("paid_agent", []).map(&:downcase).to_set
       reviews.count { |r| paid_agent_logins.include?(r[:user_login]&.downcase) }
     end
 
@@ -2722,7 +2722,7 @@ module Activities
       latest = latest_allowed_bot_review(reviews, allowed)
       return false unless latest
 
-      ProviderSupport.provider_bot_username_for?("paid_agent", latest[:user_login])
+      RunnerSupport.runner_bot_username_for?("paid_agent", latest[:user_login])
     end
 
     # Returns true when the project has an enabled body-only review bot
@@ -2736,19 +2736,19 @@ module Activities
 
       enabled.any? do |login|
         BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase) &&
-          !ProviderSupport.provider_bot_username_for?("paid_agent", login)
+          !RunnerSupport.runner_bot_username_for?("paid_agent", login)
       end
     end
 
     def provider_bot_logins_for(login)
-      provider_key = ProviderSupport.provider_key_for_bot_username(login)
-      return ProviderSupport.provider_bot_usernames_for(provider_key) if provider_key.present?
+      provider_key = RunnerSupport.runner_key_for_bot_username(login)
+      return RunnerSupport.runner_bot_usernames_for(provider_key) if provider_key.present?
 
       Set.new([ login&.downcase ].compact)
     end
 
     def provider_key_or_login_for(login)
-      ProviderSupport.provider_key_for_bot_username(login) || login&.downcase
+      RunnerSupport.runner_key_for_bot_username(login) || login&.downcase
     end
 
     def extract_actionable_labels(triggers)
