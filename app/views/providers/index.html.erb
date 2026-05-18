@@ -1,6 +1,7 @@
 <% content_for(:title) { "Providers - Paid" } %>
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div id="flash"></div>
   <div class="mb-6 flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-gray-900">Providers</h1>
@@ -50,14 +51,8 @@
                 <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">API Key</span>
               <% end %>
             </td>
-            <td class="px-4 py-3 text-sm text-gray-700"><%= provider.enabled_for_agent_runs? ? "Enabled" : "Disabled" %></td>
-            <td class="px-4 py-3 text-sm text-gray-700">
-              <% if provider.api_key? && provider.rate_limit_fallback? %>
-                <%= provider.enabled_for_fallback? ? "Enabled (rate-limit only)" : "Disabled (rate-limit only)" %>
-              <% else %>
-                <%= provider.enabled_for_fallback? ? "Enabled" : "Disabled" %>
-              <% end %>
-            </td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= render "agent_runs_toggle_index", provider: provider %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= render "fallback_toggle_index", provider: provider %></td>
             <% stats = @provider_stats_by_id[provider.id] %>
             <td class="px-4 py-3 text-sm text-gray-700">
               <% if stats && stats[:runs_7d] > 0 %>

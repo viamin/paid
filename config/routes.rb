@@ -81,6 +81,8 @@ Rails.application.routes.draw do
   resources :providers, except: :show do
     patch :settings, on: :collection
     post :test_agent, on: :member
+    post :toggle_agent_runs, on: :member
+    post :toggle_fallback, on: :member
   end
 
   # Service container management
