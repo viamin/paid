@@ -636,7 +636,7 @@ RSpec.describe Provider do
 
       expect(options).to eq(
         "apiKey" => "{env:ANTHROPIC_API_KEY}",
-        "baseURL" => "https://api.minimax.io/anthropic"
+        "baseURL" => "https://api.minimax.io/anthropic/v1"
       )
       expect(models).to eq(
         "MiniMax-M2.5" => {
@@ -923,17 +923,38 @@ RSpec.describe Provider do
         provider_key: "opencode",
         auth_type: "api_key",
         provider_api_key: minimax_key,
-        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.5" } }
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
       )
 
       runtime = minimax_provider.agent_harness_provider_runtime
 
-      expect(runtime.model).to eq("minimax/MiniMax-M2.5")
-      expect(runtime.env).to include(
-        "ANTHROPIC_API_KEY" => "sk-minimax-secret",
-        "OPENAI_BASE_URL" => "https://api.minimax.io/anthropic"
+      expect(runtime.model).to eq("MiniMax-M2.7")
+      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-minimax-secret")
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "minimax" => { "baseURL" => "https://api.minimax.io/anthropic/v1" } }
       )
-      expect(runtime.metadata[:config]["provider"]).to eq({ "minimax" => {} })
+    end
+
+    it "handles MiniMax-M2.7-highspeed model without provider prefix" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-hs")
+      minimax_provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7-highspeed" } }
+      )
+
+      runtime = minimax_provider.agent_harness_provider_runtime
+
+      expect(runtime.model).to eq("MiniMax-M2.7-highspeed")
+      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-minimax-hs")
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "minimax" => { "baseURL" => "https://api.minimax.io/anthropic/v1" } }
+      )
     end
 
     it "does not enable direct outbound when the OpenCode model id is missing" do

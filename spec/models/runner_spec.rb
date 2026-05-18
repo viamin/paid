@@ -910,6 +910,48 @@ RSpec.describe Runner do
       expect(runtime.model).to eq("zai/glm-5.1")
     end
 
+    it "configures MiniMax through the Anthropic SDK provider config" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-secret")
+      minimax_runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+      )
+
+      runtime = minimax_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("MiniMax-M2.7")
+      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-minimax-secret")
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "minimax" => { "baseURL" => "https://api.minimax.io/anthropic/v1" } }
+      )
+    end
+
+    it "leaves MiniMax highspeed models unqualified" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-hs")
+      minimax_runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7-highspeed" } }
+      )
+
+      runtime = minimax_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("MiniMax-M2.7-highspeed")
+      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-minimax-hs")
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "minimax" => { "baseURL" => "https://api.minimax.io/anthropic/v1" } }
+      )
+    end
+
     it "does not enable direct outbound when the OpenCode model id is missing" do
       runner = build(
         :runner,
