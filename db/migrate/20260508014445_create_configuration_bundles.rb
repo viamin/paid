@@ -75,74 +75,78 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
 
     reversible do |dir|
       dir.up do
-        execute <<~SQL
-          ALTER TABLE configuration_bundles ENABLE ROW LEVEL SECURITY;
-          ALTER TABLE configuration_bundles FORCE ROW LEVEL SECURITY;
-          CREATE POLICY tenant_isolation ON configuration_bundles
-            USING (
-              paid_tenant_bypass() OR (
-                configuration_bundles.account_id = paid_current_account_id()
-                AND (
-                  configuration_bundles.project_id IS NULL
-                  OR EXISTS (
-                    SELECT 1 FROM projects
-                    WHERE projects.id = configuration_bundles.project_id
-                      AND projects.account_id = paid_current_account_id()
+        safety_assured do
+          execute <<~SQL
+            ALTER TABLE configuration_bundles ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE configuration_bundles FORCE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_isolation ON configuration_bundles
+              USING (
+                paid_tenant_bypass() OR (
+                  configuration_bundles.account_id = paid_current_account_id()
+                  AND (
+                    configuration_bundles.project_id IS NULL
+                    OR EXISTS (
+                      SELECT 1 FROM projects
+                      WHERE projects.id = configuration_bundles.project_id
+                        AND projects.account_id = paid_current_account_id()
+                    )
                   )
                 )
               )
-            )
-            WITH CHECK (
-              paid_tenant_bypass() OR (
-                configuration_bundles.account_id = paid_current_account_id()
-                AND (
-                  configuration_bundles.project_id IS NULL
-                  OR EXISTS (
-                    SELECT 1 FROM projects
-                    WHERE projects.id = configuration_bundles.project_id
-                      AND projects.account_id = paid_current_account_id()
+              WITH CHECK (
+                paid_tenant_bypass() OR (
+                  configuration_bundles.account_id = paid_current_account_id()
+                  AND (
+                    configuration_bundles.project_id IS NULL
+                    OR EXISTS (
+                      SELECT 1 FROM projects
+                      WHERE projects.id = configuration_bundles.project_id
+                        AND projects.account_id = paid_current_account_id()
+                    )
                   )
                 )
-              )
-            );
+              );
 
-          ALTER TABLE bundle_outcomes ENABLE ROW LEVEL SECURITY;
-          ALTER TABLE bundle_outcomes FORCE ROW LEVEL SECURITY;
-          CREATE POLICY tenant_isolation ON bundle_outcomes
-            USING (
-              paid_tenant_bypass() OR EXISTS (
-                SELECT 1 FROM configuration_bundles
-                WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
-                  AND configuration_bundles.account_id = paid_current_account_id()
-              ) AND EXISTS (
-                SELECT 1 FROM agent_runs
-                INNER JOIN projects ON projects.id = agent_runs.project_id
-                WHERE agent_runs.id = bundle_outcomes.agent_run_id
-                  AND projects.account_id = paid_current_account_id()
+            ALTER TABLE bundle_outcomes ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE bundle_outcomes FORCE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_isolation ON bundle_outcomes
+              USING (
+                paid_tenant_bypass() OR EXISTS (
+                  SELECT 1 FROM configuration_bundles
+                  WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
+                    AND configuration_bundles.account_id = paid_current_account_id()
+                ) AND EXISTS (
+                  SELECT 1 FROM agent_runs
+                  INNER JOIN projects ON projects.id = agent_runs.project_id
+                  WHERE agent_runs.id = bundle_outcomes.agent_run_id
+                    AND projects.account_id = paid_current_account_id()
+                )
               )
-            )
-            WITH CHECK (
-              paid_tenant_bypass() OR EXISTS (
-                SELECT 1 FROM configuration_bundles
-                WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
-                  AND configuration_bundles.account_id = paid_current_account_id()
-              ) AND EXISTS (
-                SELECT 1 FROM agent_runs
-                INNER JOIN projects ON projects.id = agent_runs.project_id
-                WHERE agent_runs.id = bundle_outcomes.agent_run_id
-                  AND projects.account_id = paid_current_account_id()
-              )
-            );
-        SQL
+              WITH CHECK (
+                paid_tenant_bypass() OR EXISTS (
+                  SELECT 1 FROM configuration_bundles
+                  WHERE configuration_bundles.id = bundle_outcomes.configuration_bundle_id
+                    AND configuration_bundles.account_id = paid_current_account_id()
+                ) AND EXISTS (
+                  SELECT 1 FROM agent_runs
+                  INNER JOIN projects ON projects.id = agent_runs.project_id
+                  WHERE agent_runs.id = bundle_outcomes.agent_run_id
+                    AND projects.account_id = paid_current_account_id()
+                )
+              );
+          SQL
+        end
       end
 
       dir.down do
-        execute "DROP POLICY IF EXISTS tenant_isolation ON bundle_outcomes"
-        execute "ALTER TABLE bundle_outcomes NO FORCE ROW LEVEL SECURITY"
-        execute "ALTER TABLE bundle_outcomes DISABLE ROW LEVEL SECURITY"
-        execute "DROP POLICY IF EXISTS tenant_isolation ON configuration_bundles"
-        execute "ALTER TABLE configuration_bundles NO FORCE ROW LEVEL SECURITY"
-        execute "ALTER TABLE configuration_bundles DISABLE ROW LEVEL SECURITY"
+        safety_assured do
+          execute "DROP POLICY IF EXISTS tenant_isolation ON bundle_outcomes"
+          execute "ALTER TABLE bundle_outcomes NO FORCE ROW LEVEL SECURITY"
+          execute "ALTER TABLE bundle_outcomes DISABLE ROW LEVEL SECURITY"
+          execute "DROP POLICY IF EXISTS tenant_isolation ON configuration_bundles"
+          execute "ALTER TABLE configuration_bundles NO FORCE ROW LEVEL SECURITY"
+          execute "ALTER TABLE configuration_bundles DISABLE ROW LEVEL SECURITY"
+        end
       end
     end
   end

@@ -22,58 +22,60 @@ class MoveCoAuthorTrailerFromProjectsToProviders < ActiveRecord::Migration[8.1]
     # subscription provider). The per-user target is resolved the same way
     # Project#effective_owner falls back — created_by when present, otherwise
     # the account's first owner membership, otherwise the account's first user.
-    execute(<<~SQL)
-      WITH project_trailers AS (
-        SELECT DISTINCT ON (owner_id)
-          owner_id,
-          trailer
-        FROM (
-          SELECT
-            COALESCE(
-              p.created_by_id,
-              (
-                -- AccountMembership.roles[:owner] == 3; must stay in sync if enum changes.
-                SELECT am.user_id
-                FROM account_memberships am
-                WHERE am.account_id = p.account_id AND am.role = 3
-                ORDER BY am.id
-                LIMIT 1
-              ),
-              (
-                SELECT u.id
-                FROM users u
-                WHERE u.account_id = p.account_id
-                ORDER BY u.id
-                LIMIT 1
-              )
-            ) AS owner_id,
-            p.agent_co_author_trailer AS trailer,
-            p.updated_at
-          FROM projects p
-          WHERE p.agent_co_author_trailer IS NOT NULL
-            AND length(btrim(p.agent_co_author_trailer)) > 0
-        ) ranked
-        WHERE owner_id IS NOT NULL
-        ORDER BY owner_id, updated_at DESC, trailer
-      ),
-      targets AS (
-        SELECT DISTINCT ON (pr.user_id)
-          pr.id,
-          pt.trailer
-        FROM providers pr
-        JOIN project_trailers pt ON pt.owner_id = pr.user_id
-        WHERE pr.auth_type = 'subscription'
-        ORDER BY pr.user_id,
-                 CASE WHEN pr.provider_key = 'claude' THEN 0 ELSE 1 END,
-                 pr.id
-      )
-      UPDATE providers
-      SET agent_co_author_trailer = targets.trailer
-      FROM targets
-      WHERE providers.id = targets.id
-    SQL
+    safety_assured do
+      execute(<<~SQL)
+        WITH project_trailers AS (
+          SELECT DISTINCT ON (owner_id)
+            owner_id,
+            trailer
+          FROM (
+            SELECT
+              COALESCE(
+                p.created_by_id,
+                (
+                  -- AccountMembership.roles[:owner] == 3; must stay in sync if enum changes.
+                  SELECT am.user_id
+                  FROM account_memberships am
+                  WHERE am.account_id = p.account_id AND am.role = 3
+                  ORDER BY am.id
+                  LIMIT 1
+                ),
+                (
+                  SELECT u.id
+                  FROM users u
+                  WHERE u.account_id = p.account_id
+                  ORDER BY u.id
+                  LIMIT 1
+                )
+              ) AS owner_id,
+              p.agent_co_author_trailer AS trailer,
+              p.updated_at
+            FROM projects p
+            WHERE p.agent_co_author_trailer IS NOT NULL
+              AND length(btrim(p.agent_co_author_trailer)) > 0
+          ) ranked
+          WHERE owner_id IS NOT NULL
+          ORDER BY owner_id, updated_at DESC, trailer
+        ),
+        targets AS (
+          SELECT DISTINCT ON (pr.user_id)
+            pr.id,
+            pt.trailer
+          FROM providers pr
+          JOIN project_trailers pt ON pt.owner_id = pr.user_id
+          WHERE pr.auth_type = 'subscription'
+          ORDER BY pr.user_id,
+                   CASE WHEN pr.provider_key = 'claude' THEN 0 ELSE 1 END,
+                   pr.id
+        )
+        UPDATE providers
+        SET agent_co_author_trailer = targets.trailer
+        FROM targets
+        WHERE providers.id = targets.id
+      SQL
+    end
 
-    remove_column :projects, :agent_co_author_trailer, if_exists: true
+    safety_assured { remove_column :projects, :agent_co_author_trailer, if_exists: true }
   end
 
   def down
@@ -82,23 +84,25 @@ class MoveCoAuthorTrailerFromProjectsToProviders < ActiveRecord::Migration[8.1]
     # Best-effort restore: copy each owning user's provider trailer back onto
     # every project the user created. Projects without a created_by are left
     # null because the provider→project mapping is not reconstructible.
-    execute(<<~SQL)
-      UPDATE projects
-      SET agent_co_author_trailer = src.trailer
-      FROM (
-        SELECT DISTINCT ON (pr.user_id)
-          pr.user_id AS user_id,
-          pr.agent_co_author_trailer AS trailer
-        FROM providers pr
-        WHERE pr.agent_co_author_trailer IS NOT NULL
-          AND length(btrim(pr.agent_co_author_trailer)) > 0
-        ORDER BY pr.user_id,
-                 CASE WHEN pr.provider_key = 'claude' THEN 0 ELSE 1 END,
-                 pr.id
-      ) AS src
-      WHERE projects.created_by_id = src.user_id
-    SQL
+    safety_assured do
+      execute(<<~SQL)
+        UPDATE projects
+        SET agent_co_author_trailer = src.trailer
+        FROM (
+          SELECT DISTINCT ON (pr.user_id)
+            pr.user_id AS user_id,
+            pr.agent_co_author_trailer AS trailer
+          FROM providers pr
+          WHERE pr.agent_co_author_trailer IS NOT NULL
+            AND length(btrim(pr.agent_co_author_trailer)) > 0
+          ORDER BY pr.user_id,
+                   CASE WHEN pr.provider_key = 'claude' THEN 0 ELSE 1 END,
+                   pr.id
+        ) AS src
+        WHERE projects.created_by_id = src.user_id
+      SQL
+    end
 
-    remove_column :providers, :agent_co_author_trailer, if_exists: true
+    safety_assured { remove_column :providers, :agent_co_author_trailer, if_exists: true }
   end
 end

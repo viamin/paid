@@ -103,7 +103,7 @@ module ConfigurationBundles
           schema_version: 1,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
-          provider_id: agent_run.provider_id,
+          runner_id: agent_run.runner_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
@@ -135,8 +135,8 @@ module ConfigurationBundles
     end
 
     def marketplace_provider_key
-      @marketplace_provider_key ||= agent_run.provider&.provider_key ||
-        ProviderSupport.provider_key_for_agent_type(agent_run.agent_type)
+      @marketplace_provider_key ||= agent_run.runner&.runner_key ||
+        RunnerSupport.runner_key_for_agent_type(agent_run.agent_type)
     end
 
     def experiment_definitions(selected_variants = nil)

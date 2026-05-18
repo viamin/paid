@@ -53,7 +53,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
 
     it "supports mode parameter" do
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
       create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-mode")
 
       get "/api/knowledge/search", params: { project_id: project.id, q: "users", mode: "semantic" }
@@ -97,7 +97,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
 
     it "routes non-exact modes through Knowledge::Search without passing raw provider credentials" do
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
+      owner.settings.update!(kb_embedding_runner: "openrouter", kb_embedding_fallback_runners: [ "openai" ])
       create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
 
       allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
@@ -111,7 +111,7 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
 
     it "preserves semantic mode when only a platform OpenAI credential is available" do
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openai", kb_embedding_fallback_providers: [])
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
       allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return("sk-platform")
       allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "semantic", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
 

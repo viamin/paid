@@ -2,19 +2,23 @@
 
 class FixStrategiesRlsInfiniteRecursion < ActiveRecord::Migration[8.1]
   def up
-    drop_table_policies("strategies")
-    recreate_strategies_policies
+    safety_assured do
+      drop_table_policies("strategies")
+      recreate_strategies_policies
 
-    drop_table_policies("strategy_versions")
-    recreate_strategy_versions_policies
+      drop_table_policies("strategy_versions")
+      recreate_strategy_versions_policies
+    end
   end
 
   def down
-    drop_table_policies("strategies")
-    recreate_strategies_policies_with_recursion("strategies")
+    safety_assured do
+      drop_table_policies("strategies")
+      recreate_strategies_policies_with_recursion("strategies")
 
-    drop_table_policies("strategy_versions")
-    recreate_strategies_policies_with_recursion("strategy_versions")
+      drop_table_policies("strategy_versions")
+      recreate_strategies_policies_with_recursion("strategy_versions")
+    end
   end
 
   private

@@ -978,7 +978,7 @@ class LiveDashboardBroadcastJob < ApplicationJob
     ActionCable.server.broadcast("agent_run_#{agent_run.id}", {
       agent_run_id: agent_run.id,
       status: agent_run.status,
-      provider: agent_run.provider,
+      runner: agent_run.runner,
       duration_seconds: agent_run.duration_seconds,
       tokens_used: agent_run.total_tokens_used,
       current_output: agent_run.latest_output&.last(500),

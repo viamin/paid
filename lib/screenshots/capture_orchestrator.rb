@@ -127,7 +127,8 @@ module Screenshots
         driver.screenshot(name: route.name, path: file_path)
         capture_results << CaptureResult.new(route.name, file_path, true, nil)
       rescue StandardError => e
-        capture_results << CaptureResult.new(route.name, file_path, false, "#{route.name} (#{route.path}): #{e.message}")
+        backtrace_lines = e.backtrace&.first(5)&.join("\n    ") || "<no backtrace>"
+        capture_results << CaptureResult.new(route.name, file_path, false, "#{route.name} (#{route.path}): #{e.class}: #{e.message}\n    #{backtrace_lines}")
       end
     end
 

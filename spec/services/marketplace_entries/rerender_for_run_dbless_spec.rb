@@ -81,11 +81,11 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
         attachments
       end
     end.new(attachments: attachments)
-    provider = Struct.new(:provider_key, keyword_init: true).new(provider_key: "codex")
+    runner = Struct.new(:runner_key, keyword_init: true).new(runner_key: "codex")
 
     Struct.new(
       :agent_run_marketplace_entries,
-      :provider,
+      :runner,
       :agent_type,
       :id,
       :mcp_server_snapshot,
@@ -99,7 +99,7 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
       end
     end.new(
       agent_run_marketplace_entries: attachments_relation,
-      provider: provider,
+      runner: runner,
       id: 42,
       agent_type: "codex",
       mcp_server_snapshot: [ { "name" => "base-server" } ],

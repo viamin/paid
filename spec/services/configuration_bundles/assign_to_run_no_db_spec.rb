@@ -77,7 +77,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
   end
 
   def build_agent_run(attachment:)
-    provider = Struct.new(:provider_key, keyword_init: true).new(provider_key: "codex")
+    runner = Struct.new(:runner_key, keyword_init: true).new(runner_key: "codex")
     project = Struct.new(:account, keyword_init: true).new(account: nil)
     attachments = Struct.new(:records, keyword_init: true) do
       def ordered
@@ -85,8 +85,8 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       end
     end.new(records: [ attachment ])
 
-    Struct.new(:provider, :agent_type, :project, :agent_run_marketplace_entries, keyword_init: true).new(
-      provider: provider,
+    Struct.new(:runner, :agent_type, :project, :agent_run_marketplace_entries, keyword_init: true).new(
+      runner: runner,
       agent_type: "codex",
       project: project,
       agent_run_marketplace_entries: attachments

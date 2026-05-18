@@ -5,7 +5,8 @@ require "set"
 class ProviderApiKey < ApplicationRecord
   has_logidze
   belongs_to :user
-  has_many :providers, -> { kept }, dependent: :restrict_with_error
+  has_many :runners, -> { kept }, dependent: :restrict_with_error
+  has_many :providers, -> { kept }, class_name: "Provider", dependent: :restrict_with_error
 
   encrypts :api_key
 
@@ -24,27 +25,28 @@ class ProviderApiKey < ApplicationRecord
   # Returns true when this API key's service type is compatible with the
   # given provider. Providers with a fixed service type (claude → anthropic)
   # are checked against ProviderSupport::PROVIDER_API_SERVICE_TYPE. Providers
-  # that support multiple upstream API providers (opencode, kilocode, pi)
+  # that support multiple upstream API providers (opencode, kilocode, aider, pi)
   # resolve compatibility from their provider-specific service-type sets.
-  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode pi].to_set.freeze
+  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode aider pi].to_set.freeze
 
   def compatible_with?(provider_key)
-    static_type = ProviderSupport.api_service_type_for(provider_key)
-    if static_type
-      api_service_type == static_type
-    elsif DYNAMIC_API_PROVIDER_KEYS.include?(provider_key.to_s)
+    if DYNAMIC_API_PROVIDER_KEYS.include?(provider_key.to_s)
       compatible_dynamic_service_type?(provider_key)
     else
-      false
+      static_type = ProviderSupport.api_service_type_for(provider_key)
+      return api_service_type == static_type if static_type
+
+      static_type = RunnerSupport.api_service_type_for(provider_key)
+      static_type.present? && api_service_type == static_type
     end
   end
 
   def self.api_service_type_options
-    ProviderSupport.api_service_types.map { |key, label| [ label, key ] }
+    RunnerSupport.api_service_types.map { |key, label| [ label, key ] }
   end
 
   def display_api_service_type
-    ProviderSupport.api_service_type_label(api_service_type)
+    RunnerSupport.api_service_type_label(api_service_type)
   end
 
   def masked_api_key
@@ -73,7 +75,7 @@ class ProviderApiKey < ApplicationRecord
     normalized = api_service_type.to_s.strip.downcase
     self.api_service_type = normalized
 
-    return if ProviderSupport.api_service_types.key?(normalized)
+    return if RunnerSupport.api_service_types.key?(normalized)
 
     errors.add(:api_service_type, "is not a supported API service type")
   end

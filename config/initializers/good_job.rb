@@ -160,10 +160,10 @@ Rails.application.configure do
       class: "QueueMonitorJob",
       description: "Monitor queue depths and alert when thresholds are exceeded"
     },
-    notifications_check_provider_quotas: {
+    notifications_check_runner_quotas: {
       cron: "*/5 * * * *",
-      class: "Notifications::CheckProviderQuotasJob",
-      description: "Publish provider quota exhaustion notifications"
+      class: "Notifications::CheckRunnerQuotasJob",
+      description: "Publish runner quota exhaustion notifications"
     },
     llm_output_metric_feedback: {
       cron: "0 */6 * * *",

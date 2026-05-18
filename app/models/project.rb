@@ -391,13 +391,13 @@ class Project < ApplicationRecord
   end
 
   def knowledge_embedding_provider_configuration
-    Knowledge::ProviderConfiguration.for_embedding(project: self)
+    Knowledge::RunnerConfiguration.for_embedding(project: self)
   end
 
   # Returns true when at least one configured embedding provider can be
   # resolved by the proxy-backed provider selection flow.
   def semantic_search_available?
-    Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: self).present?
+    Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: self).present?
   end
 
   def trusted_github_user?(login)
@@ -536,8 +536,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_update
-    runs = agent_runs.recent.includes(:provider, :issue, project: [ :created_by, :account ]).limit(10).to_a
-    AgentRun.preload_final_provider_records(runs)
+    runs = agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
+    AgentRun.preload_final_runner_records(runs)
     AgentRun.preload_source_pull_requests(runs)
     AgentRun.preload_created_issue_records(runs)
     broadcast_replace_to(
@@ -549,8 +549,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_list_update
-    runs = agent_runs.recent.includes(:provider, :issue, project: [ :created_by, :account ]).limit(50).to_a
-    AgentRun.preload_final_provider_records(runs)
+    runs = agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(50).to_a
+    AgentRun.preload_final_runner_records(runs)
     AgentRun.preload_source_pull_requests(runs)
     AgentRun.preload_created_issue_records(runs)
     broadcast_replace_to(
@@ -562,8 +562,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_run_detail_update(agent_run)
-    final_provider_record = agent_run.final_provider_record
-    attempted_providers = agent_run.attempted_providers_by_routing_key
+    final_runner_record = agent_run.final_runner_record
+    attempted_runners = agent_run.attempted_runners_by_routing_key
 
     broadcast_replace_to(
       agent_run, :detail,
@@ -572,8 +572,8 @@ class Project < ApplicationRecord
       locals: {
         agent_run: agent_run,
         quality_metrics: agent_run.quality_metrics.with_composite_score.load,
-        final_provider_record: final_provider_record,
-        attempted_providers_by_routing_key: attempted_providers
+        final_runner_record: final_runner_record,
+        attempted_runners_by_routing_key: attempted_runners
       }
     )
   end
@@ -745,7 +745,7 @@ class Project < ApplicationRecord
   # Returns the set of bot GitHub logins (downcased) for all enabled review
   # methods that have a known bot account (copilot, codex, etc.).
   def enabled_review_bot_logins
-    ProviderSupport::PROVIDER_BOT_USERNAMES
+    RunnerSupport::RUNNER_BOT_USERNAMES
       .slice(*enabled_review_methods)
       .values.flatten.map(&:downcase).to_set
   end

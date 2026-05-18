@@ -2,81 +2,85 @@
 
 class CreateCoordinationPolicies < ActiveRecord::Migration[8.1]
   def up
-    create_table :coordination_policies, comment: "Versioned coordination policy catalogs that drive decomposition, recovery, escalation, and lifecycle decisions." do |t|
-      t.references :account, null: false, foreign_key: { on_delete: :cascade }, comment: "Tenant that owns this policy family."
-      t.references :project, foreign_key: { on_delete: :cascade }, comment: "Optional project-specific override; nil means account-wide default."
-      t.string :policy_type, limit: 50, null: false, comment: "Decision domain controlled by this policy: decomposition, recovery, escalation, or lifecycle_state."
-      t.string :policy_key, limit: 100, null: false, comment: "Stable identifier used by runtime policy selection."
-      t.string :name, null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
-      t.text :description, comment: "Long-form summary of what this policy is intended to optimize or protect."
-      t.string :status, limit: 30, null: false, default: "draft", comment: "Catalog lifecycle state: draft, active, or archived."
-      t.jsonb :context_selector, null: false, default: {}, comment: "Structured selector used to decide when this policy applies."
-      t.jsonb :metadata, null: false, default: {}, comment: "Additional structured provenance, rollout, and audit details."
+    safety_assured do
+      create_table :coordination_policies, comment: "Versioned coordination policy catalogs that drive decomposition, recovery, escalation, and lifecycle decisions." do |t|
+        t.references :account, null: false, foreign_key: { on_delete: :cascade }, comment: "Tenant that owns this policy family."
+        t.references :project, foreign_key: { on_delete: :cascade }, comment: "Optional project-specific override; nil means account-wide default."
+        t.string :policy_type, limit: 50, null: false, comment: "Decision domain controlled by this policy: decomposition, recovery, escalation, or lifecycle_state."
+        t.string :policy_key, limit: 100, null: false, comment: "Stable identifier used by runtime policy selection."
+        t.string :name, null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
+        t.text :description, comment: "Long-form summary of what this policy is intended to optimize or protect."
+        t.string :status, limit: 30, null: false, default: "draft", comment: "Catalog lifecycle state: draft, active, or archived."
+        t.jsonb :context_selector, null: false, default: {}, comment: "Structured selector used to decide when this policy applies."
+        t.jsonb :metadata, null: false, default: {}, comment: "Additional structured provenance, rollout, and audit details."
 
-      t.timestamps
+        t.timestamps
+      end
+
+      create_table :coordination_policy_versions, comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy." do |t|
+        t.references :coordination_policy, null: false, foreign_key: { on_delete: :cascade }, comment: "Owning policy catalog entry."
+        t.integer :version, null: false, comment: "Monotonic version number within the owning coordination policy."
+        t.string :status, limit: 30, null: false, default: "draft", comment: "Revision lifecycle state: draft, active, superseded, or retired."
+        t.jsonb :rules, null: false, default: {}, comment: "Structured decision rules executed by coordination services."
+        t.jsonb :parameters, null: false, default: {}, comment: "Thresholds, weights, and other tunable policy parameters."
+        t.text :llm_prompt, comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
+        t.text :reasoning, comment: "Why this policy version exists and what changed from the prior version."
+        t.jsonb :metadata, null: false, default: {}, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
+        t.datetime :activated_at, comment: "When this version became the policy's active revision."
+        t.datetime :retired_at, comment: "When this version stopped being eligible for runtime selection."
+
+        t.timestamps
+      end
+
+      add_reference :coordination_policies,
+        :current_version,
+        foreign_key: { to_table: :coordination_policy_versions, on_delete: :nullify },
+        index: true
+
+      add_index :coordination_policies, [ :account_id, :policy_type, :status ],
+        name: "idx_coordination_policies_account_type_status"
+      add_index :coordination_policies, [ :project_id, :policy_type, :status ],
+        name: "idx_coordination_policies_project_type_status"
+      add_index :coordination_policies, [ :account_id, :policy_type, :policy_key ],
+        unique: true,
+        where: "project_id IS NULL",
+        name: "idx_coordination_policies_account_scope_key"
+      add_index :coordination_policies, [ :account_id, :project_id, :policy_type, :policy_key ],
+        unique: true,
+        where: "project_id IS NOT NULL",
+        name: "idx_coordination_policies_project_scope_key"
+
+      add_index :coordination_policy_versions, [ :coordination_policy_id, :version ],
+        unique: true,
+        name: "idx_coordination_policy_versions_unique_version"
+      add_index :coordination_policy_versions, :coordination_policy_id,
+        unique: true,
+        where: "status = 'active'",
+        name: "idx_coordination_policy_versions_one_active"
+      add_index :coordination_policy_versions, [ :coordination_policy_id, :status, :created_at ],
+        name: "idx_coordination_policy_versions_policy_status_created"
+
+      enable_row_level_security
     end
-
-    create_table :coordination_policy_versions, comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy." do |t|
-      t.references :coordination_policy, null: false, foreign_key: { on_delete: :cascade }, comment: "Owning policy catalog entry."
-      t.integer :version, null: false, comment: "Monotonic version number within the owning coordination policy."
-      t.string :status, limit: 30, null: false, default: "draft", comment: "Revision lifecycle state: draft, active, superseded, or retired."
-      t.jsonb :rules, null: false, default: {}, comment: "Structured decision rules executed by coordination services."
-      t.jsonb :parameters, null: false, default: {}, comment: "Thresholds, weights, and other tunable policy parameters."
-      t.text :llm_prompt, comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
-      t.text :reasoning, comment: "Why this policy version exists and what changed from the prior version."
-      t.jsonb :metadata, null: false, default: {}, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
-      t.datetime :activated_at, comment: "When this version became the policy's active revision."
-      t.datetime :retired_at, comment: "When this version stopped being eligible for runtime selection."
-
-      t.timestamps
-    end
-
-    add_reference :coordination_policies,
-      :current_version,
-      foreign_key: { to_table: :coordination_policy_versions, on_delete: :nullify },
-      index: true
-
-    add_index :coordination_policies, [ :account_id, :policy_type, :status ],
-      name: "idx_coordination_policies_account_type_status"
-    add_index :coordination_policies, [ :project_id, :policy_type, :status ],
-      name: "idx_coordination_policies_project_type_status"
-    add_index :coordination_policies, [ :account_id, :policy_type, :policy_key ],
-      unique: true,
-      where: "project_id IS NULL",
-      name: "idx_coordination_policies_account_scope_key"
-    add_index :coordination_policies, [ :account_id, :project_id, :policy_type, :policy_key ],
-      unique: true,
-      where: "project_id IS NOT NULL",
-      name: "idx_coordination_policies_project_scope_key"
-
-    add_index :coordination_policy_versions, [ :coordination_policy_id, :version ],
-      unique: true,
-      name: "idx_coordination_policy_versions_unique_version"
-    add_index :coordination_policy_versions, :coordination_policy_id,
-      unique: true,
-      where: "status = 'active'",
-      name: "idx_coordination_policy_versions_one_active"
-    add_index :coordination_policy_versions, [ :coordination_policy_id, :status, :created_at ],
-      name: "idx_coordination_policy_versions_policy_status_created"
-
-    enable_row_level_security
   end
 
   def down
-    %w[coordination_policy_versions coordination_policies].each do |table|
-      next unless table_exists?(table)
+    safety_assured do
+      %w[coordination_policy_versions coordination_policies].each do |table|
+        next unless table_exists?(table)
 
-      execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
-      execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
-      execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
-    end
+        execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
+        execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
+      end
 
-    if column_exists?(:coordination_policies, :current_version_id)
-      remove_foreign_key :coordination_policies, column: :current_version_id
-      remove_reference :coordination_policies, :current_version, index: true
+      if column_exists?(:coordination_policies, :current_version_id)
+        remove_foreign_key :coordination_policies, column: :current_version_id
+        remove_reference :coordination_policies, :current_version, index: true
+      end
+      drop_table :coordination_policy_versions, if_exists: true
+      drop_table :coordination_policies, if_exists: true
     end
-    drop_table :coordination_policy_versions, if_exists: true
-    drop_table :coordination_policies, if_exists: true
   end
 
   private

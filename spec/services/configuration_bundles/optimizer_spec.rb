@@ -418,7 +418,7 @@ RSpec.describe ConfigurationBundles::Optimizer do
       "schema_version" => 1,
       "goal" => agent_run.goal,
       "agent_type" => agent_run.agent_type,
-      "provider_id" => agent_run.provider_id,
+      "runner_id" => agent_run.runner_id,
       "prompt_version_id" => agent_run.prompt_version_id,
       "experiments" => {
         experiment.config_key => {

@@ -120,7 +120,7 @@ RSpec.describe AgentRuns::Execute do
       it "calls AgentHarness.send_message with correct parameters" do
         expect(AgentHarness).to receive(:send_message).with(
           prompt,
-          provider: :claude,
+          runner: "claude",
           dangerous_mode: true
         ).and_return(response)
 
@@ -373,7 +373,7 @@ RSpec.describe AgentRuns::Execute do
       it "passes custom timeout to agent-harness" do
         expect(AgentHarness).to receive(:send_message).with(
           prompt,
-          provider: :claude,
+          runner: "claude",
           timeout: 1200,
           dangerous_mode: true
         ).and_return(response)
@@ -593,7 +593,7 @@ RSpec.describe AgentRuns::Execute do
     end
   end
 
-  describe "provider mapping" do
+  describe "runner mapping" do
     let(:response) do
       AgentHarness::Response.new(
         output: "Done",
@@ -616,13 +616,13 @@ RSpec.describe AgentRuns::Execute do
       "gemini" => :gemini,
       "opencode" => :opencode,
       "kilocode" => :kilocode
-    }.each do |agent_type, expected_provider|
-      it "maps #{agent_type} to :#{expected_provider}" do
+    }.each do |agent_type, expected_runner|
+      it "maps #{agent_type} to #{expected_runner.inspect}" do
         run = create(:agent_run, project: project, agent_type: agent_type)
 
         expect(AgentHarness).to receive(:send_message).with(
           prompt,
-          hash_including(provider: expected_provider)
+          hash_including(runner: expected_runner.to_s, dangerous_mode: true)
         ).and_return(response)
 
         described_class.call(agent_run: run, prompt: prompt)

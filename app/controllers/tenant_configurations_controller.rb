@@ -82,11 +82,11 @@ class TenantConfigurationsController < ApplicationController
     attrs = raw_params.permit(
       :max_concurrent_runs, :max_projects, :max_users, :max_tokens_per_run, :max_monthly_cost_cents,
       :self_repo_full_name,
-      allowed_provider_keys: [],
+      allowed_runner_keys: [],
       auto_pick_skip_labels: [],
-      provider_preferences: [
-        api_key_ids: ProviderSupport.api_service_types.keys,
-        model_preferences: ProviderSupport.supported_provider_keys
+      runner_preferences: [
+        api_key_ids: RunnerSupport.api_service_types.keys,
+        model_preferences: RunnerSupport.supported_runner_keys
       ],
       default_budgets: budget_params,
       guardrails: %i[max_concurrent_runs max_tokens_per_run max_monthly_cost_cents],

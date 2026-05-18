@@ -15,10 +15,10 @@
                   { include_blank: "Auto" },
                   class: "rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200",
                   "aria-label": "Model" %>
-  <%= form.label :provider_id, "Provider", class: "sr-only" %>
-  <%= form.select :provider_id,
-                  options_from_collection_for_select(available_providers, :id, :display_name, chat_session.provider_id),
+  <%= form.label :runner_id, "Runner", class: "sr-only" %>
+  <%= form.select :runner_id,
+                  options_from_collection_for_select(available_runners, :id, :display_name, chat_session.runner_id),
                   { include_blank: "Default" },
                   class: "rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200",
-                  "aria-label": "Provider" %>
+                  "aria-label": "Runner" %>
 <% end %>

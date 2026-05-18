@@ -77,10 +77,10 @@ RSpec.describe Knowledge::ProviderConfiguration do
       expect(config.api_key).to eq(api_key.api_key)
       expect(Rails.logger).to have_received(:warn).with(
         hash_including(
-          message: "knowledge.provider_selector.unsupported_provider_configured",
+          message: "knowledge.runner_selector.unsupported_runner_configured",
           user_setting_id: owner.settings.id,
           operation: :embedding,
-          providers: [ "anthropic" ]
+          runners: [ "anthropic" ]
         )
       )
     end

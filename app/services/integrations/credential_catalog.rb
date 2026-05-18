@@ -72,12 +72,12 @@ module Integrations
     module_function
 
     def provider_services
-      ProviderSupport.supported_provider_keys
-        .index_with do |provider_key|
+      RunnerSupport.supported_runner_keys
+        .index_with do |runner_key|
           {
-            key: provider_key.to_s,
-            label: ::Provider.display_name(provider_key),
-            description: "Stored #{::Provider.display_name(provider_key)} " \
+            key: runner_key.to_s,
+            label: ::Runner.display_name(runner_key),
+            description: "Stored #{::Runner.display_name(runner_key)} " \
               "credentials for API-key or OAuth-based access. " \
               "Runtime use will be wired in a follow-up.",
             category: :llm_provider,

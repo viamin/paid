@@ -210,6 +210,43 @@
     </div>
   </div>
 
+  <% aider_settings_enabled = is_api_key && provider.provider_key == "aider" %>
+  <% aider_api_provider = provider.aider_api_provider || Provider::AIDER_DEFAULT_API_PROVIDER %>
+  <div data-provider-form-target="aiderSettings" <% unless aider_settings_enabled %>hidden<% end %>>
+    <div class="rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Aider Model Settings</h3>
+      <p class="mt-1 text-xs text-gray-500">Configure the upstream API provider and model for this Aider entry.</p>
+
+      <div class="mt-4">
+        <label for="provider_config_aider_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
+        <select id="provider_config_aider_api_provider"
+                name="provider[config][aider][api_provider]"
+                <% unless aider_settings_enabled %>disabled<% end %>
+                class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                data-provider-form-target="directOutboundApiProviderSelect"
+                data-provider-key="aider"
+                data-action="change->provider-form#refreshProviderSpecificFields">
+          <% Provider::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
+            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if aider_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <div class="mt-4">
+        <label for="provider_config_aider_model" class="block text-sm font-medium text-gray-900">Model ID</label>
+        <input id="provider_config_aider_model"
+               name="provider[config][aider][model]"
+               type="text"
+               value="<%= provider.aider_model_id %>"
+               placeholder="glm-5.1"
+               autocomplete="off"
+                <% unless aider_settings_enabled %>disabled<% end %>
+               class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+        <p class="mt-1 text-xs text-gray-500">Required for API-key Aider entries. The model identifier for the selected API provider.</p>
+      </div>
+    </div>
+  </div>
+
   <% pi_settings_enabled = is_api_key && provider.provider_key == "pi" %>
   <% pi_api_provider = provider.pi_api_provider || Provider::PI_DEFAULT_API_PROVIDER %>
   <div data-provider-form-target="piSettings" <% unless pi_settings_enabled %>hidden<% end %>>

@@ -70,64 +70,68 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   ].freeze
 
   def up
-    create_helper_functions
+    safety_assured do
+      create_helper_functions
 
-    enable_policy("accounts", "id = paid_current_account_id()", insert_allows_missing_tenant: true)
+      enable_policy("accounts", "id = paid_current_account_id()", insert_allows_missing_tenant: true)
 
-    DIRECT_ACCOUNT_TABLES.each do |table|
-      enable_policy(table, direct_account_condition(table))
+      DIRECT_ACCOUNT_TABLES.each do |table|
+        enable_policy(table, direct_account_condition(table))
+      end
+
+      OPTIONAL_ACCOUNT_TABLES.each do |table|
+        enable_optional_account_policy(table)
+      end
+
+      PROJECT_TABLES.each do |table|
+        enable_policy(table, project_condition(table))
+      end
+
+      AGENT_RUN_TABLES.each do |table|
+        enable_policy(table, agent_run_condition(table))
+      end
+
+      USER_TABLES.each do |table|
+        enable_policy(table, user_condition(table))
+      end
+
+      PROMPT_TABLES.each do |table|
+        enable_read_write_policy(table, prompt_condition(table), prompt_write_condition(table))
+      end
+
+      enable_read_write_policy("ab_test_variants", ab_test_condition("ab_test_variants"), ab_test_write_condition("ab_test_variants"))
+      enable_read_write_policy("ab_test_assignments", ab_test_assignment_condition, ab_test_assignment_write_condition)
+      enable_policy("agent_coordination_signals", coordination_signal_condition)
+      enable_policy("billing_line_items", billing_line_item_condition)
+      enable_policy("collector_runs", collector_run_condition)
+      enable_read_write_policy("configuration_bundles", optional_account_read_condition("configuration_bundles"), optional_account_write_condition("configuration_bundles"))
+      enable_policy("bundle_outcomes", bundle_outcome_condition)
+      enable_policy("context_intake_responses", context_intake_response_condition)
+      enable_policy("decision_record_links", decision_record_link_condition)
+      enable_policy("issue_dependencies", issue_dependency_condition)
+      enable_policy("knowledge_links", knowledge_link_condition)
+      enable_policy("project_mcp_servers", project_mcp_server_condition)
+      enable_policy("project_memberships", project_membership_condition)
+      enable_policy("project_service_containers", project_service_container_condition)
+      enable_policy("service_container_metrics", service_container_metric_condition)
+      enable_policy("token_usages", token_usage_condition)
+      enable_policy("tracker_configurations", tracker_configuration_condition)
     end
-
-    OPTIONAL_ACCOUNT_TABLES.each do |table|
-      enable_optional_account_policy(table)
-    end
-
-    PROJECT_TABLES.each do |table|
-      enable_policy(table, project_condition(table))
-    end
-
-    AGENT_RUN_TABLES.each do |table|
-      enable_policy(table, agent_run_condition(table))
-    end
-
-    USER_TABLES.each do |table|
-      enable_policy(table, user_condition(table))
-    end
-
-    PROMPT_TABLES.each do |table|
-      enable_read_write_policy(table, prompt_condition(table), prompt_write_condition(table))
-    end
-
-    enable_read_write_policy("ab_test_variants", ab_test_condition("ab_test_variants"), ab_test_write_condition("ab_test_variants"))
-    enable_read_write_policy("ab_test_assignments", ab_test_assignment_condition, ab_test_assignment_write_condition)
-    enable_policy("agent_coordination_signals", coordination_signal_condition)
-    enable_policy("billing_line_items", billing_line_item_condition)
-    enable_policy("collector_runs", collector_run_condition)
-    enable_read_write_policy("configuration_bundles", optional_account_read_condition("configuration_bundles"), optional_account_write_condition("configuration_bundles"))
-    enable_policy("bundle_outcomes", bundle_outcome_condition)
-    enable_policy("context_intake_responses", context_intake_response_condition)
-    enable_policy("decision_record_links", decision_record_link_condition)
-    enable_policy("issue_dependencies", issue_dependency_condition)
-    enable_policy("knowledge_links", knowledge_link_condition)
-    enable_policy("project_mcp_servers", project_mcp_server_condition)
-    enable_policy("project_memberships", project_membership_condition)
-    enable_policy("project_service_containers", project_service_container_condition)
-    enable_policy("service_container_metrics", service_container_metric_condition)
-    enable_policy("token_usages", token_usage_condition)
-    enable_policy("tracker_configurations", tracker_configuration_condition)
   end
 
   def down
-    tenant_tables_with_helper_policies.each do |table|
-      next unless table_exists?(table)
+    safety_assured do
+      tenant_tables_with_helper_policies.each do |table|
+        next unless table_exists?(table)
 
-      drop_policies(table)
-      execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
-      execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
+        drop_policies(table)
+        execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
+      end
+
+      execute "DROP FUNCTION IF EXISTS paid_tenant_bypass()"
+      execute "DROP FUNCTION IF EXISTS paid_current_account_id()"
     end
-
-    execute "DROP FUNCTION IF EXISTS paid_tenant_bypass()"
-    execute "DROP FUNCTION IF EXISTS paid_current_account_id()"
   end
 
   private

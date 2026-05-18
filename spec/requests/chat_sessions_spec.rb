@@ -130,6 +130,15 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["mode"]).to eq("api")
       end
 
+      it "accepts provider_id as a legacy alias for runner_id" do
+        runner = create(:runner, user: user)
+
+        post chat_sessions_path(format: :json), params: { mode: "api", provider_id: runner.id }
+
+        expect(response).to have_http_status(:created)
+        expect(ChatSession.order(:id).last.runner).to eq(runner)
+      end
+
       it "redirects to the session page for html requests" do
         existing_ids = ChatSession.pluck(:id)
 
@@ -279,7 +288,7 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("You have read-only access to this chat.")
         expect(response.body).not_to include(%(name="chat_session[title]"))
-        expect(response.body).not_to include(%(name="chat_session[provider_id]"))
+        expect(response.body).not_to include(%(name="chat_session[runner_id]"))
         expect(response.body).not_to include(%(name="chat_session[model]"))
         expect(response.body).not_to include(%(name="content"))
         expect(response.body).not_to include("New Chat")

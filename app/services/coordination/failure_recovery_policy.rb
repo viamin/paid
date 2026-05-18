@@ -7,10 +7,10 @@ module Coordination
     DEFAULT_ACTION = "pause_and_notify"
 
     DEFAULT_ACTIONS = {
-      "rate_limit" => "retry_alternate_provider",
+      "rate_limit" => "retry_alternate_runner",
       "auth_failure" => "pause_and_notify",
-      "timeout" => "retry_same_provider",
-      "provider_error" => "retry_alternate_provider",
+      "timeout" => "retry_same_runner",
+      "runner_error" => "retry_alternate_runner",
       "container_error" => "reconfigure_and_retry",
       "prompt_error" => "pause_and_notify",
       "dependency_failure" => "cancel_workflow",

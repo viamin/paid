@@ -7,7 +7,7 @@ module Knowledge
 
       def initialize(project:, provider_configs: nil, knowledge_run: nil, containerize: false)
         @project = project
-        @provider_configs = Array(provider_configs || Knowledge::ProviderConfiguration.for_embedding_candidate_providers(project: project))
+        @provider_configs = Array(provider_configs || Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: project))
         @knowledge_run = knowledge_run
         @containerize = containerize
         @model = Generate::MODEL
@@ -24,15 +24,15 @@ module Knowledge
         last_error = nil
 
         provider_configs.each do |config|
-          record_attempt!(config.provider)
+          record_attempt!(config.runner)
 
           results = if use_container?
-            container_runner.generate(texts: texts, provider: config.provider, model: model, dimensions: dimensions)
+            container_runner.generate(texts: texts, provider: config.runner, model: model, dimensions: dimensions)
           else
-            Generate.call(texts: texts, base_url: proxy_embeddings_url, headers: proxy_headers(config.provider))
+            Generate.call(texts: texts, base_url: proxy_embeddings_url, headers: proxy_headers(config.runner))
           end
 
-          mark_success!(config.provider)
+          mark_success!(config.runner)
           return results
         rescue Knowledge::EmbeddingRunner::Error, EmbeddingError => e
           last_error = e
@@ -40,7 +40,7 @@ module Knowledge
             message: "knowledge.embeddings.provider_failed",
             project_id: project.id,
             knowledge_run_id: knowledge_run.id,
-            provider: config.provider,
+            provider: config.runner,
             error_class: e.class.name,
             error: e.message
           )

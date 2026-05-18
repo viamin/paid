@@ -42,7 +42,7 @@ class UserSettingsController < ApplicationController
       :agent_timeout_seconds,
       :marketplace_auto_attach_enabled,
       :max_execution_seconds,
-      :default_agent_provider,
+      :default_agent_runner,
       :container_memory_gb,
       :max_concurrent_runs,
       :container_timeout_seconds,
@@ -69,9 +69,9 @@ class UserSettingsController < ApplicationController
       :max_issues_per_page,
       :max_prs_per_page,
       :fallback_enabled,
-      :fallback_providers,
-      :kb_embedding_provider,
-      :kb_chat_provider,
+      :fallback_runners,
+      :kb_embedding_runner,
+      :kb_chat_runner,
       auto_pick_skip_labels: []
     )
 
@@ -85,13 +85,13 @@ class UserSettingsController < ApplicationController
     end
 
     %i[
-      fallback_providers
-      kb_embedding_fallback_providers
-      kb_chat_fallback_providers
+      fallback_runners
+      kb_embedding_fallback_runners
+      kb_chat_fallback_runners
     ].each do |key|
       next unless raw_params.key?(key)
 
-      permitted[key] = UserSetting.parse_provider_array_param(raw_params[key])
+      permitted[key] = UserSetting.parse_runner_array_param(raw_params[key])
     end
 
     permitted

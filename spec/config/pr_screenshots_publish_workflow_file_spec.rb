@@ -15,6 +15,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   let(:job) { workflow.fetch("jobs").fetch("publish") }
+  let(:checkout_step) { job.fetch("steps").find { |step| step["name"] == "Checkout trusted base-branch code" } }
   let(:resolve_step) { job.fetch("steps").find { |step| step["name"] == "Resolve PR capture run" } }
   let(:resolve_env) { resolve_step.fetch("env") }
   let(:publish_step) do
@@ -27,6 +28,11 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
       "group" => "pr-screenshots-publish-${{ github.event.pull_request.number }}-${{ github.event.action }}",
       "cancel-in-progress" => true
     )
+  end
+
+  it "pins the checkout to the trusted base sha before loading Rails with secrets" do
+    expect(checkout_step).to be_present
+    expect(checkout_step.fetch("with")).to include("ref" => "${{ github.event.pull_request.base.sha }}")
   end
 
   it "queries screenshot capture runs by the PR head sha" do

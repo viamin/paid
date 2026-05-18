@@ -6,8 +6,8 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
   let(:project) { create(:project) }
   let(:provider_configs) do
     [
-      Knowledge::ProviderConfiguration::Result.new(provider: "openrouter"),
-      Knowledge::ProviderConfiguration::Result.new(provider: "openai")
+      Knowledge::RunnerConfiguration::Result.new(runner: "openrouter"),
+      Knowledge::RunnerConfiguration::Result.new(runner: "openai")
     ]
   end
   let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
@@ -73,7 +73,7 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       allow(knowledge_run).to receive(:update!).and_call_original
       generator.call(texts: [ "again" ])
 
-      expect(knowledge_run).not_to have_received(:update!).with(hash_including(final_provider: "openrouter"))
+      expect(knowledge_run).not_to have_received(:update!).with(hash_including(final_runner: "openrouter"))
     end
 
     it "marks the knowledge run failed when every provider fails" do

@@ -86,14 +86,14 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
     it "uses a managed proxy generator when no generator is injected" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
       proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embed_result ], model: "text-embedding-3-large", close: true)
-      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers).with(project: project).and_return([ double(provider: "openai") ])
+      allow(Knowledge::RunnerConfiguration).to receive(:for_embedding_candidate_runners).with(project: project).and_return([ double(runner: "openai") ])
       allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
 
       described_class.call(project: project)
 
       expect(Knowledge::Embeddings::ProxyGenerator).to have_received(:new).with(
         project: project,
-        provider_configs: [ an_object_having_attributes(provider: "openai") ],
+        provider_configs: [ an_object_having_attributes(runner: "openai") ],
         containerize: true
       )
       expect(proxy_generator).to have_received(:close)
@@ -104,19 +104,19 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       create(:knowledge_chunk, :redaction_scanned,
         knowledge_artifact: artifact, project: project, status: "active", embedding_model: nil, content: "second")
       proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embed_result ], model: "text-embedding-3-large", close: true)
-      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers)
+      allow(Knowledge::RunnerConfiguration).to receive(:for_embedding_candidate_runners)
         .with(project: project)
-        .and_return([ double(provider: "openai") ])
+        .and_return([ double(runner: "openai") ])
       allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
 
       described_class.call(project: project, batch_size: 1)
 
-      expect(Knowledge::ProviderConfiguration).to have_received(:for_embedding_candidate_providers).with(project: project).once
+      expect(Knowledge::RunnerConfiguration).to have_received(:for_embedding_candidate_runners).with(project: project).once
     end
 
     it "logs and skips projects without embedding providers" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
-      allow(Knowledge::ProviderConfiguration).to receive(:for_embedding_candidate_providers)
+      allow(Knowledge::RunnerConfiguration).to receive(:for_embedding_candidate_runners)
         .with(project: project)
         .and_return([])
       allow(Rails.logger).to receive(:info)

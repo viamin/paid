@@ -36,7 +36,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
         :effective_prompt_for,
         agent_run: agent_run,
         base_prompt: "Base prompt",
-        provider_key: "codex"
+        runner_key: "codex"
       )
 
       expect(prompt).to eq("Rendered prompt")
@@ -48,7 +48,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     end
   end
 
-  describe "#synchronize_marketplace_mcp_for_provider!" do
+  describe "#synchronize_marketplace_mcp_for_runner!" do
     let(:activity) { described_class.new }
     let(:attachments_relation) do
       Class.new do
@@ -57,11 +57,13 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     end
     let(:agent_run) do
       Struct.new(
+        :id,
         :agent_run_marketplace_entries,
         :mcp_server_snapshot,
         :mcp_provisioned_servers,
         keyword_init: true
       ).new(
+        id: 1,
         agent_run_marketplace_entries: attachments,
         mcp_server_snapshot: initial_snapshot,
         mcp_provisioned_servers: initial_provisioned_servers
@@ -92,15 +94,15 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
       allow(provisioner).to receive(:provision)
       allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return("paid-network")
-      allow(activity).to receive(:provider_entry_for).and_return(nil)
+      allow(activity).to receive(:runner_entry_for).and_return(nil)
     end
 
     it "re-renders and re-provisions marketplace MCP servers for the provider attempt" do
       activity.send(
-        :synchronize_marketplace_mcp_for_provider!,
+        :synchronize_marketplace_mcp_for_runner!,
         agent_run: agent_run,
-        provider_candidate: "codex",
-        provider: "codex",
+        runner_candidate: "codex",
+        runner: "codex",
         user: nil
       )
 
@@ -112,10 +114,10 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       allow(MarketplaceEntries::RerenderForRun).to receive(:call)
 
       activity.send(
-        :synchronize_marketplace_mcp_for_provider!,
+        :synchronize_marketplace_mcp_for_runner!,
         agent_run: agent_run,
-        provider_candidate: "codex",
-        provider: "codex",
+        runner_candidate: "codex",
+        runner: "codex",
         user: nil
       )
 
@@ -125,10 +127,10 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     it "caches marketplace attachment existence across provider retries" do
       2.times do
         activity.send(
-          :synchronize_marketplace_mcp_for_provider!,
+          :synchronize_marketplace_mcp_for_runner!,
           agent_run: agent_run,
-          provider_candidate: "codex",
-          provider: "codex",
+          runner_candidate: "codex",
+          runner: "codex",
           user: nil
         )
       end
@@ -140,7 +142,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
   describe "#command_env_for" do
     let(:activity) { described_class.new }
     let(:command_context_class) do
-      Struct.new(:provider_candidate, :provider, :user, keyword_init: true)
+      Struct.new(:runner_candidate, :runner, :user, keyword_init: true)
     end
     let(:provider_entry) do
       double(
@@ -155,14 +157,14 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     let(:direct_outbound_exec_env) { { "OPENROUTER_API_KEY" => "secret" } }
     let(:api_key) { true }
     let(:command_context) do
-      command_context_class.new(provider_candidate: "fallback", provider: "codex", user: nil)
+      command_context_class.new(runner_candidate: "fallback", runner: "codex", user: nil)
     end
     let(:marketplace_env) { { "MARKETPLACE_FLAG" => "enabled" } }
 
     before do
       allow(activity).to receive_messages(
         marketplace_runtime_env: marketplace_env,
-        provider_entry_for: provider_entry
+        runner_entry_for: provider_entry
       )
       allow(activity).to receive(:api_key_command_env).with(provider_entry).and_return(
         "PAID_PROVIDER_ID" => "42"
@@ -189,7 +191,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
         direct_outbound_exec_env: {},
         api_key?: false
       )
-      allow(activity).to receive(:provider_entry_for).and_return(
+      allow(activity).to receive(:runner_entry_for).and_return(
         first_provider,
         second_provider
       )

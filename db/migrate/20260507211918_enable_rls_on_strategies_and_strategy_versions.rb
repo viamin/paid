@@ -2,17 +2,21 @@
 
 class EnableRlsOnStrategiesAndStrategyVersions < ActiveRecord::Migration[8.1]
   def up
-    %w[strategies strategy_versions].each { |table| drop_policies(table) }
+    safety_assured do
+      %w[strategies strategy_versions].each { |table| drop_policies(table) }
 
-    enable_read_write_policy("strategies", strategy_read_condition, strategy_write_condition)
-    enable_read_write_policy("strategy_versions", strategy_version_read_condition, strategy_version_write_condition)
+      enable_read_write_policy("strategies", strategy_read_condition, strategy_write_condition)
+      enable_read_write_policy("strategy_versions", strategy_version_read_condition, strategy_version_write_condition)
+    end
   end
 
   def down
-    %w[strategies strategy_versions].each do |table|
-      drop_policies(table)
-      execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
-      execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
+    safety_assured do
+      %w[strategies strategy_versions].each do |table|
+        drop_policies(table)
+        execute "ALTER TABLE #{quote_table_name(table)} NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{quote_table_name(table)} DISABLE ROW LEVEL SECURITY"
+      end
     end
   end
 

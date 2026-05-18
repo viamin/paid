@@ -1,0 +1,175 @@
+<% content_for(:title) { "Runners - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-gray-900">Runners</h1>
+      <p class="mt-1 text-sm text-gray-500">Configure runners available for agent runs and fallback routing.</p>
+    </div>
+    <% if @addable_runner_options.any? %>
+      <%= link_to "Add Runner", new_runner_path, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    <% else %>
+      <div class="text-right">
+        <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-500">
+          No More Runners Yet
+        </span>
+        <p class="mt-1 text-xs text-gray-500">Ship more runner CLIs in <code>paid-agent</code> to add them here.</p>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="overflow-x-auto rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Agent Runs</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Usage (7d)</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback Rate</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Rate Limits</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white">
+        <% @runners.each do |runner| %>
+          <tr
+            data-controller="test-agent"
+            data-test-agent-url-value="<%= test_agent_runner_path(runner) %>"
+            data-test-agent-csrf-token-value="<%= form_authenticity_token %>"
+          >
+            <td class="px-4 py-3 text-sm font-medium text-gray-900">
+              <%= runner.display_name %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% if runner.subscription? %>
+                <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Subscription</span>
+              <% else %>
+                <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">API Key</span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= runner.enabled_for_agent_runs? ? "Enabled" : "Disabled" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% if runner.api_key? && runner.rate_limit_fallback? %>
+                <%= runner.enabled_for_fallback? ? "Enabled (rate-limit only)" : "Disabled (rate-limit only)" %>
+              <% else %>
+                <%= runner.enabled_for_fallback? ? "Enabled" : "Disabled" %>
+              <% end %>
+            </td>
+            <% stats = @runner_stats_by_id[runner.id] %>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% if stats && stats[:runs_7d] > 0 %>
+                <span class="font-medium"><%= number_to_currency(stats[:cost_cents_7d] / 100.0) %></span>
+                <span class="text-gray-500">&middot;</span>
+                <%= format_token_count(stats[:tokens_7d]) %> tokens
+                <span class="text-gray-500">&middot;</span>
+                <%= stats[:runs_7d] %> runs
+              <% else %>
+                <span class="text-gray-400">No usage</span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% if stats && stats[:fallback_total] > 0 %>
+                <%= stats[:fallback_rate] %>%
+                <span class="text-xs text-gray-500">(<%= stats[:fallback_switched] %> of <%= stats[:fallback_total] %>)</span>
+              <% else %>
+                <span class="text-gray-400">&mdash;</span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% if stats && stats[:rate_limit_events_7d] > 0 %>
+                <span class="text-orange-700"><%= stats[:rate_limit_events_7d] %> events</span>
+              <% else %>
+                <span class="text-gray-400">0</span>
+              <% end %>
+            </td>
+            <td data-test-agent-target="status" class="px-4 py-3 text-sm">
+              <% state = @runner_states[runner.state_key] %>
+              <% state ||= @runner_states[runner.runner_key] if runner.subscription? %>
+              <% if state&.rate_limited? %>
+                <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
+                  Rate Limited
+                </span>
+                <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(state.rate_limited_until, format: :relative) %></p>
+              <% elsif state&.circuit_open? %>
+                <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                  Circuit Open
+                </span>
+              <% else %>
+                <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                  Available
+                </span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-right text-sm">
+              <div class="inline">
+                <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Agent</button>
+                <div data-test-agent-target="result"></div>
+              </div>
+              <%= link_to "Edit", edit_runner_path(runner), class: "ml-3 font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= button_to "Delete", runner_path(runner), method: :delete, class: "ml-3 inline text-red-600 hover:text-red-500", form: { class: "inline" } %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <%= render "usage_stats", usage_stats: @usage_stats, runners: @runners, runner_stats_by_id: @runner_stats_by_id %>
+
+  <div class="mt-8">
+    <%= render "settings",
+          user_setting: @user_setting,
+          default_runner_identifier: @default_runner_identifier,
+          enabled_agent_runners: @enabled_agent_runners,
+          runner_labels: @runner_labels,
+          run_enabled_runners: @run_enabled_runners,
+          goal_runner_labels: @goal_runner_labels,
+          explicit_goal_default_runners: @explicit_goal_default_runners,
+          runner_states: @runner_states,
+          fallback_candidate_runners: @fallback_candidate_runners,
+          saved_fallback_runner_tokens: @saved_fallback_runner_tokens,
+          subscription_runner_identifiers: @subscription_runner_identifiers,
+          runner_state_aliases: @runner_state_aliases %>
+  </div>
+
+  <div class="mt-8 rounded-lg border border-sky-200 bg-sky-50 p-4">
+    <h2 class="text-base font-semibold text-sky-950">Runner Auth Setup</h2>
+    <p class="mt-1 text-sm text-sky-900">
+      By default, Test Agent uses the same containerized auth path as real runs. For Codex and Gemini when using Paid-managed proxy keys, it can instead use the agent-harness auth path. Copilot real runs stay on the container path and copy GitHub Copilot CLI state from <code>~/.copilot</code> into the agent container at runtime when subscription auth is configured.
+    </p>
+
+    <div class="mt-4 space-y-3" data-runner-auth-instructions>
+      <% runner_auth_instruction_blocks.each do |instruction| %>
+        <details class="rounded-md bg-white/80 shadow-sm ring-1 ring-sky-100" data-runner-instruction-key="<%= instruction[:runner_key] %>">
+          <summary class="cursor-pointer list-none px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900"><%= instruction[:title] %></h3>
+                <p class="mt-1 text-xs text-gray-600"><%= instruction[:summary] %></p>
+              </div>
+              <% if instruction[:fallback] %>
+                <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Generic Checklist
+                </span>
+              <% end %>
+            </div>
+          </summary>
+          <div class="border-t border-sky-100 px-4 py-3">
+            <ul class="list-disc space-y-1 pl-5 text-xs text-gray-700">
+              <% instruction[:items].each do |item| %>
+                <li><%= sanitize(item, tags: %w[code]) %></li>
+              <% end %>
+            </ul>
+          </div>
+        </details>
+      <% end %>
+    </div>
+
+    <p class="mt-4 text-xs text-sky-900">
+      After changing env vars or credential mounts, restart the <code>web</code> and <code>worker</code> services before testing again. See <a href="https://github.com/viamin/paid#provider-auth-setup" class="font-medium underline">README: Runner Auth Setup</a> for the full checklist.
+    </p>
+  </div>
+</div>

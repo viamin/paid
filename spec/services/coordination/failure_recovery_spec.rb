@@ -5,8 +5,8 @@ require "rails_helper"
 RSpec.describe Coordination::FailureRecovery do
   let(:project) { create(:project) }
   let(:workflow_id) { "recovery-workflow-#{SecureRandom.hex(4)}" }
-  let(:anthropic_attempt) { { "provider" => "anthropic", "success" => false } }
-  let(:openai_attempt) { { "provider" => "openai", "success" => false } }
+  let(:anthropic_attempt) { { "runner" => "anthropic", "success" => false } }
+  let(:openai_attempt) { { "runner" => "openai", "success" => false } }
 
   describe ".call" do
     context "with a rate-limited agent run" do
@@ -16,12 +16,12 @@ RSpec.describe Coordination::FailureRecovery do
           error_message: "RateLimit: exceeded quota")
       end
 
-      it "classifies as rate_limit and selects retry_alternate_provider" do
+      it "classifies as rate_limit and selects retry_alternate_runner" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_success
         expect(result.failure_category).to eq("rate_limit")
-        expect(result.chosen_action).to eq("retry_alternate_provider")
+        expect(result.chosen_action).to eq("retry_alternate_runner")
       end
 
       it "persists the classification" do
@@ -30,7 +30,7 @@ RSpec.describe Coordination::FailureRecovery do
         classification = result.classification
         expect(classification).to be_persisted
         expect(classification.failure_category).to eq("rate_limit")
-        expect(classification.chosen_action).to eq("retry_alternate_provider")
+        expect(classification.chosen_action).to eq("retry_alternate_runner")
         expect(classification.action_status).to eq("pending")
         expect(classification.project).to eq(project)
         expect(classification.agent_run).to eq(agent_run)
@@ -47,12 +47,12 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("applied")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "policy_source" => "defaults",
           "policy_key" => "failure_recovery"
         )
         expect(decision.outputs).to include(
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "action_status" => "pending",
           "policy_source" => "defaults"
         )
@@ -74,11 +74,11 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("failed")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "policy_source" => "defaults"
         )
         expect(decision.outputs).to include(
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "error_class" => "ActiveRecord::RecordInvalid"
         )
       end
@@ -162,29 +162,29 @@ RSpec.describe Coordination::FailureRecovery do
       let(:agent_run) do
         create(:agent_run, :timeout, project: project,
           error_message: "Agent execution timed out",
-          providers_attempted: [ anthropic_attempt ])
+          runners_attempted: [ anthropic_attempt ])
       end
 
-      it "classifies as timeout and selects retry_same_provider" do
+      it "classifies as timeout and selects retry_same_runner" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_success
         expect(result.failure_category).to eq("timeout")
-        expect(result.chosen_action).to eq("retry_same_provider")
+        expect(result.chosen_action).to eq("retry_same_runner")
       end
 
-      it "uses the last attempted provider when final_provider is unavailable" do
+      it "uses the last attempted runner when final_runner is unavailable" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result.classification.action_params["provider"]).to eq("anthropic")
+        expect(result.classification.action_params["runner"]).to eq("anthropic")
       end
 
-      it "falls back to the effective provider when no provider metadata was recorded" do
-        agent_run.update!(providers_attempted: [], final_provider: nil, agent_type: "codex")
+      it "falls back to the effective runner when no runner metadata was recorded" do
+        agent_run.update!(runners_attempted: [], final_runner: nil, agent_type: "codex")
 
         result = described_class.call(agent_run: agent_run)
 
-        expect(result.classification.action_params["provider"]).to eq("codex")
+        expect(result.classification.action_params["runner"]).to eq("codex")
       end
 
       it "classifies from the enqueued snapshot even if the row was later retried" do
@@ -195,13 +195,13 @@ RSpec.describe Coordination::FailureRecovery do
           run_snapshot: {
             status: "timeout",
             error_message: "Agent execution timed out",
-            providers_attempted: [ anthropic_attempt ]
+            runners_attempted: [ anthropic_attempt ]
           }
         )
 
         expect(result).to be_success
         expect(result.failure_category).to eq("timeout")
-        expect(result.chosen_action).to eq("retry_same_provider")
+        expect(result.chosen_action).to eq("retry_same_runner")
 
         decision = OrchestrationDecision.last
         expect(decision.decision_type).to eq("retry")
@@ -218,21 +218,21 @@ RSpec.describe Coordination::FailureRecovery do
         create(:agent_run, :failed, project: project,
           parent_workflow_id: workflow_id,
           error_message: "AllProvidersExhausted: no available providers",
-          providers_attempted: [ anthropic_attempt, openai_attempt ])
+          runners_attempted: [ anthropic_attempt, openai_attempt ])
       end
 
       it "classifies as provider_error" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_success
-        expect(result.failure_category).to eq("provider_error")
-        expect(result.chosen_action).to eq("retry_alternate_provider")
+        expect(result.failure_category).to eq("runner_error")
+        expect(result.chosen_action).to eq("retry_alternate_runner")
       end
 
-      it "includes providers_attempted in action_params" do
+      it "includes attempted runners in action_params" do
         result = described_class.call(agent_run: agent_run)
 
-        expect(result.classification.action_params["exclude_providers"]).to eq(%w[anthropic openai])
+        expect(result.classification.action_params["exclude_runners"]).to eq(%w[anthropic openai])
       end
     end
 
@@ -371,9 +371,9 @@ RSpec.describe Coordination::FailureRecovery do
       let(:agent_run) do
         create(:agent_run, :failed, project: project,
           error_message: "AllProvidersExhausted",
-          final_provider: "anthropic",
-          providers_attempted: [ anthropic_attempt, openai_attempt ],
-          provider_switches: 1)
+          final_runner: "anthropic",
+          runners_attempted: [ anthropic_attempt, openai_attempt ],
+          runner_switches: 1)
       end
 
       it "captures structured failure context" do
@@ -381,9 +381,9 @@ RSpec.describe Coordination::FailureRecovery do
         ctx = result.classification.failure_context
 
         expect(ctx["error_message"]).to eq("AllProvidersExhausted")
-        expect(ctx["final_provider"]).to eq("anthropic")
-        expect(ctx["providers_attempted"]).to eq([ anthropic_attempt, openai_attempt ])
-        expect(ctx["provider_switches"]).to eq(1)
+        expect(ctx["final_runner"]).to eq("anthropic")
+        expect(ctx["runners_attempted"]).to eq([ anthropic_attempt, openai_attempt ])
+        expect(ctx["runner_switches"]).to eq(1)
         expect(ctx["policy_source"]).to eq("defaults")
       end
     end

@@ -12,17 +12,19 @@ class DashboardController < ApplicationController
     @goal_filter = valid_goal_filter
     @live_stats = Dashboard::LiveStats.call(account: current_account)
     @queue_preview = Dashboard::QueuePreview.call(user: current_user)
-    @active_runs = live_agent_runs.active.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
+    @active_runs = live_agent_runs.active.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order("agent_runs.created_at DESC")
       .limit(20)
-    AgentRun.preload_final_provider_records(@active_runs)
+    AgentRun.preload_final_runner_records(@active_runs)
     AgentRun.preload_source_pull_requests(@active_runs)
     AgentRun.preload_created_issue_records(@active_runs)
-    @paused_runs = live_agent_runs.paused.includes(:provider, :issue, :model_selection, project: [ :created_by, :account ])
+    @paused_runs = live_agent_runs.paused.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order(paused_at: :desc, created_at: :desc)
       .limit(20)
       .to_a
-    AgentRun.preload_final_provider_records(@paused_runs)
+    AgentRun.preload_final_runner_records(@paused_runs)
+    AgentRun.preload_source_pull_requests(@paused_runs)
+    AgentRun.preload_created_issue_records(@paused_runs)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)
@@ -71,9 +73,9 @@ class DashboardController < ApplicationController
     render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: @knowledge_stats }
   end
 
-  def provider_health
-    @provider_health = Dashboard::ProviderHealth.call(account: current_account)
-    render partial: "dashboard/provider_health", locals: @provider_health
+  def runner_health
+    @runner_health = Dashboard::RunnerHealth.call(account: current_account)
+    render partial: "dashboard/runner_health", locals: @runner_health
   end
 
   def queue_health

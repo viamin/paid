@@ -24,15 +24,15 @@ module Issues
       end
 
       goal = seeded_goal
-      provider = resolve_provider(goal)
-      unless provider
-        log_no_provider
+      runner = resolve_runner(goal)
+      unless runner
+        log_no_runner
         return nil
       end
 
       run = blocking_runs(goal).find_or_create_by!(project: project, issue: issue, goal: goal) do |agent_run|
-        agent_run.provider = provider
-        agent_run.agent_type = Provider.agent_type_for(provider.provider_key)
+        agent_run.runner = runner
+        agent_run.agent_type = Runner.agent_type_for(runner.runner_key)
         agent_run.status = "queued"
         agent_run.trigger_type = "automatic"
         agent_run.auto_pick = true
@@ -71,9 +71,9 @@ module Issues
         .exists?
     end
 
-    def resolve_provider(goal)
-      provider_id, = AgentRuns::ProviderResolver.call(project: project, goal: goal)
-      Provider.kept_only.find_by(id: provider_id) if provider_id
+    def resolve_runner(goal)
+      runner_id, = AgentRuns::RunnerResolver.call(project: project, goal: goal)
+      Runner.kept_only.find_by(id: runner_id) if runner_id
     end
 
     def seeded_goal
@@ -100,8 +100,8 @@ module Issues
       Rails.logger.info(log_context("enqueue_eligible.project_deferred"))
     end
 
-    def log_no_provider
-      Rails.logger.warn(log_context("enqueue_eligible.no_provider"))
+    def log_no_runner
+      Rails.logger.warn(log_context("enqueue_eligible.no_runner"))
     end
 
     def log_context(message, extra = {})

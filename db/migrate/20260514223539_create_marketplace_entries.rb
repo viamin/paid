@@ -51,10 +51,12 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_reference :marketplace_entries,
-      :current_version,
-      foreign_key: { to_table: :marketplace_entry_versions, on_delete: :nullify },
-      comment: "Current active content snapshot for this marketplace entry."
+    safety_assured do
+      add_reference :marketplace_entries,
+        :current_version,
+        foreign_key: { to_table: :marketplace_entry_versions, on_delete: :nullify },
+        comment: "Current active content snapshot for this marketplace entry."
+    end
 
     add_index :marketplace_entries, [ :account_id, :entry_type, :status ],
       name: "idx_marketplace_entries_lookup"
@@ -76,22 +78,28 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
   end
 
   def down
-    %w[
-      agent_run_marketplace_entries
-      marketplace_entry_rules
-      marketplace_entry_versions
-      marketplace_entries
-    ].each do |table|
-      next unless table_exists?(table)
+    safety_assured do
+      %w[
+        agent_run_marketplace_entries
+        marketplace_entry_rules
+        marketplace_entry_versions
+        marketplace_entries
+      ].each do |table|
+        next unless table_exists?(table)
 
-      execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
-      execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
-      execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
+        execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
+        execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
+      end
     end
 
     if column_exists?(:marketplace_entries, :current_version_id)
-      remove_foreign_key :marketplace_entries, column: :current_version_id
-      remove_reference :marketplace_entries, :current_version
+      safety_assured do
+        if foreign_key_exists?(:marketplace_entries, column: :current_version_id)
+          remove_foreign_key :marketplace_entries, column: :current_version_id
+        end
+        remove_reference :marketplace_entries, :current_version
+      end
     end
 
     drop_table :agent_run_marketplace_entries, if_exists: true
@@ -103,6 +111,12 @@ class CreateMarketplaceEntries < ActiveRecord::Migration[8.1]
   private
 
   def enable_row_level_security
+    safety_assured do
+      enable_row_level_security_statements
+    end
+  end
+
+  def enable_row_level_security_statements
     execute <<~SQL
       ALTER TABLE marketplace_entries ENABLE ROW LEVEL SECURITY;
       ALTER TABLE marketplace_entries FORCE ROW LEVEL SECURITY;

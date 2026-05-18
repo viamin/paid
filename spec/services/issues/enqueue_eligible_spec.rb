@@ -13,13 +13,13 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     @issue_class ||= Struct.new(:id, :github_number)
   end
 
-  def provider_class
-    @provider_class ||= Struct.new(:id, :provider_key)
+  def runner_class
+    @runner_class ||= Struct.new(:id, :runner_key)
   end
 
   def run_class
     @run_class ||= Struct.new(:id, :previously_new_record?) do
-      attr_accessor :provider, :agent_type, :status, :trigger_type, :auto_pick, :goal
+      attr_accessor :runner, :agent_type, :status, :trigger_type, :auto_pick, :goal
     end
   end
 
@@ -29,7 +29,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
   let(:create_pr_blocking_runs) { instance_double(ActiveRecord::Relation) }
   let(:analyze_issue_blocking_runs) { instance_double(ActiveRecord::Relation) }
-  let(:provider) { instance_double(provider_class, id: 5, provider_key: "claude") }
+  let(:runner) { instance_double(runner_class, id: 5, runner_key: "claude") }
   let(:service) { described_class.new(issue, project: project) }
 
   before do
@@ -40,7 +40,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
     allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)
     allow(service).to receive(:blocking_runs).with("analyze_issue").and_return(analyze_issue_blocking_runs)
-    allow(service).to receive(:resolve_provider).and_return(provider)
+    allow(service).to receive(:resolve_runner).and_return(runner)
   end
 
   def build_run(id:, previously_new_record:)
@@ -63,7 +63,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     expect(create_pr_blocking_runs).to have_received(:find_or_create_by!).with(
       project: project, issue: issue, goal: "create_pr"
     )
-    expect(run.provider).to eq(provider)
+    expect(run.runner).to eq(runner)
     expect(run.agent_type).to eq("claude_code")
     expect(run.status).to eq("queued")
     expect(run.trigger_type).to eq("automatic")
@@ -75,7 +75,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
   it "resolves the provider for analyze_issue when auto_enhance is enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
-    allow(service).to receive(:resolve_provider).with("analyze_issue").and_return(provider)
+    allow(service).to receive(:resolve_runner).with("analyze_issue").and_return(runner)
     allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!).and_return(
       instance_double(run_class, id: 99, previously_new_record?: true)
     )
@@ -83,7 +83,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     service.call
 
-    expect(service).to have_received(:resolve_provider).with("analyze_issue")
+    expect(service).to have_received(:resolve_runner).with("analyze_issue")
   end
 
   it "returns nil when DefaultCandidateSource excludes the issue for paid_state reasons" do
@@ -132,15 +132,15 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     expect { service.call }.to raise_error(ActiveRecord::RecordNotUnique)
   end
 
-  it "returns nil and warns when no provider can be resolved" do
-    allow(service).to receive(:resolve_provider).with("create_pr").and_return(nil)
+  it "returns nil and warns when no runner can be resolved" do
+    allow(service).to receive(:resolve_runner).with("create_pr").and_return(nil)
     allow(Rails.logger).to receive(:warn)
 
     result = service.call
 
     expect(result).to be_nil
     expect(Rails.logger).to have_received(:warn).with(
-      hash_including(message: "enqueue_eligible.no_provider", issue_id: issue.id, project_id: project.id)
+      hash_including(message: "enqueue_eligible.no_runner", issue_id: issue.id, project_id: project.id)
     )
   end
 

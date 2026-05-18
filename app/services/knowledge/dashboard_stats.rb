@@ -147,20 +147,20 @@ module Knowledge
     def build_provider_health
       return empty_provider_health unless user_setting && owner
 
-      embedding_providers = configured_providers_for(:embedding)
-      chat_providers = configured_providers_for(:chat)
-      provider_states = owner.provider_states
-        .where(provider_name: (embedding_providers + chat_providers).uniq)
-        .index_by(&:provider_name)
+      embedding_runners = configured_runners_for(:embedding)
+      chat_runners = configured_runners_for(:chat)
+      runner_states = owner.runner_states
+        .where(runner_name: (embedding_runners + chat_runners).uniq)
+        .index_by(&:runner_name)
 
-      embedding = embedding_providers.map { |provider| provider_status(provider, provider_states) }
-      chat = chat_providers.map { |provider| provider_status(provider, provider_states) }
+      embedding = embedding_runners.map { |runner| runner_status(runner, runner_states) }
+      chat = chat_runners.map { |runner| runner_status(runner, runner_states) }
 
       {
         embedding: embedding,
         chat: chat,
-        embedding_available: embedding.any? { |provider| provider[:available] },
-        chat_available: chat.any? { |provider| provider[:available] }
+        embedding_available: embedding.any? { |runner| runner[:available] },
+        chat_available: chat.any? { |runner| runner[:available] }
       }
     end
 
@@ -173,41 +173,41 @@ module Knowledge
       }
     end
 
-    def configured_providers_for(operation)
+    def configured_runners_for(operation)
       return [] unless user_setting
 
-      providers =
+      runners =
         case operation.to_sym
         when :embedding
-          [ user_setting.kb_embedding_provider, *Array(user_setting.kb_embedding_fallback_providers) ]
+          [ user_setting.kb_embedding_runner, *Array(user_setting.kb_embedding_fallback_runners) ]
         when :chat
-          [ user_setting.kb_chat_provider, *Array(user_setting.kb_chat_fallback_providers) ]
+          [ user_setting.kb_chat_runner, *Array(user_setting.kb_chat_fallback_runners) ]
         else
           []
         end
 
-      providers.filter_map { |provider| provider.to_s.strip.downcase.presence }
+      runners.filter_map { |runner| runner.to_s.strip.downcase.presence }
         .uniq
-        .select { |provider| supported_providers_for(operation).include?(provider) }
+        .select { |runner| supported_runners_for(operation).include?(runner) }
     end
 
-    def supported_providers_for(operation)
+    def supported_runners_for(operation)
       case operation.to_sym
       when :embedding
-        UserSetting::KB_EMBEDDING_PROVIDERS
+        UserSetting::KB_EMBEDDING_RUNNERS
       when :chat
-        UserSetting::KB_CHAT_PROVIDERS
+        UserSetting::KB_CHAT_RUNNERS
       else
         []
       end
     end
 
-    def provider_status(provider, provider_states)
-      state = provider_states[provider]
+    def runner_status(runner, runner_states)
+      state = runner_states[runner]
       state.check_circuit_recovery!(timeout: user_setting.circuit_breaker_timeout_seconds) if state
 
       {
-        provider: provider,
+        runner: runner,
         circuit_state: state&.circuit_state || "closed",
         rate_limited: state&.rate_limited? || false,
         rate_limited_until: state&.rate_limited_until,
@@ -225,11 +225,11 @@ module Knowledge
 
     def build_pipeline_metrics
       operation_summaries = pipeline_operation_summaries.index_by { |summary| summary[:operation_type] }
-      distributions = pipeline_provider_distribution.group_by { |summary| summary[:operation_type] }
+      distributions = pipeline_runner_distribution.group_by { |summary| summary[:operation_type] }
 
       KnowledgeRun::OPERATION_TYPES.index_with do |operation_type|
         summary = operation_summaries[operation_type]
-        provider_distribution = Array(distributions[operation_type]).sort_by { |provider| [ -provider[:run_count], provider[:provider] ] }
+        runner_distribution = Array(distributions[operation_type]).sort_by { |runner| [ -runner[:run_count], runner[:runner] ] }
 
         {
           lookback_days: PIPELINE_LOOKBACK / 1.day,
@@ -239,7 +239,7 @@ module Knowledge
           failed_runs: summary&.fetch(:failed_runs, 0) || 0,
           success_rate: summary&.fetch(:success_rate, 0.0) || 0.0,
           avg_duration_seconds: summary&.fetch(:avg_duration_seconds, 0.0) || 0.0,
-          provider_distribution: provider_distribution
+          runner_distribution: runner_distribution
         }
       end
     end
@@ -268,7 +268,7 @@ module Knowledge
         end
     end
 
-    def pipeline_provider_distribution
+    def pipeline_runner_distribution
       pipeline_runs
         .group(:operation_type, Arel.sql(effective_provider_sql))
         .pluck(
@@ -279,10 +279,10 @@ module Knowledge
           Arel.sql("COUNT(*) FILTER (WHERE knowledge_runs.status = 'completed')"),
           Arel.sql("AVG(EXTRACT(EPOCH FROM (knowledge_runs.updated_at - knowledge_runs.created_at)))")
         )
-        .map do |operation_type, provider, run_count, finished_runs, successful_runs, avg_duration_seconds|
+        .map do |operation_type, runner, run_count, finished_runs, successful_runs, avg_duration_seconds|
           {
             operation_type: operation_type,
-            provider: provider,
+            runner: runner,
             run_count: run_count,
             success_rate: percentage(successful_runs, finished_runs),
             avg_duration_seconds: avg_duration_seconds.to_f.round(2)

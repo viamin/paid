@@ -1809,7 +1809,7 @@ RSpec.describe Project do
     it "returns true when the configured knowledge embedding provider has a compatible key" do
       project = create(:project)
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [])
+      owner.settings.update!(kb_embedding_runner: "openrouter", kb_embedding_fallback_runners: [])
       create(:provider_api_key, user: owner, api_service_type: "openrouter")
 
       expect(project.semantic_search_available?).to be true

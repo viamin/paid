@@ -2,7 +2,7 @@
 
 class FailureClassification < ApplicationRecord
   FAILURE_CATEGORIES = %w[
-    provider_error
+    runner_error
     timeout
     auth_failure
     rate_limit
@@ -14,8 +14,8 @@ class FailureClassification < ApplicationRecord
   ].freeze
 
   ACTIONS = %w[
-    retry_same_provider
-    retry_alternate_provider
+    retry_same_runner
+    retry_alternate_runner
     escalate_model
     cancel_workflow
     pause_and_notify

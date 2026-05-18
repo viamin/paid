@@ -1,6 +1,6 @@
 <% show_project = local_assigns.fetch(:show_project, false) %>
 <% runs = agent_runs.to_a %>
-<% provider_displays = agent_run_provider_displays(runs) %>
+<% runner_displays = agent_run_runner_displays(runs) %>
 <% if runs.any? %>
   <div class="mt-4 flow-root">
     <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
@@ -16,7 +16,7 @@
                   Priority
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  Provider
+                  Runner
                 </th>
                 <% if show_project %>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
@@ -48,7 +48,7 @@
                     <%= agent_run_priority_badge(run) %>
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <%= agent_run_provider_display(run, provider_displays) %>
+                    <%= agent_run_runner_display(run, runner_displays) %>
                   </td>
                   <% if show_project %>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">

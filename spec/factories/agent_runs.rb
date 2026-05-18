@@ -96,7 +96,7 @@ FactoryBot.define do
       started_at { 10.minutes.ago }
       completed_at { Time.current }
       duration_seconds { 600 }
-      error_message { "All providers rate limited: claude_code" }
+      error_message { "All runners rate limited: claude_code" }
       rate_limited_until { 2.hours.from_now }
     end
 

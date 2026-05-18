@@ -50,84 +50,84 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
-      it "aligns the Provider header with provider values in each row" do
+      it "aligns the Runner header with runner values in each row" do
         owner = project.effective_owner
-        configured_provider = owner.providers.create!(
-          provider_key: "cursor",
+        configured_runner = owner.runners.create!(
+          runner_key: "cursor",
           auth_type: "subscription",
           name: "Cursor Stable",
           enabled_for_agent_runs: true
         )
-        run = create(:agent_run, :with_custom_prompt, project: project, provider: configured_provider,
-          final_provider: configured_provider.routing_key)
+        run = create(:agent_run, :with_custom_prompt, project: project, runner: configured_runner,
+          final_runner: configured_runner.routing_key)
 
         get agent_runs_path
 
-        provider_cell = cell_for_run(parsed_html, run, "Provider")
+        runner_cell = cell_for_run(parsed_html, run, "Runner")
 
-        expect(provider_cell.text.squish).to eq(configured_provider.display_name)
+        expect(runner_cell.text.squish).to eq(configured_runner.display_name)
       end
 
-      it "renders exactly one Provider column" do
+      it "renders exactly one Runner column" do
         run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr")
 
         get agent_runs_path
 
         document = parsed_html
-        provider_headers = document.css("thead th").select { |header| header.text.squish == "Provider" }
-        provider_cells = document.css("tbody tr##{ActionView::RecordIdentifier.dom_id(run)} td")
-          .select { |cell| cell.text.squish == Provider.display_name_for(run.effective_provider) }
+        runner_headers = document.css("thead th").select { |header| header.text.squish == "Runner" }
+        runner_cells = document.css("tbody tr##{ActionView::RecordIdentifier.dom_id(run)} td")
+          .select { |cell| cell.text.squish == Runner.display_name_for(run.effective_runner) }
 
-        expect(provider_headers.size).to eq(1)
-        expect(provider_cells.size).to eq(1)
+        expect(runner_headers.size).to eq(1)
+        expect(runner_cells.size).to eq(1)
       end
 
-      it "shows a deleted-provider fallback label in the Provider column" do
-        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
-          final_provider: "provider:999999")
+      it "shows a deleted-runner fallback label in the Runner column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, runner: nil,
+          final_runner: "runner:999999")
 
         get agent_runs_path
 
-        provider_cell = cell_for_run(parsed_html, run, "Provider")
+        runner_cell = cell_for_run(parsed_html, run, "Runner")
 
-        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+        expect(runner_cell.text.squish).to eq(ApplicationHelper::MISSING_RUNNER_ENTRY_LABEL)
       end
 
-      it "shows the deleted-provider fallback label when the final routed provider is missing" do
-        initial_provider = project.effective_owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-        run = create(:agent_run, :with_custom_prompt, project: project, provider: initial_provider,
-          final_provider: "provider:999999")
+      it "shows the deleted-runner fallback label when the final routed runner is missing" do
+        initial_runner = project.effective_owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        run = create(:agent_run, :with_custom_prompt, project: project, runner: initial_runner,
+          final_runner: "runner:999999")
 
         get agent_runs_path
 
-        provider_cell = cell_for_run(parsed_html, run, "Provider")
+        runner_cell = cell_for_run(parsed_html, run, "Runner")
 
-        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+        expect(runner_cell.text.squish).to eq(ApplicationHelper::MISSING_RUNNER_ENTRY_LABEL)
       end
 
-      it "does not show another owner's routed provider label in the Provider column" do
+      it "does not show another owner's routed runner label in the Runner column" do
         other_user = create(:user)
-        other_provider = create(:provider, user: other_user, provider_key: "cursor", name: "Other Owner Cursor")
-        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
-          final_provider: other_provider.routing_key)
+        other_runner = create(:runner, user: other_user, runner_key: "cursor", name: "Other Owner Cursor")
+        run = create(:agent_run, :with_custom_prompt, project: project, runner: nil,
+          final_runner: other_runner.routing_key)
 
         get agent_runs_path
 
-        provider_cell = cell_for_run(parsed_html, run, "Provider")
+        runner_cell = cell_for_run(parsed_html, run, "Runner")
 
-        expect(provider_cell.text.squish).to eq(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
-        expect(response.body).not_to include(other_provider.display_name)
+        expect(runner_cell.text.squish).to eq(ApplicationHelper::MISSING_RUNNER_ENTRY_LABEL)
+        expect(response.body).not_to include(other_runner.display_name)
       end
 
-      it "normalizes legacy final_provider aliases in the Provider column" do
-        run = create(:agent_run, :with_custom_prompt, project: project, provider: nil,
-          final_provider: "claude_code", agent_type: "claude_code")
+      it "normalizes legacy final_runner aliases in the Runner column" do
+        run = create(:agent_run, :with_custom_prompt, project: project, runner: nil,
+          final_runner: "claude_code", agent_type: "claude_code")
 
         get agent_runs_path
 
-        provider_cell = cell_for_run(parsed_html, run, "Provider")
+        runner_cell = cell_for_run(parsed_html, run, "Runner")
 
-        expect(provider_cell.text.squish).to eq(Provider.display_name_for("claude"))
+        expect(runner_cell.text.squish).to eq(Runner.display_name_for("claude"))
       end
 
       it "shows distinct goal and context values for create_pr runs" do
@@ -211,42 +211,42 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.text).to include("Some New Goal")
       end
 
-      it "shows the provider column with the resolved provider name" do
-        provider = create(:provider, user: project.effective_owner, provider_key: "codex")
-        run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
+      it "shows the runner column with the resolved runner name" do
+        runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+        run = create(:agent_run, project: project, runner: runner, final_runner: runner.routing_key)
 
         get agent_runs_path
 
         document = parsed_html
 
-        expect(column_index(document, "Provider")).not_to be_nil
-        expect(cell_for_run(document, run, "Provider").text.squish).to eq(provider.display_name)
+        expect(column_index(document, "Runner")).not_to be_nil
+        expect(cell_for_run(document, run, "Runner").text.squish).to eq(runner.display_name)
       end
 
-      it "shows a fallback label when the final provider record is missing" do
-        run = create(:agent_run, project: project, final_provider: "provider:999999")
+      it "shows a fallback label when the final runner record is missing" do
+        run = create(:agent_run, project: project, final_runner: "runner:999999")
 
         get agent_runs_path
 
-        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Deleted provider entry")
+        expect(cell_for_run(parsed_html, run, "Runner").text.squish).to eq("Deleted runner entry")
       end
 
-      it "shows the final provider label for legacy fallback runs" do
-        initial_provider = create(:provider, user: project.effective_owner, provider_key: "codex")
-        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+      it "shows the final runner label for legacy fallback runs" do
+        initial_runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+        run = create(:agent_run, project: project, runner: initial_runner, final_runner: "cursor")
 
         get agent_runs_path
 
-        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq(Provider.display_name_for("cursor"))
+        expect(cell_for_run(parsed_html, run, "Runner").text.squish).to eq(Runner.display_name_for("cursor"))
       end
 
-      it "renders unsupported provider identifiers without error" do
-        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+      it "renders unsupported runner identifiers without error" do
+        run = create(:agent_run, project: project, runner: nil, final_runner: "api", agent_type: "api")
 
         get agent_runs_path
 
         expect(response).to have_http_status(:ok)
-        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Api")
+        expect(cell_for_run(parsed_html, run, "Runner").text.squish).to eq("Api")
       end
 
       it "shows empty state when no runs exist" do
@@ -276,18 +276,18 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include(project_agent_run_path(project, issue_run))
       end
 
-      it "shows named provider filter labels and omits unresolved routed ids" do
-        kept_provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
-        create(:agent_run, project: project, final_provider: kept_provider.routing_key)
-        create(:agent_run, project: project, final_provider: "provider:999999")
-        kept_provider.discard!
+      it "shows named runner filter labels and omits unresolved routed ids" do
+        kept_runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_runner: kept_runner.routing_key)
+        create(:agent_run, project: project, final_runner: "runner:999999")
+        kept_runner.discard!
 
         get agent_runs_path
 
-        option_text = parsed_html.css('select[name="q[effective_provider_eq]"] option').map { |option| option.text.squish }
+        option_text = parsed_html.css('select[name="q[effective_runner_eq]"] option').map { |option| option.text.squish }
 
         expect(option_text).to include("Kimi K2.5")
-        expect(option_text).not_to include("provider:999999")
+        expect(option_text).not_to include("runner:999999")
       end
 
       it "shows the goal filter dropdown" do
@@ -615,34 +615,34 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("https://github.com/example/repo/pull/10#pullrequestreview-123456")
       end
 
-      it "shows the provider column with the resolved provider name" do
-        provider = create(:provider, user: project.effective_owner, provider_key: "cursor")
-        run = create(:agent_run, project: project, provider: provider, final_provider: provider.routing_key)
+      it "shows the runner column with the resolved runner name" do
+        runner = create(:runner, user: project.effective_owner, runner_key: "cursor")
+        run = create(:agent_run, project: project, runner: runner, final_runner: runner.routing_key)
 
         get project_agent_runs_path(project)
 
         document = parsed_html
 
-        expect(column_index(document, "Provider")).not_to be_nil
-        expect(cell_for_run(document, run, "Provider").text.squish).to eq(provider.display_name)
+        expect(column_index(document, "Runner")).not_to be_nil
+        expect(cell_for_run(document, run, "Runner").text.squish).to eq(runner.display_name)
       end
 
-      it "shows the final provider label for legacy fallback runs" do
-        initial_provider = create(:provider, user: project.effective_owner, provider_key: "codex")
-        run = create(:agent_run, project: project, provider: initial_provider, final_provider: "cursor")
+      it "shows the final runner label for legacy fallback runs" do
+        initial_runner = create(:runner, user: project.effective_owner, runner_key: "codex")
+        run = create(:agent_run, project: project, runner: initial_runner, final_runner: "cursor")
 
         get project_agent_runs_path(project)
 
-        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq(Provider.display_name_for("cursor"))
+        expect(cell_for_run(parsed_html, run, "Runner").text.squish).to eq(Runner.display_name_for("cursor"))
       end
 
-      it "renders unsupported provider identifiers without error" do
-        run = create(:agent_run, project: project, provider: nil, final_provider: "api", agent_type: "api")
+      it "renders unsupported runner identifiers without error" do
+        run = create(:agent_run, project: project, runner: nil, final_runner: "api", agent_type: "api")
 
         get project_agent_runs_path(project)
 
         expect(response).to have_http_status(:ok)
-        expect(cell_for_run(parsed_html, run, "Provider").text.squish).to eq("Api")
+        expect(cell_for_run(parsed_html, run, "Runner").text.squish).to eq("Api")
       end
 
       it "shows PR link in actions column for completed create_pr runs" do
@@ -700,7 +700,7 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include('spellcheck="false"')
       end
 
-      it "shows auth-expired details when the provider cannot generate an auth URL" do
+      it "shows auth-expired details when the runner cannot generate an auth URL" do
         agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "codex", auth_provider: "codex")
         without_partial_double_verification do
           allow(AgentHarness).to receive(:respond_to?).and_call_original
@@ -708,7 +708,7 @@ RSpec.describe "AgentRuns" do
           allow(AgentHarness).to receive(:respond_to?).with(:auth_url).and_return(true)
           allow(AgentHarness).to receive(:auth_url)
             .with(:codex)
-            .and_raise(NotImplementedError, "Provider codex uses api_key auth and does not support OAuth URL generation")
+            .and_raise(NotImplementedError, "Runner codex uses api_key auth and does not support OAuth URL generation")
         end
 
         get project_agent_run_path(project, agent_run)
@@ -769,28 +769,30 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
-      it "shows retry provider options for configured providers" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
-        project.effective_owner.providers.create!(provider_key: "cursor")
+      it "shows retry runner options for configured providers" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
+        project.effective_owner.runners.create!(runner_key: "cursor")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
         get project_agent_run_path(project, agent_run)
 
         expect(response.body).to include("Retry with Anthropic Claude CLI")
         expect(response.body).to include("Retry with Cursor AI")
+        expect(response.body).to include('name="runner"')
+        expect(response.body).to include('value="runner:')
         expect(response.body).to include("Current")
         expect(response.body).to include('aria-haspopup="menu"')
         expect(response.body).to include("aria-controls=")
         expect(response.body).to include("aria-labelledby=")
       end
 
-      it "marks only one retry option current for legacy runs without provider_id" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
+      it "marks only one retry option current for legacy runs without runner_id" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
         api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
-        create_opencode_provider_entry(user: owner, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
-        create_opencode_provider_entry(user: owner, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
-        agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode", provider: nil)
+        create_opencode_runner_entry(user: owner, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
+        create_opencode_runner_entry(user: owner, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode", runner: nil)
 
         get project_agent_run_path(project, agent_run)
 
@@ -809,31 +811,31 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include('role="menu"')
       end
 
-      it "shows a deleted provider entry label for missing routed fallback attempts" do
+      it "shows a deleted runner entry label for missing routed fallback attempts" do
         agent_run = create(
           :agent_run,
           :failed,
           project: project,
-          final_provider: "provider:999999",
-          provider_switches: 1,
-          providers_attempted: [
-            { "provider" => "provider:999999", "success" => false, "error_type" => "rate_limited" }
+          final_runner: "runner:999999",
+          runner_switches: 1,
+          runners_attempted: [
+            { "runner" => "runner:999999", "success" => false, "error_type" => "rate_limited" }
           ]
         )
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
-        expect(response.body).not_to include("Provider:999999")
+        expect(response.body).to include(ApplicationHelper::MISSING_RUNNER_ENTRY_LABEL)
+        expect(response.body).not_to include("Runner:999999")
       end
 
-      it "normalizes legacy final_provider aliases in the header provider label" do
-        agent_run = create(:agent_run, :completed, project: project, provider: nil,
-          agent_type: "claude_code", final_provider: "claude_code")
+      it "normalizes legacy final_runner aliases in the header runner label" do
+        agent_run = create(:agent_run, :completed, project: project, runner: nil,
+          agent_type: "claude_code", final_runner: "claude_code")
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include(Provider.display_name_for("claude"))
+        expect(response.body).to include(Runner.display_name_for("claude"))
         expect(response.body).not_to include(">Claude Code<")
       end
 
@@ -846,52 +848,52 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Cost")
       end
 
-      it "shows provider section with active provider name" do
+      it "shows runner section with active runner name" do
         owner = project.effective_owner
-        provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-        agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code", provider: provider)
+        runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code", runner: runner)
         get project_agent_run_path(project, agent_run)
-        expect(response.body).to include("Active Provider")
-        expect(response.body).to include(provider.display_name)
+        expect(response.body).to include("Active Runner")
+        expect(response.body).to include(runner.display_name)
       end
 
-      it "shows fallback badge and originally requested provider when fallback occurred" do
+      it "shows fallback badge and originally requested runner when fallback occurred" do
         owner = project.effective_owner
-        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-        fallback_provider = owner.providers.create!(provider_key: "cursor", auth_type: "subscription")
+        initial_runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        fallback_runner = owner.runners.create!(runner_key: "cursor", auth_type: "subscription")
         agent_run = create(
           :agent_run,
           :completed,
           project: project,
           agent_type: "claude_code",
-          provider: initial_provider,
-          final_provider: fallback_provider.routing_key,
-          provider_switches: 1,
-          providers_attempted: [
-            { "provider" => initial_provider.routing_key, "success" => false, "error_type" => "rate_limited" },
-            { "provider" => fallback_provider.routing_key, "success" => true }
+          runner: initial_runner,
+          final_runner: fallback_runner.routing_key,
+          runner_switches: 1,
+          runners_attempted: [
+            { "runner" => initial_runner.routing_key, "success" => false, "error_type" => "rate_limited" },
+            { "runner" => fallback_runner.routing_key, "success" => true }
           ]
         )
         get project_agent_run_path(project, agent_run)
         expect(response.body).to include("Fallback")
         expect(response.body).to include("Originally Requested")
-        expect(response.body).to include("Provider Switches")
+        expect(response.body).to include("Runner Switches")
       end
 
-      it "shows provider attempt error details in the fallback panel" do
+      it "shows runner attempt error details in the fallback panel" do
         owner = project.effective_owner
-        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-        fallback_provider = create_opencode_fallback_provider(user: owner, name: "Kimi K2", model: "moonshotai/kimi-k2-0905")
+        initial_runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        fallback_runner = create_opencode_fallback_runner(user: owner, name: "Kimi K2", model: "moonshotai/kimi-k2-0905")
         agent_run = create(
           :agent_run,
           :failed,
           project: project,
           agent_type: "claude_code",
-          provider: initial_provider,
-          provider_switches: 1,
-          providers_attempted: [
-            provider_attempt(initial_provider.routing_key, "rate_limited", "Skipped due to cached rate limit until 2026-04-30T05:59:15Z"),
-            provider_attempt(fallback_provider.routing_key, "error", "Configuration is invalid at /home/agent/.config/opencode/opencode.json")
+          runner: initial_runner,
+          runner_switches: 1,
+          runners_attempted: [
+            runner_attempt(initial_runner.routing_key, "rate_limited", "Skipped due to cached rate limit until 2026-04-30T05:59:15Z"),
+            runner_attempt(fallback_runner.routing_key, "error", "Configuration is invalid at /home/agent/.config/opencode/opencode.json")
           ]
         )
 
@@ -901,34 +903,34 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Configuration is invalid at /home/agent/.config/opencode/opencode.json")
       end
 
-      it "shows provider attempts even when no fallback switch occurred" do
+      it "shows runner attempts even when no fallback switch occurred" do
         owner = project.effective_owner
-        initial_provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
+        initial_runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
         agent_run = create(
           :agent_run,
           :failed,
           project: project,
           agent_type: "claude_code",
-          provider: initial_provider,
-          provider_switches: 0,
-          providers_attempted: [
-            provider_attempt(initial_provider.routing_key, "rate_limited", "Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
+          runner: initial_runner,
+          runner_switches: 0,
+          runners_attempted: [
+            runner_attempt(initial_runner.routing_key, "rate_limited", "Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
           ]
         )
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Provider Attempts")
+        expect(response.body).to include("Runner Attempts")
         expect(response.body).to include("1 attempt")
-        expect(response.body).to include(initial_provider.display_name)
+        expect(response.body).to include(initial_runner.display_name)
         expect(response.body).to include("Skipped due to cached rate limit until 2026-04-30T05:59:15Z")
-        expect(response.body).not_to include(ApplicationHelper::MISSING_PROVIDER_ENTRY_LABEL)
+        expect(response.body).not_to include(ApplicationHelper::MISSING_RUNNER_ENTRY_LABEL)
       end
 
-      it "shows auth type in provider section when provider record exists" do
+      it "shows auth type in runner section when runner record exists" do
         owner = project.effective_owner
-        provider = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-        agent_run = create(:agent_run, :completed, project: project, provider: provider)
+        runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        agent_run = create(:agent_run, :completed, project: project, runner: runner)
         get project_agent_run_path(project, agent_run)
         expect(response.body).to include("Auth Type")
         expect(response.body).to include("Subscription")
@@ -1062,47 +1064,47 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Preselected PR")
       end
 
-      it "exposes goal-specific provider defaults to the goal toggle controller" do
+      it "exposes goal-specific runner defaults to the goal toggle controller" do
         owner = project.created_by
-        codex = owner.providers.create!(
-          provider_key: "codex",
+        codex = owner.runners.create!(
+          runner_key: "codex",
           auth_type: "subscription",
           enabled_for_agent_runs: true,
           enabled_for_fallback: true
         )
-        owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+        owner.settings.update!(default_agent_runners_by_goal: { "review" => codex.routing_key })
 
         get new_project_agent_run_path(project)
 
         doc = Nokogiri::HTML(response.body)
         form = doc.at_css("form[data-controller='goal-toggle']")
-        defaults = JSON.parse(form["data-goal-toggle-provider-defaults-value"])
-        provider = form.at_css("#provider")
+        defaults = JSON.parse(form["data-goal-toggle-runner-defaults-value"])
+        runner = form.at_css("#runner")
 
-        expect(defaults["create_pr"]).to eq(owner.settings.default_provider_identifier_for_goal("create_pr"))
+        expect(defaults["create_pr"]).to eq(owner.settings.default_runner_identifier_for_goal("create_pr"))
         expect(defaults["review"]).to eq(codex.routing_key)
-        expect(provider["data-goal-toggle-target"]).to eq("providerSelect")
-        expect(provider["data-action"]).to include("change->goal-toggle#providerChanged")
+        expect(runner["data-goal-toggle-target"]).to eq("runnerSelect")
+        expect(runner["data-action"]).to include("change->goal-toggle#runnerChanged")
       end
 
-      it "defaults to Inherit in the provider dropdown" do
+      it "defaults to Inherit in the runner dropdown" do
         owner = project.created_by
-        codex = owner.providers.create!(
-          provider_key: "codex",
+        codex = owner.runners.create!(
+          runner_key: "codex",
           auth_type: "subscription",
           enabled_for_agent_runs: true,
           enabled_for_fallback: true
         )
-        owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+        owner.settings.update!(default_agent_runners_by_goal: { "review" => codex.routing_key })
 
         get new_project_agent_run_path(project, goal: "review")
 
         doc = Nokogiri::HTML(response.body)
-        provider_select = doc.at_css("#provider")
-        selected_option = provider_select.at_css("option[selected]")
+        runner_select = doc.at_css("#runner")
+        selected_option = runner_select.at_css("option[selected]")
 
         expect(selected_option["value"]).to eq("")
-        expect(selected_option.text.strip).to eq("Inherit (from provider settings)")
+        expect(selected_option.text.strip).to eq("Inherit (from runner settings)")
       end
 
       it "renders enhance_issue as a selectable goal with the issue picker active" do
@@ -1460,46 +1462,46 @@ RSpec.describe "AgentRuns" do
         end
       end
 
-      it "defaults to the configured provider" do
+      it "defaults to the configured runner" do
         post project_agent_runs_path(project), params: { issue_id: issue.id }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
       end
 
-      it "ignores invalid agent types and defaults to configured provider" do
+      it "ignores invalid agent types and defaults to configured runner" do
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "invalid" }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
       end
 
-      it "falls back when a managed provider is requested but not enabled for the user" do
+      it "falls back when a managed runner is requested but not enabled for the user" do
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "cursor" }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
       end
 
-      it "uses the project owner's provider selection when the signed-in user is not the owner" do
+      it "uses the project owner's runner selection when the signed-in user is not the owner" do
         owner = project.created_by
-        owner_cursor = owner.providers.create!(
-          provider_key: "cursor",
+        owner_cursor = owner.runners.create!(
+          runner_key: "cursor",
           auth_type: "subscription",
           enabled_for_agent_runs: true,
           enabled_for_fallback: true
         )
-        owner.settings.update!(default_agent_provider: owner_cursor.routing_key)
+        owner.settings.update!(default_agent_runner: owner_cursor.routing_key)
 
         post project_agent_runs_path(project), params: { issue_id: issue.id }
 
-        expect(AgentRun.last.provider).to eq(owner_cursor)
+        expect(AgentRun.last.runner).to eq(owner_cursor)
         expect(AgentRun.last.agent_type).to eq("cursor")
       end
 
-      it "redirects with an error when no runnable provider can be resolved" do
+      it "redirects with an error when no runnable runner can be resolved" do
         owner = project.effective_owner
-        allow(UserSetting).to receive(:enabled_agent_providers).with(owner, identifiers: true).and_return([])
-        allow(owner.settings).to receive(:provider_priority).with(identifiers: true).and_return([])
-        allow(Provider).to receive(:for_identifier).and_return(nil)
-        allow(Provider).to receive(:ensure_default_for).with(owner).and_return(nil)
+        allow(UserSetting).to receive(:enabled_agent_runners).with(owner, identifiers: true).and_return([])
+        allow(owner.settings).to receive(:runner_priority).with(identifiers: true).and_return([])
+        allow(Runner).to receive(:for_identifier).and_return(nil)
+        allow(Runner).to receive(:ensure_default_for).with(owner).and_return(nil)
 
         expect {
           post project_agent_runs_path(project), params: { issue_id: issue.id }
@@ -1507,7 +1509,7 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
         follow_redirect!
-        expect(response.body).to include("No runnable provider could be resolved for this project")
+        expect(response.body).to include("No runnable runner could be resolved for this project")
       end
 
       context "when budget blocks run creation" do
@@ -1533,39 +1535,39 @@ RSpec.describe "AgentRuns" do
         end
       end
 
-      it "normalizes an invalid goal to create_pr and uses the create_pr default provider" do
+      it "normalizes an invalid goal to create_pr and uses the create_pr default runner" do
         owner = project.created_by
-        codex = owner.providers.create!(
-          provider_key: "codex",
+        codex = owner.runners.create!(
+          runner_key: "codex",
           auth_type: "subscription",
           enabled_for_agent_runs: true,
           enabled_for_fallback: true
         )
-        owner.settings.update!(default_agent_providers_by_goal: { "create_pr" => codex.routing_key })
+        owner.settings.update!(default_agent_runners_by_goal: { "create_pr" => codex.routing_key })
 
         post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
 
         agent_run = AgentRun.last
         expect(agent_run.goal).to eq("create_pr")
-        expect(agent_run.provider).to eq(codex)
+        expect(agent_run.runner).to eq(codex)
       end
 
       context "with goal=review" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
 
-        it "uses the goal-specific default provider when no provider is selected" do
+        it "uses the goal-specific default runner when no runner is selected" do
           owner = project.created_by
-          codex = owner.providers.create!(
-            provider_key: "codex",
+          codex = owner.runners.create!(
+            runner_key: "codex",
             auth_type: "subscription",
             enabled_for_agent_runs: true,
             enabled_for_fallback: true
           )
-          owner.settings.update!(default_agent_providers_by_goal: { "review" => codex.routing_key })
+          owner.settings.update!(default_agent_runners_by_goal: { "review" => codex.routing_key })
 
           post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
 
-          expect(AgentRun.last.provider).to eq(codex)
+          expect(AgentRun.last.runner).to eq(codex)
           expect(AgentRun.last.agent_type).to eq("codex")
         end
 
@@ -1939,7 +1941,7 @@ RSpec.describe "AgentRuns" do
         pr.update!(auto_continue_paused: true)
 
         allow(AgentRun).to receive(:create!)
-          .and_raise(Projects::AgentRunsController::NoRunnableProviderError, "No runnable provider")
+          .and_raise(Projects::AgentRunsController::NoRunnableRunnerError, "No runnable runner")
 
         expect {
           expect {
@@ -1948,7 +1950,7 @@ RSpec.describe "AgentRuns" do
         }.not_to have_enqueued_job(ProcessRunQueueJob)
 
         expect(pr.reload.auto_continue_paused).to be false
-        expect(flash[:notice]).to include("provider")
+        expect(flash[:notice]).to include("runner")
       end
 
       it "does not enqueue an agent run when resuming if an active run already exists" do
@@ -2229,7 +2231,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "keeps the primary retry action on the original agent type" do
-        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false)
+        user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false)
         agent_run = create(:agent_run, :failed, project: project, agent_type: "cursor")
 
         post retry_project_agent_run_path(project, agent_run)
@@ -2237,55 +2239,55 @@ RSpec.describe "AgentRuns" do
         expect(AgentRun.last.agent_type).to eq("cursor")
       end
 
-      it "creates a retry using a different configured provider" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
-        project.effective_owner.providers.create!(provider_key: "cursor")
+      it "creates a retry using a different configured runner" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
+        project.effective_owner.runners.create!(runner_key: "cursor")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
-        post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
+        post retry_project_agent_run_path(project, agent_run), params: { runner: "cursor" }
 
         new_run = AgentRun.last
         expect(new_run.agent_type).to eq("cursor")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
-      it "rejects retrying with an unavailable explicit provider" do
-        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false)
+      it "rejects retrying with an unavailable explicit runner" do
+        user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false)
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
         expect {
-          post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
+          post retry_project_agent_run_path(project, agent_run), params: { runner: "cursor" }
         }.not_to change(AgentRun, :count)
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
-        expect(response.body).to include("selected provider is not available")
+        expect(response.body).to include("selected runner is not available")
       end
 
-      it "rejects retrying with a disabled explicit provider identifier" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
+      it "rejects retrying with a disabled explicit runner identifier" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
         api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
-        disabled_provider = create_opencode_provider_entry(user: owner, api_key: api_key, name: "Disabled Kimi",
+        disabled_runner = create_opencode_runner_entry(user: owner, api_key: api_key, name: "Disabled Kimi",
           model: "moonshotai/kimi-k2-0905", enabled_for_agent_runs: false)
-        create_opencode_provider_entry(user: owner, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
+        create_opencode_runner_entry(user: owner, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode")
 
         expect {
-          post retry_project_agent_run_path(project, agent_run), params: { provider: disabled_provider.routing_key }
+          post retry_project_agent_run_path(project, agent_run), params: { runner: disabled_runner.routing_key }
         }.not_to change(AgentRun, :count)
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
-        expect(response.body).to include("selected provider is not available")
+        expect(response.body).to include("selected runner is not available")
       end
 
-      it "resolves plain provider keys against enabled retry providers" do
-        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
+      it "resolves plain runner keys against enabled retry providers" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
         api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
-        owner.providers.create!(provider_key: "opencode", enabled_for_agent_runs: false)
-        enabled_provider = create_opencode_provider_entry(
+        owner.runners.create!(runner_key: "opencode", enabled_for_agent_runs: false)
+        enabled_runner = create_opencode_runner_entry(
           user: owner,
           api_key: api_key,
           name: "Enabled Kimi",
@@ -2294,12 +2296,12 @@ RSpec.describe "AgentRuns" do
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
         expect {
-          post retry_project_agent_run_path(project, agent_run), params: { provider: "opencode" }
+          post retry_project_agent_run_path(project, agent_run), params: { runner: "opencode" }
         }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
         expect(new_run.agent_type).to eq("opencode")
-        expect(new_run.provider_id).to eq(enabled_provider.id)
+        expect(new_run.runner_id).to eq(enabled_runner.id)
       end
 
       it "preserves user-supplied custom_prompt from the original run" do
@@ -2512,7 +2514,7 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
-        expect(response.body).to include("Unable to determine authentication provider")
+        expect(response.body).to include("Unable to determine authentication runner")
       end
 
       it "redirects with alert when refresh_auth is not supported" do
@@ -2527,18 +2529,18 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Re-authentication is not supported")
       end
 
-      it "redirects with alert when the provider does not support refresh_auth" do
+      it "redirects with alert when the runner does not support refresh_auth" do
         agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: "codex")
         without_partial_double_verification do
           allow(AgentHarness).to receive(:refresh_auth)
-            .and_raise(NotImplementedError, "Provider codex uses api_key auth and does not support credential refresh")
+            .and_raise(NotImplementedError, "Runner codex uses api_key auth and does not support credential refresh")
         end
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
-        expect(response.body).to include("Re-authentication is not supported for this provider")
+        expect(response.body).to include("Re-authentication is not supported for this runner")
       end
 
       it "redirects with alert on AgentHarness::AuthenticationError" do
@@ -2560,7 +2562,7 @@ RSpec.describe "AgentRuns" do
         agent_run = create(:agent_run, :auth_expired, project: project)
         without_partial_double_verification do
           allow(AgentHarness).to receive(:refresh_auth)
-            .and_raise(AgentHarness::Error, "Provider unavailable")
+            .and_raise(AgentHarness::Error, "Runner unavailable")
         end
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "some-token" }
@@ -2568,7 +2570,7 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         follow_redirect!
         expect(response.body).to include("Re-authentication failed")
-        expect(response.body).to include("Provider unavailable")
+        expect(response.body).to include("Runner unavailable")
       end
 
       it "clears auto-generated prompt on refresh_auth retry" do
@@ -2600,9 +2602,9 @@ RSpec.describe "AgentRuns" do
     end
   end
 
-  def create_opencode_provider_entry(user:, api_key:, name:, model:, **attrs)
-    user.providers.create!(
-      provider_key: "opencode",
+  def create_opencode_runner_entry(user:, api_key:, name:, model:, **attrs)
+    user.runners.create!(
+      runner_key: "opencode",
       auth_type: "api_key",
       provider_api_key: api_key,
       name: name,
@@ -2612,14 +2614,14 @@ RSpec.describe "AgentRuns" do
     )
   end
 
-  def create_opencode_fallback_provider(user:, name:, model:)
+  def create_opencode_fallback_runner(user:, name:, model:)
     api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-    create_opencode_provider_entry(user: user, api_key: api_key, name: name, model: model)
+    create_opencode_runner_entry(user: user, api_key: api_key, name: name, model: model)
   end
 
-  def provider_attempt(provider, error_type, error_message)
+  def runner_attempt(runner, error_type, error_message)
     {
-      "provider" => provider,
+      "runner" => runner,
       "success" => false,
       "error_type" => error_type,
       "error_message" => error_message

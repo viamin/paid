@@ -65,7 +65,7 @@ RSpec.describe "Dashboard" do
         expect(chart).to be_present
       end
 
-      it "renders deferred turbo frame wiring for metrics, performance, knowledge, provider health, and queue health", :aggregate_failures do
+      it "renders deferred turbo frame wiring for metrics, performance, knowledge, runner health, and queue health", :aggregate_failures do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
@@ -74,34 +74,34 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[data-dashboard-frames-src='#{dashboard_knowledge_stats_path}']")).to be_present
-        expect(doc.at_css("turbo-frame#dashboard-provider-health[data-dashboard-frames-src='#{dashboard_provider_health_path}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-runner-health[data-dashboard-frames-src='#{dashboard_runner_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading]")).not_to be_present
-        expect(doc.at_css("turbo-frame#dashboard-provider-health[loading]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-runner-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[src]")).not_to be_present
-        expect(doc.at_css("turbo-frame#dashboard-provider-health[src]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-runner-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
       end
 
-      it "renders provider health above queue health in the dashboard shell" do
+      it "renders runner health above queue health in the dashboard shell" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
         expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
-        expect(doc.at_css("turbo-frame#dashboard-provider-health[data-dashboard-frames-src='#{dashboard_provider_health_path}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-runner-health[data-dashboard-frames-src='#{dashboard_runner_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[data-dashboard-frames-src='#{dashboard_queue_health_path}']")).to be_present
-        provider_frame = doc.at_css("turbo-frame#dashboard-provider-health")
+        runner_frame = doc.at_css("turbo-frame#dashboard-runner-health")
         queue_frame = doc.at_css("turbo-frame#dashboard-queue-health")
 
-        expect(provider_frame).to be_present
+        expect(runner_frame).to be_present
         expect(queue_frame).to be_present
-        expect(provider_frame.path).to be < queue_frame.path
+        expect(runner_frame.path).to be < queue_frame.path
       end
 
       it "wires queue health and frame serialization on the dashboard shell" do
@@ -172,34 +172,34 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
-      it "shows knowledge provider health and pipeline metrics" do
-        create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
-        create(:provider_state, user: user, provider_name: user.settings.kb_chat_provider, failure_count: 2)
-        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_provider: "openai")
-        create(:knowledge_run, :failed, :decision_drafting, project: project, provider_attempts: [ { "provider" => "claude" } ])
+      it "shows knowledge runner health and pipeline metrics" do
+        create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
+        create(:runner_state, user: user, runner_name: user.settings.kb_chat_runner, failure_count: 2)
+        create(:knowledge_run, :completed, project: project, operation_type: "embedding", final_runner: "openai")
+        create(:knowledge_run, :failed, :decision_drafting, project: project, runner_attempts: [ { "runner" => "claude" } ])
 
         get dashboard_knowledge_stats_path
 
-        expect(response.body).to include("Provider Health")
+        expect(response.body).to include("Runner Health")
         expect(response.body).to include("Unavailable")
         expect(response.body).to include("LLM Pipeline Metrics (Last 30 Days)")
         expect(response.body).to include("Decision Drafting")
         expect(response.body).to include("Embedding")
       end
 
-      it "shows unavailable helper copy when both provider groups are down" do
-        create(:provider_state, :rate_limited, user: user, provider_name: user.settings.kb_embedding_provider)
-        create(:provider_state, :circuit_open, user: user, provider_name: user.settings.kb_chat_provider)
+      it "shows unavailable helper copy when both runner groups are down" do
+        create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
+        create(:runner_state, :circuit_open, user: user, runner_name: user.settings.kb_chat_runner)
 
         get dashboard_knowledge_stats_path
 
-        expect(response.body).to include("Knowledge capabilities are unavailable because both provider groups are down.")
-        expect(response.body).not_to include("Knowledge capabilities are degraded while one provider group remains available.")
+        expect(response.body).to include("Knowledge capabilities are unavailable because both runner groups are down.")
+        expect(response.body).not_to include("Knowledge capabilities are degraded while one runner group remains available.")
       end
 
-      it "shows the provider column in the active runs table" do
-        provider = create(:provider, user: user, provider_key: "codex")
-        run = create(:agent_run, :running, project: project, provider: provider, final_provider: provider.routing_key)
+      it "shows the runner column in the active runs table" do
+        runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :running, project: project, runner: runner, final_runner: runner.routing_key)
 
         get dashboard_path
 
@@ -207,12 +207,12 @@ RSpec.describe "Dashboard" do
         table = document.at_css("#active-runs table")
 
         expect(table).to be_present
-        expect(table.css("thead th").map { |header| header.text.squish }).to include("Provider")
+        expect(table.css("thead th").map { |header| header.text.squish }).to include("Runner")
 
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
 
         expect(row).to be_present
-        expect(row.text).to include(provider.display_name)
+        expect(row.text).to include(runner.display_name)
       end
 
       it "shows the priority column in the active runs table" do
@@ -238,6 +238,17 @@ RSpec.describe "Dashboard" do
 
         expect(row).to be_present
         expect(row.text).to include("2 - P1")
+      end
+
+      it "shows the final runner label for legacy fallback runs in the active runs table" do
+        initial_runner = create(:runner, user: user, runner_key: "codex")
+        run = create(:agent_run, :running, project: project, runner: initial_runner, final_runner: "cursor")
+
+        get dashboard_path
+
+        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        expect(row).to be_present
+        expect(row.text).to include(Runner.display_name_for("cursor"))
       end
 
       it "shows review context tooltips in the active runs table" do
@@ -284,19 +295,8 @@ RSpec.describe "Dashboard" do
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
-      it "shows the final provider label for legacy fallback runs in the active runs table" do
-        initial_provider = create(:provider, user: user, provider_key: "codex")
-        run = create(:agent_run, :running, project: project, provider: initial_provider, final_provider: "cursor")
-
-        get dashboard_path
-
-        row = Nokogiri::HTML(response.body).at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
-        expect(row).to be_present
-        expect(row.text).to include(Provider.display_name_for("cursor"))
-      end
-
-      it "renders unsupported provider identifiers in the active runs table without error" do
-        run = create(:agent_run, :running, project: project, provider: nil, final_provider: "api", agent_type: "api")
+      it "renders unsupported runner identifiers in the active runs table without error" do
+        run = create(:agent_run, :running, project: project, runner: nil, final_runner: "api", agent_type: "api")
 
         get dashboard_path
 
@@ -626,45 +626,45 @@ RSpec.describe "Dashboard" do
     end
   end
 
-  describe "GET /dashboard/provider_health" do
+  describe "GET /dashboard/runner_health" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
 
     before { sign_in user }
 
-    it "returns provider health partial within a turbo frame" do
-      provider = user.providers.find_by!(provider_key: Provider.default_provider_key, auth_type: "subscription")
-      create(:provider_state, :rate_limited, user: user, provider_name: provider.state_key)
+    it "returns runner health partial within a turbo frame" do
+      runner = user.runners.find_by!(runner_key: Runner.default_runner_key, auth_type: "subscription")
+      create(:runner_state, :rate_limited, user: user, runner_name: runner.state_key)
 
-      get dashboard_provider_health_path
+      get dashboard_runner_health_path
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("dashboard-provider-health")
-      expect(response.body).to include("Provider Health")
-      expect(response.body).to include(provider.display_name)
+      expect(response.body).to include("dashboard-runner-health")
+      expect(response.body).to include("Runner Health")
+      expect(response.body).to include(runner.display_name)
       expect(response.body).to include("Rate limited")
       expect(response.body).to include("Configured")
     end
 
-    it "uses plural grammar for multiple recovering providers" do
+    it "uses plural grammar for multiple recovering runners" do
       create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
-      first_provider = user.providers.find_by!(provider_key: Provider.default_provider_key, auth_type: "subscription")
-      second_provider_key = (ProviderSupport.container_executable_provider_keys - [ first_provider.provider_key ]).first || "cursor"
-      second_provider = create(:provider, user: user, provider_key: second_provider_key, auth_type: "subscription")
+      first_provider = user.runners.find_by!(runner_key: Runner.default_runner_key, auth_type: "subscription")
+      second_provider_key = (RunnerSupport.container_executable_runner_keys - [ first_provider.runner_key ]).first || "cursor"
+      second_provider = create(:runner, user: user, runner_key: second_provider_key, auth_type: "subscription")
 
-      [ first_provider, second_provider ].each do |provider|
+      [ first_provider, second_provider ].each do |runner|
         create(
           :provider_state,
           :circuit_open,
           user: user,
-          provider_name: provider.state_key,
+          runner_name: runner.state_key,
           circuit_opened_at: 31.seconds.ago
         )
       end
 
-      get dashboard_provider_health_path
+      get dashboard_runner_health_path
 
-      expect(response.body).to include("2 providers are recovering in half-open mode.")
+      expect(response.body).to include("2 runners are recovering in half-open mode.")
     end
   end
 

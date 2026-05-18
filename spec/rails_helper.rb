@@ -78,11 +78,15 @@ RSpec.configure do |config|
   # Include ActiveSupport time helpers (freeze_time, travel_to, etc.)
   config.include ActiveSupport::Testing::TimeHelpers
 
-  # Reset memoized provider support data between tests
+  # Reset both legacy provider and new runner support registries between tests.
+  # Phase 1 keeps provider-backed specs and code paths alive, so clearing only
+  # RunnerSupport leaves order-dependent memoized state behind for ProviderSupport.
   config.after do
     ProviderSupport.reset_supported_provider_keys!
+    RunnerSupport.reset_supported_runner_keys!
   end
 
+  config.filter_run_excluding :runner_smoke unless ENV["RUN_RUNNER_SMOKE"] == "true"
   config.filter_run_excluding :provider_smoke unless ENV["RUN_PROVIDER_SMOKE"] == "true"
   config.filter_run_excluding :chat_e2e unless ENV["RUN_CHAT_E2E"] == "true"
 
@@ -128,15 +132,15 @@ RSpec.configure do |config|
   # examples that need a database connection. This lets the non-DB specs run and
   # report results while DB-dependent specs are marked as pending.
   unless database_available
-    config.define_derived_metadata do |metadata|
-      spec_file = metadata[:file_path].to_s
-      allows_dbless = (spec_file.start_with?("./spec/lib/", "spec/lib/") && !metadata[:db]) || metadata[:no_db]
-      metadata[:requires_database] = true unless allows_dbless
-    end
+    config.before do |example|
+      # Only run specs under spec/lib/ or those tagged :no_db which don't need
+      # a database. All other specs are skipped to avoid connection errors.
+      spec_file = example.metadata[:file_path].to_s
+      lib_spec = spec_file.start_with?("./spec/lib/", "spec/lib/")
+      next if example.metadata[:no_db]
+      next if lib_spec && !example.metadata[:db]
 
-    # Exclude DB-backed groups before any before(:context) hooks fire. A
-    # per-example skip is too late for suites that allocate records in context
-    # setup helpers such as fixture_kit.
-    config.filter_run_excluding requires_database: true
+      skip "Database not available (ALLOW_DBLESS_SPECS=true)"
+    end
   end
 end

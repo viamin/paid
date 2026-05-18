@@ -10,8 +10,8 @@ RSpec.describe ProviderState do
   describe "validations" do
     subject { build(:provider_state) }
 
-    it { is_expected.to validate_presence_of(:provider_name) }
-    it { is_expected.to validate_length_of(:provider_name).is_at_most(50) }
+    it { is_expected.to validate_presence_of(:runner_name) }
+    it { is_expected.to validate_length_of(:runner_name).is_at_most(50) }
     it { is_expected.to validate_presence_of(:circuit_state) }
     it { is_expected.to validate_inclusion_of(:circuit_state).in_array(described_class::CIRCUIT_STATES) }
     it { is_expected.to validate_numericality_of(:failure_count).only_integer.is_greater_than_or_equal_to(0) }

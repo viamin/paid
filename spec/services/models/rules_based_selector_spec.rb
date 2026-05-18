@@ -115,10 +115,10 @@ RSpec.describe Models::RulesBasedSelector do
         expect(result[:model]).to eq(low_model)
       end
 
-      it "honors provider-level threshold overrides on the agent run" do
-        provider = create(:provider, user: agent_run.project.effective_owner)
-        provider.update!(complexity_thresholds: { "low_max" => 2, "mid_max" => 9 })
-        agent_run.update!(provider: provider)
+      it "honors runner-level threshold overrides on the agent run" do
+        runner = create(:runner, user: agent_run.project.effective_owner)
+        runner.update!(complexity_thresholds: { "low_max" => 2, "mid_max" => 9 })
+        agent_run.update!(runner: runner)
         # Give enough body to bump complexity above low_max=2
         agent_run.issue.update!(body: "A" * 600)
 
@@ -128,7 +128,7 @@ RSpec.describe Models::RulesBasedSelector do
         expect(result[:tier]).to eq("mid")
 
         # Reconfigure so mid_max=3 ⇒ complexity 4.0 routes to high.
-        provider.update!(complexity_thresholds: { "low_max" => 2, "mid_max" => 3 })
+        runner.update!(complexity_thresholds: { "low_max" => 2, "mid_max" => 3 })
         agent_run.reload
         result = described_class.call(agent_run: agent_run)
 
@@ -153,7 +153,7 @@ RSpec.describe Models::RulesBasedSelector do
       end
     end
 
-    describe "provider tier_model_ids routing" do
+    describe "runner tier_model_ids routing" do
       let!(:low_model)  { create(:llm_model, :cheap, model_id: "tier-low", tier: "low",  capability_score: 4.0) }
       let!(:mid_model)  { create(:llm_model,         model_id: "tier-mid", tier: "mid",  capability_score: 7.0) }
       let!(:custom_low) { create(:llm_model, :cheap, model_id: "custom-low", tier: "low", capability_score: 3.5) }
@@ -162,31 +162,31 @@ RSpec.describe Models::RulesBasedSelector do
         LlmModel.where.not(id: [ low_model.id, mid_model.id, custom_low.id ]).destroy_all
       end
 
-      it "prefers the provider's configured tier model over the global pool" do
-        provider = create(:provider, user: agent_run.project.effective_owner,
+      it "prefers the runner's configured tier model over the global pool" do
+        runner = create(:runner, user: agent_run.project.effective_owner,
           tier_model_ids: { "low" => custom_low.model_id })
-        agent_run.update!(provider: provider)
+        agent_run.update!(runner: runner)
 
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:model]).to eq(custom_low)
       end
 
-      it "falls back to global pool when provider tier model is inactive" do
+      it "falls back to global pool when runner tier model is inactive" do
         custom_low.update!(active: false)
-        provider = create(:provider, user: agent_run.project.effective_owner,
+        runner = create(:runner, user: agent_run.project.effective_owner,
           tier_model_ids: { "low" => custom_low.model_id })
-        agent_run.update!(provider: provider)
+        agent_run.update!(runner: runner)
 
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:model]).to eq(low_model)
       end
 
-      it "respects excluded_model_ids even for provider tier models" do
-        provider = create(:provider, user: agent_run.project.effective_owner,
+      it "respects excluded_model_ids even for runner tier models" do
+        runner = create(:runner, user: agent_run.project.effective_owner,
           tier_model_ids: { "low" => custom_low.model_id })
-        agent_run.update!(provider: provider)
+        agent_run.update!(runner: runner)
         agent_run.project.update!(
           model_preferences: { "excluded_model_ids" => [ custom_low.model_id ] }
         )
