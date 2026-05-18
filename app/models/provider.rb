@@ -40,7 +40,7 @@ class Provider < ApplicationRecord
                    opencode_model_provider: "mistral" },
     "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic", service_type: "minimax",
                    env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
-                   opencode_model_provider: "anthropic" },
+                   opencode_model_provider: "minimax" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
