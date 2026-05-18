@@ -486,13 +486,13 @@ RSpec.describe Activities::RunAgentActivity do
       llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
       create(:model_selection, agent_run: agent_run, llm_model: llm_model)
       context = described_class::CommandContext.new(
-        provider_candidate: "claude",
-        provider: "claude",
+        runner_candidate: "claude",
+        runner: "claude",
         user: nil
       )
 
-      expect(Providers::HarnessExecutionPlan).to receive(:for_provider_key).with(
-        provider_key: "claude",
+      expect(Runners::HarnessExecutionPlan).to receive(:for_runner_key).with(
+        runner_key: "claude",
         prompt: "ping",
         options: hash_including(dangerous_mode: true),
         provider_runtime: have_attributes(model: "claude-sonnet-4-6")
@@ -507,15 +507,15 @@ RSpec.describe Activities::RunAgentActivity do
       llm_model = create(:llm_model, model_id: "gpt-5.4", provider: "openai")
       create(:model_selection, agent_run: agent_run, llm_model: llm_model)
       context = described_class::CommandContext.new(
-        provider_candidate: "claude",
-        provider: "claude",
+        runner_candidate: "claude",
+        runner: "claude",
         user: nil
       )
 
       expect {
         activity.send(:build_command, context, "ping", agent_run: agent_run)
       }.to raise_error(
-        Activities::RunAgentActivity::ProviderExecutionError,
+        Activities::RunAgentActivity::RunnerExecutionError,
         /Selected model gpt-5\.4 \(openai\) is not compatible with claude \(expects anthropic\)/
       )
     end
@@ -686,7 +686,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect {
         activity.send(:build_command, opencode_context, "ping", agent_run: agent_run)
       }.to raise_error(
-        Activities::RunAgentActivity::ProviderExecutionError,
+        Activities::RunAgentActivity::RunnerExecutionError,
         /Selected model different-model does not match configured runtime model moonshotai\/kimi-k2-0905/
       )
     end
@@ -3669,14 +3669,14 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
-    describe "#synchronize_marketplace_mcp_for_provider!" do
+    describe "#synchronize_marketplace_mcp_for_runner!" do
       let(:provisioner) { instance_double(Containers::McpProvisioner) }
 
       before do
         mcp_server_snapshot = []
         mcp_provisioned_servers = nil
 
-        allow(activity).to receive(:marketplace_has_attachments?).with(agent_run).and_return(true)
+        allow(activity).to receive(:marketplace_attachments_attached?).with(agent_run).and_return(true)
         allow(agent_run).to receive(:mcp_server_snapshot) { mcp_server_snapshot }
         allow(agent_run).to receive(:mcp_provisioned_servers) { mcp_provisioned_servers }
         allow(MarketplaceEntries::RerenderForRun).to receive(:call) do
@@ -3686,36 +3686,36 @@ expect(container_service).to receive(:execute).with(
         allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
       end
 
-      it "wraps provisioning failures in ProviderExecutionError" do
+      it "wraps provisioning failures in RunnerExecutionError" do
         allow(provisioner).to receive(:provision).and_raise(StandardError, "boom")
 
         expect {
           activity.send(
-            :synchronize_marketplace_mcp_for_provider!,
+            :synchronize_marketplace_mcp_for_runner!,
             agent_run: agent_run,
-            provider_candidate: "claude_code",
-            provider: "claude",
+            runner_candidate: "claude_code",
+            runner: "claude",
             user: user
           )
         }.to raise_error(
-          Activities::RunAgentActivity::ProviderExecutionError,
+          Activities::RunAgentActivity::RunnerExecutionError,
           "Failed to synchronize marketplace MCP servers: boom"
         )
       end
 
-      it "re-raises ProviderExecutionError unchanged" do
+      it "re-raises RunnerExecutionError unchanged" do
         allow(provisioner).to receive(:provision)
-          .and_raise(Activities::RunAgentActivity::ProviderExecutionError, "provider failed")
+          .and_raise(Activities::RunAgentActivity::RunnerExecutionError, "provider failed")
 
         expect {
           activity.send(
-            :synchronize_marketplace_mcp_for_provider!,
+            :synchronize_marketplace_mcp_for_runner!,
             agent_run: agent_run,
-            provider_candidate: "claude_code",
-            provider: "claude",
+            runner_candidate: "claude_code",
+            runner: "claude",
             user: user
           )
-        }.to raise_error(Activities::RunAgentActivity::ProviderExecutionError, "provider failed")
+        }.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, "provider failed")
       end
     end
 

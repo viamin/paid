@@ -71,6 +71,10 @@ module Screenshots
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
       providers_edit: Target.new(slug: "providers_edit", path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/edit" }, requires_auth: true),
+      marketplace_entries: Target.new(slug: "marketplace_entries", path_builder: "/marketplace_entries", requires_auth: true),
+      marketplace_entry_new: Target.new(slug: "marketplace_entry_new", path_builder: "/marketplace_entries/new", requires_auth: true),
+      marketplace_entry_show: Target.new(slug: "marketplace_entry_show", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}" }, requires_auth: true),
+      marketplace_entry_edit: Target.new(slug: "marketplace_entry_edit", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}/edit" }, requires_auth: true),
       service_containers: Target.new(slug: "service_containers", path_builder: "/service_containers", requires_auth: true),
       service_container_new: Target.new(slug: "service_container_new", path_builder: "/service_containers/new", requires_auth: true),
       service_container_show: Target.new(slug: "service_container_show", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}" }, requires_auth: true),
@@ -179,6 +183,7 @@ module Screenshots
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "runners_controller.rb" => %i[providers providers_new providers_edit],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
+      "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
       "github_tokens_controller.rb" => %i[github_tokens github_token_new github_token_show],
@@ -265,6 +270,7 @@ module Screenshots
     def targets_for_javascript_controller(relative_path)
       case relative_path
       when "clarifying_questions_controller.js" then [ :project_issue_clarifying_questions ]
+      when "marketplace_picker_controller.js" then [ :project_agent_run_new ]
       else
         []
       end
@@ -312,7 +318,9 @@ module Screenshots
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
+      when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
+      when "agent_runs/_detail.html.erb", "agent_runs/_detail_actions.html.erb" then [ :project_agent_run_show ]
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
       when /\Astrategy_reviews\// then strategy_review_targets(relative_path.delete_prefix("strategy_reviews/"))

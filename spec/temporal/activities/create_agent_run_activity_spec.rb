@@ -287,6 +287,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         "goal" => "create_pr",
         "agent_type" => "claude_code",
         "runner_id" => claude_runner.id,
+        "marketplace_entries" => [],
         "experiments" => {}
       }
     end

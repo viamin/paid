@@ -15,8 +15,8 @@ RSpec.describe Coordination::FailureRecoveryService do
 
       result = described_class.call(agent_run: agent_run)
 
-      expect(result.failure_category).to eq("provider_error")
-      expect(result.chosen_action).to eq("retry_alternate_provider")
+      expect(result.failure_category).to eq("runner_error")
+      expect(result.chosen_action).to eq("retry_alternate_runner")
       expect(result.action_params).to include(
         "exclude_runners" => %w[anthropic openai],
         "policy_source" => "defaults"
@@ -62,7 +62,7 @@ RSpec.describe Coordination::FailureRecoveryService do
 
       result = described_class.call(agent_run: agent_run)
 
-      expect(result.chosen_action).to eq("retry_same_provider")
+      expect(result.chosen_action).to eq("retry_same_runner")
       expect(result.action_params).to include(
         "runner" => "anthropic",
         "policy_source" => "defaults"

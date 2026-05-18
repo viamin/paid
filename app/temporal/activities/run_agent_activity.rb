@@ -527,6 +527,149 @@ module Activities
 
     private
 
+    # Synchronizes marketplace-driven MCP server attachments for the current
+    # runner attempt. Re-renders the run's marketplace entries for the chosen
+    # runner key, then re-provisions MCP if the snapshot changed (or hasn't
+    # been provisioned yet). Re-raises RunnerExecutionError unchanged so the
+    # fallback loop can handle it; wraps other errors so they don't propagate
+    # as the top-level activity error.
+    def synchronize_marketplace_mcp_for_runner!(agent_run:, runner_candidate:, runner:, user:)
+      return unless marketplace_attachments_attached?(agent_run)
+
+      runner_key = marketplace_runner_key(runner_candidate, runner, user)
+      previous_snapshot = Array(agent_run.mcp_server_snapshot).deep_dup
+
+      AgentRun.transaction do
+        MarketplaceEntries::RerenderForRun.call(agent_run: agent_run, provider_key: runner_key)
+
+        next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
+
+        Containers::McpProvisioner.new.provision(
+          agent_run,
+          network: Containers::Provision.network_for(agent_run: agent_run)
+        )
+      end
+    rescue RunnerExecutionError
+      raise
+    rescue => e
+      raise RunnerExecutionError, "Failed to synchronize marketplace MCP servers: #{e.message}"
+    end
+
+    def marketplace_attachments_attached?(agent_run)
+      @marketplace_attachments_attached_cache ||= {}
+      @marketplace_attachments_attached_cache[agent_run.id] ||=
+        agent_run.agent_run_marketplace_entries.exists?
+    end
+
+    def marketplace_runner_key(runner_candidate, runner, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      return runner_entry.runner_key if runner_entry
+
+      RunnerSupport.runner_key_for_agent_type(runner)
+    end
+
+    def marketplace_runtime_env(runner_key)
+      return {} unless @agent_run
+
+      @marketplace_runtime_env ||= {}
+      @marketplace_runtime_env[runner_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_env(
+        @agent_run,
+        provider_key: runner_key
+      )
+    end
+
+    def marketplace_runtime_preparation(runner_key)
+      return unless @agent_run
+
+      @marketplace_runtime_preparation ||= {}
+      @marketplace_runtime_preparation[runner_key] ||= MarketplaceEntries::RuntimeAttachments.runtime_preparation(
+        @agent_run,
+        provider_key: runner_key
+      )
+    end
+
+    def base_prompt_for(agent_run)
+      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+    end
+
+    def effective_prompt_for(agent_run:, base_prompt:, runner_key:)
+      MarketplaceEntries::InjectIntoPrompt.call(
+        agent_run: agent_run,
+        prompt: base_prompt,
+        provider_key: runner_key
+      )
+    end
+
+    # Resolves the AgentHarness::ProviderRuntime to use for a given runner
+    # candidate. When the runner entry already declares a fixed runtime
+    # (e.g. opencode/aider with a configured model), validates that any
+    # selected LlmModel matches it. Otherwise constructs a runtime from the
+    # selected model, validating that its provider is compatible with the
+    # runner's expected LLM provider family.
+    def selected_runner_runtime(runner_candidate, user, agent_run)
+      runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
+      configured_runtime = runner_entry&.agent_harness_runner_runtime
+      selected_model = agent_run&.model_selection&.llm_model
+      selected_model_id = selected_model&.model_id
+
+      if configured_runtime&.model.present? && selected_model_id.present?
+        validate_selected_model_matches_runtime!(runner_entry, selected_model_id, configured_runtime)
+        return configured_runtime
+      end
+
+      return configured_runtime if configured_runtime
+      return nil if selected_model_id.blank?
+      return nil if codex_subscription_auth_runtime?(runner_entry)
+
+      validate_selected_model_runner_compatibility!(runner_candidate, runner_entry, selected_model)
+
+      AgentHarness::ProviderRuntime.new(model: selected_model_id)
+    end
+
+    def codex_subscription_auth_runtime?(runner_entry)
+      runner_entry&.runner_key == "codex" && runner_entry&.subscription?
+    end
+
+    def runtime_cache_key(runtime)
+      return nil unless runtime
+
+      [
+        runtime.model,
+        runtime.api_provider,
+        runtime.base_url,
+        runtime.env,
+        runtime.unset_env,
+        runtime.metadata
+      ]
+    end
+
+    def validate_selected_model_matches_runtime!(runner_entry, selected_model_id, configured_runtime)
+      configured_model_id =
+        if runner_entry&.respond_to?(:direct_outbound_model_id) && runner_entry.direct_outbound_model_id.present?
+          runner_entry.direct_outbound_model_id
+        else
+          configured_runtime.model
+        end
+
+      return if configured_model_id.blank? || configured_model_id == selected_model_id
+
+      runner_label = runner_entry&.display_name || runner_entry&.runner_key || "runner"
+      raise RunnerExecutionError,
+        "Selected model #{selected_model_id} does not match configured runtime model #{configured_model_id} for #{runner_label}"
+    end
+
+    def validate_selected_model_runner_compatibility!(runner_candidate, runner_entry, selected_model)
+      return unless selected_model
+
+      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
+      return if compatible_provider.blank? || selected_model.provider == compatible_provider
+
+      runner_label = runner_entry&.display_name || runner_key
+      raise RunnerExecutionError,
+        "Selected model #{selected_model.model_id} (#{selected_model.provider}) is not compatible with #{runner_label} (expects #{compatible_provider})"
+    end
+
     def paused_result(agent_run_id)
       {
         agent_run_id: agent_run_id,
@@ -1530,22 +1673,22 @@ module Activities
       worker.value unless interrupted
     end
 
-    def build_command(command_context, prompt)
+    def build_command(command_context, prompt, agent_run: nil)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
 
       if runner_entry&.agent_harness_runtime?
-        harness_runtime_command(runner_entry, prompt)
+        harness_runtime_command(runner_entry, prompt, agent_run: agent_run)
       elsif runner_entry&.requires_direct_outbound?
-        plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry)
+        plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry, user: command_context.user, agent_run: agent_run)
         runner_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif runner_entry&.api_key?
-        plan = harness_execution_plan_for(command_context.runner, prompt)
+        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
         api_key_auth_command(runner_entry, plan.command[0..-2], prompt)
       elsif RunnerSupport.subscription_auth_unset_vars_for(command_context.runner).any?
-        plan = harness_execution_plan_for(command_context.runner, prompt)
+        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
         subscription_auth_command(command_context.runner, plan.command[0..-2], prompt)
       else
-        plan = harness_execution_plan_for(command_context.runner, prompt)
+        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
         plan.command
       end
     end
@@ -1563,25 +1706,28 @@ module Activities
     # servers are included so that a later execution on the same
     # activity instance with a different MCP setup does not reuse a
     # stale plan.
-    def harness_execution_plan_for(runner_key, prompt, runner_entry: nil)
+    def harness_execution_plan_for(runner_key, prompt, runner_entry: nil, user: nil, agent_run: nil)
       @harness_plan_cache ||= {}
-      cache_key = [ runner_key, prompt, runner_entry&.agent_harness_runner_runtime.present?, @effective_mcp_servers ]
+      runtime = selected_runner_runtime(runner_entry || runner_key, user, agent_run)
+      cache_key = [ runner_key, prompt, runtime_cache_key(runtime), @effective_mcp_servers ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
       options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
-      @harness_plan_cache[cache_key] = if runner_entry&.agent_harness_runner_runtime
+      @harness_plan_cache[cache_key] = if runner_entry
         Runners::HarnessExecutionPlan.call(
           runner: runner_entry,
           prompt: prompt,
-          options: options
+          options: options,
+          provider_runtime: runtime
         )
       else
         Runners::HarnessExecutionPlan.for_runner_key(
           runner_key: RunnerSupport.runner_key_for_agent_type(runner_key),
           prompt: prompt,
-          options: options
+          options: options,
+          provider_runtime: runtime
         )
       end
     end
@@ -1663,15 +1809,17 @@ module Activities
     # runner gains MCP support in the future, this method (and its
     # cache key) must be updated to include @effective_mcp_servers,
     # mirroring harness_execution_plan_for.
-    def direct_outbound_execution_plan(runner_entry, prompt)
+    def direct_outbound_execution_plan(runner_entry, prompt, agent_run: nil)
       @direct_outbound_execution_plan_cache ||= {}
-      cache_key = [ runner_entry.id, prompt ]
+      runtime = selected_runner_runtime(runner_entry, nil, agent_run)
+      cache_key = [ runner_entry.id, prompt, runtime_cache_key(runtime) ]
       return @direct_outbound_execution_plan_cache[cache_key] if @direct_outbound_execution_plan_cache.key?(cache_key)
 
       @direct_outbound_execution_plan_cache[cache_key] = Runners::HarnessExecutionPlan.call(
         runner: runner_entry,
         prompt: prompt,
-        options: { dangerous_mode: true }
+        options: { dangerous_mode: true },
+        provider_runtime: runtime
       )
     end
 
@@ -1904,8 +2052,8 @@ module Activities
     # Wraps the harness execution plan command with `env -u` to strip
     # proxy-specific headers inherited from container startup so they
     # are not forwarded to the real runner API.
-    def harness_runtime_command(runner_entry, prompt)
-      plan = direct_outbound_execution_plan(runner_entry, prompt)
+    def harness_runtime_command(runner_entry, prompt, agent_run: nil)
+      plan = direct_outbound_execution_plan(runner_entry, prompt, agent_run: agent_run)
       unset_vars = RunnerSupport.harness_runtime_unset_vars_for(runner_entry.runner_key)
       RunnerSupport.command_with_unset_env(plan.command, unset_vars)
     end
