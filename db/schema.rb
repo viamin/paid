@@ -167,7 +167,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
     t.boolean "auto_pick", default: false, null: false
-    t.integer "blocked_by_issue_ids", default: [], array: true, comment: "IDs of issues/PRs that block the created issue from being picked up for work."
+    t.bigint "blocked_by_issue_ids", default: [], array: true, comment: "IDs of issues/PRs that block the created issue from being picked up for work."
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40
