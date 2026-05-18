@@ -1371,6 +1371,29 @@ RSpec.describe Activities::RunAgentActivity do
 
   alias_method :create_opencode_provider_entry, :create_opencode_runner_entry
 
+  def configure_single_compatible_opencode_runner(agent_run:, user:)
+    llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+    create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+    allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude codex opencode])
+
+    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    kimi_runner = create_opencode_runner_entry(
+      user: user,
+      api_key: api_key,
+      name: "Kimi K2",
+      model: "moonshotai/kimi-k2-0905"
+    )
+    codex_runner = create(:runner, user: user, runner_key: "codex")
+
+    user.settings.update!(
+      fallback_enabled: true,
+      fallback_runners: [ kimi_runner.routing_key, codex_runner.routing_key ]
+    )
+
+    kimi_runner
+  end
+
   def expect_change_detection_retry_logs(logger, operation:)
     expect(logger).to have_received(:warn).with(hash_including(
       message: "agent_execution.change_detection_retry",
@@ -3395,6 +3418,23 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to include("rate limited")
+      end
+
+      it "surfaces a single compatible attempted runner as rate limited" do
+        kimi_runner = configure_single_compatible_opencode_runner(agent_run: agent_run, user: user)
+
+        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(
+          Temporalio::Error::ApplicationError,
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+        )
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq([ kimi_runner.routing_key ])
       end
 
       it "classifies 'exhausted ... capacity' as a rate limit" do

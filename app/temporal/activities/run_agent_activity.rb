@@ -484,7 +484,7 @@ module Activities
           selected_model = agent_run.model_selection&.llm_model
           if selected_model && runners.size == 1
             label = runner_attempt_label(runners.first, agent_run, user_settings.user)
-            reason = all_skipped_rate_limited ? "rate limited" : "unavailable"
+            reason = "rate limited"
             error_message = "No compatible runner available: #{label} is the only runner compatible with #{selected_model.model_id} and it is currently #{reason}"
             error_type = "NoCompatibleRunnerAvailable"
           end
