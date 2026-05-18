@@ -1571,18 +1571,21 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def timeout!(error: nil)
+  def timeout!(error: nil, guardrail_violation_type: nil, guardrail_context: nil)
     with_lock do
       reload
       if finished?
         false
       else
-        update!(
+        attributes = {
           status: "timeout",
           completed_at: Time.current,
           error_message: error,
           duration_seconds: duration
-        )
+        }
+        attributes[:guardrail_violation_type] = guardrail_violation_type unless guardrail_violation_type.nil?
+        attributes[:guardrail_context] = guardrail_context unless guardrail_context.nil?
+        update!(attributes)
       end
     end
   end

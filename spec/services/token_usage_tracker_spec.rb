@@ -266,11 +266,11 @@ RSpec.describe TokenUsageTracker do
       expect(agent_run.reload.token_limit_status).to eq("exceeded")
     end
 
-    it "pauses a running agent when the hard token limit is exceeded" do
+    it "times out a running agent when the hard token limit is exceeded" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
 
       agent_run.reload
-      expect(agent_run.status).to eq("paused")
+      expect(agent_run.status).to eq("timeout")
       expect(agent_run.guardrail_violation_type).to eq("token_limit")
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
     end
