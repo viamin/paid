@@ -24,16 +24,21 @@ class DockerOrphanCleanupJob < ApplicationJob
 
   VOLUME_PREFIX = "paid-workspace-"
   POOL_VOLUME_PREFIX = "paid-pool-workspace-"
+  COLLECTOR_VOLUME_PREFIX = "paid-collector-"
+  COLLECTOR_CONTAINER_LABEL = "paid.resource=collector_container"
+  COLLECTOR_STALE_AFTER = 1.hour
 
   def perform
     agent_removed = 0
     pool_removed = 0
+    collector_removed = 0
     service_removed = 0
     volume_result = { found: 0, removed: 0, failed: 0, active: 0, retained: 0 }
 
     Containers.all_backends.each do |backend|
       agent_removed += cleanup_agent_containers(backend: backend)
       pool_removed += cleanup_pool_containers(backend: backend)
+      collector_removed += cleanup_collector_containers(backend: backend)
       service_removed += cleanup_service_containers(backend: backend)
       backend_volume_result = cleanup_volumes(backend: backend)
       volume_result = volume_result.merge(backend_volume_result) { |_key, old_val, new_val| old_val + new_val }
@@ -43,6 +48,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       message: "container_manager.orphan_cleanup_complete",
       agent_containers_removed: agent_removed,
       pool_containers_removed: pool_removed,
+      collector_containers_removed: collector_removed,
       service_containers_removed: service_removed,
       volumes_found: volume_result[:found],
       volumes_removed: volume_result[:removed],
@@ -102,7 +108,22 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 3: Remove service containers with zero in-flight capacity runs.
+  # Phase 3: Remove orphaned collector containers that are stopped or stale.
+  def cleanup_collector_containers(backend:)
+    containers = list_containers_by_label(COLLECTOR_CONTAINER_LABEL, backend: backend)
+    return 0 if containers.empty?
+
+    removed = 0
+    containers.each do |container|
+      next if collector_container_active?(container)
+
+      project_id = container.info.dig("Labels", "paid.project_id")
+      removed += 1 if stop_and_remove_container(container, "collector", project_id, backend: backend)
+    end
+    removed
+  end
+
+  # Phase 4: Remove service containers with zero in-flight capacity runs.
   def cleanup_service_containers(backend:)
     containers = list_containers_by_label("paid.service_container=true", backend: backend)
     return 0 if containers.empty?
@@ -136,10 +157,10 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 4: Remove orphaned workspace volumes.
+  # Phase 5: Remove orphaned workspace volumes.
   # Skips volumes for runs with an unexpired retention TTL.
   def cleanup_volumes(backend:)
-    volumes = list_paid_volumes(backend: backend)
+    volumes = list_all_managed_volumes(backend: backend)
     return { found: 0, removed: 0, failed: 0, active: 0, retained: 0 } if volumes.empty?
 
     numeric_agent_run_ids = volumes
@@ -162,7 +183,27 @@ class DockerOrphanCleanupJob < ApplicationJob
     active = 0
     retained = 0
     active_pool_volume_names = active_pool_volume_names_for_backend(backend)
+    active_collector_volume_names = active_collector_volume_names_for_backend(backend)
     volumes.each do |volume|
+      if volume.id.start_with?(COLLECTOR_VOLUME_PREFIX)
+        if active_collector_volume_names.include?(volume.id)
+          active += 1
+          next
+        end
+
+        unless collector_volume_stale?(volume)
+          active += 1
+          next
+        end
+
+        if remove_volume(volume, nil, backend: backend)
+          removed += 1
+        else
+          failed += 1
+        end
+        next
+      end
+
       if volume.id.start_with?(POOL_VOLUME_PREFIX)
         if active_pool_volume_names.include?(volume.id)
           active += 1
@@ -231,8 +272,10 @@ class DockerOrphanCleanupJob < ApplicationJob
     false
   end
 
-  def list_paid_volumes(backend:)
-    backend.list_volumes.select { |v| v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) }
+  def list_all_managed_volumes(backend:)
+    backend.list_volumes.select do |v|
+      v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) || v.id.start_with?(COLLECTOR_VOLUME_PREFIX)
+    end
   rescue Docker::Error::DockerError => e
     Rails.logger.error(
       message: "container_manager.volume_list_failed",
@@ -284,6 +327,47 @@ class DockerOrphanCleanupJob < ApplicationJob
 
       (warm_names + warming_names + claimed_names).to_set
     end
+  end
+
+  def active_collector_volume_names_for_backend(backend)
+    @active_collector_volume_names ||= {}
+    @active_collector_volume_names[backend.identifier] ||= begin
+      list_containers_by_label(COLLECTOR_CONTAINER_LABEL, backend: backend)
+        .select { |container| collector_container_active?(container) }
+        .flat_map { |container| collector_volume_names_for(container) }
+        .to_set
+    end
+  end
+
+  def collector_container_active?(container)
+    container.info.dig("State", "Running") == true
+  end
+
+  def collector_volume_names_for(container)
+    Array(container.info["Mounts"]).filter_map do |mount|
+      mount["Name"] if mount["Type"] == "volume" && mount["Name"].to_s.start_with?(COLLECTOR_VOLUME_PREFIX)
+    end
+  end
+
+  def collector_volume_stale?(volume)
+    created_at = collector_volume_created_at(volume)
+    return false if created_at.nil?
+
+    created_at < COLLECTOR_STALE_AFTER.ago
+  end
+
+  def collector_volume_created_at(volume)
+    labels = volume.info["Labels"] if volume.info.respond_to?(:[])
+    labels ||= {}
+    labeled_time = labels["paid.created_at"]
+    return Time.zone.parse(labeled_time.to_s) if labeled_time.present?
+
+    created_at = volume.info.respond_to?(:[]) && volume.info["CreatedAt"]
+    return if created_at.blank?
+
+    Time.zone.parse(created_at.to_s)
+  rescue ArgumentError
+    nil
   end
 
   def claimed_pool_entry_active?(entry)
