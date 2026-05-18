@@ -9,7 +9,13 @@
 # chat_sessions, user_settings, and tenant_settings are intentionally
 # left in place — those are managed by the LegacyAttributeBridge in
 # their respective models during the migration window, and will be
-# dropped in a separate follow-up once dependent specs/code are audited.
+# dropped in a separate follow-up once dependent specs/code are audited
+# (#2083).
+#
+# Deployment note: this migration breaks app instances still running
+# phase 1 code (which sets `self.table_name = "providers"`). Deploy
+# during a low-traffic window, deploy the new app code immediately after
+# the migration, or expect a brief window of PG::UndefinedTable errors.
 class RenameProviderTablesToRunners < ActiveRecord::Migration[8.1]
   def up
     safety_assured do
