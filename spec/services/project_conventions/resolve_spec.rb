@@ -40,4 +40,37 @@ RSpec.describe ProjectConventions::Resolve do
     expect(result[:drift]).to be(true)
     expect(result[:value]).to include("type" => "plain", "fallback_subject" => "Apply Paid changes")
   end
+
+  it "returns defaults when the override is disabled" do
+    create(:project_convention_detection,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "conventional_commits", "required" => true, "default_type" => "feat" })
+    create(:project_convention_override,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "plain" },
+      enabled: false)
+
+    result = described_class.call(project:, key: "commit_style")
+
+    expect(result[:source]).to eq("override")
+    expect(result[:enabled]).to be(false)
+    expect(result[:value]).to eq(described_class::DEFAULTS["commit_style"].deep_stringify_keys)
+  end
+
+  it "preserves default keys when override is enabled with detection present" do
+    create(:project_convention_detection,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "conventional_commits", "required" => true })
+    create(:project_convention_override,
+      project: project,
+      key: "commit_style",
+      value: { "default_type" => "fix" })
+
+    result = described_class.call(project:, key: "commit_style")
+
+    expect(result[:value]).to include("type" => "conventional_commits", "required" => true, "default_type" => "fix")
+  end
 end

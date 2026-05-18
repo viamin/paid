@@ -58,7 +58,7 @@ class ConventionalCommitTitle
     end
 
     def default_style(style_key)
-      ProjectConventions::Resolve::DEFAULTS.fetch(style_key)
+      ProjectConventions::Resolve::DEFAULTS.fetch(style_key, {})
     end
 
     def infer_type(issue, title:, fallback_type:)

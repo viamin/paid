@@ -88,16 +88,17 @@ module ProjectConventions
     end
 
     def hook_manager_detection
-      if repo_file?("lefthook.yml") || repo_file?("lefthook.yaml")
+      lefthook_path = repo_file?("lefthook.yml") ? "lefthook.yml" : (repo_file?("lefthook.yaml") ? "lefthook.yaml" : nil)
+      if lefthook_path
         return build_detection(
           key: "hook_manager",
           value: {
-            "path" => repo_file?("lefthook.yml") ? "lefthook.yml" : "lefthook.yaml",
+            "path" => lefthook_path,
             "required" => true,
             "type" => "lefthook"
           },
           evidence: {
-            "paths" => [ repo_file?("lefthook.yml") ? "lefthook.yml" : "lefthook.yaml" ],
+            "paths" => [ lefthook_path ],
             "signals" => [ "repo_managed_hooks" ]
           }
         )

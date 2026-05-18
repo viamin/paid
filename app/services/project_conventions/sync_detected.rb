@@ -44,7 +44,7 @@ module ProjectConventions
       project.project_convention_detections.where(project_version: project_version).find_each do |record|
         next if detections.any? { |detection| detection_identity(detection) == detection_identity(record) }
 
-        record.delete
+        record.destroy!
       end
     end
 

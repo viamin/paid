@@ -40,9 +40,10 @@ module ProjectConventions
       override = project.project_convention_overrides.find_by(key: key)
 
       if override
-        value = override.enabled ? merge_values(resolved_detection || default_value, override.value) : merge_values(default_value, {})
+        detection_base = resolved_detection.present? ? merge_values(default_value, resolved_detection) : default_value
+        value = override.enabled ? merge_values(detection_base, override.value) : default_value
         return result(
-          value: override.enabled ? value : default_value,
+          value: value,
           source: "override",
           enabled: override.enabled,
           confidence: override.enabled ? 1.0 : 0.0,
