@@ -25,9 +25,12 @@ module ProjectConventions
 
     def upsert_detections
       detections.each do |detection|
-        record = project.project_convention_detections.find_or_initialize_by(key: detection.fetch(:key))
-        record.update!(
+        record = project.project_convention_detections.find_or_initialize_by(
+          key: detection.fetch(:key),
           detector_key: detection.fetch(:detector_key),
+          project_version: project_version
+        )
+        record.update!(
           confidence: detection.fetch(:confidence),
           value: detection.fetch(:value),
           evidence: detection.fetch(:evidence),
@@ -38,8 +41,19 @@ module ProjectConventions
     end
 
     def remove_stale_detections
-      active_keys = detections.map { |detection| detection.fetch(:key) }
-      project.project_convention_detections.where.not(key: active_keys).delete_all
+      project.project_convention_detections.where(project_version: project_version).find_each do |record|
+        next if detections.any? { |detection| detection_identity(detection) == detection_identity(record) }
+
+        record.delete
+      end
+    end
+
+    def detection_identity(detection)
+      if detection.respond_to?(:fetch)
+        return [ detection.fetch(:key), detection.fetch(:detector_key) ]
+      end
+
+      [ detection.key, detection.detector_key ]
     end
   end
 end

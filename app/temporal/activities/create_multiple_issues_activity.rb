@@ -153,13 +153,18 @@ module Activities
 
       dep_indices = Array(task[:dependencies])
       if dep_indices.any?
+        resolved = ProjectConventions::IssueDependencies.convention_value(project)
         dep_lines = dep_indices.filter_map do |dep_index|
           gh_number = index_to_github_number[dep_index]
-          ProjectConventions::IssueDependencies.depends_on_line(project: project, github_number: gh_number) if gh_number
+          ProjectConventions::IssueDependencies.depends_on_line(
+            project: project,
+            github_number: gh_number,
+            resolved:
+          ) if gh_number
         end
 
         if dep_lines.any?
-          parts << ProjectConventions::IssueDependencies.heading(project: project)
+          parts << ProjectConventions::IssueDependencies.heading(project: project, resolved:)
           parts << dep_lines.join("\n")
         end
       end

@@ -305,28 +305,35 @@ module Activities
     end
 
     def append_dependency_text(body, upstream_issue, project:)
+      resolved = ProjectConventions::IssueDependencies.convention_value(project)
       dep_line = ProjectConventions::IssueDependencies.blocked_by_line(
         project: project,
         repo: upstream_issue[:target_repo],
-        github_number: upstream_issue[:issue_number]
+        github_number: upstream_issue[:issue_number],
+        resolved:
       )
-      append_dependency_lines(body, [ dep_line ], project: project)
+      append_dependency_lines(body, [ dep_line ], project: project, resolved:)
     end
 
     def append_blocked_by_text(body, agent_run, project:)
       blocked_issues = agent_run.project.issues.where(id: agent_run.blocked_by_issue_ids, github_state: "open")
       return body if blocked_issues.empty?
 
+      resolved = ProjectConventions::IssueDependencies.convention_value(project)
       dep_lines = blocked_issues.map do |issue|
-        ProjectConventions::IssueDependencies.depends_on_line(project:, github_number: issue.github_number)
+        ProjectConventions::IssueDependencies.depends_on_line(
+          project:,
+          github_number: issue.github_number,
+          resolved:
+        )
       end
-      append_dependency_lines(body, dep_lines, project: project)
+      append_dependency_lines(body, dep_lines, project: project, resolved:)
     end
 
-    def append_dependency_lines(body, dep_lines, project:)
+    def append_dependency_lines(body, dep_lines, project:, resolved: nil)
       return body if dep_lines.empty?
 
-      heading = ProjectConventions::IssueDependencies.heading(project: project)
+      heading = ProjectConventions::IssueDependencies.heading(project: project, resolved:)
       dep_text = dep_lines.map { |line| "- #{line}" }.join("\n")
 
       if body.include?(heading)

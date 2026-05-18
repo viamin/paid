@@ -70,7 +70,6 @@ jobs:
           end
 
           run = nil
-          matching_run_seen = false
           120.times do
             runs = get_json(
               "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&head_sha=#{head_sha}&per_page=100",
@@ -88,30 +87,13 @@ jobs:
               end
             end
 
-            matching_run_seen ||= !run.nil?
             break if run && run["status"] == "completed"
 
             run = nil if run && run["status"] != "completed"
             sleep 10
           end
 
-          unless run
-            fallback_status = pr_action == "synchronize" ? "no_ui_changes" : "skip"
-            warning =
-              if matching_run_seen
-                "Timed out waiting for PR Screenshots capture workflow for #{head_sha}; skipping publish with #{fallback_status}."
-              else
-                "No PR Screenshots capture workflow run found for #{head_sha}; skipping publish with #{fallback_status}."
-              end
-
-            warn warning
-            File.open(output_path, "a") do |file|
-              file.puts("run_id=")
-              file.puts("artifact_present=false")
-              file.puts("comment_status=#{fallback_status}")
-            end
-            exit 0
-          end
+          raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
 
           jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
           capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }

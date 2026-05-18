@@ -137,13 +137,18 @@ module Activities
       parts << "Sub-issue of ##{parent_issue.github_number}"
 
       if creation_mode == ORCHESTRATION_MODE
+        resolved = ProjectConventions::IssueDependencies.convention_value(project)
         dependency_lines = Array(task[:dependencies]).filter_map do |dependency_index|
           dependency_number = index_to_github_number[dependency_index]
-          ProjectConventions::IssueDependencies.depends_on_line(project:, github_number: dependency_number) if dependency_number
+          ProjectConventions::IssueDependencies.depends_on_line(
+            project:,
+            github_number: dependency_number,
+            resolved:
+          ) if dependency_number
         end
 
         if dependency_lines.any?
-          parts << ProjectConventions::IssueDependencies.heading(project: project)
+          parts << ProjectConventions::IssueDependencies.heading(project: project, resolved:)
           parts << dependency_lines.join("\n")
         end
       end

@@ -5,6 +5,13 @@ require "rails_helper"
 RSpec.describe ProjectConventions::IssueDependencies do
   let(:first_project) { create(:project) }
   let(:second_project) { create(:project) }
+  let(:resolved) do
+    {
+      "depends_on_prefix" => "Requires",
+      "blocked_by_prefix" => "Awaits",
+      "heading" => "## Blockers"
+    }
+  end
 
   it "resolves dependency wording per call instead of reusing stale process state" do
     create(:project_convention_override,
@@ -28,5 +35,17 @@ RSpec.describe ProjectConventions::IssueDependencies do
     expect(described_class.depends_on_line(project: second_project, github_number: 34)).to eq("Depends on #34")
     expect(described_class.heading(project: first_project)).to eq("## Blockers")
     expect(described_class.heading(project: second_project)).to eq("## Dependencies")
+  end
+
+  it "uses a pre-resolved convention without querying again" do
+    expect(ProjectConventions::Resolve).not_to receive(:call)
+
+    expect(
+      described_class.depends_on_line(project: first_project, github_number: 12, resolved:)
+    ).to eq("Requires #12")
+    expect(
+      described_class.blocked_by_line(project: first_project, repo: "acme/repo", github_number: 34, resolved:)
+    ).to eq("Awaits acme/repo#34")
+    expect(described_class.heading(project: first_project, resolved:)).to eq("## Blockers")
   end
 end
