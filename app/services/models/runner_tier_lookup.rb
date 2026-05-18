@@ -21,10 +21,11 @@ module Models
     end
 
     def compatible_model_provider
-      runner_key = agent_run.runner&.runner_key.to_s
-      return nil if runner_key.blank?
+      runner = agent_run.runner
+      return nil unless runner
 
-      Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key]
+      runner.direct_outbound_llm_model_provider.presence ||
+        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
     end
 
     def excluded_model?(model, excluded)
