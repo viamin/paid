@@ -622,7 +622,9 @@ RSpec.describe Providers::TestAgent do
           :opencode,
           timeout: 60,
           executor: an_instance_of(Containers::HarnessExecutor),
-          provider_runtime: nil
+          provider_runtime: have_attributes(
+            unset_env: array_including("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+          )
         )
       end
     end

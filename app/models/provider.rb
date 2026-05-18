@@ -38,9 +38,8 @@ class Provider < ApplicationRecord
                     opencode_model_provider: "deepseek" },
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
                    opencode_model_provider: "mistral" },
-    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic", service_type: "minimax",
-                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
-                   opencode_model_provider: "minimax" },
+    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic/v1", service_type: "minimax",
+                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
@@ -773,9 +772,7 @@ class Provider < ApplicationRecord
   def opencode_api_key_config_must_be_valid
     return unless provider_key == "opencode"
     if subscription?
-      if opencode_model_id.blank?
-        errors.add(:config, "must include an OpenCode model id")
-      elsif !opencode_model_id.include?("/")
+      if opencode_model_id.present? && !opencode_model_id.match?(%r{\A[^/]+/[^/]+})
         errors.add(:config, "must use a fully qualified OpenCode model id like openai/gpt-5")
       end
       return
@@ -959,15 +956,23 @@ class Provider < ApplicationRecord
   def opencode_provider_runtime
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
-    provider_id = model_id.split("/", 2).first
     env = {}
+    provider_key = model_id.split("/", 2).first
+    provider_config = {}
 
     if api_key?
       api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
       env_var = direct_outbound_api_key_env_var(opencode_api_provider)
       env = { env_var => provider_api_key&.api_key.to_s }
-      env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
-      provider_id = opencode_api_provider
+      provider_key = opencode_api_provider
+
+      # Providers using @ai-sdk/anthropic receive their base URL through the
+      # provider config (OPENAI_BASE_URL is only read by the OpenAI-compatible SDK).
+      if api_config[:opencode_npm] == "@ai-sdk/anthropic" && api_config[:base_url]
+        provider_config["baseURL"] = api_config[:base_url]
+      elsif api_config[:base_url]
+        env["OPENAI_BASE_URL"] = api_config[:base_url]
+      end
     end
 
     AgentHarness::ProviderRuntime.new(
@@ -976,7 +981,7 @@ class Provider < ApplicationRecord
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
         config: {
-          "provider" => { provider_id => {} }
+          "provider" => { provider_key => provider_config }
         }
       }
     )
