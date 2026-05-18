@@ -957,14 +957,14 @@ class Provider < ApplicationRecord
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
     env = {}
-    provider_key = model_id.split("/", 2).first
+    runtime_provider_key = model_id.split("/", 2).first
     provider_config = {}
 
     if api_key?
       api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
       env_var = direct_outbound_api_key_env_var(opencode_api_provider)
       env = { env_var => provider_api_key&.api_key.to_s }
-      provider_key = opencode_api_provider
+      runtime_provider_key = opencode_api_provider
 
       # Providers using @ai-sdk/anthropic receive their base URL through the
       # provider config (OPENAI_BASE_URL is only read by the OpenAI-compatible SDK).
@@ -981,7 +981,7 @@ class Provider < ApplicationRecord
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
         config: {
-          "provider" => { provider_key => provider_config }
+          "provider" => { runtime_provider_key => provider_config }
         }
       }
     )
