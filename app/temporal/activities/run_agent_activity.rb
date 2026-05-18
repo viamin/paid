@@ -86,6 +86,7 @@ module Activities
     DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
     PREFLIGHT_TIMEOUT_SECONDS = 10
+    DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -986,11 +987,12 @@ module Activities
       command = build_command(command_context, prompt, agent_run: agent_run)
       env = command_env_for(command_context, prompt, agent_run: agent_run)
       preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
+      preflight_timeout = preflight_timeout_seconds_for(command_context.provider_candidate, command_context.user)
 
       result = container_service.execute(
         command,
-        timeout: PREFLIGHT_TIMEOUT_SECONDS,
-        idle_timeout: PREFLIGHT_TIMEOUT_SECONDS,
+        timeout: preflight_timeout,
+        idle_timeout: preflight_timeout,
         env: env,
         preparation: preparation,
         abort_patterns: aggregated_abort_patterns
@@ -1041,7 +1043,8 @@ module Activities
       end
       raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
     rescue Containers::Provision::TimeoutError => e
-      reason = "Timed out after #{PREFLIGHT_TIMEOUT_SECONDS}s: #{e.message}. Check proxy configuration, auth, and network policy."
+      preflight_timeout = preflight_timeout_seconds_for(command_context.provider_candidate, command_context.user)
+      reason = "Timed out after #{preflight_timeout}s: #{e.message}. Check proxy configuration, auth, and network policy."
       raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       reset_at = rate_limit_reset_at(provider, e.matched_output.to_s)
@@ -1069,6 +1072,13 @@ module Activities
       # Provider config unavailable — skip harness preflight and let the
       # smoke execution catch any real issues.
       nil
+    end
+
+    def preflight_timeout_seconds_for(provider_candidate, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS if provider_entry&.requires_direct_outbound?
+
+      PREFLIGHT_TIMEOUT_SECONDS
     end
 
     # Checks if the agent run is stuck in an infinite loop by analyzing
@@ -1785,10 +1795,15 @@ module Activities
 
       return configured_runtime if configured_runtime
       return nil if selected_model_id.blank?
+      return nil if codex_subscription_auth_runtime?(provider_entry)
 
       validate_selected_model_provider_compatibility!(provider_candidate, provider_entry, selected_model)
 
       AgentHarness::ProviderRuntime.new(model: selected_model_id)
+    end
+
+    def codex_subscription_auth_runtime?(provider_entry)
+      provider_entry&.provider_key == "codex" && provider_entry&.subscription?
     end
 
     def runtime_cache_key(runtime)
