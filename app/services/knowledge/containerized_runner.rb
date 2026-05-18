@@ -254,7 +254,8 @@ module Knowledge
         "Labels" => {
           "paid.managed" => "true",
           "paid.resource" => "collector_volume",
-          "paid.project_id" => project.id.to_s
+          "paid.project_id" => project.id.to_s,
+          "paid.created_at" => Time.current.iso8601
         }
       )
     end
