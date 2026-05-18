@@ -835,5 +835,47 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         )
       end
     end
+
+    context "with blocked_by_issue_ids" do
+      let!(:blocker_issue) { create(:issue, project: project, github_number: 42, is_pull_request: false) }
+      let!(:blocker_pr) { create(:issue, project: project, github_number: 99, is_pull_request: true) }
+
+      before do
+        agent_run.update!(blocked_by_issue_ids: [ blocker_issue.id, blocker_pr.id ])
+      end
+
+      it "appends blocked by references to the issue body" do
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/Blocked by #42/))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes all blockers in the dependency section" do
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/Blocked by #42.*Blocked by #99/m))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes a Dependencies section in the body" do
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/## Dependencies/))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
   end
 end
