@@ -87,6 +87,43 @@ RSpec.describe Activities::RunAgentActivity do
     ab_test
   end
 
+  def create_opencode_provider_for(user)
+    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+    create(:provider, :api_key,
+      user: user,
+      provider_key: "opencode",
+      provider_api_key: api_key,
+      config: {
+        "opencode" => {
+          "model" => "moonshotai/kimi-k2",
+          "api_provider" => "openrouter"
+        }
+      })
+  end
+
+  def run_direct_outbound_preflight(activity:, agent_run:, container_service:, provider:, user:)
+    command_context = Activities::RunAgentActivity::CommandContext.new(
+      provider_candidate: provider,
+      provider: provider.provider_key,
+      user: user
+    )
+
+    allow(activity).to receive(:run_provider_preflight!).and_call_original
+    allow(activity).to receive_messages(
+      preflight_provider_instance: nil,
+      build_command: %w[echo ok],
+      command_env_for: {},
+      command_preparation_for: nil
+    )
+
+    activity.send(:run_provider_preflight!,
+      agent_run: agent_run,
+      container_service: container_service,
+      command_context: command_context,
+      provider: provider.provider_key,
+      execution_env: {})
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:mock_context) { instance_double(Temporalio::Activity::Context) }
 
@@ -689,6 +726,24 @@ RSpec.describe Activities::RunAgentActivity do
         Activities::RunAgentActivity::ProviderExecutionError,
         /Selected model different-model does not match configured runtime model moonshotai\/kimi-k2-0905/
       )
+    end
+  end
+
+  describe "#selected_provider_runtime" do
+    it "ignores Paid model selection for Codex subscription-auth runs" do
+      codex_provider = create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
+      runtime_issue = create(:issue, project: project)
+      run = create(:agent_run, :with_git_context,
+        project: project,
+        issue: runtime_issue,
+        agent_type: "codex",
+        provider: codex_provider,
+        container_id: "abc123")
+      create(:model_selection, agent_run: run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o"))
+
+      runtime = activity.send(:selected_provider_runtime, codex_provider, nil, run)
+
+      expect(runtime).to be_nil
     end
   end
 
@@ -2057,6 +2112,27 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
             idle_timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
+          )
+        )
+      end
+
+      it "uses a longer timeout for direct-outbound provider preflight" do
+        opencode_provider = create_opencode_provider_for(user)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+
+        run_direct_outbound_preflight(
+          activity: activity,
+          agent_run: agent_run,
+          container_service: container_service,
+          provider: opencode_provider,
+          user: user
+        )
+
+        expect(container_service).to have_received(:execute).with(
+          %w[echo ok],
+          hash_including(
+            timeout: described_class::DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS,
+            idle_timeout: described_class::DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS
           )
         )
       end

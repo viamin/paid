@@ -19,6 +19,11 @@ module Models
     def call
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
+      if skip_model_selection?
+        persist_decision_log(outcome: "no_selection", duration_ms: 0)
+        return nil
+      end
+
       selected = select_model
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
       unless selected
@@ -60,6 +65,11 @@ module Models
     end
 
     private
+
+    def skip_model_selection?
+      provider = agent_run.provider
+      provider&.provider_key == "codex" && provider&.subscription?
+    end
 
     def select_model
       project = agent_run.project
