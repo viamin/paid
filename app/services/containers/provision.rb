@@ -118,6 +118,7 @@ module Containers
     TimeoutCheckState = Struct.new(
       :mutex, :timeout_reason_ref, :startup_timeout, :idle_timeout,
       :timeout, :started_at, :heartbeat_path, :output_received_ref, :last_activity_ref,
+      :startup_heartbeat_active_ref,
       keyword_init: true
     )
 
@@ -404,7 +405,8 @@ module Containers
         started_at: started_at,
         heartbeat_path: heartbeat_path,
         output_received_ref: -> { output_received },
-        last_activity_ref: -> { last_activity_at }
+        last_activity_ref: -> { last_activity_at },
+        startup_heartbeat_active_ref: -> { startup_heartbeat&.alive? }
       )
 
       watchdog_ctx = WatchdogContext.new(
@@ -2481,9 +2483,10 @@ module Containers
           diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: false)
         )
       when :idle
+        diagnostics = timeout_diagnostics_for_state(timeout_check, output_received: true)
         raise IdleTimeoutError.new(
-          "No output received for #{timeout_check.idle_timeout} seconds",
-          diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: true)
+          idle_timeout_message(timeout_check, diagnostics),
+          diagnostics: diagnostics
         )
       when :wall_clock
         elapsed_seconds = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - timeout_check.started_at)).round(1)
@@ -2542,15 +2545,16 @@ module Containers
           )
         )
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
+        diagnostics = timeout_diagnostics_from_elapsed(
+          elapsed_since_start,
+          elapsed_since_activity,
+          output_received,
+          tc.heartbeat_path,
+          heartbeat_age
+        )
         raise IdleTimeoutError.new(
-          "No output received for #{tc.idle_timeout} seconds",
-          diagnostics: timeout_diagnostics_from_elapsed(
-            elapsed_since_start,
-            elapsed_since_activity,
-            output_received,
-            tc.heartbeat_path,
-            heartbeat_age
-          )
+          idle_timeout_message(tc, diagnostics),
+          diagnostics: diagnostics
         )
       elsif tc.timeout && elapsed_since_start >= tc.timeout && !heartbeat_fresh
         log_system("container.execute.timeout",
@@ -2568,6 +2572,22 @@ module Containers
           )
         )
       end
+    end
+
+    def idle_timeout_message(timeout_check, diagnostics)
+      if startup_grace_expired_without_output?(timeout_check)
+        elapsed = timeout_check.startup_timeout + timeout_check.idle_timeout
+        "No output received after startup grace expired (waited #{elapsed.round(1)} seconds total; " \
+          "startup grace #{timeout_check.startup_timeout} seconds, idle timeout #{timeout_check.idle_timeout} seconds)"
+      else
+        "No output received for #{timeout_check.idle_timeout} seconds"
+      end
+    end
+
+    def startup_grace_expired_without_output?(timeout_check)
+      timeout_check.startup_timeout &&
+        timeout_check.output_received_ref&.call == false &&
+        timeout_check.startup_heartbeat_active_ref&.call == false
     end
 
     def timeout_diagnostics_for_state(timeout_check, output_received:)

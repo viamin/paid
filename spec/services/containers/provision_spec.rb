@@ -3049,7 +3049,34 @@ RSpec.describe Containers::Provision do
         }.to raise_error(described_class::IdleTimeoutError)
       end
 
-      it "allows idle timeout to fire after startup_timeout deadline elapses with no output" do
+      it "reports cumulative startup plus idle budget when startup grace expires before any output" do
+        timeout_check = described_class::TimeoutCheckState.new(
+          startup_timeout: 360,
+          idle_timeout: 360,
+          output_received_ref: -> { false },
+          startup_heartbeat_active_ref: -> { false }
+        )
+
+        message = service.send(:idle_timeout_message, timeout_check, elapsed_seconds: 720)
+
+        expect(message).to include("waited 720 seconds total")
+        expect(message).to include("startup grace 360 seconds")
+        expect(message).to include("idle timeout 360 seconds")
+        expect(message).not_to eq("No output received for 360 seconds")
+      end
+
+      it "keeps the simple idle message after output has been produced" do
+        timeout_check = described_class::TimeoutCheckState.new(
+          startup_timeout: 360,
+          idle_timeout: 360,
+          output_received_ref: -> { true },
+          startup_heartbeat_active_ref: -> { false }
+        )
+
+        expect(service.send(:idle_timeout_message, timeout_check, elapsed_seconds: 360)).to eq("No output received for 360 seconds")
+      end
+
+      it "reports total wait when idle timeout fires after silent startup grace expires" do
         host_path = service.heartbeat_host_path
         skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
 
@@ -3059,8 +3086,6 @@ RSpec.describe Containers::Provision do
           [ [], [], 137 ]
         end
 
-        # startup_timeout == idle_timeout so the idle timeout fires once the
-        # startup heartbeat deadline passes and the file goes stale.
         # Total hang bound = startup_timeout + idle_timeout = 0.2 + 0.1s here.
         expect {
           service.execute(
@@ -3070,7 +3095,12 @@ RSpec.describe Containers::Provision do
             idle_timeout: 0.1,
             heartbeat_path: host_path
           )
-        }.to raise_error(described_class::IdleTimeoutError)
+        }.to raise_error(described_class::IdleTimeoutError) { |error|
+          expect(error.message).to include("No output received after startup grace expired")
+          expect(error.message).to include("startup grace 0.2 seconds")
+          expect(error.message).to include("idle timeout 0.1 seconds")
+          expect(error.message).not_to eq("No output received for 0.1 seconds")
+        }
       end
 
       it "returns nil from start_startup_heartbeat when heartbeat_host_path is absent" do
