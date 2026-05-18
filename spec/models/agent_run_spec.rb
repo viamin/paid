@@ -1156,6 +1156,22 @@ RSpec.describe AgentRun do
         end
       end
 
+      it "can persist guardrail metadata atomically" do
+        agent_run = create(:agent_run, :running)
+        context = { violation_type: "time_limit", details: "Execution exceeded 3600s limit" }
+
+        agent_run.timeout!(
+          error: "guardrail: time_limit — Execution exceeded 3600s limit",
+          guardrail_violation_type: "time_limit",
+          guardrail_context: context
+        )
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.guardrail_violation_type).to eq("time_limit")
+        expect(agent_run.guardrail_context).to eq(context.deep_stringify_keys)
+      end
+
       it "does not overwrite a finished run", :aggregate_failures do
         completed_at = 10.minutes.ago
         agent_run = create(:agent_run, :completed,
@@ -3595,6 +3611,25 @@ RSpec.describe AgentRun do
         hash_including(
           "status" => "timeout",
           "error_message" => "Agent execution timed out"
+        )
+      )
+    end
+
+    it "captures guardrail subtype in the timeout snapshot" do
+      agent_run = create(:agent_run, :running, goal: "create_issue")
+
+      expect {
+        agent_run.timeout!(
+          error: "guardrail: time_limit — Execution exceeded 3600s limit",
+          guardrail_violation_type: "time_limit",
+          guardrail_context: { violation_type: "time_limit", details: "Execution exceeded 3600s limit" }
+        )
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "timeout",
+          "error_message" => "guardrail: time_limit — Execution exceeded 3600s limit",
+          "guardrail_violation_type" => "time_limit"
         )
       )
     end

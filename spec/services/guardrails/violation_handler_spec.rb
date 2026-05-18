@@ -129,6 +129,22 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(context["execution_cleanup"]).to be_present
     end
 
+    it "enqueues failure recovery with terminal guardrail subtype in the initial timeout transition" do
+      expect {
+        described_class.call(
+          agent_run: agent_run,
+          violation_type: "time_limit",
+          details: "Execution exceeded 3600s limit"
+        )
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "timeout",
+          "guardrail_violation_type" => "time_limit"
+        )
+      )
+    end
+
     it "includes current run metrics in context" do
       agent_run.update!(iterations: 10, tokens_input: 5000, tokens_output: 2000, cost_cents: 75)
 

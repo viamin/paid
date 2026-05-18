@@ -3,7 +3,8 @@
 module Guardrails
   # Unified handler for guardrail violations. When any guardrail is triggered
   # (loop detection, token limit, cost limit, time limit, anomaly), this
-  # service pauses the agent run and sends alerts with actionable context.
+  # service pauses or terminates the agent run and sends alerts with
+  # actionable context.
   #
   # @example
   #   result = Guardrails::ViolationHandler.call(
@@ -52,14 +53,13 @@ module Guardrails
 
     def handle_terminal_violation
       context = build_violation_context
-      timed_out = agent_run.timeout!(error: "guardrail: #{violation_type} — #{details}")
-
-      return already_handled_result(context) unless timed_out
-
-      agent_run.update!(
+      timed_out = agent_run.timeout!(
+        error: "guardrail: #{violation_type} — #{details}",
         guardrail_violation_type: violation_type,
         guardrail_context: context
       )
+
+      return already_handled_result(context) unless timed_out
 
       log_violation(context)
       context = persist_execution_cleanup(context, stop_in_flight_execution)
