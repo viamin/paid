@@ -98,7 +98,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bundler (pinned to match Gemfile.lock)
-RUN gem install --no-document bundler:2.7.2
+RUN gem install --no-document bundler:4.0.11
 
 # Install ruby-maat (VCS mining tool for churn/hotspot analysis)
 # https://github.com/viamin/ruby-maat

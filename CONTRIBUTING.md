@@ -67,7 +67,7 @@ bash .devcontainer/enable-commit-signing.sh
 Prerequisites:
 
 - Ruby 3.4+
-- Bundler 2.7.2
+- Bundler 4.0.11
 - PostgreSQL 16+
 - Node.js 22.x
 - Yarn 1.22.22
@@ -78,7 +78,7 @@ If you use `asdf`, the repo pins tool versions in `.tool-versions`.
 For local development, start PostgreSQL, Temporal, and Qdrant first, then run:
 
 ```bash
-gem install bundler:2.7.2
+gem install bundler:4.0.11
 bin/setup
 bin/dev
 ```
