@@ -53,7 +53,7 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     expect(capture_step("Set up Chrome fallback")).to include(
       "id" => "setup_chrome",
       "if" => "steps.locate_chromium.outputs.chrome_path == ''",
-      "uses" => "browser-actions/setup-chrome@v1"
+      "uses" => "browser-actions/setup-chrome@v2"
     )
   end
 
