@@ -5,7 +5,7 @@ require "shellwords"
 
 RSpec.describe Containers::GitOperations do
   let(:project) { create(:project) }
-  let(:agent_run) { create(:agent_run, :running, project: project, provider: provider) }
+  let(:agent_run) { create(:agent_run, :running, project: project, runner: runner) }
   let(:container_service) { instance_double(Containers::Provision) }
   let(:git_ops) { described_class.new(container_service: container_service, agent_run: agent_run) }
 
@@ -15,8 +15,8 @@ RSpec.describe Containers::GitOperations do
   # Helper (not a `let`) so we stay within the RSpec/MultipleMemoizedHelpers
   # limit. Resolves the default "claude" subscription provider auto-created
   # for the project owner and used throughout the specs for trailer setup.
-  def provider
-    project.effective_owner.providers.find_by!(provider_key: "claude")
+  def runner
+    project.effective_owner.runners.find_by!(runner_key: "claude")
   end
 
   def stub_auto_commit_prerequisites(status_stdout: "M  file.rb\n", staged_stdout: "file.rb\n")
@@ -763,8 +763,8 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(issue: issue)
       stub_auto_commit_prerequisites
 
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
-      allow(agent_run).to receive(:effective_provider_record).and_return(provider)
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(agent_run).to receive(:effective_runner_record).and_return(runner)
 
       expect(container_service).to receive(:execute)
         .with(
@@ -1703,7 +1703,7 @@ RSpec.describe Containers::GitOperations do
 
     context "when project has a trailer configured" do
       before do
-        provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
@@ -1764,7 +1764,7 @@ RSpec.describe Containers::GitOperations do
 
     context "when trailer contains a single quote" do
       before do
-        provider.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
 
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
@@ -1805,7 +1805,7 @@ RSpec.describe Containers::GitOperations do
     end
 
     context "when no provider owned by the project owner has a trailer configured" do
-      before { agent_run.project.effective_owner.providers.update_all(agent_co_author_trailer: nil) }
+      before { agent_run.project.effective_owner.runners.update_all(agent_co_author_trailer: nil) }
 
       it "does not install a hook or touch the trailer file" do
         expect(container_service).not_to receive(:execute)
@@ -1819,8 +1819,8 @@ RSpec.describe Containers::GitOperations do
         # The initial provider has no trailer, but a fallback provider owned
         # by the same user does — the hook must still be installed so the
         # trailer file can be refreshed mid-run when fallback occurs.
-        provider.update!(agent_co_author_trailer: nil)
-        agent_run.project.effective_owner.providers.create!(
+        runner.update!(agent_co_author_trailer: nil)
+        agent_run.project.effective_owner.runners.create!(
           provider_key: "codex",
           auth_type: "subscription",
           enabled_for_agent_runs: false,
@@ -1863,7 +1863,7 @@ RSpec.describe Containers::GitOperations do
 
     context "when a commit-msg hook already exists" do
       before do
-        provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
@@ -1907,7 +1907,7 @@ RSpec.describe Containers::GitOperations do
 
     context "when a prior failed installation left commit-msg.original orphaned" do
       before do
-        provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
@@ -1965,7 +1965,7 @@ RSpec.describe Containers::GitOperations do
     end
 
     context "when the hook marker is already present (idempotency)" do
-      before { provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+      before { runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
 
       it "skips installation to avoid duplicate appends" do
         allow(container_service).to receive(:execute)
@@ -1983,7 +1983,7 @@ RSpec.describe Containers::GitOperations do
 
     context "when commit-msg.original already exists alongside commit-msg" do
       before do
-        provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
@@ -2009,7 +2009,7 @@ RSpec.describe Containers::GitOperations do
 
     context "when an exception occurs after renaming the original hook" do
       before do
-        provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
@@ -2048,7 +2048,7 @@ RSpec.describe Containers::GitOperations do
     end
 
     it "does not raise when installation fails" do
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
       allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
 
       expect { git_ops.install_co_author_hook }.not_to raise_error
@@ -2059,7 +2059,7 @@ RSpec.describe Containers::GitOperations do
     let(:trailer_file) { described_class::CO_AUTHOR_TRAILER_FILE }
 
     it "writes the provider's trailer to the shared file" do
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
       write_script = nil
       allow(container_service).to receive(:execute)
@@ -2068,13 +2068,13 @@ RSpec.describe Containers::GitOperations do
           success_result
         }
 
-      git_ops.write_co_author_trailer(provider)
+      git_ops.write_co_author_trailer(runner)
 
       expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>"))
     end
 
     it "escapes shell metacharacters in the trailer" do
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
 
       write_script = nil
       allow(container_service).to receive(:execute) { |cmd, **|
@@ -2082,20 +2082,20 @@ RSpec.describe Containers::GitOperations do
         success_result
       }
 
-      git_ops.write_co_author_trailer(provider)
+      git_ops.write_co_author_trailer(runner)
 
       expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
       expect(write_script).not_to include("''")
     end
 
     it "removes the file when the provider has a blank trailer" do
-      provider.update!(agent_co_author_trailer: nil)
+      runner.update!(agent_co_author_trailer: nil)
 
       expect(container_service).to receive(:execute)
         .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
         .and_return(success_result)
 
-      git_ops.write_co_author_trailer(provider)
+      git_ops.write_co_author_trailer(runner)
     end
 
     it "removes the file when given nil" do
@@ -2107,23 +2107,23 @@ RSpec.describe Containers::GitOperations do
     end
 
     it "removes the file when the trailer is whitespace-only" do
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
       # Bypass the single-line validation to emulate legacy/corrupt data
-      provider.update_column(:agent_co_author_trailer, "   ")
+      runner.update_column(:agent_co_author_trailer, "   ")
 
       expect(container_service).to receive(:execute)
         .with([ "rm", "-f", trailer_file ], timeout: nil, stream: false)
         .and_return(success_result)
 
-      git_ops.write_co_author_trailer(provider)
+      git_ops.write_co_author_trailer(runner)
     end
 
     it "logs a warning when the write returns a failure result but does not raise" do
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
       allow(container_service).to receive(:execute).and_return(failure_result)
       allow(Rails.logger).to receive(:warn)
 
-      expect { git_ops.write_co_author_trailer(provider) }.not_to raise_error
+      expect { git_ops.write_co_author_trailer(runner) }.not_to raise_error
 
       expect(Rails.logger).to have_received(:warn).with(
         hash_including(message: "container_git.write_co_author_trailer_failed")
@@ -2131,11 +2131,11 @@ RSpec.describe Containers::GitOperations do
     end
 
     it "does not raise when the container call raises" do
-      provider.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
       allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
       allow(Rails.logger).to receive(:error)
 
-      expect { git_ops.write_co_author_trailer(provider) }.not_to raise_error
+      expect { git_ops.write_co_author_trailer(runner) }.not_to raise_error
       expect(Rails.logger).to have_received(:error).with(
         hash_including(message: "container_git.write_co_author_trailer_unexpected_error")
       )

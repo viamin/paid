@@ -25,7 +25,8 @@ def usage
   USAGE
 
   ProviderSmokeHelpers::PRESETS.each do |name, scenarios|
-    puts "      #{name}: #{scenarios.join(', ')}"
+    resolved = scenarios || ProviderSmokeHelpers.expand_name(name)
+    puts "      #{name}: #{resolved.join(', ')}"
   end
 
   puts "    Scenarios:"
@@ -62,7 +63,14 @@ def run_rspec!(spec_paths:, scenario_names:)
     "COVERAGE" => "false",
     "PAID_SMOKE_SCENARIOS" => scenario_names.join(",")
   }
-  command = [ "bundle", "exec", "rspec", *spec_paths ]
+  command = [
+    "bundle", "exec", "rspec",
+    "--options", "/dev/null",
+    "--require", "spec_helper",
+    "--color",
+    "--format", "documentation",
+    *spec_paths
+  ]
 
   puts "Running #{Shellwords.join(command)}"
   puts "PAID_SMOKE_SCENARIOS=#{env.fetch('PAID_SMOKE_SCENARIOS')}"

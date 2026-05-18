@@ -30,7 +30,7 @@ RSpec.describe ExceptionHandler::IssueFiler do
     ServiceContainer.delete_all
     Project.delete_all
     GithubToken.delete_all
-    Provider.delete_all
+    Runner.delete_all
     ProviderState.delete_all
     AccountMembership.delete_all
     User.delete_all

@@ -853,5 +853,93 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         )
       end
     end
+
+    context "with blocked_by_issue_ids" do
+      let!(:blocker_issue) { create(:issue, project: project, github_number: 42, is_pull_request: false) }
+      let!(:blocker_pr) { create(:issue, project: project, github_number: 99, is_pull_request: true) }
+
+      before do
+        agent_run.update!(blocked_by_issue_ids: [ blocker_issue.id, blocker_pr.id ])
+      end
+
+      it "appends blocked by references to the issue body" do
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/Depends on #42/))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes all blockers in the dependency section" do
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/Depends on #42.*Depends on #99/m))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes a Dependencies section in the body" do
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_matching(/## Dependencies/))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "uses the resolved dependency wording for same-project blockers" do
+        create(:project_convention_override,
+          project: project,
+          key: "issue_dependency_format",
+          value: {
+            "depends_on_prefix" => "Requires",
+            "blocked_by_prefix" => "Awaits",
+            "heading" => "## Blockers"
+          })
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(body: a_string_including("## Blockers").and(include("Requires #42")))
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "ignores blocker IDs from other projects" do
+        other_project = create(:project, account: project.account)
+        cross_project_issue = create(:issue, project: other_project, github_number: 777)
+        agent_run.update!(blocked_by_issue_ids: [ cross_project_issue.id ])
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue) do |_repo, opts|
+          expect(opts[:body]).not_to match(/Blocked by/)
+          issue_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "ignores closed blocker issues" do
+        closed_issue = create(:issue, project: project, github_number: 55, github_state: "closed")
+        agent_run.update!(blocked_by_issue_ids: [ closed_issue.id ])
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue) do |_repo, opts|
+          expect(opts[:body]).not_to match(/Blocked by/)
+          issue_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
   end
 end

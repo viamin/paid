@@ -35,7 +35,7 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
-    context "with unavailable provider states" do
+    context "with unavailable runner states" do
       let(:owner) { create(:user, account: account) }
       let(:project) do
         create(:project,
@@ -46,37 +46,37 @@ RSpec.describe Knowledge::DashboardStats do
 
       before do
         project
-        create(:provider_state, :rate_limited, user: owner, provider_name: owner.settings.kb_embedding_provider)
-        create(:provider_state, :circuit_open, user: owner, provider_name: owner.settings.kb_chat_provider)
+        create(:runner_state, :rate_limited, user: owner, runner_name: owner.settings.kb_embedding_runner)
+        create(:runner_state, :circuit_open, user: owner, runner_name: owner.settings.kb_chat_runner)
       end
 
-      it "reports provider health and degraded operational status" do
+      it "reports runner health and degraded operational status" do
         embedding = stats[:provider_health][:embedding].first
         chat = stats[:provider_health][:chat].first
 
-        expect(embedding[:provider]).to eq(owner.settings.kb_embedding_provider)
+        expect(embedding[:runner]).to eq(owner.settings.kb_embedding_runner)
         expect(embedding[:available]).to be false
         expect(embedding[:rate_limited]).to be true
 
-        expect(chat[:provider]).to eq(owner.settings.kb_chat_provider)
+        expect(chat[:runner]).to eq(owner.settings.kb_chat_runner)
         expect(chat[:available]).to be false
         expect(chat[:circuit_state]).to eq("open")
 
         expect(stats[:operational_status]).to eq("unavailable")
       end
 
-      it "checks circuit recovery once per configured provider state" do
+      it "checks circuit recovery once per configured runner state" do
         dashboard = described_class.new(account: account)
-        allow(dashboard).to receive(:provider_status).and_call_original
+        allow(dashboard).to receive(:runner_status).and_call_original
 
         dashboard.call
 
-        expect(dashboard).to have_received(:provider_status).twice
+        expect(dashboard).to have_received(:runner_status).twice
       end
 
       it "does not report an expired rate limit as active" do
         expired_time = 2.minutes.ago
-        owner.provider_states.find_by!(provider_name: owner.settings.kb_embedding_provider)
+        owner.runner_states.find_by!(runner_name: owner.settings.kb_embedding_runner)
           .update!(rate_limited_until: expired_time)
 
         embedding = stats[:provider_health][:embedding].first
@@ -151,23 +151,23 @@ RSpec.describe Knowledge::DashboardStats do
         create(:knowledge_run, :completed,
           project: project,
           operation_type: "embedding",
-          final_provider: "openai",
+          final_runner: "openai",
           created_at: 20.minutes.ago,
           updated_at: 10.minutes.ago)
         create(:knowledge_run, :failed,
           project: project,
           operation_type: "embedding",
-          provider_attempts: [ { "provider" => "azure_openai" } ],
+          runner_attempts: [ { "runner" => "azure_openai" } ],
           created_at: 9.minutes.ago,
           updated_at: 5.minutes.ago)
         create(:knowledge_run, :completed, :decision_drafting,
           project: project,
-          final_provider: "claude",
+          final_runner: "claude",
           created_at: 7.minutes.ago,
           updated_at: 4.minutes.ago)
       end
 
-      it "summarizes success rate, latency, and provider distribution by operation" do
+      it "summarizes success rate, latency, and runner distribution by operation" do
         embedding = stats[:pipeline_metrics]["embedding"]
         drafting = stats[:pipeline_metrics]["decision_drafting"]
 
@@ -176,31 +176,31 @@ RSpec.describe Knowledge::DashboardStats do
         expect(embedding[:failed_runs]).to eq(1)
         expect(embedding[:success_rate]).to eq(50.0)
         expect(embedding[:avg_duration_seconds]).to eq(420.0)
-        expect(embedding[:provider_distribution]).to contain_exactly(
-          hash_including(provider: "azure_openai", run_count: 1, success_rate: 0.0, avg_duration_seconds: 240.0),
-          hash_including(provider: "openai", run_count: 1, success_rate: 100.0, avg_duration_seconds: 600.0)
+        expect(embedding[:runner_distribution]).to contain_exactly(
+          hash_including(runner: "azure_openai", run_count: 1, success_rate: 0.0, avg_duration_seconds: 240.0),
+          hash_including(runner: "openai", run_count: 1, success_rate: 100.0, avg_duration_seconds: 600.0)
         )
 
         expect(drafting[:total_runs]).to eq(1)
         expect(drafting[:success_rate]).to eq(100.0)
-        expect(drafting[:provider_distribution]).to contain_exactly(
-          hash_including(provider: "claude", run_count: 1, success_rate: 100.0)
+        expect(drafting[:runner_distribution]).to contain_exactly(
+          hash_including(runner: "claude", run_count: 1, success_rate: 100.0)
         )
       end
 
-      it "falls back to unknown when a run has no recorded provider" do
+      it "falls back to unknown when a run has no recorded runner" do
         create(:knowledge_run, :failed,
           project: project,
           operation_type: "embedding",
-          final_provider: nil,
-          provider_attempts: [],
+          final_runner: nil,
+          runner_attempts: [],
           created_at: 6.minutes.ago,
           updated_at: 3.minutes.ago)
 
-        distribution = stats[:pipeline_metrics]["embedding"][:provider_distribution]
+        distribution = stats[:pipeline_metrics]["embedding"][:runner_distribution]
 
         expect(distribution).to include(
-          hash_including(provider: "unknown", run_count: 1, success_rate: 0.0)
+          hash_including(runner: "unknown", run_count: 1, success_rate: 0.0)
         )
       end
 
@@ -209,14 +209,14 @@ RSpec.describe Knowledge::DashboardStats do
           create(:knowledge_run, :running,
             project: project,
             operation_type: "embedding",
-            final_provider: "openai",
+            final_runner: "openai",
             created_at: 5.minutes.ago,
             updated_at: 1.minute.ago)
           create(:knowledge_run,
             project: project,
             operation_type: "decision_drafting",
             status: "pending",
-            final_provider: "claude",
+            final_runner: "claude",
             created_at: 4.minutes.ago,
             updated_at: 2.minutes.ago)
         end
@@ -237,12 +237,12 @@ RSpec.describe Knowledge::DashboardStats do
           expect(drafting[:success_rate]).to eq(100.0)
         end
 
-        it "excludes unfinished runs from provider distribution counts" do
-          distribution = stats[:pipeline_metrics]["embedding"][:provider_distribution]
+        it "excludes unfinished runs from runner distribution counts" do
+          distribution = stats[:pipeline_metrics]["embedding"][:runner_distribution]
 
           expect(distribution).to contain_exactly(
-            hash_including(provider: "azure_openai", run_count: 1, success_rate: 0.0),
-            hash_including(provider: "openai", run_count: 1, success_rate: 100.0)
+            hash_including(runner: "azure_openai", run_count: 1, success_rate: 0.0),
+            hash_including(runner: "openai", run_count: 1, success_rate: 100.0)
           )
         end
       end
@@ -270,7 +270,7 @@ RSpec.describe Knowledge::DashboardStats do
         create(:knowledge_run, :completed,
           project: project,
           operation_type: "embedding",
-          final_provider: "openai")
+          final_runner: "openai")
 
         expect(second_dashboard.call[:pipeline_metrics]["embedding"][:total_runs]).to eq(0)
         expect(first_dashboard).to have_received(:build_pipeline_metrics).once

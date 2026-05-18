@@ -12,20 +12,21 @@ export default class extends Controller {
     "prDropdown",
     "prTable",
     "prioritySection",
-    "providerSelect",
+    "runnerSelect",
+    "blockedBySection",
   ]
   static values = {
     currentGoal: String,
-    providerDefaults: Object,
-    providerManuallySelected: { type: Boolean, default: false },
+    runnerDefaults: Object,
+    runnerManuallySelected: { type: Boolean, default: false },
   }
 
   connect() {
     this.toggle()
   }
 
-  providerChanged() {
-    this.providerManuallySelectedValue = true
+  runnerChanged() {
+    this.runnerManuallySelectedValue = true
   }
 
   toggle() {
@@ -37,6 +38,7 @@ export default class extends Controller {
     const showPr = goal === "create_pr" || goal === "review"
     const isReview = goal === "review"
     const isEnhanceIssue = goal === "enhance_issue"
+    const isCreateIssue = goal === "create_issue"
     const showPriority = !isReview
 
     this.issueSectionTargets.forEach((el) => {
@@ -66,6 +68,17 @@ export default class extends Controller {
       el.querySelectorAll("input, select, textarea, button").forEach(
         (control) => {
           control.disabled = !showPriority
+        }
+      )
+    })
+
+    this.blockedBySectionTargets.forEach((el) => {
+      el.hidden = !isCreateIssue
+      el.querySelectorAll("input, select, textarea, button").forEach(
+        (control) => {
+          if (!control.hasAttribute("data-permanently-disabled")) {
+            control.disabled = !isCreateIssue
+          }
         }
       )
     })
@@ -131,33 +144,33 @@ export default class extends Controller {
       })
     }
 
-    this.syncProviderDefault(previousGoal, goal)
+    this.syncRunnerDefault(previousGoal, goal)
     this.currentGoalValue = goal
   }
 
-  syncProviderDefault(previousGoal, goal) {
-    if (!this.hasProviderSelectTarget) return
+  syncRunnerDefault(previousGoal, goal) {
+    if (!this.hasRunnerSelectTarget) return
 
     // When "Inherit" (empty value) is selected, keep it as-is across goal changes
-    if (this.providerSelectTarget.value === "") return
+    if (this.runnerSelectTarget.value === "") return
 
-    const previousDefault = this.defaultProviderForGoal(previousGoal)
-    const nextDefault = this.defaultProviderForGoal(goal)
+    const previousDefault = this.defaultRunnerForGoal(previousGoal)
+    const nextDefault = this.defaultRunnerForGoal(goal)
     if (!nextDefault) return
 
     const shouldSync =
-      !this.providerManuallySelectedValue ||
-      this.providerSelectTarget.value === previousDefault
+      !this.runnerManuallySelectedValue ||
+      this.runnerSelectTarget.value === previousDefault
 
     if (!shouldSync) return
 
-    this.providerSelectTarget.value = nextDefault
-    this.providerManuallySelectedValue = false
+    this.runnerSelectTarget.value = nextDefault
+    this.runnerManuallySelectedValue = false
   }
 
-  defaultProviderForGoal(goal) {
-    if (!this.hasProviderDefaultsValue) return null
+  defaultRunnerForGoal(goal) {
+    if (!this.hasRunnerDefaultsValue) return null
 
-    return this.providerDefaultsValue[goal] || null
+    return this.runnerDefaultsValue[goal] || null
   }
 }

@@ -55,7 +55,7 @@ module Knowledge
 
     # Returns true when the given provider can be executed in a container.
     def self.supported_provider?(provider)
-      api_type = ProviderSupport.api_service_type_for(provider.to_s)
+      api_type = RunnerSupport.api_service_type_for(provider.to_s)
       SUPPORTED_API_TYPES.include?(api_type)
     end
 
@@ -82,7 +82,7 @@ module Knowledge
     def call_llm(prompt, provider:, model: nil, timeout: CONTAINER_DEFAULTS[:timeout_seconds])
       raise ContainerError, "Container not provisioned" unless @container
 
-      api_type = ProviderSupport.api_service_type_for(provider.to_s)
+      api_type = RunnerSupport.api_service_type_for(provider.to_s)
       raise ContainerError, "Unsupported API type for provider: #{provider}" unless SUPPORTED_API_TYPES.include?(api_type)
 
       effective_model = model || DEFAULT_MODELS.fetch(api_type)

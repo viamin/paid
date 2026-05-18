@@ -395,7 +395,7 @@ module Containers
       return unless owner_has_any_co_author_trailer?
 
       install_or_chain_co_author_hook
-      write_co_author_trailer(agent_run.effective_provider_record)
+      write_co_author_trailer(agent_run.effective_runner_record)
     rescue Error => e
       Rails.logger.warn(
         message: "container_git.install_co_author_hook_failed",
@@ -424,7 +424,7 @@ module Containers
     # container/filesystem error does not abort an agent run for what is
     # a metadata-only concern.
     #
-    # @param provider_record [Provider, nil] the provider whose trailer to
+    # @param runner_record [Runner, nil] the runner whose trailer to
     #   use; pass nil to clear the file.
     # @return [void]
     def write_co_author_trailer(provider_record)
@@ -964,7 +964,7 @@ module Containers
         ConventionalCommitTitle.for_issue(nil, fallback_type: "chore", project: agent_run.project, style_key: "commit_style")
       end
 
-      trailer = agent_run.effective_provider_record&.agent_co_author_trailer.presence
+      trailer = agent_run.effective_runner_record&.agent_co_author_trailer.presence
       return subject unless trailer
 
       "#{subject}\n\n#{trailer}"
@@ -1051,7 +1051,7 @@ module Containers
       owner = agent_run.project&.effective_owner
       return false unless owner
 
-      owner.providers
+      owner.runners
         .where.not(agent_co_author_trailer: nil)
         .where.not(agent_co_author_trailer: "")
         .exists?

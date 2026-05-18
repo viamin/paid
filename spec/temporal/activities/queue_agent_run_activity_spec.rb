@@ -35,7 +35,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.project).to eq(project)
       expect(agent_run.issue).to eq(issue)
       expect(agent_run.agent_type).to eq("claude_code")
-      expect(agent_run.provider).to eq(user.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.runner).to eq(user.runners.find_by!(runner_key: "claude"))
     end
 
     it "accepts a custom agent_type" do
@@ -43,63 +43,63 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.agent_type).to eq("aider")
-      expect(agent_run.provider_id).to be_nil
+      expect(agent_run.runner_id).to be_nil
     end
 
     it "accepts copilot when a requested agent_type is container executable" do
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "copilot")
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider_id).to be_nil
+      expect(agent_run.runner_id).to be_nil
       expect(agent_run.agent_type).to eq("copilot")
     end
 
-    it "derives agent_type from provider_id when only a provider is supplied" do
-      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
+    it "derives agent_type from runner_id when only a runner is supplied" do
+      codex_runner = user.runners.find_or_create_by!(runner_key: "codex", auth_type: "subscription")
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: codex_provider.id)
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: codex_runner.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
     end
 
-    it "accepts copilot when a requested provider_id is container executable" do
-      copilot_provider = user.providers.find_or_create_by!(provider_key: "copilot", auth_type: "subscription")
+    it "accepts copilot when a requested runner_id is container executable" do
+      copilot_runner = user.runners.find_or_create_by!(runner_key: "copilot", auth_type: "subscription")
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: copilot_provider.id)
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: copilot_runner.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(copilot_provider)
+      expect(agent_run.runner).to eq(copilot_runner)
       expect(agent_run.agent_type).to eq("copilot")
     end
 
-    it "falls back to the runnable default when a requested provider is treated as non-executable" do
-      copilot_provider = user.providers.find_or_create_by!(provider_key: "copilot", auth_type: "subscription")
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
+    it "falls back to the runnable default when a requested runner is treated as non-executable" do
+      copilot_runner = user.runners.find_or_create_by!(runner_key: "copilot", auth_type: "subscription")
+      allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+      allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
-      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: copilot_provider.id)
+      result = activity.execute(project_id: project.id, issue_id: issue.id, runner_id: copilot_runner.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(user.providers.find_by!(provider_key: "claude"))
+      expect(agent_run.runner).to eq(user.runners.find_by!(runner_key: "claude"))
       expect(agent_run.agent_type).to eq("claude_code")
     end
 
-    it "uses the configured primary provider when agent type is omitted" do
-      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
-      user.settings.update!(default_agent_provider: codex_provider.routing_key)
+    it "uses the configured primary runner when agent type is omitted" do
+      codex_runner = user.runners.find_or_create_by!(runner_key: "codex", auth_type: "subscription")
+      user.settings.update!(default_agent_runner: codex_runner.routing_key)
 
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
     end
 
-    it "records a provider selection decision for queued runs" do
-      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
-      user.settings.update!(default_agent_provider: codex_provider.routing_key)
+    it "records a runner selection decision for queued runs" do
+      codex_runner = user.runners.find_or_create_by!(runner_key: "codex", auth_type: "subscription")
+      user.settings.update!(default_agent_runner: codex_runner.routing_key)
 
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
@@ -111,15 +111,15 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(decision.outputs).to include(
         "outcome" => "selected",
         "selection" => include(
-          "provider_id" => codex_provider.id,
+          "runner_id" => codex_runner.id,
           "provider_key" => "codex",
           "agent_type" => "codex"
         )
       )
-      expect(decision.inputs.dig("policy_constraints", "default_agent_provider")).to eq(codex_provider.routing_key)
+      expect(decision.inputs.dig("policy_constraints", "default_agent_runner")).to eq(codex_runner.routing_key)
     end
 
-    it "uses the tenant API key provider for the default provider" do
+    it "uses the tenant API key runner for the default runner" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       create(:tenant_setting, account: user.account,
         provider_preferences: { "api_key_ids" => { "anthropic" => api_key.id.to_s } })
@@ -127,22 +127,22 @@ RSpec.describe Activities::QueueAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to have_attributes(
-        provider_key: "claude",
+      expect(agent_run.runner).to have_attributes(
+        runner_key: "claude",
         auth_type: "api_key",
         provider_api_key_id: api_key.id
       )
       expect(agent_run.agent_type).to eq("claude_code")
     end
 
-    it "uses the goal-specific provider when goal is review" do
-      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
-      user.settings.update!(default_agent_providers_by_goal: { "review" => codex_provider.routing_key })
+    it "uses the goal-specific runner when goal is review" do
+      codex_runner = user.runners.find_or_create_by!(runner_key: "codex", auth_type: "subscription")
+      user.settings.update!(default_agent_runners_by_goal: { "review" => codex_runner.routing_key })
 
       result = activity.execute(project_id: project.id, source_pull_request_number: 42, goal: "review")
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.runner).to eq(codex_runner)
       expect(agent_run.agent_type).to eq("codex")
     end
 

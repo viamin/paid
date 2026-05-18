@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Provider Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) is next.
+**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) is next.
 
 ## Phase Overview
 
@@ -24,7 +24,7 @@ This document outlines the phased implementation plan for Paid. Each phase build
 │  ─────────────────────────────────                                           │
 │  • Security & reliability P1s     • Performance fundamentals (partial)      │
 │  • Wire half-built Phase 2 feats  • Quality recovery workflows              │
-│  • Multi-provider & model select  • Fair queueing                           │
+│  • Multi-runner & model select   • Fair queueing                            │
 │  • MCP server support             • Screenshot visual regression            │
 │  • Self-healing exception handling • Knowledge provider resilience          │
 │  • Agent run enhancements         • Notification subscriptions              │
@@ -282,7 +282,7 @@ Tasks:
 - [x] Implement meta-agent for model selection — `Models::MetaAgentSelector`
 - [x] Rules-based fallback when meta-agent fails — `Models::RulesBasedSelector`
 - [x] Model selection logging and analysis — `ModelSelection` model
-- [x] Per-project model preferences/restrictions — `Provider` model with project scoping and fallback roles
+- [x] Per-project model preferences/restrictions — `Runner` model with project scoping and fallback roles
 
 Deliverables:
 
@@ -600,9 +600,9 @@ Deliverables:
 
 **Goal**: Close gaps in Phase 2–3 feature completion, fix security and reliability P1s, and ensure the system is production-ready at scale before beginning Phase 4's learning systems.
 
-**Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-provider must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
+**Why this phase exists**: Phase 3's core features are built (multi-agent orchestration, prompt evolution, guardrails, scaling infrastructure), but open issues reveal unfinished wiring in Phase 2's intelligence layer and several security/reliability gaps. Phase 4's learning systems require these foundations to be solid — A/B tests must produce real data, multi-runner must work end-to-end, and the system must handle concurrent load without credential leaks or data drift.
 
-**Status**: Substantially complete. Section 3.5.4 (Performance Fundamentals) is complete. Section 3.5.6 (Provider Quota Tracking) Step 1 has one remaining task (`Add per-provider circuit breaker history`); Step 2 is complete; Steps 3–6 are deferred to Phase 4.
+**Status**: Substantially complete. Section 3.5.4 (Performance Fundamentals) is complete. Section 3.5.6 (Runner Quota Tracking) Step 1 has one remaining task (`Add per-runner circuit breaker history`); Step 2 is complete; Steps 3–6 are deferred to Phase 4.
 
 ### 3.5.1 Security & Reliability
 
@@ -612,9 +612,9 @@ Deliverables:
 
 Tasks:
 
-- [x] Remove direct provider credential injection from agent runs (#1281)
+- [x] Remove direct runner credential injection from agent runs (#1281)
 - [x] Fix schema.rb drift from shared database across agent containers (#1280)
-- [x] Fix container network isolation alignment across provider auth modes (#1284)
+- [x] Fix container network isolation alignment across runner auth modes (#1284)
 - [x] Fix GitHub sync incremental watermark permanently skipping issues (#1257)
 - [x] Fix notification Turbo Frame mismatch ("Content missing") (#1263)
 
@@ -638,7 +638,7 @@ Tasks:
 - [x] Complete enhance_issue pipeline: quality metrics (#1266)
 - [x] Complete enhance_issue pipeline: label management and re-evaluation loop (#991)
 - [x] Add tests for enhance_issue enhancement and re-evaluation workflow (#992)
-- [x] Replace "primary provider" with "automated provider" and multi-provider modes (#778)
+- [x] Replace "primary runner" with "automated runner" and multi-runner modes (#778)
 - [x] Intelligent model selection based on task complexity (#760)
 - [x] Add container-authenticated knowledge search endpoint for agent tool access (#1272)
 
@@ -646,7 +646,7 @@ Deliverables:
 
 - A/B tests produce real quality data from live agent runs
 - enhance_issue goal works end-to-end with knowledge, quality, and re-evaluation
-- Users can configure multiple providers with automatic selection and fallback
+- Users can configure multiple runners with automatic selection and fallback
 - Agents can search the knowledge base from within containers
 
 ### 3.5.3 Fair Queueing
@@ -670,12 +670,12 @@ Deliverables:
 
 **Objective**: Complete the remaining Phase 3.5 performance items needed to handle 10+ concurrent projects.
 
-**Status**: Complete — Performance benchmarking suite runs in CI with 5 benchmark types, database query optimizations (distinct_effective_providers cache, deferred cost snapshots, fasterer performance lint), container pool warming, workflow batching, worker pool tuning, and GitHub API call reduction all done.
+**Status**: Complete — Performance benchmarking suite runs in CI with 5 benchmark types, database query optimizations (distinct_effective_runners cache, deferred cost snapshots, fasterer performance lint), container pool warming, workflow batching, worker pool tuning, and GitHub API call reduction all done.
 
 Tasks:
 
 - [x] Container pool warming (#718)
-- [x] Database query optimization (#720) — distinct_effective_providers cache (#1586), deferred cost snapshots (#1580), fasterer performance lint (#1595)
+- [x] Database query optimization (#720) — distinct_effective_runners cache (#1586), deferred cost snapshots (#1580), fasterer performance lint (#1595)
 - [x] Workflow batching optimizations (#719)
 - [x] Worker pool tuning (#722)
 - [x] Performance benchmarking suite (#723) — benchmark types, CI integration, baseline tracking, regression checking (#1559)
@@ -703,32 +703,32 @@ Deliverables:
 - Quality pause events trigger recovery suggestions
 - Users can acknowledge and resume with actionable next steps
 
-### 3.5.6 Provider Quota Tracking
+### 3.5.6 Runner Quota Tracking
 
-**Objective**: Give users visibility into upstream provider subscription quotas and use that data to make smarter provider routing decisions.
+**Objective**: Give users visibility into upstream provider subscription quotas and use that data to make smarter runner routing decisions.
 
-**Why this matters**: Users with active subscriptions (Claude Pro, Codex Pro, Copilot Business, Z.ai Coding Max) need to know how close each provider is to hitting its quota, and Paid should proactively avoid routing to nearly-exhausted providers instead of waiting for 429 errors.
+**Why this matters**: Users with active subscriptions (Claude Pro, Codex Pro, Copilot Business, Z.ai Coding Max) need to know how close each runner is to hitting its quota, and Paid should proactively avoid routing to nearly-exhausted runners instead of waiting for 429 errors.
 
-**RDR**: [RDR-025](rdrs/RDR-025-provider-quota-tracking.md)
+**RDR**: [RDR-025](rdrs/RDR-025-runner-quota-tracking.md)
 
 **Approach**: Provider-specific quota API knowledge and response parsing live in agent-harness (per AGENTS.md boundary). Paid stores credentials, persists snapshots, displays data, and makes routing decisions. Starts with a quick win showing existing internal usage data, then layers on upstream quota polling.
 
-#### Step 1: Internal Provider Usage Display (Quick Win)
+#### Step 1: Internal Runner Usage Display (Quick Win)
 
-Display per-provider aggregations from data Paid already collects — no new credentials or APIs needed.
+Display per-runner aggregations from data Paid already collects — no new credentials or APIs needed.
 
 Tasks:
 
-- [x] Create `Providers::UsageStats` service — aggregate `TokenUsage` by `AgentRun.effective_provider` for 7-day and 30-day windows
-- [x] Add per-provider spend column to `/providers` index (tokens, cost, run count)
-- [x] Add per-provider fallback frequency display (from `providers_attempted` JSON)
-- [x] Add per-provider rate-limit event count (from `AgentRun` statuses)
-- [ ] Add per-provider circuit breaker history (recent transitions from `ProviderState`)
+- [x] Create `Runners::UsageStats` service — aggregate `TokenUsage` by `AgentRun.effective_runner` for 7-day and 30-day windows
+- [x] Add per-runner spend column to `/runners` index (tokens, cost, run count)
+- [x] Add per-runner fallback frequency display (from `runners_attempted` JSON)
+- [x] Add per-runner rate-limit event count (from `AgentRun` statuses)
+- [ ] Add per-runner circuit breaker history (recent transitions from `RunnerState`)
 
 Deliverables:
 
-- `/providers` page shows how much Paid has consumed from each provider
-- Users can see which providers hit rate limits most often
+- `/runners` page shows how much Paid has consumed from each runner
+- Users can see which runners hit rate limits most often
 - Zero new infrastructure required
 
 #### Step 2: Upstream Provider-Specific Code to agent-harness
@@ -782,38 +782,38 @@ Wire agent-harness quota polling into Paid with encrypted credential storage and
 
 Tasks:
 
-- [ ] Create `provider_quota_credentials` table (encrypted OAuth tokens/API keys per provider)
-- [ ] Create `provider_quota_snapshots` table (cached quota metrics per provider)
-- [ ] Create `ProviderQuotaCredential` model with encryption
-- [ ] Create `ProviderQuotaSnapshot` model with upsert logic
-- [ ] Create `Providers::RefreshQuotas` service (calls agent-harness, upserts snapshots)
-- [ ] Create `Providers::RefreshQuotasJob` (GoodJob cron, every 15 minutes)
+- [ ] Create `runner_quota_credentials` table (encrypted OAuth tokens/API keys per runner)
+- [ ] Create `runner_quota_snapshots` table (cached quota metrics per runner)
+- [ ] Create `RunnerQuotaCredential` model with encryption
+- [ ] Create `RunnerQuotaSnapshot` model with upsert logic
+- [ ] Create `Runners::RefreshQuotas` service (calls agent-harness, upserts snapshots)
+- [ ] Create `Runners::RefreshQuotasJob` (GoodJob cron, every 15 minutes)
 - [ ] Add credential collection UI for Z.ai (API key — reuses `ProviderApiKey` pattern)
 - [ ] Add credential collection UI for Copilot (GitHub token)
 - [ ] Add opportunistic OAuth token capture for Claude/Codex (read from container after successful run)
-- [ ] Add quota display to `/providers` page (progress bars, plan name, reset timers)
+- [ ] Add quota display to `/runners` page (progress bars, plan name, reset timers)
 
 Deliverables:
 
-- Quota snapshots refresh on schedule for all configured providers
-- `/providers` page shows real upstream quota status per provider
-- Users can configure credentials for quota polling per provider
+- Quota snapshots refresh on schedule for all configured runners
+- `/runners` page shows real upstream quota status per runner
+- Users can configure credentials for quota polling per runner
 
-#### Step 5: Quota-Aware Provider Routing
+#### Step 5: Quota-Aware Runner Routing
 
-Enhance provider selection to consider upstream quota state when choosing which provider to use for a run.
+Enhance runner selection to consider upstream quota state when choosing which runner to use for a run.
 
 Tasks:
 
-- [ ] Create `Providers::QuotaScore` service (scores providers by remaining quota)
-- [ ] Enhance `RunAgentActivity#build_provider_order` to incorporate quota scores
+- [ ] Create `Runners::QuotaScore` service (scores runners by remaining quota)
+- [ ] Enhance `RunAgentActivity#build_runner_order` to incorporate quota scores
 - [ ] Add quota-based routing logging (visible in dashboard and run details)
 - [ ] Add quota-exhaustion anticipation: prefer fallback when primary > 80% session usage
 
 Deliverables:
 
-- Provider routing considers upstream quota state, not just circuit breaker health
-- Runs avoid providers nearing quota exhaustion
+- Runner routing considers upstream quota state, not just circuit breaker health
+- Runs avoid runners nearing quota exhaustion
 - Routing decisions logged with quota context
 
 #### Step 6: Predictive Analytics (Future)
@@ -822,25 +822,25 @@ Use historical data to predict quota exhaustion and suggest configuration change
 
 Tasks:
 
-- [ ] Build quota consumption rate model from historical `ProviderQuotaSnapshot` data
+- [ ] Build quota consumption rate model from historical `RunnerQuotaSnapshot` data
 - [ ] Add "predicted exhaustion" cards to dashboard ("Claude session will exhaust in ~2 hours")
-- [ ] Add provider configuration suggestions ("Copilot at 92% — consider adding Codex fallback")
+- [ ] Add runner configuration suggestions ("Copilot at 92% — consider adding Codex fallback")
 - [ ] Add weekly quota digest notification
 
 Deliverables:
 
 - Users receive proactive alerts before quotas exhaust
-- System suggests optimal provider configuration
+- System suggests optimal runner configuration
 
 ### Phase 3.5 Completion Criteria
 
 - [x] Zero P1 security or data integrity issues open
 - [x] A/B tests produce data from live agent runs
 - [x] enhance_issue goal works end-to-end
-- [x] Multi-provider with automatic selection works
+- [x] Multi-runner with automatic selection works
 - [x] Fair queueing prevents capacity starvation
 - [x] Performance handles 10+ concurrent projects with benchmarks
-- [x] Provider quota tracking: per-provider usage visible on /providers page
+- [x] Runner quota tracking: per-runner usage visible on /runners page
 - [x] Provider-specific code upstreamed to agent-harness
 - [x] ~~Upstream quota polling~~ — deferred to Phase 4
 - [x] MCP server support for agent tool use and project configuration
@@ -848,7 +848,7 @@ Deliverables:
 - [x] Self-healing exception handling with auto-issue filing
 - [x] Screenshot visual regression for PRs with UI changes
 
-**Phase 3.5 substantially complete**: All hardening work except `Add per-provider circuit breaker history` verified as of 2026-05-07.
+**Phase 3.5 substantially complete**: All hardening work except `Add per-runner circuit breaker history` verified as of 2026-05-07.
 
 ### 3.5.7 Interactive Chat
 
@@ -1003,14 +1003,14 @@ Tasks:
 - [x] Add pre-flight provider health check before agent execution (#1620) — auth, CLI availability, API reachability
 - [x] Adopt agent-harness heartbeat support for OpenCode/KiloCode fallbacks (#1641) — upstream capability detection
 - [x] Tie model selection to direct-outbound provider capabilities (#1670) — auto-populate tier_model_ids
-- [x] Skip harness preflight for subscription-auth providers (#1680)
+- [x] Skip harness preflight for subscription-auth runners (#1680)
 - [x] Implement provider fallback loop for knowledge base LLM calls (#1684) — `Knowledge::ProviderExecutor` with graceful degradation
 
 Deliverables:
 
 - Decomposition plans produce ordered, dependency-linked sub-issues
 - Watchdog has semantic awareness of agent state via structured JSONL events
-- Pre-flight checks prevent wasted container resources on misconfigured providers
+- Pre-flight checks prevent wasted container resources on misconfigured runners
 - Knowledge base LLM calls are resilient to provider rate limits and errors
 
 ### 3.5.15 Self-Healing & Exception Handling
@@ -1292,7 +1292,7 @@ Deliverables:
 
 Tasks:
 
-- [ ] Create system-wide audit event model covering auth, project changes, provider changes, runs, approvals, and automation policy changes
+- [ ] Create system-wide audit event model covering auth, project changes, runner changes, runs, approvals, and automation policy changes
 - [ ] Record actor, target, before/after state, request metadata, and tenant context for all sensitive operations
 - [ ] Add immutable audit-log export APIs and retention controls
 - [ ] Add audit-log search and filtering UI for operators and account admins
@@ -1306,11 +1306,11 @@ Deliverables:
 
 ### 6.3 Policy, Risk & Approval Controls
 
-**Objective**: Give enterprises fine-grained control over what agents may do, when humans must approve, and how model/provider risk is bounded.
+**Objective**: Give enterprises fine-grained control over what agents may do, when humans must approve, and how model/runner risk is bounded.
 
 Tasks:
 
-- [ ] Add policy engine for provider allowlists, model allowlists, max capability tiers, and network/service-container restrictions
+- [ ] Add policy engine for runner allowlists, model allowlists, max capability tiers, and network/service-container restrictions
 - [ ] Add configurable approval workflows by repo, branch, issue type, risk score, or change surface
 - [ ] Add environment-specific controls for production, staging, and regulated codebases
 - [ ] Add DLP-style redaction and prompt/context classification rules
@@ -1622,7 +1622,7 @@ Phase 4 (AI-Native Evolution) ────────────────�
 - Zero open P1 security or data integrity issues
 - A/B tests producing quality data from ≥ 20 live runs
 - enhance_issue goal: end-to-end with knowledge, quality, and re-evaluation
-- Multi-provider automatic selection working with fallback
+- Multi-runner automatic selection working with fallback
 - Fair queueing: no user starvation under load
 - Performance: 10 concurrent projects with P95 container startup < 30s
 - MCP servers: agents successfully use external tools during execution
@@ -1650,7 +1650,7 @@ Phase 4 (AI-Native Evolution) ────────────────�
 
 - 90%+ of new enterprise projects onboard through GitHub App rather than PAT
 - 100% of security-relevant mutations appear in audit logs with actor and tenant context
-- Policy engine can enforce repo/model/provider restrictions with no manual console intervention
+- Policy engine can enforce repo/model/runner restrictions with no manual console intervention
 - Compliance evidence can be exported for a customer security review in < 1 hour
 
 ### Phase 7

@@ -18,6 +18,41 @@ RSpec.describe AgentRun do
     it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
   end
 
+  describe "provider bridge columns" do
+    let(:owner) { create(:user) }
+    let(:runner) { create(:runner, user: owner, runner_key: "cursor") }
+
+    it "keeps legacy provider columns synchronized when runner-named attributes change" do
+      agent_run = create(
+        :agent_run,
+        project: create(:project, account: owner.account, created_by: owner),
+        runner: runner,
+        runner_switches: 2,
+        runners_attempted: [ { "runner" => runner.routing_key } ],
+        final_runner: runner.routing_key
+      )
+
+      expect(agent_run.read_attribute(:provider_id)).to eq(runner.id)
+      expect(agent_run.read_attribute(:provider_switches)).to eq(2)
+      expect(agent_run.read_attribute(:providers_attempted)).to eq([ { "runner" => runner.routing_key } ])
+      expect(agent_run.read_attribute(:final_provider)).to eq(runner.routing_key)
+    end
+
+    it "keeps runner-named attributes synchronized when legacy provider setters are used" do
+      agent_run = build(:agent_run)
+
+      agent_run.provider_id = runner.id
+      agent_run.provider_switches = 3
+      agent_run.providers_attempted = [ { "runner" => runner.routing_key } ]
+      agent_run.final_provider = runner.routing_key
+
+      expect(agent_run.runner_id).to eq(runner.id)
+      expect(agent_run.runner_switches).to eq(3)
+      expect(agent_run.runners_attempted).to eq([ { "runner" => runner.routing_key } ])
+      expect(agent_run.final_runner).to eq(runner.routing_key)
+    end
+  end
+
   describe "validations" do
     subject { build(:agent_run) }
 
@@ -135,22 +170,22 @@ RSpec.describe AgentRun do
       end
     end
 
-    describe "provider ownership validation" do
-      it "allows provider from the project owner" do
+    describe "runner ownership validation" do
+      it "allows runner from the project owner" do
         agent_run = build(:agent_run)
-        provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
-        agent_run.provider = provider
+        runner = create(:runner, user: agent_run.project.effective_owner, runner_key: "opencode")
+        agent_run.runner = runner
 
         expect(agent_run).to be_valid
       end
 
-      it "rejects provider from another user" do
+      it "rejects runner from another user" do
         agent_run = build(:agent_run)
-        provider = create(:provider, user: create(:user), provider_key: "opencode")
-        agent_run.provider = provider
+        runner = create(:runner, user: create(:user), runner_key: "opencode")
+        agent_run.runner = runner
 
         expect(agent_run).not_to be_valid
-        expect(agent_run.errors[:provider]).to include("must belong to the same user as the project owner")
+        expect(agent_run.errors[:runner]).to include("must belong to the same user as the project owner")
       end
     end
   end
@@ -691,7 +726,7 @@ RSpec.describe AgentRun do
       end
 
       it "returns false when error_message lacks both sentinel prefixes" do
-        agent_run = build(:agent_run, status: "timeout", error_message: "Provider timed out")
+        agent_run = build(:agent_run, status: "timeout", error_message: "Runner timed out")
 
         expect(agent_run.cancelled_by_cleanup?).to be false
       end
@@ -729,7 +764,7 @@ RSpec.describe AgentRun do
         expect(agent_run.operational_failure?).to be true
       end
 
-      it "returns true for failed status with provider exhaustion error" do
+      it "returns true for failed status with runner exhaustion error" do
         agent_run = build(:agent_run, :failed,
           error_message: "All providers exhausted: claude_code, codex")
 
@@ -1186,12 +1221,12 @@ RSpec.describe AgentRun do
     end
 
     describe "#auth_expire!" do
-      it "sets status to auth_expired with error and provider" do
+      it "sets status to auth_expired with error and runner" do
         started_time = 10.minutes.ago
         agent_run = create(:agent_run, status: "running", started_at: started_time)
 
         freeze_time do
-          agent_run.auth_expire!(error: "OAuth session expired", provider: "claude")
+          agent_run.auth_expire!(error: "OAuth session expired", runner: "claude")
 
           expect(agent_run.status).to eq("auth_expired")
           expect(agent_run.completed_at).to eq(Time.current)
@@ -2509,30 +2544,30 @@ RSpec.describe AgentRun do
     end
   end
 
-  describe "#record_provider_attempt" do
-    it "appends an attempt to providers_attempted" do
+  describe "#record_runner_attempt" do
+    it "appends an attempt to runners_attempted" do
       agent_run = create(:agent_run)
-      agent_run.record_provider_attempt("claude", success: true)
+      agent_run.record_runner_attempt("claude", success: true)
 
       agent_run.reload
-      expect(agent_run.providers_attempted.size).to eq(1)
-      expect(agent_run.providers_attempted.first["provider"]).to eq("claude")
-      expect(agent_run.providers_attempted.first["success"]).to be true
+      expect(agent_run.runners_attempted.size).to eq(1)
+      expect(agent_run.runners_attempted.first["runner"]).to eq("claude")
+      expect(agent_run.runners_attempted.first["success"]).to be true
     end
 
     it "records error_type for failed attempts" do
       agent_run = create(:agent_run)
-      agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
+      agent_run.record_runner_attempt("claude", success: false, error_type: "rate_limited")
 
-      attempt = agent_run.reload.providers_attempted.last
+      attempt = agent_run.reload.runners_attempted.last
       expect(attempt["error_type"]).to eq("rate_limited")
     end
 
     it "records error_message for failed attempts" do
       agent_run = create(:agent_run)
-      agent_run.record_provider_attempt("claude", success: false, error_type: "error", error_message: "Configuration is invalid")
+      agent_run.record_runner_attempt("claude", success: false, error_type: "error", error_message: "Configuration is invalid")
 
-      attempt = agent_run.reload.providers_attempted.last
+      attempt = agent_run.reload.runners_attempted.last
       expect(attempt["error_message"]).to eq("Configuration is invalid")
     end
 
@@ -2541,9 +2576,9 @@ RSpec.describe AgentRun do
       secret = "sk-test-super-secret-value"
       long_message = "Error: #{secret} " + ("x" * 600)
 
-      agent_run.record_provider_attempt("claude", success: false, error_type: "error", error_message: long_message)
+      agent_run.record_runner_attempt("claude", success: false, error_type: "error", error_message: long_message)
 
-      attempt = agent_run.reload.providers_attempted.last
+      attempt = agent_run.reload.runners_attempted.last
       expect(attempt["error_message"]).not_to include(secret)
       expect(attempt["error_message"].length).to be <= AgentRun::MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH
     end
@@ -2552,7 +2587,7 @@ RSpec.describe AgentRun do
       agent_run = create(:agent_run)
       secret = "sk-test-super-secret-value"
 
-      agent_run.record_provider_attempt(
+      agent_run.record_runner_attempt(
         "claude",
         success: false,
         error_type: "timeout",
@@ -2562,7 +2597,7 @@ RSpec.describe AgentRun do
         }
       )
 
-      attempt = agent_run.reload.providers_attempted.last
+      attempt = agent_run.reload.runners_attempted.last
       diagnostics = attempt["diagnostics"]
 
       expect(diagnostics["argv"].first).not_to include(secret)
@@ -2572,10 +2607,10 @@ RSpec.describe AgentRun do
 
     it "accumulates multiple attempts" do
       agent_run = create(:agent_run)
-      agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
-      agent_run.record_provider_attempt("cursor", success: true)
+      agent_run.record_runner_attempt("claude", success: false, error_type: "rate_limited")
+      agent_run.record_runner_attempt("cursor", success: true)
 
-      expect(agent_run.reload.providers_attempted.size).to eq(2)
+      expect(agent_run.reload.runners_attempted.size).to eq(2)
     end
   end
 
@@ -2590,10 +2625,10 @@ RSpec.describe AgentRun do
       expect(log.content).to include("cursor")
     end
 
-    it "increments the provider_switches counter" do
+    it "increments the runner_switches counter" do
       agent_run = create(:agent_run)
       expect { agent_run.log_provider_switch!("claude", "cursor", "rate_limited") }
-        .to change { agent_run.reload.provider_switches }.by(1)
+        .to change { agent_run.reload.runner_switches }.by(1)
     end
   end
 
@@ -2614,7 +2649,7 @@ RSpec.describe AgentRun do
       scope = described_class.where(project_id: project.id)
 
       first_call = scope.distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
-      expect(first_call).to include({ label: Provider.display_name_for("claude"), value: "claude" })
+      expect(first_call).to include({ label: Runner.display_name_for("claude"), value: "claude" })
 
       second_call = scope.distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
       expect(second_call).to eq(first_call)
@@ -2627,12 +2662,12 @@ RSpec.describe AgentRun do
       scope = described_class.where(project_id: project.id)
 
       first = scope.distinct_effective_provider_options(account_id: project.account_id)
-      expect(first).to include({ label: Provider.display_name_for("claude"), value: "claude" })
+      expect(first).to include({ label: Runner.display_name_for("claude"), value: "claude" })
 
       create(:agent_run, :completed, project: project, agent_type: "cursor")
 
       second = scope.distinct_effective_provider_options(account_id: project.account_id)
-      expect(second).to include({ label: Provider.display_name_for("cursor"), value: "cursor" })
+      expect(second).to include({ label: Runner.display_name_for("cursor"), value: "cursor" })
     end
 
     it "uses separate cache keys for account and project scope" do
@@ -2649,24 +2684,24 @@ RSpec.describe AgentRun do
       expect(Rails.cache.read(project_key)).not_to be_nil
     end
 
-    it "keeps discarded provider names available for routed filter options" do
+    it "keeps discarded runner names available for routed filter options" do
       project = create(:project)
-      provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
-      create(:agent_run, :completed, project: project, final_provider: provider.routing_key)
-      provider.discard!
+      runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
+      create(:agent_run, :completed, project: project, final_runner: runner.routing_key)
+      runner.discard!
 
       options = described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id)
 
-      expect(options).to include({ label: "Kimi K2.5", value: provider.routing_key })
+      expect(options).to include({ label: "Kimi K2.5", value: runner.routing_key })
     end
 
-    it "bulk-loads routed provider filter options without N+1 queries" do
+    it "bulk-loads routed runner filter options without N+1 queries" do
       project = create(:project)
       providers = %w[opencode cursor gemini].map.with_index do |provider_key, index|
-        create(:provider, user: project.effective_owner, provider_key:, name: "Routed Provider #{index}")
+        create(:runner, user: project.effective_owner, runner_key: provider_key, name: "Routed Runner #{index}")
       end
-      providers.each do |provider|
-        create(:agent_run, :completed, project: project, final_provider: provider.routing_key)
+      providers.each do |runner|
+        create(:agent_run, :completed, project: project, final_runner: runner.routing_key)
       end
 
       queries = capture_queries do
@@ -2678,9 +2713,9 @@ RSpec.describe AgentRun do
       expect(provider_queries.size).to eq(1)
     end
 
-    it "omits unresolved routed provider ids from filter options" do
+    it "omits unresolved routed runner ids from filter options" do
       project = create(:project)
-      create(:agent_run, :completed, project: project, final_provider: "provider:999999")
+      create(:agent_run, :completed, project: project, final_runner: "runner:999999")
 
       options = described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id)
 
@@ -2706,7 +2741,7 @@ RSpec.describe AgentRun do
         expect(Rails.cache.read(account_key)).to be_nil
       end
 
-      it "invalidates cache when final_provider changes" do
+      it "invalidates cache when final_runner changes" do
         project = create(:project)
         agent_run = create(:agent_run, :running, project: project, agent_type: "claude_code")
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
@@ -2714,7 +2749,7 @@ RSpec.describe AgentRun do
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
-        agent_run.update!(final_provider: "cursor")
+        agent_run.update!(final_runner: "cursor")
 
         expect(Rails.cache.read(account_key)).to be_nil
       end
@@ -2746,96 +2781,96 @@ RSpec.describe AgentRun do
         expect(Rails.cache.read(project_key)).to be_nil
       end
 
-      it "invalidates provider option caches when a routed provider is renamed" do
+      it "invalidates runner option caches when a routed runner is renamed" do
         project = create(:project)
-        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
-        create(:agent_run, project: project, final_provider: provider.routing_key)
+        runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_runner: runner.routing_key)
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
-        provider.update!(name: "Kimi K2.6")
+        runner.update!(name: "Kimi K2.6")
 
         expect(Rails.cache.read(account_key)).to be_nil
       end
 
-      it "does not invalidate provider option caches for non-label provider changes" do
+      it "does not invalidate runner option caches for non-label runner changes" do
         project = create(:project)
-        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
-        create(:agent_run, project: project, final_provider: provider.routing_key)
+        runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_runner: runner.routing_key)
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
-        provider.update!(weight: provider.weight + 1)
+        runner.update!(weight: runner.weight + 1)
 
         expect(Rails.cache.read(account_key)).not_to be_nil
       end
 
-      it "does not invalidate provider option caches for unrelated config changes" do
+      it "does not invalidate runner option caches for unrelated config changes" do
         project = create(:project)
-        provider = create(
-          :provider,
+        runner = create(
+          :runner,
           user: project.effective_owner,
-          provider_key: "opencode",
+          runner_key: "opencode",
           name: "",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
         )
-        create(:agent_run, project: project, final_provider: provider.routing_key)
+        create(:agent_run, project: project, final_runner: runner.routing_key)
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
-        provider.update!(
+        runner.update!(
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" }, "extra" => "value" }
         )
 
         expect(Rails.cache.read(account_key)).not_to be_nil
       end
 
-      it "invalidates provider option caches when model-driven display names change" do
+      it "invalidates runner option caches when model-driven display names change" do
         project = create(:project)
-        provider = create(
-          :provider,
+        runner = create(
+          :runner,
           user: project.effective_owner,
-          provider_key: "opencode",
+          runner_key: "opencode",
           name: "",
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
         )
-        create(:agent_run, project: project, final_provider: provider.routing_key)
+        create(:agent_run, project: project, final_runner: runner.routing_key)
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
-        provider.update!(
+        runner.update!(
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0906" } }
         )
 
         expect(Rails.cache.read(account_key)).to be_nil
       end
 
-      it "invalidates provider option caches when a provider is discarded" do
+      it "invalidates runner option caches when a runner is discarded" do
         project = create(:project)
-        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
-        create(:agent_run, project: project, final_provider: provider.routing_key)
+        runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_runner: runner.routing_key)
         account_key = described_class.provider_options_cache_key_for(account_id: project.account_id)
 
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id, cache_key: account_key)
         expect(Rails.cache.read(account_key)).not_to be_nil
 
-        provider.discard!
+        runner.discard!
 
         expect(Rails.cache.read(account_key)).to be_nil
       end
 
-      it "invalidates project-scoped provider option caches when a provider label changes" do
+      it "invalidates project-scoped runner option caches when a runner label changes" do
         project = create(:project)
-        provider = create(:provider, user: project.effective_owner, provider_key: "opencode", name: "Kimi K2.5")
-        create(:agent_run, project: project, final_provider: provider.routing_key)
+        runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
+        create(:agent_run, project: project, final_runner: runner.routing_key)
         project_key = described_class.provider_options_cache_key_for(account_id: project.account_id, project_id: project.id)
 
         described_class.where(project_id: project.id).distinct_effective_provider_options(
@@ -2844,7 +2879,7 @@ RSpec.describe AgentRun do
         )
         expect(Rails.cache.read(project_key)).not_to be_nil
 
-        provider.update!(name: "Kimi K2.6")
+        runner.update!(name: "Kimi K2.6")
 
         expect(Rails.cache.read(project_key)).to be_nil
       end
@@ -2852,28 +2887,28 @@ RSpec.describe AgentRun do
   end
 
   describe "#effective_provider" do
-    it "returns final_provider when present and not mapped" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "codex")
+    it "returns final_runner when present and not mapped" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "codex")
       expect(agent_run.effective_provider).to eq("codex")
     end
 
-    it "normalizes final_provider when it contains a legacy agent-type identifier" do
-      agent_run = create(:agent_run, agent_type: "cursor", final_provider: "claude_code")
+    it "normalizes final_runner when it contains a legacy agent-type identifier" do
+      agent_run = create(:agent_run, agent_type: "cursor", final_runner: "claude_code")
       expect(agent_run.effective_provider).to eq("claude")
     end
 
-    it "returns normalized provider key when final_provider is nil" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: nil)
+    it "returns normalized runner key when final_runner is nil" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_runner: nil)
       expect(agent_run.effective_provider).to eq("claude")
     end
 
-    it "returns normalized provider key when final_provider is blank" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "")
+    it "returns normalized runner key when final_runner is blank" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "")
       expect(agent_run.effective_provider).to eq("claude")
     end
 
     it "returns agent_type as-is for non-mapped types" do
-      agent_run = create(:agent_run, :cursor, final_provider: nil)
+      agent_run = create(:agent_run, :cursor, final_runner: nil)
       expect(agent_run.effective_provider).to eq("cursor")
     end
   end
@@ -2886,66 +2921,66 @@ RSpec.describe AgentRun do
 
     it "accepts whitelisted column names" do
       expect { described_class.normalize_provider_sql("agent_type") }.not_to raise_error
-      expect { described_class.normalize_provider_sql("final_provider") }.not_to raise_error
-      expect { described_class.normalize_provider_sql("NULLIF(final_provider, '')") }.not_to raise_error
+      expect { described_class.normalize_provider_sql("final_runner") }.not_to raise_error
+      expect { described_class.normalize_provider_sql("NULLIF(final_runner, '')") }.not_to raise_error
     end
   end
 
-  describe "#final_provider_record" do
-    it "resolves a routing-key final provider to its provider record" do
+  describe "#final_runner_record" do
+    it "resolves a routing-key final runner to its runner record" do
       agent_run = create(:agent_run)
-      provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
-      agent_run.update!(final_provider: provider.routing_key)
+      runner = create(:runner, user: agent_run.project.effective_owner, runner_key: "opencode")
+      agent_run.update!(final_runner: runner.routing_key)
 
-      expect(agent_run.final_provider_record).to eq(provider)
+      expect(agent_run.final_runner_record).to eq(runner)
     end
 
-    it "returns nil for a non-routing-key final provider" do
-      agent_run = create(:agent_run, final_provider: "claude")
+    it "returns nil for a non-routing-key final runner" do
+      agent_run = create(:agent_run, final_runner: "claude")
 
-      expect(agent_run.final_provider_record).to be_nil
+      expect(agent_run.final_runner_record).to be_nil
     end
 
     it "does not resolve providers owned by another user" do
       project_owner = create(:user)
       project = create(:project, account: project_owner.account, created_by: project_owner)
       other_user = create(:user)
-      provider = create(:provider, user: other_user, provider_key: "opencode")
-      agent_run = create(:agent_run, project: project, final_provider: provider.routing_key)
+      runner = create(:runner, user: other_user, runner_key: "opencode")
+      agent_run = create(:agent_run, project: project, final_runner: runner.routing_key)
 
-      expect(agent_run.final_provider_record).to be_nil
+      expect(agent_run.final_runner_record).to be_nil
     end
   end
 
   describe "#effective_provider_record" do
-    it "returns the final provider record when final_provider is a routing key" do
+    it "returns the final runner record when final_runner is a routing key" do
       agent_run = create(:agent_run)
-      provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
-      agent_run.update!(final_provider: provider.routing_key)
+      runner = create(:runner, user: agent_run.project.effective_owner, runner_key: "opencode")
+      agent_run.update!(final_runner: runner.routing_key)
 
-      expect(agent_run.effective_provider_record).to eq(provider)
+      expect(agent_run.effective_provider_record).to eq(runner)
     end
 
-    it "resolves a subscription provider_key final_provider to its record" do
+    it "resolves a subscription provider_key final_runner to its record" do
       agent_run = create(:agent_run)
       owner = agent_run.project.effective_owner
-      claude = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-      agent_run.update!(final_provider: "claude")
+      claude = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+      agent_run.update!(final_runner: "claude")
 
       expect(agent_run.effective_provider_record).to eq(claude)
     end
 
-    it "falls back to the initially-assigned provider when final_provider is blank" do
+    it "falls back to the initially-assigned runner when final_runner is blank" do
       agent_run = create(:agent_run)
       owner = agent_run.project.effective_owner
-      initial = owner.providers.find_by!(provider_key: "claude", auth_type: "subscription")
-      agent_run.update!(provider: initial, final_provider: nil)
+      initial = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+      agent_run.update!(runner: initial, final_runner: nil)
 
       expect(agent_run.effective_provider_record).to eq(initial)
     end
 
-    it "returns nil when neither the final nor initial provider can be resolved" do
-      agent_run = create(:agent_run, provider: nil, final_provider: nil)
+    it "returns nil when neither the final nor initial runner can be resolved" do
+      agent_run = create(:agent_run, runner: nil, final_runner: nil)
 
       expect(agent_run.effective_provider_record).to be_nil
     end
@@ -2954,20 +2989,20 @@ RSpec.describe AgentRun do
   describe "#attempted_providers_by_routing_key" do
     it "returns attempted providers indexed by routing key" do
       agent_run = create(:agent_run)
-      provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
+      runner = create(:runner, user: agent_run.project.effective_owner, runner_key: "opencode")
       agent_run.update!(
-        providers_attempted: [
-          { "provider" => provider.routing_key, "success" => false },
-          { "provider" => "claude", "success" => true }
+        runners_attempted: [
+          { "runner" => runner.routing_key, "success" => false },
+          { "runner" => "claude", "success" => true }
         ],
-        provider_switches: 1
+        runner_switches: 1
       )
 
-      expect(agent_run.attempted_providers_by_routing_key).to eq(provider.routing_key => provider)
+      expect(agent_run.attempted_providers_by_routing_key).to eq(runner.routing_key => runner)
     end
 
-    it "returns an empty hash when no provider switches were recorded" do
-      agent_run = create(:agent_run, provider_switches: 0, providers_attempted: [])
+    it "returns an empty hash when no runner switches were recorded" do
+      agent_run = create(:agent_run, runner_switches: 0, runners_attempted: [])
 
       expect(agent_run.attempted_providers_by_routing_key).to eq({})
     end
@@ -2976,12 +3011,12 @@ RSpec.describe AgentRun do
       project_owner = create(:user)
       project = create(:project, account: project_owner.account, created_by: project_owner)
       other_user = create(:user)
-      provider = create(:provider, user: other_user, provider_key: "opencode")
+      runner = create(:runner, user: other_user, runner_key: "opencode")
       agent_run = create(
         :agent_run,
         project: project,
-        provider_switches: 1,
-        providers_attempted: [ { "provider" => provider.routing_key, "success" => false } ]
+        runner_switches: 1,
+        runners_attempted: [ { "runner" => runner.routing_key, "success" => false } ]
       )
 
       expect(agent_run.attempted_providers_by_routing_key).to eq({})
@@ -3846,7 +3881,7 @@ RSpec.describe AgentRun do
           status: "queued",
           now: inserted_agent_run_timestamp
         )
-        # Real callers (e.g. Providers::TestAgent) manually increment after insert_all!
+        # Real callers (e.g. Runners::TestAgent) manually increment after insert_all!
         Project.update_counters(project.id, agent_runs_count: 1)
 
         expect { agent_run.destroy! }

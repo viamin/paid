@@ -32,7 +32,7 @@
       <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6", data: {
         controller: "goal-toggle",
         goal_toggle_current_goal_value: selected_goal,
-        goal_toggle_provider_defaults_value: @default_provider_identifiers_by_goal.to_json
+        goal_toggle_runner_defaults_value: @default_runner_identifiers_by_goal.to_json
       } do |f| %>
 
         <fieldset>
@@ -113,6 +113,33 @@
           </div>
         </div>
 
+        <div data-goal-toggle-target="blockedBySection" <% unless selected_goal == "create_issue" %>hidden<% end %>>
+          <h2 class="text-base font-semibold text-gray-900">Blocked By</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally select existing issues or PRs that must be closed before the new issue can be picked up for work.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <% blocked_by_items = @issues + @pull_requests %>
+            <% if blocked_by_items.any? %>
+              <div class="max-h-60 space-y-2 overflow-y-auto">
+                <% blocked_by_items.each do |item| %>
+                  <label class="flex items-center gap-2 rounded-md border border-gray-100 p-2 hover:border-indigo-200">
+                    <input type="checkbox" name="blocked_by_issue_ids[]" value="<%= item.id %>"
+                           class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                           <% if Array(params[:blocked_by_issue_ids]).map(&:to_s).include?(item.id.to_s) %>checked<% end %>>
+                    <span class="text-sm text-gray-700">
+                      <span class="font-medium <%= item.is_pull_request? ? 'text-purple-600' : 'text-gray-900' %>">#<%= item.github_number %></span>
+                      - <%= truncate(item.title, length: 70) %>
+                      <% if item.is_pull_request? %><span class="text-xs text-purple-500">(PR)</span><% end %>
+                    </span>
+                  </label>
+                <% end %>
+              </div>
+            <% else %>
+              <p class="text-sm text-gray-500">No open issues or PRs found to select as blockers.</p>
+            <% end %>
+          </div>
+        </div>
+
         <div>
           <h2 class="text-base font-semibold text-gray-900">Additional Instructions</h2>
           <p class="mt-1 text-sm text-gray-500">Optionally provide extra context or instructions for the agent. This can be combined with an issue or PR selection above.</p>
@@ -141,11 +168,11 @@
         </div>
 
         <div>
-          <h2 class="text-base font-semibold text-gray-900">Provider</h2>
+          <h2 class="text-base font-semibold text-gray-900">Runner</h2>
           <div class="mt-4">
-            <select name="provider" id="provider" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" data-action="change->goal-toggle#providerChanged" data-goal-toggle-target="providerSelect">
-              <option value="" selected>Inherit (from provider settings)</option>
-              <% @available_run_provider_options.each do |label, identifier| %>
+            <select name="runner" id="runner" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" data-action="change->goal-toggle#runnerChanged" data-goal-toggle-target="runnerSelect">
+              <option value="" selected>Inherit (from runner settings)</option>
+              <% @available_run_runner_options.each do |label, identifier| %>
                 <option value="<%= identifier %>">
                   <%= label %>
                 </option>
