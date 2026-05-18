@@ -509,6 +509,51 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("infrastructure_error")
       end
 
+      it "treats no-space-left runtime failures as infrastructure errors even after some work" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 22)
+        agent_run.log!("stdout", <<~LOG)
+          error https://registry.yarnpkg.com/@esbuild/openbsd-x64/-/openbsd-x64-0.28.0.tgz:
+          Extracting tar content of undefined failed, the file appears to be corrupt:
+          "ENOSPC: no space left on device, write"
+        LOG
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "treats permission auto-rejects as infrastructure errors even after some work" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 22)
+        agent_run.log!("stderr", "! permission requested: external_directory (/home/agent/.cache/yarn/*); auto-rejecting")
+        agent_run.log!("stdout", "Error: The user rejected permission to use this specific tool call.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "does not treat a bare tool-permission rejection quote as infrastructure error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", <<~LOG)
+          I found the prior failure note: "The user rejected permission to use this specific tool call."
+          That appears to be from an earlier run and is not needed for this issue.
+        LOG
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+
       it "allows recommend_close when agent has iterations > 0 despite bwrap mention" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,

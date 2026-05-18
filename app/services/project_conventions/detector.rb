@@ -28,9 +28,12 @@ module ProjectConventions
       detections = []
       detections.concat(release_please_detections)
       detections.concat(commitlint_detections)
-      detections << hook_manager_detection if hook_manager_detection
-      detections << ci_entrypoint_detection if ci_entrypoint_detection
-      detections << dependency_format_detection if dependency_format_detection
+      hook = hook_manager_detection
+      detections << hook if hook
+      ci = ci_entrypoint_detection
+      detections << ci if ci
+      dependency_format = dependency_format_detection
+      detections << dependency_format if dependency_format
       merge_detections(detections.compact)
     end
 
