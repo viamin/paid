@@ -76,6 +76,7 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
   end
 
   def disable_later_rls_migrations
+    marketplace_migration.down if marketplace_have_rls?
     strategy_rls_migration.down if strategies_have_rls?
     strategy_experiment_tables_migration.down if strategy_experiment_tables_have_rls?
     issue_merge_subscriptions_migration.down if issue_merge_subscriptions_have_rls?
@@ -84,6 +85,15 @@ RSpec.describe EnableTenantRowLevelSecurity, :aggregate_failures do
     llm_output_metrics_migration.down if llm_output_metrics_have_rls?
     knowledge_usage_stats_migration.down if knowledge_usage_stats_have_rls?
     notification_rule_states_migration.down
+  end
+
+  def marketplace_migration
+    @marketplace_migration ||= CreateMarketplaceEntries.new
+  end
+
+  def marketplace_have_rls?
+    return false unless ActiveRecord::Base.connection.table_exists?(:marketplace_entries)
+    tenant_policy_count("marketplace_entries").positive?
   end
 
   def enable_later_rls_migrations

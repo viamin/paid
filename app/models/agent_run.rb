@@ -1729,7 +1729,11 @@ class AgentRun < ApplicationRecord
   #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
-    custom_prompt.presence || prompt_for_goal
+    base = custom_prompt.presence || prompt_for_goal
+    return base unless agent_run_marketplace_entries.exists?
+
+    runner_key = runner&.runner_key || RunnerSupport.runner_key_for_agent_type(agent_type)
+    MarketplaceEntries::InjectIntoPrompt.call(agent_run: self, prompt: base, provider_key: runner_key)
   end
 
   # Returns the base prompt for the review goal.

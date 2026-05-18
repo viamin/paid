@@ -30,8 +30,10 @@ class CreateExceptionIncidents < ActiveRecord::Migration[8.1]
     add_index :exception_incidents, [ :project_id ], name: "index_exception_incidents_on_project"
     add_index :exception_incidents, [ :severity ], name: "index_exception_incidents_on_severity"
 
-    add_foreign_key :exception_incidents, :accounts
-    add_foreign_key :exception_incidents, :projects
+    safety_assured do
+      add_foreign_key :exception_incidents, :accounts
+      add_foreign_key :exception_incidents, :projects
+    end
 
     safety_assured do
       execute <<~SQL

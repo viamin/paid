@@ -9,7 +9,7 @@ module Knowledge
     end
 
     def for_embedding_candidate_providers
-      for_embedding_candidates
+      for_embedding_candidate_runners
     end
   end
 end
