@@ -403,6 +403,15 @@ RSpec.describe Issue do
       }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
     end
 
+    it "does not re-enqueue when project has auto-pick disabled" do
+      project = create(:project, auto_pick_enabled: false)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+    end
+
     it "still enqueues recheck when the project gate defers auto-pick" do
       project = create(:project, auto_pick_enabled: true, quality_paused_at: Time.current)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")

@@ -567,6 +567,7 @@ class Issue < ApplicationRecord
   def auto_pick_recheck_needed?
     return false if is_pull_request?
     return false unless saved_change_to_paid_state?
+    return false unless project&.auto_pick_enabled?
 
     paid_state.in?(%w[new planning failed completed])
   end
