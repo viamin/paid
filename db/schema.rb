@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_18_131232) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -185,10 +185,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
     t.boolean "auto_pick", default: false, null: false
-    t.bigint "blocked_by_issue_ids", default: [], array: true, comment: "IDs of issues/PRs that block the created issue from being picked up for work."
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40
+    t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
@@ -1702,53 +1702,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
   end
 
-  create_table "provider_states", force: :cascade do |t|
-    t.datetime "circuit_opened_at"
-    t.string "circuit_state", limit: 20, default: "closed", null: false
-    t.datetime "created_at", null: false
-    t.integer "failure_count", default: 0, null: false
-    t.string "provider_name", limit: 50
-    t.datetime "rate_limited_until"
-    t.string "runner_name", limit: 50, null: false
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.index ["user_id", "provider_name"], name: "index_provider_states_on_user_id_and_provider_name", unique: true
-    t.index ["user_id", "runner_name"], name: "index_provider_states_on_user_id_and_runner_name", unique: true
-  end
-
-  create_table "providers", force: :cascade do |t|
-    t.text "agent_co_author_trailer"
-    t.string "auth_type", limit: 20, default: "subscription", null: false
-    t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
-    t.jsonb "config", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.datetime "discarded_at", comment: "Soft-delete timestamp so historical provider names remain available for filters and run history."
-    t.boolean "enabled_for_agent_runs", default: true, null: false
-    t.boolean "enabled_for_fallback", default: true, null: false
-    t.string "fallback_role", limit: 30, default: "standard", null: false
-    t.jsonb "log_data"
-    t.string "name", limit: 100, default: "", null: false
-    t.bigint "provider_api_key_id"
-    t.string "provider_key", limit: 50
-    t.string "runner_key", limit: 50, null: false
-    t.jsonb "tier_model_ids", default: {}, null: false
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.integer "weight", default: 1, null: false
-    t.index ["auth_type"], name: "index_providers_on_auth_type"
-    t.index ["discarded_at"], name: "index_providers_on_discarded_at"
-    t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
-    t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
-    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id", "runner_key", "provider_api_key_id", "name"], name: "idx_runners_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id", "runner_key"], name: "idx_runners_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id"], name: "index_providers_on_user_id"
-    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "runners_api_key_requires_key"
-    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "runners_subscription_invariants"
-    t.check_constraint "weight >= 1", name: "runners_weight_positive"
-  end
-
   create_table "quality_gate_events", comment: "Records each threshold breach and recovery observed by the quality gate system.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "event_type", limit: 20, null: false, comment: "Quality gate transition being recorded: trigger or recovery."
@@ -1851,6 +1804,53 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["account_id"], name: "index_quality_thresholds_on_account_id"
     t.index ["project_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_project_overrides", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
+  end
+
+  create_table "runner_states", force: :cascade do |t|
+    t.datetime "circuit_opened_at"
+    t.string "circuit_state", limit: 20, default: "closed", null: false
+    t.datetime "created_at", null: false
+    t.integer "failure_count", default: 0, null: false
+    t.string "provider_name", limit: 50
+    t.datetime "rate_limited_until"
+    t.string "runner_name", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "provider_name"], name: "index_runner_states_on_user_id_and_provider_name", unique: true
+    t.index ["user_id", "runner_name"], name: "index_runner_states_on_user_id_and_runner_name", unique: true
+  end
+
+  create_table "runners", force: :cascade do |t|
+    t.text "agent_co_author_trailer"
+    t.string "auth_type", limit: 20, default: "subscription", null: false
+    t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
+    t.jsonb "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "discarded_at", comment: "Soft-delete timestamp so historical provider names remain available for filters and run history."
+    t.boolean "enabled_for_agent_runs", default: true, null: false
+    t.boolean "enabled_for_fallback", default: true, null: false
+    t.string "fallback_role", limit: 30, default: "standard", null: false
+    t.jsonb "log_data"
+    t.string "name", limit: 100, default: "", null: false
+    t.bigint "provider_api_key_id"
+    t.string "provider_key", limit: 50
+    t.string "runner_key", limit: 50, null: false
+    t.jsonb "tier_model_ids", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.integer "weight", default: 1, null: false
+    t.index ["auth_type"], name: "index_runners_on_auth_type"
+    t.index ["discarded_at"], name: "index_runners_on_discarded_at"
+    t.index ["provider_api_key_id"], name: "index_runners_on_provider_api_key_id"
+    t.index ["tier_model_ids"], name: "index_runners_on_tier_model_ids", using: :gin
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "runner_key", "provider_api_key_id", "name"], name: "idx_runners_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "runner_key"], name: "idx_runners_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id"], name: "index_runners_on_user_id"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "runners_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "runners_subscription_invariants"
+    t.check_constraint "weight >= 1", name: "runners_weight_positive"
   end
 
   create_table "scaling_experiment_assignments", comment: "Workflow-scoped assignments and result snapshots for scaling experiments.", force: :cascade do |t|
@@ -2300,8 +2300,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers", column: "runner_id", name: "fk_agent_runs_runner_id", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers", on_delete: :nullify
+  add_foreign_key "agent_runs", "runners", column: "provider_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
@@ -2315,8 +2315,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
   add_foreign_key "chat_sessions", "projects"
-  add_foreign_key "chat_sessions", "providers"
-  add_foreign_key "chat_sessions", "providers", column: "runner_id", name: "fk_chat_sessions_runner_id"
+  add_foreign_key "chat_sessions", "runners", column: "provider_id"
+  add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
@@ -2425,9 +2425,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
-  add_foreign_key "provider_states", "users", on_delete: :cascade
-  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
-  add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
@@ -2441,6 +2438,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "runner_states", "users", on_delete: :cascade
+  add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
+  add_foreign_key "runners", "users", on_delete: :cascade
   add_foreign_key "scaling_experiment_assignments", "issues", on_delete: :nullify
   add_foreign_key "scaling_experiment_assignments", "projects", on_delete: :cascade
   add_foreign_key "scaling_experiment_assignments", "scaling_experiments", on_delete: :cascade
@@ -3348,16 +3348,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
       CREATE TRIGGER logidze_on_provider_api_keys BEFORE INSERT OR UPDATE ON public.provider_api_keys FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{api_key}')
   SQL
 
-  create_trigger :logidze_on_providers, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.providers FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
   create_trigger :logidze_on_quality_gate_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_gate_thresholds BEFORE INSERT OR UPDATE ON public.quality_gate_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_providers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.runners FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_service_containers, sql_definition: <<-SQL

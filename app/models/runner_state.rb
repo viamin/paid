@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class RunnerState < ApplicationRecord
-  self.table_name = "provider_states"
   include LegacyAttributeBridge
 
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
