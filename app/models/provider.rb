@@ -330,6 +330,7 @@ class Provider < ApplicationRecord
   def opencode_qualified_model
     model_id = opencode_model_id
     return if model_id.blank?
+    return model_id if subscription?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
     provider_id = api_config[:opencode_model_provider]
@@ -372,7 +373,7 @@ class Provider < ApplicationRecord
   end
 
   def agent_harness_provider_runtime
-    return opencode_provider_runtime if opencode_direct_outbound?
+    return opencode_provider_runtime if opencode_agent_harness_runtime?
     return pi_provider_runtime if pi_agent_harness_runtime?
 
     nil
@@ -383,7 +384,7 @@ class Provider < ApplicationRecord
   end
 
   def opencode_agent_harness_runtime?
-    provider_key == "opencode" && requires_direct_outbound?
+    provider_key == "opencode" && (requires_direct_outbound? || (subscription? && opencode_model_id.present?))
   end
 
   def copilot_agent_harness_runtime?
@@ -771,6 +772,14 @@ class Provider < ApplicationRecord
 
   def opencode_api_key_config_must_be_valid
     return unless provider_key == "opencode"
+    if subscription?
+      if opencode_model_id.blank?
+        errors.add(:config, "must include an OpenCode model id")
+      elsif !opencode_model_id.include?("/")
+        errors.add(:config, "must use a fully qualified OpenCode model id like openai/gpt-5")
+      end
+      return
+    end
     return unless api_key?
 
     unless OPENCODE_API_PROVIDER_KEYS.include?(opencode_api_provider)
@@ -950,12 +959,16 @@ class Provider < ApplicationRecord
   def opencode_provider_runtime
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
+    provider_id = model_id.split("/", 2).first
+    env = {}
 
-    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
-
-    env_var = direct_outbound_api_key_env_var(opencode_api_provider)
-    env = { env_var => provider_api_key&.api_key.to_s }
-    env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
+    if api_key?
+      api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
+      env_var = direct_outbound_api_key_env_var(opencode_api_provider)
+      env = { env_var => provider_api_key&.api_key.to_s }
+      env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
+      provider_id = opencode_api_provider
+    end
 
     AgentHarness::ProviderRuntime.new(
       model: model_id,
@@ -963,7 +976,7 @@ class Provider < ApplicationRecord
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
         config: {
-          "provider" => { opencode_api_provider => {} }
+          "provider" => { provider_id => {} }
         }
       }
     )

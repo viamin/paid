@@ -496,9 +496,10 @@ RSpec.describe Provider do
     end
 
     it "prefers kept rows before discarded rows when including discarded matches" do
-      discarded_subscription = create(:provider, user: user, provider_key: "opencode", name: "Legacy Name")
+      opencode_config = { "opencode" => { "model" => "openai/gpt-5" } }
+      discarded_subscription = create(:provider, user: user, provider_key: "opencode", name: "Legacy Name", config: opencode_config)
       discarded_subscription.update_column(:discarded_at, Time.current)
-      kept_subscription = create(:provider, user: user, provider_key: "opencode", name: "Current Name")
+      kept_subscription = create(:provider, user: user, provider_key: "opencode", name: "Current Name", config: opencode_config)
 
       expect(described_class.for_identifier(user, "opencode", include_discarded: true)).to eq(kept_subscription)
     end
@@ -926,6 +927,22 @@ RSpec.describe Provider do
       expect(runtime.metadata[:config]["provider"]).to eq({ "minimax" => {} })
     end
 
+    it "builds subscription OpenCode runtimes from fully qualified model ids" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "subscription",
+        config: { "opencode" => { "model" => "openai/gpt-5" } }
+      )
+
+      runtime = provider.agent_harness_provider_runtime
+
+      expect(runtime.model).to eq("openai/gpt-5")
+      expect(runtime.env).to eq({})
+      expect(runtime.metadata[:config]["provider"]).to eq({ "openai" => {} })
+    end
+
     it "does not enable direct outbound when the OpenCode model id is missing" do
       provider = build(
         :provider,
@@ -1064,7 +1081,18 @@ RSpec.describe Provider do
       expect(provider.agent_harness_runtime?).to be(false)
     end
 
-    it "returns false for opencode subscription providers" do
+    it "returns true for opencode subscription providers with a model" do
+      provider = build(
+        :provider,
+        provider_key: "opencode",
+        auth_type: "subscription",
+        config: { "opencode" => { "model" => "openai/gpt-5" } }
+      )
+
+      expect(provider.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns false for opencode subscription providers without a model" do
       provider = build(:provider, provider_key: "opencode", auth_type: "subscription")
 
       expect(provider.agent_harness_runtime?).to be(false)

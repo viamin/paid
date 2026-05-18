@@ -211,6 +211,11 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
 
+    it "includes OpenCode proxy header vars for subscription auth" do
+      vars = described_class.subscription_auth_unset_vars_for("opencode")
+      expect(vars).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
+    end
+
     it "returns the Pi API-key unset vars, including GEMINI_API_KEY" do
       vars = described_class.subscription_auth_unset_vars_for("pi")
 

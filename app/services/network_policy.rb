@@ -94,7 +94,8 @@ class NetworkPolicy
     #
     # @return [Boolean]
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? ||
+        copilot_subscription_auth? || opencode_subscription_auth?
     end
 
     # Ensures the agent Docker network exists. Creates it if missing.
@@ -224,6 +225,11 @@ class NetworkPolicy
       dir.present? && File.file?(File.join(dir, "config.json"))
     end
 
+    def opencode_subscription_auth?
+      dir = opencode_data_dir
+      dir.present? && opencode_subscription_credential_present?(dir)
+    end
+
     # Returns the Claude config directory path, checking the explicit
     # environment variable first, then auto-detecting standard locations.
     def claude_config_dir
@@ -286,6 +292,34 @@ class NetworkPolicy
       end
 
       "/.copilot" if credential_present?("/.copilot", "config.json")
+    end
+
+    def opencode_data_dir
+      return ENV["OPENCODE_DATA_DIR"] if ENV["OPENCODE_DATA_DIR"].present? && credential_present?(ENV["OPENCODE_DATA_DIR"], "auth.json")
+
+      home = home_dir
+      if home.present?
+        local_share = File.join(home, ".local", "share", "opencode")
+        return local_share if credential_present?(local_share, "auth.json")
+      end
+
+      "/.local/share/opencode" if credential_present?("/.local/share/opencode", "auth.json")
+    end
+
+    def opencode_subscription_credential_present?(dir)
+      auth_path = File.join(dir, "auth.json")
+      return false unless File.file?(auth_path)
+
+      payload = JSON.parse(File.read(auth_path))
+      return false unless payload.is_a?(Hash)
+
+      payload.values.any? do |credential|
+        credential.is_a?(Hash) &&
+          credential["type"].present? &&
+          !%w[api_key apiKey].include?(credential["type"].to_s)
+      end
+    rescue JSON::ParserError, Errno::ENOENT, Errno::EACCES
+      false
     end
 
     # Returns true when the directory exists and contains the given credential file.

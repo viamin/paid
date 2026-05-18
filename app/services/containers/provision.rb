@@ -201,6 +201,7 @@ module Containers
       start_container
       fix_all_ownership!
       seed_opencode_database!
+      seed_opencode_credentials!
       seed_codex_credentials!
       seed_gemini_credentials!
       seed_copilot_credentials!
@@ -1226,6 +1227,15 @@ module Containers
       ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
 
+    def opencode_subscription_provider_requested?
+      return false unless agent_run
+
+      providers = resolved_run_provider_candidates
+      return providers.any? { |provider| provider.provider_key == "opencode" && provider.subscription? } if providers.any?
+
+      ProviderSupport.provider_key_for_agent_type(agent_run.agent_type) == "opencode"
+    end
+
     def seed_gemini_credentials!
       source_files = %w[
         oauth_creds.json
@@ -1286,6 +1296,30 @@ module Containers
           files: source_files,
           success_log_key: "container.copilot_credentials_seeded",
           failure_log_key: "container.copilot_credentials_seed_failed"
+        )
+      end
+    end
+
+    def seed_opencode_credentials!
+      return unless opencode_subscription_provider_requested?
+      return unless opencode_subscription_auth?
+
+      host = opencode_data_host_path
+      if host.present? && opencode_subscription_credential_present?(host)
+        seed_host_credentials!(
+          staging_path: "/home/agent/.opencode-host",
+          target_path: "/home/agent/.local/share/opencode",
+          files: %w[auth.json],
+          success_log_key: "container.opencode_credentials_seeded",
+          failure_log_key: "container.opencode_credentials_seed_failed"
+        )
+      elsif opencode_local_data_path.present?
+        seed_local_credentials!(
+          source_path: opencode_local_data_path,
+          target_path: "/home/agent/.local/share/opencode",
+          files: %w[auth.json],
+          success_log_key: "container.opencode_credentials_seeded",
+          failure_log_key: "container.opencode_credentials_seed_failed"
         )
       end
     end
@@ -1760,6 +1794,15 @@ module Containers
         binds << "#{copilot_config_host_path}:/home/agent/.copilot-host:ro"
       end
 
+      if backend.supports_host_paths? &&
+         opencode_subscription_provider_requested? &&
+         opencode_data_host_path.present? &&
+         File.directory?(opencode_data_host_path) &&
+         opencode_subscription_credential_present?(opencode_data_host_path) &&
+         opencode_subscription_auth?
+        binds << "#{opencode_data_host_path}:/home/agent/.opencode-host:ro"
+      end
+
       # /paid-heartbeat carries agent heartbeat touches used by the watchdog.
       # When the backend supports host paths we bind-mount a host temp dir so
       # both host and container can observe the same file. Backends like Swarm
@@ -1969,6 +2012,7 @@ module Containers
       env.concat(run_scoped_environment(proxy_base)) if agent_run.present?
 
       env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
+      env << "PAID_OPENCODE_SUBSCRIPTION_AUTH=#{(opencode_subscription_provider_requested? && opencode_subscription_auth?) ? 1 : 0}"
 
       env << "PAID_CLAUDE_SUBSCRIPTION_AUTH=#{claude_subscription_auth? ? 1 : 0}"
 
@@ -2054,7 +2098,8 @@ module Containers
     # Returns true when any provider CLI config is available for
     # subscription-based authentication via copied host login state.
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? ||
+        copilot_subscription_auth? || (opencode_subscription_provider_requested? && opencode_subscription_auth?)
     end
 
     def proxy_base_url
@@ -2077,6 +2122,11 @@ module Containers
       end
       if host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path)
         unsupported_mounts << "Copilot subscription auth at #{copilot_config_host_path}"
+      end
+      if opencode_subscription_provider_requested? &&
+         host_only_auth_source?(opencode_data_host_path, "auth.json", opencode_local_data_path) &&
+         opencode_subscription_auth?
+        unsupported_mounts << "OpenCode subscription auth at #{opencode_data_host_path}"
       end
       return if unsupported_mounts.empty?
 
@@ -2278,6 +2328,35 @@ module Containers
     def copilot_subscription_auth?
       paths = [ copilot_config_host_path, copilot_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "config.json")) }
+    end
+
+    def opencode_data_host_path
+      @opencode_data_host_path ||= ENV["OPENCODE_DATA_DIR"].presence || detect_host_config_path("/.local/share/opencode")
+    end
+
+    def opencode_local_data_path
+      @opencode_local_data_path ||= local_config_path(".local/share/opencode")
+    end
+
+    def opencode_subscription_auth?
+      paths = [ opencode_data_host_path, opencode_local_data_path ].compact
+      paths.any? { |base| opencode_subscription_credential_present?(base) }
+    end
+
+    def opencode_subscription_credential_present?(dir)
+      auth_path = File.join(dir, "auth.json")
+      return false unless File.file?(auth_path)
+
+      payload = JSON.parse(File.read(auth_path))
+      return false unless payload.is_a?(Hash)
+
+      payload.values.any? do |credential|
+        credential.is_a?(Hash) &&
+          credential["type"].present? &&
+          !%w[api_key apiKey].include?(credential["type"].to_s)
+      end
+    rescue JSON::ParserError, Errno::ENOENT, Errno::EACCES
+      false
     end
 
     def detect_host_config_path(suffix)

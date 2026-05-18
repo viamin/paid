@@ -381,7 +381,8 @@ RSpec.describe NetworkPolicy, :no_db do
     around do |example|
       # Isolate env vars used by config dir detection
       original_env = ENV.to_h.slice(
-        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR", "COPILOT_HOME", "COPILOT_CONFIG_DIR"
+        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR",
+        "COPILOT_HOME", "COPILOT_CONFIG_DIR", "OPENCODE_DATA_DIR"
       )
       ENV.delete("CLAUDE_CONFIG_DIR")
       ENV.delete("CODEX_CONFIG_DIR")
@@ -389,6 +390,7 @@ RSpec.describe NetworkPolicy, :no_db do
       ENV.delete("GEMINI_CONFIG_DIR")
       ENV.delete("COPILOT_HOME")
       ENV.delete("COPILOT_CONFIG_DIR")
+      ENV.delete("OPENCODE_DATA_DIR")
       example.run
     ensure
       original_env.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
@@ -482,6 +484,44 @@ RSpec.describe NetworkPolicy, :no_db do
 
       it "selects the infrastructure network" do
         expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+
+    context "when only OpenCode credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        allow(Dir).to receive(:exist?).with("/tmp/opencode-test").and_return(true)
+        ENV["OPENCODE_DATA_DIR"] = "/tmp/opencode-test"
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/opencode-test/auth.json").and_return(true)
+        allow(File).to receive(:read)
+          .with("/tmp/opencode-test/auth.json").and_return('{"openai":{"type":"oauth"}}')
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+
+    context "when OpenCode auth.json only contains API keys" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        allow(Dir).to receive(:exist?).with("/tmp/opencode-test").and_return(true)
+        ENV["OPENCODE_DATA_DIR"] = "/tmp/opencode-test"
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/opencode-test/auth.json").and_return(true)
+        allow(File).to receive(:read)
+          .with("/tmp/opencode-test/auth.json").and_return('{"openai":{"type":"api_key"}}')
+      end
+
+      it "does not treat API-key-only auth.json as subscription auth" do
+        expect(described_class.subscription_auth?).to be false
       end
     end
   end

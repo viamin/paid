@@ -1674,6 +1674,97 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with OpenCode subscription auth (OPENCODE_DATA_DIR)" do
+      let(:opencode_data_dir) { Dir.mktmpdir("opencode-data") }
+
+      before do
+        File.write(File.join(opencode_data_dir, "auth.json"), '{"openai":{"type":"oauth"}}')
+
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("OPENCODE_DATA_DIR").and_return(opencode_data_dir)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil,
+          opencode_local_data_path: nil
+        )
+        allow(service).to receive(:opencode_subscription_provider_requested?).and_return(true)
+      end
+
+      after do
+        FileUtils.rm_rf(opencode_data_dir)
+      end
+
+      it "mounts OpenCode auth at a staging path and sets the subscription marker" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("#{opencode_data_dir}:/home/agent/.opencode-host:ro")
+          expect(config["Env"]).to include("PAID_OPENCODE_SUBSCRIPTION_AUTH=1")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "seeds OpenCode auth into the agent data tmpfs" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-c", include("/home/agent/.opencode-host/auth.json").and(include("/home/agent/.local/share/opencode/auth.json")) ],
+          user: "agent"
+        )
+      end
+    end
+
+    context "with OpenCode API-key auth.json (OPENCODE_DATA_DIR)" do
+      let(:opencode_data_dir) { Dir.mktmpdir("opencode-data") }
+
+      before do
+        File.write(File.join(opencode_data_dir, "auth.json"), '{"openai":{"type":"api_key"}}')
+
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("OPENCODE_DATA_DIR").and_return(opencode_data_dir)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil,
+          opencode_local_data_path: nil
+        )
+        allow(service).to receive(:opencode_subscription_provider_requested?).and_return(true)
+      end
+
+      after do
+        FileUtils.rm_rf(opencode_data_dir)
+      end
+
+      it "does not mount or mark subscription auth" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds.none? { |bind| bind.include?("/home/agent/.opencode-host:ro") }).to be true
+          expect(config["Env"]).to include("PAID_OPENCODE_SUBSCRIPTION_AUTH=0")
+          mock_container
+        end
+
+        service.provision
+      end
+    end
+
     context "when firewall rules fail in production" do
       before do
         allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))

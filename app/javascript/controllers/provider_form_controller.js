@@ -67,6 +67,7 @@ export default class extends Controller {
     "providerSelect",
     "apiKeyOption",
     "opencodeSettings",
+    "opencodeApiProviderField",
     "kilocodeSettings",
     "piSettings",
     "directOutboundApiProviderSelect",
@@ -117,7 +118,7 @@ export default class extends Controller {
   refreshProviderSpecificFields() {
     const providerKey = this.currentProviderKey()
     const isApiKey = this.providerApiKeyMode()
-    const showOpenCodeSettings = isApiKey && providerKey === "opencode"
+    const showOpenCodeSettings = providerKey === "opencode"
     const showKiloCodeSettings = isApiKey && providerKey === "kilocode"
     const showPiSettings = isApiKey && providerKey === "pi"
 
@@ -125,6 +126,13 @@ export default class extends Controller {
       el.hidden = !showOpenCodeSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showOpenCodeSettings
+      })
+    })
+
+    this.opencodeApiProviderFieldTargets.forEach((el) => {
+      el.hidden = !showOpenCodeSettings || !isApiKey
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !showOpenCodeSettings || !isApiKey
       })
     })
 

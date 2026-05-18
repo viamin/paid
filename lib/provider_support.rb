@@ -242,6 +242,10 @@ module ProviderSupport
   # know about. These must be unset alongside the provider-native vars from
   # agent-harness when running in subscription-auth mode.
   PROXY_HEADER_UNSET_VARS = {
+    "opencode" => %w[
+      OPENAI_HEADER_X_AGENT_RUN_ID
+      OPENAI_HEADER_X_PROXY_TOKEN
+    ].freeze,
     "gemini" => %w[
       GOOGLE_HEADER_X_AGENT_RUN_ID
       GOOGLE_HEADER_X_PROXY_TOKEN
