@@ -312,6 +312,7 @@ class ProvidersController < ApplicationController
         end
 
         if success
+          @provider.reload
           render turbo_stream: turbo_stream.replace(
             ActionView::RecordIdentifier.dom_id(@provider, :"#{attribute}_toggle"),
             partial: partial,
