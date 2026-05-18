@@ -99,8 +99,8 @@ module ProviderSmokeHelpers
       auth_type: "api_key",
       api_provider: "minimax",
       model_env: "PAID_SMOKE_OPENCODE_MINIMAX_MODEL",
-      default_model: "MiniMax-M2.5",
-      label: "OpenCode with MiniMax API key"
+      default_model: "MiniMax-M2.7",
+      label: "OpenCode with MiniMax Token Plan API key"
     ),
 
     "kilocode-zai" => Scenario.new(
@@ -136,8 +136,8 @@ module ProviderSmokeHelpers
       auth_type: "api_key",
       api_provider: "minimax",
       model_env: "PAID_SMOKE_PI_MINIMAX_MODEL",
-      default_model: "MiniMax-M2.5",
-      label: "Pi with MiniMax API key"
+      default_model: "MiniMax-M2.7",
+      label: "Pi with MiniMax Token Plan API key"
     ),
     "copilot-subscription" => Scenario.new(
       name: "copilot-subscription",

@@ -46,9 +46,9 @@ RSpec.describe ProviderSmokeHelpers do
       expect(described_class.scenario_for("kilocode-zai").default_model).to eq("glm-5.1")
       expect(described_class.scenario_for("opencode-openrouter").default_model).to eq("moonshotai/kimi-k2")
       expect(described_class.scenario_for("kilocode-inception").default_model).to eq("mercury-2")
-      expect(described_class.scenario_for("opencode-minimax").default_model).to eq("MiniMax-M2.5")
+      expect(described_class.scenario_for("opencode-minimax").default_model).to eq("MiniMax-M2.7")
       expect(described_class.scenario_for("pi-deepseek").default_model).to eq("deepseek-chat")
-      expect(described_class.scenario_for("pi-minimax").default_model).to eq("MiniMax-M2.5")
+      expect(described_class.scenario_for("pi-minimax").default_model).to eq("MiniMax-M2.7")
     end
 
     it "raises a helpful error for unknown names" do
@@ -96,7 +96,7 @@ RSpec.describe ProviderSmokeHelpers do
 
       expect(provider.provider_key).to eq("opencode")
       expect(provider.opencode_api_provider).to eq("minimax")
-      expect(provider.opencode_model_id).to eq("MiniMax-M2.5")
+      expect(provider.opencode_model_id).to eq("MiniMax-M2.7")
       expect(provider.provider_api_key.api_service_type).to eq("minimax")
     end
   end
