@@ -42,6 +42,9 @@ RSpec.describe ProviderSmokeHelpers do
       expect(described_class.scenario_for("kilocode-zai").default_model).to eq("glm-5.1")
       expect(described_class.scenario_for("opencode-openrouter").default_model).to eq("moonshotai/kimi-k2")
       expect(described_class.scenario_for("kilocode-inception").default_model).to eq("mercury-2")
+      expect(described_class.scenario_for("opencode-minimax").default_model).to eq("MiniMax-M2.5")
+      expect(described_class.scenario_for("pi-deepseek").default_model).to eq("deepseek-chat")
+      expect(described_class.scenario_for("pi-minimax").default_model).to eq("MiniMax-M2.5")
     end
 
     it "raises a helpful error for unknown names" do
@@ -63,6 +66,34 @@ RSpec.describe ProviderSmokeHelpers do
       provider = described_class.build_direct_outbound_provider!(user: user, scenario: scenario)
 
       expect(provider.opencode_model_id).to eq("moonshotai/kimi-k2")
+    end
+
+    it "builds Pi DeepSeek providers through the shared direct-outbound path" do
+      scenario = described_class.scenario_for("pi-deepseek")
+      allow(described_class).to receive(:development_provider_info_for).with(scenario).and_return(
+        { "api_key" => "sk-deepseek-test" }
+      )
+
+      provider = described_class.build_direct_outbound_provider!(user: user, scenario: scenario)
+
+      expect(provider.provider_key).to eq("pi")
+      expect(provider.pi_api_provider).to eq("deepseek")
+      expect(provider.pi_model_id).to eq("deepseek-chat")
+      expect(provider.provider_api_key.api_service_type).to eq("deepseek")
+    end
+
+    it "builds MiniMax providers with the Anthropic env-var backed service type" do
+      scenario = described_class.scenario_for("opencode-minimax")
+      allow(described_class).to receive(:development_provider_info_for).with(scenario).and_return(
+        { "api_key" => "sk-minimax-test" }
+      )
+
+      provider = described_class.build_direct_outbound_provider!(user: user, scenario: scenario)
+
+      expect(provider.provider_key).to eq("opencode")
+      expect(provider.opencode_api_provider).to eq("minimax")
+      expect(provider.opencode_model_id).to eq("MiniMax-M2.5")
+      expect(provider.provider_api_key.api_service_type).to eq("minimax")
     end
   end
 end

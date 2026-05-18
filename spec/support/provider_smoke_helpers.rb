@@ -93,6 +93,15 @@ module ProviderSmokeHelpers
       default_model: "moonshotai/kimi-k2",
       label: "OpenCode with OpenRouter API key"
     ),
+    "opencode-minimax" => Scenario.new(
+      name: "opencode-minimax",
+      provider_key: "opencode",
+      auth_type: "api_key",
+      api_provider: "minimax",
+      model_env: "PAID_SMOKE_OPENCODE_MINIMAX_MODEL",
+      default_model: "MiniMax-M2.5",
+      label: "OpenCode with MiniMax API key"
+    ),
 
     "kilocode-zai" => Scenario.new(
       name: "kilocode-zai",
@@ -111,6 +120,24 @@ module ProviderSmokeHelpers
       model_env: "PAID_SMOKE_KILOCODE_INCEPTION_MODEL",
       default_model: "mercury-2",
       label: "KiloCode with Inception API key"
+    ),
+    "pi-deepseek" => Scenario.new(
+      name: "pi-deepseek",
+      provider_key: "pi",
+      auth_type: "api_key",
+      api_provider: "deepseek",
+      model_env: "PAID_SMOKE_PI_DEEPSEEK_MODEL",
+      default_model: "deepseek-chat",
+      label: "Pi with DeepSeek API key"
+    ),
+    "pi-minimax" => Scenario.new(
+      name: "pi-minimax",
+      provider_key: "pi",
+      auth_type: "api_key",
+      api_provider: "minimax",
+      model_env: "PAID_SMOKE_PI_MINIMAX_MODEL",
+      default_model: "MiniMax-M2.5",
+      label: "Pi with MiniMax API key"
     ),
     "copilot-subscription" => Scenario.new(
       name: "copilot-subscription",
