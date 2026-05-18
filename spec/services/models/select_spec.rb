@@ -375,6 +375,100 @@ RSpec.describe Models::Select do
       end
     end
 
+    context "when a fixed-model Pi run is forced to an incompatible override model" do
+      let!(:minimax_model) { create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "mid", capability_score: 8.0) }
+      let!(:claude_model) { create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", capability_score: 9.0) }
+      let(:minimax_key) { create(:provider_api_key, user: project.created_by, api_service_type: "minimax") }
+      let(:pi_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: minimax_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => minimax_model.model_id } }
+        )
+      end
+
+      before do
+        agent_run.update!(runner: pi_runner)
+        project.update!(model_preferences: { "required_model_id" => claude_model.model_id })
+      end
+
+      it "returns no selection instead of persisting an incompatible model" do
+        expect(described_class.call(agent_run: agent_run)).to be_nil
+        expect(agent_run.model_selection).to be_nil
+      end
+
+      it "records the no-selection outcome" do
+        described_class.call(agent_run: agent_run)
+
+        log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+
+        expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "no_selection")
+        expect(log.metadata.dig("selection", "model_id")).to eq(claude_model.model_id)
+        expect(log.metadata.dig("selection", "model_provider")).to eq(claude_model.provider)
+        expect(log.metadata.dig("selection", "selector_type")).to eq("override")
+      end
+    end
+
+    context "when quality escalation fires for a provider-constrained Pi run" do
+      let!(:anthropic_high) { create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high", capability_score: 10.0) }
+      let(:minimax_key) { create(:provider_api_key, user: project.created_by, api_service_type: "minimax") }
+      let(:pi_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: minimax_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+        )
+      end
+
+      before do
+        agent_run.update!(runner: pi_runner)
+        project.update!(model_preferences: {
+          "quality_triggered_escalation" => {
+            "status" => "active",
+            "trigger" => "quality_drop",
+            "from_tier" => "mid",
+            "to_tier" => "high"
+          }
+        })
+      end
+
+      it "selects the runner's compatible MiniMax model instead of the top global model" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.selector_type).to eq("quality_escalation")
+        expect(selection.llm_model.provider).to eq("minimax")
+      end
+
+      it "never selects an incompatible provider model during escalation" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).not_to eq(anthropic_high)
+      end
+    end
+
+    context "when a non-Pi runner has an override model from another provider" do
+      let!(:gpt_model) { create(:llm_model, model_id: "gpt-4o", provider: "openai", tier: "mid", capability_score: 8.5) }
+
+      before do
+        project.update!(model_preferences: { "required_model_id" => gpt_model.model_id })
+      end
+
+      it "still persists the explicit override selection" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.llm_model).to eq(gpt_model)
+        expect(selection.selector_type).to eq("override")
+      end
+    end
+
     context "when required_model_id bypasses tier logic (regression)" do
       let!(:low_tier_model) { create(:llm_model, model_id: "cheap-model", tier: "low", capability_score: 3.0) }
 
