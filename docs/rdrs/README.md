@@ -96,11 +96,11 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Implemented | High |
 | [RDR-031](RDR-031-focused-agent-runs.md) | Focused Agent Runs — Single-Problem-Per-Run | Implemented | P1 |
 
-### Provider Intelligence
+### Runner Intelligence
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Implemented | Medium |
+| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Implemented | Medium |
 
 ### Semantic Understanding
 
@@ -188,7 +188,6 @@ Key sections:
 
 ## Related Documents
 
-- [GLOSSARY.md](../GLOSSARY.md) - Paid-specific terminology and naming conventions
 - [VISION.md](../VISION.md) - Project philosophy and principles
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture overview
 - [ROADMAP.md](../ROADMAP.md) - Implementation phases

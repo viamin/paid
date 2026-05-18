@@ -638,13 +638,13 @@ RSpec.describe Containers::Provision do
         ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
       end
 
-      it "includes provider CLI env overrides from agent-harness" do
-        gemini_provider = instance_double(
+      it "includes runner CLI env overrides from agent-harness" do
+        gemini_runner = instance_double(
           AgentHarness::Providers::Gemini,
           cli_env_overrides: { "GEMINI_SANDBOX" => "false", "GEMINI_CLI_DISABLE_RETRIES" => "true" }
         )
         allow(AgentHarness).to receive(:provider).and_call_original
-        allow(AgentHarness).to receive(:provider).with(:gemini).and_return(gemini_provider)
+        allow(AgentHarness).to receive(:provider).with(:gemini).and_return(gemini_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -657,14 +657,14 @@ RSpec.describe Containers::Provision do
       end
 
       it "does not let harness cli_env_overrides clobber app-managed subscription auth" do
-        codex_provider = instance_double(
+        codex_runner = instance_double(
           AgentHarness::Providers::Codex,
           cli_env_overrides: { "PAID_CODEX_SUBSCRIPTION_AUTH" => "1" },
           config_file_content: "model_provider = \"paid\"\n",
           auth_lock_config: { path: "/tmp/codex-auth.lock" }
         )
         allow(AgentHarness).to receive(:provider).and_call_original
-        allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_provider)
+        allow(AgentHarness).to receive(:provider).with(:codex).and_return(codex_runner)
 
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
@@ -678,14 +678,14 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "raises when a known provider is missing from agent-harness" do
+      it "raises when a known runner is missing from agent-harness" do
         allow(AgentHarness).to receive(:provider).and_call_original
         allow(AgentHarness).to receive(:provider).with(:gemini).and_raise(KeyError, "missing gemini")
 
         expect { service.provision }.to raise_error(KeyError, /missing gemini/)
       end
 
-      it "raises when provider CLI env overrides are misconfigured in agent-harness" do
+      it "raises when runner CLI env overrides are misconfigured in agent-harness" do
         allow(AgentHarness).to receive(:provider).and_call_original
         allow(AgentHarness).to receive(:provider).with(:gemini)
           .and_raise(AgentHarness::ConfigurationError, "broken gemini")
@@ -996,23 +996,23 @@ RSpec.describe Containers::Provision do
     context "with fallback providers" do
       let(:settings) { project.created_by.settings }
       let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
-      let!(:direct_outbound_provider) do
+      let!(:direct_outbound_runner) do
         create(
-          :provider,
+          :runner,
           :api_key,
           user: project.created_by,
-          provider_key: "opencode",
+          runner_key: "opencode",
           provider_api_key: api_key,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
         )
       end
 
       before do
-        project.created_by.providers.find_by!(provider_key: "claude").update!(enabled_for_fallback: false)
+        project.created_by.runners.find_by!(runner_key: "claude").update!(enabled_for_fallback: false)
       end
 
       it "stays on the restricted network when direct-outbound fallbacks are disabled" do
-        settings.update!(fallback_enabled: false, fallback_providers: [])
+        settings.update!(fallback_enabled: false, fallback_runners: [])
 
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
@@ -1025,7 +1025,7 @@ RSpec.describe Containers::Provision do
       it "uses the infrastructure network when a fallback requires direct outbound" do
         settings.update!(
           fallback_enabled: true,
-          fallback_providers: [ direct_outbound_provider.routing_key ]
+          fallback_runners: [ direct_outbound_runner.routing_key ]
         )
 
         expect(Docker::Container).to receive(:create) do |config|
@@ -1037,18 +1037,18 @@ RSpec.describe Containers::Provision do
       end
 
       it "uses the infrastructure network when kilocode is configured as a fallback" do
-        kilocode_provider = create(
-          :provider,
+        kilocode_runner = create(
+          :runner,
           user: project.created_by,
-          provider_key: "kilocode",
+          runner_key: "kilocode",
           enabled_for_agent_runs: false,
           enabled_for_fallback: true
         )
-        direct_outbound_provider.update!(enabled_for_fallback: false)
+        direct_outbound_runner.update!(enabled_for_fallback: false)
 
         settings.update!(
           fallback_enabled: true,
-          fallback_providers: [ kilocode_provider.routing_key ]
+          fallback_runners: [ kilocode_runner.routing_key ]
         )
 
         expect(Docker::Container).to receive(:create) do |config|
@@ -1060,8 +1060,8 @@ RSpec.describe Containers::Provision do
       end
 
       it "uses the infrastructure network when a rate-limit fallback requires direct outbound" do
-        settings.update!(fallback_enabled: false, fallback_providers: [])
-        direct_outbound_provider.update!(
+        settings.update!(fallback_enabled: false, fallback_runners: [])
+        direct_outbound_runner.update!(
           enabled_for_agent_runs: false,
           fallback_role: "rate_limit_fallback"
         )
@@ -1075,31 +1075,31 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with a direct-outbound default provider" do
+    context "with a direct-outbound default runner" do
       let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
-      let!(:direct_outbound_provider) do
+      let!(:direct_outbound_runner) do
         create(
-          :provider,
+          :runner,
           :api_key,
           user: project.created_by,
-          provider_key: "opencode",
+          runner_key: "opencode",
           provider_api_key: api_key,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
         )
       end
 
-      it "uses the infrastructure network for project-level provisioning when the default provider is direct outbound" do
-        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key)
+      it "uses the infrastructure network for project-level provisioning when the default runner is direct outbound" do
+        project.created_by.settings.update!(default_agent_runner: direct_outbound_runner.routing_key)
 
         expect(described_class.new(project: project).network_name).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
       end
 
-      it "uses the infrastructure network when execution falls back from an unrunnable saved provider to a direct-outbound default" do
-        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
-        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
-        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
-        allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
-        allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
+      it "uses the infrastructure network when execution falls back from an unrunnable saved runner to a direct-outbound default" do
+        copilot_runner = create(:runner, user: project.created_by, runner_key: "copilot")
+        agent_run.update!(runner: copilot_runner, agent_type: "copilot")
+        project.created_by.settings.update!(default_agent_runner: direct_outbound_runner.routing_key, fallback_enabled: false)
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
@@ -1109,23 +1109,23 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "uses the restricted network when an unrunnable saved provider has a runnable proxy-mode fallback despite a direct-outbound default" do
-        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
+      it "uses the restricted network when an unrunnable saved runner has a runnable proxy-mode fallback despite a direct-outbound default" do
+        copilot_runner = create(:runner, user: project.created_by, runner_key: "copilot")
         claude_api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
-        claude_fallback = create(:provider, :api_key, user: project.created_by,
-          provider_key: "claude", provider_api_key: claude_api_key)
-        allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
-        allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
+        claude_fallback = create(:runner, :api_key, user: project.created_by,
+          runner_key: "claude", provider_api_key: claude_api_key)
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
-        direct_outbound_provider.update!(enabled_for_fallback: false)
-        project.created_by.providers.subscription.find_by!(provider_key: "claude")
+        direct_outbound_runner.update!(enabled_for_fallback: false)
+        project.created_by.runners.subscription.find_by!(runner_key: "claude")
           .update!(enabled_for_fallback: false)
 
-        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
+        agent_run.update!(runner: copilot_runner, agent_type: "copilot")
         project.created_by.settings.update!(
-          default_agent_provider: direct_outbound_provider.routing_key,
+          default_agent_runner: direct_outbound_runner.routing_key,
           fallback_enabled: true,
-          fallback_providers: [ claude_fallback.routing_key ]
+          fallback_runners: [ claude_fallback.routing_key ]
         )
 
         expect(Docker::Container).to receive(:create) do |config|
@@ -1139,12 +1139,12 @@ RSpec.describe Containers::Provision do
 
     context "with service-container network alignment (#1282)" do
       let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
-      let!(:direct_outbound_provider) do
+      let!(:direct_outbound_runner) do
         create(
-          :provider,
+          :runner,
           :api_key,
           user: project.created_by,
-          provider_key: "opencode",
+          runner_key: "opencode",
           provider_api_key: api_key,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
         )
@@ -1167,11 +1167,11 @@ RSpec.describe Containers::Provision do
       end
 
       it "network_for matches agent container network in direct-outbound mode" do
-        copilot_provider = create(:provider, user: project.created_by, provider_key: "copilot")
-        agent_run.update!(provider: copilot_provider, agent_type: "copilot")
-        project.created_by.settings.update!(default_agent_provider: direct_outbound_provider.routing_key, fallback_enabled: false)
-        allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
-        allow(ProviderSupport).to receive(:container_executable_provider_key?).with("copilot").and_return(false)
+        copilot_runner = create(:runner, user: project.created_by, runner_key: "copilot")
+        agent_run.update!(runner: copilot_runner, agent_type: "copilot")
+        project.created_by.settings.update!(default_agent_runner: direct_outbound_runner.routing_key, fallback_enabled: false)
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).and_call_original
+        allow(RunnerSupport).to receive(:container_executable_runner_key?).with("copilot").and_return(false)
 
         container_network = nil
 
@@ -1507,8 +1507,8 @@ RSpec.describe Containers::Provision do
       end
 
       it "fails clearly for a Codex subscription run when local auth is not bind-mountable" do
-        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
-        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
+        project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
         agent_run.update!(agent_type: "codex")
         current_container = instance_double(Docker::Container, info: { "Mounts" => [] })
         allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
@@ -1523,8 +1523,8 @@ RSpec.describe Containers::Provision do
 
       it "does not fail for an API-key-backed Codex default when local auth is not bind-mountable" do
         api_key = create(:provider_api_key, user: project.created_by, api_service_type: "openai")
-        codex_provider = create(:provider, :api_key, user: project.created_by, provider_key: "codex", provider_api_key: api_key)
-        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+        codex_runner = create(:runner, :api_key, user: project.created_by, runner_key: "codex", provider_api_key: api_key)
+        project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)
         agent_run.update!(agent_type: "codex")
         current_container = instance_double(Docker::Container, info: { "Mounts" => [] })
         allow(Docker::Container).to receive(:get).with(Socket.gethostname).and_return(current_container)
@@ -1728,10 +1728,10 @@ RSpec.describe Containers::Provision do
     let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
     let!(:opencode_provider) do
       create(
-        :provider,
+        :runner,
         :api_key,
         user: project.created_by,
-        provider_key: "opencode",
+        runner_key: "opencode",
         provider_api_key: api_key,
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
       )
@@ -1739,7 +1739,7 @@ RSpec.describe Containers::Provision do
     let(:service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
 
     before do
-      project.created_by.settings.update!(default_agent_provider: opencode_provider.routing_key)
+      project.created_by.settings.update!(default_agent_runner: opencode_provider.routing_key)
       allow(Docker::Container).to receive(:create).and_return(mock_container)
       allow(mock_container).to receive(:start)
       allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
@@ -1768,8 +1768,8 @@ RSpec.describe Containers::Provision do
         metadata: {})
     end
 
-    it "does not seed when the run resolves to a different provider" do
-      project.created_by.settings.update!(default_agent_provider: "claude")
+    it "does not seed when the run resolves to a different runner" do
+      project.created_by.settings.update!(default_agent_runner: "claude")
 
       service.provision
 

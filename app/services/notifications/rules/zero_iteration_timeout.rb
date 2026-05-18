@@ -33,7 +33,7 @@ module Notifications
             project_id: agent_run.project_id,
             source_pull_request_number: agent_run.source_pull_request_number,
             trigger_type: agent_run.trigger_type,
-            providers_attempted: Array(agent_run.providers_attempted).map { |attempt| attempt["provider"] }.compact
+            runners_attempted: Array(agent_run.runners_attempted).map { |attempt| attempt["runner"] }.compact
           }.compact
         }
       end

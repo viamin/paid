@@ -12,6 +12,6 @@ class AddReviewGoalRetryResetAtToIssues < ActiveRecord::Migration[8.1]
   end
 
   def down
-    remove_column :issues, :review_goal_retry_reset_at
+    safety_assured { remove_column :issues, :review_goal_retry_reset_at }
   end
 end

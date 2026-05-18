@@ -30,22 +30,26 @@ class CreateExceptionIncidents < ActiveRecord::Migration[8.1]
     add_index :exception_incidents, [ :project_id ], name: "index_exception_incidents_on_project"
     add_index :exception_incidents, [ :severity ], name: "index_exception_incidents_on_severity"
 
-    add_foreign_key :exception_incidents, :accounts
-    add_foreign_key :exception_incidents, :projects
+    safety_assured do
+      add_foreign_key :exception_incidents, :accounts
+      add_foreign_key :exception_incidents, :projects
+    end
 
-    execute <<~SQL
-      ALTER TABLE exception_incidents ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE exception_incidents FORCE ROW LEVEL SECURITY;
-      CREATE POLICY tenant_isolation ON exception_incidents
-        USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
-        WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
-    SQL
+    safety_assured do
+      execute <<~SQL
+        ALTER TABLE exception_incidents ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE exception_incidents FORCE ROW LEVEL SECURITY;
+        CREATE POLICY tenant_isolation ON exception_incidents
+          USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
+          WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
+      SQL
+    end
   end
 
   def down
-    execute "DROP POLICY IF EXISTS tenant_isolation ON exception_incidents"
-    execute "ALTER TABLE exception_incidents NO FORCE ROW LEVEL SECURITY"
-    execute "ALTER TABLE exception_incidents DISABLE ROW LEVEL SECURITY"
+    safety_assured { execute "DROP POLICY IF EXISTS tenant_isolation ON exception_incidents" }
+    safety_assured { execute "ALTER TABLE exception_incidents NO FORCE ROW LEVEL SECURITY" }
+    safety_assured { execute "ALTER TABLE exception_incidents DISABLE ROW LEVEL SECURITY" }
 
     drop_table :exception_incidents
   end

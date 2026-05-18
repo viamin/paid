@@ -30,7 +30,7 @@ module Tools
 
       issue = project.issues.find(issue_id)
 
-      provider_id, agent_type = AgentRuns::ProviderResolver.call(
+      runner_id, agent_type = AgentRuns::RunnerResolver.call(
         project: project,
         goal: goal
       )
@@ -38,7 +38,7 @@ module Tools
       run = AgentRun.create!(
         project: project,
         issue: issue,
-        provider_id: provider_id,
+        runner_id: runner_id,
         agent_type: agent_type,
         goal: goal,
         status: "queued",

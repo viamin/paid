@@ -5,7 +5,7 @@ class Notification < ApplicationRecord
   belongs_to :user, optional: true
   belongs_to :subject, polymorphic: true, optional: true
 
-  NAV_SECTIONS = %w[dashboard projects agent_runs providers].freeze
+  NAV_SECTIONS = %w[dashboard projects agent_runs providers runners].freeze
 
   enum :severity, { info: 0, warning: 1, error: 2 }, validate: true
 

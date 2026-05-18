@@ -10,7 +10,7 @@
           <% when :user_key %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-green-500"></span>
             <span class="ml-2 text-sm text-gray-700">
-              Using <span class="font-medium"><%= semantic_search_provider_config.provider_label %></span>
+              Using <span class="font-medium"><%= semantic_search_provider_config.runner_label %></span>
               with API key: <span class="font-medium"><%= semantic_search_api_key_record.name %></span>
               <% if semantic_search_api_key_record.user_id == current_user.id %>
                 <code class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500"><%= semantic_search_api_key_record.masked_api_key %></code>
@@ -19,7 +19,7 @@
           <% when :platform_env %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500"></span>
             <span class="ml-2 text-sm text-gray-700">
-              Using platform-provided <%= semantic_search_provider_config.provider_label %> key
+              Using platform-provided <%= semantic_search_provider_config.runner_label %> key
             </span>
           <% when :available %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500"></span>

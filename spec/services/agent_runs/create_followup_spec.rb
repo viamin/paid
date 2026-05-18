@@ -6,12 +6,12 @@ RSpec.describe AgentRuns::CreateFollowup do
   describe ".call" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }
-    let(:provider) { create(:provider, user: project.created_by) }
+    let(:runner) { create(:runner, user: project.created_by) }
     let(:analysis_run) do
       create(:agent_run, :analyze_issue_goal, :completed,
         project: project,
         issue: issue,
-        provider: provider)
+        runner: runner)
     end
 
     context "when goal is create_pr" do
@@ -30,10 +30,10 @@ RSpec.describe AgentRuns::CreateFollowup do
         expect(followup.issue).to eq(issue)
       end
 
-      it "inherits provider from the analysis run" do
+      it "inherits runner from the analysis run" do
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
 
-        expect(followup.provider).to eq(provider)
+        expect(followup.runner).to eq(runner)
       end
 
       it "sets trigger_type to automatic and auto_pick to true" do
@@ -72,31 +72,31 @@ RSpec.describe AgentRuns::CreateFollowup do
       end
     end
 
-    context "when analysis run has no provider" do
+    context "when analysis run has no runner" do
       let(:analysis_run) do
         create(:agent_run, :analyze_issue_goal, :completed,
           project: project,
           issue: issue,
-          provider: nil)
+          runner: nil)
       end
 
-      it "resolves a provider via ProviderResolver" do
-        resolved_provider = create(:provider, user: project.created_by)
-        allow(AgentRuns::ProviderResolver).to receive(:call)
-          .and_return([ resolved_provider.id, "claude_code" ])
+      it "resolves a runner via RunnerResolver" do
+        resolved_runner = create(:runner, user: project.created_by)
+        allow(AgentRuns::RunnerResolver).to receive(:call)
+          .and_return([ resolved_runner.id, "claude_code" ])
 
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
 
-        expect(followup.provider).to eq(resolved_provider)
+        expect(followup.runner).to eq(resolved_runner)
       end
 
-      it "preserves the resolver agent_type when provider_id is nil" do
-        allow(AgentRuns::ProviderResolver).to receive(:call)
+      it "preserves the resolver agent_type when runner_id is nil" do
+        allow(AgentRuns::RunnerResolver).to receive(:call)
           .and_return([ nil, "codex" ])
 
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
 
-        expect(followup.provider).to be_nil
+        expect(followup.runner).to be_nil
         expect(followup.agent_type).to eq("codex")
       end
     end

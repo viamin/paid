@@ -2,19 +2,25 @@
 
 class ChatSession < ApplicationRecord
   include TenantScoped
+  include LegacyAttributeBridge
 
+  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
+    "provider_id" => "runner_id"
+  }.freeze
   STATUSES = %w[active idle closed archived].freeze
   MODES = %w[api workspace].freeze
   IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
+  before_validation :sync_legacy_provider_id
   before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
   after_update_commit :broadcast_sidebar_refresh
   after_destroy_commit :broadcast_sidebar_remove
 
   belongs_to :project, optional: true
-  belongs_to :provider, -> { with_discarded }, optional: true
+  belongs_to :runner, -> { with_discarded }, optional: true
+  belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
@@ -25,8 +31,27 @@ class ChatSession < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :mode, inclusion: { in: MODES }
   validates :external_id, uniqueness: true
-  validate :provider_must_belong_to_same_account
+  validate :runner_must_belong_to_same_account
   validate :project_must_belong_to_same_account
+
+  def provider_id
+    self[:runner_id]
+  end
+
+  def provider_id=(value)
+    self[:runner_id] = value
+    self[:provider_id] = value
+  end
+
+  def provider=(value)
+    return self.runner = value if value.is_a?(Runner) || value.nil?
+
+    super
+  end
+
+  def update_columns(attributes)
+    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+  end
 
   scope :active, -> { where(status: "active") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
@@ -89,6 +114,18 @@ class ChatSession < ApplicationRecord
 
   private
 
+  def sync_legacy_provider_id
+    if will_save_change_to_runner_id?
+      self[:provider_id] = runner_id
+    elsif will_save_change_to_attribute?("provider_id")
+      self[:runner_id] = self[:provider_id]
+    elsif runner_id.nil? && self[:provider_id].present?
+      self[:runner_id] = self[:provider_id]
+    elsif self[:provider_id].nil? && runner_id.present?
+      self[:provider_id] = runner_id
+    end
+  end
+
   def set_external_id
     self.external_id ||= SecureRandom.uuid
   end
@@ -97,13 +134,13 @@ class ChatSession < ApplicationRecord
     self.proxy_token ||= SecureRandom.hex(32)
   end
 
-  def provider_must_belong_to_same_account
-    return unless provider && account
+  def runner_must_belong_to_same_account
+    return unless runner && account
 
-    provider_account_id = provider.user&.account_id
-    return if provider_account_id == account_id
+    runner_account_id = runner.user&.account_id
+    return if runner_account_id == account_id
 
-    errors.add(:provider, "must belong to the same account")
+    errors.add(:runner, "must belong to the same account")
   end
 
   def project_must_belong_to_same_account

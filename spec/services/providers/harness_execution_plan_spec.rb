@@ -66,6 +66,14 @@ RSpec.describe Providers::HarnessExecutionPlan do
   end
 
   describe ".call" do
+    let(:provider_double_class) do
+      Class.new do
+        def provider_key; end
+
+        def agent_harness_provider_runtime; end
+      end
+    end
+
     it "builds the OpenCode execution contract through agent-harness" do
       user = build_user_with_account
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")

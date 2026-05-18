@@ -320,8 +320,7 @@ module ProviderSupport
     []
   end
 
-  # Aggregates error_classification_patterns[category] across all supported
-  # providers.
+  # Aggregates error_classification_patterns[category] across all supported providers.
   def aggregated_error_classification_patterns(category)
     supported_provider_keys.flat_map { |key| error_classification_patterns_for(key, category) }.uniq
   end
