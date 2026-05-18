@@ -38,9 +38,8 @@ class Provider < ApplicationRecord
                     opencode_model_provider: "deepseek" },
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
                    opencode_model_provider: "mistral" },
-    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic", service_type: "minimax",
-                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
-                   opencode_model_provider: "minimax" },
+    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic/v1", service_type: "minimax",
+                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
@@ -955,7 +954,15 @@ class Provider < ApplicationRecord
 
     env_var = direct_outbound_api_key_env_var(opencode_api_provider)
     env = { env_var => provider_api_key&.api_key.to_s }
-    env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
+
+    # Providers using @ai-sdk/anthropic receive their base URL through the
+    # provider config (OPENAI_BASE_URL is only read by the OpenAI-compatible SDK).
+    provider_config = {}
+    if api_config[:opencode_npm] == "@ai-sdk/anthropic" && api_config[:base_url]
+      provider_config["baseURL"] = api_config[:base_url]
+    elsif api_config[:base_url]
+      env["OPENAI_BASE_URL"] = api_config[:base_url]
+    end
 
     AgentHarness::ProviderRuntime.new(
       model: model_id,
@@ -963,7 +970,7 @@ class Provider < ApplicationRecord
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
         config: {
-          "provider" => { opencode_api_provider => {} }
+          "provider" => { opencode_api_provider => provider_config }
         }
       }
     )
