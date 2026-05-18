@@ -166,4 +166,11 @@ class Provider < Runner
     errors.delete(attribute, runner_message)
     errors.add(attribute, provider_message) unless errors[attribute].include?(provider_message)
   end
+
+  def direct_outbound_api_key_env_var(api_provider)
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS[api_provider.to_s]
+    return "OPENAI_API_KEY" if api_config.blank?
+
+    api_config[:env_var].presence || "#{api_config[:service_type].upcase.tr('-', '_')}_API_KEY"
+  end
 end

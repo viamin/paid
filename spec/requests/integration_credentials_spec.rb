@@ -55,6 +55,14 @@ RSpec.describe "IntegrationCredentials" do
       expect(response.body).to include("GitHub Signing")
     end
 
+    it "offers MiniMax in the LLM provider credential service list" do
+      get new_integration_credential_path(category: "llm_provider")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('value="minimax"')
+      expect(response.body).to include("MiniMax")
+    end
+
     context "when user is an admin" do
       before { sign_in admin_user }
 
@@ -95,6 +103,23 @@ RSpec.describe "IntegrationCredentials" do
       expect(response).to redirect_to(integration_credential_path(credential, category: credential.category))
       expect(credential.service_key).to eq("gemini")
       expect(credential.created_by).to eq(owner_user)
+    end
+
+    it "creates MiniMax provider credentials" do
+      post integration_credentials_path, params: {
+        integration_credential: {
+          name: "MiniMax API Key",
+          service_key: "minimax",
+          category: "llm_provider",
+          auth_kind: "api_key",
+          secret: "minimax-secret"
+        }
+      }
+
+      credential = IntegrationCredential.last
+      expect(response).to redirect_to(integration_credential_path(credential, category: credential.category))
+      expect(credential.service_key).to eq("minimax")
+      expect(credential.auth_kind).to eq("api_key")
     end
 
     context "when user is an admin" do

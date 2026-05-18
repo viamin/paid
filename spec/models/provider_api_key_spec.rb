@@ -135,6 +135,7 @@ RSpec.describe ProviderApiKey do
       options = described_class.api_service_type_options
 
       expect(options).to include(%w[Anthropic anthropic])
+      expect(options).to include([ "MiniMax", "minimax" ])
       expect(options).to include(%w[OpenRouter openrouter])
       expect(options).to include(%w[OpenAI openai])
       expect(options).to include([ "Google AI", "google" ])
