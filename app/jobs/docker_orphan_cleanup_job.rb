@@ -108,7 +108,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     removed
   end
 
-  # Phase 3: Remove service containers with zero in-flight capacity runs.
+  # Phase 3: Remove orphaned collector containers that are stopped or stale.
   def cleanup_collector_containers(backend:)
     containers = list_containers_by_label(COLLECTOR_CONTAINER_LABEL, backend: backend)
     return 0 if containers.empty?
@@ -160,7 +160,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   # Phase 5: Remove orphaned workspace volumes.
   # Skips volumes for runs with an unexpired retention TTL.
   def cleanup_volumes(backend:)
-    volumes = list_paid_volumes(backend: backend) + list_collector_volumes(backend: backend)
+    volumes = list_all_managed_volumes(backend: backend)
     return { found: 0, removed: 0, failed: 0, active: 0, retained: 0 } if volumes.empty?
 
     numeric_agent_run_ids = volumes
@@ -272,22 +272,13 @@ class DockerOrphanCleanupJob < ApplicationJob
     false
   end
 
-  def list_paid_volumes(backend:)
-    backend.list_volumes.select { |v| v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) }
+  def list_all_managed_volumes(backend:)
+    backend.list_volumes.select do |v|
+      v.id.start_with?(VOLUME_PREFIX) || v.id.start_with?(POOL_VOLUME_PREFIX) || v.id.start_with?(COLLECTOR_VOLUME_PREFIX)
+    end
   rescue Docker::Error::DockerError => e
     Rails.logger.error(
       message: "container_manager.volume_list_failed",
-      backend: backend.identifier,
-      error: e.message
-    )
-    []
-  end
-
-  def list_collector_volumes(backend:)
-    backend.list_volumes.select { |v| v.id.start_with?(COLLECTOR_VOLUME_PREFIX) }
-  rescue Docker::Error::DockerError => e
-    Rails.logger.error(
-      message: "container_manager.collector_volume_list_failed",
       backend: backend.identifier,
       error: e.message
     )
@@ -381,15 +372,16 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def collector_volume_created_at(volume)
-    labels = volume.info["Labels"] || {}
+    labels = volume.info["Labels"] if volume.info.respond_to?(:[])
+    labels ||= {}
     labeled_time = labels["paid.created_at"]
     return Time.zone.parse(labeled_time.to_s) if labeled_time.present?
 
-    created_at = volume.info["CreatedAt"]
+    created_at = volume.info.respond_to?(:[]) && volume.info["CreatedAt"]
     return if created_at.blank?
 
     Time.zone.parse(created_at.to_s)
-  rescue ArgumentError, NoMethodError
+  rescue ArgumentError
     nil
   end
 
