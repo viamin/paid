@@ -2481,8 +2481,9 @@ module Containers
           diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: false)
         )
       when :idle
+        elapsed_seconds = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - timeout_check.started_at).round
         raise IdleTimeoutError.new(
-          "No output received for #{timeout_check.idle_timeout} seconds",
+          "No output received for #{elapsed_seconds} seconds (startup grace: #{timeout_check.startup_timeout || 0}s + idle timeout: #{timeout_check.idle_timeout}s)",
           diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: true)
         )
       when :wall_clock
@@ -2543,7 +2544,7 @@ module Containers
         )
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
         raise IdleTimeoutError.new(
-          "No output received for #{tc.idle_timeout} seconds",
+          "No output received for #{elapsed_since_start.round} seconds (startup grace: #{tc.startup_timeout || 0}s + idle timeout: #{tc.idle_timeout}s)",
           diagnostics: timeout_diagnostics_from_elapsed(
             elapsed_since_start,
             elapsed_since_activity,
