@@ -388,6 +388,17 @@ RSpec.describe Runner do
       expect(runner.errors[:config]).to include("must include a KiloCode model id")
     end
 
+    it "requires kilocode preflight timeout overrides to be positive integers" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "inception")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "kilocode"
+      runner.config = { "kilocode" => { "api_provider" => "inception", "model" => "glm-5.1", "preflight_timeout_seconds" => "0" } }
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:config]).to include("must include a KiloCode preflight timeout of at least 1 second")
+    end
+
     it "requires a model id for opencode api_key providers" do
       api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
       runner.auth_type = "api_key"
@@ -672,6 +683,14 @@ RSpec.describe Runner do
       config = JSON.parse(runner.kilocode_config_json)
 
       expect(config["model"]).to eq("anthropic/claude-opus-4")
+    end
+
+    it "reads an optional per-runner preflight timeout override from config" do
+      runner.update!(
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514", "preflight_timeout_seconds" => "45" } }
+      )
+
+      expect(runner.kilocode_preflight_timeout_seconds).to eq(45)
     end
 
     it "uses the native zai-coding-plan runner id for z.ai coding plan backends" do

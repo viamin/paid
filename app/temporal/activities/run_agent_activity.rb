@@ -87,6 +87,7 @@ module Activities
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
+    PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -370,6 +371,33 @@ module Activities
             # timeout should not fail the entire run when fallback runners
             # are available. Only break when max_execution_seconds is exceeded
             # (checked at the top of the loop).
+          rescue PreflightTimeoutError => e
+            last_error = "error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              break
+            end
+            record_runner_failure(
+              user_settings,
+              runner_state_name,
+              runner_states,
+              threshold: preflight_timeout_failure_threshold(user_settings)
+            )
+            agent_run.record_runner_attempt(
+              attempt_label,
+              success: false,
+              error_type: "error",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
+            logger.warn(
+              message: "agent_execution.preflight_timeout",
+              runner: runner,
+              agent_run_id: agent_run.id,
+              error: e.message,
+              duration_seconds: attempt_duration
+            )
           rescue RunnerAuthExpiredError => e
             last_error = "auth_expired"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -518,6 +546,7 @@ module Activities
     end
 
     class RunnerExecutionError < StandardError; end
+    class PreflightTimeoutError < RunnerExecutionError; end
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
@@ -828,9 +857,13 @@ module Activities
     end
 
     # Records a failed runner execution.
-    def record_runner_failure(user_settings, runner_state_name, runner_states)
+    def record_runner_failure(user_settings, runner_state_name, runner_states, threshold: user_settings.circuit_breaker_failure_threshold)
       state = runner_state_for(user_settings, runner_state_name, runner_states)
-      state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
+      state.record_failure!(threshold: threshold)
+    end
+
+    def preflight_timeout_failure_threshold(user_settings)
+      [ user_settings.circuit_breaker_failure_threshold, PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD ].min
     end
 
     # True when the agent run we're executing has already been force-timed-out
@@ -1150,6 +1183,7 @@ module Activities
       subscription_auth = runner_entry&.subscription? &&
         RunnerSupport.subscription_auth_unset_vars_for(runner_entry.runner_key).any?
       harness_provider = preflight_provider_instance(command_context)
+      harness_preflight_passed = false
       if harness_provider && !subscription_auth
         run_harness_preflight!(
           agent_run: agent_run,
@@ -1157,6 +1191,7 @@ module Activities
           runner: runner,
           execution_env: execution_env
         )
+        harness_preflight_passed = true
       end
 
       prompt = runner_preflight_prompt_for(runner)
@@ -1219,8 +1254,10 @@ module Activities
       end
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::TimeoutError => e
-      reason = "Timed out after #{preflight_timeout}s: #{e.message}. Check proxy configuration, auth, and network policy."
-      raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
+      reason = "Runner smoke preflight timed out after #{preflight_timeout}s"
+      reason += " after harness preflight passed" if harness_preflight_passed
+      reason += ". This points to the runner CLI path (container egress, proxy, auth wiring, or upstream API responsiveness). Original error: #{e.message}"
+      raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: e.matched_output.to_s.truncate(200))
@@ -1241,7 +1278,7 @@ module Activities
 
       return if result[:healthy]
 
-      reason = result[:reason] || "Preflight check failed"
+      reason = "Harness preflight failed: #{result[:reason] || 'Preflight check failed'}"
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue AgentHarness::ConfigurationError, KeyError
       # Runner config unavailable — skip harness preflight and let the
@@ -1251,6 +1288,8 @@ module Activities
 
     def preflight_timeout_seconds_for(provider_candidate, user)
       provider_entry = provider_entry_for(provider_candidate, user)
+      configured_timeout = provider_entry&.kilocode_preflight_timeout_seconds
+      return configured_timeout if configured_timeout.present?
       return DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS if provider_entry&.requires_direct_outbound?
 
       PREFLIGHT_TIMEOUT_SECONDS
@@ -1561,6 +1600,11 @@ module Activities
     def raise_preflight_failure!(agent_run:, runner:, reason:)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
       raise RunnerExecutionError, "Preflight check failed: #{reason}"
+    end
+
+    def raise_preflight_timeout!(agent_run:, runner:, reason:)
+      log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
+      raise PreflightTimeoutError, "Preflight check failed: #{reason}"
     end
 
     def harness_response_config(harness_key, runner_candidate, user)
