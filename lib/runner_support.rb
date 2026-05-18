@@ -319,28 +319,9 @@ module RunnerSupport
     []
   end
 
-  # Paid-side stopgap patterns layered on top of agent-harness classification
-  # when a known LLM-provider error wording is not yet recognized upstream.
-  # Both the primary detection in `RunAgentActivity#insufficient_credits_error?`
-  # (which triggers runner fallback) and the defense-in-depth classifier in
-  # `HandleNoOutputIssueRunActivity` pick these up via
-  # `aggregated_error_classification_patterns`. Each entry should reference
-  # the upstream issue tracking its removal.
-  SUPPLEMENTARY_ERROR_CLASSIFICATION_PATTERNS = {
-    # DeepSeek wording for account-balance exhaustion. Tracked upstream in
-    # viamin/agent-harness#217; Paid cleanup tracked in #2080.
-    quota: [
-      /insufficient.?balance/i
-    ].freeze
-  }.freeze
-
-  # Aggregates error_classification_patterns[category] across all supported
-  # runners and merges Paid-side stopgap patterns from
-  # SUPPLEMENTARY_ERROR_CLASSIFICATION_PATTERNS.
+  # Aggregates error_classification_patterns[category] across all supported runners.
   def aggregated_error_classification_patterns(category)
-    upstream = supported_runner_keys.flat_map { |key| error_classification_patterns_for(key, category) }
-    supplementary = SUPPLEMENTARY_ERROR_CLASSIFICATION_PATTERNS.fetch(category, [])
-    (upstream + supplementary).uniq
+    supported_runner_keys.flat_map { |key| error_classification_patterns_for(key, category) }.uniq
   end
 
   # Aggregates noisy_error_patterns across all supported runners.
