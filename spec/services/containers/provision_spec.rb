@@ -3009,9 +3009,9 @@ RSpec.describe Containers::Provision do
         skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
 
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
-          # Simulate ~0.4s silent startup (MCP init) before producing output,
-          # longer than startup_timeout (0.2s). The startup heartbeat thread
-          # suppresses the timeout by touching host_path within the deadline.
+          # Simulate ~0.4s silent startup (MCP init) before producing output.
+          # startup_timeout (1.0s) is long enough to cover the silent period,
+          # and the startup heartbeat keeps the idle timeout from firing.
           sleep 0.4
           block.call(:stdout, "finally started\n") if block
           [ [ "finally started\n" ], [], 0 ]
@@ -3020,7 +3020,7 @@ RSpec.describe Containers::Provision do
         result = service.execute(
           "claude_with_mcp",
           timeout: 10,
-          startup_timeout: 0.2,
+          startup_timeout: 1.0,
           heartbeat_path: host_path
         )
         expect(result).to be_success
@@ -3049,7 +3049,7 @@ RSpec.describe Containers::Provision do
         }.to raise_error(described_class::IdleTimeoutError)
       end
 
-      it "allows idle timeout to fire after startup_timeout deadline elapses with no output" do
+      it "fires startup timeout after startup_timeout deadline elapses with no output" do
         host_path = service.heartbeat_host_path
         skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
 
@@ -3059,9 +3059,9 @@ RSpec.describe Containers::Provision do
           [ [], [], 137 ]
         end
 
-        # startup_timeout == idle_timeout so the idle timeout fires once the
-        # startup heartbeat deadline passes and the file goes stale.
-        # Total hang bound = startup_timeout + idle_timeout = 0.2 + 0.1s here.
+        # When no output is received, the startup timeout fires promptly after
+        # the startup heartbeat deadline passes — no additional idle_timeout
+        # window is added.
         expect {
           service.execute(
             "claude_mcp_hung",
@@ -3070,7 +3070,7 @@ RSpec.describe Containers::Provision do
             idle_timeout: 0.1,
             heartbeat_path: host_path
           )
-        }.to raise_error(described_class::IdleTimeoutError)
+        }.to raise_error(described_class::StartupTimeoutError)
       end
 
       it "returns nil from start_startup_heartbeat when heartbeat_host_path is absent" do
