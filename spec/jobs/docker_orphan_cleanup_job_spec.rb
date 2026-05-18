@@ -6,6 +6,7 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:job) { described_class.new }
   let(:agent_filter) { { label: [ "paid.agent_run_id" ] }.to_json }
   let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
+  let(:collector_filter) { { label: [ "paid.resource=collector_container" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
   let(:backend) { Containers.backend }
 
@@ -49,17 +50,29 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
-  def make_container(labels:, id: SecureRandom.hex(32))
+  def stub_collector_containers(*containers)
+    allow(backend).to receive(:list_containers)
+      .with(all: true, filters: collector_filter)
+      .and_return(containers)
+  end
+
+  def make_container(labels:, id: SecureRandom.hex(32), running: false, created_at: Time.current, mounts: [])
     instance_double(Docker::Container,
       id: id,
-      info: { "Labels" => labels },
+      info: {
+        "Labels" => labels,
+        "State" => { "Running" => running },
+        "Created" => created_at.iso8601,
+        "Mounts" => mounts
+      },
       stop: true,
       delete: true)
   end
 
-  def stub_backend_resources(target_backend, agent: [], pool: [], service: [], volumes: [])
+  def stub_backend_resources(target_backend, agent: [], pool: [], collector: [], service: [], volumes: [])
     allow(target_backend).to receive(:list_containers).with(all: true, filters: agent_filter).and_return(agent)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: pool_filter).and_return(pool)
+    allow(target_backend).to receive(:list_containers).with(all: true, filters: collector_filter).and_return(collector)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: service_filter).and_return(service)
     allow(target_backend).to receive(:list_volumes).and_return(volumes)
   end
@@ -91,6 +104,7 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_no_volumes
         stub_service_containers
         stub_pool_containers
+        stub_collector_containers
       end
 
       it "removes containers for finished agent runs" do
@@ -231,6 +245,7 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_no_volumes
         stub_agent_containers
         stub_pool_containers
+        stub_collector_containers
       end
 
       it "removes service containers with zero in-flight capacity runs" do
@@ -320,6 +335,7 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_no_volumes
         stub_agent_containers
         stub_service_containers
+        stub_collector_containers
       end
 
       it "skips fresh warming pool containers" do
@@ -404,8 +420,58 @@ RSpec.describe DockerOrphanCleanupJob do
       end
     end
 
+    context "with collector containers" do
+      before do
+        stub_no_volumes
+        stub_agent_containers
+        stub_pool_containers
+        stub_service_containers
+      end
+
+      it "removes stopped collector containers" do
+        container = make_container(
+          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+          running: false
+        )
+        stub_collector_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+      end
+
+      it "removes stale running collector containers" do
+        container = make_container(
+          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+          running: true,
+          created_at: 2.hours.ago
+        )
+        stub_collector_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+      end
+
+      it "keeps recently created running collector containers" do
+        container = make_container(
+          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+          running: true,
+          created_at: 10.minutes.ago
+        )
+        stub_collector_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+    end
+
     context "with volumes" do
-      before { stub_no_containers }
+      before do
+        stub_no_containers
+        stub_collector_containers
+      end
 
       it "returns a complete empty summary when no paid volumes exist" do
         stub_no_volumes
@@ -499,6 +565,55 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(volume).to have_received(:remove)
+      end
+
+      it "removes stale collector volumes not mounted by active collector containers" do
+        volume = instance_double(
+          Docker::Volume,
+          id: "paid-collector-42-deadbeef",
+          info: { "Labels" => { "paid.created_at" => 2.hours.ago.iso8601 } },
+          remove: true
+        )
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
+      end
+
+      it "skips fresh collector volumes that are not mounted yet" do
+        volume = instance_double(
+          Docker::Volume,
+          id: "paid-collector-42-deadbeef",
+          info: { "Labels" => { "paid.created_at" => 5.minutes.ago.iso8601 } },
+          remove: true
+        )
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
+      end
+
+      it "skips collector volumes mounted by active collector containers" do
+        active_collector = make_container(
+          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+          running: true,
+          created_at: 5.minutes.ago,
+          mounts: [ { "Type" => "volume", "Name" => "paid-collector-42-deadbeef" } ]
+        )
+        volume = instance_double(
+          Docker::Volume,
+          id: "paid-collector-42-deadbeef",
+          info: { "Labels" => { "paid.created_at" => 2.hours.ago.iso8601 } },
+          remove: true
+        )
+        stub_collector_containers(active_collector)
+        allow(backend).to receive(:list_volumes).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
       end
 
       it "skips volumes for retained agent runs" do
