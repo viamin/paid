@@ -34,6 +34,8 @@ module Automation
       #   (Dependabot, Renovate, etc.).
       # * +dependabot_eligible+ — the project allows auto-merging
       #   bot-authored PRs (+auto_merge_dependabot?+).
+      # * +skip_auto_merge+ — the +paid-skip-auto-merge+ label is present
+      #   on the issue/PR, preventing automatic merging.
       class Signals < ::Data.define(
         :issue_id,
         :pr_number,
@@ -45,7 +47,8 @@ module Automation
         :reviews_fresh,
         :dependencies_resolved,
         :bot_authored,
-        :dependabot_eligible
+        :dependabot_eligible,
+        :skip_auto_merge
       )
         class << self
           # Builds a Signals from keyword arguments, defaulting boolean
@@ -62,7 +65,8 @@ module Automation
               reviews_fresh: kwargs.fetch(:reviews_fresh, false),
               dependencies_resolved: kwargs.fetch(:dependencies_resolved, false),
               bot_authored: kwargs.fetch(:bot_authored, false),
-              dependabot_eligible: kwargs.fetch(:dependabot_eligible, false)
+              dependabot_eligible: kwargs.fetch(:dependabot_eligible, false),
+              skip_auto_merge: kwargs.fetch(:skip_auto_merge, false)
             )
           end
         end
@@ -76,6 +80,7 @@ module Automation
         def dependencies_resolved? = dependencies_resolved == true
         def bot_authored? = bot_authored == true
         def dependabot_eligible? = dependabot_eligible == true
+        def skip_auto_merge? = skip_auto_merge == true
       end
     end
   end

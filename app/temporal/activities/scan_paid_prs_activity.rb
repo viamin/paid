@@ -2825,6 +2825,8 @@ module Activities
         false
       end
 
+      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
@@ -2834,8 +2836,18 @@ module Activities
         review_feedback_clear: review_feedback_clear,
         blocking_reviews_complete: blocking_reviews_complete,
         reviews_fresh: reviews_fresh,
-        dependencies_resolved: dependencies_resolved
+        dependencies_resolved: dependencies_resolved,
+        skip_auto_merge: skip_label
       )
+
+      if skip_label
+        logger.info(
+          message: "pr_scanner.auto_merge_skipped_by_label",
+          project_id: project.id,
+          pr_number: issue.github_number,
+          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+        )
+      end
 
       evaluate_auto_merge(project, signals)
     end
@@ -2856,6 +2868,8 @@ module Activities
         false
       end
 
+      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
         pr_number: issue.github_number,
@@ -2863,8 +2877,18 @@ module Activities
         dependabot_eligible: dependabot_eligible,
         checks_green: checks_green,
         mergeable: mergeable_signal,
-        dependencies_resolved: dependencies_resolved
+        dependencies_resolved: dependencies_resolved,
+        skip_auto_merge: skip_label
       )
+
+      if skip_label
+        logger.info(
+          message: "pr_scanner.auto_merge_skipped_by_label",
+          project_id: project.id,
+          pr_number: issue.github_number,
+          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+        )
+      end
 
       evaluate_auto_merge(project, signals)
     end

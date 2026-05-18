@@ -86,6 +86,23 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    it "skips when PR has the paid-skip-auto-merge label" do
+      labeled_pr = OpenStruct.new(
+        number: 42,
+        title: "Bump rails from 7.0.0 to 7.1.0",
+        user: OpenStruct.new(login: "dependabot[bot]"),
+        head: OpenStruct.new(sha: "def456"),
+        merged_at: nil,
+        mergeable: true,
+        labels: [ OpenStruct.new(name: "paid-skip-auto-merge") ]
+      )
+      allow(client).to receive_messages(pull_requests: [ labeled_pr ], pull_request: labeled_pr)
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
     it "skips when PR is not authored by Dependabot" do
       human_pr = OpenStruct.new(
         number: 43,

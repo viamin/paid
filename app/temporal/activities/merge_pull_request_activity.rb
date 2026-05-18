@@ -31,6 +31,16 @@ module Activities
         return { merged: false, skipped: true, pr_number: pr_number }
       end
 
+      if issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+        logger.info(
+          message: "pr_review.auto_merge_skipped_by_label",
+          project_id: project.id,
+          pr_number: pr_number,
+          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+        )
+        return { merged: false, skipped: true, pr_number: pr_number }
+      end
+
       provider = Automation::Providers::Resolver.repository_for(project)
       repo = project.full_name
 

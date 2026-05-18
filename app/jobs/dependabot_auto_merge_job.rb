@@ -25,6 +25,7 @@ class DependabotAutoMergeJob < ApplicationJob
   DEPENDABOT_AUTHORS = %w[dependabot[bot] dependabot-preview[bot]].freeze
   EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
   PAID_AUTO_MERGED_LABEL = "paid-auto-merged-dependabot"
+  SKIP_AUTO_MERGE_LABEL = Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
 
   def perform(project_id, pr_number: nil)
     project = Project.find_by(id: project_id)
@@ -45,6 +46,7 @@ class DependabotAutoMergeJob < ApplicationJob
     pr_data = fetch_pr(client, project, pr_number)
     return unless pr_data
 
+    return if skip_auto_merge_label?(project, pr_data)
     return if skip_unmergeable?(client, project, pr_data)
 
     merge_dependabot_pr(client, project, pr_data)
@@ -59,6 +61,7 @@ class DependabotAutoMergeJob < ApplicationJob
       pr_data = fetch_pr(client, project, pr_num)
       next unless pr_data
 
+      next if skip_auto_merge_label?(project, pr_data)
       next if skip_unmergeable?(client, project, pr_data)
 
       merged = merge_dependabot_pr(client, project, pr_data)
@@ -68,6 +71,24 @@ class DependabotAutoMergeJob < ApplicationJob
 
   def pr_number_from(pr_data)
     pr_data.respond_to?(:number) ? pr_data.number : pr_data[:number]
+  end
+
+  def skip_auto_merge_label?(project, pr_data)
+    pr_labels = if pr_data.respond_to?(:labels)
+      Array(pr_data.labels).map { |l| l.respond_to?(:name) ? l.name : l[:name] }
+    else
+      Array(pr_data[:labels]).map { |l| l[:name] }
+    end
+
+    return false unless pr_labels.include?(SKIP_AUTO_MERGE_LABEL)
+
+    Rails.logger.info(
+      message: "dependabot_auto_merge.skipped",
+      project_id: project.id,
+      pr_number: pr_number_from(pr_data),
+      reason: "skip_auto_merge_label"
+    )
+    true
   end
 
   def skip_unmergeable?(client, project, pr_data)

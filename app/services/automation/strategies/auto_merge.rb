@@ -37,6 +37,7 @@ module Automation
       include Automation::Strategy
 
       SIGNALS_KEY = :auto_merge_signals
+      SKIP_AUTO_MERGE_LABEL = "paid-skip-auto-merge"
 
       # @param context [Automation::Context]
       # @return [Automation::Result]
@@ -46,6 +47,7 @@ module Automation
 
         signals = context.metadata_fetch(SIGNALS_KEY)
         return noop_result if signals.nil?
+        return noop_result if signals.skip_auto_merge?
 
         eligible = if signals.bot_authored?
           bot_eligible?(signals)
