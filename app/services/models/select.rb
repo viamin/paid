@@ -68,7 +68,7 @@ module Models
 
     def skip_model_selection?
       provider = agent_run.provider
-      provider&.provider_key == "codex" && provider.subscription?
+      provider&.provider_key == "codex" && provider&.subscription?
     end
 
     def select_model

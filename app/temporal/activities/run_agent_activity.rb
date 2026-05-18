@@ -1043,7 +1043,6 @@ module Activities
       end
       raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
     rescue Containers::Provision::TimeoutError => e
-      preflight_timeout = preflight_timeout_seconds_for(command_context.provider_candidate, command_context.user)
       reason = "Timed out after #{preflight_timeout}s: #{e.message}. Check proxy configuration, auth, and network policy."
       raise_preflight_failure!(agent_run: agent_run, provider: provider, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
