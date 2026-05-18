@@ -2708,7 +2708,7 @@ RSpec.describe AgentRun do
         described_class.where(project_id: project.id).distinct_effective_provider_options(account_id: project.account_id)
       end
 
-      provider_queries = queries.grep(/FROM "providers"/)
+      provider_queries = queries.grep(/FROM "runners"/)
 
       expect(provider_queries.size).to eq(1)
     end

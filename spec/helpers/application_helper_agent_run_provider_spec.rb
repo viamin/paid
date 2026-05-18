@@ -17,7 +17,7 @@ RSpec.describe ApplicationHelper do
         expect(helper.agent_run_provider_display(preloaded_run)).to eq(provider.display_name)
       end
 
-      provider_queries = queries.grep(/FROM "providers"/)
+      provider_queries = queries.grep(/FROM "runners"/)
       expect(provider_queries).to be_empty
     end
 

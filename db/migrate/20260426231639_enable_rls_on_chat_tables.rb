@@ -2,6 +2,15 @@
 
 class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
   def up
+    # Phase 2 (#2115) renamed the `providers` table to `runners`. When this
+    # historical migration is replayed against a post-rename test DB, the
+    # `FROM providers` subqueries below would fail with PG::UndefinedTable.
+    # Resolve the correct table name at runtime so the migration is safe
+    # to replay in either world. Production was unaffected at original
+    # apply time (table was still `providers`); the policy expressions
+    # are stored by OID and follow the renamed table automatically.
+    runner_table = ActiveRecord::Base.connection.table_exists?(:providers) ? "providers" : "runners"
+
     safety_assured do
       # chat_sessions: direct account_id
       execute <<~SQL
@@ -23,9 +32,9 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
               AND (
                 chat_sessions.provider_id IS NULL
                 OR EXISTS (
-                  SELECT 1 FROM providers
-                  WHERE providers.id = chat_sessions.provider_id
-                    AND providers.user_id IN (
+                  SELECT 1 FROM #{runner_table}
+                  WHERE #{runner_table}.id = chat_sessions.provider_id
+                    AND #{runner_table}.user_id IN (
                       SELECT users.id FROM users
                       WHERE users.account_id = paid_current_account_id()
                     )
@@ -55,9 +64,9 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
               AND (
                 chat_sessions.provider_id IS NULL
                 OR EXISTS (
-                  SELECT 1 FROM providers
-                  WHERE providers.id = chat_sessions.provider_id
-                    AND providers.user_id IN (
+                  SELECT 1 FROM #{runner_table}
+                  WHERE #{runner_table}.id = chat_sessions.provider_id
+                    AND #{runner_table}.user_id IN (
                       SELECT users.id FROM users
                       WHERE users.account_id = paid_current_account_id()
                     )

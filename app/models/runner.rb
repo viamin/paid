@@ -5,7 +5,6 @@ require "set"
 require "shellwords"
 
 class Runner < ApplicationRecord
-  self.table_name = "providers"
   has_logidze
   include Discard::Model
   include LegacyAttributeBridge
