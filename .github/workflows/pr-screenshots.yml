@@ -170,7 +170,7 @@ jobs:
       - name: Set up Chrome fallback
         id: setup_chrome
         if: steps.locate_chromium.outputs.chrome_path == ''
-        uses: browser-actions/setup-chrome@v1
+        uses: browser-actions/setup-chrome@v2
 
       - name: Export Chromium path
         env:
