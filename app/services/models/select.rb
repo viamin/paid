@@ -26,8 +26,8 @@ module Models
 
       selected = select_model
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-      unless selected
-        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms)
+      unless selected && compatible_selection?(selected)
+        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected)
         return nil
       end
 
@@ -103,6 +103,7 @@ module Models
       runner_model = runner_tier_model(tier)
       runner_model = nil if runner_model && excluded_model?(runner_model, excluded)
       scope = LlmModel.active.by_tier(tier).by_capability
+      scope = compatible_model_scope(scope)
       scope = scope.where.not(model_id: excluded) if excluded.present?
       model = runner_model || scope.first
       return nil unless model
@@ -203,6 +204,27 @@ module Models
       Array(selected[:candidates]).filter_map.with_index(1) do |candidate, rank|
         normalize_candidate(candidate, rank: rank, selected_model_id: selected_model_id)
       end
+    end
+
+    def compatible_selection?(selected)
+      model = selected[:model]
+      runner = agent_run.runner
+      return true unless model && runner
+      return true unless constrained_runner_selection?(runner)
+
+      configured_model_id = runner.direct_outbound_model_id
+      return model.model_id == configured_model_id if configured_model_id.present?
+
+      compatible_provider = runner.direct_outbound_llm_model_provider.presence ||
+        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
+      return true if compatible_provider.blank?
+
+      model.provider == compatible_provider
+    end
+
+    def constrained_runner_selection?(runner)
+      runner.requires_direct_outbound? ||
+        (runner.runner_key == "pi" && runner.api_key? && runner.pi_required_api_service_type.present?)
     end
 
     def normalize_candidate(candidate, rank:, selected_model_id:)

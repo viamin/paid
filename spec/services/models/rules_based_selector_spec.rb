@@ -210,6 +210,27 @@ RSpec.describe Models::RulesBasedSelector do
         expect(result[:model]).to eq(anthropic_low)
         expect(result[:candidates]).to all(have_attributes(provider: "anthropic"))
       end
+
+      it "pins fixed-model Pi runs to the configured MiniMax model" do
+        minimax_model = create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "low", capability_score: 5.0)
+        create(:llm_model, :cheap, model_id: "anthropic-low", provider: "anthropic", tier: "low", capability_score: 4.0)
+        minimax_key = create(:provider_api_key, user: agent_run.project.effective_owner, api_service_type: "minimax")
+        runner = create(
+          :runner,
+          user: agent_run.project.effective_owner,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: minimax_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => minimax_model.model_id } }
+        )
+        agent_run.update!(runner: runner)
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:tier]).to eq("low")
+        expect(result[:model]).to eq(minimax_model)
+        expect(result[:candidates]).to eq([ minimax_model ])
+      end
     end
   end
 end

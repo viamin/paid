@@ -159,6 +159,23 @@ RSpec.describe Runner do
         expect(runner).to be_valid
       end
 
+      it "allows Pi runners with a configured model to reference upstream MiniMax models" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+        create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "high")
+        runner = build(
+          :runner,
+          user: user,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } },
+          tier_model_ids: { "high" => "MiniMax-M2.7", "mid" => "MiniMax-M2.7", "low" => "MiniMax-M2.7" }
+        )
+
+        expect(runner).to be_valid
+      end
+
       it "rejects partial tier_model_ids for direct-outbound providers" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "zai")
@@ -177,6 +194,24 @@ RSpec.describe Runner do
         expect(runner.errors[:tier_model_ids].join).to include("must map all tiers")
       end
 
+      it "rejects partial tier_model_ids for Pi runners with a fixed model" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+        create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "high")
+        runner = create(
+          :runner,
+          user: user,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+        )
+
+        runner.tier_model_ids = { "high" => "MiniMax-M2.7" }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:tier_model_ids].join).to include("must map all tiers")
+      end
+
       it "rejects crafted tier_model_ids that pin a direct-outbound runner to a different model" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "zai")
@@ -189,6 +224,25 @@ RSpec.describe Runner do
           auth_type: "api_key",
           provider_api_key: api_key,
           config: { "kilocode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+        )
+
+        runner.tier_model_ids = { "high" => wrong_model.model_id, "mid" => wrong_model.model_id, "low" => wrong_model.model_id }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:tier_model_ids].join).to include("must match the configured direct-outbound model")
+      end
+
+      it "rejects crafted tier_model_ids that pin a Pi runner to a different model" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+        create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "high")
+        wrong_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high")
+        runner = create(
+          :runner,
+          user: user,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
         )
 
         runner.tier_model_ids = { "high" => wrong_model.model_id, "mid" => wrong_model.model_id, "low" => wrong_model.model_id }
@@ -797,6 +851,25 @@ RSpec.describe Runner do
       expect(runner.tier_model_ids).to be_blank
     end
 
+    it "clears stale tier_model_ids when the Pi model is removed from config" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+      )
+
+      expect(runner.tier_model_ids).to be_present
+
+      runner.update_columns(config: { "pi" => { "api_provider" => "minimax", "model" => "" } })
+
+      runner.valid?
+      expect(runner.tier_model_ids).to be_blank
+    end
+
     it "preserves tier_model_ids on unrelated attribute saves when config is unchanged" do
       runner = create(
         :runner,
@@ -989,6 +1062,22 @@ RSpec.describe Runner do
       )
 
       expect(runner.agent_harness_runtime?).to be(true)
+    end
+
+    it "returns true for Pi API-key runners" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-test")
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+      )
+
+      expect(runner.agent_harness_runtime?).to be(true)
+      expect(runner.requires_direct_outbound?).to be(true)
     end
 
     it "returns false for claude providers" do

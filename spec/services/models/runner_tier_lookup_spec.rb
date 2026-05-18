@@ -13,10 +13,12 @@ module Models
     end
 
     class RunnerLike
-      attr_reader :tier_model_ids
+      attr_reader :tier_model_ids, :runner_key, :direct_outbound_llm_model_provider
 
-      def initialize(tier_model_ids:)
+      def initialize(tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil)
         @tier_model_ids = tier_model_ids
+        @runner_key = runner_key
+        @direct_outbound_llm_model_provider = direct_outbound_llm_model_provider
       end
     end
 
@@ -30,6 +32,9 @@ module Models
 
     class ActiveScopeLike
       def find_by(model_id:)
+      end
+
+      def by_provider(provider)
       end
     end
 
@@ -48,6 +53,10 @@ module Models
 
       def excluded?(model, excluded)
         excluded_model?(model, excluded)
+      end
+
+      def compatible_scope(scope)
+        compatible_model_scope(scope)
       end
     end
   end
@@ -98,6 +107,31 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
 
     it "returns false for non-array exclusions" do
       expect(dummy.excluded?(model, "gpt-5.4")).to be(false)
+    end
+  end
+
+  describe "#compatible_scope" do
+    let(:scope) { instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike) }
+
+    it "returns the original scope when no runner is attached" do
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: nil))
+
+      expect(dummy.compatible_scope(scope)).to eq(scope)
+    end
+
+    it "filters by the runner's fixed direct-outbound provider when available" do
+      minimax_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+      runner = instance_double(
+        Models::RunnerTierLookupSpec::RunnerLike,
+        runner_key: "pi",
+        tier_model_ids: {},
+        direct_outbound_llm_model_provider: "minimax"
+      )
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
+
+      allow(scope).to receive(:by_provider).with("minimax").and_return(minimax_scope)
+
+      expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
     end
   end
 end
