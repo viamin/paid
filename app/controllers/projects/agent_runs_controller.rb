@@ -89,6 +89,7 @@ module Projects
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
       priority_tier = resolve_priority_tier
+      blocked_by_issue_ids = resolve_blocked_by_issue_ids
 
       if goal == "review"
         pr_ids = Array(params[:pull_request_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
@@ -141,7 +142,8 @@ module Projects
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pr_number,
           goal: goal,
-          priority_tier: priority_tier
+          priority_tier: priority_tier,
+          blocked_by_issue_ids: blocked_by_issue_ids
         )
       end
     end
@@ -558,6 +560,10 @@ module Projects
       tier if Project::PRIORITY_TIERS.include?(tier)
     end
 
+    def resolve_blocked_by_issue_ids
+      Array(params[:blocked_by_issue_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
+    end
+
     def apply_priority_label(issue, tier)
       label_name = @project.priority_label_for(tier)
       return if label_name.blank?
@@ -616,7 +622,7 @@ module Projects
       @agent_run.reload
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil, blocked_by_issue_ids: [])
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
@@ -642,7 +648,8 @@ module Projects
           goal: goal,
           trigger_type: trigger_type,
           status: "queued",
-          priority_tier: priority_tier
+          priority_tier: priority_tier,
+          blocked_by_issue_ids: blocked_by_issue_ids
         )
         attach_marketplace_entries(agent_run: agent_run)
         agent_run

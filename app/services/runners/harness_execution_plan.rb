@@ -33,7 +33,9 @@ module Runners
     def self.for_runner_key(runner_key:, prompt:, options: {}, provider_runtime: nil)
       harness_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym
       runner_instance = build_harness_provider(harness_key)
-      Result.new(**runner_instance.plan_execution(prompt: prompt, provider_runtime: provider_runtime, **options))
+      kwargs = options.merge(prompt: prompt)
+      kwargs[:provider_runtime] = provider_runtime if provider_runtime
+      Result.new(**runner_instance.plan_execution(**kwargs))
     end
 
     def self.for_provider_key(provider_key:, prompt:, options: {}, provider_runtime: nil)
@@ -41,7 +43,10 @@ module Runners
     end
 
     def call
-      Result.new(**harness_provider.plan_execution(prompt: @prompt, provider_runtime: runner_runtime, **@options))
+      kwargs = @options.merge(prompt: @prompt)
+      runtime = runner_runtime
+      kwargs[:provider_runtime] = runtime if runtime
+      Result.new(**harness_provider.plan_execution(**kwargs))
     end
 
     private

@@ -103,12 +103,12 @@ RSpec.describe Activities::RunAgentActivity do
 
   def run_direct_outbound_preflight(activity:, agent_run:, container_service:, provider:, user:)
     command_context = Activities::RunAgentActivity::CommandContext.new(
-      provider_candidate: provider,
-      provider: provider.provider_key,
+      runner_candidate: provider,
+      runner: provider.runner_key,
       user: user
     )
 
-    allow(activity).to receive(:run_provider_preflight!).and_call_original
+    allow(activity).to receive(:run_runner_preflight!).and_call_original
     allow(activity).to receive_messages(
       preflight_provider_instance: nil,
       build_command: %w[echo ok],
@@ -116,11 +116,11 @@ RSpec.describe Activities::RunAgentActivity do
       command_preparation_for: nil
     )
 
-    activity.send(:run_provider_preflight!,
+    activity.send(:run_runner_preflight!,
       agent_run: agent_run,
       container_service: container_service,
       command_context: command_context,
-      provider: provider.provider_key,
+      runner: provider.runner_key,
       execution_env: {})
   end
 
@@ -729,7 +729,7 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
-  describe "#selected_provider_runtime" do
+  describe "#selected_runner_runtime" do
     it "ignores Paid model selection for Codex subscription-auth runs" do
       codex_provider = create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
       runtime_issue = create(:issue, project: project)
@@ -741,20 +741,20 @@ RSpec.describe Activities::RunAgentActivity do
         container_id: "abc123")
       create(:model_selection, agent_run: run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o"))
 
-      runtime = activity.send(:selected_provider_runtime, codex_provider, nil, run)
+      runtime = activity.send(:selected_runner_runtime, codex_provider, nil, run)
 
       expect(runtime).to be_nil
     end
   end
 
-  describe "#provider_entry_for" do
+  describe "#runner_entry_for" do
     it "memoizes routing-key lookups per user and identifier" do
       runner = create(:runner, user: user, runner_key: "opencode")
 
       expect(Runner).to receive(:for_identifier).once.with(user, runner.routing_key).and_call_original
 
       2.times do
-        expect(activity.send(:provider_entry_for, runner.routing_key, user)).to eq(runner)
+        expect(activity.send(:runner_entry_for, runner.routing_key, user)).to eq(runner)
       end
     end
   end

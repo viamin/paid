@@ -121,7 +121,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
 
   def down
     safety_assured do
-      tenant_tables.each do |table|
+      tenant_tables_with_helper_policies.each do |table|
         next unless table_exists?(table)
 
         drop_policies(table)
@@ -223,15 +223,54 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   def drop_policies(table)
     qualified_table = quote_table_name(table)
 
-    %w[
-      tenant_isolation
-      tenant_isolation_select
-      tenant_isolation_insert
-      tenant_isolation_update
-      tenant_isolation_delete
-    ].each do |policy|
-      execute "DROP POLICY IF EXISTS #{policy} ON #{qualified_table}"
+    (
+      %w[
+        tenant_isolation
+        tenant_isolation_select
+        tenant_isolation_insert
+        tenant_isolation_update
+        tenant_isolation_delete
+      ] + helper_policy_names(table)
+    ).uniq.each do |policy|
+      execute "DROP POLICY IF EXISTS #{quote_column_name(policy)} ON #{qualified_table}"
     end
+  end
+
+  def helper_policy_names(table)
+    select_values(<<~SQL.squish)
+      SELECT policyname
+      FROM pg_policies
+      WHERE schemaname = current_schema()
+        AND tablename = #{quote(table)}
+        AND (
+          COALESCE(qual, '') LIKE '%paid_tenant_bypass()%'
+          OR COALESCE(with_check, '') LIKE '%paid_tenant_bypass()%'
+          OR COALESCE(qual, '') LIKE '%paid_current_account_id()%'
+          OR COALESCE(with_check, '') LIKE '%paid_current_account_id()%'
+        )
+    SQL
+  end
+
+  def tenant_tables_with_helper_policies
+    (tenant_tables + helper_policy_tables).uniq
+  end
+
+  def helper_policy_tables
+    select_values(<<~SQL.squish)
+      SELECT DISTINCT tablename
+      FROM pg_policies
+      WHERE schemaname = current_schema()
+        AND (
+          COALESCE(qual, '') LIKE '%paid_tenant_bypass()%'
+          OR COALESCE(with_check, '') LIKE '%paid_tenant_bypass()%'
+          OR COALESCE(qual, '') LIKE '%paid_current_account_id()%'
+          OR COALESCE(with_check, '') LIKE '%paid_current_account_id()%'
+        )
+    SQL
+  end
+
+  def select_values(sql)
+    ActiveRecord::Base.connection.select_values(sql)
   end
 
   def optional_account_write_condition(table)
