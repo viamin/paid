@@ -38,6 +38,9 @@ class Provider < ApplicationRecord
                     opencode_model_provider: "deepseek" },
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
                    opencode_model_provider: "mistral" },
+    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic", service_type: "minimax",
+                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
+                   opencode_model_provider: "anthropic" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
@@ -69,6 +72,7 @@ class Provider < ApplicationRecord
     "deepseek" => { label: "DeepSeek", service_type: "deepseek", env_var: "DEEPSEEK_API_KEY" },
     "google" => { label: "Google Gemini", service_type: "google", env_var: "GEMINI_API_KEY" },
     "mistral" => { label: "Mistral", service_type: "mistral", env_var: "MISTRAL_API_KEY" },
+    "minimax" => { label: "MiniMax", service_type: "minimax", env_var: "ANTHROPIC_API_KEY" },
     "xai" => { label: "xAI", service_type: "xai", env_var: "XAI_API_KEY" },
     "zai" => { label: "z.ai", service_type: "zai", env_var: "ZAI_API_KEY" },
     "openrouter" => { label: "OpenRouter", service_type: "openrouter", env_var: "OPENROUTER_API_KEY" }
@@ -335,10 +339,7 @@ class Provider < ApplicationRecord
   end
 
   def kilocode_api_key_env_var
-    service_type = kilocode_required_api_service_type
-    return "OPENAI_API_KEY" if service_type.blank?
-
-    "#{service_type.upcase.tr('-', '_')}_API_KEY"
+    direct_outbound_api_key_env_var(kilocode_api_provider)
   end
 
   def kilocode_runtime_env
@@ -952,7 +953,7 @@ class Provider < ApplicationRecord
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
 
-    env_var = "#{api_config[:service_type].upcase.tr('-', '_')}_API_KEY"
+    env_var = direct_outbound_api_key_env_var(opencode_api_provider)
     env = { env_var => provider_api_key&.api_key.to_s }
     env["OPENAI_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
 
@@ -979,5 +980,12 @@ class Provider < ApplicationRecord
         }
       }
     )
+  end
+
+  def direct_outbound_api_key_env_var(api_provider)
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS[api_provider.to_s]
+    return "OPENAI_API_KEY" if api_config.blank?
+
+    api_config[:env_var].presence || "#{api_config[:service_type].upcase.tr('-', '_')}_API_KEY"
   end
 end
