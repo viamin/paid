@@ -440,24 +440,11 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).to have_received(:delete).with(force: true, v: true)
       end
 
-      it "removes stale running collector containers" do
+      it "keeps running collector containers regardless of age" do
         container = make_container(
           labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
           running: true,
           created_at: 2.hours.ago
-        )
-        stub_collector_containers(container)
-
-        job.perform
-
-        expect(container).to have_received(:delete).with(force: true, v: true)
-      end
-
-      it "keeps recently created running collector containers" do
-        container = make_container(
-          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
-          running: true,
-          created_at: 10.minutes.ago
         )
         stub_collector_containers(container)
 

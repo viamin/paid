@@ -340,22 +340,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def collector_container_active?(container)
-    running = container.info.dig("State", "Running")
-    return false unless running
-
-    created_at = collector_container_created_at(container)
-    return true if created_at.nil?
-
-    created_at >= COLLECTOR_STALE_AFTER.ago
-  end
-
-  def collector_container_created_at(container)
-    created = container.info["Created"]
-    return if created.blank?
-
-    Time.zone.parse(created.to_s)
-  rescue ArgumentError
-    nil
+    container.info.dig("State", "Running") == true
   end
 
   def collector_volume_names_for(container)
