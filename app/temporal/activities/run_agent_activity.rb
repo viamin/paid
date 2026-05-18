@@ -1742,11 +1742,11 @@ module Activities
     end
 
     def command_env_for(command_context, prompt)
+      env = marketplace_runtime_env(command_context.runner).dup
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
-      return direct_outbound_execution_plan(runner_entry, prompt).env if runner_entry&.agent_harness_runtime?
-      return {} unless runner_entry
+      return env.merge(direct_outbound_execution_plan(runner_entry, prompt).env) if runner_entry&.agent_harness_runtime?
+      return env unless runner_entry
 
-      env = {}
       env.merge!(runner_entry.direct_outbound_exec_env) if runner_entry.requires_direct_outbound?
       env.merge!(api_key_command_env(runner_entry)) if runner_entry.api_key?
       env
