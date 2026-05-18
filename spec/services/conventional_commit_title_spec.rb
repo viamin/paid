@@ -91,5 +91,22 @@ RSpec.describe ConventionalCommitTitle do
 
       expect(described_class.for_issue(nil, project: project)).to eq("Apply Paid changes")
     end
+
+    it "logs and falls back to defaults when convention lookup hits an Active Record error" do
+      issue = create(:issue, project: project, title: "Worker pool tuning")
+      error = ActiveRecord::ConnectionNotEstablished.new("database unavailable")
+
+      allow(ProjectConventions::Resolve).to receive(:call).and_raise(error)
+      allow(Rails.logger).to receive(:warn)
+
+      expect(described_class.for_issue(issue, project: project)).to eq("feat: Worker pool tuning")
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "conventional_commit_title.style_lookup_failed",
+          key: "commit_style",
+          error: "database unavailable"
+        )
+      )
+    end
   end
 end

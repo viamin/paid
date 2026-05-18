@@ -48,7 +48,12 @@ class ConventionalCommitTitle
       return default_style(style_key) unless project
 
       ProjectConventions::Resolve.call(project:, key: style_key).fetch(:value)
-    rescue StandardError
+    rescue ActiveRecord::ActiveRecordError => e
+      Rails.logger.warn(
+        message: "conventional_commit_title.style_lookup_failed",
+        key: style_key,
+        error: e.message
+      )
       default_style(style_key)
     end
 
