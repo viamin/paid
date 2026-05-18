@@ -113,33 +113,6 @@
           </div>
         </div>
 
-        <div data-goal-toggle-target="blockedBySection" <% unless selected_goal == "create_issue" %>hidden<% end %>>
-          <h2 class="text-base font-semibold text-gray-900">Blocked By</h2>
-          <p class="mt-1 text-sm text-gray-500">Optionally select existing issues or PRs that must be closed before the new issue can be picked up for work.</p>
-
-          <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <% blocked_by_items = @issues + @pull_requests %>
-            <% if blocked_by_items.any? %>
-              <div class="max-h-60 space-y-2 overflow-y-auto">
-                <% blocked_by_items.each do |item| %>
-                  <label class="flex items-center gap-2 rounded-md border border-gray-100 p-2 hover:border-indigo-200">
-                    <input type="checkbox" name="blocked_by_issue_ids[]" value="<%= item.id %>"
-                           class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                           <% if Array(params[:blocked_by_issue_ids]).map(&:to_s).include?(item.id.to_s) %>checked<% end %>>
-                    <span class="text-sm text-gray-700">
-                      <span class="font-medium <%= item.is_pull_request? ? 'text-purple-600' : 'text-gray-900' %>">#<%= item.github_number %></span>
-                      - <%= truncate(item.title, length: 70) %>
-                      <% if item.is_pull_request? %><span class="text-xs text-purple-500">(PR)</span><% end %>
-                    </span>
-                  </label>
-                <% end %>
-              </div>
-            <% else %>
-              <p class="text-sm text-gray-500">No open issues or PRs found to select as blockers.</p>
-            <% end %>
-          </div>
-        </div>
-
         <div>
           <h2 class="text-base font-semibold text-gray-900">Additional Instructions</h2>
           <p class="mt-1 text-sm text-gray-500">Optionally provide extra context or instructions for the agent. This can be combined with an issue or PR selection above.</p>
@@ -151,6 +124,37 @@
                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
             <p class="mt-1 text-xs text-gray-500">Add any additional instructions for the agent. When used alone, this serves as the primary prompt for the run.</p>
           </div>
+        </div>
+
+        <div data-goal-toggle-target="blockedBySection" <% unless selected_goal == "create_issue" %>hidden<% end %>>
+          <details class="rounded-lg border border-gray-200">
+            <summary class="cursor-pointer px-4 py-3 text-base font-semibold text-gray-900 hover:bg-gray-50">
+              Blocked By
+              <p class="mt-1 text-sm font-normal text-gray-500">Optionally select existing issues or PRs that must be closed before the new issue can be picked up for work.</p>
+            </summary>
+
+            <div class="border-t border-gray-200 p-4">
+              <% blocked_by_items = @issues + @pull_requests %>
+              <% if blocked_by_items.any? %>
+                <div class="max-h-60 space-y-2 overflow-y-auto">
+                  <% blocked_by_items.each do |item| %>
+                    <label class="flex items-center gap-2 rounded-md border border-gray-100 p-2 hover:border-indigo-200">
+                      <input type="checkbox" name="blocked_by_issue_ids[]" value="<%= item.id %>"
+                             class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                             <% if Array(params[:blocked_by_issue_ids]).map(&:to_s).include?(item.id.to_s) %>checked<% end %>>
+                      <span class="text-sm text-gray-700">
+                        <span class="font-medium <%= item.is_pull_request? ? 'text-purple-600' : 'text-gray-900' %>">#<%= item.github_number %></span>
+                        - <%= truncate(item.title, length: 70) %>
+                        <% if item.is_pull_request? %><span class="text-xs text-purple-500">(PR)</span><% end %>
+                      </span>
+                    </label>
+                  <% end %>
+                </div>
+              <% else %>
+                <p class="text-sm text-gray-500">No open issues or PRs found to select as blockers.</p>
+              <% end %>
+            </div>
+          </details>
         </div>
 
         <div data-goal-toggle-target="prioritySection">
