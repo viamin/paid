@@ -27,7 +27,7 @@ module Models
       selected = select_model
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
       unless selected && compatible_selection?(selected)
-        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms)
+        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected)
         return nil
       end
 

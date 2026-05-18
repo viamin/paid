@@ -406,6 +406,9 @@ RSpec.describe Models::Select do
         log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
 
         expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "no_selection")
+        expect(log.metadata.dig("selection", "model_id")).to eq(claude_model.model_id)
+        expect(log.metadata.dig("selection", "model_provider")).to eq(claude_model.provider)
+        expect(log.metadata.dig("selection", "selector_type")).to eq("override")
       end
     end
 
