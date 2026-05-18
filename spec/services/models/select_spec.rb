@@ -338,6 +338,29 @@ RSpec.describe Models::Select do
       end
     end
 
+    context "when the run uses Codex subscription auth" do
+      let(:codex_provider) { create(:provider, user: project.created_by, provider_key: "codex", auth_type: "subscription") }
+      let(:agent_run) { create(:agent_run, project: project, provider: codex_provider, agent_type: "codex") }
+
+      before do
+        create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid")
+        create(:llm_model, :openai, model_id: "gpt-4o-mini", tier: "low")
+      end
+
+      it "returns nil instead of persisting an incompatible selected model" do
+        expect(described_class.call(agent_run: agent_run)).to be_nil
+        expect(agent_run.model_selection).to be_nil
+      end
+
+      it "records the no-selection outcome" do
+        described_class.call(agent_run: agent_run)
+
+        log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+
+        expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "no_selection")
+      end
+    end
+
     context "when override model does not exist" do
       before do
         create(:llm_model)
