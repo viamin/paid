@@ -52,6 +52,22 @@ RSpec.describe ProjectConventions::Detector, :no_db do
     )
   end
 
+  it "detects cross-repo depends on wording" do
+    write_repo_file("AGENTS.md", "Depends on owner/repo#123")
+
+    detection = described_class.call(repo_path:).find { |item| item[:key] == "issue_dependency_format" }
+
+    expect(detection[:value]).to include("depends_on_prefix" => "Depends on")
+  end
+
+  it "detects same-repo blocked by wording" do
+    write_repo_file("README.md", "Blocked by #42")
+
+    detection = described_class.call(repo_path:).find { |item| item[:key] == "issue_dependency_format" }
+
+    expect(detection[:value]).to include("blocked_by_prefix" => "Blocked by")
+  end
+
   it "merges evidence for duplicate convention keys" do
     write_repo_file("release-please-config.json", '{"packages":{".":{}}}')
     write_repo_file("commitlint.config.js", "module.exports = {};\n")

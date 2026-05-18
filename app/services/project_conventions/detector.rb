@@ -134,7 +134,7 @@ module ProjectConventions
     def dependency_format_detection
       matched_paths = text_matches(
         %w[AGENTS.md CLAUDE.md README.md],
-        /(Depends on #\d+|Blocked by [A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#\d+)/
+        /(?:Depends on|Blocked by) (?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#\d+/
       )
       return if matched_paths.empty?
 
