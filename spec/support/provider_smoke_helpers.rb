@@ -422,9 +422,11 @@ module ProviderSmokeHelpers
         "bundle", "exec", "rails", "runner", runner_script
       )
 
-      return [] unless status.success?
-
-      JSON.parse(stdout.lines.last.to_s)
+      if status.success?
+        JSON.parse(stdout.lines.last.to_s)
+      else
+        []
+      end
     rescue JSON::ParserError
       []
     end
