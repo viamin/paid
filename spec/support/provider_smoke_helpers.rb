@@ -196,7 +196,7 @@ module ProviderSmokeHelpers
     claude-diag-tool-required
   ].freeze
   PRESETS = {
-    "current-enabled" => DEFAULT_SCENARIO_NAMES,
+    "current-enabled" => nil,
     "all-scenarios" => SCENARIOS.keys,
     "claude-diagnostics" => CLAUDE_DIAGNOSTIC_SCENARIO_NAMES
   }.freeze
@@ -205,7 +205,7 @@ module ProviderSmokeHelpers
 
   def scenario_names_from_env
     configured = ENV["PAID_SMOKE_SCENARIOS"].to_s.split(",").map(&:strip).reject(&:blank?)
-    (configured.presence || DEFAULT_SCENARIO_NAMES).flat_map { |name| expand_name(name) }
+    (configured.presence || [ "current-enabled" ]).flat_map { |name| expand_name(name) }
   end
 
   def scenarios_from_env
@@ -219,7 +219,13 @@ module ProviderSmokeHelpers
   end
 
   def expand_name(name)
+    return current_enabled_scenario_names if name == "current-enabled"
+
     PRESETS.fetch(name, [ name ])
+  end
+
+  def current_enabled_scenario_names
+    DEFAULT_SCENARIO_NAMES | configured_scenario_names
   end
 
   def build_provider!(user:, scenario:)
@@ -253,8 +259,8 @@ module ProviderSmokeHelpers
 
     dev_provider = development_provider_info_for(scenario)
     model_id = ENV[scenario.model_env].to_s.strip.presence ||
-      scenario.default_model.presence ||
-      dev_provider&.fetch("model", nil).to_s.presence
+      dev_provider&.fetch("model", nil).to_s.presence ||
+      scenario.default_model.presence
     if model_id.blank?
       raise ScenarioUnavailableError, "Set #{scenario.model_env} to run #{scenario.label}"
     end
@@ -309,7 +315,7 @@ module ProviderSmokeHelpers
     return @development_provider_info_cache[scenario.name] if @development_provider_info_cache.key?(scenario.name)
 
     service_type = Provider::DIRECT_OUTBOUND_API_PROVIDERS.dig(scenario.api_provider, :service_type)
-    desired_model = ENV[scenario.model_env].to_s.strip.presence || scenario.default_model
+    desired_model = ENV[scenario.model_env].to_s.strip.presence
     payload = {
       provider_key: scenario.provider_key,
       auth_type: scenario.auth_type,
@@ -378,5 +384,63 @@ module ProviderSmokeHelpers
     @development_provider_info_cache[scenario.name] = parsed
   rescue JSON::ParserError
     nil
+  end
+
+  def configured_scenario_names
+    payload = configured_provider_payload
+    return [] unless payload.is_a?(Array)
+
+    payload.filter_map do |config|
+      scenario_for_configuration(config)
+    end.uniq
+  end
+
+  def configured_provider_payload
+    @configured_provider_payload ||= begin
+      runner_script = <<~'RUBY'
+        require "json"
+
+        result = TenantContext.with_system_access do
+          Provider.includes(:provider_api_key)
+            .where(auth_type: %w[subscription api_key])
+            .map do |provider|
+              config = provider.config.is_a?(Hash) ? provider.config.fetch(provider.provider_key, {}) : {}
+              {
+                "provider_key" => provider.provider_key,
+                "auth_type" => provider.auth_type,
+                "service_type" => provider.provider_api_key&.api_service_type,
+                "api_provider" => config["api_provider"]
+              }
+            end
+        end
+
+        puts JSON.generate(result)
+      RUBY
+
+      stdout, _stderr, status = Open3.capture3(
+        { "RAILS_ENV" => "development" },
+        "bundle", "exec", "rails", "runner", runner_script
+      )
+
+      if status.success?
+        JSON.parse(stdout.lines.last.to_s)
+      else
+        []
+      end
+    rescue JSON::ParserError
+      []
+    end
+  end
+
+  def scenario_for_configuration(config)
+    SCENARIOS.each_value.find do |scenario|
+      next false unless scenario.provider_key == config["provider_key"].to_s
+      next false unless scenario.auth_type == config["auth_type"].to_s
+      next true if scenario.subscription?
+
+      service_type = Provider::DIRECT_OUTBOUND_API_PROVIDERS.dig(scenario.api_provider, :service_type)
+      service_type == config["service_type"].to_s &&
+        scenario.api_provider == config["api_provider"].to_s
+    end&.name
   end
 end
