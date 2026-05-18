@@ -1791,7 +1791,7 @@ class AgentRun < ApplicationRecord
     return {} unless owner
 
     routing_ids = runners_attempted.filter_map do |attempt|
-      Runner.id_from_routing_key(attempt["runner"])
+      Runner.id_from_routing_key(attempt["runner"] || attempt["provider"])
     end
     return {} if routing_ids.empty?
 
