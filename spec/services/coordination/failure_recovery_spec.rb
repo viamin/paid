@@ -16,12 +16,12 @@ RSpec.describe Coordination::FailureRecovery do
           error_message: "RateLimit: exceeded quota")
       end
 
-      it "classifies as rate_limit and selects retry_alternate_provider" do
+      it "classifies as rate_limit and selects retry_alternate_runner" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_success
         expect(result.failure_category).to eq("rate_limit")
-        expect(result.chosen_action).to eq("retry_alternate_provider")
+        expect(result.chosen_action).to eq("retry_alternate_runner")
       end
 
       it "persists the classification" do
@@ -30,7 +30,7 @@ RSpec.describe Coordination::FailureRecovery do
         classification = result.classification
         expect(classification).to be_persisted
         expect(classification.failure_category).to eq("rate_limit")
-        expect(classification.chosen_action).to eq("retry_alternate_provider")
+        expect(classification.chosen_action).to eq("retry_alternate_runner")
         expect(classification.action_status).to eq("pending")
         expect(classification.project).to eq(project)
         expect(classification.agent_run).to eq(agent_run)
@@ -47,12 +47,12 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("applied")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "policy_source" => "defaults",
           "policy_key" => "failure_recovery"
         )
         expect(decision.outputs).to include(
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "action_status" => "pending",
           "policy_source" => "defaults"
         )
@@ -74,11 +74,11 @@ RSpec.describe Coordination::FailureRecovery do
         expect(decision.context["decision_status"]).to eq("failed")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "policy_source" => "defaults"
         )
         expect(decision.outputs).to include(
-          "chosen_action" => "retry_alternate_provider",
+          "chosen_action" => "retry_alternate_runner",
           "error_class" => "ActiveRecord::RecordInvalid"
         )
       end
@@ -165,12 +165,12 @@ RSpec.describe Coordination::FailureRecovery do
           runners_attempted: [ anthropic_attempt ])
       end
 
-      it "classifies as timeout and selects retry_same_provider" do
+      it "classifies as timeout and selects retry_same_runner" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_success
         expect(result.failure_category).to eq("timeout")
-        expect(result.chosen_action).to eq("retry_same_provider")
+        expect(result.chosen_action).to eq("retry_same_runner")
       end
 
       it "uses the last attempted runner when final_runner is unavailable" do
@@ -201,7 +201,7 @@ RSpec.describe Coordination::FailureRecovery do
 
         expect(result).to be_success
         expect(result.failure_category).to eq("timeout")
-        expect(result.chosen_action).to eq("retry_same_provider")
+        expect(result.chosen_action).to eq("retry_same_runner")
 
         decision = OrchestrationDecision.last
         expect(decision.decision_type).to eq("retry")
@@ -225,8 +225,8 @@ RSpec.describe Coordination::FailureRecovery do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_success
-        expect(result.failure_category).to eq("provider_error")
-        expect(result.chosen_action).to eq("retry_alternate_provider")
+        expect(result.failure_category).to eq("runner_error")
+        expect(result.chosen_action).to eq("retry_alternate_runner")
       end
 
       it "includes attempted runners in action_params" do

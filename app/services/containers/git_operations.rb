@@ -395,7 +395,7 @@ module Containers
       return unless owner_has_any_co_author_trailer?
 
       install_or_chain_co_author_hook
-      write_co_author_trailer(agent_run.effective_provider_record)
+      write_co_author_trailer(agent_run.effective_runner_record)
     rescue Error => e
       Rails.logger.warn(
         message: "container_git.install_co_author_hook_failed",
@@ -964,7 +964,7 @@ module Containers
         "chore: apply agent changes"
       end
 
-      trailer = agent_run.effective_provider_record&.agent_co_author_trailer.presence
+      trailer = agent_run.effective_runner_record&.agent_co_author_trailer.presence
       return subject unless trailer
 
       "#{subject}\n\n#{trailer}"

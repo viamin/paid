@@ -46,7 +46,7 @@ module Projects
       end.compact
       @default_runner_identifier = @default_runner_identifiers_by_goal[selected_goal]
       @available_run_runner_options = available_run_runner_options
-      @marketplace_entries = MarketplaceEntry.where(account: @project.account).where.not(current_version_id: nil).ordered.to_a
+      @marketplace_entries = marketplace_entries_for_new_run.to_a
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -651,12 +651,12 @@ module Projects
 
     def attach_marketplace_entries(agent_run:)
       manual_entry_ids = params.permit(marketplace_entry_ids: []).fetch(:marketplace_entry_ids, nil)
-      account_auto_attach_required = @project.account.tenant_setting&.agent_settings&.dig("marketplace_auto_attach_required").present?
+      account_auto_attach_required = marketplace_auto_attach_required_for_current_account?
 
       MarketplaceEntries::AttachToRun.call(
         agent_run: agent_run,
         manual_entry_ids: manual_entry_ids,
-        auto_attach_enabled: current_user.settings.marketplace_auto_attach_enabled?,
+        auto_attach_enabled: marketplace_auto_attach_enabled_for_current_user?,
         account_auto_attach_required: account_auto_attach_required
       )
     rescue => e
@@ -668,6 +668,37 @@ module Projects
       )
       raise if account_auto_attach_required || Array(manual_entry_ids).any?
       raise unless e.is_a?(ActiveRecord::RecordNotFound)
+    end
+
+    def copy_marketplace_attachments(source_run:, target_run:)
+      attachments = source_run.agent_run_marketplace_entries.includes(:marketplace_entry, :marketplace_entry_version).ordered.to_a
+      return if attachments.empty?
+
+      attachments.each do |attachment|
+        target_run.agent_run_marketplace_entries.create!(
+          marketplace_entry: attachment.marketplace_entry,
+          marketplace_entry_version: attachment.marketplace_entry_version,
+          attachment_source: attachment.attachment_source,
+          position: attachment.position,
+          selection_reason: attachment.selection_reason,
+          rendered_format: attachment.rendered_format,
+          rendered_payload: attachment.rendered_payload
+        )
+      end
+
+      MarketplaceEntries::RerenderForRun.call(agent_run: target_run)
+    end
+
+    def marketplace_auto_attach_enabled_for_current_user?
+      !!current_user.settings&.marketplace_auto_attach_enabled?
+    end
+
+    def marketplace_auto_attach_required_for_current_account?
+      !!@project.account.tenant_setting&.marketplace_auto_attach_required?
+    end
+
+    def marketplace_entries_for_new_run
+      @project.account.marketplace_entries.active.where.not(current_version_id: nil).ordered.includes(:current_version)
     end
 
     def enqueue_resume_run(pr)

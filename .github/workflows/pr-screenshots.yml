@@ -98,14 +98,23 @@ jobs:
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       SCREENSHOT_OUTPUT_DIR: tmp/screenshots
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde
@@ -123,7 +132,9 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile && bin/yarn-postinstall
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
         run: |
@@ -166,7 +177,10 @@ jobs:
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:prepare
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Capture screenshots
         id: capture_screenshots

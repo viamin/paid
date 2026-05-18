@@ -6,7 +6,7 @@ module Coordination
       "rate_limit" => [ /RateLimit/i, /rate.?limit/i, /\b429\b/ ],
       "auth_failure" => [ /AuthenticationError/i, /auth.?expir/i, /unauthorized/i, /\b403\b/ ],
       "timeout" => [ /timeout/i, /timed?\s*out/i ],
-      "provider_error" => [ /AllProvidersExhausted/i, /ProxyUnavailable/i, /\bprovider.?(error|fail)/i ],
+      "runner_error" => [ /AllRunnersExhausted/i, /AllProvidersExhausted/i, /ProxyUnavailable/i, /\b(runner|provider).?(error|fail)/i ],
       "container_error" => [ /ContainerNotProvisioned/i, /\bcontainer.?(error|fail)/i, /\bdocker.?(error|fail)/i ],
       "prompt_error" => [ /MissingPrompt/i, /\bprompt.?(error|fail|missing)/i ],
       "dependency_failure" => [ /dependency.?fail/i, /\bblocked.?by\b/i ],
@@ -97,11 +97,11 @@ module Coordination
         params[:action] = action
 
         case action
-        when "retry_alternate_provider"
+        when "retry_alternate_runner"
           params[:exclude_runners] = attempted_runner_identifiers
         when "escalate_model"
           params[:current_runner] = preferred_runner_identifier
-        when "retry_same_provider"
+        when "retry_same_runner"
           params[:runner] = preferred_runner_identifier
         end
       end

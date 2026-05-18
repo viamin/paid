@@ -234,7 +234,7 @@ module Coordination
       case action
       when "noop"
         "noop"
-      when "retry_same_provider", "retry_alternate_provider", "reconfigure_and_retry"
+      when "retry_same_runner", "retry_alternate_runner", "reconfigure_and_retry"
         "retry"
       when "pause_and_notify"
         "pause"
