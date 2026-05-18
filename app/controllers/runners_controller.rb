@@ -10,7 +10,7 @@ class RunnersController < ApplicationController
     def circuit_open?  = circuit_state == "open"
     def circuit_half_open? = circuit_state == "half_open"
   end
-  before_action :set_runner, only: [ :edit, :update, :destroy, :test_agent ]
+  before_action :set_runner, only: [ :edit, :update, :destroy, :test_agent, :toggle_agent_runs, :toggle_fallback ]
   before_action :load_runner_options, only: [ :new, :create, :edit, :update ]
 
   def index
@@ -122,6 +122,16 @@ class RunnersController < ApplicationController
       error_type: result.error_type,
       message: result.message
     }
+  end
+
+  def toggle_agent_runs
+    authorize @runner, :update?
+    toggle_runner_flag(:enabled_for_agent_runs, "#{toggle_partial_prefix}/agent_runs_toggle_index")
+  end
+
+  def toggle_fallback
+    authorize @runner, :update?
+    toggle_runner_flag(:enabled_for_fallback, "#{toggle_partial_prefix}/fallback_toggle_index")
   end
 
   def settings
@@ -251,6 +261,71 @@ class RunnersController < ApplicationController
     return unless resource_supported_key?(@runner.runner_key)
 
     @runner.errors.add(:runner_key, "is not available in paid-agent yet")
+  end
+
+  def toggle_runner_flag(attribute, partial)
+    new_value = !@runner.public_send(:"#{attribute}?")
+    @runner.assign_attributes(attribute => new_value)
+
+    validate_container_executable_for_toggle(attribute)
+
+    respond_to do |format|
+      format.turbo_stream do
+        success = if @runner.errors.none?
+          resource_model_class.transaction do
+            if @runner.save && reconcile_settings!
+              true
+            else
+              raise ActiveRecord::Rollback
+            end
+          end
+        end
+
+        if success
+          @runner.reload
+          render turbo_stream: turbo_stream.replace(
+            ActionView::RecordIdentifier.dom_id(@runner, :"#{attribute}_toggle"),
+            partial: partial,
+            locals: { toggle_partial_locals_key => @runner }
+          )
+        else
+          @runner.reload if @runner.persisted?
+          error_message = @runner.errors.full_messages.to_sentence.presence || "Could not update #{resource_noun}"
+          render turbo_stream: [
+            turbo_stream.replace(
+              ActionView::RecordIdentifier.dom_id(@runner, :"#{attribute}_toggle"),
+              partial: partial,
+              locals: { toggle_partial_locals_key => @runner }
+            ),
+            turbo_stream.prepend("flash", partial: "shared/flash_alert", locals: { message: error_message })
+          ], status: :unprocessable_content
+        end
+      end
+      format.html { redirect_to resource_index_path }
+    end
+  end
+
+  def validate_container_executable_for_toggle(attribute)
+    return unless @runner.public_send(:"#{attribute}?")
+    return unless @runner.will_save_change_to_attribute?(attribute.to_s, to: true)
+
+    unless resource_supported_key?(@runner.runner_key)
+      @runner.errors.add(attribute, "must be disabled for an unsupported #{resource_noun}")
+      return
+    end
+
+    return if resource_addable_key?(@runner.runner_key)
+    return if resource_container_executable_keys.include?(@runner.runner_key)
+
+    @runner.errors.add(attribute, "cannot be enabled for a #{resource_noun} whose CLI is not installed in the agent container")
+  end
+
+  def toggle_partial_prefix
+    legacy_provider_controller? ? "providers" : "runners"
+  end
+
+  def toggle_partial_locals_key
+    legacy_provider_controller? ? :provider : :runner
   end
 
   def validate_container_executable!

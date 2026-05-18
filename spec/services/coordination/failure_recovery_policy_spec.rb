@@ -15,7 +15,7 @@ RSpec.describe Coordination::FailureRecoveryPolicy do
         "default_action" => "pause_and_notify"
       )
       expect(result["actions"]).to include(
-        "timeout" => "retry_same_provider",
+        "timeout" => "retry_same_runner",
         "dependency_failure" => "cancel_workflow"
       )
     end
