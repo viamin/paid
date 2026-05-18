@@ -64,6 +64,7 @@ module Activities
         title, llm_generated_title = extract_title(summary, agent_run.custom_prompt)
         body = body_override.present? ? issue_body(body_override) : issue_body(summary)
         body = append_dependency_text(body, upstream_issue) if upstream_issue
+        body = append_blocked_by_text(body, agent_run) if agent_run.blocked_by_issue_ids.present?
 
         issue_labels = project.auto_add_labels_enabled? ? [ project.generated_label_name ] : []
         priority_label = priority_label_for(agent_run)
@@ -306,6 +307,20 @@ module Activities
     def append_dependency_text(body, upstream_issue)
       dep_line = "Blocked by #{upstream_issue[:target_repo]}##{upstream_issue[:issue_number]}"
       "#{body}\n\n## Dependencies\n\n- #{dep_line}"
+    end
+
+    def append_blocked_by_text(body, agent_run)
+      blocked_issues = agent_run.project.issues.where(id: agent_run.blocked_by_issue_ids, github_state: "open")
+      return body if blocked_issues.empty?
+
+      dep_lines = blocked_issues.map { |issue| "- Blocked by ##{issue.github_number}" }
+      dep_text = dep_lines.join("\n")
+
+      if body.include?("## Dependencies")
+        "#{body}\n#{dep_text}"
+      else
+        "#{body}\n\n## Dependencies\n\n#{dep_text}"
+      end
     end
 
     def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:, title: nil, llm_generated_title: false)
