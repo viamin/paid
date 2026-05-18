@@ -80,6 +80,7 @@ module Activities
       /no space left on device/i,
       /permission requested: .*auto-rejecting/i
     ].freeze
+    PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
     def execute(input)
@@ -189,7 +190,7 @@ module Activities
 
     def auto_rejected_tool_permission_output?(text)
       text.match?(TOOL_PERMISSION_REJECTED_PATTERN) &&
-        text.match?(/permission requested:/i)
+        text.match?(PERMISSION_REQUESTED_PATTERN)
     end
 
     def classification_text_for(agent_run)
