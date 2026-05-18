@@ -102,6 +102,8 @@ RSpec.describe "ProviderApiKeys" do
         expect(response.body).to include("OpenRouter")
         expect(response.body).to include('value="anthropic"')
         expect(response.body).to include("Anthropic")
+        expect(response.body).to include('value="minimax"')
+        expect(response.body).to include("MiniMax")
       end
     end
   end

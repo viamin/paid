@@ -40,6 +40,7 @@ module ProviderSmokeHelpers
     "inception" => "INCEPTION_API_KEY",
     "deepseek" => "DEEPSEEK_API_KEY",
     "mistral" => "MISTRAL_API_KEY",
+    "minimax" => "ANTHROPIC_API_KEY",
     "xai" => "XAI_API_KEY",
     "zai" => "ZAI_API_KEY",
     "zai_coding" => "ZAI_CODING_API_KEY"
