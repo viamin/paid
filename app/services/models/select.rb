@@ -103,6 +103,7 @@ module Models
       runner_model = runner_tier_model(tier)
       runner_model = nil if runner_model && excluded_model?(runner_model, excluded)
       scope = LlmModel.active.by_tier(tier).by_capability
+      scope = compatible_model_scope(scope)
       scope = scope.where.not(model_id: excluded) if excluded.present?
       model = runner_model || scope.first
       return nil unless model

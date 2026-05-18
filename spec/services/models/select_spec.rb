@@ -412,6 +412,47 @@ RSpec.describe Models::Select do
       end
     end
 
+    context "when quality escalation fires for a provider-constrained Pi run" do
+      let!(:anthropic_high) { create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high", capability_score: 10.0) }
+      let(:minimax_key) { create(:provider_api_key, user: project.created_by, api_service_type: "minimax") }
+      let(:pi_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: minimax_key,
+          config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+        )
+      end
+
+      before do
+        agent_run.update!(runner: pi_runner)
+        project.update!(model_preferences: {
+          "quality_triggered_escalation" => {
+            "status" => "active",
+            "trigger" => "quality_drop",
+            "from_tier" => "mid",
+            "to_tier" => "high"
+          }
+        })
+      end
+
+      it "selects the runner's compatible MiniMax model instead of the top global model" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.selector_type).to eq("quality_escalation")
+        expect(selection.llm_model.provider).to eq("minimax")
+      end
+
+      it "never selects an incompatible provider model during escalation" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).not_to eq(anthropic_high)
+      end
+    end
+
     context "when a non-Pi runner has an override model from another provider" do
       let!(:gpt_model) { create(:llm_model, model_id: "gpt-4o", provider: "openai", tier: "mid", capability_score: 8.5) }
 
