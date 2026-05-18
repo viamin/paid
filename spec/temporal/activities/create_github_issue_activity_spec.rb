@@ -876,6 +876,33 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
         activity.execute(agent_run_id: agent_run.id)
       end
+
+      it "ignores blocker IDs from other projects" do
+        other_project = create(:project, account: project.account)
+        cross_project_issue = create(:issue, project: other_project, github_number: 777)
+        agent_run.update!(blocked_by_issue_ids: [ cross_project_issue.id ])
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue) do |_repo, opts|
+          expect(opts[:body]).not_to match(/Blocked by/)
+          issue_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "ignores closed blocker issues" do
+        closed_issue = create(:issue, project: project, github_number: 55, github_state: "closed")
+        agent_run.update!(blocked_by_issue_ids: [ closed_issue.id ])
+        agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
+
+        expect(github_client).to receive(:create_issue) do |_repo, opts|
+          expect(opts[:body]).not_to match(/Blocked by/)
+          issue_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
     end
   end
 end

@@ -310,7 +310,7 @@ module Activities
     end
 
     def append_blocked_by_text(body, agent_run)
-      blocked_issues = Issue.where(id: agent_run.blocked_by_issue_ids)
+      blocked_issues = agent_run.project.issues.where(id: agent_run.blocked_by_issue_ids, github_state: "open")
       return body if blocked_issues.empty?
 
       dep_lines = blocked_issues.map { |issue| "- Blocked by ##{issue.github_number}" }
