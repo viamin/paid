@@ -76,6 +76,13 @@ module Activities
       /Model not found:/i
     ].freeze
 
+    TERMINAL_INFRASTRUCTURE_ERROR_PATTERNS = [
+      /no space left on device/i,
+      /permission requested: .*auto-rejecting/i
+    ].freeze
+    PERMISSION_REQUESTED_PATTERN = /permission requested:/i
+    TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
@@ -131,6 +138,8 @@ module Activities
     # even if RunAgentActivity failed to detect a provider error, this check
     # prevents credit/quota errors from being misclassified as recommend_close.
     def classify_outcome(agent_run, output_present, diagnostic_output)
+      return "infrastructure_error" if terminal_infrastructure_error_output?(diagnostic_output)
+
       unless output_present
         return "provider_error" if provider_error_output?(diagnostic_output)
         return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
@@ -170,6 +179,18 @@ module Activities
       return false if text.blank?
 
       INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| text.match?(pattern) }
+    end
+
+    def terminal_infrastructure_error_output?(text)
+      return false if text.blank?
+
+      TERMINAL_INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| text.match?(pattern) } ||
+        auto_rejected_tool_permission_output?(text)
+    end
+
+    def auto_rejected_tool_permission_output?(text)
+      text.match?(TOOL_PERMISSION_REJECTED_PATTERN) &&
+        text.match?(PERMISSION_REQUESTED_PATTERN)
     end
 
     def classification_text_for(agent_run)
