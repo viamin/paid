@@ -152,7 +152,7 @@ module Activities
 
     def llm_options(provider)
       options = {
-        provider: ProviderSupport.harness_provider_key_for(provider).to_sym,
+        provider: RunnerSupport.harness_runner_key_for(provider).to_sym,
         timeout: LLM_TIMEOUT,
         dangerous_mode: false,
         tools: :none

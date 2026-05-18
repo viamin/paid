@@ -7,7 +7,6 @@ module Paid
   module WorktreeDatabaseNames
     EXPLICIT_NAME_FORMAT = /\A[a-zA-Z0-9_]+\z/
     MAX_DATABASE_NAME_LENGTH = 63
-
     module_function
 
     def development_primary_name(app_root: default_app_root)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_18_131232) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -144,6 +144,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["created_at"], name: "index_agent_run_logs_on_created_at"
   end
 
+  create_table "agent_run_marketplace_entries", comment: "Marketplace entries attached to a specific agent run with rendered provider payloads", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.string "attachment_source", limit: 50, null: false, comment: "Whether the attachment came from manual selection, a team default, or automatic matching."
+    t.datetime "created_at", null: false
+    t.bigint "marketplace_entry_id", null: false
+    t.bigint "marketplace_entry_version_id", null: false
+    t.integer "position", default: 0, null: false
+    t.string "rendered_format", limit: 100, default: "canonical_v1", null: false, comment: "Exact provider-facing format emitted for this run."
+    t.jsonb "rendered_payload", default: {}, null: false, comment: "Resolved provider-facing payload snapshot used by this run."
+    t.text "selection_reason"
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "attachment_source", "position"], name: "index_agent_run_marketplace_entries_on_run_source_position"
+    t.index ["agent_run_id", "marketplace_entry_id"], name: "index_agent_run_marketplace_entries_unique_attachment", unique: true
+    t.index ["agent_run_id"], name: "index_agent_run_marketplace_entries_on_agent_run_id"
+    t.index ["marketplace_entry_id"], name: "index_agent_run_marketplace_entries_on_marketplace_entry_id"
+    t.index ["marketplace_entry_version_id"], name: "idx_arm_entries_entry_ver"
+  end
+
   create_table "agent_run_phases", comment: "Tracks the discrete lifecycle phases recorded for an agent run so setup, execution, post-processing, and cleanup can be timed and inspected.", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
@@ -167,17 +185,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
     t.boolean "auto_pick", default: false, null: false
-    t.bigint "blocked_by_issue_ids", default: [], array: true, comment: "IDs of issues/PRs that block the created issue from being picked up for work."
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40
+    t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
     t.string "configuration_bundle_selection_context", comment: "Primary optimization context used for bundle routing, such as task or project."
     t.string "configuration_bundle_selection_mode", comment: "Whether configuration bundle routing favored exploitative or exploratory selection for this run."
-    t.string "container_id", limit: 128
     t.string "container_host", limit: 64, default: "local", comment: "Container backend host identifier used to provision and reconnect to this run's container."
+    t.string "container_id", limit: 128
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
@@ -193,6 +211,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.text "error_message"
     t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
+    t.string "final_runner", limit: 50
     t.string "focus", limit: 50, default: "general", null: false, comment: "Focused run intent derived from the highest-priority PR trigger or assigned workflow context."
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -219,6 +238,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
     t.string "review_url", limit: 500
+    t.bigint "runner_id"
+    t.integer "runner_switches", default: 0, null: false
+    t.jsonb "runners_attempted", default: [], null: false
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -253,6 +275,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
     t.index ["provider_id"], name: "index_agent_runs_on_provider_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
+    t.index ["runner_id"], name: "index_agent_runs_on_runner_id"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
@@ -396,6 +419,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.bigint "project_id"
     t.bigint "provider_id"
     t.string "proxy_token", limit: 64
+    t.bigint "runner_id"
     t.string "status", default: "active", null: false
     t.text "system_prompt"
     t.string "title"
@@ -408,6 +432,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["project_id"], name: "index_chat_sessions_on_project_id"
     t.index ["provider_id"], name: "index_chat_sessions_on_provider_id"
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
+    t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
   end
 
@@ -531,8 +556,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   create_table "container_pool_entries", comment: "Represents a warm-container pool slot that can be pre-provisioned, claimed by a run, or recycled after failure.", force: :cascade do |t|
     t.bigint "agent_run_id", comment: "Agent run that claimed or last used the warm pool entry."
     t.datetime "claimed_at", precision: nil, comment: "Time an agent run claimed the warm container entry."
-    t.string "container_id", limit: 128
     t.string "container_host", limit: 64, default: "local", comment: "Container backend host identifier for the warmed container."
+    t.string "container_id", limit: 128
     t.datetime "created_at", null: false
     t.string "image", null: false
     t.text "last_error", comment: "Most recent provisioning or lifecycle error for this pool entry."
@@ -1240,20 +1265,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
 
   create_table "marketplace_entries", comment: "Team-shareable agent enhancements that can be attached to agent runs", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.string "added_by_email", limit: 255, null: false
+    t.string "added_by_name", limit: 255, null: false
+    t.datetime "created_at", null: false
     t.bigint "current_version_id", comment: "Current active content snapshot for this marketplace entry."
-    t.string "name", limit: 255, null: false
-    t.string "entry_type", limit: 50, null: false, comment: "Logical enhancement category such as skill, plugin, or MCP server."
     t.text "description"
+    t.string "entry_type", limit: 50, null: false, comment: "Logical enhancement category such as skill, plugin, or MCP server."
+    t.string "name", limit: 255, null: false
     t.string "provider", limit: 100, comment: "Primary target runtime or provider family for this entry."
     t.string "provider_format", limit: 100, default: "canonical_v1", null: false, comment: "Default artifact schema or provider-native format identifier."
-    t.text "usage_guidance", comment: "Human guidance describing when the entry should be used."
-    t.string "added_by_name", limit: 255, null: false
-    t.string "added_by_email", limit: 255, null: false
+    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for safe rollout and deprecation."
     t.jsonb "tags", default: [], null: false, comment: "Searchable labels for browsing and matching."
     t.string "team_scope", limit: 50, default: "account", null: false, comment: "Marketplace visibility scope within the tenant."
-    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for safe rollout and deprecation."
-    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "usage_guidance", comment: "Human guidance describing when the entry should be used."
     t.index ["account_id", "entry_type", "status"], name: "idx_marketplace_entries_lookup"
     t.index ["account_id", "team_scope", "status"], name: "idx_marketplace_entries_scope"
     t.index ["account_id"], name: "index_marketplace_entries_on_account_id"
@@ -1262,13 +1287,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   end
 
   create_table "marketplace_entry_rules", comment: "Account-scoped rules for auto-attaching or defaulting marketplace entries", force: :cascade do |t|
-    t.bigint "marketplace_entry_id", null: false
-    t.string "mode", limit: 50, null: false, comment: "Whether the rule is automatic matching or a team default."
-    t.boolean "enabled", default: true, null: false
-    t.integer "position", default: 0, null: false
-    t.text "rationale"
     t.jsonb "conditions", default: {}, null: false, comment: "Run-context conditions that must match before the entry attaches."
     t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.bigint "marketplace_entry_id", null: false
+    t.string "mode", limit: 50, null: false, comment: "Whether the rule is automatic matching or a team default."
+    t.integer "position", default: 0, null: false
+    t.text "rationale"
     t.datetime "updated_at", null: false
     t.index ["marketplace_entry_id", "mode", "position"], name: "index_marketplace_entry_rules_on_entry_mode_position"
     t.index ["marketplace_entry_id", "mode"], name: "index_marketplace_entry_rules_unique_mode", unique: true
@@ -1276,35 +1301,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   end
 
   create_table "marketplace_entry_versions", comment: "Immutable provider-content snapshots for marketplace entries", force: :cascade do |t|
-    t.bigint "marketplace_entry_id", null: false
-    t.integer "version", default: 1, null: false
-    t.text "changelog"
     t.jsonb "canonical_artifact", default: {}, null: false, comment: "Canonical runtime artifact preserved for rendering into provider-specific payloads."
-    t.jsonb "renderers", default: {}, null: false, comment: "Provider-specific renderers or native payload snapshots keyed by provider."
+    t.text "changelog"
     t.jsonb "compatibility_constraints", default: {}, null: false, comment: "Provider, model, runtime, or tool constraints for attachment."
-    t.jsonb "review_metadata", default: {}, null: false, comment: "Optional approval and review metadata for the version."
     t.datetime "created_at", null: false
+    t.bigint "marketplace_entry_id", null: false
+    t.jsonb "renderers", default: {}, null: false, comment: "Provider-specific renderers or native payload snapshots keyed by provider."
+    t.jsonb "review_metadata", default: {}, null: false, comment: "Optional approval and review metadata for the version."
     t.datetime "updated_at", null: false
+    t.integer "version", default: 1, null: false
     t.index ["marketplace_entry_id", "version"], name: "index_marketplace_entry_versions_unique_version", unique: true
     t.index ["marketplace_entry_id"], name: "index_marketplace_entry_versions_on_marketplace_entry_id"
-  end
-
-  create_table "agent_run_marketplace_entries", comment: "Marketplace entries attached to a specific agent run with rendered provider payloads", force: :cascade do |t|
-    t.bigint "agent_run_id", null: false
-    t.bigint "marketplace_entry_id", null: false
-    t.bigint "marketplace_entry_version_id", null: false
-    t.string "attachment_source", limit: 50, null: false, comment: "Whether the attachment came from manual selection, a team default, or automatic matching."
-    t.integer "position", default: 0, null: false
-    t.text "selection_reason"
-    t.string "rendered_format", limit: 100, default: "canonical_v1", null: false, comment: "Exact provider-facing format emitted for this run."
-    t.jsonb "rendered_payload", default: {}, null: false, comment: "Resolved provider-facing payload snapshot used by this run."
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["agent_run_id", "attachment_source", "position"], name: "index_agent_run_marketplace_entries_on_run_source_position"
-    t.index ["agent_run_id", "marketplace_entry_id"], name: "index_agent_run_marketplace_entries_unique_attachment", unique: true
-    t.index ["agent_run_id"], name: "index_agent_run_marketplace_entries_on_agent_run_id"
-    t.index ["marketplace_entry_id"], name: "index_agent_run_marketplace_entries_on_marketplace_entry_id"
-    t.index ["marketplace_entry_version_id"], name: "idx_arm_entries_entry_ver"
   end
 
   create_table "mcp_server_definitions", force: :cascade do |t|
@@ -1695,48 +1702,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
   end
 
-  create_table "provider_states", force: :cascade do |t|
-    t.datetime "circuit_opened_at"
-    t.string "circuit_state", limit: 20, default: "closed", null: false
-    t.datetime "created_at", null: false
-    t.integer "failure_count", default: 0, null: false
-    t.string "provider_name", limit: 50, null: false
-    t.datetime "rate_limited_until"
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.index ["user_id", "provider_name"], name: "index_provider_states_on_user_id_and_provider_name", unique: true
-  end
-
-  create_table "providers", force: :cascade do |t|
-    t.text "agent_co_author_trailer"
-    t.string "auth_type", limit: 20, default: "subscription", null: false
-    t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
-    t.jsonb "config", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.datetime "discarded_at", comment: "Soft-delete timestamp so historical provider names remain available for filters and run history."
-    t.boolean "enabled_for_agent_runs", default: true, null: false
-    t.boolean "enabled_for_fallback", default: true, null: false
-    t.string "fallback_role", limit: 30, default: "standard", null: false
-    t.jsonb "log_data"
-    t.string "name", limit: 100, default: "", null: false
-    t.bigint "provider_api_key_id"
-    t.string "provider_key", limit: 50, null: false
-    t.jsonb "tier_model_ids", default: {}, null: false
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.integer "weight", default: 1, null: false
-    t.index ["auth_type"], name: "index_providers_on_auth_type"
-    t.index ["discarded_at"], name: "index_providers_on_discarded_at"
-    t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
-    t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
-    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
-    t.index ["user_id"], name: "index_providers_on_user_id"
-    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "providers_api_key_requires_key"
-    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
-    t.check_constraint "weight >= 1", name: "providers_weight_positive"
-  end
-
   create_table "quality_gate_events", comment: "Records each threshold breach and recovery observed by the quality gate system.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "event_type", limit: 20, null: false, comment: "Quality gate transition being recorded: trigger or recovery."
@@ -1839,6 +1804,53 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.index ["account_id"], name: "index_quality_thresholds_on_account_id"
     t.index ["project_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_project_overrides", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
+  end
+
+  create_table "runner_states", force: :cascade do |t|
+    t.datetime "circuit_opened_at"
+    t.string "circuit_state", limit: 20, default: "closed", null: false
+    t.datetime "created_at", null: false
+    t.integer "failure_count", default: 0, null: false
+    t.string "provider_name", limit: 50
+    t.datetime "rate_limited_until"
+    t.string "runner_name", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "provider_name"], name: "index_runner_states_on_user_id_and_provider_name", unique: true
+    t.index ["user_id", "runner_name"], name: "index_runner_states_on_user_id_and_runner_name", unique: true
+  end
+
+  create_table "runners", force: :cascade do |t|
+    t.text "agent_co_author_trailer"
+    t.string "auth_type", limit: 20, default: "subscription", null: false
+    t.jsonb "complexity_thresholds", default: {"low_max" => 3, "mid_max" => 7}, null: false
+    t.jsonb "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "discarded_at", comment: "Soft-delete timestamp so historical provider names remain available for filters and run history."
+    t.boolean "enabled_for_agent_runs", default: true, null: false
+    t.boolean "enabled_for_fallback", default: true, null: false
+    t.string "fallback_role", limit: 30, default: "standard", null: false
+    t.jsonb "log_data"
+    t.string "name", limit: 100, default: "", null: false
+    t.bigint "provider_api_key_id"
+    t.string "provider_key", limit: 50
+    t.string "runner_key", limit: 50, null: false
+    t.jsonb "tier_model_ids", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.integer "weight", default: 1, null: false
+    t.index ["auth_type"], name: "index_runners_on_auth_type"
+    t.index ["discarded_at"], name: "index_runners_on_discarded_at"
+    t.index ["provider_api_key_id"], name: "index_runners_on_provider_api_key_id"
+    t.index ["tier_model_ids"], name: "index_runners_on_tier_model_ids", using: :gin
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "runner_key", "provider_api_key_id", "name"], name: "idx_runners_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id", "runner_key"], name: "idx_runners_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
+    t.index ["user_id"], name: "index_runners_on_user_id"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "runners_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "runners_subscription_invariants"
+    t.check_constraint "weight >= 1", name: "runners_weight_positive"
   end
 
   create_table "scaling_experiment_assignments", comment: "Workflow-scoped assignments and result snapshots for scaling experiments.", force: :cascade do |t|
@@ -2080,6 +2092,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.bigint "account_id", null: false
     t.jsonb "agent_settings", default: {}, null: false
     t.text "allowed_provider_keys", default: [], array: true
+    t.text "allowed_runner_keys", default: [], array: true
     t.jsonb "auto_pick_skip_labels", comment: "Optional tenant-level override for labels that make auto-pick skip an issue. Null means use built-in defaults."
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
@@ -2093,6 +2106,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.integer "max_users", default: 25, null: false
     t.jsonb "provider_preferences", default: {}, null: false
     t.jsonb "quality_thresholds", default: {}, null: false
+    t.jsonb "runner_preferences", default: {}, null: false
     t.string "self_repo_full_name"
     t.datetime "updated_at", null: false
     t.jsonb "worker_settings", default: {}, null: false
@@ -2155,6 +2169,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_agent_providers_by_goal", default: {}, null: false
+    t.string "default_agent_runner", default: "claude", null: false
+    t.jsonb "default_agent_runners_by_goal", default: {}, null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
@@ -2162,15 +2178,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.boolean "fair_queue_across_projects", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
+    t.jsonb "fallback_runners", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false
     t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_providers", default: [], null: false
+    t.jsonb "kb_chat_fallback_runners", default: [], null: false
     t.string "kb_chat_provider", default: "claude", null: false
+    t.string "kb_chat_runner", default: "claude", null: false
     t.jsonb "kb_embedding_fallback_providers", default: [], null: false
+    t.jsonb "kb_embedding_fallback_runners", default: [], null: false
     t.string "kb_embedding_provider", default: "openai", null: false
+    t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
     t.integer "max_auto_pick_open_prs", default: 1, null: false
@@ -2188,6 +2209,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
     t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
+    t.jsonb "runner_round_robin_state", default: {}, null: false
+    t.string "runner_selection_mode", limit: 20, default: "single", null: false
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
@@ -2199,6 +2222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
     t.check_constraint "provider_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_provider_selection_mode"
+    t.check_constraint "runner_selection_mode::text = ANY (ARRAY['single'::character varying::text, 'round_robin'::character varying::text, 'random'::character varying::text])", name: "chk_runner_selection_mode"
   end
 
   create_table "users", force: :cascade do |t|
@@ -2268,12 +2292,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_marketplace_entries", "agent_runs"
+  add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
+  add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers", on_delete: :nullify
+  add_foreign_key "agent_runs", "runners", column: "provider_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
@@ -2287,7 +2315,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
   add_foreign_key "chat_sessions", "projects"
-  add_foreign_key "chat_sessions", "providers"
+  add_foreign_key "chat_sessions", "runners", column: "provider_id"
+  add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
@@ -2356,9 +2385,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "llm_output_metrics", "accounts", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "projects", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_run_marketplace_entries", "agent_runs"
-  add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
-  add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
   add_foreign_key "marketplace_entries", "accounts"
   add_foreign_key "marketplace_entries", "marketplace_entry_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "marketplace_entry_rules", "marketplace_entries"
@@ -2399,9 +2425,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
-  add_foreign_key "provider_states", "users", on_delete: :cascade
-  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
-  add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
@@ -2415,6 +2438,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "runner_states", "users", on_delete: :cascade
+  add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
+  add_foreign_key "runners", "users", on_delete: :cascade
   add_foreign_key "scaling_experiment_assignments", "issues", on_delete: :nullify
   add_foreign_key "scaling_experiment_assignments", "projects", on_delete: :cascade
   add_foreign_key "scaling_experiment_assignments", "scaling_experiments", on_delete: :cascade
@@ -3322,16 +3348,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_053300) do
       CREATE TRIGGER logidze_on_provider_api_keys BEFORE INSERT OR UPDATE ON public.provider_api_keys FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{api_key}')
   SQL
 
-  create_trigger :logidze_on_providers, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.providers FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
   create_trigger :logidze_on_quality_gate_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_gate_thresholds BEFORE INSERT OR UPDATE ON public.quality_gate_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_providers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.runners FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_service_containers, sql_definition: <<-SQL

@@ -65,6 +65,11 @@ gem "agent-harness", "~> 0.18.2"
 # Defer loading — invoked as CLI binary, not via Ruby API.
 gem "ruby-maat", require: false
 
+# Catch unsafe migrations anywhere migrations can run. Phase-1 bridge
+# migrations call `safety_assured`, so the gem cannot be limited to
+# development/test only.
+gem "strong_migrations"
+
 # Runtime feature flags for staged rollouts
 gem "flipper"
 gem "flipper-active_record"

@@ -2,7 +2,7 @@
 
 module Models
   class Select
-    include ProviderTierLookup
+    include RunnerTierLookup
 
     DECISION_LOG_TYPE = "model_selection_decision"
 
@@ -26,8 +26,8 @@ module Models
 
       selected = select_model
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-      unless selected
-        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms)
+      unless selected && compatible_selection?(selected)
+        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected)
         return nil
       end
 
@@ -100,11 +100,12 @@ module Models
       return nil unless tier
 
       excluded = project.model_preferences["excluded_model_ids"]
-      provider_model = provider_tier_model(tier)
-      provider_model = nil if provider_model && excluded_model?(provider_model, excluded)
+      runner_model = runner_tier_model(tier)
+      runner_model = nil if runner_model && excluded_model?(runner_model, excluded)
       scope = LlmModel.active.by_tier(tier).by_capability
+      scope = compatible_model_scope(scope)
       scope = scope.where.not(model_id: excluded) if excluded.present?
-      model = provider_model || scope.first
+      model = runner_model || scope.first
       return nil unless model
 
       {
@@ -130,7 +131,7 @@ module Models
     end
 
     def tenant_model_preference_result(project)
-      model_id = project.account.tenant_setting&.model_preference_for(agent_run.effective_provider)
+      model_id = project.account.tenant_setting&.model_preference_for(agent_run.effective_runner)
       return nil if model_id.blank?
 
       model = LlmModel.active.find_by(model_id: model_id)
@@ -184,7 +185,7 @@ module Models
     def base_tier_for(complexity_score)
       Models::TierForComplexity.call(
         complexity: complexity_score,
-        provider: agent_run.provider
+        runner: agent_run.runner
       )
     end
 
@@ -203,6 +204,27 @@ module Models
       Array(selected[:candidates]).filter_map.with_index(1) do |candidate, rank|
         normalize_candidate(candidate, rank: rank, selected_model_id: selected_model_id)
       end
+    end
+
+    def compatible_selection?(selected)
+      model = selected[:model]
+      runner = agent_run.runner
+      return true unless model && runner
+      return true unless constrained_runner_selection?(runner)
+
+      configured_model_id = runner.direct_outbound_model_id
+      return model.model_id == configured_model_id if configured_model_id.present?
+
+      compatible_provider = runner.direct_outbound_llm_model_provider.presence ||
+        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
+      return true if compatible_provider.blank?
+
+      model.provider == compatible_provider
+    end
+
+    def constrained_runner_selection?(runner)
+      runner.requires_direct_outbound? ||
+        (runner.runner_key == "pi" && runner.api_key? && runner.pi_required_api_service_type.present?)
     end
 
     def normalize_candidate(candidate, rank:, selected_model_id:)
@@ -328,9 +350,10 @@ module Models
       {
         model_selection_id: selection&.id,
         agent_type: agent_run.agent_type,
-        provider_id: agent_run.provider_id,
-        provider_key: agent_run.provider&.provider_key || agent_run.effective_provider,
-        effective_provider: agent_run.effective_provider,
+        runner_id: agent_run.runner_id,
+        runner_key: agent_run.runner&.runner_key || agent_run.effective_runner,
+        provider_key: agent_run.runner&.runner_key || agent_run.effective_runner,
+        effective_runner: agent_run.effective_runner,
         selector_type: selected&.dig(:selector_type) || selection&.selector_type,
         reasoning: selected&.dig(:reasoning) || selection&.reasoning,
         model_id: selected&.dig(:model)&.model_id || selection&.llm_model&.model_id,
@@ -348,7 +371,7 @@ module Models
       project = agent_run.project
       issue = agent_run.issue
       preferences = project.model_preferences || {}
-      provider = agent_run.provider
+      runner = agent_run.runner
 
       {
         task: {
@@ -366,11 +389,11 @@ module Models
           full_name: project.full_name,
           max_tokens_per_run: project.max_tokens_per_run
         }.compact,
-        provider_context: {
-          provider_id: provider&.id,
-          provider_key: provider&.provider_key || agent_run.effective_provider,
+        runner_context: {
+          runner_id: runner&.id,
+          runner_key: runner&.runner_key || agent_run.effective_runner,
           agent_type: agent_run.agent_type,
-          effective_provider: agent_run.effective_provider,
+          effective_runner: agent_run.effective_runner,
           complexity_thresholds: Models::TierForComplexity.new(agent_run: agent_run, complexity: 1.0).effective_thresholds
         }.compact,
         policy_constraints: {

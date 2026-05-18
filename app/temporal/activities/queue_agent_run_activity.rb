@@ -9,7 +9,7 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       requested_agent_type = input[:agent_type]
-      provider_id = input[:provider_id]
+      provider_id = input[:runner_id]
       source_pull_request_number = input[:source_pull_request_number]
       goal = input[:goal]
       focus = input[:focus] || "general"
@@ -19,14 +19,14 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
-      respect_requested = input.key?(:agent_type) || input.key?(:provider_id)
-      provider_id, agent_type = resolve_provider_selection(
+      respect_requested = input.key?(:agent_type) || input.key?(:runner_id)
+      provider_id, agent_type = resolve_runner_selection(
         project: project,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: provider_id,
+        requested_runner_id: provider_id,
         goal: goal,
         agent_type_provided: input.key?(:agent_type),
-        provider_id_provided: input.key?(:provider_id)
+        runner_id_provided: input.key?(:runner_id)
       )
 
       # Use a transaction with row-level locking to prevent duplicate
@@ -90,15 +90,15 @@ module Activities
                  cross_goal: agent_run.goal != goal }
       end
 
-      AgentRuns::ProviderSelectionLogger.call(
+      AgentRuns::RunnerSelectionLogger.call(
         project: project,
         issue: issue,
         agent_run: agent_run,
         goal: goal,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: input[:provider_id],
+        requested_runner_id: input[:runner_id],
         respect_requested: respect_requested,
-        resolved_provider_id: provider_id,
+        resolved_runner_id: provider_id,
         resolved_agent_type: agent_type
       )
 
@@ -116,13 +116,13 @@ module Activities
 
     private
 
-    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, goal:, agent_type_provided:, provider_id_provided:)
-      AgentRuns::ProviderResolver.call(
+    def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, agent_type_provided:, runner_id_provided:)
+      AgentRuns::RunnerResolver.call(
         project: project,
         goal: goal,
         requested_agent_type: requested_agent_type,
-        requested_provider_id: requested_provider_id,
-        respect_requested: provider_id_provided || agent_type_provided,
+        requested_runner_id: requested_runner_id,
+        respect_requested: runner_id_provided || agent_type_provided,
         logger: logger
       )
     end

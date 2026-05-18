@@ -7,13 +7,13 @@ on:
       - docker/agent/**
       - Gemfile.lock
       - scripts/build-agent-image.sh
-      - scripts/extract-provider-install-contract.rb
+      - scripts/extract-runner-install-contract.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
-      - scripts/test-agent-provider-contracts.sh
-      - scripts/test-agent-provider-contracts-inner.sh
+      - scripts/test-agent-runner-contracts.sh
+      - scripts/test-agent-runner-contracts-inner.sh
       - app/services/containers/provision.rb
-      - lib/provider_support.rb
+      - lib/runner_support.rb
   push:
     branches: [ main ]
     paths:
@@ -21,13 +21,13 @@ on:
       - docker/agent/**
       - Gemfile.lock
       - scripts/build-agent-image.sh
-      - scripts/extract-provider-install-contract.rb
+      - scripts/extract-runner-install-contract.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
-      - scripts/test-agent-provider-contracts.sh
-      - scripts/test-agent-provider-contracts-inner.sh
+      - scripts/test-agent-runner-contracts.sh
+      - scripts/test-agent-runner-contracts-inner.sh
       - app/services/containers/provision.rb
-      - lib/provider_support.rb
+      - lib/runner_support.rb
 
 permissions:
   contents: read
@@ -67,13 +67,13 @@ jobs:
                 .github/workflows/agent-image.yml|\
                 docker/agent/*|\
                 scripts/build-agent-image.sh|\
-                scripts/extract-provider-install-contract.rb|\
+                scripts/extract-runner-install-contract.rb|\
                 scripts/test-agent-image.sh|\
                 scripts/test-agent-image-inner.sh|\
-                scripts/test-agent-provider-contracts.sh|\
-                scripts/test-agent-provider-contracts-inner.sh|\
+                scripts/test-agent-runner-contracts.sh|\
+                scripts/test-agent-runner-contracts-inner.sh|\
                 app/services/containers/provision.rb|\
-                lib/provider_support.rb)
+                lib/runner_support.rb)
                   printf '%s\n' "$path"
                   ;;
               esac
@@ -127,7 +127,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: claude-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb claude)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb claude)
           install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
           post_install_path=$(echo "$contract" | sed -n 's/^POST_INSTALL_BINARY_PATH=//p')
           if [ -z "$install_command" ]; then
@@ -149,7 +149,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: cursor-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb cursor)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb cursor)
           artifact_url=$(echo "$contract" | sed -n 's/^ARTIFACT_URL=//p')
           artifact_sha256=$(echo "$contract" | sed -n 's/^ARTIFACT_SHA256=//p')
           binary_name=$(echo "$contract" | sed -n 's/^BINARY_NAME=//p')
@@ -179,7 +179,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: codex-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb codex)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb codex)
           package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
           if [ -z "$package" ]; then
             echo "Failed to extract Codex package from agent-harness" >&2
@@ -191,7 +191,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: opencode-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb opencode)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb opencode)
           package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
           if [ -z "$package" ]; then
             echo "Failed to extract OpenCode package from agent-harness" >&2
@@ -203,7 +203,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: pi-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb pi)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb pi)
           package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
           if [ -z "$package" ]; then
             echo "Failed to extract Pi package from agent-harness" >&2
@@ -215,7 +215,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: kilocode-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb kilocode)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb kilocode)
           install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
           if [ -z "$install_command" ]; then
             echo "Failed to extract Kilocode CLI install command from agent-harness" >&2
@@ -229,7 +229,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: gemini-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb gemini)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb gemini)
           install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
           if [ -z "$install_command" ]; then
             echo "Failed to extract Gemini CLI install command from agent-harness" >&2
@@ -243,7 +243,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: aider-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb aider)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb aider)
           install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
           if [ -z "$install_command" ]; then
             echo "Failed to extract Aider CLI install command from agent-harness" >&2
@@ -257,7 +257,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: copilot-contract
         run: |
-          contract=$(bundle exec ruby scripts/extract-provider-install-contract.rb copilot)
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb copilot)
           install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
           if [ -z "$install_command" ]; then
             echo "Failed to extract Copilot CLI install command from agent-harness" >&2
@@ -298,9 +298,9 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         run: ./scripts/test-agent-image.sh
 
-      - name: Provider-contract smoke test
+      - name: Runner-contract smoke test
         if: steps.changes.outputs.image_relevant == 'true'
-        run: ./scripts/test-agent-provider-contracts.sh
+        run: ./scripts/test-agent-runner-contracts.sh
 
       - name: Agent image workflow not needed
         if: steps.changes.outputs.image_relevant != 'true'

@@ -1,0 +1,69 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Dashboard::RunnerHealth do
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
+  describe ".call" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account, name: "Operator One", email: "operator@example.com") }
+    let(:default_runner) { user.runners.find_by!(runner_key: Runner.default_runner_key, auth_type: "subscription") }
+    let(:secondary_runner_key) { (RunnerSupport.container_executable_runner_keys - [ default_runner.runner_key ]).first || "cursor" }
+
+    it "returns configured runner health for the account" do
+      available_runner = default_runner
+      rate_limited_runner = create(:runner, user: user, runner_key: secondary_runner_key, auth_type: "subscription")
+      create(:runner_state, user: user, runner_name: rate_limited_runner.state_key, rate_limited_until: 10.minutes.from_now)
+
+      stats = described_class.call(account: account)
+
+      expect(stats).to include(
+        total: 2,
+        available: 1,
+        rate_limited: 1,
+        circuit_open: 0,
+        recovering: 0,
+        healthy: false
+      )
+      expect(stats[:runners].map(&:runner)).to eq([ rate_limited_runner.display_name, available_runner.display_name ])
+      expect(stats[:runners].map(&:status)).to eq([ :rate_limited, :available ])
+    end
+
+    it "filters runners to the current account" do
+      default_runner
+
+      other_user = create(:user)
+      create(:runner, user: other_user, runner_key: secondary_runner_key)
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:total]).to eq(1)
+      expect(stats[:runners].map(&:owner_email)).to eq([ user.email ])
+    end
+
+    it "uses each runner owner's configured circuit breaker timeout when checking recovery" do
+      runner = default_runner
+      create(:user_setting, user: user, circuit_breaker_timeout_seconds: 30)
+      create(
+        :runner_state,
+        :circuit_open,
+        user: user,
+        runner_name: runner.state_key,
+        circuit_opened_at: 31.seconds.ago
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:circuit_open]).to eq(0)
+      expect(stats[:recovering]).to eq(1)
+      expect(stats[:runners].map(&:status)).to eq([ :recovering ])
+    end
+  end
+end

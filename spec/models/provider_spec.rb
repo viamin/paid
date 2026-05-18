@@ -409,6 +409,16 @@ RSpec.describe Provider do
     end
   end
 
+  describe "provider bridge columns" do
+    it "keeps runner_key synchronized when legacy provider columns are updated directly" do
+      provider = create(:user).providers.find_by!(provider_key: "claude")
+
+      provider.update_columns(provider_key: "cursor")
+
+      expect(provider.reload.runner_key).to eq("cursor")
+    end
+  end
+
   describe ".supported_provider_keys" do
     it "returns app provider keys backed by the agent harness registry" do
       expect(described_class.supported_provider_keys).to include("claude", "cursor", "gemini", "codex", "kilocode", "copilot", "pi")

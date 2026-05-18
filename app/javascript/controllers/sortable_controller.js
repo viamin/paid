@@ -1,9 +1,9 @@
 import { Controller } from "@hotwired/stimulus"
 import Sortable from "sortablejs"
 
-// Manages drag-and-drop reordering of provider priority list.
-// Updates hidden input fields with the JSON array of provider names
-// and the list of providers enabled for fallback.
+// Manages drag-and-drop reordering of runner priority list.
+// Updates hidden input fields with the JSON array of runner names
+// and the list of runners enabled for fallback.
 export default class extends Controller {
   static targets = ["list", "item", "input", "enabledInput", "checkbox"]
 
@@ -22,7 +22,7 @@ export default class extends Controller {
     // Initialize the input with current order (excluding primary)
     this.updateInput()
 
-    this.primarySelect = document.getElementById("user_setting_default_agent_provider")
+    this.primarySelect = document.getElementById("user_setting_default_agent_runner")
     if (this.primarySelect) {
       this.boundPrimaryChange = () => this.updateInput()
       this.primarySelect.addEventListener("change", this.boundPrimaryChange)
@@ -70,24 +70,24 @@ export default class extends Controller {
   updateInput() {
     if (!this.hasInputTarget) return
 
-    // Get all providers from the sorted list
-    const providers = this.itemTargets.map(el => el.dataset.provider)
+    // Get all runners from the sorted list
+    const runners = this.itemTargets.map(el => el.dataset.runner)
 
-    // Exclude the configured primary provider by name, not by position.
-    const primaryProvider = this.primarySelect?.value || this.inputTarget.dataset.primaryProvider
-    const fallbacks = primaryProvider
-      ? providers.filter(provider => provider !== primaryProvider)
-      : providers.slice(1)
+    // Exclude the configured primary runner by name, not by position.
+    const primaryRunner = this.primarySelect?.value || this.inputTarget.dataset.primaryRunner
+    const fallbacks = primaryRunner
+      ? runners.filter(runner => runner !== primaryRunner)
+      : runners.slice(1)
 
     this.inputTarget.value = JSON.stringify(fallbacks)
 
-    // Update the enabled fallback providers hidden field
+    // Update the enabled fallback runners hidden field
     if (this.hasEnabledInputTarget) {
-      const enabledProviders = this.itemTargets
+      const enabledRunners = this.itemTargets
         .filter(el => el.dataset.fallbackEnabled === "true")
-        .map(el => el.dataset.provider)
+        .map(el => el.dataset.runner)
 
-      this.enabledInputTarget.value = JSON.stringify(enabledProviders)
+      this.enabledInputTarget.value = JSON.stringify(enabledRunners)
     }
   }
 }

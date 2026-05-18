@@ -27,19 +27,19 @@ RSpec.describe Models::TierForComplexity do
       expect(described_class.call(complexity: 10)).to eq("high")
     end
 
-    it "uses provider thresholds when provided" do
-      provider = build(:provider, complexity_thresholds: { "low_max" => 5, "mid_max" => 8 })
-      expect(described_class.call(complexity: 5, provider: provider)).to eq("low")
-      expect(described_class.call(complexity: 6, provider: provider)).to eq("mid")
-      expect(described_class.call(complexity: 9, provider: provider)).to eq("high")
+    it "uses runner thresholds when provided" do
+      runner = build(:runner, complexity_thresholds: { "low_max" => 5, "mid_max" => 8 })
+      expect(described_class.call(complexity: 5, runner: runner)).to eq("low")
+      expect(described_class.call(complexity: 6, runner: runner)).to eq("mid")
+      expect(described_class.call(complexity: 9, runner: runner)).to eq("high")
     end
 
-    it "prefers project overrides over provider thresholds" do
-      provider = build(:provider, complexity_thresholds: { "low_max" => 5, "mid_max" => 8 })
+    it "prefers project overrides over runner thresholds" do
+      runner = build(:runner, complexity_thresholds: { "low_max" => 5, "mid_max" => 8 })
       project = build(:project)
       project.model_preferences = { "complexity_thresholds" => { "low_max" => 1, "mid_max" => 2 } }
 
-      expect(described_class.call(complexity: 3, provider: provider, project: project)).to eq("high")
+      expect(described_class.call(complexity: 3, runner: runner, project: project)).to eq("high")
     end
 
     context "with per-goal min tier" do

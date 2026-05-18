@@ -103,7 +103,7 @@ test:
 #   CACHE_DATABASE_URL="postgres://cacheuser:cachepass@localhost/cachedatabase"
 #
 # Read https://guides.rubyonrails.org/configuring.html#configuring-a-database
-# for a full overview on how database connection configuration can be specified.
+# for a full overview of how database connection configuration can be specified.
 #
 production:
   primary: &primary_production

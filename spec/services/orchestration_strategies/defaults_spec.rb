@@ -124,7 +124,7 @@ RSpec.describe OrchestrationStrategies::Defaults do
 
     it "includes recovery policy defaults" do
       expect(config["recovery"]).to include(
-        "actions" => include("timeout" => "retry_same_provider"),
+        "actions" => include("timeout" => "retry_same_runner"),
         "default_action" => "pause_and_notify"
       )
     end

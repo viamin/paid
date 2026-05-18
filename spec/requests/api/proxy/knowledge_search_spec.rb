@@ -71,7 +71,7 @@ RSpec.describe "Api::Proxy::KnowledgeSearch" do
 
     it "routes semantic search through Knowledge::Search without exposing provider credentials" do
       owner = project.effective_owner
-      owner.settings.update!(kb_embedding_provider: "openrouter", kb_embedding_fallback_providers: [ "openai" ])
+      owner.settings.update!(kb_embedding_runner: "openrouter", kb_embedding_fallback_runners: [ "openai" ])
       create(:provider_api_key, user: owner, api_service_type: "openrouter", api_key: "sk-test-api")
 
       allow(Knowledge::Search).to receive(:call).and_return({ results: [] })

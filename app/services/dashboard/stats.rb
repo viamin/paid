@@ -15,14 +15,14 @@ module Dashboard
     SECTIONS = %i[
       run_volume daily_run_status_chart duration_percentiles phase_breakdown cost_and_tokens
       performance_by_outcome performance_by_goal
-      runs_by_agent_type runs_by_provider provider_fallback_stats
+      runs_by_agent_type runs_by_runner runner_fallback_stats
       runs_by_project cost_by_project issue_completion
     ].freeze
 
     METRICS_SECTIONS = %i[
       run_volume daily_run_status_chart cost_and_tokens duration_percentiles phase_breakdown
-      issue_completion cost_by_project provider_fallback_stats
-      runs_by_provider runs_by_project
+      issue_completion cost_by_project runner_fallback_stats
+      runs_by_runner runs_by_project
     ].freeze
 
     PERFORMANCE_SECTIONS = %i[performance_by_outcome performance_by_goal].freeze
@@ -54,16 +54,16 @@ module Dashboard
       end
     end
 
-    def effective_provider_sql
-      AgentRun.effective_provider_sql
+    def effective_runner_sql
+      AgentRun.effective_runner_sql
     end
 
     def normalized_agent_type_sql
       AgentRun.normalized_agent_type_sql
     end
 
-    def normalized_final_provider_sql
-      AgentRun.normalize_provider_sql("final_provider")
+    def normalized_final_runner_sql
+      AgentRun.normalize_runner_sql("final_runner")
     end
 
     def cache_key
@@ -378,20 +378,20 @@ module Dashboard
       time_filtered_runs.group(:agent_type).count.sort_by { |_, v| -v }
     end
 
-    def runs_by_provider
-      counts_by_provider_label(
+    def runs_by_runner
+      counts_by_runner_label(
         time_filtered_runs
-          .group(Arel.sql(effective_provider_sql))
+          .group(Arel.sql(effective_runner_sql))
           .count
       )
     end
 
-    def provider_fallback_stats
+    def runner_fallback_stats
       rows = time_filtered_runs
-        .group(:agent_type, Arel.sql(effective_provider_sql))
+        .group(:agent_type, Arel.sql(effective_runner_sql))
         .pluck(
           :agent_type,
-          Arel.sql(effective_provider_sql),
+          Arel.sql(effective_runner_sql),
           Arel.sql("COUNT(*)"),
           Arel.sql(fallback_count_sql)
         )
@@ -401,23 +401,23 @@ module Dashboard
       fallback_by_requested = Hash.new(0)
       fallback_by_effective = Hash.new(0)
 
-      rows.each do |requested_provider, effective_provider, run_count, fallback_run_count|
+      rows.each do |requested_runner, effective_runner, run_count, fallback_run_count|
         run_count = run_count.to_i
         fallback_run_count = fallback_run_count.to_i
         total += run_count
         fallback_count += fallback_run_count
         next if fallback_run_count.zero?
 
-        fallback_by_requested[requested_provider] += fallback_run_count
-        fallback_by_effective[effective_provider] += fallback_run_count
+        fallback_by_requested[requested_runner] += fallback_run_count
+        fallback_by_effective[effective_runner] += fallback_run_count
       end
 
       {
         total_runs: total,
         fallback_count: fallback_count,
         fallback_rate: total.zero? ? 0.0 : (fallback_count.to_f / total * 100).round(1),
-        by_requested_provider: fallback_by_requested.sort_by { |_, v| -v },
-        by_effective_provider: counts_by_provider_label(fallback_by_effective)
+        by_requested_runner: fallback_by_requested.sort_by { |_, v| -v },
+        by_effective_runner: counts_by_runner_label(fallback_by_effective)
       }
     end
 
@@ -564,38 +564,38 @@ module Dashboard
 
     def fallback_count_sql
       [
-        "COUNT(*) FILTER (WHERE agent_runs.provider_switches > 0 OR (",
-        "agent_runs.final_provider IS NOT NULL",
-        "AND agent_runs.final_provider <> ''",
-        "AND", normalized_final_provider_sql, "<>", normalized_agent_type_sql,
+        "COUNT(*) FILTER (WHERE agent_runs.runner_switches > 0 OR (",
+        "agent_runs.final_runner IS NOT NULL",
+        "AND agent_runs.final_runner <> ''",
+        "AND", normalized_final_runner_sql, "<>", normalized_agent_type_sql,
         "))"
       ].join(" ")
     end
 
-    def counts_by_provider_label(counts_by_identifier)
-      providers_by_routing_key = provider_records_by_routing_key(counts_by_identifier.keys)
+    def counts_by_runner_label(counts_by_identifier)
+      runners_by_routing_key = runner_records_by_routing_key(counts_by_identifier.keys)
 
       counts_by_identifier
         .each_with_object(Hash.new(0)) do |(identifier, count), totals|
-          totals[provider_label(identifier, providers_by_routing_key[identifier])] += count
+          totals[runner_label(identifier, runners_by_routing_key[identifier])] += count
         end
         .sort_by { |_, v| -v }
     end
 
-    def provider_records_by_routing_key(identifiers)
-      routing_ids = identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }.uniq
+    def runner_records_by_routing_key(identifiers)
+      routing_ids = identifiers.filter_map { |identifier| Runner.id_from_routing_key(identifier) }.uniq
       return {} if routing_ids.empty?
 
-      Provider.joins(:user)
+      Runner.joins(:user)
               .where(id: routing_ids, users: { account_id: account.id })
               .index_by(&:routing_key)
     end
 
-    def provider_label(identifier, provider_record)
-      return provider_record.display_name if provider_record
-      return "Deleted provider entry" if Provider.routing_key?(identifier)
+    def runner_label(identifier, runner_record)
+      return runner_record.display_name if runner_record
+      return "Deleted runner entry" if Runner.routing_key?(identifier)
 
-      Provider.display_name(ProviderSupport.provider_key_for_agent_type(identifier))
+      Runner.display_name(RunnerSupport.runner_key_for_agent_type(identifier))
     end
   end
 end

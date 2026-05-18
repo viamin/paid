@@ -121,7 +121,7 @@ module QualityRecovery
     def execute_agent_preference_change
       from_agent_type = parameter_value(:from_agent_type).to_s.presence
       to_agent_type = parameter_value(:to_agent_type).to_s
-      to_provider = Provider.provider_key_for_agent_type(to_agent_type)
+      to_provider = Runner.runner_key_for_agent_type(to_agent_type)
       validate_agent_preference!(to_agent_type, to_provider)
 
       project.update!(
@@ -142,7 +142,7 @@ module QualityRecovery
         raise ArgumentError, "Unknown agent type: #{agent_type}"
       end
 
-      return if ProviderSupport.container_executable_provider_key?(provider_key)
+      return if RunnerSupport.container_executable_runner_key?(provider_key)
 
       raise ArgumentError, "Agent type is not runnable in containers: #{agent_type}"
     end
