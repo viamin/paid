@@ -109,7 +109,7 @@ module Containers
       :container, :mutex, :output_received_ref, :last_activity_ref,
       :exec_completed_ref, :timeout_reason_setter,
       :startup_timeout, :idle_timeout, :wall_clock_timeout, :started_at_ref,
-      :heartbeat_path,
+      :heartbeat_path, :startup_heartbeat_expired_ref,
       keyword_init: true
     )
 
@@ -386,6 +386,7 @@ module Containers
       exec_completed = false
       timeout_reason = nil # :startup, :idle, or :wall_clock, set by watchdog
       timeout_reason_ref = -> { timeout_reason }
+      startup_heartbeat_expired = false
       abort_matched_output = nil # set when an abort_pattern matches stderr
       stdout_abort_buffer = +""
       watchdog = nil
@@ -418,12 +419,17 @@ module Containers
         idle_timeout: idle_timeout,
         wall_clock_timeout: timeout,
         started_at_ref: -> { started_at },
-        heartbeat_path: heartbeat_path
+        heartbeat_path: heartbeat_path,
+        startup_heartbeat_expired_ref: -> { startup_heartbeat_expired }
       )
 
       begin
         watchdog = start_watchdog(watchdog_ctx)
-        startup_heartbeat = start_startup_heartbeat(watchdog_mutex, -> { output_received }, -> { exec_completed }, startup_timeout) if startup_timeout
+        if startup_timeout
+          startup_heartbeat = start_startup_heartbeat(
+            watchdog_mutex, -> { output_received }, -> { exec_completed }, startup_timeout
+          ) { watchdog_mutex.synchronize { startup_heartbeat_expired = true } }
+        end
 
         exec_result = backend.exec_in_container(container, cmd_array, **exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
@@ -2481,9 +2487,8 @@ module Containers
           diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: false)
         )
       when :idle
-        elapsed_seconds = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - timeout_check.started_at).round
         raise IdleTimeoutError.new(
-          "No output received for #{elapsed_seconds} seconds (startup grace: #{timeout_check.startup_timeout || 0}s + idle timeout: #{timeout_check.idle_timeout}s)",
+          "No output received for #{timeout_check.idle_timeout} seconds after last activity",
           diagnostics: timeout_diagnostics_for_state(timeout_check, output_received: true)
         )
       when :wall_clock
@@ -2544,7 +2549,7 @@ module Containers
         )
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
         raise IdleTimeoutError.new(
-          "No output received for #{elapsed_since_start.round} seconds (startup grace: #{tc.startup_timeout || 0}s + idle timeout: #{tc.idle_timeout}s)",
+          "No output received for #{tc.idle_timeout} seconds after last activity",
           diagnostics: timeout_diagnostics_from_elapsed(
             elapsed_since_start,
             elapsed_since_activity,
@@ -2632,8 +2637,16 @@ module Containers
                 # also suppresses wall-clock timeout — actively working agents
                 # (making tool calls) should never be killed by time limits alone.
                 # Cost and token limits serve as the primary execution ceiling.
+                #
+                # However, when the startup heartbeat has expired and the agent
+                # never produced real output, the heartbeat file is stale — its
+                # mtime just reflects the last startup-heartbeat touch, not real
+                # agent activity. Treating it as fresh would add a full
+                # idle_timeout window on top of the startup_timeout, doubling
+                # the actual wait vs what is reported/configured.
                 heartbeat_fresh = heartbeat_age && heartbeat_age <= total_elapsed
-                if heartbeat_fresh
+                startup_hb_expired = ctx.startup_heartbeat_expired_ref&.call
+                if heartbeat_fresh && !(startup_hb_expired && !output_received)
                   output_received = true
                   elapsed = heartbeat_age if heartbeat_age < elapsed
                 end
@@ -2799,11 +2812,12 @@ module Containers
     # returns nil for remote/volume-backed backends where heartbeat_host_path is nil.
     #
     # The thread runs for at most +startup_timeout+ seconds. After that, the
-    # heartbeat file goes stale (no more touches), so the idle timeout can fire
-    # normally once its threshold elapses — bounding total hang time to
-    # startup_timeout + idle_timeout rather than running until Temporal kills
-    # the activity.
-    def start_startup_heartbeat(mutex, output_received_ref, exec_completed_ref, startup_timeout)
+    # heartbeat file goes stale (no more touches) and the optional
+    # +on_expired+ block is called so the watchdog can distinguish a stale
+    # startup heartbeat from a genuinely active agent. This lets the startup
+    # timeout fire promptly instead of waiting an additional idle_timeout
+    # window.
+    def start_startup_heartbeat(mutex, output_received_ref, exec_completed_ref, startup_timeout, &on_expired)
       host_path = heartbeat_host_path
       return nil unless host_path.present?
 
@@ -2814,7 +2828,8 @@ module Containers
           if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
             log_system("container.startup_heartbeat.deadline_reached",
               startup_timeout: startup_timeout,
-              message: "Agent produced no output within startup_timeout; falling back to idle timeout")
+              message: "Agent produced no output within startup_timeout; startup timeout will fire")
+            on_expired&.call
             break
           end
           break if mutex.synchronize { exec_completed_ref.call || output_received_ref.call }
