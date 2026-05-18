@@ -25,7 +25,8 @@ def usage
   USAGE
 
   ProviderSmokeHelpers::PRESETS.each do |name, scenarios|
-    puts "      #{name}: #{scenarios.join(', ')}"
+    resolved = scenarios || ProviderSmokeHelpers.expand_name(name)
+    puts "      #{name}: #{resolved.join(', ')}"
   end
 
   puts "    Scenarios:"

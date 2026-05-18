@@ -918,7 +918,7 @@ RSpec.describe Provider do
 
       runtime = minimax_provider.agent_harness_provider_runtime
 
-      expect(runtime.model).to eq("anthropic/MiniMax-M2.5")
+      expect(runtime.model).to eq("minimax/MiniMax-M2.5")
       expect(runtime.env).to include(
         "ANTHROPIC_API_KEY" => "sk-minimax-secret",
         "OPENAI_BASE_URL" => "https://api.minimax.io/anthropic"
