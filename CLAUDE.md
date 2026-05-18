@@ -76,8 +76,8 @@ The `Gemfile.lock` specifies a bundler version. If you encounter bundler version
 tail -3 Gemfile.lock
 
 # Install and use the specific bundler version
-gem install bundler:2.7.2
-bundle _2.7.2_ install
+gem install bundler:4.0.11
+bundle _4.0.11_ install
 ```
 
 ### JavaScript Package Manager
