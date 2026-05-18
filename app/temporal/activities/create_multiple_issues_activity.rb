@@ -72,7 +72,7 @@ module Activities
         heartbeat("creating_issue_#{step + 1}_of_#{creation_order.size}")
 
         title = task[:title].to_s.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
-        body = build_body(task, index_to_github_number, parent_issue_number)
+        body = build_body(task, index_to_github_number, parent_issue_number, project: project)
         labels = build_labels(project, agent_run)
 
         gh_issue = client.create_issue(
@@ -143,7 +143,7 @@ module Activities
       }
     end
 
-    def build_body(task, index_to_github_number, parent_issue_number)
+    def build_body(task, index_to_github_number, parent_issue_number, project:)
       parts = []
       parts << task[:body].to_s.truncate(50_000) if task[:body].present?
 
@@ -155,11 +155,11 @@ module Activities
       if dep_indices.any?
         dep_lines = dep_indices.filter_map do |dep_index|
           gh_number = index_to_github_number[dep_index]
-          "Depends on ##{gh_number}" if gh_number
+          ProjectConventions::IssueDependencies.depends_on_line(project: project, github_number: gh_number) if gh_number
         end
 
         if dep_lines.any?
-          parts << "## Dependencies"
+          parts << ProjectConventions::IssueDependencies.heading(project: project)
           parts << dep_lines.join("\n")
         end
       end

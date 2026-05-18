@@ -170,7 +170,7 @@ module Activities
     def pr_title(issue)
       return "Agent changes" unless issue
 
-      ConventionalCommitTitle.for_issue(issue).truncate(255)
+      ConventionalCommitTitle.for_issue(issue, project: issue.project, style_key: "pr_title_style").truncate(255)
     end
 
     def build_pr_body(issue, agent_run, client: nil)

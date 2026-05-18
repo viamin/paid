@@ -21,17 +21,40 @@ class ConventionalCommitTitle
       "#{match[:type].downcase}#{match[:rest]}"
     end
 
-    def for_issue(issue, fallback_type: "feat")
+    def for_issue(issue, fallback_type: nil, project: issue&.project, style_key: "commit_style")
+      style = style_for(project, style_key)
+      return plain_title_for(issue, style) if style["type"] == "plain"
+
       normalized = normalize(issue&.title)
       return normalized if normalized
 
       title = sanitize_subject(issue&.title)
+      fallback_type ||= style["default_type"] || "feat"
       return "#{fallback_type}: apply agent changes" if title.blank?
 
       "#{infer_type(issue, title: title, fallback_type: fallback_type)}: #{title}"
     end
 
     private
+
+    def plain_title_for(issue, style)
+      title = sanitize_subject(issue&.title)
+      return title if title.present?
+
+      style["fallback_subject"].presence || "Apply agent changes"
+    end
+
+    def style_for(project, style_key)
+      return default_style(style_key) unless project
+
+      ProjectConventions::Resolve.call(project:, key: style_key).fetch(:value)
+    rescue StandardError
+      default_style(style_key)
+    end
+
+    def default_style(style_key)
+      ProjectConventions::Resolve::DEFAULTS.fetch(style_key)
+    end
 
     def infer_type(issue, title:, fallback_type:)
       labels = Array(issue&.labels).filter_map { |label| label.to_s.downcase.presence }

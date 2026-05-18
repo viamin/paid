@@ -122,6 +122,24 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       agent_run.log!("stderr", "Upstream request failed")
     end
 
+    it "uses the resolved dependency wording for upstream issue references" do
+      create(:project_convention_override,
+        project: project,
+        key: "issue_dependency_format",
+        value: {
+          "depends_on_prefix" => "Requires",
+          "blocked_by_prefix" => "Awaits",
+          "heading" => "## Blockers"
+        })
+
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(body: a_string_including("## Blockers").and(include("Awaits owner/upstream#5")))
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id, upstream_issue: { target_repo: "owner/upstream", issue_number: 5 })
+    end
+
     def log_failed_issue_label_attempt
       agent_run.log!("stderr", %(curl -X POST "$GITHUB_API_URL/repos/owner/repo/issues/10/labels"))
       agent_run.log!("stderr", "HTTP/1.1 502 Bad Gateway")

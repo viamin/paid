@@ -72,5 +72,24 @@ RSpec.describe ConventionalCommitTitle do
 
       expect(described_class.for_issue(issue, fallback_type: "chore")).to eq("chore: Worker pool tuning")
     end
+
+    it "uses plain titles when the project overrides commit style away from conventional commits" do
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
+      issue = create(:issue, project: project, title: "Worker pool tuning")
+
+      expect(described_class.for_issue(issue, project: project)).to eq("Worker pool tuning")
+    end
+
+    it "uses the plain fallback subject when the project disables conventional commits and no issue title is present" do
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
+
+      expect(described_class.for_issue(nil, project: project)).to eq("Apply Paid changes")
+    end
   end
 end

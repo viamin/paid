@@ -63,7 +63,7 @@ module Activities
         validate_issue_creation_attempt!(agent_run)
         title, llm_generated_title = extract_title(summary, agent_run.custom_prompt)
         body = body_override.present? ? issue_body(body_override) : issue_body(summary)
-        body = append_dependency_text(body, upstream_issue) if upstream_issue
+        body = append_dependency_text(body, upstream_issue, project: project) if upstream_issue
 
         issue_labels = project.auto_add_labels_enabled? ? [ project.generated_label_name ] : []
         priority_label = priority_label_for(agent_run)
@@ -303,9 +303,13 @@ module Activities
       ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(text) }
     end
 
-    def append_dependency_text(body, upstream_issue)
-      dep_line = "Blocked by #{upstream_issue[:target_repo]}##{upstream_issue[:issue_number]}"
-      "#{body}\n\n## Dependencies\n\n- #{dep_line}"
+    def append_dependency_text(body, upstream_issue, project:)
+      dep_line = ProjectConventions::IssueDependencies.blocked_by_line(
+        project: project,
+        repo: upstream_issue[:target_repo],
+        github_number: upstream_issue[:issue_number]
+      )
+      "#{body}\n\n#{ProjectConventions::IssueDependencies.heading(project: project)}\n\n- #{dep_line}"
     end
 
     def reconcile_created_issue(agent_run, project, gh_issue, upstream_issue:, title: nil, llm_generated_title: false)
