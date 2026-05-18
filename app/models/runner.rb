@@ -299,7 +299,7 @@ class Runner < ApplicationRecord
   # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
   # add aider_direct_outbound? here once the runtime path is implemented.
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -417,6 +417,7 @@ class Runner < ApplicationRecord
     when "kilocode" then kilocode_model_id
     when "opencode" then opencode_model_id
     when "aider" then aider_model_id
+    when "pi" then pi_model_id
     end
   end
 
@@ -634,7 +635,7 @@ class Runner < ApplicationRecord
     # Anthropic runner in DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER,
     # so including it here would cause clear_stale_direct_outbound_tier_models
     # to erase its valid standard tier mappings on every save.
-    %w[kilocode opencode].include?(runner_key)
+    %w[kilocode opencode pi].include?(runner_key)
   end
 
   def direct_outbound_display_name(model_id)
@@ -1002,6 +1003,13 @@ class Runner < ApplicationRecord
       api_key? &&
       AIDER_API_PROVIDER_KEYS.include?(aider_api_provider) &&
       aider_model_id.present?
+  end
+
+  def pi_direct_outbound?
+    runner_key == "pi" &&
+      api_key? &&
+      PI_API_PROVIDER_KEYS.include?(pi_api_provider) &&
+      pi_model_id.present?
   end
 
   def opencode_runner_runtime
