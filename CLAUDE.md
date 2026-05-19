@@ -128,7 +128,7 @@ app/
 ├── workflows/        # Temporal workflow definitions (to be added)
 ├── activities/       # Temporal activity implementations (to be added)
 ├── adapters/         # External service adapters (to be added)
-├── views/            # Phlex view components (to be added)
+├── views/            # ERB templates today; Phlex components if/when that layer lands
 └── jobs/             # GoodJob jobs
 ```
 
