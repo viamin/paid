@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_030522) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_135640) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -66,6 +66,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_030522) do
     t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["status"], name: "index_ab_tests_on_status"
     t.index ["winner_variant_id"], name: "index_ab_tests_on_winner_variant_id"
+  end
+
+  create_table "account_activity_events", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account whose administration history this event belongs to."
+    t.string "action", null: false, comment: "Stable action key for the account administration event."
+    t.bigint "actor_id", comment: "User who performed the action, when available."
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured event details for UI rendering and audits."
+    t.bigint "subject_id"
+    t.string "subject_type", comment: "Polymorphic subject type affected by the action."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_account_activity_events_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_account_activity_events_on_account_id"
+    t.index ["subject_type", "subject_id"], name: "index_account_activity_events_on_subject_type_and_subject_id"
   end
 
   create_table "account_memberships", force: :cascade do |t|
@@ -2288,6 +2302,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_030522) do
   add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
+  add_foreign_key "account_activity_events", "accounts"
+  add_foreign_key "account_activity_events", "users", column: "actor_id"
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"

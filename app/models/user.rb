@@ -17,6 +17,7 @@ class User < ApplicationRecord
   has_many :runners, dependent: :destroy
   has_many :providers, class_name: "Provider", dependent: :destroy
   has_many :provider_api_keys, dependent: :destroy
+  has_many :account_activity_events, foreign_key: :actor_id, dependent: :nullify, inverse_of: :actor
   has_many :pre_commit_requirements, dependent: :destroy
   has_many :initiated_agent_runs, class_name: "AgentRun", foreign_key: :initiating_user_id, dependent: :nullify, inverse_of: :initiating_user
   has_one :tracker_configuration, as: :configurable, dependent: :destroy

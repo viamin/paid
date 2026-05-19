@@ -14,6 +14,14 @@ class TenantConfigurationsController < ApplicationController
     ActiveRecord::Base.transaction do
       @tenant_setting.update!(tenant_setting_params)
       update_feature_flag_rollouts! if feature_flag_rollout_params.present?
+
+      Accounts::RecordActivity.call(
+        account: current_account,
+        actor: current_user,
+        action: "tenant_configuration.updated",
+        subject: @tenant_setting,
+        metadata: { changed_fields: @tenant_setting.saved_changes.except("updated_at").keys }
+      )
     end
 
     redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
