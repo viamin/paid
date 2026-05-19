@@ -38,6 +38,26 @@ RSpec.describe Models::SeedKnownModels do
       expect(model.supports_vision).to be(false)
     end
 
+    it "preserves snapshot values when registry metadata is missing" do
+      registry_models.replace([
+        registry_model(
+          id: "gpt-4o",
+          name: "GPT-4o (Registry)",
+          provider: "openai",
+          family: "gpt-4.1",
+          pricing: {}
+        )
+      ])
+
+      described_class.call
+
+      model = LlmModel.find_by!(model_id: "gpt-4o")
+      expect(model.display_name).to eq("GPT-4o (Registry)")
+      expect(model.family).to eq("gpt-4.1")
+      expect(model.input_cost_per_million).to eq(2.50)
+      expect(model.output_cost_per_million).to eq(10.0)
+    end
+
     it "falls back to the snapshot when the registry misses a known model" do
       registry_models.replace([
         registry_model(id: "other-model", provider: "openai")

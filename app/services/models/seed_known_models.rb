@@ -133,7 +133,7 @@ module Models
     private
 
     def merged_attributes(snapshot_attrs, registry_models)
-      snapshot_attrs.except(:tier).merge(registry_attributes_for(snapshot_attrs, registry_models)).compact
+      snapshot_attrs.except(:tier).merge(registry_attributes_for(snapshot_attrs, registry_models).compact)
     end
 
     def registry_attributes_for(snapshot_attrs, registry_models)
