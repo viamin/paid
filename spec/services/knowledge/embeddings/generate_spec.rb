@@ -15,22 +15,17 @@ RSpec.describe Knowledge::Embeddings::Generate do
 
   let(:success_response_body) do
     {
-      data: [
-        { index: 0, embedding: vector },
-        { index: 1, embedding: vector }
+      "data" => [
+        { "index" => 0, "embedding" => vector },
+        { "index" => 1, "embedding" => vector }
       ],
-      usage: { total_tokens: 10 }
-    }.to_json
+      "usage" => { "total_tokens" => 10 }
+    }
   end
 
   describe ".call" do
     before do
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .with(
-          body: { input: texts, model: "text-embedding-3-large", dimensions: 3072 }.to_json,
-          headers: headers.merge("Content-Type" => "application/json")
-        )
-        .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
+      allow(AgentHarness).to receive(:embed).and_return(success_response_body)
     end
 
     it "returns embedding results for each text" do
@@ -47,27 +42,41 @@ RSpec.describe Knowledge::Embeddings::Generate do
 
     it "sorts results by index" do
       reversed_body = {
-        data: [
-          { index: 1, embedding: Array.new(3072, 0.2) },
-          { index: 0, embedding: Array.new(3072, 0.1) }
+        "data" => [
+          { "index" => 1, "embedding" => Array.new(3072, 0.2) },
+          { "index" => 0, "embedding" => Array.new(3072, 0.1) }
         ],
-        usage: { total_tokens: 10 }
-      }.to_json
+        "usage" => { "total_tokens" => 10 }
+      }
 
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .to_return(status: 200, body: reversed_body, headers: { "Content-Type" => "application/json" })
+      allow(AgentHarness).to receive(:embed).and_return(reversed_body)
 
       results = described_class.call(texts: texts, base_url: base_url, headers: headers)
 
       expect(results.first.vector.first).to eq(0.1)
       expect(results.last.vector.first).to eq(0.2)
     end
+
+    it "passes proxy credentials through AgentHarness.embed" do
+      described_class.call(texts: texts, base_url: base_url, headers: headers)
+
+      expect(AgentHarness).to have_received(:embed).with(
+        texts,
+        model: "text-embedding-3-large",
+        dimensions: 3072,
+        base_url: base_url,
+        api_key: "paid-knowledge-run:99:token",
+        headers: { "X-Paid-Knowledge-Provider" => "openrouter" },
+        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT
+      )
+    end
   end
 
   describe "error handling" do
     it "retries on retryable HTTP statuses and raises after max retries" do
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .to_return(status: 500, body: "Internal Server Error")
+      allow(AgentHarness).to receive(:embed).and_raise(
+        AgentHarness::ProviderError.new("Server error (500): Internal Server Error", context: { status: 500 })
+      )
 
       generator = described_class.new(base_url: base_url, headers: headers)
       allow(generator).to receive(:sleep)
@@ -77,9 +86,16 @@ RSpec.describe Knowledge::Embeddings::Generate do
     end
 
     it "respects Retry-After header on 429 responses" do
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .to_return(status: 429, body: "Rate limited", headers: { "Retry-After" => "2.5" })
-        .then.to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
+      calls = 0
+      allow(AgentHarness).to receive(:embed) do
+        calls += 1
+        raise AgentHarness::RateLimitError.new(
+          "API rate limit exceeded: Rate limited",
+          context: { headers: { "retry-after" => "2.5" } }
+        ) if calls == 1
+
+        success_response_body
+      end
 
       generator = described_class.new(base_url: base_url, headers: headers)
       allow(generator).to receive(:sleep)
@@ -90,16 +106,18 @@ RSpec.describe Knowledge::Embeddings::Generate do
     end
 
     it "raises EmbeddingError on non-retryable HTTP failures" do
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .to_return(status: 400, body: "Bad Request")
+      allow(AgentHarness).to receive(:embed).and_raise(
+        AgentHarness::ProviderError.new("Bad request: Bad Request", context: { status: 400 })
+      )
 
       expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /400/)
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /Bad request/)
     end
 
-    it "retries on Faraday errors and raises after max retries" do
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .to_raise(Faraday::ConnectionFailed.new("connection failed"))
+    it "retries on transport errors and raises after max retries" do
+      allow(AgentHarness).to receive(:embed).and_raise(
+        AgentHarness::ProviderError.new("HTTP connection error: connection failed", original_error: IOError.new("connection failed"))
+      )
 
       generator = described_class.new(base_url: base_url, headers: headers)
       allow(generator).to receive(:sleep)
@@ -108,27 +126,51 @@ RSpec.describe Knowledge::Embeddings::Generate do
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
     end
 
-    it "raises EmbeddingError on non-JSON response body" do
-      stub_request(:post, "https://proxy.openai.test/api/proxy/openai/v1/embeddings")
-        .to_return(status: 200, body: "<html>Error</html>", headers: { "Content-Type" => "text/html" })
+    it "retries when the shim wraps TLS transport failures as provider errors" do
+      allow(AgentHarness).to receive(:embed).and_raise(
+        AgentHarness::ProviderError.new(
+          "HTTP connection error: tls handshake failed",
+          original_error: OpenSSL::SSL::SSLError.new("tls handshake failed")
+        )
+      )
+
+      generator = described_class.new(base_url: base_url, headers: headers)
+      allow(generator).to receive(:sleep)
+
+      expect { generator.call(texts: texts) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
+    end
+
+    it "raises EmbeddingError on invalid embedding response JSON" do
+      allow(AgentHarness).to receive(:embed).and_raise(
+        AgentHarness::ProviderError.new(
+          "Invalid JSON in embedding API response: unexpected token at '<html>Error</html>'",
+          original_error: JSON::ParserError.new("unexpected token at '<html>Error</html>'")
+        )
+      )
 
       expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /Failed to parse embedding API response/)
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /Invalid JSON/)
     end
 
     it "supports arbitrary OpenAI-compatible proxy base URLs" do
-      stub_request(:post, "https://proxy.openai.test/custom/v1/embeddings")
-        .with(headers: headers)
-        .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
+      allow(AgentHarness).to receive(:embed).and_return(success_response_body)
 
-      results = described_class.call(
+      described_class.call(
         texts: texts,
         base_url: "https://proxy.openai.test/custom/v1",
         headers: headers
       )
 
-      expect(results.size).to eq(2)
-      expect(results.first.vector).to eq(vector)
+      expect(AgentHarness).to have_received(:embed).with(
+        texts,
+        model: "text-embedding-3-large",
+        dimensions: 3072,
+        base_url: "https://proxy.openai.test/custom/v1",
+        api_key: "paid-knowledge-run:99:token",
+        headers: { "X-Paid-Knowledge-Provider" => "openrouter" },
+        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT
+      )
     end
   end
 

@@ -100,6 +100,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Bundler (pinned to match Gemfile.lock)
 RUN gem install --no-document bundler:4.0.11
 
+# Install agent-harness globally so lightweight utility scripts inside the
+# agent container can use the same transport layer as the Rails app.
+# Keep this pin in sync with Gemfile.lock until the image build is wired to a
+# shared source of truth.
+RUN gem install --no-document agent-harness:0.18.2
+
 # Install ruby-maat (VCS mining tool for churn/hotspot analysis)
 # https://github.com/viamin/ruby-maat
 # Version is sourced from Gemfile.lock at build time when RUBY_MAAT_VERSION is provided
