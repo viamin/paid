@@ -100,6 +100,7 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
 
       expect(runner.send(:script)).to include('AgentHarness::OpenAICompatibleTransport.new(')
       expect(runner.send(:script)).to include("transport.embed(inputs: texts, model: model, dimensions: dimensions)")
+      expect(runner.send(:script)).to include("handle_embedding_error_response(http_response, status_code) unless status_code == 200")
     end
 
     it "uses the external proxy URL for remote backends" do

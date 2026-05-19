@@ -192,11 +192,16 @@ module Knowledge
             }
             body[:dimensions] = dimensions if dimensions
 
-            response = make_request(uri, body)
-            status_code = response.code.to_i
-            handle_error_response(response, status_code) unless status_code == 200
+            http_response = make_request(uri, body)
+            status_code = http_response.code.to_i
+            handle_embedding_error_response(http_response, status_code) unless status_code == 200
 
-            JSON.parse(response.body)
+            JSON.parse(http_response.body)
+          rescue JSON::ParserError => e
+            raise AgentHarness::ProviderError.new(
+              "Invalid JSON in embedding API response: #{e.message}",
+              original_error: e
+            )
           end
 
           private
@@ -211,6 +216,49 @@ module Knowledge
             request = super
             @paid_extra_headers.each { |key, value| request[key] = value }
             request
+          end
+
+          def handle_embedding_error_response(http_response, status_code)
+            headers = http_response.each_header.to_h.transform_keys(&:downcase)
+            context = {
+              status: status_code,
+              headers: headers
+            }
+            message = embedding_error_message(http_response.body)
+
+            case status_code
+            when 401
+              raise AgentHarness::AuthenticationError.new(
+                "API authentication failed: #{message}",
+                provider: :openai_compatible,
+                context:
+              )
+            when 403
+              raise AgentHarness::AuthenticationError.new(
+                "API access forbidden: #{message}",
+                provider: :openai_compatible,
+                context:
+              )
+            when 429
+              raise AgentHarness::RateLimitError.new(
+                "API rate limit exceeded: #{message}",
+                provider: :openai_compatible,
+                context:
+              )
+            when 400
+              raise AgentHarness::ProviderError.new("Bad request: #{message}", context:)
+            when 500, 502, 503, 504
+              raise AgentHarness::ProviderError.new("Server error (#{status_code}): #{message}", context:)
+            else
+              raise AgentHarness::ProviderError.new("HTTP #{status_code}: #{message}", context:)
+            end
+          end
+
+          def embedding_error_message(body_string)
+            body = JSON.parse(body_string)
+            body.dig("error", "message") || body.dig("error", "type") || body_string
+          rescue JSON::ParserError
+            body_string
           end
         end
 
