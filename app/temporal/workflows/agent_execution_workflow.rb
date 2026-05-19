@@ -92,6 +92,7 @@ module Workflows
       # claim marker used by the queue).
       create_input = { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
         custom_prompt: custom_prompt,
+        initiating_user_id: input[:initiating_user_id],
         source_pull_request_number: source_pull_request_number,
         agent_run_id: agent_run_id, goal: goal,
         focus: input[:focus],

@@ -5,17 +5,14 @@ require "rails_helper"
 RSpec.describe PreCommitRequirements::Evaluate do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
-  let(:agent_run) { create(:agent_run, project: project, container_id: "container-123") }
+  let(:owner) { project.effective_owner }
+  let(:initiating_user) { nil }
+  let(:agent_run) { create(:agent_run, project: project, container_id: "container-123", initiating_user: initiating_user) }
 
   let(:success_result) { Containers::Provision::Result.success(stdout: "OK", stderr: "", exit_code: 0) }
   let(:failure_result) { Containers::Provision::Result.failure(error: "check failed", stdout: "", stderr: "FAIL", exit_code: 1) }
 
-  before do
-    # Stub effective_owner to return nil (no user-level requirements)
-    allow(project).to receive(:effective_owner).and_return(nil)
-    allow(agent_run).to receive(:project).and_return(project)
-    allow(agent_run).to receive(:log!)
-  end
+  before { allow(agent_run).to receive(:log!) }
 
   describe ".call" do
     context "with no requirements" do
@@ -25,6 +22,51 @@ RSpec.describe PreCommitRequirements::Evaluate do
         expect(result[:passed]).to be true
         expect(result[:results]).to be_empty
         expect(result[:blocking]).to be false
+      end
+    end
+
+    context "when the run has a non-owner initiating user" do
+      let(:initiating_user) { create(:user, account: account) }
+
+      before do
+        create(:pre_commit_requirement, account: account, user: initiating_user, name: "lint", command: "bin/lint")
+        create(:pre_commit_requirement, account: account, user: owner, name: "owner-only", command: "bin/owner")
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(success_result)
+      end
+
+      it "binds user-level requirements to the initiating user" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:results].map { |entry| entry[:name] }).to eq([ "lint" ])
+        expect(agent_run).to have_received(:execute_in_container).with("bin/lint", stream: false)
+      end
+    end
+
+    context "when the run has no initiating user" do
+      before do
+        create(:pre_commit_requirement, account: account, user: owner, name: "lint", command: "bin/lint")
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(success_result)
+      end
+
+      it "falls back to the project owner" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:results].map { |entry| entry[:name] }).to eq([ "lint" ])
+        expect(agent_run).to have_received(:execute_in_container).with("bin/lint", stream: false)
+      end
+    end
+
+    context "when the run is system-initiated and the project has no effective owner" do
+      before do
+        allow(project).to receive(:effective_owner).and_return(nil)
+      end
+
+      it "does not resolve user-level requirements" do
+        expect(described_class.call(agent_run: agent_run)).to eq(
+          passed: true,
+          results: [],
+          blocking: false
+        )
       end
     end
 

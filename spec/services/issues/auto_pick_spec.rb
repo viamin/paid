@@ -35,6 +35,7 @@ RSpec.describe Issues::AutoPick do
       expect(result.project).to eq(project)
       expect(result.status).to eq("queued")
       expect(result.trigger_type).to eq("automatic")
+      expect(result.initiating_user).to be_nil
       expect(result.agent_type).to eq("claude_code")
     end
 

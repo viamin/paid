@@ -138,6 +138,7 @@ class AgentRun < ApplicationRecord
   belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
+  belongs_to :initiating_user, class_name: "User", optional: true
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
@@ -170,6 +171,7 @@ class AgentRun < ApplicationRecord
   attr_readonly :mcp_server_snapshot
 
   before_validation :sync_legacy_provider_bridge_columns
+  before_validation :set_initiating_user_from_current_user, on: :create
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
@@ -225,6 +227,7 @@ class AgentRun < ApplicationRecord
   validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :initiating_user_belongs_to_project_account, if: -> { initiating_user.present? && project.present? }
   validate :runner_belongs_to_project_owner, if: -> { runner.present? }
   validate :has_prompt_source, on: :create
   validate :draft_review_round_tracking_is_consistent
@@ -267,6 +270,10 @@ class AgentRun < ApplicationRecord
 
   def update_columns(attributes)
     super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+  end
+
+  def settings_user
+    initiating_user || project&.effective_owner
   end
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
@@ -1972,6 +1979,16 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def set_initiating_user_from_current_user
+    self.initiating_user ||= Current.user
+  end
+
+  def initiating_user_belongs_to_project_account
+    return if initiating_user.account_id == project.account_id
+
+    errors.add(:initiating_user, "must belong to the same account as the project")
+  end
 
   def sync_legacy_provider_bridge_columns
     LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
