@@ -214,7 +214,7 @@ module Activities
     def resolve_pr_template(agent_run)
       PrTemplate.resolve(
         project: agent_run.project,
-        user: agent_run.project.effective_owner
+        user: agent_run.settings_user
       )
     rescue StandardError => e
       logger.warn(

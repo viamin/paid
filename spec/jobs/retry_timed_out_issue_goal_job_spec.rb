@@ -95,6 +95,15 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       expect(new_run.custom_prompt).to eq("Create an issue about auth")
     end
 
+    it "preserves the initiating user on retry" do
+      initiating_user = create(:user, account: project.account)
+      agent_run = create_timed_out_issue_goal_run(initiating_user: initiating_user)
+
+      described_class.perform_now(agent_run.id)
+
+      expect(AgentRun.last.initiating_user).to eq(initiating_user)
+    end
+
     it "counts only issue goal runs toward the retry limit" do
       # Create MAX_RETRIES retried PR-goal runs (should not count)
       described_class::MAX_RETRIES.times do

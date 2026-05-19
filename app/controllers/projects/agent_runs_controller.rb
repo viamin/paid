@@ -381,6 +381,7 @@ module Projects
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
+        initiating_user: current_user,
         runner: retry_runner,
         agent_type: agent_type,
         custom_prompt: prompt_for_retry(@agent_run),
@@ -463,6 +464,7 @@ module Projects
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
+        initiating_user: current_user,
         runner: @agent_run.runner,
         agent_type: @agent_run.agent_type,
         custom_prompt: prompt_for_retry(@agent_run),
@@ -641,6 +643,7 @@ module Projects
         agent_run = AgentRun.create!(
           project: @project,
           issue: issue,
+          initiating_user: current_user,
           runner: resolved_runner,
           agent_type: resolved_agent_type,
           custom_prompt: custom_prompt,

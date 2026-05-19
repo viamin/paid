@@ -38,6 +38,7 @@ module Tools
       run = AgentRun.create!(
         project: project,
         issue: issue,
+        initiating_user: current_user,
         runner_id: runner_id,
         agent_type: agent_type,
         goal: goal,
