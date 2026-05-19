@@ -10,7 +10,9 @@ class AccountsController < ApplicationController
   def update
     authorize current_account, :update?
 
-    if current_account.update(account_params)
+    ActiveRecord::Base.transaction do
+      current_account.update!(account_params)
+
       Accounts::RecordActivity.call(
         account: current_account,
         actor: current_user,
@@ -18,11 +20,11 @@ class AccountsController < ApplicationController
         subject: current_account,
         metadata: { changed_fields: current_account.saved_changes.except("updated_at").keys }
       )
-
-      redirect_to account_path, notice: "Account settings updated."
-    else
-      render :show, status: :unprocessable_content
     end
+
+    redirect_to account_path, notice: "Account settings updated."
+  rescue ActiveRecord::RecordInvalid
+    render :show, status: :unprocessable_content
   end
 
   private

@@ -27,14 +27,16 @@ module Accounts
       method_name = TRANSITIONS[transition]
       raise AdministrationError, "Unsupported lifecycle transition." unless method_name
 
-      account.public_send(method_name)
+      ActiveRecord::Base.transaction do
+        account.public_send(method_name)
 
-      Accounts::RecordActivity.call(
-        account: account,
-        actor: actor,
-        action: ACTIVITY_ACTIONS.fetch(transition),
-        subject: account
-      )
+        Accounts::RecordActivity.call(
+          account: account,
+          actor: actor,
+          action: ACTIVITY_ACTIONS.fetch(transition),
+          subject: account
+        )
+      end
     end
 
     private

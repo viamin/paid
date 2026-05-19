@@ -22,19 +22,21 @@ module Accounts
       previous_role = membership.role
       return membership if previous_role == role
 
-      membership.update!(role: role)
+      ActiveRecord::Base.transaction do
+        membership.update!(role: role)
 
-      Accounts::RecordActivity.call(
-        account: account,
-        actor: actor,
-        action: "membership.role_changed",
-        subject: membership,
-        metadata: {
-          email: membership.user.email,
-          from_role: previous_role,
-          to_role: membership.role
-        }
-      )
+        Accounts::RecordActivity.call(
+          account: account,
+          actor: actor,
+          action: "membership.role_changed",
+          subject: membership,
+          metadata: {
+            email: membership.user.email,
+            from_role: previous_role,
+            to_role: membership.role
+          }
+        )
+      end
 
       membership
     end

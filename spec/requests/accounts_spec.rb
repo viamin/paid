@@ -60,6 +60,21 @@ RSpec.describe "Accounts" do
       expect(event.metadata["changed_fields"]).to include("name", "default_max_tokens_per_run")
     end
 
+    it "rolls back the account update when activity recording fails" do
+      allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+      expect do
+        patch account_path, params: {
+          account: {
+            name: "Acme Labs"
+          }
+        }
+      end.not_to change(AccountActivityEvent, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(account.reload.name).to eq("Acme")
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out owner

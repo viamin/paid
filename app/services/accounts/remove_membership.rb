@@ -17,14 +17,17 @@ module Accounts
       raise AdministrationError, "Transfer ownership before removing an owner." if membership.owner?
 
       email = membership.user.email
-      membership.destroy!
 
-      Accounts::RecordActivity.call(
-        account: account,
-        actor: actor,
-        action: "membership.removed",
-        metadata: { email: email }
-      )
+      ActiveRecord::Base.transaction do
+        membership.destroy!
+
+        Accounts::RecordActivity.call(
+          account: account,
+          actor: actor,
+          action: "membership.removed",
+          metadata: { email: email }
+        )
+      end
     end
 
     private
