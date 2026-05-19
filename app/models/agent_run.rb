@@ -275,6 +275,7 @@ class AgentRun < ApplicationRecord
   def settings_user
     initiating_user || project&.effective_owner
   end
+
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
