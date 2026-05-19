@@ -8,27 +8,36 @@ module Knowledge
       COST_PER_MILLION_TOKENS = 0.13
       MAX_RETRIES = 3
       BASE_DELAY = 1.0
-      RETRYABLE_STATUSES = [ 429, 500, 502, 503, 504 ].freeze
 
       attr_reader :model, :dimensions
 
-      def initialize(model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {})
+      RETRYABLE_PROVIDER_STATUSES = [ 500, 502, 503, 504 ].freeze
+      RETRYABLE_PROVIDER_ERRORS = [
+        EOFError,
+        IOError,
+        OpenSSL::SSL::SSLError,
+        SocketError,
+        Errno::ECONNREFUSED,
+        Errno::ECONNRESET
+      ].freeze
+
+      def initialize(model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {}, timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT)
         @model = model
         @dimensions = dimensions
         @base_url = base_url
         @headers = headers
+        @timeout = timeout
       end
 
-      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {})
-        new(model: model, dimensions: dimensions, base_url: base_url, headers: headers).call(texts: texts)
+      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {}, timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT)
+        new(model: model, dimensions: dimensions, base_url: base_url, headers: headers, timeout: timeout).call(texts: texts)
       end
 
       # Returns an array of Result structs with :vector and :token_count
       def call(texts:)
         return [] if texts.empty?
 
-        response = request_embeddings(texts)
-        self.class.results_from_body(parse_response(response))
+        self.class.results_from_body(request_embeddings(texts))
       end
 
       Result = Struct.new(:vector, :token_count, keyword_init: true)
@@ -53,82 +62,67 @@ module Knowledge
         retries = 0
 
         begin
-          response = connection.post(embeddings_path) do |req|
-            req.body = {
-              input: texts,
-              model: model,
-              dimensions: dimensions
-            }.to_json
-          end
+          AgentHarness.embed(
+            texts,
+            model: model,
+            dimensions: dimensions,
+            base_url: normalized_base_url,
+            api_key: api_key,
+            headers: request_headers,
+            timeout:
+          )
+        rescue AgentHarness::AuthenticationError => e
+          raise EmbeddingError, "Embedding API request failed: #{e.message}"
+        rescue AgentHarness::RateLimitError, AgentHarness::TimeoutError => e
+          retry_request(error: e, retries: retries) { |count| retries = count }
+          retry
+        rescue AgentHarness::ProviderError => e
+          raise EmbeddingError, "Embedding API request failed: #{e.message}" unless retryable_provider_error?(e)
 
-          if !response.success? && RETRYABLE_STATUSES.include?(response.status)
-            raise RetryableHTTPError, response
-          end
-
-          response
-        rescue Faraday::Error, RetryableHTTPError => e
-          retries += 1
-          if retries <= MAX_RETRIES
-            delay = retry_delay(e, retries)
-            sleep(delay)
-            retry
-          end
-          raise EmbeddingError, "Embedding API request failed after #{MAX_RETRIES} retries: #{e.message}"
+          retry_request(error: e, retries: retries) { |count| retries = count }
+          retry
         end
+      end
+
+      def retry_request(error:, retries:)
+        retries += 1
+        if retries <= MAX_RETRIES
+          sleep(retry_delay(error, retries))
+          yield(retries)
+          return
+        end
+
+        raise EmbeddingError, "Embedding API request failed after #{MAX_RETRIES} retries: #{error.message}"
       end
 
       # Respects Retry-After header when present, otherwise uses exponential backoff.
       def retry_delay(error, attempt)
-        if error.is_a?(RetryableHTTPError) && (retry_after = error.response.headers["retry-after"])
-          retry_after.to_f
-        else
-          BASE_DELAY * (2**(attempt - 1))
-        end
+        retry_after = error.context.dig(:headers, "retry-after")
+        return retry_after.to_f if retry_after.present?
+
+        BASE_DELAY * (2**(attempt - 1))
       end
 
-      # Internal error to trigger retry on retryable HTTP statuses.
-      class RetryableHTTPError < StandardError
-        attr_reader :response
+      attr_reader :base_url, :headers, :timeout
 
-        def initialize(response)
-          @response = response
-          super("HTTP #{response.status}: #{response.body}")
-        end
+      def normalized_base_url
+        base_url.to_s.sub(%r{/\z}, "")
       end
 
-      def parse_response(response)
-        unless response.success?
-          raise EmbeddingError, "Embedding API returned #{response.status}: #{response.body}"
-        end
-
-        JSON.parse(response.body)
-      rescue JSON::ParserError => e
-        raise EmbeddingError,
-          "Failed to parse embedding API response as JSON: #{e.message} (status #{response.status}, body: #{response.body})"
+      def api_key
+        headers.fetch("Authorization").to_s.sub(/\ABearer\s+/i, "")
       end
 
-      # HTTP client for the secrets-proxy-backed embedding endpoint.
-      # TODO(#1039): Replace with AgentHarness.embed once agent-harness ships embedding support.
-      def connection
-        @connection ||= Faraday.new(url: base_url) do |f|
-          f.request :retry, max: 0
-          f.headers.update(headers)
-          f.headers["Content-Type"] = "application/json"
-          f.adapter Faraday.default_adapter
-        end
+      def request_headers
+        headers.except("Authorization").compact
       end
 
-      attr_reader :base_url
+      def retryable_provider_error?(error)
+        status = error.context[:status]
+        return RETRYABLE_PROVIDER_STATUSES.include?(status) if status
 
-      def embeddings_path
-        path = URI.parse(base_url).path.to_s.sub(%r{/\z}, "")
-        path = "/v1" if path.blank?
-        "#{path}/embeddings"
-      rescue URI::InvalidURIError
-        "/v1/embeddings"
+        RETRYABLE_PROVIDER_ERRORS.any? { |klass| error.original_error.is_a?(klass) }
       end
-
-      attr_reader :headers
 
       def self.estimate_cost(token_count)
         (token_count.to_f / 1_000_000 * COST_PER_MILLION_TOKENS).round(6)
