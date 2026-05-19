@@ -38,6 +38,9 @@ module Issues
     end
 
     def call
+      gate = Issues::AutoPickProjectGate.new(@project)
+      return nil unless gate.call
+
       result = strategy.evaluate(Automation::Context.build(record: nil, project: @project, metadata: {}))
       decision = result.decisions.first
       return nil if decision.nil? || decision.type == "noop"

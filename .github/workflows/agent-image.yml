@@ -44,11 +44,69 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect agent-image relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          diff_files=$(git diff --name-only --diff-filter=d "${BASE_SHA}"..."${HEAD_SHA}")
+
+          if [ -z "$diff_files" ]; then
+            echo "image_relevant=false" >> "$GITHUB_OUTPUT"
+            echo "No changed files detected for agent-image workflow."
+            exit 0
+          fi
+
+          relevant_non_lockfile_changes=$(
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/agent-image.yml|\
+                docker/agent/*|\
+                scripts/build-agent-image.sh|\
+                scripts/extract-runner-install-contract.rb|\
+                scripts/test-agent-image.sh|\
+                scripts/test-agent-image-inner.sh|\
+                scripts/test-agent-runner-contracts.sh|\
+                scripts/test-agent-runner-contracts-inner.sh|\
+                app/services/containers/provision.rb|\
+                lib/runner_support.rb)
+                  printf '%s\n' "$path"
+                  ;;
+              esac
+            done <<< "$diff_files"
+          )
+
+          if [ -n "$relevant_non_lockfile_changes" ]; then
+            echo "image_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Agent-image relevant files changed:"
+            printf '%s\n' "$relevant_non_lockfile_changes" | sed 's/^/  /'
+            exit 0
+          fi
+
+          lockfile_contract_changes=$(
+            git diff --unified=0 "${BASE_SHA}"..."${HEAD_SHA}" -- Gemfile.lock \
+              | grep -E '^[+-].*(agent-harness|ruby-maat)' || true
+          )
+
+          if [ -n "$lockfile_contract_changes" ]; then
+            echo "image_relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Gemfile.lock changed agent-image-managed dependencies:"
+            printf '%s\n' "$lockfile_contract_changes" | sed 's/^/  /'
+          else
+            echo "image_relevant=false" >> "$GITHUB_OUTPUT"
+            echo "Gemfile.lock changed, but not agent-harness or ruby-maat. Skipping agent image rebuild."
+          fi
 
       - name: Set up Docker Buildx
+        if: steps.changes.outputs.image_relevant == 'true'
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Extract ruby-maat version from Gemfile.lock
+        if: steps.changes.outputs.image_relevant == 'true'
         id: ruby-maat
         run: |
           version=$(sed -n '/^GEM$/,/^$/s/^  *ruby-maat (\(.*\))/\1/p' Gemfile.lock | head -n 1)
@@ -59,12 +117,14 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Ruby
+        if: steps.changes.outputs.image_relevant == 'true'
         uses: ruby/setup-ruby@97ecb7b512899eb71ab1bf2310a624c6f1589ac6
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Extract Claude install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: claude-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb claude)
@@ -86,6 +146,7 @@ jobs:
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Extract Cursor install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: cursor-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb cursor)
@@ -115,6 +176,7 @@ jobs:
           echo "global_path=$global_path" >> "$GITHUB_OUTPUT"
 
       - name: Extract Codex package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: codex-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb codex)
@@ -126,6 +188,7 @@ jobs:
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
       - name: Extract OpenCode package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: opencode-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb opencode)
@@ -137,6 +200,7 @@ jobs:
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
       - name: Extract Pi package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: pi-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb pi)
@@ -148,6 +212,7 @@ jobs:
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
       - name: Extract Kilocode CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: kilocode-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb kilocode)
@@ -161,6 +226,7 @@ jobs:
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Extract Gemini CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: gemini-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb gemini)
@@ -174,6 +240,7 @@ jobs:
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Extract Aider CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: aider-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb aider)
@@ -187,6 +254,7 @@ jobs:
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Extract Copilot CLI install contract from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
         id: copilot-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb copilot)
@@ -200,6 +268,7 @@ jobs:
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build paid-agent image
+        if: steps.changes.outputs.image_relevant == 'true'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: ./docker/agent
@@ -226,7 +295,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=paid-agent
 
       - name: Smoke test paid-agent image
+        if: steps.changes.outputs.image_relevant == 'true'
         run: ./scripts/test-agent-image.sh
 
       - name: Runner-contract smoke test
+        if: steps.changes.outputs.image_relevant == 'true'
         run: ./scripts/test-agent-runner-contracts.sh
+
+      - name: Agent image workflow not needed
+        if: steps.changes.outputs.image_relevant != 'true'
+        run: echo "No agent-image-managed files or lockfile entries changed."

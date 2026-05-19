@@ -447,23 +447,34 @@ module Screenshots
     def parse_rails_routes_output(output)
       output.each_line.filter_map do |line|
         tokens = line.strip.split(/\s+/)
-        next if tokens.length < 3
+        next if tokens.empty?
 
         verb_index = tokens.index { |token| token.match?(/\A(?:GET|POST|PATCH|PUT|DELETE)\z/) }
-        next unless verb_index
-        next unless tokens[verb_index + 1]
+        if verb_index && tokens[verb_index + 1]
+          path = normalized_rails_route_segment(tokens[verb_index + 1])
+          name = verb_index.positive? ? tokens[verb_index - 1] : path
+          next route_hash(path, name, requires_auth: false)
+        end
 
-        path = tokens[verb_index + 1].sub(/\(\.:format\)\z/, "")
-        name = verb_index.positive? ? tokens[verb_index - 1] : path
+        # Mounted engines and wildcard match routes can appear without a verb in
+        # `bin/rails routes` output, e.g. `avo /admin Avo::Engine` or
+        # `/admin(/*path)(.:format) operator_console_access#show`.
+        path_index = tokens.index { |token| token.start_with?("/") }
+        next unless path_index
+
+        path = normalized_rails_route_segment(tokens[path_index])
+        name = path_index.positive? ? tokens[path_index - 1] : route_name_from_path(path)
         route_hash(path, name, requires_auth: false)
-      end.then { |routes| unique_routes(routes) }
+      end.then do |routes|
+        unique_routes(routes) { |route| [ route["path"], route["name"] ] }
+      end
     end
 
     def parse_rails_route_line(line, prefixes)
       return route_hash("/", "root") if line.match?(/^root\s+/)
 
-      if (match = line.match(/^(?:get|post|patch|put|delete)\s+["']([^"']+)["']/))
-        path = normalize_route_path(prefixes, match[1])
+      if (match = line.match(/^(?:get|post|patch|put|delete|match)\s+["']([^"']+)["']/))
+        path = normalize_route_path(prefixes, normalized_rails_route_segment(match[1]))
         return route_hash(path, route_name_from_path(path))
       end
 
@@ -475,6 +486,11 @@ module Screenshots
       if (match = line.match(/^resource\s+:([a-zA-Z_][\w]*)/))
         path = normalize_route_path(prefixes, match[1])
         return route_hash(path, match[1])
+      end
+
+      if (match = line.match(/^mount(?:_[a-zA-Z_][\w]*)?\s+.+?\s+at:\s+["']([^"']+)["']/))
+        path = normalize_route_path(prefixes, normalized_rails_route_segment(match[1]))
+        return route_hash(path, route_name_from_path(path))
       end
 
       nil
@@ -625,8 +641,13 @@ module Screenshots
       "/" + full_path.gsub(%r{/+}, "/").delete_prefix("/")
     end
 
-    def unique_routes(routes)
-      routes.compact.uniq { |route| route["path"] }.first(10)
+    def normalized_rails_route_segment(path)
+      path.to_s.sub(/\(\.:format\)\z/, "").sub(/\(\/\*[^)]+\)\z/, "")
+    end
+
+    def unique_routes(routes, &identity)
+      identity ||= ->(route) { route["path"] }
+      routes.compact.uniq(&identity).first(10)
     end
 
     def route_hash(path, name, requires_auth: false)

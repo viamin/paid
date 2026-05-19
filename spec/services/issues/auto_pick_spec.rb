@@ -70,6 +70,42 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    it "returns nil when the project quality queue is paused" do
+      project.update!(quality_paused_at: Time.current)
+      create(:issue, project: project, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "returns nil when the project scheduler is paused" do
+      project.update!(scheduler_paused_at: Time.current)
+      create(:issue, project: project, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "returns nil when the account scheduler is paused" do
+      project.account.update!(scheduler_paused_at: Time.current)
+      create(:issue, project: project, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "returns nil when the project has no effective owner" do
+      allow(project).to receive(:effective_owner).and_return(nil)
+      create(:issue, project: project, github_state: "open")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
     it "skips issues labeled planning" do
       create(:issue, project: project, labels: [ "planning" ])
       eligible = create(:issue, project: project, labels: [])

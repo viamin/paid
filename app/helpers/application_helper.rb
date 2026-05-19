@@ -103,16 +103,18 @@ module ApplicationHelper
 
     runs.each_with_object({}) do |run, displays|
       current_runner = current_runner_record(run)
+      final_runner = run.respond_to?(:final_runner) ? run.final_runner : nil
+      effective_runner = run.respond_to?(:effective_runner) ? run.effective_runner : nil
       displays[run.id] =
-        if run.final_runner.present?
+        if final_runner.present?
           runner_display_for_identifier(
-            run.final_runner,
+            final_runner,
             runner: runner_for_identifier(run, configured_runners_by_owner_and_key, routed_runners_by_owner_and_id)
           )
         elsif current_runner.present?
           current_runner.display_name
         else
-          Runner.display_name_for(run.effective_runner)
+          Runner.display_name_for(effective_runner)
         end
     end
   end
@@ -220,6 +222,30 @@ module ApplicationHelper
     uri.scheme == "https" && uri.host == "github.com"
   rescue URI::InvalidURIError
     false
+  end
+
+  def project_member_path(project)
+    app_route_path(:project_path, project)
+  end
+
+  def project_agent_run_member_path(project, agent_run)
+    app_route_path(:project_agent_run_path, project, agent_run)
+  end
+
+  def project_agent_runs_collection_path(project)
+    app_route_path(:project_agent_runs_path, project)
+  end
+
+  def new_project_agent_run_member_path(project)
+    app_route_path(:new_project_agent_run_path, project)
+  end
+
+  def cleanup_stale_runs_project_member_path(project)
+    app_route_path(:cleanup_stale_runs_project_path, project)
+  end
+
+  def dashboard_cancel_agent_run_member_path(agent_run)
+    app_route_path(:dashboard_cancel_run_path, agent_run)
   end
 
   # Returns context display info for an agent run as a hash with :type and optional :label, :url, :classes.
@@ -566,25 +592,29 @@ module ApplicationHelper
   end
 
   def runner_for_identifier(run, configured_runners_by_owner_and_key, routed_runners_by_owner_and_id)
-    if Runner.routing_key?(run.final_runner)
-      owner_id = run.project&.effective_owner&.id
-      runner_id = Runner.id_from_routing_key(run.final_runner)
+    final_runner = run.respond_to?(:final_runner) ? run.final_runner : nil
+
+    if Runner.routing_key?(final_runner)
+      owner_id = run.respond_to?(:project) ? run.project&.effective_owner&.id : nil
+      runner_id = Runner.id_from_routing_key(final_runner)
       return routed_runners_by_owner_and_id[[ owner_id, runner_id ]]
     end
 
-    normalized_identifier = normalized_runner_identifier(run.final_runner)
+    normalized_identifier = normalized_runner_identifier(final_runner)
     current_runner = current_runner_record(run)
+    owner_id = run.respond_to?(:project) ? run.project&.effective_owner&.id : nil
 
-    configured_runners_by_owner_and_key[[ run.project&.effective_owner&.id, normalized_identifier ]] ||
-      (current_runner if current_runner&.matches_identifier?(run.final_runner))
+    configured_runners_by_owner_and_key[[ owner_id, normalized_identifier ]] ||
+      (current_runner if current_runner&.matches_identifier?(final_runner))
   end
 
   def routed_runners_for_runs(runs)
     runner_ids_by_owner_id = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, runner_ids|
-      next unless Runner.routing_key?(run.final_runner)
+      final_runner = run.respond_to?(:final_runner) ? run.final_runner : nil
+      next unless Runner.routing_key?(final_runner)
 
-      owner_id = run.project&.effective_owner&.id
-      runner_id = Runner.id_from_routing_key(run.final_runner)
+      owner_id = run.respond_to?(:project) ? run.project&.effective_owner&.id : nil
+      runner_id = Runner.id_from_routing_key(final_runner)
       next unless owner_id && runner_id
 
       runner_ids[owner_id] << runner_id
@@ -597,12 +627,13 @@ module ApplicationHelper
 
   def configured_runners_for_runs(runs)
     owner_ids_by_runner_key = runs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, runner_keys|
-      next if run.final_runner.blank? || Runner.routing_key?(run.final_runner)
+      final_runner = run.respond_to?(:final_runner) ? run.final_runner : nil
+      next if final_runner.blank? || Runner.routing_key?(final_runner)
 
-      owner_id = run.project&.effective_owner&.id
+      owner_id = run.respond_to?(:project) ? run.project&.effective_owner&.id : nil
       next unless owner_id
 
-      runner_keys[normalized_runner_identifier(run.final_runner)] << owner_id
+      runner_keys[normalized_runner_identifier(final_runner)] << owner_id
     end
     return {} if owner_ids_by_runner_key.empty?
 
@@ -614,10 +645,15 @@ module ApplicationHelper
   end
 
   def current_runner_record(run)
-    return run.provider if run.association(:provider).loaded?
-    return run.runner if run.association(:runner).loaded?
+    if run.respond_to?(:association)
+      return run.provider if run.association(:provider).loaded?
+      return run.runner if run.association(:runner).loaded?
+    end
 
-    run.runner
+    return run.runner if run.respond_to?(:runner)
+    return run.provider if run.respond_to?(:provider)
+
+    nil
   end
 
   def safe_asset_tag
@@ -628,6 +664,23 @@ module ApplicationHelper
 
   def normalized_runner_identifier(identifier)
     RunnerSupport.runner_key_for_agent_type(identifier)
+  end
+
+  def app_route_path(name, *args, **kwargs)
+    return public_send(name, *args, **kwargs) if respond_to?(name)
+    return main_app.public_send(name, *args, **kwargs) if respond_to?(:main_app) && main_app.respond_to?(name)
+
+    if respond_to?(:_routes_context, true)
+      routes_context = _routes_context
+      return routes_context.public_send(name, *args, **kwargs) if routes_context.respond_to?(name)
+    end
+
+    if respond_to?(:_routes, true)
+      route_helpers = _routes.url_helpers
+      return route_helpers.public_send(name, *args, **kwargs) if route_helpers.respond_to?(name)
+    end
+
+    Rails.application.routes.url_helpers.public_send(name, *args, **kwargs)
   end
 
   def safe_return_path?(path)

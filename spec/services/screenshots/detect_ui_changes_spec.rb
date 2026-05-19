@@ -135,6 +135,13 @@ RSpec.describe Screenshots::DetectUiChanges do
       expect(result[:ui_files]).to be_empty
     end
 
+    it "excludes the operator console access controller (manual admin screenshots only)" do
+      result = described_class.call(changed_files: [ "app/controllers/operator_console_access_controller.rb" ])
+
+      expect(result[:ui_changes?]).to be false
+      expect(result[:ui_files]).to be_empty
+    end
+
     it "ignores mailer templates that do not render browser UI" do
       result = described_class.call(changed_files: [ "app/views/devise/mailer/reset_password_instructions.html.erb" ])
 

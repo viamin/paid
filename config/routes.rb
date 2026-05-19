@@ -248,6 +248,12 @@ Rails.application.routes.draw do
     resources :chat_messages, path: "messages", only: %i[index create]
   end
 
+  authenticate :user, ->(user) { user.operator? } do
+    mount_avo at: "/admin"
+  end
+
+  match "/admin(/*path)", to: "operator_console_access#show", via: :all
+
   # Defines the root path route ("/")
   root "dashboard#show"
 end
