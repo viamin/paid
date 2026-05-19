@@ -226,11 +226,9 @@ module Api
       # CollectReviewReactionFeedback, which queries source_pull_request_number
       # directly for review-goal runs.
       #
-      # NOTE: the existing partial unique index on (project_id,
-      # source_pull_request_number) covers active runs only and does not help
-      # this completed-status query. At current volume that is fine.
-      # TODO(#943): if review-goal feedback volume grows, consider a composite
-      # index on (project_id, source_pull_request_number, status).
+      # NOTE: completed review-goal lookups use the dedicated
+      # idx_agent_runs_review_feedback_lookup composite index because the
+      # active-run unique index only covers queued/pending/running/paused rows.
       @project.agent_runs
         .where(pull_request_number: pr_number, status: "completed")
         .order(created_at: :desc)

@@ -35,7 +35,7 @@ RSpec.describe Guardrails::ViolationHandler do
       )
     end
 
-    it "pauses the agent run on token limit violation" do
+    it "terminates the agent run on token limit violation" do
       result = described_class.call(
         agent_run: agent_run,
         violation_type: "token_limit",
@@ -43,31 +43,38 @@ RSpec.describe Guardrails::ViolationHandler do
         metrics: { max_tokens: 100_000 }
       )
 
-      expect(result.paused?).to be true
-      expect(agent_run.reload.status).to eq("paused")
+      expect(result.paused?).to be false
+      expect(agent_run.reload.status).to eq("timeout")
       expect(agent_run.guardrail_violation_type).to eq("token_limit")
+      expect(agent_run.completed_at).to be_present
+      expect(agent_run.error_message).to include("guardrail: token_limit")
     end
 
-    it "pauses the agent run on cost limit violation" do
+    it "terminates the agent run on cost limit violation" do
       result = described_class.call(
         agent_run: agent_run,
         violation_type: "cost_limit",
         details: "Per-run budget exceeded: 500 of 400 cents"
       )
 
-      expect(result.paused?).to be true
-      expect(agent_run.reload.guardrail_violation_type).to eq("cost_limit")
+      expect(result.paused?).to be false
+      expect(agent_run.reload.status).to eq("timeout")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+      expect(agent_run.error_message).to include("guardrail: cost_limit")
     end
 
-    it "pauses the agent run on time limit violation" do
+    it "terminates the agent run on time limit violation" do
       result = described_class.call(
         agent_run: agent_run,
         violation_type: "time_limit",
         details: "Execution exceeded 3600s limit"
       )
 
-      expect(result.paused?).to be true
-      expect(agent_run.reload.guardrail_violation_type).to eq("time_limit")
+      expect(result.paused?).to be false
+      expect(agent_run.reload.status).to eq("timeout")
+      expect(agent_run.guardrail_violation_type).to eq("time_limit")
+      expect(agent_run.completed_at).to be_present
+      expect(agent_run.error_message).to include("guardrail: time_limit")
     end
 
     it "pauses the agent run on anomaly detection" do
@@ -106,6 +113,38 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(context["recommended_action"]).to be_present
     end
 
+    it "stores violation context for terminal violations" do
+      described_class.call(
+        agent_run: agent_run,
+        violation_type: "time_limit",
+        details: "Execution exceeded 3600s limit",
+        metrics: { elapsed_seconds: 3616, max_execution_seconds: 3600 }
+      )
+
+      context = agent_run.reload.guardrail_context
+      expect(context["violation_type"]).to eq("time_limit")
+      expect(context["details"]).to eq("Execution exceeded 3600s limit")
+      expect(context["triggered_at"]).to be_present
+      expect(context["metrics"]).to include("elapsed_seconds" => 3616)
+      expect(context["execution_cleanup"]).to be_present
+    end
+
+    it "enqueues failure recovery with terminal guardrail subtype in the initial timeout transition" do
+      expect {
+        described_class.call(
+          agent_run: agent_run,
+          violation_type: "time_limit",
+          details: "Execution exceeded 3600s limit"
+        )
+      }.to have_enqueued_job(FailureRecoveryDecisionJob).with(
+        agent_run.id,
+        hash_including(
+          "status" => "timeout",
+          "guardrail_violation_type" => "time_limit"
+        )
+      )
+    end
+
     it "includes current run metrics in context" do
       agent_run.update!(iterations: 10, tokens_input: 5000, tokens_output: 2000, cost_cents: 75)
 
@@ -142,8 +181,8 @@ RSpec.describe Guardrails::ViolationHandler do
       expect {
         described_class.call(
           agent_run: agent_run,
-          violation_type: "cost_limit",
-          details: "Budget exceeded"
+          violation_type: "anomaly",
+          details: "Unusual pattern"
         )
       }.to have_enqueued_job(LiveDashboardBroadcastJob).at_least(:once)
 
@@ -155,11 +194,31 @@ RSpec.describe Guardrails::ViolationHandler do
 
       result = described_class.call(
         agent_run: agent_run,
+        violation_type: "anomaly",
+        details: "Unusual pattern"
+      )
+
+      expect(result.paused?).to be true
+
+      cleanup = agent_run.reload.guardrail_context["execution_cleanup"]
+      expect(cleanup).to include(
+        "status" => "cancel_failed",
+        "error_class" => "StandardError",
+        "error_message" => "Temporal RPC error"
+      )
+    end
+
+    it "records cleanup failure details for terminal violations" do
+      allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal RPC error")
+
+      result = described_class.call(
+        agent_run: agent_run,
         violation_type: "cost_limit",
         details: "Budget exceeded"
       )
 
-      expect(result.paused?).to be true
+      expect(result.paused?).to be false
+      expect(agent_run.reload.status).to eq("timeout")
 
       cleanup = agent_run.reload.guardrail_context["execution_cleanup"]
       expect(cleanup).to include(
@@ -174,17 +233,17 @@ RSpec.describe Guardrails::ViolationHandler do
 
       result = described_class.call(
         agent_run: agent_run,
-        violation_type: "token_limit",
-        details: "Token limit exceeded"
+        violation_type: "time_limit",
+        details: "Time limit exceeded"
       )
 
-      expect(result.paused?).to be true
-      expect(agent_run.reload.status).to eq("paused")
+      expect(result.paused?).to be false
+      expect(agent_run.reload.status).to eq("timeout")
       expect(agent_run.guardrail_context["execution_cleanup"]).to be_present
       expect(AgentRuns::Cancel).to have_received(:call)
     end
 
-    it "does not pause a non-running agent run" do
+    it "does not transition a non-running agent run" do
       agent_run.update!(status: "completed", completed_at: Time.current)
 
       result = described_class.call(
@@ -197,13 +256,26 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(agent_run.reload.status).to eq("completed")
     end
 
+    it "does not transition a non-running agent run for terminal violations" do
+      agent_run.update!(status: "completed", completed_at: Time.current)
+
+      result = described_class.call(
+        agent_run: agent_run,
+        violation_type: "time_limit",
+        details: "Time limit exceeded"
+      )
+
+      expect(result.paused?).to be false
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
     it "does not pause an already paused agent run" do
       agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "loop_detected")
 
       result = described_class.call(
         agent_run: agent_run,
-        violation_type: "cost_limit",
-        details: "Budget exceeded"
+        violation_type: "anomaly",
+        details: "Unusual pattern"
       )
 
       expect(result.paused?).to be true
@@ -220,6 +292,34 @@ RSpec.describe Guardrails::ViolationHandler do
           details: "Something weird"
         )
       }.to raise_error(ArgumentError, /Unknown violation type/)
+    end
+
+    it "sends terminated notification for terminal violations" do
+      described_class.call(
+        agent_run: agent_run,
+        violation_type: "time_limit",
+        details: "Execution exceeded 3600s limit"
+      )
+
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          title: match(/terminated by time limit guardrail/)
+        )
+      )
+    end
+
+    it "sends paused notification for pausable violations" do
+      described_class.call(
+        agent_run: agent_run,
+        violation_type: "loop_detected",
+        details: "Repeated output"
+      )
+
+      expect(Notifications::Publish).to have_received(:call).with(
+        hash_including(
+          title: match(/paused by loop detected guardrail/)
+        )
+      )
     end
   end
 end

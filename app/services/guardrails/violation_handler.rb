@@ -3,7 +3,8 @@
 module Guardrails
   # Unified handler for guardrail violations. When any guardrail is triggered
   # (loop detection, token limit, cost limit, time limit, anomaly), this
-  # service pauses the agent run and sends alerts with actionable context.
+  # service pauses or terminates the agent run and sends alerts with
+  # actionable context.
   #
   # @example
   #   result = Guardrails::ViolationHandler.call(
@@ -16,6 +17,10 @@ module Guardrails
   #   result.violation_type # => "loop_detected"
   class ViolationHandler
     include Rails.application.routes.url_helpers
+
+    # Violation types where no human intervention is expected — the run should
+    # transition directly to a terminal state instead of pausing.
+    TERMINAL_VIOLATION_TYPES = %w[time_limit token_limit cost_limit].freeze
 
     def self.call(...)
       new(...).call
@@ -31,6 +36,40 @@ module Guardrails
     end
 
     def call
+      if terminal_violation?
+        handle_terminal_violation
+      else
+        handle_pausable_violation
+      end
+    end
+
+    private
+
+    attr_reader :agent_run, :violation_type, :details, :metrics
+
+    def terminal_violation?
+      TERMINAL_VIOLATION_TYPES.include?(violation_type)
+    end
+
+    def handle_terminal_violation
+      context = build_violation_context
+      timed_out = agent_run.timeout!(
+        error: "guardrail: #{violation_type} — #{details}",
+        guardrail_violation_type: violation_type,
+        guardrail_context: context
+      )
+
+      return already_handled_result(context) unless timed_out
+
+      log_violation(context)
+      context = persist_execution_cleanup(context, stop_in_flight_execution)
+
+      safe_publish_notification(context)
+
+      Result.new(paused: false, violation_type: violation_type, context: context)
+    end
+
+    def handle_pausable_violation
       context = build_violation_context
       paused = agent_run.pause!(violation_type: violation_type, context: context)
 
@@ -39,27 +78,22 @@ module Guardrails
       log_violation(context)
       context = persist_execution_cleanup(context, stop_in_flight_execution)
 
-      begin
-        publish_notification(context)
-      rescue => e
-        Rails.logger.error(
-          message: "guardrails.notification_failed",
-          agent_run_id: agent_run.id,
-          violation_type: violation_type,
-          error_class: e.class.name,
-          error_message: e.message
-        )
-      end
-
-      # Dashboard alert is handled by LiveDashboardBroadcastJob (triggered by
-      # the status change callback) to avoid duplicate notifications.
+      safe_publish_notification(context)
 
       Result.new(paused: true, violation_type: violation_type, context: context)
     end
 
-    private
-
-    attr_reader :agent_run, :violation_type, :details, :metrics
+    def safe_publish_notification(context)
+      publish_notification(context)
+    rescue => e
+      Rails.logger.error(
+        message: "guardrails.notification_failed",
+        agent_run_id: agent_run.id,
+        violation_type: violation_type,
+        error_class: e.class.name,
+        error_message: e.message
+      )
+    end
 
     def validate_inputs!
       unless AgentRun::GUARDRAIL_VIOLATION_TYPES.include?(violation_type)
@@ -169,7 +203,8 @@ module Guardrails
     end
 
     def notification_title
-      "Agent run ##{agent_run.id} paused by #{violation_type.tr("_", " ")} guardrail"
+      action = terminal_violation? ? "terminated" : "paused"
+      "Agent run ##{agent_run.id} #{action} by #{violation_type.tr("_", " ")} guardrail"
     end
 
     class Result

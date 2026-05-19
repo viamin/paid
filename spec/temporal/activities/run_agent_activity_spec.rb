@@ -1148,6 +1148,84 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(runners).to eq([ "codex" ])
     end
+
+    context "with model-based pre-filtering" do
+      it "excludes runners whose provider is incompatible with the selected model" do
+        llm_model = create(:llm_model, model_id: "glm-5.1", provider: "zai_coding")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        api_key = create(:runner_api_key, user: user, api_service_type: "zai_coding")
+        kilocode_runner = create(
+          :runner,
+          user: user,
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          runner_key: "kilocode",
+          name: "Kilocode GLM 5.1",
+          config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+        )
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ kilocode_runner.routing_key, codex_runner.routing_key ]
+        )
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).to include(kilocode_runner.routing_key)
+        expect(runners).not_to include(codex_runner.routing_key)
+      end
+
+      it "excludes direct-outbound runners whose fixed model differs from the selection" do
+        llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+        matching_runner = create_opencode_runner_entry(
+          user: user, api_key: api_key,
+          name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
+        )
+        other_api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-other")
+        mismatched_runner = create_opencode_runner_entry(
+          user: user, api_key: other_api_key,
+          name: "Deepseek", model: "deepseek-v4-pro"
+        )
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ matching_runner.routing_key, mismatched_runner.routing_key ]
+        )
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).to include(matching_runner.routing_key)
+        expect(runners).not_to include(mismatched_runner.routing_key)
+      end
+
+      it "preserves all runners when no model is selected" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ codex_runner.routing_key ]
+        )
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).to include("claude_code")
+        expect(runners).to include(codex_runner.routing_key)
+      end
+
+      it "keeps all runners when filtering would eliminate every candidate" do
+        # All runners are incompatible, so the filter is not applied
+        llm_model = create(:llm_model, model_id: "exotic-model-99", provider: "exotic_provider")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        user.settings.update!(fallback_enabled: false)
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).not_to be_empty
+      end
+    end
   end
 
   def build_opencode_context(user, api_provider: "openrouter", model: "moonshotai/kimi-k2-0905", service_type: "openrouter", api_key: "sk-openrouter-secret")
@@ -1292,6 +1370,29 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   alias_method :create_opencode_provider_entry, :create_opencode_runner_entry
+
+  def configure_single_compatible_opencode_runner(agent_run:, user:)
+    llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+    create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+    allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude codex opencode])
+
+    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    kimi_runner = create_opencode_runner_entry(
+      user: user,
+      api_key: api_key,
+      name: "Kimi K2",
+      model: "moonshotai/kimi-k2-0905"
+    )
+    codex_runner = create(:runner, user: user, runner_key: "codex")
+
+    user.settings.update!(
+      fallback_enabled: true,
+      fallback_runners: [ kimi_runner.routing_key, codex_runner.routing_key ]
+    )
+
+    kimi_runner
+  end
 
   def expect_change_detection_retry_logs(logger, operation:)
     expect(logger).to have_received(:warn).with(hash_including(
@@ -3319,6 +3420,26 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.error_message).to include("rate limited")
       end
 
+      it "surfaces a single compatible attempted runner as rate limited" do
+        kimi_runner = configure_single_compatible_opencode_runner(agent_run: agent_run, user: user)
+
+        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(
+          Temporalio::Error::ApplicationError,
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+        )
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to match(
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+        )
+        expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq([ kimi_runner.routing_key ])
+      end
+
       it "classifies 'exhausted ... capacity' as a rate limit" do
         gemini_rate_limit = Containers::Provision::Result.failure(
           error: "exit 1", stdout: "", stderr: "You have exhausted your capacity on this model.", exit_code: 1
@@ -3543,36 +3664,44 @@ expect(container_service).to receive(:execute).with(
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "pauses when execution time limit is exceeded" do
+    it "times out when execution time limit is exceeded" do
       project.update!(max_execution_seconds: 60)
       agent_run.update!(started_at: 2.minutes.ago, status: "running")
 
       allow(AgentRuns::Cancel).to receive(:call)
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "All runners exhausted"
+      )
 
       agent_run.reload
-      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
-      expect(agent_run.status).to eq("paused")
+      expect(agent_run.status).to eq("timeout")
       expect(agent_run.guardrail_violation_type).to eq("time_limit")
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
     end
 
-    it "returns a paused result when the run was already paused by another guardrail" do
+    it "preserves a terminal result when another guardrail already timed out the run" do
       project.update!(max_execution_seconds: 60)
       agent_run.update!(started_at: 2.minutes.ago, status: "running")
 
       violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
       allow(Guardrails::ViolationHandler).to receive(:call) do
-        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        agent_run.update!(status: "timeout", completed_at: Time.current, guardrail_violation_type: "cost_limit")
         violation_result
       end
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "All runners exhausted"
+      )
 
       agent_run.reload
-      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
-      expect(agent_run.status).to eq("paused")
+      expect(agent_run.status).to eq("timeout")
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
   end
@@ -3616,20 +3745,24 @@ expect(container_service).to receive(:execute).with(
       allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
     end
 
-    it "returns a paused result when the run was already paused during loop handling" do
+    it "does not overwrite a terminal guardrail result raised during loop handling" do
       allow(activity).to receive(:run_agent_with_runner).and_raise(described_class::InfiniteLoopError, "loop detected")
 
       violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
       allow(Guardrails::ViolationHandler).to receive(:call) do
-        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        agent_run.update!(status: "timeout", completed_at: Time.current, guardrail_violation_type: "cost_limit")
         violation_result
       end
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "Infinite loop detected: loop detected"
+      )
 
       agent_run.reload
-      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
-      expect(agent_run.status).to eq("paused")
+      expect(agent_run.status).to eq("timeout")
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
   end
@@ -3652,24 +3785,28 @@ expect(container_service).to receive(:execute).with(
     end
   end
 
-  describe "paused run protection after runner exhaustion" do
+  describe "terminal guardrail preservation after runner exhaustion" do
     before do
       allow(container_service).to receive(:execute).and_return(exec_failure)
       allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
     end
 
-    it "preserves paused state when a guardrail paused the run during runner execution" do
-      # Simulate a cost budget guardrail pausing the run during execution
+    it "preserves terminal guardrail state when a guardrail times out the run during runner execution" do
+      # Simulate a cost budget guardrail timing out the run during execution
       allow(container_service).to receive(:execute) do
-        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        agent_run.update!(status: "timeout", completed_at: Time.current, guardrail_violation_type: "cost_limit")
         exec_failure
       end
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "All runners exhausted"
+      )
 
       agent_run.reload
-      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
-      expect(agent_run.status).to eq("paused")
+      expect(agent_run.status).to eq("timeout")
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
   end

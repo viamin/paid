@@ -1571,18 +1571,21 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def timeout!(error: nil)
+  def timeout!(error: nil, guardrail_violation_type: nil, guardrail_context: nil)
     with_lock do
       reload
       if finished?
         false
       else
-        update!(
+        attributes = {
           status: "timeout",
           completed_at: Time.current,
           error_message: error,
           duration_seconds: duration
-        )
+        }
+        attributes[:guardrail_violation_type] = guardrail_violation_type unless guardrail_violation_type.nil?
+        attributes[:guardrail_context] = guardrail_context unless guardrail_context.nil?
+        update!(attributes)
       end
     end
   end
@@ -1788,7 +1791,7 @@ class AgentRun < ApplicationRecord
     return {} unless owner
 
     routing_ids = runners_attempted.filter_map do |attempt|
-      Runner.id_from_routing_key(attempt["runner"])
+      Runner.id_from_routing_key(attempt["runner"] || attempt["provider"])
     end
     return {} if routing_ids.empty?
 
