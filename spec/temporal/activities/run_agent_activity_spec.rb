@@ -101,6 +101,43 @@ RSpec.describe Activities::RunAgentActivity do
       })
   end
 
+  def create_runner_backed_agent_run(project:, runner:)
+    create(
+      :agent_run,
+      :with_git_context,
+      project: project,
+      issue: create(:issue, project: project),
+      runner: runner,
+      container_id: "abc123"
+    )
+  end
+
+  def expect_all_runners_exhausted(activity:, agent_run:)
+    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+    expect {
+      activity.execute(agent_run_id: agent_run.id)
+    }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+  end
+
+  def trip_runner_circuit_with_preflight_timeouts(activity:, project:, runner:, attempts: 3)
+    attempts.times do
+      timed_out_run = create_runner_backed_agent_run(project: project, runner: runner)
+      expect_all_runners_exhausted(activity: activity, agent_run: timed_out_run)
+    end
+  end
+
+  def create_open_runner_state(user:, runner:, opened_at:, failure_count: 3)
+    create(
+      :runner_state,
+      user: user,
+      runner_name: runner.state_key,
+      circuit_state: "open",
+      failure_count: failure_count,
+      circuit_opened_at: opened_at
+    )
+  end
+
   def run_direct_outbound_preflight(activity:, agent_run:, container_service:, provider:, user:)
     command_context = Activities::RunAgentActivity::CommandContext.new(
       runner_candidate: provider,
@@ -2256,6 +2293,59 @@ expect(container_service).to receive(:execute).with(
             idle_timeout: described_class::DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS
           )
         )
+      end
+
+      it "opens the runner circuit after three consecutive preflight timeouts and skips later runs during cooldown" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(circuit_breaker_failure_threshold: 10)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::PreflightTimeoutError,
+          "Preflight check failed: Runner smoke preflight timed out after 30s"
+        )
+
+        trip_runner_circuit_with_preflight_timeouts(activity: activity, project: project, runner: runner)
+
+        state = user.runner_states.find_by!(runner_name: runner.state_key)
+        expect(state).to be_circuit_open
+
+        skipped_run = create_runner_backed_agent_run(project: project, runner: runner)
+
+        expect(activity).not_to receive(:run_agent_with_runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
+
+        expect(skipped_run.reload.runners_attempted).to include(
+          hash_including(
+            "error_type" => "unavailable",
+            "error_message" => "Skipped because runner circuit is open"
+          )
+        )
+      end
+
+      it "reopens a half-open runner circuit when the recovery preflight times out" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 10,
+          circuit_breaker_timeout_seconds: 300
+        )
+        state = create_open_runner_state(user: user, runner: runner, opened_at: 10.minutes.ago)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::PreflightTimeoutError,
+          "Preflight check failed: Runner smoke preflight timed out after 30s"
+        )
+
+        timed_out_run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: timed_out_run)
+
+        state.reload
+        expect(state).to be_circuit_open
+        expect(state.circuit_opened_at).to be_within(5.seconds).of(Time.current)
+
+        skipped_run = create_runner_backed_agent_run(project: project, runner: runner)
+
+        expect(activity).not_to receive(:run_agent_with_runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
       end
 
       it "calls harness preflight_check with the main execution env and timeout" do

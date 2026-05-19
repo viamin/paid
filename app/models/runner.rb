@@ -63,6 +63,7 @@ class Runner < ApplicationRecord
 
   KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   KILOCODE_DEFAULT_API_PROVIDER = "anthropic"
+  MIN_PREFLIGHT_TIMEOUT_SECONDS = 1
 
   AIDER_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   AIDER_DEFAULT_API_PROVIDER = "openrouter"
@@ -241,6 +242,12 @@ class Runner < ApplicationRecord
     return nil unless runner_key == "kilocode"
 
     kilocode_config["model"].to_s.presence
+  end
+
+  def kilocode_preflight_timeout_seconds
+    return nil unless runner_key == "kilocode"
+
+    Integer(kilocode_config["preflight_timeout_seconds"], exception: false)
   end
 
   def kilocode_required_api_service_type
@@ -942,6 +949,11 @@ class Runner < ApplicationRecord
 
     if kilocode_model_id.blank?
       errors.add(:config, "must include a KiloCode model id")
+    end
+
+    if kilocode_config["preflight_timeout_seconds"].present? &&
+        (kilocode_preflight_timeout_seconds.nil? || kilocode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
+      errors.add(:config, "must include a KiloCode preflight timeout of at least #{MIN_PREFLIGHT_TIMEOUT_SECONDS} second")
     end
   end
 

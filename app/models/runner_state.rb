@@ -43,15 +43,14 @@ class RunnerState < ApplicationRecord
     with_lock do
       new_count = failure_count + 1
 
-      if new_count >= threshold && circuit_state == "closed"
-        update!(
-          failure_count: new_count,
-          circuit_state: "open",
-          circuit_opened_at: Time.current
-        )
-      else
-        update!(failure_count: new_count)
+      attrs = { failure_count: new_count }
+
+      if circuit_half_open? || (new_count >= threshold && circuit_closed?)
+        attrs[:circuit_state] = "open"
+        attrs[:circuit_opened_at] = Time.current
       end
+
+      update!(attrs)
     end
   end
 

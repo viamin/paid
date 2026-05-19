@@ -31,6 +31,8 @@ RSpec.describe RunnerFormBridgeFile, :no_db do
     expect(runner_form).to include('name="runner[config][aider][model]"')
     expect(provider_form).to include('name="provider[config][aider][api_provider]"')
     expect(provider_form).to include('name="provider[config][aider][model]"')
+    expect(runner_form).to include('name="runner[config][kilocode][preflight_timeout_seconds]"')
+    expect(provider_form).to include('name="provider[config][kilocode][preflight_timeout_seconds]"')
     expect(runner_form).to include('name="runner[config][pi][api_provider]"')
     expect(runner_form).to include('name="runner[config][pi][model]"')
     expect(provider_form).to include('name="provider[config][pi][api_provider]"')
@@ -38,6 +40,7 @@ RSpec.describe RunnerFormBridgeFile, :no_db do
   end
 
   it "permits aider config through the runners controller bridge" do
+    expect(runners_controller).to include("kilocode: [ :api_provider, :model, :preflight_timeout_seconds ]")
     expect(runners_controller).to include("aider: [ :api_provider, :model ]")
     expect(runners_controller).to include("pi: [ :api_provider, :model ]")
   end

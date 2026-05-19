@@ -6,6 +6,25 @@ require "set"
 RSpec.describe "Runners" do
   let(:user) { create(:user) }
 
+  def kilocode_runner_params(api_key_id:, model:, preflight_timeout_seconds: nil)
+    kilocode_config = {
+      api_provider: "inception",
+      model: model
+    }
+    kilocode_config[:preflight_timeout_seconds] = preflight_timeout_seconds if preflight_timeout_seconds
+
+    {
+      runner_key: "kilocode",
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true,
+      config: {
+        kilocode: kilocode_config
+      }
+    }
+  end
+
   describe "GET /runners" do
     context "when not authenticated" do
       it "redirects to sign in" do
@@ -478,23 +497,28 @@ RSpec.describe "Runners" do
       api_key = create(:provider_api_key, user: user, api_service_type: "inception")
 
       post runners_path, params: {
-        runner: {
-          runner_key: "kilocode",
-          auth_type: "api_key",
-          provider_api_key_id: api_key.id,
-          enabled_for_agent_runs: true,
-          enabled_for_fallback: true,
-          config: {
-            kilocode: {
-              api_provider: "inception",
-              model: ""
-            }
-          }
-        }
+        runner: kilocode_runner_params(api_key_id: api_key.id, model: "")
       }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("must include a KiloCode model id")
+    end
+
+    it "persists nested KiloCode preflight timeout config for API-key runners" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "inception")
+
+      post runners_path, params: {
+        runner: kilocode_runner_params(
+          api_key_id: api_key.id,
+          model: "glm-5.1",
+          preflight_timeout_seconds: "45"
+        )
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "kilocode", auth_type: "api_key")
+      expect(runner.kilocode_model_id).to eq("glm-5.1")
+      expect(runner.kilocode_preflight_timeout_seconds).to eq(45)
     end
 
     it "rejects opencode API-key providers without a model id" do

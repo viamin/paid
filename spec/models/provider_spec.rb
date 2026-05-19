@@ -334,6 +334,17 @@ RSpec.describe Provider do
       expect(provider.errors[:config]).to include("must include a KiloCode model id")
     end
 
+    it "requires kilocode preflight timeout overrides to be positive integers" do
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "inception")
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      provider.provider_key = "kilocode"
+      provider.config = { "kilocode" => { "api_provider" => "inception", "model" => "glm-5.1", "preflight_timeout_seconds" => "0" } }
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config]).to include("must include a KiloCode preflight timeout of at least 1 second")
+    end
+
     it "requires a model id for opencode api_key providers" do
       api_key = create(:provider_api_key, user: provider.user, api_service_type: "openrouter")
       provider.auth_type = "api_key"
@@ -598,6 +609,14 @@ RSpec.describe Provider do
       config = JSON.parse(provider.kilocode_config_json)
 
       expect(config["model"]).to eq("anthropic/claude-opus-4")
+    end
+
+    it "reads an optional per-provider preflight timeout override from config" do
+      provider.update!(
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514", "preflight_timeout_seconds" => "45" } }
+      )
+
+      expect(provider.kilocode_preflight_timeout_seconds).to eq(45)
     end
 
     it "uses the native zai-coding-plan provider id for z.ai coding plan backends" do

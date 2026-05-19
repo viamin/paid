@@ -207,6 +207,20 @@
                class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
         <p class="mt-1 text-xs text-gray-500">Required. The model identifier for the selected API provider.</p>
       </div>
+
+      <div class="mt-4">
+        <label for="provider_config_kilocode_preflight_timeout_seconds" class="block text-sm font-medium text-gray-900">Preflight Timeout (seconds)</label>
+        <input id="provider_config_kilocode_preflight_timeout_seconds"
+               name="provider[config][kilocode][preflight_timeout_seconds]"
+               type="number"
+               min="<%= Provider::MIN_PREFLIGHT_TIMEOUT_SECONDS %>"
+               value="<%= provider.kilocode_preflight_timeout_seconds %>"
+               placeholder="<%= Activities::RunAgentActivity::DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS %>"
+               autocomplete="off"
+                <% unless kilocode_settings_enabled %>disabled<% end %>
+               class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+        <p class="mt-1 text-xs text-gray-500">Optional. Overrides the default direct-outbound preflight timeout for this KiloCode entry only.</p>
+      </div>
     </div>
   </div>
 
