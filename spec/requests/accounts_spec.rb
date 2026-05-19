@@ -124,6 +124,22 @@ RSpec.describe "Accounts" do
       expect(flash[:alert]).to include("another account")
     end
 
+    it "does not send reset instructions when the invite transaction rolls back" do
+      allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+      expect do
+        post account_memberships_path, params: {
+          invitation: {
+            email: "rolled-back@example.com",
+            role: "member"
+          }
+        }
+      end.not_to change(ActionMailer::Base.deliveries, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(User.find_by(email: "rolled-back@example.com")).to be_nil
+    end
+
     it "refuses to invite an owner via the membership flow" do
       expect do
         post account_memberships_path, params: {
@@ -216,6 +232,30 @@ RSpec.describe "Accounts" do
 
       expect(response).to redirect_to(root_path)
       expect(account.reload).to be_active
+    end
+
+    it "reactivates a suspended account and records activity" do
+      account.suspend!
+
+      expect do
+        patch account_lifecycle_path, params: { transition: "reactivate" }
+      end.to change(AccountActivityEvent, :count).by(1)
+
+      expect(response).to redirect_to(account_path)
+      expect(account.reload).to be_active
+      expect(account.account_activity_events.recent.first.action).to eq("lifecycle.reactivated")
+    end
+
+    it "deactivates a suspended account and records activity" do
+      account.suspend!
+
+      expect do
+        patch account_lifecycle_path, params: { transition: "deactivate" }
+      end.to change(AccountActivityEvent, :count).by(1)
+
+      expect(response).to redirect_to(account_path)
+      expect(account.reload).to be_deactivated
+      expect(account.account_activity_events.recent.first.action).to eq("lifecycle.deactivated")
     end
   end
 end

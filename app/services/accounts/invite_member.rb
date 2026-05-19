@@ -25,6 +25,7 @@ module Accounts
       raise AdministrationError, "That email is already used by another account." if existing_user.present? && existing_user.account_id != account.id
 
       membership = nil
+      user = nil
 
       ActiveRecord::Base.transaction do
         user = existing_user || create_user!
@@ -33,7 +34,6 @@ module Accounts
 
         membership.role = role
         membership.save!
-        user.send_reset_password_instructions if existing_user.nil?
 
         Accounts::RecordActivity.call(
           account: account,
@@ -43,6 +43,8 @@ module Accounts
           metadata: { email: user.email, role: membership.role }
         )
       end
+
+      user.send_reset_password_instructions if existing_user.nil?
 
       membership
     end

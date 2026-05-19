@@ -20,4 +20,8 @@ class AccountLifecyclesController < ApplicationController
   def lifecycle_params
     params.permit(:transition)
   end
+
+  def allow_suspended_account_write?
+    current_account.suspended? && lifecycle_params[:transition].in?(%w[reactivate deactivate])
+  end
 end
