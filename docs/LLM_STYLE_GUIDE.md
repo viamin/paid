@@ -113,8 +113,8 @@ Analyzing meaning or making a judgment?
 ## 8. Rails Patterns
 
 - **Controllers**: Thin, delegate to services. HTTP concerns only. `STYLE_GUIDE:968-1005`
-- **Views**: Phlex components (pure Ruby, composable, performant). `STYLE_GUIDE:1007-1125`
-- **Hotwire**: Broadcast Turbo Stream updates via Phlex rendering. `STYLE_GUIDE:1127-1146`
+- **Views**: Use the current ERB stack; treat Phlex as future-state guidance until the gem lands. `STYLE_GUIDE:1007-1125`
+- **Hotwire**: Follow existing Turbo patterns; Phlex rendering guidance applies only after adoption. `STYLE_GUIDE:1127-1146`
 - **Background jobs**: Prefer Temporal workflows for multi-step/external work. GoodJob for simple fire-and-forget. `STYLE_GUIDE:1148-1197`
 
 ## 9. Security

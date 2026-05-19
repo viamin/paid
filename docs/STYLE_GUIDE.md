@@ -158,7 +158,7 @@ app/
 ├── workflows/            # Temporal workflow definitions
 ├── activities/           # Temporal activity implementations
 ├── adapters/             # External service adapters (GitHub, LLM providers)
-├── views/                # Phlex view components and templates
+├── views/                # ERB templates today; Phlex components once adopted
 └── jobs/                 # GoodJob jobs (when Temporal isn't appropriate)
 ```
 
@@ -1054,11 +1054,13 @@ class AgentRunsController < ApplicationController
 end
 ```
 
-### Views with Phlex
+### Views
 
-Use [Phlex](https://www.phlex.fun/) for view components. Phlex provides pure Ruby views with better performance than ERB and natural composition.
+The app currently renders views with ERB. Match the existing ERB-based stack unless and until Phlex is added to the application.
 
-**Why Phlex over ERB/ViewComponent**:
+If and when [Phlex](https://www.phlex.fun/) is adopted, it remains the intended future component layer because it provides pure Ruby views with natural composition.
+
+**Why Phlex once adopted**:
 
 - Pure Ruby: No template language to learn, full IDE support
 - Performance: Faster than ERB, especially for component-heavy pages
@@ -1136,7 +1138,7 @@ class Components::AgentRunCard < Phlex::HTML
 end
 ```
 
-**Page layouts with Phlex**:
+**Page layouts with Phlex once adopted**:
 
 ```ruby
 # app/views/layouts/application_layout.rb
@@ -1176,7 +1178,7 @@ end
 
 ### Hotwire Integration
 
-Phlex works seamlessly with Turbo. Broadcast updates by rendering components:
+Once Phlex is available in the app, it works seamlessly with Turbo. Broadcast updates by rendering components:
 
 ```ruby
 # app/models/agent_run.rb

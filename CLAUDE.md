@@ -128,7 +128,7 @@ app/
 ├── workflows/        # Temporal workflow definitions (to be added)
 ├── activities/       # Temporal activity implementations (to be added)
 ├── adapters/         # External service adapters (to be added)
-├── views/            # Phlex view components (to be added)
+├── views/            # ERB templates today; Phlex components if/when that layer lands
 └── jobs/             # GoodJob jobs
 ```
 
@@ -168,7 +168,7 @@ When adding a new artifact pattern, update ALL of: `.gitignore`, `CONTAINER_ARTI
 - Follow `rubocop-rails-omakase` style (StandardRB-based)
 - `frozen_string_literal: true` at top of all Ruby files
 - Service objects use [Servo](https://github.com/martinstreicher/servo) with verb-noun naming: `AgentRuns::Create`, `Projects::Import`
-- Views use [Phlex](https://www.phlex.fun/) for pure Ruby components
+- The app currently renders views with ERB. [Phlex](https://www.phlex.fun/) remains the intended future component layer, but do not assume the gem or component base classes already exist until that work lands.
 - No TODO without issue reference: `# TODO(#123): description`
 
 ### Size Guidelines (Sandi Metz's Rules)
