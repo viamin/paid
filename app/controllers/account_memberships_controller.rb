@@ -53,10 +53,18 @@ class AccountMembershipsController < ApplicationController
   end
 
   def invitation_params
-    params.require(:invitation).permit(:email, :name, :role)
+    invitation = params.require(:invitation)
+
+    {
+      email: invitation[:email],
+      name: invitation[:name],
+      role: invitation[:role]
+    }
   end
 
   def membership_params
-    params.require(:account_membership).permit(:role)
+    membership = params.require(:account_membership)
+
+    { role: membership[:role] }
   end
 end

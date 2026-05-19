@@ -18,13 +18,13 @@ class AccountActivityEvent < ApplicationRecord
     when "account.updated"
       "Updated account settings"
     when "membership.invited"
-      "Invited #{metadata.fetch('email')} as #{metadata.fetch('role').humanize.downcase}"
+      "Invited #{metadata_value('email')} as #{humanized_metadata_value('role')}"
     when "membership.role_changed"
-      "Changed #{metadata.fetch('email')} from #{metadata.fetch('from_role').humanize.downcase} to #{metadata.fetch('to_role').humanize.downcase}"
+      "Changed #{metadata_value('email')} from #{humanized_metadata_value('from_role')} to #{humanized_metadata_value('to_role')}"
     when "membership.removed"
-      "Removed #{metadata.fetch('email')} from the account"
+      "Removed #{metadata_value('email')} from the account"
     when "ownership.transferred"
-      "Transferred ownership to #{metadata.fetch('to_email')}"
+      "Transferred ownership to #{metadata_value('to_email')}"
     when "lifecycle.suspended"
       "Suspended the account"
     when "lifecycle.reactivated"
@@ -41,11 +41,21 @@ class AccountActivityEvent < ApplicationRecord
   def detail_lines
     case action
     when "account.updated", "tenant_configuration.updated"
-      Array(metadata["changed_fields"]).map { |field| "#{field.humanize} changed" }
+      Array(metadata.to_h["changed_fields"]).map { |field| "#{field.humanize} changed" }
     when "ownership.transferred"
-      [ "Previous owner: #{metadata['from_email']}" ]
+      [ "Previous owner: #{metadata_value('from_email')}" ]
     else
       []
     end
+  end
+
+  private
+
+  def metadata_value(key)
+    metadata.to_h[key] || "unknown"
+  end
+
+  def humanized_metadata_value(key)
+    metadata_value(key).to_s.humanize.downcase
   end
 end

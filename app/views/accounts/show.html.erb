@@ -25,7 +25,7 @@
       </div>
       <div class="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Projects</p>
-        <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-white"><%= current_account.projects.count %></p>
+        <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-white"><%= @projects_count %></p>
       </div>
     </div>
   </div>
@@ -174,7 +174,7 @@
           </div>
           <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
             <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Projects</p>
-            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"><%= current_account.projects.count %></p>
+            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"><%= @projects_count %></p>
             <p class="text-sm text-gray-500 dark:text-gray-400">Limit: <%= @tenant_setting.max_projects || "Unlimited" %></p>
           </div>
           <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">

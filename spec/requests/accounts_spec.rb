@@ -108,6 +108,20 @@ RSpec.describe "Accounts" do
       expect(response).to redirect_to(account_path)
       expect(flash[:alert]).to include("another account")
     end
+
+    it "refuses to invite an owner via the membership flow" do
+      expect do
+        post account_memberships_path, params: {
+          invitation: {
+            email: "new-owner@example.com",
+            role: "owner"
+          }
+        }
+      end.not_to change(AccountMembership, :count)
+
+      expect(response).to redirect_to(account_path)
+      expect(flash[:alert]).to include("ownership transfer")
+    end
   end
 
   describe "PATCH /account_memberships/:id" do

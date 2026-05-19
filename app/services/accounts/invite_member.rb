@@ -17,7 +17,7 @@ module Accounts
     def call
       raise AdministrationError, "Email is required." if email.blank?
       raise AdministrationError, "Role is invalid." unless AccountMembership.roles.key?(role)
-      raise AdministrationError, "Only owners can invite another owner." if role == "owner" && !actor.has_role?(:owner, account)
+      raise AdministrationError, "Use ownership transfer to assign the owner role." if role == "owner"
 
       existing_user = TenantContext.with_system_access do
         User.find_by(email: email)

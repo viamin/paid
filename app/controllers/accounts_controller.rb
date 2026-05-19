@@ -30,6 +30,7 @@ class AccountsController < ApplicationController
   def set_account_context
     @tenant_setting = current_account.tenant_setting!
     @memberships = current_account.account_memberships.includes(:user).order(role: :desc, created_at: :asc)
+    @projects_count = current_account.projects.count
     @active_plan = current_account.billing_plans.active.order(created_at: :desc).first
     @current_billing_period = current_account.billing_periods.order(starts_at: :desc).first
     @recent_invoices = current_account.billing_invoices.order(created_at: :desc).limit(5)
