@@ -453,6 +453,22 @@ module Activities
         agent_run.reload
         return paused_result(agent_run_id) if agent_run.paused?
 
+        error_type = "AllRunnersExhausted"
+        error_message = "All runners exhausted"
+
+        # When the only compatible runner(s) were all rate-limited or
+        # circuit-open, surface the real cause instead of the generic
+        # "all runners exhausted" message.
+        if runners.size <= 1 && (all_skipped_rate_limited || last_error == "rate_limited")
+          selected_model = agent_run.model_selection&.llm_model
+          if selected_model && runners.size == 1
+            label = runner_attempt_label(runners.first, agent_run, user_settings.user)
+            reason = "rate limited"
+            error_message = "No compatible runner available: #{label} is the only runner compatible with #{selected_model.model_id} and it is currently #{reason}"
+            error_type = "NoCompatibleRunnerAvailable"
+          end
+        end
+
         # All runners exhausted. Timeout takes precedence over rate_limited
         # because it indicates an actual execution attempt that should trigger
         # ProcessRunQueueJob to re-schedule work.
@@ -466,16 +482,17 @@ module Activities
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
-            error: "All runners rate limited: #{runner_list}",
+            error: error_type == "NoCompatibleRunnerAvailable" ? error_message : "All runners rate limited: #{runner_list}",
             reset_at: rate_limit_reset_at
           )
         elsif !agent_run.finished?
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
           agent_run.fail!(error: "All runners exhausted: #{runner_list}")
         end
+
         raise Temporalio::Error::ApplicationError.new(
-          "All runners exhausted",
-          type: "AllRunnersExhausted",
+          error_message,
+          type: error_type,
           non_retryable: true
         )
       end
@@ -671,6 +688,28 @@ module Activities
         "Selected model #{selected_model.model_id} (#{selected_model.provider}) is not compatible with #{runner_label} (expects #{compatible_provider})"
     end
 
+    # Returns true when a runner candidate is structurally compatible with the
+    # selected LlmModel. Checks provider family and fixed runtime model.
+    def runner_compatible_with_model?(runner_candidate, selected_model, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+
+      # 1. Provider family check — e.g. "claude" expects "anthropic"
+      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
+      if compatible_provider.present? && selected_model.provider != compatible_provider
+        return false
+      end
+
+      # 2. Fixed runtime model check — direct-outbound runners have a
+      #    configured model that must match the selected model exactly.
+      fixed_model_id = runner_entry&.direct_outbound_model_id
+      if fixed_model_id.present? && fixed_model_id != selected_model.model_id
+        return false
+      end
+
+      true
+    end
+
     def paused_result(agent_run_id)
       {
         agent_run_id: agent_run_id,
@@ -744,6 +783,15 @@ module Activities
       end
       if runners.empty? && fallback_to_default_runner?(agent_run)
         runners = default_runner_candidates(agent_run, user_settings)
+      end
+
+      # Pre-filter runners that are structurally incompatible with the
+      # selected model. This avoids wasting attempts on runners that would
+      # always fail validation in selected_runner_runtime.
+      selected_model = agent_run.model_selection&.llm_model
+      if selected_model
+        compatible = runners.select { |r| runner_compatible_with_model?(r, selected_model, user_settings.user) }
+        runners = compatible if compatible.any?
       end
 
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
