@@ -126,6 +126,21 @@ RSpec.describe Knowledge::Embeddings::Generate do
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
     end
 
+    it "retries when the shim wraps TLS transport failures as provider errors" do
+      allow(AgentHarness).to receive(:embed).and_raise(
+        AgentHarness::ProviderError.new(
+          "HTTP connection error: tls handshake failed",
+          original_error: OpenSSL::SSL::SSLError.new("tls handshake failed")
+        )
+      )
+
+      generator = described_class.new(base_url: base_url, headers: headers)
+      allow(generator).to receive(:sleep)
+
+      expect { generator.call(texts: texts) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
+    end
+
     it "raises EmbeddingError on invalid embedding response JSON" do
       allow(AgentHarness).to receive(:embed).and_raise(
         AgentHarness::ProviderError.new(

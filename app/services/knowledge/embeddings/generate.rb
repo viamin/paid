@@ -13,7 +13,9 @@ module Knowledge
 
       RETRYABLE_PROVIDER_STATUSES = [ 500, 502, 503, 504 ].freeze
       RETRYABLE_PROVIDER_ERRORS = [
+        EOFError,
         IOError,
+        OpenSSL::SSL::SSLError,
         SocketError,
         Errno::ECONNREFUSED,
         Errno::ECONNRESET

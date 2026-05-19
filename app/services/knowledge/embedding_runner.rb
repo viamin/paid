@@ -178,6 +178,11 @@ module Knowledge
         require "agent_harness"
 
         module PaidEmbeddingTransportPatch
+          PAID_TRANSPORT_ERRORS = [
+            EOFError,
+            OpenSSL::SSL::SSLError
+          ].freeze
+
           def initialize(base_url:, api_key:, model:, logger: nil, extra_headers: {}, timeout: self.class::DEFAULT_TIMEOUT)
             @paid_extra_headers = extra_headers
             @paid_timeout = timeout
@@ -197,6 +202,8 @@ module Knowledge
             handle_embedding_error_response(http_response, status_code) unless status_code == 200
 
             JSON.parse(http_response.body)
+          rescue *PAID_TRANSPORT_ERRORS => e
+            raise AgentHarness::ProviderError.new("HTTP connection error: #{e.message}", original_error: e)
           rescue JSON::ParserError => e
             raise AgentHarness::ProviderError.new(
               "Invalid JSON in embedding API response: #{e.message}",
