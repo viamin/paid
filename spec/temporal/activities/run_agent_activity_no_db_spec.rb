@@ -204,4 +204,34 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       expect(marketplace_env).to eq("MARKETPLACE_FLAG" => "enabled")
     end
   end
+
+  describe "#preflight_timeout_seconds_for" do
+    let(:activity) { described_class.new }
+
+    it "prefers a configured kilocode timeout override on the runner entry" do
+      runner_entry = instance_double(
+        Runner,
+        kilocode_preflight_timeout_seconds: 45,
+        requires_direct_outbound?: true
+      )
+      allow(activity).to receive(:provider_entry_for).and_return(runner_entry)
+
+      timeout = activity.send(:preflight_timeout_seconds_for, "runner:19", nil)
+
+      expect(timeout).to eq(45)
+    end
+
+    it "falls back to the direct-outbound default when no override is configured" do
+      runner_entry = instance_double(
+        Runner,
+        kilocode_preflight_timeout_seconds: nil,
+        requires_direct_outbound?: true
+      )
+      allow(activity).to receive(:provider_entry_for).and_return(runner_entry)
+
+      timeout = activity.send(:preflight_timeout_seconds_for, "runner:19", nil)
+
+      expect(timeout).to eq(described_class::DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS)
+    end
+  end
 end

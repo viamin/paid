@@ -27,12 +27,9 @@ module PreCommitRequirements
     end
 
     def call
-      # TODO(#664): Pass the initiating user explicitly once AgentRun tracks
-      # who triggered the run. Currently falls back to project.effective_owner,
-      # which means user-level requirements bind to the project owner.
       requirements = PreCommitRequirement.resolve(
         project: agent_run.project,
-        user: agent_run.project.effective_owner
+        user: agent_run.settings_user
       )
 
       return { passed: true, results: [], blocking: false } if requirements.empty?
