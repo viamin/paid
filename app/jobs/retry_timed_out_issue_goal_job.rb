@@ -52,6 +52,7 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         created = AgentRun.create!(
           project: locked_run.project,
           issue: locked_run.issue,
+          initiating_user: locked_run.initiating_user,
           runner: locked_run.runner,
           agent_type: locked_run.agent_type,
           custom_prompt: locked_run.custom_prompt,

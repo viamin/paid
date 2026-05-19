@@ -76,6 +76,7 @@ module Activities
       attrs = {
         project: project,
         issue: issue,
+        initiating_user_id: input[:initiating_user_id],
         runner_id: provider_id,
         agent_type: agent_type,
         goal: goal,

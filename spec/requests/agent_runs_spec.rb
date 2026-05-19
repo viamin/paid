@@ -1160,6 +1160,7 @@ RSpec.describe "AgentRuns" do
         agent_run = AgentRun.last
         expect(agent_run.project).to eq(project)
         expect(agent_run.issue).to eq(issue)
+        expect(agent_run.initiating_user).to eq(user)
         expect(agent_run.agent_type).to eq("claude_code")
         expect(agent_run.status).to eq("queued")
       end
@@ -1687,6 +1688,7 @@ RSpec.describe "AgentRuns" do
         agent_run = AgentRun.last
         expect(agent_run.project).to eq(project)
         expect(agent_run.issue).to eq(issue)
+        expect(agent_run.initiating_user).to eq(user)
         expect(agent_run.agent_type).to eq("claude_code")
         expect(agent_run.goal).to eq("create_pr")
         expect(agent_run.status).to eq("queued")
@@ -2218,6 +2220,7 @@ RSpec.describe "AgentRuns" do
         expect(new_run.status).to eq("queued")
         expect(new_run.project).to eq(project)
         expect(new_run.issue).to eq(agent_run.issue)
+        expect(new_run.initiating_user).to eq(user)
         expect(new_run.agent_type).to eq("claude_code")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
@@ -2461,26 +2464,35 @@ RSpec.describe "AgentRuns" do
 
       it "creates a new queued run and marks original as retried on success" do
         agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "claude_code")
-        without_partial_double_verification do
-          allow(AgentHarness).to receive(:refresh_auth)
-        end
+        without_partial_double_verification { allow(AgentHarness).to receive(:refresh_auth) }
 
         expect {
           post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
         }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
-        expect(new_run.status).to eq("queued")
-        expect(new_run.project).to eq(project)
-        expect(new_run.issue).to eq(agent_run.issue)
-        expect(new_run.agent_type).to eq("claude_code")
-        expect(new_run.trigger_type).to eq("manual")
+        expect(new_run).to have_attributes(
+          status: "queued",
+          project: project,
+          issue: agent_run.issue,
+          agent_type: "claude_code",
+          trigger_type: "manual"
+        )
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
         expect(OrchestrationDecision.last.actor).to eq("refresh_auth_retry")
+        without_partial_double_verification { expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token") }
+      end
+
+      it "binds refresh-auth retries to the current user" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
         without_partial_double_verification do
-          expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token")
+          allow(AgentHarness).to receive(:refresh_auth)
         end
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
+
+        expect(AgentRun.last.initiating_user).to eq(user)
       end
 
       it "still accepts the legacy auth_code parameter as a token" do

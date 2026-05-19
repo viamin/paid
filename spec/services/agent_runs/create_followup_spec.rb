@@ -7,11 +7,13 @@ RSpec.describe AgentRuns::CreateFollowup do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }
     let(:runner) { create(:runner, user: project.created_by) }
+    let(:initiating_user) { create(:user, account: project.account) }
     let(:analysis_run) do
       create(:agent_run, :analyze_issue_goal, :completed,
         project: project,
         issue: issue,
-        runner: runner)
+        runner: runner,
+        initiating_user: initiating_user)
     end
 
     context "when goal is create_pr" do
@@ -41,6 +43,12 @@ RSpec.describe AgentRuns::CreateFollowup do
 
         expect(followup.trigger_type).to eq("automatic")
         expect(followup.auto_pick).to be true
+      end
+
+      it "carries forward the original initiating user" do
+        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
+
+        expect(followup.initiating_user).to eq(initiating_user)
       end
     end
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_004131) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_030522) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -216,6 +216,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_004131) do
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
+    t.bigint "initiating_user_id", comment: "User who explicitly initiated the run; null for system-triggered runs."
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
@@ -262,6 +263,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_004131) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["focus"], name: "index_agent_runs_on_focus"
     t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
+    t.index ["initiating_user_id"], name: "index_agent_runs_on_initiating_user_id"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "created_at"], name: "idx_agent_runs_project_created_at_desc", order: { created_at: :desc }
@@ -2303,6 +2305,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_004131) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", column: "provider_id", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"

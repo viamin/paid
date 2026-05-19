@@ -434,6 +434,7 @@ module Runners
         result = AgentRun.insert_all!(
           [ {
             project_id: test_project.id,
+            initiating_user_id: runner.user_id,
             provider_id: runner.id,
             runner_id: runner.id,
             agent_type: Runner.agent_type_for(runner.runner_key),
