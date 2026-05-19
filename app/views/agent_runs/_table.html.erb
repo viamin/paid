@@ -47,7 +47,7 @@
                       <% end %>
                     </td>
                     <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                      <%= link_to "View", project_agent_run_path(project, run), class: "text-indigo-600 hover:text-indigo-900" %>
+                      <%= link_to "View", project_agent_run_member_path(project, run), class: "text-indigo-600 hover:text-indigo-900" %>
                       <% if run.pull_request_url.present? %>
                         &middot;
                         <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
@@ -70,7 +70,7 @@
       <p class="mt-1 text-sm text-gray-500">Trigger an agent run to get started.</p>
       <% if local_assigns.fetch(:show_trigger_button, false) %>
         <div class="mt-6">
-          <%= link_to new_project_agent_run_path(project), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" do %>
+          <%= link_to new_project_agent_run_member_path(project), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" do %>
             Trigger Run
           <% end %>
         </div>

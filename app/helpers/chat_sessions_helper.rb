@@ -69,6 +69,10 @@ module ChatSessionsHelper
     (chat_session.projects.to_a + [ chat_session.project ].compact).uniq(&:id)
   end
 
+  def chat_session_member_path(chat_session)
+    Rails.application.routes.url_helpers.chat_session_path(chat_session)
+  end
+
   def chat_message_bubble_classes(message)
     case message.role
     when "user"
