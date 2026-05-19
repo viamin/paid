@@ -6,6 +6,25 @@ require "set"
 RSpec.describe "Providers" do
   let(:user) { create(:user) }
 
+  def kilocode_provider_params(api_key_id:, model:, preflight_timeout_seconds: nil)
+    kilocode_config = {
+      api_provider: "inception",
+      model: model
+    }
+    kilocode_config[:preflight_timeout_seconds] = preflight_timeout_seconds if preflight_timeout_seconds
+
+    {
+      provider_key: "kilocode",
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true,
+      config: {
+        kilocode: kilocode_config
+      }
+    }
+  end
+
   describe "GET /providers" do
     context "when not authenticated" do
       it "redirects to sign in" do
@@ -502,24 +521,27 @@ RSpec.describe "Providers" do
     it "rejects kilocode API-key providers without a model id" do
       api_key = create(:provider_api_key, user: user, api_service_type: "inception")
 
-      post providers_path, params: {
-        provider: {
-          provider_key: "kilocode",
-          auth_type: "api_key",
-          provider_api_key_id: api_key.id,
-          enabled_for_agent_runs: true,
-          enabled_for_fallback: true,
-          config: {
-            kilocode: {
-              api_provider: "inception",
-              model: ""
-            }
-          }
-        }
-      }
+      post providers_path, params: { provider: kilocode_provider_params(api_key_id: api_key.id, model: "") }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("must include a KiloCode model id")
+    end
+
+    it "persists nested KiloCode preflight timeout config for API-key providers" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "inception")
+
+      post providers_path, params: {
+        provider: kilocode_provider_params(
+          api_key_id: api_key.id,
+          model: "glm-5.1",
+          preflight_timeout_seconds: "45"
+        )
+      }
+
+      expect(response).to redirect_to(providers_path)
+      provider = user.providers.find_by!(provider_key: "kilocode", auth_type: "api_key")
+      expect(provider.kilocode_model_id).to eq("glm-5.1")
+      expect(provider.kilocode_preflight_timeout_seconds).to eq(45)
     end
 
     it "rejects opencode API-key providers without a model id" do
