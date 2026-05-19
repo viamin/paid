@@ -453,27 +453,6 @@ module Activities
         agent_run.reload
         return paused_result(agent_run_id) if agent_run.paused?
 
-        # All runners exhausted. Timeout takes precedence over rate_limited
-        # because it indicates an actual execution attempt that should trigger
-        # ProcessRunQueueJob to re-schedule work.
-        if timeout_error.present?
-          timed_out = !agent_run.finished? && agent_run.timeout!(error: timeout_error)
-          Notifications::Rules::ZeroIterationTimeout.call(scope: agent_run) if timed_out
-          # Skip queue processing when cleanup killed the run — the timeout
-          # was not a real runner issue, so there is nothing to re-schedule.
-          # (agent_run was reloaded above, so the model method sees current state)
-          ProcessRunQueueJob.perform_later if timed_out && !agent_run.cancelled_by_cleanup?
-        elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
-          runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
-          agent_run.rate_limit!(
-            error: "All runners rate limited: #{runner_list}",
-            reset_at: rate_limit_reset_at
-          )
-        elsif !agent_run.finished?
-          runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
-          agent_run.fail!(error: "All runners exhausted: #{runner_list}")
-        end
-
         error_type = "AllRunnersExhausted"
         error_message = "All runners exhausted"
 
@@ -488,6 +467,27 @@ module Activities
             error_message = "No compatible runner available: #{label} is the only runner compatible with #{selected_model.model_id} and it is currently #{reason}"
             error_type = "NoCompatibleRunnerAvailable"
           end
+        end
+
+        # All runners exhausted. Timeout takes precedence over rate_limited
+        # because it indicates an actual execution attempt that should trigger
+        # ProcessRunQueueJob to re-schedule work.
+        if timeout_error.present?
+          timed_out = !agent_run.finished? && agent_run.timeout!(error: timeout_error)
+          Notifications::Rules::ZeroIterationTimeout.call(scope: agent_run) if timed_out
+          # Skip queue processing when cleanup killed the run — the timeout
+          # was not a real runner issue, so there is nothing to re-schedule.
+          # (agent_run was reloaded above, so the model method sees current state)
+          ProcessRunQueueJob.perform_later if timed_out && !agent_run.cancelled_by_cleanup?
+        elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
+          runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
+          agent_run.rate_limit!(
+            error: error_type == "NoCompatibleRunnerAvailable" ? error_message : "All runners rate limited: #{runner_list}",
+            reset_at: rate_limit_reset_at
+          )
+        elsif !agent_run.finished?
+          runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
+          agent_run.fail!(error: "All runners exhausted: #{runner_list}")
         end
 
         raise Temporalio::Error::ApplicationError.new(

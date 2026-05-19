@@ -3434,6 +3434,9 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to match(
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+        )
         expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq([ kimi_runner.routing_key ])
       end
 
