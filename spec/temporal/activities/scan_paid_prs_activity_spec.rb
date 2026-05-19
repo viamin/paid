@@ -210,6 +210,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           }
         )
       end
+
+      it "checks lifecycle gate queries at most once per PR scan" do
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "success" } ], reviews: [])
+        allow(activity).to receive(:record_focus_resolution)
+        allow(activity).to receive(:review_goal_retry_needed?).and_return(false)
+
+        queries = capture_queries do
+          result = activity.execute(project_id: project.id)
+          expect(result[:automation_results]).to eq([])
+        end
+
+        active_run_gate_queries = queries.grep(/FROM "agent_runs".*"status" IN .*"goal" =/)
+        expect(active_run_gate_queries.size).to eq(1)
+      end
     end
 
     context "when explicit PR decisions are disabled" do
