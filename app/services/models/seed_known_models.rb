@@ -178,6 +178,7 @@ module Models
     def fetch_registry_models
       require "ruby_llm"
 
+      RubyLLM.models.refresh!
       models = Array(RubyLLM.models.all)
       return models if models.any?
 

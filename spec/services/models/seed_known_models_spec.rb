@@ -9,10 +9,17 @@ RSpec.describe Models::SeedKnownModels do
 
     before do
       allow(RubyLLM).to receive(:models).and_return(registry)
+      allow(registry).to receive(:refresh!).and_return(true)
     end
 
     it "creates model records from known models" do
       expect { described_class.call }.to change(LlmModel, :count).by(described_class::KNOWN_MODELS.size)
+    end
+
+    it "refreshes the registry before reading models" do
+      described_class.call
+
+      expect(registry).to have_received(:refresh!).once
     end
 
     it "updates existing models on re-sync" do
@@ -72,7 +79,7 @@ RSpec.describe Models::SeedKnownModels do
     end
 
     it "falls back cleanly with a single structured warning when the registry is unavailable" do
-      allow(RubyLLM).to receive(:models).and_raise(Faraday::ConnectionFailed.new("registry down"))
+      allow(registry).to receive(:refresh!).and_raise(Faraday::ConnectionFailed.new("registry down"))
       allow(Rails.logger).to receive(:warn)
 
       described_class.call
