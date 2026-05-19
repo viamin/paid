@@ -85,6 +85,17 @@ RSpec.describe ProviderState do
       expect(state.reload.failure_count).to eq(7)
       expect(state.circuit_state).to eq("open")
     end
+
+    it "reopens a half-open circuit on the next failure" do
+      state = create(:provider_state, :circuit_half_open, failure_count: 3, circuit_opened_at: 10.minutes.ago)
+
+      state.record_failure!(threshold: 10)
+
+      state.reload
+      expect(state.failure_count).to eq(4)
+      expect(state.circuit_state).to eq("open")
+      expect(state.circuit_opened_at).to be_within(5.seconds).of(Time.current)
+    end
   end
 
   describe "#record_success!" do
