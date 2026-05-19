@@ -175,8 +175,47 @@ module Knowledge
     def script
       <<~'RUBY'
         require "json"
-        require "net/http"
-        require "uri"
+        require "agent_harness"
+
+        module PaidEmbeddingTransportPatch
+          def initialize(base_url:, api_key:, model:, logger: nil, extra_headers: {}, timeout: self.class::DEFAULT_TIMEOUT)
+            @paid_extra_headers = extra_headers
+            @paid_timeout = timeout
+            super(base_url:, api_key:, model:, logger:)
+          end
+
+          def embed(inputs:, model: nil, dimensions: nil)
+            uri = URI("#{@base_url}/embeddings")
+            body = {
+              input: inputs,
+              model: model || @model
+            }
+            body[:dimensions] = dimensions if dimensions
+
+            response = make_request(uri, body)
+            status_code = response.code.to_i
+            handle_error_response(response, status_code) unless status_code == 200
+
+            JSON.parse(response.body)
+          end
+
+          private
+
+          def build_http(uri)
+            http = super
+            http.read_timeout = @paid_timeout if @paid_timeout
+            http
+          end
+
+          def build_post_request(uri, body)
+            request = super
+            @paid_extra_headers.each { |key, value| request[key] = value }
+            request
+          end
+        end
+
+        AgentHarness::OpenAICompatibleTransport.prepend(PaidEmbeddingTransportPatch) unless
+          AgentHarness::OpenAICompatibleTransport < PaidEmbeddingTransportPatch
 
         proxy_url = ENV.fetch("PROXY_BASE_URL")
         run_id = ENV.fetch("KNOWLEDGE_RUN_ID")
@@ -188,29 +227,18 @@ module Knowledge
         input_path = ENV.fetch("INPUT_PATH")
 
         texts = JSON.parse(File.read(input_path))
-        uri = URI("#{proxy_url}/api/proxy/openai/v1/embeddings")
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = uri.scheme == "https"
-        http.open_timeout = 10
-        http.read_timeout = timeout
-
-        req = Net::HTTP::Post.new(uri.path)
-        req["Authorization"] = "Bearer paid-knowledge-run:#{run_id}:#{token}"
-        req["Content-Type"] = "application/json"
-        req["X-Paid-Knowledge-Provider"] = provider
-        req.body = {
-          input: texts,
+        transport = AgentHarness::OpenAICompatibleTransport.new(
+          base_url: "#{proxy_url}/api/proxy/openai/v1",
+          api_key: "paid-knowledge-run:#{run_id}:#{token}",
           model: model,
-          dimensions: dimensions
-        }.to_json
+          extra_headers: {
+            "X-Paid-Knowledge-Provider" => provider
+          },
+          timeout: timeout
+        )
 
-        res = http.request(req)
-        unless res.is_a?(Net::HTTPSuccess)
-          $stderr.puts("Proxy error: #{res.code} #{res.body&.slice(0, 500)}")
-          exit(1)
-        end
-
-        $stdout.print(res.body)
+        body = transport.embed(inputs: texts, model: model, dimensions: dimensions)
+        $stdout.print(JSON.generate(body))
       RUBY
     end
 

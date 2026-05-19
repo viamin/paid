@@ -95,10 +95,11 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   end
 
   describe "#script_env" do
-    it "enables TLS in the generated embedding proxy script when PROXY_BASE_URL is HTTPS" do
+    it "uses AgentHarness transport in the generated embedding proxy script" do
       runner = described_class.new(project: project, knowledge_run: knowledge_run)
 
-      expect(runner.send(:script)).to include('http.use_ssl = uri.scheme == "https"')
+      expect(runner.send(:script)).to include('AgentHarness::OpenAICompatibleTransport.new(')
+      expect(runner.send(:script)).to include("transport.embed(inputs: texts, model: model, dimensions: dimensions)")
     end
 
     it "uses the external proxy URL for remote backends" do
