@@ -924,9 +924,7 @@ module Activities
       FOCUS_PRIORITY.find { |focus| candidate_focuses.include?(focus) } || "general"
     end
 
-    def focus_for(project, triggers)
-      return "general" unless FeatureFlags.focused_agent_runs?(project:)
-
+    def focus_for(_project, triggers)
       resolve_focus(triggers)
     end
 
