@@ -46,6 +46,7 @@ module Activities
           run = AgentRun.create!(
             project: project,
             issue: issue,
+            initiating_user_id: input[:initiating_user_id],
             provider_id: provider_id,
             agent_type: agent_type,
             custom_prompt: custom_prompt,

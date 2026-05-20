@@ -110,6 +110,21 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       expect(call_args[1][:body]).to include("## Dependencies")
     end
 
+    it "uses the resolved dependency wording when the project overrides it" do
+      create(:project_convention_override,
+        project: project,
+        key: "issue_dependency_format",
+        value: {
+          "depends_on_prefix" => "Requires",
+          "blocked_by_prefix" => "Awaits",
+          "heading" => "## Blockers"
+        })
+      body = created_issue_bodies[1]
+
+      expect(body).to include("## Blockers")
+      expect(body).to include("Requires #101")
+    end
+
     it "returns created issue details" do
       result = activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
 
@@ -418,5 +433,21 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
 
       activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
     end
+  end
+
+  def created_issue_bodies
+    call_args = []
+    allow(github_client).to receive(:create_issue) do |_repo, **opts|
+      call_args << opts
+      gh_issue_response(
+        number: 100 + call_args.size,
+        id: 200_000 + call_args.size,
+        title: opts[:title],
+        body: opts[:body]
+      )
+    end
+
+    activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+    call_args.map { |opts| opts[:body] }
   end
 end

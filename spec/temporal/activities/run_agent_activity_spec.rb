@@ -101,6 +101,43 @@ RSpec.describe Activities::RunAgentActivity do
       })
   end
 
+  def create_runner_backed_agent_run(project:, runner:)
+    create(
+      :agent_run,
+      :with_git_context,
+      project: project,
+      issue: create(:issue, project: project),
+      runner: runner,
+      container_id: "abc123"
+    )
+  end
+
+  def expect_all_runners_exhausted(activity:, agent_run:)
+    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+    expect {
+      activity.execute(agent_run_id: agent_run.id)
+    }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+  end
+
+  def trip_runner_circuit_with_preflight_timeouts(activity:, project:, runner:, attempts: 3)
+    attempts.times do
+      timed_out_run = create_runner_backed_agent_run(project: project, runner: runner)
+      expect_all_runners_exhausted(activity: activity, agent_run: timed_out_run)
+    end
+  end
+
+  def create_open_runner_state(user:, runner:, opened_at:, failure_count: 3)
+    create(
+      :runner_state,
+      user: user,
+      runner_name: runner.state_key,
+      circuit_state: "open",
+      failure_count: failure_count,
+      circuit_opened_at: opened_at
+    )
+  end
+
   def run_direct_outbound_preflight(activity:, agent_run:, container_service:, provider:, user:)
     command_context = Activities::RunAgentActivity::CommandContext.new(
       runner_candidate: provider,
@@ -1148,6 +1185,84 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(runners).to eq([ "codex" ])
     end
+
+    context "with model-based pre-filtering" do
+      it "excludes runners whose provider is incompatible with the selected model" do
+        llm_model = create(:llm_model, model_id: "glm-5.1", provider: "zai_coding")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        api_key = create(:runner_api_key, user: user, api_service_type: "zai_coding")
+        kilocode_runner = create(
+          :runner,
+          user: user,
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          runner_key: "kilocode",
+          name: "Kilocode GLM 5.1",
+          config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+        )
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ kilocode_runner.routing_key, codex_runner.routing_key ]
+        )
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).to include(kilocode_runner.routing_key)
+        expect(runners).not_to include(codex_runner.routing_key)
+      end
+
+      it "excludes direct-outbound runners whose fixed model differs from the selection" do
+        llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+        matching_runner = create_opencode_runner_entry(
+          user: user, api_key: api_key,
+          name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
+        )
+        other_api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-other")
+        mismatched_runner = create_opencode_runner_entry(
+          user: user, api_key: other_api_key,
+          name: "Deepseek", model: "deepseek-v4-pro"
+        )
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ matching_runner.routing_key, mismatched_runner.routing_key ]
+        )
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).to include(matching_runner.routing_key)
+        expect(runners).not_to include(mismatched_runner.routing_key)
+      end
+
+      it "preserves all runners when no model is selected" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ codex_runner.routing_key ]
+        )
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).to include("claude_code")
+        expect(runners).to include(codex_runner.routing_key)
+      end
+
+      it "keeps all runners when filtering would eliminate every candidate" do
+        # All runners are incompatible, so the filter is not applied
+        llm_model = create(:llm_model, model_id: "exotic-model-99", provider: "exotic_provider")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        user.settings.update!(fallback_enabled: false)
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners).not_to be_empty
+      end
+    end
   end
 
   def build_opencode_context(user, api_provider: "openrouter", model: "moonshotai/kimi-k2-0905", service_type: "openrouter", api_key: "sk-openrouter-secret")
@@ -1292,6 +1407,29 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   alias_method :create_opencode_provider_entry, :create_opencode_runner_entry
+
+  def configure_single_compatible_opencode_runner(agent_run:, user:)
+    llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+    create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+    allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude codex opencode])
+
+    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    kimi_runner = create_opencode_runner_entry(
+      user: user,
+      api_key: api_key,
+      name: "Kimi K2",
+      model: "moonshotai/kimi-k2-0905"
+    )
+    codex_runner = create(:runner, user: user, runner_key: "codex")
+
+    user.settings.update!(
+      fallback_enabled: true,
+      fallback_runners: [ kimi_runner.routing_key, codex_runner.routing_key ]
+    )
+
+    kimi_runner
+  end
 
   def expect_change_detection_retry_logs(logger, operation:)
     expect(logger).to have_received(:warn).with(hash_including(
@@ -2157,6 +2295,59 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "opens the runner circuit after three consecutive preflight timeouts and skips later runs during cooldown" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(circuit_breaker_failure_threshold: 10)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::PreflightTimeoutError,
+          "Preflight check failed: Runner smoke preflight timed out after 30s"
+        )
+
+        trip_runner_circuit_with_preflight_timeouts(activity: activity, project: project, runner: runner)
+
+        state = user.runner_states.find_by!(runner_name: runner.state_key)
+        expect(state).to be_circuit_open
+
+        skipped_run = create_runner_backed_agent_run(project: project, runner: runner)
+
+        expect(activity).not_to receive(:run_agent_with_runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
+
+        expect(skipped_run.reload.runners_attempted).to include(
+          hash_including(
+            "error_type" => "unavailable",
+            "error_message" => "Skipped because runner circuit is open"
+          )
+        )
+      end
+
+      it "reopens a half-open runner circuit when the recovery preflight times out" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 10,
+          circuit_breaker_timeout_seconds: 300
+        )
+        state = create_open_runner_state(user: user, runner: runner, opened_at: 10.minutes.ago)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::PreflightTimeoutError,
+          "Preflight check failed: Runner smoke preflight timed out after 30s"
+        )
+
+        timed_out_run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: timed_out_run)
+
+        state.reload
+        expect(state).to be_circuit_open
+        expect(state.circuit_opened_at).to be_within(5.seconds).of(Time.current)
+
+        skipped_run = create_runner_backed_agent_run(project: project, runner: runner)
+
+        expect(activity).not_to receive(:run_agent_with_runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
+      end
+
       it "calls harness preflight_check with the main execution env and timeout" do
         harness_provider = instance_double(AgentHarness::Providers::Codex)
         allow(harness_provider).to receive(:preflight_check).and_return({ healthy: true })
@@ -2573,6 +2764,33 @@ expect(container_service).to receive(:execute).with(
         expect {
           activity.execute(agent_run_id: run_no_container.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /No container provisioned/)
+      end
+
+      it "wraps ContainerNotProvisioned as RunnerExecutionError when a prior runner attempt is already recorded" do
+        other_issue = create(:issue, project: project)
+        prior_attempt = {
+          "runner" => "claude_code",
+          "success" => false,
+          "error_type" => "error",
+          "error_message" => "prior runner failure (real root cause)"
+        }
+        run_no_container = create(
+          :agent_run, :with_git_context,
+          project: project,
+          issue: other_issue,
+          container_id: nil,
+          runners_attempted: [ prior_attempt ]
+        )
+        allow(AgentRun).to receive(:find).with(run_no_container.id).and_return(run_no_container)
+
+        expect {
+          activity.execute(agent_run_id: run_no_container.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        # The prior failure remains the first entry so the real root cause is preserved
+        # even though the run now surfaces AllRunnersExhausted at the activity boundary.
+        expect(run_no_container.reload.runners_attempted.first)
+          .to include("error_message" => "prior runner failure (real root cause)")
       end
     end
 
@@ -3317,6 +3535,26 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to include("rate limited")
+      end
+
+      it "surfaces a single compatible attempted runner as rate limited" do
+        kimi_runner = configure_single_compatible_opencode_runner(agent_run: agent_run, user: user)
+
+        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(
+          Temporalio::Error::ApplicationError,
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+        )
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to match(
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+        )
+        expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq([ kimi_runner.routing_key ])
       end
 
       it "classifies 'exhausted ... capacity' as a rate limit" do

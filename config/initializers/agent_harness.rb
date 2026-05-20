@@ -74,6 +74,127 @@ if agent_harness_version < Gem::Version.new("0.19.0")
     AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
 end
 
+# Backport embedding support until agent-harness ships a native public API.
+# Keep this version-gated and narrow so Paid can switch back to upstream
+# behavior cleanly once the gem exposes AgentHarness.embed (or equivalent).
+# TODO(#2146): remove when agent-harness >= 0.19.0 ships native embeddings support
+module PaidAgentHarnessEmbeddingTransportPatch
+  PAID_TRANSPORT_ERRORS = [
+    EOFError,
+    OpenSSL::SSL::SSLError
+  ].freeze
+
+  def initialize(base_url:, api_key:, model:, logger: nil, extra_headers: {}, timeout: self.class::DEFAULT_TIMEOUT)
+    @paid_extra_headers = extra_headers
+    @paid_timeout = timeout
+    super(base_url:, api_key:, model:, logger:)
+  end
+
+  def embed(inputs:, model: nil, dimensions: nil)
+    uri = URI("#{@base_url}/embeddings")
+    body = {
+      input: inputs,
+      model: model || @model
+    }
+    body[:dimensions] = dimensions if dimensions
+
+    http_response = make_request(uri, body)
+    status_code = http_response.code.to_i
+    handle_embedding_error_response(http_response, status_code) unless status_code == 200
+
+    JSON.parse(http_response.body)
+  rescue *PAID_TRANSPORT_ERRORS => e
+    raise AgentHarness::ProviderError.new("HTTP connection error: #{e.message}", original_error: e)
+  rescue JSON::ParserError => e
+    raise AgentHarness::ProviderError.new(
+      "Invalid JSON in embedding API response: #{e.message}",
+      original_error: e
+    )
+  end
+
+  private
+
+  def build_http(uri)
+    http = super
+    http.read_timeout = @paid_timeout if @paid_timeout
+    http
+  end
+
+  def build_post_request(uri, body)
+    request = super
+    @paid_extra_headers.each { |key, value| request[key] = value }
+    request
+  end
+
+  def handle_embedding_error_response(http_response, status_code)
+    headers = http_response.each_header.to_h.transform_keys(&:downcase)
+    context = {
+      status: status_code,
+      headers: headers
+    }
+    message = embedding_error_message(http_response.body)
+
+    case status_code
+    when 401
+      raise AgentHarness::AuthenticationError.new(
+        "API authentication failed: #{message}",
+        provider: :openai_compatible,
+        context:
+      )
+    when 403
+      raise AgentHarness::AuthenticationError.new(
+        "API access forbidden: #{message}",
+        provider: :openai_compatible,
+        context:
+      )
+    when 429
+      raise AgentHarness::RateLimitError.new(
+        "API rate limit exceeded: #{message}",
+        provider: :openai_compatible,
+        context:
+      )
+    when 400
+      raise AgentHarness::ProviderError.new("Bad request: #{message}", context:)
+    when 500, 502, 503, 504
+      raise AgentHarness::ProviderError.new("Server error (#{status_code}): #{message}", context:)
+    else
+      raise AgentHarness::ProviderError.new("HTTP #{status_code}: #{message}", context:)
+    end
+  end
+
+  def embedding_error_message(body_string)
+    body = JSON.parse(body_string)
+    body.dig("error", "message") || body.dig("error", "type") || body_string
+  rescue JSON::ParserError
+    body_string
+  end
+end
+
+module PaidAgentHarnessEmbeddingPatch
+  def embed(inputs, model:, base_url:, api_key:, dimensions: nil, headers: {}, timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT)
+    transport = AgentHarness::OpenAICompatibleTransport.new(
+      base_url: base_url,
+      api_key: api_key,
+      model: model,
+      logger: logger,
+      extra_headers: headers,
+      timeout: timeout
+    )
+
+    transport.embed(
+      inputs: Array(inputs),
+      model: model,
+      dimensions: dimensions
+    )
+  end
+end
+
+if agent_harness_version < Gem::Version.new("0.19.0") && !AgentHarness.respond_to?(:embed)
+  AgentHarness::OpenAICompatibleTransport.prepend(PaidAgentHarnessEmbeddingTransportPatch) unless
+    AgentHarness::OpenAICompatibleTransport < PaidAgentHarnessEmbeddingTransportPatch
+  AgentHarness.extend(PaidAgentHarnessEmbeddingPatch)
+end
+
 # Default agent timeout used for AgentHarness boot-time config and as a
 # fallback when per-user settings are unavailable. Runtime code should
 # prefer UserSetting#agent_timeout_seconds resolved via

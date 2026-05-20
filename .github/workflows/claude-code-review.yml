@@ -64,9 +64,33 @@ jobs:
           echo "base_sha=$(jq -r '.base.sha' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
           echo "head_sha=$(jq -r '.head.sha' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
           echo "head_repo_fork=$(jq -r '.head.repo.fork' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
+          echo "author_login=$(jq -r '.user.login' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
+          echo "author_association=$(jq -r '.author_association' <<<\"${pr_json}\")" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether review is allowed
+        id: trust
+        env:
+          AUTHOR_ASSOCIATION: ${{ steps.pr.outputs.author_association }}
+          AUTHOR_LOGIN: ${{ steps.pr.outputs.author_login }}
+        run: |
+          case "${AUTHOR_ASSOCIATION}" in
+            OWNER|MEMBER|COLLABORATOR)
+              echo "allowed=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              case "${AUTHOR_LOGIN}" in
+                "dependabot[bot]"|"renovate[bot]"|"github-actions[bot]")
+                  echo "allowed=true" >> "$GITHUB_OUTPUT"
+                  ;;
+                *)
+                  echo "allowed=false" >> "$GITHUB_OUTPUT"
+                  ;;
+              esac
+              ;;
+          esac
 
       - name: Start PR head check run
-        if: steps.pr.outputs.head_repo_fork != 'true'
+        if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         id: check-run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,7 +115,7 @@ jobs:
           echo "id=$(jq -r '.id' <<<\"${response}\")" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        if: steps.pr.outputs.head_repo_fork != 'true'
+        if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         # Check out the base branch (not the PR head) so that config files
         # (CLAUDE.md, etc.) come from trusted code. The action retrieves
         # PR diffs via the GitHub API, so it does not need the PR ref.
@@ -105,10 +129,14 @@ jobs:
         if: steps.pr.outputs.head_repo_fork == 'true'
         run: echo "Skipping Claude review for fork-backed PR."
 
+      - name: Skip untrusted PRs without blocking the CI gate
+        if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed != 'true'
+        run: echo "Skipping Claude review for untrusted PR author."
+
       - name: Run Claude Code Review
-        if: steps.pr.outputs.head_repo_fork != 'true'
+        if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         id: claude-review
-        uses: anthropics/claude-code-action@51ea8ea73a139f2a74ff649e3092c25a904aed7e # v1
+        uses: anthropics/claude-code-action@1dc994ee7a008f0ecc866d9ac23ef036b7229f84 # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
@@ -125,7 +153,7 @@ jobs:
           allowed_bots: 'dependabot[bot]'
 
       - name: Complete PR head check run
-        if: always() && steps.pr.outputs.head_repo_fork != 'true'
+        if: always() && steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         env:
           CHECK_RUN_ID: ${{ steps.check-run.outputs.id }}
           GH_TOKEN: ${{ github.token }}

@@ -28,6 +28,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
+gem "avo", "4.0.0.beta.30"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -59,6 +60,9 @@ gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 gem "agent-harness", "~> 0.18.2"
+
+# Runtime model registry for canonical model metadata, pricing, and capabilities.
+gem "ruby_llm", "~> 1.15"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.

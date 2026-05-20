@@ -87,6 +87,7 @@ module Activities
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
+    PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -370,6 +371,33 @@ module Activities
             # timeout should not fail the entire run when fallback runners
             # are available. Only break when max_execution_seconds is exceeded
             # (checked at the top of the loop).
+          rescue PreflightTimeoutError => e
+            last_error = "error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              break
+            end
+            record_runner_failure(
+              user_settings,
+              runner_state_name,
+              runner_states,
+              threshold: preflight_timeout_failure_threshold(user_settings)
+            )
+            agent_run.record_runner_attempt(
+              attempt_label,
+              success: false,
+              error_type: "preflight_timeout",
+              error_message: e.message,
+              duration_seconds: attempt_duration
+            )
+            logger.warn(
+              message: "agent_execution.preflight_timeout",
+              runner: runner,
+              agent_run_id: agent_run.id,
+              error: e.message,
+              duration_seconds: attempt_duration
+            )
           rescue RunnerAuthExpiredError => e
             last_error = "auth_expired"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -453,6 +481,22 @@ module Activities
         agent_run.reload
         return paused_result(agent_run_id) if agent_run.paused?
 
+        error_type = "AllRunnersExhausted"
+        error_message = "All runners exhausted"
+
+        # When the only compatible runner(s) were all rate-limited or
+        # circuit-open, surface the real cause instead of the generic
+        # "all runners exhausted" message.
+        if runners.size <= 1 && (all_skipped_rate_limited || last_error == "rate_limited")
+          selected_model = agent_run.model_selection&.llm_model
+          if selected_model && runners.size == 1
+            label = runner_attempt_label(runners.first, agent_run, user_settings.user)
+            reason = "rate limited"
+            error_message = "No compatible runner available: #{label} is the only runner compatible with #{selected_model.model_id} and it is currently #{reason}"
+            error_type = "NoCompatibleRunnerAvailable"
+          end
+        end
+
         # All runners exhausted. Timeout takes precedence over rate_limited
         # because it indicates an actual execution attempt that should trigger
         # ProcessRunQueueJob to re-schedule work.
@@ -466,16 +510,17 @@ module Activities
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
-            error: "All runners rate limited: #{runner_list}",
+            error: error_type == "NoCompatibleRunnerAvailable" ? error_message : "All runners rate limited: #{runner_list}",
             reset_at: rate_limit_reset_at
           )
         elsif !agent_run.finished?
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
           agent_run.fail!(error: "All runners exhausted: #{runner_list}")
         end
+
         raise Temporalio::Error::ApplicationError.new(
-          "All runners exhausted",
-          type: "AllRunnersExhausted",
+          error_message,
+          type: error_type,
           non_retryable: true
         )
       end
@@ -501,6 +546,7 @@ module Activities
     end
 
     class RunnerExecutionError < StandardError; end
+    class PreflightTimeoutError < RunnerExecutionError; end
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
@@ -671,6 +717,28 @@ module Activities
         "Selected model #{selected_model.model_id} (#{selected_model.provider}) is not compatible with #{runner_label} (expects #{compatible_provider})"
     end
 
+    # Returns true when a runner candidate is structurally compatible with the
+    # selected LlmModel. Checks provider family and fixed runtime model.
+    def runner_compatible_with_model?(runner_candidate, selected_model, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+
+      # 1. Provider family check — e.g. "claude" expects "anthropic"
+      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
+      if compatible_provider.present? && selected_model.provider != compatible_provider
+        return false
+      end
+
+      # 2. Fixed runtime model check — direct-outbound runners have a
+      #    configured model that must match the selected model exactly.
+      fixed_model_id = runner_entry&.direct_outbound_model_id
+      if fixed_model_id.present? && fixed_model_id != selected_model.model_id
+        return false
+      end
+
+      true
+    end
+
     def paused_result(agent_run_id)
       {
         agent_run_id: agent_run_id,
@@ -746,6 +814,15 @@ module Activities
         runners = default_runner_candidates(agent_run, user_settings)
       end
 
+      # Pre-filter runners that are structurally incompatible with the
+      # selected model. This avoids wasting attempts on runners that would
+      # always fail validation in selected_runner_runtime.
+      selected_model = agent_run.model_selection&.llm_model
+      if selected_model
+        compatible = runners.select { |r| runner_compatible_with_model?(r, selected_model, user_settings.user) }
+        runners = compatible if compatible.any?
+      end
+
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
       @inserted_rate_limit_fallbacks = Set.new
 
@@ -780,9 +857,13 @@ module Activities
     end
 
     # Records a failed runner execution.
-    def record_runner_failure(user_settings, runner_state_name, runner_states)
+    def record_runner_failure(user_settings, runner_state_name, runner_states, threshold: user_settings.circuit_breaker_failure_threshold)
       state = runner_state_for(user_settings, runner_state_name, runner_states)
-      state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
+      state.record_failure!(threshold: threshold)
+    end
+
+    def preflight_timeout_failure_threshold(user_settings)
+      [ user_settings.circuit_breaker_failure_threshold, PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD ].min
     end
 
     # True when the agent run we're executing has already been force-timed-out
@@ -859,7 +940,23 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
-      container_service = reconnect_container(agent_run)
+      container_service = begin
+        reconnect_container(agent_run)
+      rescue Temporalio::Error::ApplicationError => e
+        # When a prior runner attempt has already recorded a failure on this
+        # run, a secondary ContainerNotProvisioned (e.g. because the earlier
+        # failure cleared container_id) would otherwise overwrite the real
+        # root cause at the top level. Wrap it as RunnerExecutionError so the
+        # per-runner rescue records the attempt and the loop surfaces
+        # AllRunnersExhausted, leaving the original failure visible in
+        # runners_attempted. On a first attempt with no prior history, let
+        # the precise ContainerNotProvisioned propagate so the user-visible
+        # error names the actual problem.
+        if e.type == "ContainerNotProvisioned" && agent_run.runners_attempted.present?
+          raise RunnerExecutionError, e.message
+        end
+        raise
+      end
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
@@ -1102,6 +1199,7 @@ module Activities
       subscription_auth = runner_entry&.subscription? &&
         RunnerSupport.subscription_auth_unset_vars_for(runner_entry.runner_key).any?
       harness_provider = preflight_provider_instance(command_context)
+      harness_preflight_passed = false
       if harness_provider && !subscription_auth
         run_harness_preflight!(
           agent_run: agent_run,
@@ -1109,6 +1207,7 @@ module Activities
           runner: runner,
           execution_env: execution_env
         )
+        harness_preflight_passed = true
       end
 
       prompt = runner_preflight_prompt_for(runner)
@@ -1171,8 +1270,10 @@ module Activities
       end
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::TimeoutError => e
-      reason = "Timed out after #{preflight_timeout}s: #{e.message}. Check proxy configuration, auth, and network policy."
-      raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
+      reason = "Runner smoke preflight timed out after #{preflight_timeout}s"
+      reason += " after harness preflight passed" if harness_preflight_passed
+      reason += ". This points to the runner CLI path (container egress, proxy, auth wiring, or upstream API responsiveness). Original error: #{e.message}"
+      raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: e.matched_output.to_s.truncate(200))
@@ -1193,7 +1294,7 @@ module Activities
 
       return if result[:healthy]
 
-      reason = result[:reason] || "Preflight check failed"
+      reason = "Harness preflight failed: #{result[:reason] || 'Preflight check failed'}"
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue AgentHarness::ConfigurationError, KeyError
       # Runner config unavailable — skip harness preflight and let the
@@ -1203,6 +1304,8 @@ module Activities
 
     def preflight_timeout_seconds_for(provider_candidate, user)
       provider_entry = provider_entry_for(provider_candidate, user)
+      configured_timeout = provider_entry&.kilocode_preflight_timeout_seconds
+      return configured_timeout if configured_timeout.present?
       return DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS if provider_entry&.requires_direct_outbound?
 
       PREFLIGHT_TIMEOUT_SECONDS
@@ -1513,6 +1616,11 @@ module Activities
     def raise_preflight_failure!(agent_run:, runner:, reason:)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
       raise RunnerExecutionError, "Preflight check failed: #{reason}"
+    end
+
+    def raise_preflight_timeout!(agent_run:, runner:, reason:)
+      log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
+      raise PreflightTimeoutError, "Preflight check failed: #{reason}"
     end
 
     def harness_response_config(harness_key, runner_candidate, user)

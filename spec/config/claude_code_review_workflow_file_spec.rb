@@ -54,12 +54,12 @@ RSpec.describe ClaudeCodeReviewWorkflowFile, :no_db do
     expect(steps).to include(
       a_hash_including(
         "name" => "Start PR head check run",
-        "if" => "steps.pr.outputs.head_repo_fork != 'true'",
+        "if" => "steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'",
         "env" => a_hash_including("HEAD_SHA" => "${{ steps.pr.outputs.head_sha }}")
       ),
       a_hash_including(
         "name" => "Complete PR head check run",
-        "if" => "always() && steps.pr.outputs.head_repo_fork != 'true'",
+        "if" => "always() && steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'",
         "env" => a_hash_including("CHECK_RUN_ID" => "${{ steps.check-run.outputs.id }}")
       )
     )
@@ -71,6 +71,16 @@ RSpec.describe ClaudeCodeReviewWorkflowFile, :no_db do
         "name" => "Skip fork-backed PRs without blocking the CI gate",
         "if" => "steps.pr.outputs.head_repo_fork == 'true'",
         "run" => "echo \"Skipping Claude review for fork-backed PR.\""
+      )
+    )
+  end
+
+  it "skips untrusted same-repo PRs without running Claude" do
+    expect(steps).to include(
+      a_hash_including(
+        "name" => "Skip untrusted PRs without blocking the CI gate",
+        "if" => "steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed != 'true'",
+        "run" => "echo \"Skipping Claude review for untrusted PR author.\""
       )
     )
   end

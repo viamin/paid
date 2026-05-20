@@ -38,6 +38,9 @@ module Issues
     end
 
     def call
+      gate = Issues::AutoPickProjectGate.new(@project)
+      return nil unless gate.call
+
       result = strategy.evaluate(Automation::Context.build(record: nil, project: @project, metadata: {}))
       decision = result.decisions.first
       return nil if decision.nil? || decision.type == "noop"
@@ -116,6 +119,7 @@ module Issues
       AgentRun.create!(
         project: @project,
         issue: issue,
+        initiating_user: nil,
         runner: runner,
         agent_type: Runner.agent_type_for(runner.runner_key),
         status: "queued",

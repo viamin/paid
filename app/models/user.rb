@@ -17,7 +17,9 @@ class User < ApplicationRecord
   has_many :runners, dependent: :destroy
   has_many :providers, class_name: "Provider", dependent: :destroy
   has_many :provider_api_keys, dependent: :destroy
+  has_many :account_activity_events, foreign_key: :actor_id, dependent: :nullify, inverse_of: :actor
   has_many :pre_commit_requirements, dependent: :destroy
+  has_many :initiated_agent_runs, class_name: "AgentRun", foreign_key: :initiating_user_id, dependent: :nullify, inverse_of: :initiating_user
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :created_chat_sessions, class_name: "ChatSession", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :pr_templates, dependent: :destroy
@@ -107,7 +109,13 @@ class User < ApplicationRecord
     return false unless membership
     return false unless normalize_role(role, resource) == membership.role
 
-    membership.destroy
+    case resource
+    when Account
+      revoke_account_access!(resource)
+    else
+      membership.destroy
+    end
+
     true
   end
 
@@ -159,6 +167,32 @@ class User < ApplicationRecord
     return :deactivated_account if account&.deactivated?
 
     super
+  end
+
+  def operator?
+    OperatorConsole::Access.allowed?(self)
+  end
+
+  def revoke_account_access!(account)
+    with_lock do
+      membership = account_memberships.find_by(account: account)
+      return false unless membership
+
+      if account_id == account.id
+        successor_membership = account_memberships.where.not(id: membership.id).order(:id).first
+
+        if successor_membership
+          update!(account: successor_membership.account)
+          membership.destroy!
+        else
+          destroy!
+        end
+      else
+        membership.destroy!
+      end
+    end
+
+    true
   end
 
   private

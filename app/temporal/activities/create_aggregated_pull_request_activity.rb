@@ -86,7 +86,12 @@ module Activities
 
     def pr_title(parent_issue)
       if parent_issue
-        ConventionalCommitTitle.for_issue(parent_issue, fallback_type: "feat").truncate(255)
+        ConventionalCommitTitle.for_issue(
+          parent_issue,
+          fallback_type: "feat",
+          project: parent_issue.project,
+          style_key: "pr_title_style"
+        ).truncate(255)
       else
         "Aggregated feature changes"
       end

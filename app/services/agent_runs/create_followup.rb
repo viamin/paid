@@ -41,6 +41,7 @@ module AgentRuns
       AgentRun.create!(
         project: agent_run.project,
         issue: agent_run.issue,
+        initiating_user: agent_run.initiating_user,
         runner: runner,
         agent_type: agent_type,
         status: "queued",

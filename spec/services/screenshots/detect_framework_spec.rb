@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Screenshots::DetectFramework do
+RSpec.describe Screenshots::DetectFramework, :no_db do
   def fixture_path(name)
     Rails.root.join("spec/fixtures/screenshots/#{name}").to_s
   end
@@ -152,6 +152,22 @@ RSpec.describe Screenshots::DetectFramework do
 
       expect(paths).to include("/sessions", "/sign_in")
     end
+
+    it "captures mounted engines and wildcard match routes without verbs" do
+      output = <<~ROUTES
+                         Prefix Verb   URI Pattern                 Controller#Action
+                            avo        /admin                      Avo::Engine
+                                       /admin(/*path)(.:format)    operator_console_access#show
+      ROUTES
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      routes = service.send(:parse_rails_routes_output, output)
+
+      expect(routes).to include(
+        a_hash_including("path" => "/admin", "name" => "avo"),
+        a_hash_including("path" => "/admin", "name" => "admin")
+      )
+    end
   end
 
   describe "fallback Rails route parsing" do
@@ -180,6 +196,31 @@ RSpec.describe Screenshots::DetectFramework do
       parsed_routes = service.send(:discover_rails_routes)
 
       expect(parsed_routes.map { |route| route["path"] }).to include("/admin/users", "/admin/dashboard")
+    end
+
+    it "detects mounted engines and wildcard match routes behind auth blocks" do
+      routes = <<~RUBY
+        Rails.application.routes.draw do
+          authenticate :user, ->(user) { user.operator? } do
+            mount_avo at: "/admin"
+          end
+
+          match "/admin(/*path)", to: "operator_console_access#show", via: :all
+        end
+      RUBY
+
+      repo = instance_double(
+        described_class::LocalRepository,
+        respond_to?: false,
+        read: routes
+      )
+
+      service = described_class.new(repo_path: fixture_path("rails_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_rails_routes)
+
+      expect(parsed_routes.map { |route| route["path"] }).to include("/admin")
     end
   end
 
@@ -260,9 +301,8 @@ RSpec.describe Screenshots::DetectFramework do
   describe "GitHub repository reads" do
     it "uses the project's configured default branch for both tree and file reads" do
       client = instance_double(GithubClient)
-      github_token = instance_double(GithubToken, client:)
-      project = instance_double(
-        Project,
+      github_token = double(client:)
+      project = double(
         github_token:,
         full_name: "acme/widgets",
         default_branch: "develop"

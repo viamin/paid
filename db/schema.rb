@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_135640) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -66,6 +66,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
     t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["status"], name: "index_ab_tests_on_status"
     t.index ["winner_variant_id"], name: "index_ab_tests_on_winner_variant_id"
+  end
+
+  create_table "account_activity_events", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account whose administration history this event belongs to."
+    t.string "action", null: false, comment: "Stable action key for the account administration event."
+    t.bigint "actor_id", comment: "User who performed the action, when available."
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured event details for UI rendering and audits."
+    t.bigint "subject_id"
+    t.string "subject_type", comment: "Polymorphic subject type affected by the action."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_account_activity_events_on_account_id_and_created_at"
+    t.index ["actor_id"], name: "index_account_activity_events_on_actor_id"
+    t.index ["subject_type", "subject_id"], name: "index_account_activity_events_on_subject_type_and_subject_id"
   end
 
   create_table "account_memberships", force: :cascade do |t|
@@ -216,6 +230,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
+    t.bigint "initiating_user_id", comment: "User who explicitly initiated the run; null for system-triggered runs."
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
@@ -262,12 +277,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["focus"], name: "index_agent_runs_on_focus"
     t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
+    t.index ["initiating_user_id"], name: "index_agent_runs_on_initiating_user_id"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "created_at"], name: "idx_agent_runs_project_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number", "status"], name: "idx_agent_runs_review_feedback_lookup"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
@@ -1511,6 +1528,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
     t.index ["project_id"], name: "index_project_baselines_on_project_id"
   end
 
+  create_table "project_convention_detections", comment: "Repository-derived convention detections captured for a specific project version.", force: :cascade do |t|
+    t.decimal "confidence", precision: 4, scale: 3, default: "1.0", null: false, comment: "Detector confidence from 0.0 to 1.0."
+    t.datetime "created_at", null: false
+    t.datetime "detected_at", null: false, comment: "Timestamp when the repository scan produced this detection."
+    t.string "detector_key", null: false, comment: "Detector responsible for producing this normalized convention record."
+    t.jsonb "evidence", default: {}, null: false, comment: "Structured supporting evidence with source files and matched signals."
+    t.string "key", null: false, comment: "Convention key detected from repository evidence."
+    t.bigint "project_id", null: false, comment: "Project whose repository conventions were detected."
+    t.bigint "project_version_id", null: false, comment: "Project version whose tree was scanned."
+    t.datetime "updated_at", null: false
+    t.jsonb "value", default: {}, null: false, comment: "Normalized detected convention payload."
+    t.index ["project_id", "key"], name: "index_project_convention_detections_on_project_id_and_key"
+    t.index ["project_id"], name: "index_project_convention_detections_on_project_id"
+    t.index ["project_version_id", "key", "detector_key"], name: "idx_project_convention_detections_unique_detector", unique: true
+    t.index ["project_version_id"], name: "index_project_convention_detections_on_project_version_id"
+  end
+
+  create_table "project_convention_overrides", comment: "Explicit per-project overrides for detected repository conventions.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false, comment: "Disabled overrides act as tombstones against detected defaults."
+    t.string "key", null: false, comment: "Convention key being overridden, such as commit_messages."
+    t.bigint "project_id", null: false, comment: "Project receiving the explicit convention override."
+    t.text "rationale", comment: "User-entered reason for overriding the detected convention."
+    t.datetime "updated_at", null: false
+    t.jsonb "value", default: {}, null: false, comment: "Explicit project-scoped convention override payload."
+    t.index ["project_id", "key"], name: "index_project_convention_overrides_on_project_id_and_key", unique: true
+    t.index ["project_id"], name: "index_project_convention_overrides_on_project_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -2285,6 +2331,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
   add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
+  add_foreign_key "account_activity_events", "accounts"
+  add_foreign_key "account_activity_events", "users", column: "actor_id"
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
@@ -2302,6 +2350,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", column: "provider_id", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
@@ -2407,6 +2456,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_18_210746) do
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
+  add_foreign_key "project_convention_detections", "project_versions"
+  add_foreign_key "project_convention_detections", "projects"
+  add_foreign_key "project_convention_overrides", "projects"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"

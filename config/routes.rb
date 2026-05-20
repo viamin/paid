@@ -64,6 +64,12 @@ Rails.application.routes.draw do
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
 
+  # Customer-facing account administration
+  resource :account, only: [ :show, :update ]
+  resources :account_memberships, only: [ :create, :update, :destroy ]
+  resource :account_ownership_transfer, only: [ :create ]
+  resource :account_lifecycle, only: [ :update ]
+
   # Account tenant configuration
   resource :tenant_configuration, only: [ :edit, :update ]
 
@@ -247,6 +253,12 @@ Rails.application.routes.draw do
     end
     resources :chat_messages, path: "messages", only: %i[index create]
   end
+
+  authenticate :user, ->(user) { user.operator? } do
+    mount_avo at: "/admin"
+  end
+
+  match "/admin(/*path)", to: "operator_console_access#show", via: :all
 
   # Defines the root path route ("/")
   root "dashboard#show"

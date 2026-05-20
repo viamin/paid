@@ -19,7 +19,7 @@ module TenantEnforcement
 
     if current_account.deactivated?
       handle_deactivated_account
-    elsif current_account.suspended? && mutating_request?
+    elsif current_account.suspended? && mutating_request? && !allow_suspended_account_write?
       handle_suspended_account
     end
   end
@@ -82,5 +82,9 @@ module TenantEnforcement
 
   def skip_tenant_enforcement?
     devise_controller?
+  end
+
+  def allow_suspended_account_write?
+    false
   end
 end

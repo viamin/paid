@@ -24,6 +24,11 @@ concurrency:
 jobs:
   detect:
     if: github.event.action != 'closed'
+      && (
+        (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,7 +78,13 @@ jobs:
 
   capture:
     needs: detect
-    if: needs.detect.outputs.has_ui_changes == 'true'
+    if: >-
+      needs.detect.outputs.has_ui_changes == 'true'
+      && (
+        (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -220,6 +231,10 @@ jobs:
   cleanup-storage:
     if: >-
       github.event.action == 'closed'
+      && (
+        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      )
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
