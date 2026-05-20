@@ -214,7 +214,8 @@ module Scaling
 
       def resolve_ssl_options(cluster, user)
         {}.tap do |options|
-          options[:cert_store] = cert_store(cluster)
+          store = cert_store(cluster)
+          options[:cert_store] = store if store
 
           client_cert = pem_value(user, "client-certificate-data", "client-certificate")
           client_key = pem_value(user, "client-key-data", "client-key")

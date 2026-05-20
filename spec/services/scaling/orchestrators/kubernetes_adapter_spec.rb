@@ -64,6 +64,12 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
         described_class.new(namespace: "test", kubeconfig_path:)
       }.to raise_error(described_class::ApiError, /Malformed kubeconfig/)
     end
+
+    it "does not pass a nil cert store when kubeconfig only provides a token" do
+      File.write(kubeconfig_path, kubeconfig_yaml)
+
+      expect(adapter.send(:ssl_options)).to be_nil
+    end
   end
 
   describe "#current_status" do
