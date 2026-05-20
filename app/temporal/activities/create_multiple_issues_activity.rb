@@ -67,12 +67,14 @@ module Activities
       tasks, creation_order, index_to_github_number, created_issues,
       client, project, agent_run, parent_issue_number
     )
+      resolved = ProjectConventions::IssueDependencies.convention_value(project)
+
       creation_order.each_with_index do |task_index, step|
         task = tasks[task_index]
         heartbeat("creating_issue_#{step + 1}_of_#{creation_order.size}")
 
         title = task[:title].to_s.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
-        body = build_body(task, index_to_github_number, parent_issue_number)
+        body = build_body(task, index_to_github_number, parent_issue_number, project: project, resolved: resolved)
         labels = build_labels(project, agent_run)
 
         gh_issue = client.create_issue(
@@ -143,7 +145,7 @@ module Activities
       }
     end
 
-    def build_body(task, index_to_github_number, parent_issue_number)
+    def build_body(task, index_to_github_number, parent_issue_number, project:, resolved: nil)
       parts = []
       parts << task[:body].to_s.truncate(50_000) if task[:body].present?
 
@@ -153,14 +155,19 @@ module Activities
 
       dep_indices = Array(task[:dependencies])
       if dep_indices.any?
+        resolved ||= ProjectConventions::IssueDependencies.convention_value(project)
         dep_lines = dep_indices.filter_map do |dep_index|
           gh_number = index_to_github_number[dep_index]
-          "Depends on ##{gh_number}" if gh_number
+          ProjectConventions::IssueDependencies.depends_on_line(
+            project: project,
+            github_number: gh_number,
+            resolved:
+          ) if gh_number
         end
 
         if dep_lines.any?
-          parts << "## Dependencies"
-          parts << dep_lines.join("\n")
+          parts << ProjectConventions::IssueDependencies.heading(project: project, resolved:)
+          parts << dep_lines.map { |line| "- #{line}" }.join("\n")
         end
       end
 

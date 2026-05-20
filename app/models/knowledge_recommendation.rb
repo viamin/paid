@@ -3,7 +3,7 @@
 class KnowledgeRecommendation < ApplicationRecord
   belongs_to :project
 
-  RECOMMENDATION_TYPES = %w[add_collector remove_collector improve_collector knowledge_gap].freeze
+  RECOMMENDATION_TYPES = %w[add_collector remove_collector improve_collector knowledge_gap project_convention].freeze
   PRIORITIES = %w[low medium high critical].freeze
   STATUSES = %w[pending accepted dismissed implemented].freeze
 

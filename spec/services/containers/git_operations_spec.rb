@@ -801,6 +801,32 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.commit_uncommitted_changes).to be true
     end
 
+    it "uses the resolved plain commit style when the project overrides away from conventional commits" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      issue = create(:issue, project: project, title: "Tidy workspace")
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
+      agent_run.update!(issue: issue)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0))
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "Tidy workspace" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
     it "raises Error when staging fails" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)

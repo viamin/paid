@@ -96,6 +96,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
       )
     end
 
+    it "uses a plain PR title when the project overrides PR title style away from conventional commits" do
+      create(:project_convention_override,
+        project: project,
+        key: "pr_title_style",
+        value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
+      issue.update!(title: "Queue monitoring dashboard")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "Queue monitoring dashboard")
+      )
+    end
+
     it "falls back to feat for ambiguous issue titles instead of under-versioning them as fixes" do
       issue.update!(title: "Worker pool tuning")
 

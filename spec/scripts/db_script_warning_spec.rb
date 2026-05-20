@@ -108,7 +108,9 @@ RSpec.describe DbScriptWarning do
       "DB_HOST" => "localhost",
       "DB_NAME" => "paid_test",
       "DB_USER" => "paid",
-      "DB_PASSWORD" => "paid"
+      "DB_PASSWORD" => "paid",
+      "PAID_DEVELOPMENT_DATABASE" => "paid_development",
+      "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_development_cable"
     }
   end
 
