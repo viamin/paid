@@ -83,7 +83,7 @@ GEM
     agent-harness (0.18.2)
       logger (>= 1.6, < 2.0)
     ast (2.4.3)
-    avo (4.0.0.beta.29)
+    avo (4.0.0.beta.30)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -631,7 +631,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness (~> 0.18.2)
-  avo (= 4.0.0.beta.29)
+  avo (= 4.0.0.beta.30)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -707,7 +707,7 @@ CHECKSUMS
   addressable (2.9.0) sha256=7fdf6ac3660f7f4e867a0838be3f6cf722ace541dd97767fa42bc6cfa980c7af
   agent-harness (0.18.2) sha256=ee7fba0996bd5f31367d83de087a336b9ce7472a50652d0e4239e13463cef9f0
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.0.0.beta.29) sha256=98d6ec63f1350c7757647d6e0a3f6962f57c749fdbe2e2ea1e19661e7539924c
+  avo (4.0.0.beta.30) sha256=3944a47b4b588ed11d93fba5c691a05855469237f8f82c3a5000b2fc95a5e92a
   avo-icons (0.1.4) sha256=4f77070a5710ebb9db5cd6746aa5f043b8e71e61b27c7fba5210a40d87898e4d
   aws-eventstream (1.4.0) sha256=116bf85c436200d1060811e6f5d2d40c88f65448f2125bc77ffce5121e6e183b
   aws-partitions (1.1247.0) sha256=0461b97f905e8cfc346bb6e57668e916c46b8f4b7c2eb5eedad005368403715f
