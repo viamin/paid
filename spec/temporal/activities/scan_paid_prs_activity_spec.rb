@@ -54,6 +54,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def stub_automation_label_events!(issue_number:, actor_login: "viamin", proj: project, label_name: nil)
+    allow(github_client).to receive(:issue_events)
+      .with(proj.full_name, issue_number)
+      .and_return([
+        OpenStruct.new(
+          event: "labeled",
+          actor: OpenStruct.new(login: actor_login),
+          label: OpenStruct.new(name: label_name || proj.automation_label_name),
+          created_at: 1.hour.ago
+        )
+      ])
+  end
+
   def create_stale_review_runs!(issue, statuses:, trigger_type: "automatic")
     Array(statuses).each_with_index do |status, index|
       timestamp = (90 + ((Array(statuses).size - index) * 5)).minutes.ago
@@ -400,6 +413,79 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when an automation-labeled PR was created by an untrusted user" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          github_creator_login: "attacker",
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+      end
+
+      before do
+        pr_issue
+        stub_automation_label_events!(issue_number: 42, actor_login: label_actor_login, label_name: "paid-automation")
+      end
+
+      context "when the automation label was added by a trusted actor" do
+        let(:label_actor_login) { "viamin" }
+
+        it "includes the PR in scan results" do
+          stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
+
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger].size).to eq(1)
+          expect(result[:prs_to_trigger].first[:pr_number]).to eq(42)
+        end
+      end
+
+      context "when the automation label was added by an untrusted actor" do
+        let(:label_actor_login) { "attacker" }
+
+        it "does not include the PR in scan results" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:prs_to_trigger]).to eq([])
+        end
+      end
+
+      context "when fetching label history fails" do
+        let(:label_actor_login) { "viamin" }
+
+        before do
+          allow(github_client).to receive(:issue_events)
+            .with(project.full_name, 42)
+            .and_raise(GithubClient::ApiError.new("boom", status: 500))
+        end
+
+        it "fails closed and excludes the PR" do
+          expect(activity.execute(project_id: project.id)[:prs_to_trigger]).to eq([])
+        end
+      end
+    end
+
+    context "when an automation-labeled PR was created by a trusted user" do
+      before do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed")
+      end
+
+      it "does not fetch issue events before scanning it" do
+        allow(github_client).to receive(:issue_events)
+        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:issue_events)
       end
     end
 
@@ -1426,6 +1512,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             github_creator_login: "dependabot[bot]",
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
             pr_review_phase: "ready", paid_state: "completed")
+          stub_automation_label_events!(issue_number: 42)
           3.times do
             create(:agent_run, :failed,
               project: project,
@@ -4780,6 +4867,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0,
           github_creator_login: "dependabot[bot]")
+        stub_automation_label_events!(issue_number: 42)
       end
 
       it "skips reviews and advances to ready when CI is green" do
@@ -4856,6 +4944,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "ready",
           draft_review_count: 0,
           github_creator_login: "dependabot[bot]")
+        stub_automation_label_events!(issue_number: 42)
       end
 
       it "does not emit owner_approved — auto-merge is handled by DependabotAutoMergeJob" do
@@ -6937,6 +7026,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_updated_at: (ceiling + 60).seconds.ago,
           last_pr_scan_at: (ceiling + 30).seconds.ago
         )
+        stub_automation_label_events!(issue_number: 42)
         stub_github_for_pr(author_login: "dependabot[bot]")
 
         activity.execute(project_id: project.id)
@@ -6952,6 +7042,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_updated_at: (ceiling + 60).seconds.ago,
           last_pr_scan_at: (ceiling + 30).seconds.ago
         )
+        stub_automation_label_events!(issue_number: 42)
 
         result = activity.execute(project_id: project.id)
 
