@@ -14,6 +14,7 @@ module Accounts
 
     def call
       current_owner = account.account_memberships.find_by!(user: actor)
+      new_owner = new_owner_membership.user
 
       raise AdministrationError, "Only an owner can transfer ownership." unless current_owner.owner?
       raise AdministrationError, "Membership does not belong to this account." unless new_owner_membership.account_id == account.id
@@ -25,6 +26,7 @@ module Accounts
         end
 
         new_owner_membership.update!(role: :owner)
+        new_owner.update!(account: account) if new_owner.account_id != account.id
 
         Accounts::RecordActivity.call(
           account: account,

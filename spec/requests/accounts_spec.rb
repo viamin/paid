@@ -255,6 +255,25 @@ RSpec.describe "Accounts" do
       expect(account.account_activity_events.recent.first.action).to eq("ownership.transferred")
     end
 
+    it "switches the new owner's active account when they belong to another account" do
+      secondary_account = create(:account)
+      transferee = create(:user, :admin, account: secondary_account)
+      membership = create(:account_membership, :admin, account: account, user: transferee)
+
+      post account_ownership_transfer_path, params: { membership_id: membership.id }
+
+      expect(response).to redirect_to(account_path)
+      expect(transferee.reload.account).to eq(account)
+
+      sign_out owner
+      sign_in transferee
+
+      get account_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Account Administration")
+    end
+
     it "rolls back the transfer when activity recording fails" do
       membership = create(:account_membership, :admin, account: account, user: create(:user, account: account))
       allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
