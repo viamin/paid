@@ -56,107 +56,82 @@ module ProjectConventions
       detected = detected_state(entry_key)
       override = override_record(entry_key)
       default = default_value(entry_key)
+      resolved_entry(entry_key, detected:, override:, default:)
+    end
 
+    def resolved_entry(entry_key, detected:, override:, default:)
       if override&.apply?
-        value = merge_values(detected.fetch(:value), override.value)
-        return result(
-          key: entry_key,
-          category: override.category,
-          value: value,
-          source: "override",
-          enabled: true,
-          confidence: detected.fetch(:confidence, 0.0),
-          policy_mode: override.mode,
-          override: override,
-          detection: detected[:record],
-          detected_value: detected[:value],
-          evidence: detected[:evidence],
-          configured_value: override.value.deep_stringify_keys,
-          detected_at: detected[:detected_at],
-          detected_commit_sha: detected[:commit_sha],
-          conflict: conflict_for(
-            key: entry_key,
-            category: override.category,
-            status: "override_applied",
-            detected: detected,
-            override: override
-          )
-        )
+        result(apply_branch(entry_key, detected, override))
+      elsif override&.warn?
+        result(warn_branch(entry_key, detected, override))
+      elsif override&.ignore?
+        result(ignore_branch(entry_key, detected, override, default))
+      elsif detected[:record]
+        result(detection_branch(entry_key, detected))
+      else
+        result(default_branch(entry_key, default))
       end
+    end
 
-      if override&.warn?
-        return result(
-          key: entry_key,
-          category: override.category,
-          value: detected.fetch(:value),
-          source: "warning",
-          enabled: true,
-          confidence: detected.fetch(:confidence, 0.0),
-          policy_mode: override.mode,
-          override: override,
-          detection: detected[:record],
-          detected_value: detected[:value],
-          evidence: detected[:evidence],
-          configured_value: override.value.deep_stringify_keys,
-          detected_at: detected[:detected_at],
-          detected_commit_sha: detected[:commit_sha],
-          conflict: conflict_for(
-            key: entry_key,
-            category: override.category,
-            status: "override_warning",
-            detected: detected,
-            override: override
-          )
-        )
-      end
+    def result(attrs)
+      attrs.merge(drift: attrs[:conflict].present?)
+    end
 
-      if override&.ignore?
-        return result(
-          key: entry_key,
-          category: override.category,
-          value: default,
-          source: "override",
-          enabled: false,
-          confidence: 0.0,
-          policy_mode: override.mode,
-          override: override,
-          detection: detected[:record],
-          detected_value: detected[:value],
-          evidence: detected[:evidence],
-          configured_value: override.value.deep_stringify_keys,
-          detected_at: detected[:detected_at],
-          detected_commit_sha: detected[:commit_sha],
-          conflict: conflict_for(
-            key: entry_key,
-            category: override.category,
-            status: "override_ignored_detection",
-            detected: detected,
-            override: override
-          )
-        )
-      end
+    def apply_branch(entry_key, detected, override)
+      common_override_attrs(entry_key, detected, override).merge(
+        value: merge_values(detected.fetch(:value), override.value),
+        source: "override",
+        confidence: detected.fetch(:confidence, 0.0),
+        enabled: true,
+        conflict: conflict_for(key: entry_key, category: override.category, status: "override_applied",
+                               detected:, override:)
+      )
+    end
 
-      if detected[:record]
-        return result(
-          key: entry_key,
-          category: detected[:category],
-          value: detected[:value],
-          source: "detection",
-          enabled: true,
-          confidence: detected[:confidence],
-          policy_mode: nil,
-          override: nil,
-          detection: detected[:record],
-          detected_value: detected[:value],
-          evidence: detected[:evidence],
-          configured_value: nil,
-          detected_at: detected[:detected_at],
-          detected_commit_sha: detected[:commit_sha],
-          conflict: nil
-        )
-      end
+    def warn_branch(entry_key, detected, override)
+      common_override_attrs(entry_key, detected, override).merge(
+        value: detected.fetch(:value),
+        source: "warning",
+        confidence: detected.fetch(:confidence, 0.0),
+        enabled: true,
+        conflict: conflict_for(key: entry_key, category: override.category, status: "override_warning",
+                               detected:, override:)
+      )
+    end
 
-      result(
+    def ignore_branch(entry_key, detected, override, default)
+      common_override_attrs(entry_key, detected, override).merge(
+        value: default,
+        source: "override",
+        confidence: 0.0,
+        enabled: false,
+        conflict: conflict_for(key: entry_key, category: override.category,
+                               status: "override_ignored_detection", detected:, override:)
+      )
+    end
+
+    def detection_branch(entry_key, detected)
+      {
+        key: entry_key,
+        category: detected[:category],
+        value: detected[:value],
+        source: "detection",
+        enabled: true,
+        confidence: detected[:confidence],
+        policy_mode: nil,
+        override: nil,
+        detection: detected[:record],
+        detected_value: detected[:value],
+        evidence: detected[:evidence],
+        configured_value: nil,
+        detected_at: detected[:detected_at],
+        detected_commit_sha: detected[:commit_sha],
+        conflict: nil
+      }
+    end
+
+    def default_branch(entry_key, default)
+      {
         key: entry_key,
         category: Catalog.category_for(entry_key),
         value: default,
@@ -172,28 +147,21 @@ module ProjectConventions
         detected_at: nil,
         detected_commit_sha: nil,
         conflict: nil
-      )
+      }
     end
 
-    def result(key:, category:, value:, source:, enabled:, confidence:, policy_mode:, override:, detection:,
-      detected_value:, evidence:, configured_value:, detected_at:, detected_commit_sha:, conflict:)
+    def common_override_attrs(entry_key, detected, override)
       {
-        key: key,
-        category: category,
-        value: value,
-        source: source,
-        enabled: enabled,
-        confidence: confidence,
-        policy_mode: policy_mode,
+        key: entry_key,
+        category: override.category,
+        policy_mode: override.mode,
         override: override,
-        detection: detection,
-        detected_value: detected_value,
-        evidence: evidence,
-        configured_value: configured_value,
-        detected_at: detected_at,
-        detected_commit_sha: detected_commit_sha,
-        conflict: conflict,
-        drift: conflict.present?
+        detection: detected[:record],
+        detected_value: detected[:value],
+        evidence: detected[:evidence],
+        configured_value: override.value.deep_stringify_keys,
+        detected_at: detected[:detected_at],
+        detected_commit_sha: detected[:commit_sha]
       }
     end
 
