@@ -2765,6 +2765,33 @@ expect(container_service).to receive(:execute).with(
           activity.execute(agent_run_id: run_no_container.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /No container provisioned/)
       end
+
+      it "wraps ContainerNotProvisioned as RunnerExecutionError when a prior runner attempt is already recorded" do
+        other_issue = create(:issue, project: project)
+        prior_attempt = {
+          "runner" => "claude_code",
+          "success" => false,
+          "error_type" => "error",
+          "error_message" => "prior runner failure (real root cause)"
+        }
+        run_no_container = create(
+          :agent_run, :with_git_context,
+          project: project,
+          issue: other_issue,
+          container_id: nil,
+          runners_attempted: [ prior_attempt ]
+        )
+        allow(AgentRun).to receive(:find).with(run_no_container.id).and_return(run_no_container)
+
+        expect {
+          activity.execute(agent_run_id: run_no_container.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        # The prior failure remains the first entry so the real root cause is preserved
+        # even though the run now surfaces AllRunnersExhausted at the activity boundary.
+        expect(run_no_container.reload.runners_attempted.first)
+          .to include("error_message" => "prior runner failure (real root cause)")
+      end
     end
 
     it "raises an error when no prompt is available" do
