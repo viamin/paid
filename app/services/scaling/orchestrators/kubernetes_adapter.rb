@@ -261,7 +261,7 @@ module Scaling
       end
 
       def pem_data(value)
-        Base64.strict_decode64(value)
+        Base64.decode64(value)
       end
 
       def expanded_kubeconfig_path(path)
