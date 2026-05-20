@@ -165,6 +165,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
 
     before do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
       allow(workflow).to receive(:run_activity).and_return({})
       allow(workflow).to receive(:maybe_scan_code_scanning_alerts)
       allow(workflow).to receive(:maybe_check_knowledge_staleness)
@@ -205,6 +206,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       workflow.send(:maybe_run_non_critical_activities, 1)
 
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+    end
+
+    it "skips the rate limit check for pre-v872 workflows" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+        .and_return({ prs_to_trigger: [] })
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
@@ -1849,6 +1864,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
       allow(Temporalio::Workflow).to receive(:patched).and_call_original
       allow(Temporalio::Workflow).to receive(:patched)
+        .with("add-rate-limit-budget-v1").and_return(false)
+      allow(Temporalio::Workflow).to receive(:patched)
         .with("add-auto-release-poll-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-dependabot-auto-merge-poll-v1").and_return(false)
@@ -1878,9 +1895,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckKnowledgeStalenessActivity, { project_id: project_id }, timeout: 30)
         .and_return({})
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRateLimitActivity, { project_id: project_id }, timeout: 10)
-        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
         .and_return(flags: { explicit_pr_automation_decisions: false }, project_missing: false)
