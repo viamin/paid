@@ -244,14 +244,17 @@ module ProjectConventions
 
     def conflict_for(key:, category:, status:, detected:, override:)
       return if detected[:record].blank?
-      return if override.value.deep_stringify_keys == detected.fetch(:value)
+
+      configured_value = override.value.deep_stringify_keys
+      detected_value = detected.fetch(:value)
+      return if subset_match?(configured_value, detected_value)
 
       {
         key: key,
         category: category,
         status: status,
-        detected_value: detected.fetch(:value),
-        configured_value: override.value.deep_stringify_keys,
+        detected_value: detected_value,
+        configured_value: configured_value,
         evidence: detected.fetch(:evidence),
         message: "#{key} #{status.tr('_', ' ')}"
       }
@@ -259,6 +262,19 @@ module ProjectConventions
 
     def detected_value_for(detected)
       detected[:record] ? detected.fetch(:value) : nil
+    end
+
+    def subset_match?(expected, actual)
+      case expected
+      when Hash
+        return false unless actual.is_a?(Hash)
+
+        expected.all? { |key, value| subset_match?(value, actual[key]) }
+      when Array
+        expected == actual
+      else
+        expected == actual
+      end
     end
   end
 end

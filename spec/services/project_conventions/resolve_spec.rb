@@ -119,6 +119,24 @@ RSpec.describe ProjectConventions::Resolve do
     expect(result[:conflict]).to include(status: "override_warning")
   end
 
+  it "does not report drift for redundant partial overrides" do
+    create(:project_convention_detection,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "conventional_commits", "required" => true, "default_type" => "feat" })
+    create(:project_convention_override,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "conventional_commits" })
+
+    result = described_class.call(project:, key: "commit_style")
+
+    expect(result[:source]).to eq("override")
+    expect(result[:value]).to include("type" => "conventional_commits", "required" => true, "default_type" => "feat")
+    expect(result[:conflict]).to be_nil
+    expect(result[:drift]).to be(false)
+  end
+
   it "does not report drift when an override has no detected repo state" do
     create(:project_convention_override,
       project: project,
