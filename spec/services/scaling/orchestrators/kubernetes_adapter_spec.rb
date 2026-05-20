@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "fileutils"
+require "tmpdir"
 
 RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
-  let(:adapter) { described_class.new(namespace: "test", api_url: "https://k8s.example.com", bearer_token: "test-token") }
-
   let(:deployment_response) do
     {
       "metadata" => { "name" => "agent-worker" },
@@ -20,18 +20,74 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
   let(:stubs) { Faraday::Adapter::Test::Stubs.new }
 
   let(:test_connection) do
-    Faraday.new(url: "https://k8s.example.com") do |f|
+    Faraday.new(url: adapter.api_url) do |f|
       f.request :json
       f.response :json
       f.adapter :test, stubs
     end
   end
 
-  before do
-    allow(adapter).to receive(:connection).and_return(test_connection)
+  describe "#initialize" do
+    let(:tmpdir) { Dir.mktmpdir }
+    let(:kubeconfig_path) { File.join(tmpdir, "config") }
+    let(:adapter) { described_class.new(namespace: "test", kubeconfig_path:) }
+
+    after do
+      FileUtils.remove_entry(tmpdir) if File.exist?(tmpdir)
+    end
+
+    it "initializes from kubeconfig alone" do
+      File.write(kubeconfig_path, kubeconfig_yaml)
+
+      expect(adapter.api_url).to eq("https://kube.example.test")
+      expect(adapter.send(:bearer_token)).to eq("kube-token")
+    end
+
+    it "prefers explicit api_url and bearer_token over kubeconfig" do
+      File.write(kubeconfig_path, malformed_kubeconfig_yaml)
+
+      explicit_adapter = described_class.new(
+        namespace: "test",
+        kubeconfig_path:,
+        api_url: "https://explicit.example.test",
+        bearer_token: "explicit-token"
+      )
+
+      expect(explicit_adapter.api_url).to eq("https://explicit.example.test")
+      expect(explicit_adapter.send(:bearer_token)).to eq("explicit-token")
+    end
+
+    it "raises a clear error when kubeconfig is malformed" do
+      File.write(kubeconfig_path, malformed_kubeconfig_yaml)
+
+      expect {
+        described_class.new(namespace: "test", kubeconfig_path:)
+      }.to raise_error(described_class::ApiError, /Malformed kubeconfig/)
+    end
+
+    it "does not pass a nil cert store when kubeconfig only provides a token" do
+      File.write(kubeconfig_path, kubeconfig_yaml)
+
+      expect(adapter.send(:ssl_options)).to be_nil
+    end
+
+    it "accepts line-wrapped base64 certificate authority data" do
+      File.write(kubeconfig_path, kubeconfig_with_wrapped_ca_yaml)
+
+      adapter_with_wrapped_ca = described_class.new(namespace: "test", kubeconfig_path:)
+
+      expect(adapter_with_wrapped_ca.api_url).to eq("https://kube.example.test")
+      expect(adapter_with_wrapped_ca.send(:ssl_options)).to include(:cert_store)
+    end
   end
 
   describe "#current_status" do
+    let(:adapter) { described_class.new(namespace: "test", api_url: "https://k8s.example.com", bearer_token: "test-token") }
+
+    before do
+      allow(adapter).to receive(:connection).and_return(test_connection)
+    end
+
     it "returns a ServiceStatus with deployment information" do
       stubs.get("/apis/apps/v1/namespaces/test/deployments/agent-worker") do
         [ 200, { "Content-Type" => "application/json" }, deployment_response.to_json ]
@@ -58,6 +114,12 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
   end
 
   describe "#scale" do
+    let(:adapter) { described_class.new(namespace: "test", api_url: "https://k8s.example.com", bearer_token: "test-token") }
+
+    before do
+      allow(adapter).to receive(:connection).and_return(test_connection)
+    end
+
     it "patches the deployment and returns a ScaleResult" do
       stubs.get("/apis/apps/v1/namespaces/test/deployments/agent-worker") do
         [ 200, { "Content-Type" => "application/json" }, deployment_response.to_json ]
@@ -88,6 +150,12 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
   end
 
   describe "#set_resource_limits" do
+    let(:adapter) { described_class.new(namespace: "test", api_url: "https://k8s.example.com", bearer_token: "test-token") }
+
+    before do
+      allow(adapter).to receive(:connection).and_return(test_connection)
+    end
+
     it "patches the deployment and returns a ResourceUpdateResult" do
       stubs.patch("/apis/apps/v1/namespaces/test/deployments/agent-worker") do
         [ 200, { "Content-Type" => "application/json" }, deployment_response.to_json ]
@@ -107,6 +175,12 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
   end
 
   describe "#healthy?" do
+    let(:adapter) { described_class.new(namespace: "test", api_url: "https://k8s.example.com", bearer_token: "test-token") }
+
+    before do
+      allow(adapter).to receive(:connection).and_return(test_connection)
+    end
+
     it "returns true when the API responds successfully" do
       stubs.get("/api/v1/namespaces/test") do
         [ 200, { "Content-Type" => "application/json" }, { "status" => "ok" }.to_json ]
@@ -133,8 +207,101 @@ RSpec.describe Scaling::Orchestrators::KubernetesAdapter do
   end
 
   describe "includes Scaling::Orchestrator" do
+    let(:adapter) { described_class.new(namespace: "test", api_url: "https://k8s.example.com", bearer_token: "test-token") }
+
     it "includes the orchestrator interface" do
       expect(described_class.ancestors).to include(Scaling::Orchestrator)
+    end
+  end
+
+  def kubeconfig_yaml
+    <<~YAML
+      apiVersion: v1
+      kind: Config
+      current-context: paid
+      clusters:
+        - name: paid-cluster
+          cluster:
+            server: https://kube.example.test
+      contexts:
+        - name: paid
+          context:
+            cluster: paid-cluster
+            user: paid-user
+      users:
+        - name: paid-user
+          user:
+            token: kube-token
+    YAML
+  end
+
+  def kubeconfig_with_wrapped_ca_yaml
+    {
+      "apiVersion" => "v1",
+      "kind" => "Config",
+      "current-context" => "paid",
+      "clusters" => [
+        {
+          "name" => "paid-cluster",
+          "cluster" => {
+            "server" => "https://kube.example.test",
+            "certificate-authority-data" => Base64.encode64(certificate_pem)
+          }
+        }
+      ],
+      "contexts" => [
+        {
+          "name" => "paid",
+          "context" => {
+            "cluster" => "paid-cluster",
+            "user" => "paid-user"
+          }
+        }
+      ],
+      "users" => [
+        {
+          "name" => "paid-user",
+          "user" => {
+            "token" => "kube-token"
+          }
+        }
+      ]
+    }.to_yaml
+  end
+
+  def malformed_kubeconfig_yaml
+    <<~YAML
+      apiVersion: v1
+      kind: Config
+      current-context: paid
+      clusters:
+        - name: paid-cluster
+          cluster: {}
+      contexts:
+        - name: paid
+          context:
+            cluster: paid-cluster
+            user: paid-user
+      users:
+        - name: paid-user
+          user: {}
+    YAML
+  end
+
+  def certificate_pem
+    @certificate_pem ||= begin
+      key = OpenSSL::PKey::RSA.new(2048)
+      certificate = OpenSSL::X509::Certificate.new
+      certificate.serial = 1
+      certificate.version = 2
+      certificate.subject = OpenSSL::X509::Name.parse("/CN=kube.example.test")
+      certificate.issuer = certificate.subject
+      certificate.public_key = key.public_key
+      certificate.not_before = Time.now
+      certificate.not_after = Time.now + 3600
+
+      certificate.sign(key, OpenSSL::Digest::SHA256.new)
+      certificate.to_pem
     end
   end
 end
