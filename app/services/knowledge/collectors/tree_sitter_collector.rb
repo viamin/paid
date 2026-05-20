@@ -91,6 +91,8 @@ module Knowledge
         lua: %w[.lua]
       }.freeze
 
+      MAX_FALLBACK_FILE_BYTES = 512_000
+
       def collect
         ast_artifacts = collect_ast_artifacts
         fallback_artifacts = collect_file_fallback_artifacts(
@@ -307,12 +309,13 @@ module Knowledge
           language = fallback_language_for(relative)
           next unless language
           next unless text_file?(path)
+          next if File.size(path) > MAX_FALLBACK_FILE_BYTES
 
           {
             absolute_path: path,
             relative_path: relative,
             language: language,
-            content: (File.size(path) <= 512_000) ? File.read(path) : nil
+            content: File.read(path)
           }
         rescue Errno::ENOENT, Errno::EACCES
           nil

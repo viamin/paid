@@ -329,6 +329,19 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
           hash_including(relative_path: "sample.lua", language: :lua)
         )
       end
+
+      it "skips oversized supported source files instead of building nil-content artifacts" do
+        rb_path = File.join(fixture_path, "sample.rb")
+
+        allow(Dir).to receive(:glob).and_return([ rb_path ])
+        allow(File).to receive(:file?).with(rb_path).and_return(true)
+        allow(File).to receive(:size).with(rb_path)
+          .and_return(described_class::MAX_FALLBACK_FILE_BYTES + 1)
+        allow(File).to receive(:read).with(rb_path).and_call_original
+
+        expect(collector.collect).to eq([])
+        expect(File).not_to have_received(:read).with(rb_path)
+      end
     end
   end
 end
