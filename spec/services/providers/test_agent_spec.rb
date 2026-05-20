@@ -257,6 +257,35 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when an account integration credential exists for the provider" do
+      let(:credential) do
+        create(:integration_credential, account: account, created_by: user, service_key: "claude", secret: "sk-account-claude")
+      end
+      let(:provider_record) do
+        user.providers.find_or_create_by!(provider_key: "claude").tap do |record|
+          record.update!(enabled_for_agent_runs: true, enabled_for_fallback: false)
+        end
+      end
+
+      before do
+        credential
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_container_smoke_test(
+          name: :claude, status: "ok", message: "Smoke test passed", latency_ms: 42, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "materializes an API-key provider backed by the integration credential" do
+        result = described_class.call(provider: provider)
+        materialized = user.providers.find_by!(provider_key: "claude", auth_type: "api_key")
+
+        expect(result).to be_success
+        expect(materialized.integration_credential).to eq(credential)
+        expect(materialized.provider_api_key).to be_nil
+      end
+    end
+
     context "when agent-harness returns a binary-encoded failure message" do
       let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
       let(:provider_record) { create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
