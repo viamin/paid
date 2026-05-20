@@ -153,6 +153,7 @@ module Knowledge
           committed_at: version.committed_at&.iso8601
         }
       end
+
       def generate_query_embedding
         generator = Knowledge::Embeddings::ProxyGenerator.new(project: project, containerize: false)
         results = generator.call(texts: [ query ])

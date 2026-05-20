@@ -306,6 +306,29 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         expect(File).to have_received(:binread).with(rb_path, 1024)
         expect(File).to have_received(:read).with(rb_path)
       end
+
+      it "skips reading files already covered by AST artifacts" do
+        rb_path = File.join(fixture_path, "sample.rb")
+        lua_path = File.join(fixture_path, "sample.lua")
+
+        allow(Dir).to receive(:glob).and_return([ rb_path, lua_path ])
+        allow(File).to receive(:file?).with(rb_path).and_return(true)
+        allow(File).to receive(:file?).with(lua_path).and_return(true)
+        allow(File).to receive(:binread).with(lua_path, 1024).and_call_original
+        allow(File).to receive(:read).with(lua_path).and_call_original
+        allow(File).to receive(:binread).with(rb_path, 1024).and_call_original
+        allow(File).to receive(:read).with(rb_path).and_call_original
+
+        repo_files = collector.send(:repo_files, exclude_paths: Set["sample.rb"])
+
+        expect(File).not_to have_received(:binread).with(rb_path, 1024)
+        expect(File).not_to have_received(:read).with(rb_path)
+        expect(File).to have_received(:binread).with(lua_path, 1024)
+        expect(File).to have_received(:read).with(lua_path)
+        expect(repo_files).to contain_exactly(
+          hash_including(relative_path: "sample.lua", language: :lua)
+        )
+      end
     end
   end
 end

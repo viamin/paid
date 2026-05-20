@@ -259,8 +259,7 @@ module Knowledge
       end
 
       def collect_file_fallback_artifacts(existing_paths:)
-        repo_files.filter_map do |repo_file|
-          next if existing_paths.include?(repo_file[:relative_path])
+        repo_files(exclude_paths: existing_paths).map do |repo_file|
           build_file_artifact(repo_file, repo_file[:language])
         end
       end
@@ -295,7 +294,7 @@ module Knowledge
         }
       end
 
-      def repo_files
+      def repo_files(exclude_paths: Set.new)
         root = host_repo_path || scan_path
         return [] if root.blank?
 
@@ -304,6 +303,7 @@ module Knowledge
 
           relative = relative_path(path)
           next if ignored_path?(relative)
+          next if exclude_paths.include?(relative)
           language = fallback_language_for(relative)
           next unless language
           next unless text_file?(path)
