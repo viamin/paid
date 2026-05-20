@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe ClarifyingQuestions::Load, :no_db do
+  let(:trusted_login) { "viamin" }
   let(:issue_body) { "Original issue body" }
   let(:github_client) { instance_double(GithubClient) }
   let(:github_token) { double(client: github_client) }
@@ -32,7 +33,10 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
     COMMENT
   end
 
-  before { allow(github_client).to receive(:issue_comments).and_return([]) }
+  before do
+    allow(github_client).to receive(:issue_comments).and_return([])
+    allow(project).to receive(:trusted_github_user?) { |login| login == trusted_login }
+  end
 
   describe ".call" do
     context "when the issue body already contains clarifying questions" do
@@ -68,7 +72,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
     context "when clarifying questions only exist in GitHub comments" do
       before do
-        comment = double(body: comment_body)
+        comment = double(body: comment_body, user: double(login: trusted_login))
         allow(github_client).to receive(:issue_comments).and_return([ comment ])
       end
 
@@ -86,6 +90,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       before do
         enhancement_comment = double(
           body: comment_body,
+          user: double(login: trusted_login),
           created_at: 2.minutes.ago
         )
         answers_comment = double(
@@ -97,6 +102,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
             **Q1: What is the expected behavior?**
             **A1:** Use the wizard flow.
           COMMENT
+          user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
 
@@ -121,6 +127,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
             **Q1: What is the expected behavior?**
             **A1:** Use the wizard flow.
           COMMENT
+          user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
 
@@ -152,6 +159,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
             **Q1: What is the expected behavior?**
             **A1:** Use the wizard flow.
           COMMENT
+          user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
 
@@ -177,6 +185,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
             **Q1: What is the expected behavior?**
             **A1:** Use the wizard flow.
           COMMENT
+          user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
 
@@ -185,6 +194,38 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when only an untrusted answers marker exists" do
+      let(:issue_body) do
+        <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. What is the expected behavior?
+        COMMENT
+      end
+
+      before do
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: "attacker"),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+      end
+
+      it "ignores the spoofed answers marker" do
+        expect(described_class.call(project: project, issue: issue)).to eq([ "What is the expected behavior?" ])
       end
     end
 

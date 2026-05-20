@@ -16,6 +16,8 @@ module Activities
   #
   # Returns a list of PRs needing follow-up with trigger reasons.
   class ScanPaidPrsActivity < BaseActivity
+    include Automation::LabelPolicy
+
     activity_name "ScanPaidPrs"
 
     MIN_COMMENT_LENGTH = 20
@@ -157,6 +159,11 @@ module Activities
         pending_review_states: pending_review_states.compact,
         pr_progress_states: progress_states
       }
+    rescue GithubClient::RateLimitError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "RateLimit"
+      )
     end
 
     private
@@ -231,11 +238,46 @@ module Activities
     end
 
     def find_paid_prs(project)
-      project.issues
+      labeled_prs = project.issues
         .pull_requests_only
         .auto_continue_active
         .where(github_state: "open")
         .where("labels @> ?", [ project.automation_label_name ].to_json)
+
+      trusted_creator_logins = trusted_creator_logins_for(project)
+      trusted_prs = if trusted_creator_logins.any?
+        labeled_prs.where("LOWER(github_creator_login) IN (?)", trusted_creator_logins).to_a
+      else
+        []
+      end
+      untrusted_prs = if trusted_creator_logins.any?
+        labeled_prs.where("LOWER(github_creator_login) NOT IN (?)", trusted_creator_logins)
+      else
+        labeled_prs
+      end
+
+      trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
+    end
+
+    def authorized_for_automation_scan?(project, issue)
+      return true if project.trusted_github_user?(issue.github_creator_login)
+      return true if trusted_user_added_label?(project, issue, project.automation_label_name)
+
+      Rails.logger.warn(
+        message: "pr_scanner.untrusted_pr_blocked",
+        project_id: project.id,
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        creator: issue.github_creator_login,
+        label: project.automation_label_name
+      )
+      false
+    end
+
+    def trusted_creator_logins_for(project)
+      Array(project.allowed_github_usernames)
+        .filter_map { |login| login.to_s.downcase.presence }
+        .uniq
     end
 
     def merged_issue?(issue)
