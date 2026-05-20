@@ -18,9 +18,21 @@ class CreateAccountActivityEvents < ActiveRecord::Migration[8.1]
     add_index :account_activity_events, :actor_id
     add_index :account_activity_events, [ :account_id, :created_at ]
     add_index :account_activity_events, [ :subject_type, :subject_id ]
+
+    execute <<~SQL
+      ALTER TABLE account_activity_events ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE account_activity_events FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON account_activity_events
+        USING (account_id = paid_current_account_id())
+        WITH CHECK (account_id = paid_current_account_id());
+    SQL
   end
 
   def down
+    return unless table_exists?(:account_activity_events)
+
+    execute "DROP POLICY IF EXISTS tenant_isolation ON account_activity_events"
+    execute "ALTER TABLE account_activity_events NO FORCE ROW LEVEL SECURITY"
     remove_index :account_activity_events, [ :subject_type, :subject_id ], if_exists: true
     remove_index :account_activity_events, [ :account_id, :created_at ], if_exists: true
     remove_index :account_activity_events, :actor_id, if_exists: true

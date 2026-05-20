@@ -22,7 +22,6 @@ module Accounts
       existing_user = TenantContext.with_system_access do
         User.find_by(email: email)
       end
-      raise AdministrationError, "That email is already used by another account." if existing_user.present? && existing_user.account_id != account.id
 
       membership = nil
       user = nil

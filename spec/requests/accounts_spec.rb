@@ -108,8 +108,8 @@ RSpec.describe "Accounts" do
       expect(account.account_activity_events.recent.first.action).to eq("membership.invited")
     end
 
-    it "rejects inviting an email that belongs to another account" do
-      create(:user, email: "shared@example.com")
+    it "invites an existing user from another account without creating a duplicate user" do
+      existing_user = create(:user, :member, email: "shared@example.com")
 
       expect do
         post account_memberships_path, params: {
@@ -118,10 +118,15 @@ RSpec.describe "Accounts" do
             role: "member"
           }
         }
-      end.not_to change(AccountMembership, :count)
+      end.to change(AccountMembership, :count).by(1)
+        .and change(AccountActivityEvent, :count).by(1)
 
       expect(response).to redirect_to(account_path)
-      expect(flash[:alert]).to include("another account")
+      membership = account.account_memberships.find_by!(user: existing_user)
+      expect(membership.role).to eq("member")
+      expect(User.find_by!(email: "shared@example.com")).to eq(existing_user)
+      expect(existing_user.reload.account).not_to eq(account)
+      expect(ActionMailer::Base.deliveries).to be_empty
     end
 
     it "does not send reset instructions when the invite transaction rolls back" do
