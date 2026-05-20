@@ -27,6 +27,7 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      ensure_trusted_issue_for_non_container_goal!(issue, goal)
       user_settings = resolve_user_settings(project)
       runner_selection_options = {
         project: project,
@@ -150,6 +151,23 @@ module Activities
     end
 
     private
+
+    def ensure_trusted_issue_for_non_container_goal!(issue, goal)
+      return unless issue.present? && NON_CONTAINER_GOALS.include?(goal)
+      return if issue.trusted?
+
+      logger.warn(
+        message: "agent_execution.untrusted_issue_rejected",
+        issue_id: issue.id,
+        goal: goal,
+        creator: issue.github_creator_login
+      )
+      raise Temporalio::Error::ApplicationError.new(
+        "Cannot queue #{goal} for issue from untrusted user: #{issue.github_creator_login}",
+        type: "UntrustedIssue",
+        non_retryable: true
+      )
+    end
 
     def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, respect_requested: true)
       AgentRuns::RunnerResolver.call(

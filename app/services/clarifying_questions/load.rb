@@ -97,6 +97,11 @@ module ClarifyingQuestions
 
     def issue_comments
       @issue_comments ||= project.github_token.client.issue_comments(project.full_name, issue.github_number)
+        .select { |comment| trusted_comment?(comment) }
+    end
+
+    def trusted_comment?(comment)
+      project.trusted_github_user?(comment.user&.login)
     end
   end
 end
