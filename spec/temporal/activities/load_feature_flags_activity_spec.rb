@@ -23,8 +23,7 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
 
       expect(activity.execute(project_id: project.id)).to eq(
         flags: {
-          explicit_pr_automation_decisions: true,
-          focused_agent_runs: false
+          explicit_pr_automation_decisions: true
         },
         project_missing: false
       )

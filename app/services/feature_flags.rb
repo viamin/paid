@@ -14,13 +14,6 @@ class FeatureFlags
       intent: "Stage the PR automation decision refactor for the #1077 bug class behind an explicit gate.",
       rollout_plan: "Enable per project/repo during validation, monitor the new decision path, then promote to the default rollout.",
       cleanup_criteria: "Remove after the explicit-decision path is the only implementation and the legacy branch is deleted."
-    ),
-    focused_agent_runs: Definition.new(
-      name: :focused_agent_runs,
-      owner: "agent-runs",
-      intent: "Stage focused agent runs so PR follow-ups can target a single highest-priority problem instead of a blended prompt.",
-      rollout_plan: "Enable per project during validation of focus resolution and prompt plumbing, then expand once follow-up prompt scoping lands.",
-      cleanup_criteria: "Remove after focused agent runs are the default behavior and the general-only fallback path is deleted."
     )
   }.freeze
 
@@ -101,10 +94,6 @@ class FeatureFlags
 
     def explicit_pr_automation_decisions?(project: nil)
       enabled?(:explicit_pr_automation_decisions, project:)
-    end
-
-    def focused_agent_runs?(project: nil)
-      enabled?(:focused_agent_runs, project:)
     end
 
     def flipper
