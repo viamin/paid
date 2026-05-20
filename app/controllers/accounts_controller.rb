@@ -15,13 +15,15 @@ class AccountsController < ApplicationController
     ActiveRecord::Base.transaction do
       current_account.update!(account_params)
 
-      Accounts::RecordActivity.call(
-        account: current_account,
-        actor: current_user,
-        action: "account.updated",
-        subject: current_account,
-        metadata: { changed_fields: current_account.saved_changes.except("updated_at").keys }
-      )
+      if current_account.saved_changes.except("updated_at").any?
+        Accounts::RecordActivity.call(
+          account: current_account,
+          actor: current_user,
+          action: "account.updated",
+          subject: current_account,
+          metadata: { changed_fields: current_account.saved_changes.except("updated_at").keys }
+        )
+      end
     end
 
     redirect_to account_path, notice: "Account settings updated."
