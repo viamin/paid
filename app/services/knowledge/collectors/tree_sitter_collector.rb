@@ -147,8 +147,8 @@ module Knowledge
         return nil if name.nil? || name.empty?
 
         text = match["text"].to_s
-        line = match.dig("range", "start", "line")
-        end_line = match.dig("range", "end", "line")
+        line = one_indexed_line(match.dig("range", "start", "line"))
+        end_line = one_indexed_line(match.dig("range", "end", "line"))
 
         {
           file_path: file_path,
@@ -163,6 +163,12 @@ module Knowledge
           params: extract_params(match),
           naming_style: detect_naming_style(name)
         }
+      end
+
+      def one_indexed_line(line)
+        return nil if line.nil?
+
+        line.to_i + 1
       end
 
       def extract_meta_var(match, var_name)

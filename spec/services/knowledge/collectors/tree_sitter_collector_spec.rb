@@ -125,8 +125,8 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         it "preserves line ranges for deep-linking" do
           greet = ruby_artifacts.find { |a| a[:metadata][:name] == "greet" }
 
-          expect(greet[:metadata][:start_line]).to eq(8)
-          expect(greet[:metadata][:end_line]).to eq(10)
+          expect(greet[:metadata][:start_line]).to eq(9)
+          expect(greet[:metadata][:end_line]).to eq(11)
           expect(greet[:metadata][:chunking_strategy]).to eq("ast")
         end
       end

@@ -3,6 +3,8 @@
 module Knowledge
   class Search
     class Semantic
+      include LineRangeHelpers
+
       attr_reader :project, :query, :artifact_type, :limit
 
       def initialize(project:, query:, artifact_type: nil, limit: 20)
@@ -151,15 +153,6 @@ module Knowledge
           committed_at: version.committed_at&.iso8601
         }
       end
-
-      def start_line_for(artifact)
-        artifact.metadata["start_line"] || artifact.metadata["line"]
-      end
-
-      def end_line_for(artifact)
-        artifact.metadata["end_line"]
-      end
-
       def generate_query_embedding
         generator = Knowledge::Embeddings::ProxyGenerator.new(project: project, containerize: false)
         results = generator.call(texts: [ query ])
