@@ -940,7 +940,23 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
-      container_service = reconnect_container(agent_run)
+      container_service = begin
+        reconnect_container(agent_run)
+      rescue Temporalio::Error::ApplicationError => e
+        # When a prior runner attempt has already recorded a failure on this
+        # run, a secondary ContainerNotProvisioned (e.g. because the earlier
+        # failure cleared container_id) would otherwise overwrite the real
+        # root cause at the top level. Wrap it as RunnerExecutionError so the
+        # per-runner rescue records the attempt and the loop surfaces
+        # AllRunnersExhausted, leaving the original failure visible in
+        # runners_attempted. On a first attempt with no prior history, let
+        # the precise ContainerNotProvisioned propagate so the user-visible
+        # error names the actual problem.
+        if e.type == "ContainerNotProvisioned" && agent_run.runners_attempted.present?
+          raise RunnerExecutionError, e.message
+        end
+        raise
+      end
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
