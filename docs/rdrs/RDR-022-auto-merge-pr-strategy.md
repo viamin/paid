@@ -29,7 +29,7 @@ PR #950 is a large umbrella implementation (+2355/-275 lines, 46 files) for auto
 
 ### Key Findings
 
-1. **#950 is unmergeable as-is** — conflicts with 2 merged PRs on 8+ files, and uses the wrong bot login (`paid-agent[bot]` vs actual `paid-code-reviewer[bot]`).
+1. **#950 is unmergeable as-is** — conflicts with 2 merged PRs on 8+ files, and uses the wrong bot login (`paid-agents[bot]` vs actual `paid-code-reviewer[bot]`).
 2. **Core scanner work is partially done** — clean signal detection (#921) and bot identity registration (#993) are merged.
 3. **4 hotspot files** are touched by all three open PRs: `scan_paid_prs_activity.rb`, `git_hub_poll_workflow.rb`, and their specs.
 4. **#950 has scope creep** — 37 of its 46 files are unique to it and include unrelated changes (orphan branch reaper, priority tiers, issue sync timestamps, GoodJob config).
@@ -48,7 +48,7 @@ Close #950 as superseded. Merge the focused PRs (#927, #1000) and file new PRs f
 
 - Rebasing a 46-file, +2355-line PR with conflicts against 2 merged PRs is high-effort and error-prone.
 - The PR contains scope creep (unrelated changes) that would need to be stripped anyway.
-- The wrong bot login (`paid-agent[bot]`) indicates the PR predates architectural decisions now locked in.
+- The wrong bot login (`paid-agents[bot]`) indicates the PR predates architectural decisions now locked in.
 - Large PRs are harder to review, increasing risk of merging bugs.
 
 ### Why not Option 3 (split #950)?
