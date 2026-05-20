@@ -187,7 +187,10 @@ module Automation
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
 
             trusted_usernames = Array(project.allowed_github_usernames).presence
-            base = base.where(github_creator_login: trusted_usernames) if trusted_usernames
+            if trusted_usernames
+              downcased = trusted_usernames.map(&:downcase)
+              base = base.where("LOWER(issues.github_creator_login) IN (?)", downcased)
+            end
 
             project.effective_auto_pick_skip_labels.reduce(base) do |scope, label|
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
