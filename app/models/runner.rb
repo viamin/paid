@@ -93,6 +93,7 @@ class Runner < ApplicationRecord
 
   belongs_to :user
   belongs_to :provider_api_key, optional: true
+  belongs_to :integration_credential, optional: true
 
   has_many :chat_sessions, dependent: :nullify
 
@@ -134,6 +135,7 @@ class Runner < ApplicationRecord
   validate :subscription_auth_must_not_have_api_key
   validate :api_key_must_be_compatible
   validate :api_key_must_belong_to_same_account
+  validate :integration_credential_must_be_active
   validate :subscription_must_have_standard_fallback_role
   validate :api_key_entry_must_be_unique
   validate :opencode_api_key_config_must_be_valid
@@ -157,6 +159,21 @@ class Runner < ApplicationRecord
 
   def rate_limit_fallback?
     fallback_role == "rate_limit_fallback"
+  end
+
+  def effective_api_secret
+    return provider_api_key&.api_key.to_s.presence if provider_api_key.present?
+    return unless active_integration_credential?
+
+    integration_credential.secret.to_s.presence
+  end
+
+  def active_integration_credential?
+    integration_credential&.category == "llm_provider" && integration_credential&.active?
+  end
+
+  def proxy_route_compatible?(provider)
+    required_api_service_type == provider.to_s
   end
 
   def display_name
@@ -366,7 +383,7 @@ class Runner < ApplicationRecord
   end
 
   def kilocode_runtime_env
-    api_key = provider_api_key&.api_key.to_s
+    api_key = effective_api_secret.to_s
     return {} if api_key.blank?
 
     { kilocode_api_key_env_var => api_key }
@@ -775,42 +792,58 @@ class Runner < ApplicationRecord
 
   def api_key_auth_requires_provider_api_key
     return unless api_key?
-    return if provider_api_key.present?
+    return if provider_api_key.present? || integration_credential.present?
 
     errors.add(:provider_api_key, "is required for API key authentication")
   end
 
   def subscription_auth_must_not_have_api_key
     return unless subscription?
-    return if provider_api_key_id.blank?
+    return if provider_api_key_id.blank? && integration_credential_id.blank?
 
-    errors.add(:provider_api_key, "must not be set for subscription authentication")
+    credential_error_attribute = provider_api_key_id.present? ? :provider_api_key : :integration_credential
+    errors.add(credential_error_attribute, "must not be set for subscription authentication")
   end
 
   def api_key_must_be_compatible
     return unless api_key?
-    return if provider_api_key_id.blank?
-    return unless provider_api_key
+    return if provider_api_key_id.blank? && integration_credential_id.blank?
 
     required_service = required_api_service_type
 
     if required_service.nil?
-      errors.add(:provider_api_key, "is not supported for this runner; use subscription authentication instead")
+      credential_error_attribute = provider_api_key.present? ? :provider_api_key : :integration_credential
+      errors.add(credential_error_attribute, "is not supported for this runner; use subscription authentication instead")
       return
     end
 
-    return if provider_api_key.api_service_type == required_service
+    if provider_api_key.present?
+      return if provider_api_key.api_service_type == required_service
 
-    errors.add(:provider_api_key, "must be an API key for #{RunnerSupport.api_service_type_label(required_service)}")
+      errors.add(:provider_api_key, "must be an API key for #{RunnerSupport.api_service_type_label(required_service)}")
+      return
+    end
+
+    return if integration_credential.present? &&
+      integration_credential.category == "llm_provider" &&
+      integration_credential.service_key == runner_key
+
+    errors.add(:integration_credential, "must match this runner")
   end
 
   def api_key_must_belong_to_same_account
     return unless api_key?
-    return if provider_api_key_id.blank?
-    return unless provider_api_key
-    return if provider_api_key.user&.account_id == user&.account_id
+    if provider_api_key.present?
+      return if provider_api_key.user&.account_id == user&.account_id
 
-    errors.add(:provider_api_key, "must belong to the same account")
+      errors.add(:provider_api_key, "must belong to the same account")
+      return
+    end
+
+    return unless integration_credential.present?
+    return if integration_credential.account_id == user&.account_id
+
+    errors.add(:integration_credential, "must belong to the same account")
   end
 
   def subscription_must_have_standard_fallback_role
@@ -827,11 +860,20 @@ class Runner < ApplicationRecord
     normalized_name = name.to_s
     duplicate = user.runners.kept_only.api_key.where(
       runner_key: runner_key,
-      provider_api_key_id: provider_api_key_id
+      provider_api_key_id: provider_api_key_id,
+      integration_credential_id: integration_credential_id
     ).where.not(id: id).where("COALESCE(name, '') = ?", normalized_name).exists?
     return unless duplicate
 
     errors.add(:runner_key, "already has an entry with this API key")
+  end
+
+  def integration_credential_must_be_active
+    return unless api_key?
+    return unless integration_credential.present?
+    return if integration_credential.active?
+
+    errors.add(:integration_credential, "must be active")
   end
 
   def opencode_api_key_config_must_be_valid
@@ -995,6 +1037,7 @@ class Runner < ApplicationRecord
 
     self.class.api_service_type_for(runner_key)
   end
+  public :required_api_service_type
 
   def opencode_direct_outbound?
     runner_key == "opencode" &&
@@ -1031,7 +1074,7 @@ class Runner < ApplicationRecord
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
 
     env_var = direct_outbound_api_key_env_var(opencode_api_provider)
-    env = { env_var => provider_api_key&.api_key.to_s }
+    env = { env_var => effective_api_secret.to_s }
 
     # Providers using @ai-sdk/anthropic receive their base URL through the
     # provider config (OPENAI_BASE_URL is only read by the OpenAI-compatible SDK).
@@ -1061,7 +1104,7 @@ class Runner < ApplicationRecord
       metadata: {
         "paid_pi_auth_entry" => {
           "provider" => pi_api_provider,
-          "api_key" => provider_api_key&.api_key.to_s
+          "api_key" => effective_api_secret.to_s
         }
       }
     )

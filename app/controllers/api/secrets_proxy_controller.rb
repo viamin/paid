@@ -182,7 +182,12 @@ module Api
         return nil
       end
 
-      runner_entry.provider_api_key.api_key
+      api_key = runner_entry.effective_api_secret
+      return api_key if api_key.present?
+
+      log_error("secrets_proxy.missing_runner_credential", "No active runner credential configured for #{provider}")
+      render json: { error: "API key not configured for #{provider}" }, status: :service_unavailable
+      nil
     end
 
     def agent_run_runner_entry(provider)
@@ -192,11 +197,12 @@ module Api
       runner_entries = @agent_run.project.effective_owner
         &.runners
         &.api_key
-        &.joins(:provider_api_key)
       return unless runner_entries
 
-      available_runner_entries(runner_entries)
-        .find_by(id: provider_id, provider_api_keys: { api_service_type: provider.to_s })
+      entry = available_runner_entries(runner_entries).find_by(id: provider_id)
+      return if entry.blank? || !entry.proxy_route_compatible?(provider)
+
+      entry
     end
 
     def knowledge_run_api_key(provider)

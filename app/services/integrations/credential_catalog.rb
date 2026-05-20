@@ -13,7 +13,7 @@ module Integrations
       },
       llm_provider: {
         label: "LLM Providers",
-        description: "API keys and OAuth tokens stored in Paid for provider integrations and future runtime wiring."
+        description: "API keys and OAuth tokens stored in Paid for provider integrations and account-level runtime fallback."
       },
       signing: {
         label: "Signing",
@@ -79,7 +79,7 @@ module Integrations
             label: ::Runner.display_name(runner_key),
             description: "Stored #{::Runner.display_name(runner_key)} " \
               "credentials for API-key or OAuth-based access. " \
-              "Runtime use will be wired in a follow-up.",
+              "Active records can back account-level runtime execution.",
             category: :llm_provider,
             auth_kinds: %w[api_key oauth_token]
           }

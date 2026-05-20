@@ -182,6 +182,70 @@ RSpec.describe AgentRuns::RunnerResolver do
       )
     end
 
+    it "falls back to an account integration credential when no tenant API key is selected" do
+      account = create(:account)
+      owner = create(:user, :owner, account: account)
+      project = create(:project, account: account, created_by: owner)
+      credential = create(:integration_credential, account: account, created_by: owner, service_key: "claude")
+
+      runner_id, agent_type = described_class.call(project: project, goal: "create_pr")
+      runner = Runner.find(runner_id)
+
+      expect(agent_type).to eq("claude_code")
+      expect(runner).to have_attributes(
+        user: owner,
+        runner_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: nil,
+        integration_credential: credential
+      )
+    end
+
+    it "prefers the tenant-selected ProviderApiKey over an account integration credential" do
+      account = create(:account)
+      owner = create(:user, :owner, account: account)
+      project = create(:project, account: account, created_by: owner)
+      api_key = create(:provider_api_key, user: owner, api_service_type: "anthropic")
+      create(:integration_credential, account: account, created_by: owner, service_key: "claude")
+      create(:tenant_setting, account: account,
+        runner_preferences: { "api_key_ids" => { "anthropic" => api_key.id } })
+
+      runner_id, = described_class.call(project: project, goal: "create_pr")
+      runner = Runner.find(runner_id)
+
+      expect(runner.provider_api_key).to eq(api_key)
+      expect(runner.integration_credential).to be_nil
+    end
+
+    it "ignores revoked and expired integration credentials" do
+      account = create(:account)
+      owner = create(:user, :owner, account: account)
+      project = create(:project, account: account, created_by: owner)
+      create(:integration_credential, :revoked, account: account, created_by: owner, service_key: "claude")
+      create(:integration_credential, :expired, account: account, created_by: owner, service_key: "claude")
+
+      runner_id, agent_type = described_class.call(project: project, goal: "create_pr")
+      runner = Runner.find(runner_id)
+
+      expect(agent_type).to eq("claude_code")
+      expect(runner.auth_type).to eq("subscription")
+      expect(runner.integration_credential).to be_nil
+    end
+
+    it "does not use integration credentials from another account" do
+      project = create(:project)
+      other_account = create(:account)
+      other_owner = create(:user, :owner, account: other_account)
+      create(:integration_credential, account: other_account, created_by: other_owner, service_key: "claude")
+
+      runner_id, agent_type = described_class.call(project: project, goal: "create_pr")
+      runner = Runner.find(runner_id)
+
+      expect(agent_type).to eq("claude_code")
+      expect(runner.auth_type).to eq("subscription")
+      expect(runner.integration_credential).to be_nil
+    end
+
     it "falls back to a nil runner id with the first runnable agent type when no owner runners are available" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[codex])
 

@@ -7,6 +7,7 @@ RSpec.describe Provider do
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to belong_to(:provider_api_key).optional }
+    it { is_expected.to belong_to(:integration_credential).optional }
   end
 
   describe "validations" do
@@ -251,6 +252,15 @@ RSpec.describe Provider do
 
       expect(provider).not_to be_valid
       expect(provider.errors[:provider_api_key]).to include("must not be set for subscription authentication")
+    end
+
+    it "rejects integration_credential for subscription auth type" do
+      credential = create(:integration_credential, account: provider.user.account, created_by: provider.user, category: "llm_provider")
+      provider.auth_type = "subscription"
+      provider.integration_credential = credential
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:integration_credential]).to include("must not be set for subscription authentication")
     end
 
     it "prevents duplicate subscription entries for the same user and provider_key" do
