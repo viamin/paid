@@ -39,9 +39,11 @@ RSpec.describe Containers::GitOperations do
   describe "#clone_and_setup_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
     let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
 
     before do
       allow(container_service).to receive(:execute).and_return(success_result)
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
 
       # The clone is skipped when rev-parse HEAD succeeds (idempotency guard),
       # so return failure first (triggering clone), then success (for head_sha).
@@ -55,6 +57,18 @@ RSpec.describe Containers::GitOperations do
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      git_ops.clone_and_setup_branch
+    end
+
+    it "configures the repository git commit identity from Github::BotIdentity" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       git_ops.clone_and_setup_branch
@@ -148,6 +162,15 @@ RSpec.describe Containers::GitOperations do
         .and_return(failure_result)
 
       expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::CloneError)
+    end
+
+    it "raises CloneError when git identity configuration fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.clone_and_setup_branch }
+        .to raise_error(described_class::CloneError, /Failed to configure git user\.name/)
     end
 
     context "when clone fails with a transient DNS/network error" do
