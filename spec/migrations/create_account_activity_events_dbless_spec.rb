@@ -57,6 +57,7 @@ RSpec.describe CreateAccountActivityEvents, :no_db do
     expect(recorded_sql.join("\n")).to include("ALTER TABLE account_activity_events ENABLE ROW LEVEL SECURITY;")
     expect(recorded_sql.join("\n")).to include("ALTER TABLE account_activity_events FORCE ROW LEVEL SECURITY;")
     expect(recorded_sql.join("\n")).to include("CREATE POLICY tenant_isolation ON account_activity_events")
+    expect(recorded_sql.join("\n")).to include("paid_tenant_bypass() OR account_id = paid_current_account_id()")
     expect(recorded_sql.join("\n")).to include("account_id = paid_current_account_id()")
   end
 end
