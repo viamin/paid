@@ -255,11 +255,7 @@ module Knowledge
       def collect_file_fallback_artifacts(existing_paths:)
         repo_files.filter_map do |repo_file|
           next if existing_paths.include?(repo_file[:relative_path])
-
-          language = fallback_language_for(repo_file[:relative_path])
-          next unless language
-
-          build_file_artifact(repo_file, language)
+          build_file_artifact(repo_file, repo_file[:language])
         end
       end
 
@@ -302,11 +298,14 @@ module Knowledge
 
           relative = relative_path(path)
           next if ignored_path?(relative)
+          language = fallback_language_for(relative)
+          next unless language
           next unless text_file?(path)
 
           {
             absolute_path: path,
             relative_path: relative,
+            language: language,
             content: File.read(path)
           }
         rescue Errno::ENOENT, Errno::EACCES
