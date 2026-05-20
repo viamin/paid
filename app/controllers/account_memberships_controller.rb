@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AccountMembershipsController < ApplicationController
+  include AccountAdministrationPage
+
   before_action :set_membership, only: [ :update, :destroy ]
 
   def create
@@ -15,6 +17,8 @@ class AccountMembershipsController < ApplicationController
     redirect_to account_path, notice: "Invitation sent."
   rescue Accounts::AdministrationError => e
     redirect_to account_path, alert: e.message
+  rescue ActiveRecord::RecordInvalid
+    render_account_administration_error
   end
 
   def update
@@ -30,6 +34,8 @@ class AccountMembershipsController < ApplicationController
     redirect_to account_path, notice: "Membership updated."
   rescue Accounts::AdministrationError => e
     redirect_to account_path, alert: e.message
+  rescue ActiveRecord::RecordInvalid
+    render_account_administration_error
   end
 
   def destroy
@@ -44,6 +50,8 @@ class AccountMembershipsController < ApplicationController
     redirect_to account_path, notice: "Membership removed."
   rescue Accounts::AdministrationError => e
     redirect_to account_path, alert: e.message
+  rescue ActiveRecord::RecordInvalid
+    render_account_administration_error
   end
 
   private

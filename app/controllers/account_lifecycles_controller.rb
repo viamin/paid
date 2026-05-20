@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AccountLifecyclesController < ApplicationController
+  include AccountAdministrationPage
+
   def update
     authorize current_account, :destroy?
 
@@ -13,6 +15,8 @@ class AccountLifecyclesController < ApplicationController
     redirect_to account_path, notice: "Account lifecycle updated."
   rescue Accounts::AdministrationError, Account::InvalidTransitionError => e
     redirect_to account_path, alert: e.message
+  rescue ActiveRecord::RecordInvalid
+    render_account_administration_error
   end
 
   private

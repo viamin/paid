@@ -30,7 +30,7 @@ RSpec.describe CreateAccountActivityEvents, :no_db do
   end
 
   it "creates the intended index and foreign key shape" do
-    migration.change
+    migration.up
 
     expect(table).to have_received(:references).with(
       :account,

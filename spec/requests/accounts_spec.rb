@@ -170,6 +170,18 @@ RSpec.describe "Accounts" do
       expect(account.account_activity_events.recent.first.action).to eq("membership.role_changed")
     end
 
+    it "rolls back the role change when activity recording fails" do
+      membership = create(:account_membership, :member, account: account, user: create(:user, account: account))
+      allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+      patch account_membership_path(membership), params: {
+        account_membership: { role: "admin" }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(membership.reload.role).to eq("member")
+    end
+
     it "refuses to assign owner via role change" do
       membership = create(:account_membership, :member, account: account, user: create(:user, account: account))
 
@@ -195,6 +207,16 @@ RSpec.describe "Accounts" do
       expect(response).to redirect_to(account_path)
       expect(account.account_activity_events.recent.first.action).to eq("membership.removed")
     end
+
+    it "rolls back the removal when activity recording fails" do
+      membership = create(:account_membership, :viewer, account: account, user: create(:user, account: account))
+      allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+      delete account_membership_path(membership)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(membership.reload).to be_present
+    end
   end
 
   describe "POST /account_ownership_transfer" do
@@ -210,6 +232,17 @@ RSpec.describe "Accounts" do
       expect(owner.account_membership_for(account).reload.role).to eq("admin")
       expect(account.account_activity_events.recent.first.action).to eq("ownership.transferred")
     end
+
+    it "rolls back the transfer when activity recording fails" do
+      membership = create(:account_membership, :admin, account: account, user: create(:user, account: account))
+      allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+      post account_ownership_transfer_path, params: { membership_id: membership.id }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(membership.reload.role).to eq("admin")
+      expect(owner.account_membership_for(account).reload.role).to eq("owner")
+    end
   end
 
   describe "PATCH /account_lifecycle" do
@@ -221,6 +254,15 @@ RSpec.describe "Accounts" do
       expect(response).to redirect_to(account_path)
       expect(account.reload).to be_suspended
       expect(account.account_activity_events.recent.first.action).to eq("lifecycle.suspended")
+    end
+
+    it "rolls back the transition when activity recording fails" do
+      allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+      patch account_lifecycle_path, params: { transition: "suspend" }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(account.reload).to be_active
     end
 
     it "rejects admins" do

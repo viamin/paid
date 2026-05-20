@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 class AccountsController < ApplicationController
-  before_action :set_account_context
+  include AccountAdministrationPage
+
+  before_action :load_account_administration_page
 
   def show
     authorize current_account
@@ -28,17 +30,6 @@ class AccountsController < ApplicationController
   end
 
   private
-
-  def set_account_context
-    @tenant_setting = current_account.tenant_setting!
-    @memberships = current_account.account_memberships.includes(:user).order(role: :desc, created_at: :asc)
-    @projects_count = current_account.projects.count
-    @active_plan = current_account.billing_plans.active.order(created_at: :desc).first
-    @current_billing_period = current_account.billing_periods.order(starts_at: :desc).first
-    @recent_invoices = current_account.billing_invoices.order(created_at: :desc).limit(5)
-    @recent_activity = current_account.account_activity_events.includes(:actor).recent.limit(20)
-    @billing_visible = BillingPolicy.new(current_user, current_account).billing?
-  end
 
   def account_params
     params.require(:account).permit(:name, :default_max_tokens_per_run)

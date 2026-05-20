@@ -78,7 +78,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_135640) do
     t.string "subject_type", comment: "Polymorphic subject type affected by the action."
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "index_account_activity_events_on_account_id_and_created_at"
-    t.index ["account_id"], name: "index_account_activity_events_on_account_id"
+    t.index ["actor_id"], name: "index_account_activity_events_on_actor_id"
     t.index ["subject_type", "subject_id"], name: "index_account_activity_events_on_subject_type_and_subject_id"
   end
 
