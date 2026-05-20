@@ -1864,10 +1864,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with("batch-evaluate-issues-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("notification-rules-v1").and_return(false)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-auto-release-poll-v1").and_return(false)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-dependabot-auto-merge-poll-v1").and_return(false)
       allow(workflow).to receive(:interruptible_sleep)
       allow(workflow).to receive(:with_jitter) { |base| base }
       allow(workflow).to receive(:run_activity)
