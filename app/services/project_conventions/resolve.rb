@@ -33,6 +33,7 @@ module ProjectConventions
     private
 
     def profile
+      preload_profile_records
       conventions = profile_keys.index_with { |profile_key| convention_entry(profile_key) }
 
       {
@@ -44,19 +45,16 @@ module ProjectConventions
     end
 
     def profile_keys
-      detection_scope = project.project_convention_detections
-      detection_scope = detection_scope.where(project_version: project_version) if project_version
-
       (
         Catalog.known_keys +
-        detection_scope.distinct.pluck(:key) +
-        project.project_convention_overrides.distinct.pluck(:key)
+        all_detections.map(&:key) +
+        all_overrides.map(&:key)
       ).uniq.sort
     end
 
     def convention_entry(entry_key)
       detected = detected_state(entry_key)
-      override = project.project_convention_overrides.find_by(key: entry_key)
+      override = override_record(entry_key)
       default = default_value(entry_key)
 
       if override&.apply?
@@ -217,9 +215,39 @@ module ProjectConventions
     end
 
     def detection_records(entry_key)
-      scope = project.project_convention_detections.where(key: entry_key)
+      return all_detections.select { |record| record.key == entry_key } if profile_records_loaded?
+
+      scope = project.project_convention_detections.preload(:project_version).where(key: entry_key)
       scope = scope.where(project_version: project_version) if project_version
       scope.order(confidence: :desc, detected_at: :desc, id: :desc).to_a
+    end
+
+    def override_record(entry_key)
+      return all_overrides.find { |record| record.key == entry_key } if profile_records_loaded?
+
+      project.project_convention_overrides.find_by(key: entry_key)
+    end
+
+    def preload_profile_records
+      return if profile_records_loaded?
+
+      detection_scope = project.project_convention_detections.preload(:project_version)
+      detection_scope = detection_scope.where(project_version: project_version) if project_version
+
+      @all_detections = detection_scope.order(confidence: :desc, detected_at: :desc, id: :desc).to_a
+      @all_overrides = project.project_convention_overrides.to_a
+    end
+
+    def all_detections
+      @all_detections || []
+    end
+
+    def all_overrides
+      @all_overrides || []
+    end
+
+    def profile_records_loaded?
+      defined?(@all_detections) && defined?(@all_overrides)
     end
 
     def default_value(entry_key)

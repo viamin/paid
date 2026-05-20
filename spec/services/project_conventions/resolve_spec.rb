@@ -109,4 +109,29 @@ RSpec.describe ProjectConventions::Resolve do
     expect(profile[:conventions].fetch("hook_manager")).to include(source: "detection")
     expect(profile[:conflicts].map { |conflict| conflict[:key] }).to include("commit_style")
   end
+
+  it "resolves profile mode with a bounded query count" do
+    create(:project_convention_detection,
+      project: project,
+      key: "hook_manager",
+      value: { "type" => "lefthook", "path" => "lefthook.yml" })
+    create(:project_convention_detection,
+      project: project,
+      key: "ci_entrypoint",
+      value: { "command" => "bin/ci" })
+    create(:project_convention_override,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "plain" })
+    create(:project_convention_override,
+      project: project,
+      key: "custom_policy",
+      value: { "enabled" => true })
+
+    query_count = count_queries do
+      described_class.profile(project:)
+    end
+
+    expect(query_count).to be <= 3
+  end
 end
