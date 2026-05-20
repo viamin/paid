@@ -108,6 +108,28 @@ RSpec.describe "Api::SecretsProxy" do
           .with(headers: { "x-api-key" => "sk-stored-anthropic-key" })
       end
 
+      it "uses the run owner's active integration credential when a runner id header is present" do
+        credential = create(
+          :integration_credential,
+          account: project.account,
+          created_by: project.effective_owner,
+          service_key: "claude",
+          secret: "sk-account-anthropic-key"
+        )
+        runner = create(:runner, :api_key, user: project.effective_owner, runner_key: "claude",
+          provider_api_key: nil, integration_credential: credential)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: { model: "claude-3-5-sonnet-20241022" }.to_json,
+          headers: valid_headers.merge(
+            "X-Paid-Provider-Id" => runner.id.to_s,
+            "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          )
+
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: { "x-api-key" => "sk-account-anthropic-key" })
+      end
+
       it "uses a fallback-only runner API key when a runner id header is present" do
         runner = create_anthropic_api_key_provider(
           :rate_limit_fallback,
@@ -157,6 +179,23 @@ RSpec.describe "Api::SecretsProxy" do
           )
 
         expect(response).to have_http_status(:forbidden)
+        expect(WebMock).not_to have_requested(:post, target_url)
+      end
+
+      it "rejects revoked integration credentials" do
+        credential = create(:integration_credential, account: project.account, created_by: project.effective_owner, service_key: "claude")
+        runner = create(:runner, :api_key, user: project.effective_owner, runner_key: "claude",
+          provider_api_key: nil, integration_credential: credential)
+        credential.revoke!
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: { model: "claude-3-5-sonnet-20241022" }.to_json,
+          headers: valid_headers.merge(
+            "X-Paid-Provider-Id" => runner.id.to_s,
+            "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          )
+
+        expect(response).to have_http_status(:service_unavailable)
         expect(WebMock).not_to have_requested(:post, target_url)
       end
 

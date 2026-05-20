@@ -48,10 +48,10 @@ module AgentRuns
       configured_provider = configured_runner_from_raw_settings(settings)
       base_provider = runnable_runner(selected_provider) || runnable_runner(configured_provider)
       fallback_provider = Provider.first_enabled_for_owner(owner) || Provider.ensure_default_for(owner)
-      tenant_api_key_runner(base_provider, owner) ||
+      account_managed_runner(base_provider, owner) ||
         base_provider ||
-        tenant_api_key_runner(configured_provider, owner) ||
-        tenant_api_key_runner(fallback_provider, owner) ||
+        account_managed_runner(configured_provider, owner) ||
+        account_managed_runner(fallback_provider, owner) ||
         fallback_provider
     end
 
@@ -77,22 +77,20 @@ module AgentRuns
       provider
     end
 
-    def tenant_api_key_runner(base_provider, owner)
+    def account_managed_runner(base_provider, owner)
       return unless base_provider
       return unless runner_runnable?(base_provider)
 
-      service_type = tenant_api_key_service_type_for(base_provider)
-      return unless service_type
+      credential = resolve_account_credential(base_provider)
+      return unless credential.present?
+      return if credential.provider_api_key? && !credential.provider_api_key.compatible_with?(base_provider.provider_key)
 
-      api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
-      return unless api_key
-      return unless api_key.compatible_with?(base_provider.provider_key)
-
-      provider_config = tenant_api_key_provider_config(base_provider, api_key)
+      provider_config = account_managed_provider_config(base_provider, credential)
       owner.providers.kept_only.find_or_create_by!(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
-        provider_api_key: api_key
+        provider_api_key: credential.provider_api_key,
+        integration_credential: credential.integration_credential
       ) do |provider|
         provider.config = provider_config
       end.tap do |provider|
@@ -103,11 +101,12 @@ module AgentRuns
       owner.providers.kept_only.find_by(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
-        provider_api_key: api_key
+        provider_api_key: credential&.provider_api_key,
+        integration_credential: credential&.integration_credential
       )
     end
 
-    def tenant_api_key_service_type_for(base_provider)
+    def account_credential_service_type_for(base_provider)
       static = ProviderSupport.api_service_type_for(base_provider.provider_key)
       return static if static.present?
       return base_provider.pi_required_api_service_type if base_provider.provider_key == "pi"
@@ -115,12 +114,12 @@ module AgentRuns
       nil
     end
 
-    def tenant_api_key_provider_config(base_provider, api_key)
+    def account_managed_provider_config(base_provider, credential)
       return {} unless base_provider.provider_key == "pi"
 
       config = {
         "pi" => {
-          "api_provider" => api_key.api_service_type
+          "api_provider" => credential.provider_api_key&.api_service_type || account_credential_service_type_for(base_provider)
         }
       }
 

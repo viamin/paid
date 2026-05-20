@@ -187,13 +187,13 @@ module Providers
     private
 
     def validate!
-      unless ProviderSupport.supported_provider_key?(provider.provider_key)
-        raise UnsupportedProviderError, "Unknown provider: #{provider.provider_key}"
+      unless ProviderSupport.supported_provider_key?(effective_provider.provider_key)
+        raise UnsupportedProviderError, "Unknown provider: #{effective_provider.provider_key}"
       end
 
-      unless ProviderSupport.container_executable_provider_key?(provider.provider_key)
+      unless ProviderSupport.container_executable_provider_key?(effective_provider.provider_key)
         raise NotContainerExecutableError,
-          "Provider #{provider.provider_key} is not installed in the agent container"
+          "Provider #{effective_provider.provider_key} is not installed in the agent container"
       end
 
       return if harness_health_check_supported? && !@diagnostic_prompt
@@ -375,18 +375,18 @@ module Providers
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
-      provider.agent_harness_provider_runtime
+      effective_provider.agent_harness_provider_runtime
     end
 
     def subscription_provider_runtime?
-      provider.subscription? &&
-        ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key).any?
+      effective_provider.subscription? &&
+        ProviderSupport.subscription_auth_unset_vars_for(effective_provider.provider_key).any?
     end
 
     def subscription_provider_runtime
-      unset_vars = ProviderSupport.subscription_auth_unset_vars_for(provider.provider_key)
+      unset_vars = ProviderSupport.subscription_auth_unset_vars_for(effective_provider.provider_key)
 
-      if provider.provider_key == "copilot"
+      if effective_provider.provider_key == "copilot"
         unset_vars.delete("COPILOT_GITHUB_TOKEN")
       end
 
@@ -400,11 +400,11 @@ module Providers
     # key from environment variables. This runtime passes the API key through
     # the env var referenced by the generated config.
     def kilocode_provider_runtime
-      AgentHarness::ProviderRuntime.new(env: provider.kilocode_runtime_env)
+      AgentHarness::ProviderRuntime.new(env: effective_provider.kilocode_runtime_env)
     end
 
     def kilocode_direct_outbound?
-      provider.provider_key == "kilocode" && provider.requires_direct_outbound?
+      effective_provider.provider_key == "kilocode" && effective_provider.requires_direct_outbound?
     end
 
     # Writes the kilocode config file into the container before the smoke test.
@@ -414,7 +414,7 @@ module Providers
     # provision.rb ensure block), which removes the config before the
     # subsequent smoke test runs.
     def prepare_kilocode_config!(run)
-      config_json = provider.kilocode_config_json
+      config_json = effective_provider.kilocode_config_json
       run.execute_in_container(
         [ "sh", "-c",
           "mkdir -p /home/agent/.config/kilo && " \
@@ -434,10 +434,10 @@ module Providers
         result = AgentRun.insert_all!(
           [ {
             project_id: test_project.id,
-            initiating_user_id: provider.user_id,
-            provider_id: provider.id,
-            runner_id: provider.id,
-            agent_type: Provider.agent_type_for(provider.provider_key),
+            initiating_user_id: effective_provider.user_id,
+            provider_id: effective_provider.id,
+            runner_id: effective_provider.id,
+            agent_type: Provider.agent_type_for(effective_provider.provider_key),
             status: "queued",
             temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
             goal: "create_pr",
@@ -455,18 +455,18 @@ module Providers
     end
 
     def test_project
-      @test_project ||= provider.user.created_projects.active.order(:id).first ||
-        provider.user.member_projects.active.order(:id).first
+      @test_project ||= effective_provider.user.created_projects.active.order(:id).first ||
+        effective_provider.user.member_projects.active.order(:id).first
     end
 
     def harness_health_check_supported?
-      return false if provider.subscription?
-      api_key_name = ProviderSupport.proxy_health_check_api_key_for(provider.provider_key)
+      return false if effective_provider.subscription?
+      api_key_name = ProviderSupport.proxy_health_check_api_key_for(effective_provider.provider_key)
       !!(api_key_name && proxy_api_key_configured?(api_key_name))
     end
 
     def harness_provider_name
-      ProviderSupport.harness_provider_key_for(provider.provider_key).to_sym
+      ProviderSupport.harness_provider_key_for(effective_provider.provider_key).to_sym
     end
 
     def proxy_api_key_configured?(provider_name)
@@ -484,7 +484,7 @@ module Providers
 
     def clear_provider_state_if_healthy!
       provider_state_names.each do |provider_name|
-        provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
+        effective_provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
       end
     end
 
@@ -492,21 +492,68 @@ module Providers
       reset_at = rate_limit_reset_at(message)
 
       provider_state_names.each do |provider_name|
-        provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+        effective_provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     rescue ActiveRecord::RecordNotUnique
       provider_state_names.each do |provider_name|
-        provider.user.provider_states.find_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+        effective_provider.user.provider_states.find_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     end
 
     def provider_state_names
-      names = [ provider.state_key ]
-      if provider.subscription? || provider.state_key == provider.provider_key
-        names << provider.provider_key
+      names = [ effective_provider.state_key ]
+      if effective_provider.subscription? || effective_provider.state_key == effective_provider.provider_key
+        names << effective_provider.provider_key
       end
 
       names.uniq
+    end
+
+    def effective_provider
+      @effective_provider ||= materialize_account_provider || provider
+    end
+
+    def materialize_account_provider
+      return if provider.api_key?
+
+      credential = LlmCredentials::AccountResolver.call(
+        account: provider.user.account,
+        runner_key: provider.provider_key,
+        api_service_type: provider.required_api_service_type,
+        tenant_setting: provider.user.account.tenant_setting
+      )
+      return unless credential.present?
+
+      provider.user.providers.kept_only.find_or_create_by!(
+        provider_key: provider.provider_key,
+        auth_type: "api_key",
+        provider_api_key: credential.provider_api_key,
+        integration_credential: credential.integration_credential
+      ) do |record|
+        record.config = account_managed_provider_config(credential)
+        record.enabled_for_agent_runs = provider.enabled_for_agent_runs
+        record.enabled_for_fallback = provider.enabled_for_fallback
+        record.fallback_role = provider.fallback_role
+      end.tap do |record|
+        config = account_managed_provider_config(credential)
+        record.update!(config: config) if config != record.config
+      end
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
+      provider.user.providers.kept_only.find_by(
+        provider_key: provider.provider_key,
+        auth_type: "api_key",
+        provider_api_key: credential&.provider_api_key,
+        integration_credential: credential&.integration_credential
+      )
+    end
+
+    def account_managed_provider_config(credential)
+      return provider.config unless provider.provider_key == "pi"
+
+      provider.config.deep_dup.tap do |config|
+        config["pi"] ||= {}
+        config["pi"]["api_provider"] = credential.provider_api_key&.api_service_type || provider.required_api_service_type
+      end
     end
 
     def rate_limit_reset_at(message)

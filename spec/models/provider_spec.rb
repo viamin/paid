@@ -7,6 +7,7 @@ RSpec.describe Provider do
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to belong_to(:provider_api_key).optional }
+    it { is_expected.to belong_to(:integration_credential).optional }
   end
 
   describe "validations" do
