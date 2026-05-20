@@ -325,8 +325,6 @@ RUN chmod +x /usr/local/bin/git-credential-paid
 # Configure git at system level so it works with ReadonlyRootfs.
 # The credential helper fetches tokens from the secrets proxy on demand.
 RUN git config --system init.defaultBranch main \
-    && git config --system user.email "agent@paid.dev" \
-    && git config --system user.name "Paid Agent" \
     && git config --system credential.helper /usr/local/bin/git-credential-paid
 
 # Set up working directory

@@ -256,6 +256,7 @@ module Containers
     # @raise [CloneError] when the clone fails
     def clone_and_setup_branch
       clone_repo
+      configure_git_identity!
       branch_name = create_branch
       base_sha = record_base_commit
 
@@ -278,6 +279,7 @@ module Containers
     # @raise [CloneError] when clone or checkout fails
     def clone_and_checkout_branch(branch_name:, pull_request_number: nil, persist: true)
       clone_repo
+      configure_git_identity!
       checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
       base_sha = record_merge_base
 
@@ -297,6 +299,7 @@ module Containers
     # same starting point.
     def clone_and_restore_branch(branch_name:, base_commit_sha:, pull_request_number: nil)
       clone_repo
+      configure_git_identity!
 
       if pull_request_number.present?
         checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
@@ -905,6 +908,18 @@ module Containers
       else
         # Fall back to HEAD if merge-base fails (e.g. unrelated histories)
         record_base_commit
+      end
+    end
+
+    def configure_git_identity!
+      identity = Github::BotIdentity.for_git
+
+      {
+        "user.name" => identity.name,
+        "user.email" => identity.email
+      }.each do |key, value|
+        result = execute_git("config", key, value)
+        raise CloneError, "Failed to configure git #{key}: #{error_with_stderr(result)}" if result.failure?
       end
     end
 
