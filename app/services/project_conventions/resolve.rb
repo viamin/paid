@@ -175,7 +175,7 @@ module ProjectConventions
         confidence: primary&.confidence.to_f,
         evidence: merge_evidence(detections),
         detected_at: primary&.detected_at,
-        commit_sha: primary&.project_version_commit_sha,
+        commit_sha: primary&.read_attribute(:detected_commit_sha),
         record: primary,
         records: detections,
         value: base_value
@@ -223,7 +223,12 @@ module ProjectConventions
     end
 
     def detection_scope
-      scope = project.project_convention_detections.eager_load(:project_version)
+      scope = project.project_convention_detections
+        .joins(:project_version)
+        .select(
+          "#{ProjectConventionDetection.table_name}.*",
+          "#{ProjectVersion.table_name}.commit_sha AS detected_commit_sha"
+        )
       effective_project_version ? scope.where(project_version: effective_project_version) : scope
     end
 

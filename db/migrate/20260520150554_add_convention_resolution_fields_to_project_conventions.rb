@@ -12,6 +12,8 @@ class AddConventionResolutionFieldsToProjectConventions < ActiveRecord::Migratio
 
     safety_assured do
       up_only do
+        # Rollback is safe without a down data step because both values are derived:
+        # category is repopulated by assign_category on save, and mode maps back to enabled.
         execute <<~SQL.squish
           UPDATE project_convention_detections
           SET category = CASE key
