@@ -48,6 +48,7 @@ Analyzing meaning or making a judgment?
 - Always add foreign key constraints and index FK columns. `STYLE_GUIDE:400-415`
 - Prefer `timestamp` over `datetime`. Prefer explicit columns over JSON for queryable data. `STYLE_GUIDE:400-415`
 - Add table/column `comment:` in migrations for non-obvious schema elements. `db/schema.rb` is the canonical schema reference — no separate DATA_MODEL.md needed. `STYLE_GUIDE:400-415`
+- Prefer Rails migration helpers over raw SQL. For PostgreSQL-only features without a project helper, especially RLS and `CREATE POLICY`, keep SQL minimal and wrap that block in `safety_assured`. `STYLE_GUIDE:400-415`
 
 ### Naming
 
