@@ -21,6 +21,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       - Some context
     COMMENT
   end
+  let(:trusted_comment) { double(body: comment_body, user: double(login: "viamin")) }
 
   before do
     sign_in user
@@ -31,8 +32,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   describe "GET /projects/:project_id/issues/:issue_id/clarifying_questions" do
     context "when enhancement comment with clarifying questions exists" do
       before do
-        comment = double(body: comment_body)
-        allow(github_client).to receive(:issue_comments).and_return([ comment ])
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
       it "renders the wizard view" do
@@ -69,7 +69,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
     context "when all answers are provided" do
       before do
-        allow(github_client).to receive(:issue_comments).and_return([ double(body: comment_body) ])
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
       it "posts answers as a GitHub comment and redirects" do
@@ -91,7 +91,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
     context "when some answers are blank" do
       before do
-        allow(github_client).to receive(:issue_comments).and_return([ double(body: comment_body) ])
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
       it "redirects back with an alert" do
@@ -106,7 +106,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
 
     context "when the submitted questions no longer match the current questions" do
       before do
-        allow(github_client).to receive(:issue_comments).and_return([ double(body: comment_body) ])
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
       it "redirects back with an alert instead of posting mismatched answers" do

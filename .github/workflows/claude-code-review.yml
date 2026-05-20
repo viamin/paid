@@ -77,11 +77,15 @@ jobs:
             OWNER|MEMBER|COLLABORATOR)
               echo "allowed=true" >> "$GITHUB_OUTPUT"
               ;;
-            dependabot[bot]|renovate[bot]|github-actions[bot])
-              echo "allowed=true" >> "$GITHUB_OUTPUT"
-              ;;
             *)
-              echo "allowed=false" >> "$GITHUB_OUTPUT"
+              case "${AUTHOR_LOGIN}" in
+                "dependabot[bot]"|"renovate[bot]"|"github-actions[bot]")
+                  echo "allowed=true" >> "$GITHUB_OUTPUT"
+                  ;;
+                *)
+                  echo "allowed=false" >> "$GITHUB_OUTPUT"
+                  ;;
+              esac
               ;;
           esac
 

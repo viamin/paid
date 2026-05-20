@@ -44,6 +44,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   end
 
   before do
+    allow(project).to receive(:broadcast_agent_run_detail_update)
     allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
     allow(Knowledge::Search).to receive(:call).and_return(
