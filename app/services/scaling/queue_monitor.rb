@@ -176,11 +176,7 @@ module Scaling
       client = Paid.temporal_client
       sanitized_queue = task_queue.gsub("\\", "\\\\\\\\").gsub("'", "\\\\'")
       query = "TaskQueue = '#{sanitized_queue}' AND ExecutionStatus = 'Running'"
-      # TODO(#725): Switch to client.count_workflows(query) when the Ruby Temporal SDK
-      # exposes CountWorkflowExecutions. list_workflows is O(n) and will degrade at scale.
-      count = 0
-      client.list_workflows(query).each { |_wf| count += 1 }
-      count
+      client.count_workflows(query).count
     rescue => e
       Rails.logger.warn(
         message: "scaling.queue_monitor.temporal_count_failed",

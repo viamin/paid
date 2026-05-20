@@ -134,6 +134,65 @@ RSpec.describe Scaling::QueueMonitor do
       temporal_depths = result.queue_depths.select { |d| d.type == :temporal }
       expect(temporal_depths).to be_empty
     end
+
+    it "uses Temporal count_workflows to measure queue depth" do
+      temporal_client = instance_double(Temporalio::Client)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+      allow(temporal_client).to receive(:count_workflows).and_return(
+        instance_double(Temporalio::Client::WorkflowExecutionCount, count: 3)
+      )
+
+      result = described_class.call
+
+      temporal_depths = result.queue_depths.select { |d| d.type == :temporal }
+      expect(temporal_depths.map(&:depth)).to eq([ 3, 3 ])
+      expect(temporal_client).to have_received(:count_workflows).with(
+        "TaskQueue = '#{Paid.poll_task_queue}' AND ExecutionStatus = 'Running'"
+      )
+      expect(temporal_client).to have_received(:count_workflows).with(
+        "TaskQueue = '#{Paid.agent_task_queue}' AND ExecutionStatus = 'Running'"
+      )
+    end
+
+    it "falls back to zero when Temporal count_workflows fails" do
+      temporal_client = instance_double(Temporalio::Client)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+      allow(temporal_client).to receive(:count_workflows).and_raise(StandardError, "count failed")
+
+      result = described_class.call
+
+      temporal_depths = result.queue_depths.select { |d| d.type == :temporal }
+      expect(temporal_depths.map(&:depth)).to eq([ 0, 0 ])
+    end
+  end
+
+  describe "#fetch_temporal_queue_depth" do
+    subject(:fetch_temporal_queue_depth) { monitor.send(:fetch_temporal_queue_depth, task_queue) }
+
+    let(:monitor) { described_class.new }
+    let(:temporal_client) { instance_double(Temporalio::Client) }
+    let(:count_result) { instance_double(Temporalio::Client::WorkflowExecutionCount, count: 7) }
+
+    before do
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+    end
+
+    {
+      "plain-task-queue" => "TaskQueue = 'plain-task-queue' AND ExecutionStatus = 'Running'",
+      "queue'with quote" => "TaskQueue = 'queue\\'with quote' AND ExecutionStatus = 'Running'",
+      "queue\\with\\slashes" => "TaskQueue = 'queue\\\\with\\\\slashes' AND ExecutionStatus = 'Running'"
+    }.each do |task_queue_name, expected_query|
+      context "when task queue is #{task_queue_name.inspect}" do
+        let(:task_queue) { task_queue_name }
+
+        it "uses the same escaped query with Temporal count_workflows" do
+          allow(temporal_client).to receive(:count_workflows).with(expected_query).and_return(count_result)
+
+          expect(fetch_temporal_queue_depth).to eq(7)
+          expect(temporal_client).to have_received(:count_workflows).with(expected_query)
+        end
+      end
+    end
   end
 
   describe ".cached_for_account" do
