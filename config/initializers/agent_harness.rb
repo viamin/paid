@@ -2,67 +2,7 @@
 
 require Rails.root.join("lib/runner_support").to_s
 
-# Backport fix for viamin/agent-harness#173 — agent-harness 0.17.x passes
-# `nil` as the smoke-test timeout when a contract exists, so the adapter
-# falls back to the contract's 30s default. Slow models (e.g. Kilocode
-# GLM 5.1) need the caller-specified timeout honoured.
-#
-# Keep this patch narrow and version-gated: only intercept the nil timeout
-# forwarded into the provider smoke test, and only until agent-harness 0.18
-# ships the upstream fix.
-# TODO(#1538): remove this monkey-patch when agent-harness ships the upstream fix
-module AgentHarnessSmokeTestTimeoutProviderPatch
-  def smoke_test(*args, **kwargs, &block)
-    if kwargs.key?(:timeout)
-      kwargs = kwargs.merge(timeout: effective_smoke_test_timeout(kwargs[:timeout]))
-    end
-
-    super(*args, **kwargs, &block)
-  end
-
-  private
-
-  def effective_smoke_test_timeout(timeout)
-    return timeout unless timeout.nil?
-
-    caller_timeout = instance_variable_get(:@paid_smoke_test_timeout)
-    contract_timeout = smoke_test_contract&.dig(:timeout)
-
-    if caller_timeout.is_a?(Numeric) && contract_timeout.is_a?(Numeric)
-      [ caller_timeout, contract_timeout ].max
-    else
-      caller_timeout || contract_timeout
-    end
-  end
-end
-
-module AgentHarnessSmokeTestTimeoutPatch
-  private
-
-  def perform_check(*args, timeout: nil, **kwargs, &block)
-    previous_timeout = Thread.current[:paid_agent_harness_smoke_test_timeout]
-    Thread.current[:paid_agent_harness_smoke_test_timeout] = timeout
-    super(*args, timeout: timeout, **kwargs, &block)
-  ensure
-    Thread.current[:paid_agent_harness_smoke_test_timeout] = previous_timeout
-  end
-
-  def build_provider(provider_name, klass, executor:)
-    provider_instance = super
-    provider_instance.instance_variable_set(
-      :@paid_smoke_test_timeout,
-      Thread.current[:paid_agent_harness_smoke_test_timeout]
-    )
-    provider_instance.singleton_class.prepend(AgentHarnessSmokeTestTimeoutProviderPatch) unless
-      provider_instance.singleton_class < AgentHarnessSmokeTestTimeoutProviderPatch
-    provider_instance
-  end
-end
-
 agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
-if agent_harness_version == Gem::Version.new("0.17.0")
-  AgentHarness::ProviderHealthCheck.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
-end
 
 # Backport Pi API-key runtime support that agent-harness 0.18.1 does not yet
 # expose consistently. Pi itself supports API keys via env vars or auth.json,
