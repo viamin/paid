@@ -631,6 +631,28 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to be_nil
       end
 
+      it "rejects analyze_issue for an untrusted issue" do
+        untrusted_issue = create(:issue, project: project, github_creator_login: "untrusted-user")
+
+        expect {
+          activity.execute(project_id: project.id, issue_id: untrusted_issue.id, goal: "analyze_issue")
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("UntrustedIssue")
+          expect(error.non_retryable).to be(true)
+        }
+      end
+
+      it "rejects enhance_issue for an untrusted issue" do
+        untrusted_issue = create(:issue, project: project, github_creator_login: "untrusted-user")
+
+        expect {
+          activity.execute(project_id: project.id, issue_id: untrusted_issue.id, goal: "enhance_issue")
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("UntrustedIssue")
+          expect(error.non_retryable).to be(true)
+        }
+      end
+
       it "appends trusted issue comments to the rendered custom_prompt" do
         trusted_login = project.allowed_github_usernames.first
         comment = OpenStruct.new(

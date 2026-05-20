@@ -28,6 +28,9 @@ concurrency:
 jobs:
   detect:
     name: Detect ephemeral tests
+    if: >-
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     outputs:
       has_tests: ${{ steps.check.outputs.has_tests }}
@@ -180,6 +183,10 @@ jobs:
     needs: [detect, run-tests]
     if: >-
       always()
+      && (
+        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      )
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:

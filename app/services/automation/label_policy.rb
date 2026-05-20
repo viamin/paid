@@ -61,12 +61,16 @@ module Automation
     end
 
     def trusted_user_added_label?(project, record, label)
+      @trusted_user_added_label_cache ||= {}
+      cache_key = [ project.id, record.github_number, label ]
+      return @trusted_user_added_label_cache[cache_key] if @trusted_user_added_label_cache.key?(cache_key)
+
       events = project.github_token.client.issue_events(project.full_name, record.github_number)
       relevant = events.select do |event|
         (event.event == "labeled" || event.event == "unlabeled") &&
           event_label_name(event) == label
       end
-      return false if relevant.empty?
+      return @trusted_user_added_label_cache[cache_key] = false if relevant.empty?
 
       sorted = relevant.sort_by do |event|
         event.respond_to?(:created_at) && event.created_at ? event.created_at : Time.at(0)
@@ -86,7 +90,7 @@ module Automation
         end
       end
 
-      label_present && project.trusted_github_user?(last_labeled_actor)
+      @trusted_user_added_label_cache[cache_key] = label_present && project.trusted_github_user?(last_labeled_actor)
     rescue GithubClient::RateLimitError
       raise
     rescue => e
@@ -98,7 +102,7 @@ module Automation
         error_class: e.class.name,
         error: e.message
       )
-      false
+      @trusted_user_added_label_cache[cache_key] = false
     end
 
     def event_label_name(event)

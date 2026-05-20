@@ -16,6 +16,10 @@ concurrency:
 
 jobs:
   system:
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 

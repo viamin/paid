@@ -13,6 +13,9 @@ concurrency:
 
 jobs:
   check-artifacts:
+    if: >-
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

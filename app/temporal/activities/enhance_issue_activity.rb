@@ -35,15 +35,15 @@ module Activities
       project = agent_run.project
       issue = agent_run.issue
       raise ArgumentError, "enhance_issue run requires an issue" unless issue
+      ensure_trusted_issue!(issue)
 
       client = github_client(project)
-      gh_issue = client.issue(project.full_name, issue.github_number)
-      comments = client.issue_comments(project.full_name, issue.github_number)
+      comments = trusted_comments(project, client.issue_comments(project.full_name, issue.github_number))
       existing_comment = enhancement_comment(comments)
       return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
 
       context = build_context(agent_run, project, issue)
-      response = call_llm(agent_run, prompt_for(project, gh_issue, comments, context))
+      response = call_llm(agent_run, prompt_for(project, issue, comments, context))
       parsed = parse_response!(agent_run, response)
       parsed = stop_after_max_rounds(parsed, project, issue)
       comment_body = comment_body_for(parsed)
@@ -218,7 +218,7 @@ module Activities
       options
     end
 
-    def prompt_for(project, gh_issue, comments, context)
+    def prompt_for(project, issue, comments, context)
       <<~PROMPT
         You analyze GitHub issues for implementation readiness.
 
@@ -257,11 +257,11 @@ module Activities
         #{project.full_name}
 
         ## Issue
-        Title: #{gh_issue.title}
-        Number: ##{gh_issue.number}
-        Author: #{gh_issue.user&.login}
+        Title: #{issue.title}
+        Number: ##{issue.github_number}
+        Author: #{issue.github_creator_login}
 
-        #{gh_issue.body.to_s.truncate(20_000)}
+        #{issue.body.to_s.truncate(20_000)}
 
         ## Conversation
         #{format_comments(comments)}
@@ -283,6 +283,10 @@ module Activities
         body = comment.body.to_s.truncate(2_000)
         "### #{author} at #{created}\n#{body}"
       end.join("\n\n")
+    end
+
+    def trusted_comments(project, comments)
+      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
     end
 
     def format_search_results(results)
@@ -339,6 +343,21 @@ module Activities
 
     def enhancement_comment(comments)
       comments.find { |comment| comment.body.to_s.include?(COMMENT_MARKER) }
+    end
+
+    def ensure_trusted_issue!(issue)
+      return if issue.trusted?
+
+      logger.warn(
+        message: "agent_execution.enhance_issue_untrusted_issue_rejected",
+        issue_id: issue.id,
+        creator: issue.github_creator_login
+      )
+      raise Temporalio::Error::ApplicationError.new(
+        "Cannot enhance issue from untrusted user: #{issue.github_creator_login}",
+        type: "UntrustedIssue",
+        non_retryable: true
+      )
     end
 
     def apply_label_state(client, project, issue, parsed)
