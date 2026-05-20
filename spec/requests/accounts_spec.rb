@@ -2,6 +2,8 @@
 
 require "rails_helper"
 
+RSpec::Matchers.define_negated_matcher :not_change, :change
+
 RSpec.describe "Accounts" do
   let(:account) { create(:account, name: "Acme") }
   let(:owner) { create(:user, :owner, account: account) }
@@ -108,7 +110,7 @@ RSpec.describe "Accounts" do
       expect(account.account_activity_events.recent.first.action).to eq("membership.invited")
     end
 
-    it "invites an existing user from another account without creating a duplicate user" do
+    it "rejects inviting an existing user from another account" do
       existing_user = create(:user, :member, email: "shared@example.com")
 
       expect do
@@ -118,12 +120,12 @@ RSpec.describe "Accounts" do
             role: "member"
           }
         }
-      end.to change(AccountMembership, :count).by(1)
-        .and change(AccountActivityEvent, :count).by(1)
+      end.to not_change(AccountMembership, :count)
+        .and not_change(AccountActivityEvent, :count)
 
       expect(response).to redirect_to(account_path)
-      membership = account.account_memberships.find_by!(user: existing_user)
-      expect(membership.role).to eq("member")
+      expect(flash[:alert]).to include("Cross-account invites are not supported yet")
+      expect(account.account_memberships.find_by(user: existing_user)).to be_nil
       expect(User.find_by!(email: "shared@example.com")).to eq(existing_user)
       expect(existing_user.reload.account).not_to eq(account)
       expect(ActionMailer::Base.deliveries).to be_empty
@@ -318,6 +320,15 @@ RSpec.describe "Accounts" do
       expect(response).to redirect_to(account_path)
       expect(account.reload).to be_deactivated
       expect(account.account_activity_events.recent.first.action).to eq("lifecycle.deactivated")
+    end
+
+    it "does not render a self-service reactivation button for deactivated accounts" do
+      account.suspend!
+      account.deactivate!
+
+      get account_path
+
+      expect(response).to redirect_to(new_user_session_path)
     end
   end
 end

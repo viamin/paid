@@ -22,6 +22,9 @@ module Accounts
       existing_user = TenantContext.with_system_access do
         User.find_by(email: email)
       end
+      if existing_user.present? && existing_user.account_id != account.id
+        raise AdministrationError, "That user already belongs to another account. Cross-account invites are not supported yet."
+      end
 
       membership = nil
       user = nil
