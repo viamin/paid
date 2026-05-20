@@ -83,6 +83,7 @@
               <%= link_to "Quality", quality_dashboard_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <%= link_to "Knowledge", knowledge_search_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <%= link_to "Integrations", integrations_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
+              <%= link_to "Account", account_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <%= link_to "Runners", runners_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white", data: { nav_section: "runners" } %>
               <% if policy(current_account).update? %>
                 <%= link_to "Tenant", edit_tenant_configuration_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
@@ -140,6 +141,7 @@
             <%= link_to "Quality", quality_dashboard_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <%= link_to "Integrations", integrations_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
+            <%= link_to "Account", account_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <%= link_to "Runners", runners_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <% if policy(current_account).update? %>
               <%= link_to "Tenant", edit_tenant_configuration_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
