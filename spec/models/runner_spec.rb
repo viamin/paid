@@ -308,6 +308,15 @@ RSpec.describe Runner do
       expect(runner.errors[:provider_api_key]).to include("must not be set for subscription authentication")
     end
 
+    it "rejects integration_credential for subscription auth type" do
+      credential = create(:integration_credential, account: runner.user.account, created_by: runner.user, category: "llm_provider")
+      runner.auth_type = "subscription"
+      runner.integration_credential = credential
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:integration_credential]).to include("must not be set for subscription authentication")
+    end
+
     it "prevents duplicate subscription entries for the same user and runner_key" do
       user = create(:user)
       create(:runner, user: user, runner_key: "cursor", auth_type: "subscription")

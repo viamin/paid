@@ -801,7 +801,8 @@ class Runner < ApplicationRecord
     return unless subscription?
     return if provider_api_key_id.blank? && integration_credential_id.blank?
 
-    errors.add(:provider_api_key, "must not be set for subscription authentication")
+    credential_error_attribute = provider_api_key_id.present? ? :provider_api_key : :integration_credential
+    errors.add(credential_error_attribute, "must not be set for subscription authentication")
   end
 
   def api_key_must_be_compatible
