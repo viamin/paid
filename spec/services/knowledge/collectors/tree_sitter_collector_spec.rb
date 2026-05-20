@@ -121,6 +121,14 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
             expect(m[:metadata][:line_count]).to be >= 1
           end
         end
+
+        it "preserves line ranges for deep-linking" do
+          greet = ruby_artifacts.find { |a| a[:metadata][:name] == "greet" }
+
+          expect(greet[:metadata][:start_line]).to eq(8)
+          expect(greet[:metadata][:end_line]).to eq(10)
+          expect(greet[:metadata][:chunking_strategy]).to eq("ast")
+        end
       end
 
       context "with TypeScript files" do
@@ -215,6 +223,29 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         end
       end
 
+      context "with unsupported source files" do
+        let(:fallback_artifact) { artifacts.find { |a| a[:scope_path] == "sample.lua" } }
+
+        it "falls back to file-level chunking" do
+          expect(fallback_artifact).to include(
+            artifact_type: "structure",
+            identifier: "sample.lua::file"
+          )
+          expect(fallback_artifact[:metadata]).to include(
+            language: "lua",
+            element_type: "file",
+            chunking_strategy: "file_fallback",
+            start_line: 1
+          )
+          expect(fallback_artifact[:chunks]).to contain_exactly(
+            hash_including(
+              chunk_type: "definition",
+              scope_tags: [ "lua", "file", "file_fallback" ]
+            )
+          )
+        end
+      end
+
       it "deduplicates overlapping patterns" do
         # When both "class $NAME" and "class $NAME < $PARENT" match,
         # only the more specific one should be kept
@@ -230,8 +261,14 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         )
       end
 
-      it "returns an empty array" do
-        expect(collector.collect).to eq([])
+      it "returns file-level fallback artifacts" do
+        expect(collector.collect).to include(
+          hash_including(
+            scope_path: "sample.rb",
+            identifier: "sample.rb::file",
+            metadata: hash_including(chunking_strategy: "file_fallback")
+          )
+        )
       end
     end
 
@@ -240,8 +277,14 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
       end
 
-      it "returns an empty array" do
-        expect(collector.collect).to eq([])
+      it "returns file-level fallback artifacts" do
+        expect(collector.collect).to include(
+          hash_including(
+            scope_path: "sample.ts",
+            identifier: "sample.ts::file",
+            metadata: hash_including(chunking_strategy: "file_fallback")
+          )
+        )
       end
     end
   end

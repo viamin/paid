@@ -9,7 +9,30 @@ module Knowledge
     class TreeSitterCollector < BaseCollector
       include Concerns::AstGrepRunner
 
+      IGNORED_PATH_SEGMENTS = %w[
+        .git
+        node_modules
+        vendor
+        tmp
+        log
+        storage
+        coverage
+      ].freeze
+
       LANGUAGE_CONFIG = {
+        javascript: {
+          extensions: %w[.js .jsx],
+          lang: "JavaScript",
+          patterns: {
+            class_extends: {
+              pattern: "class $NAME extends $PARENT { $$$BODY }", element: "class"
+            },
+            class_plain: { pattern: "class $NAME", element: "class" },
+            function_def: {
+              pattern: "function $NAME($$$PARAMS) { $$$BODY }", element: "function"
+            }
+          }
+        },
         ruby: {
           extensions: %w[.rb],
           lang: "Ruby",
@@ -62,16 +85,23 @@ module Knowledge
         }
       }.freeze
 
+      FILE_LEVEL_FALLBACKS = {
+        shell: %w[.sh],
+        sql: %w[.sql],
+        lua: %w[.lua]
+      }.freeze
+
       def collect
-        artifacts = []
-        LANGUAGE_CONFIG.each do |language, config|
-          artifacts.concat(collect_language(language, config))
-        end
-        deduplicate_by_content(artifacts).sort_by do |artifact|
+        ast_artifacts = collect_ast_artifacts
+        fallback_artifacts = collect_file_fallback_artifacts(
+          existing_paths: ast_artifacts.map { |artifact| artifact[:scope_path] }.to_set
+        )
+
+        deduplicate_by_content(ast_artifacts + fallback_artifacts).sort_by do |artifact|
           metadata = artifact[:metadata] || {}
           [
             artifact[:scope_path].to_s,
-            metadata[:line].to_i,
+            metadata[:start_line].to_i.nonzero? || metadata[:line].to_i,
             metadata[:element_type].to_s,
             metadata[:name].to_s,
             artifact[:identifier].to_s
@@ -88,6 +118,12 @@ module Knowledge
       end
 
       private
+
+      def collect_ast_artifacts
+        LANGUAGE_CONFIG.each_with_object([]) do |(language, config), artifacts|
+          artifacts.concat(collect_language(language, config))
+        end
+      end
 
       def collect_language(language, config)
         results = []
@@ -189,7 +225,9 @@ module Knowledge
           language: result[:language].to_s,
           element_type: result[:element_type],
           name: result[:name],
+          chunking_strategy: "ast",
           line: result[:line],
+          start_line: result[:line],
           end_line: result[:end_line],
           line_count: result[:line_count],
           naming_style: result[:naming_style]
@@ -207,11 +245,97 @@ module Knowledge
             {
               chunk_type: "definition",
               content: result[:text],
-              scope_tags: [ result[:language].to_s, result[:element_type] ],
+              scope_tags: [ result[:language].to_s, result[:element_type], "ast" ],
               sequence: 0
             }
           ]
         }
+      end
+
+      def collect_file_fallback_artifacts(existing_paths:)
+        repo_files.filter_map do |repo_file|
+          next if existing_paths.include?(repo_file[:relative_path])
+
+          language = fallback_language_for(repo_file[:relative_path])
+          next unless language
+
+          build_file_artifact(repo_file, language)
+        end
+      end
+
+      def build_file_artifact(repo_file, language)
+        line_count = repo_file[:content].lines.count
+
+        {
+          artifact_type: "structure",
+          scope_path: repo_file[:relative_path],
+          identifier: "#{repo_file[:relative_path]}::file",
+          content: repo_file[:content],
+          metadata: {
+            language: language.to_s,
+            element_type: "file",
+            name: File.basename(repo_file[:relative_path]),
+            chunking_strategy: "file_fallback",
+            line: 1,
+            start_line: 1,
+            end_line: line_count,
+            line_count: line_count,
+            naming_style: "other"
+          },
+          chunks: [
+            {
+              chunk_type: "definition",
+              content: repo_file[:content],
+              scope_tags: [ language.to_s, "file", "file_fallback" ],
+              sequence: 0
+            }
+          ]
+        }
+      end
+
+      def repo_files
+        root = host_repo_path || scan_path
+        return [] if root.blank?
+
+        Dir.glob(File.join(root, "**", "*")).filter_map do |path|
+          next unless File.file?(path)
+
+          relative = relative_path(path)
+          next if ignored_path?(relative)
+          next unless text_file?(path)
+
+          {
+            absolute_path: path,
+            relative_path: relative,
+            content: File.read(path)
+          }
+        rescue Errno::ENOENT, Errno::EACCES
+          nil
+        end
+      end
+
+      def ignored_path?(relative_path)
+        relative_path.split(File::SEPARATOR).any? { |segment| IGNORED_PATH_SEGMENTS.include?(segment) }
+      end
+
+      def text_file?(path)
+        !File.binread(path, 1024).include?("\x00")
+      rescue EOFError
+        true
+      end
+
+      def fallback_language_for(relative_path)
+        extension = File.extname(relative_path)
+
+        LANGUAGE_CONFIG.each do |language, config|
+          return language if config[:extensions].include?(extension)
+        end
+
+        FILE_LEVEL_FALLBACKS.each do |language, extensions|
+          return language if extensions.include?(extension)
+        end
+
+        nil
       end
 
       # Prevent content_hash collisions within a single collector run.

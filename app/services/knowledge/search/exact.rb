@@ -72,6 +72,8 @@ module Knowledge
           source: "exact",
           project_version: version_info(version),
           scope_tags: chunk.scope_tags || [],
+          start_line: start_line_for(artifact),
+          end_line: end_line_for(artifact),
           collector_run_id: artifact.collector_run_id,
           status: artifact.status,
           link_count: chunk.outgoing_links.size + chunk.incoming_links.size,
@@ -86,6 +88,14 @@ module Knowledge
           commit_sha: version.commit_sha,
           committed_at: version.committed_at&.iso8601
         }
+      end
+
+      def start_line_for(artifact)
+        artifact.metadata["start_line"] || artifact.metadata["line"]
+      end
+
+      def end_line_for(artifact)
+        artifact.metadata["end_line"]
       end
     end
   end
