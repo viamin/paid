@@ -38,7 +38,7 @@ module ProjectConventions
 
       {
         project: project,
-        project_version: project_version,
+        project_version: effective_project_version,
         conventions: conventions,
         conflicts: conventions.values.filter_map { |entry| entry[:conflict] }
       }
@@ -157,7 +157,7 @@ module ProjectConventions
         policy_mode: override.mode,
         override: override,
         detection: detected[:record],
-        detected_value: detected[:value],
+        detected_value: detected_value_for(detected),
         evidence: detected[:evidence],
         configured_value: override.value.deep_stringify_keys,
         detected_at: detected[:detected_at],
@@ -185,8 +185,7 @@ module ProjectConventions
     def detection_records(entry_key)
       return all_detections.select { |record| record.key == entry_key } if profile_records_loaded?
 
-      scope = project.project_convention_detections.preload(:project_version).where(key: entry_key)
-      scope = scope.where(project_version: project_version) if project_version
+      scope = detection_scope.where(key: entry_key)
       scope.order(confidence: :desc, detected_at: :desc, id: :desc).to_a
     end
 
@@ -198,9 +197,6 @@ module ProjectConventions
 
     def preload_profile_records
       return if profile_records_loaded?
-
-      detection_scope = project.project_convention_detections.preload(:project_version)
-      detection_scope = detection_scope.where(project_version: project_version) if project_version
 
       @all_detections = detection_scope.order(confidence: :desc, detected_at: :desc, id: :desc).to_a
       @all_overrides = project.project_convention_overrides.to_a
@@ -222,6 +218,15 @@ module ProjectConventions
       Catalog.default_for(entry_key)
     end
 
+    def effective_project_version
+      @effective_project_version ||= project_version || project.project_versions.by_recency.first
+    end
+
+    def detection_scope
+      scope = project.project_convention_detections.eager_load(:project_version)
+      effective_project_version ? scope.where(project_version: effective_project_version) : scope
+    end
+
     def merge_values(base, override)
       base = (base || {}).deep_dup
       override = (override || {}).deep_stringify_keys
@@ -238,8 +243,8 @@ module ProjectConventions
     end
 
     def conflict_for(key:, category:, status:, detected:, override:)
+      return if detected[:record].blank?
       return if override.value.deep_stringify_keys == detected.fetch(:value)
-      return if status == "override_ignored_detection" && detected[:record].blank?
 
       {
         key: key,
@@ -250,6 +255,10 @@ module ProjectConventions
         evidence: detected.fetch(:evidence),
         message: "#{key} #{status.tr('_', ' ')}"
       }
+    end
+
+    def detected_value_for(detected)
+      detected[:record] ? detected.fetch(:value) : nil
     end
   end
 end
