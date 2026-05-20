@@ -63,8 +63,9 @@ module Activities
         validate_issue_creation_attempt!(agent_run)
         title, llm_generated_title = extract_title(summary, agent_run.custom_prompt)
         body = body_override.present? ? issue_body(body_override) : issue_body(summary)
-        body = append_dependency_text(body, upstream_issue) if upstream_issue
-        body = append_blocked_by_text(body, agent_run) if agent_run.blocked_by_issue_ids.present?
+        resolved_dependencies = ProjectConventions::IssueDependencies.convention_value(project)
+        body = append_dependency_text(body, upstream_issue, project: project, resolved: resolved_dependencies) if upstream_issue
+        body = append_blocked_by_text(body, agent_run, project: project, resolved: resolved_dependencies) if agent_run.blocked_by_issue_ids.present?
 
         issue_labels = project.auto_add_labels_enabled? ? [ project.generated_label_name ] : []
         priority_label = priority_label_for(agent_run)
@@ -304,22 +305,42 @@ module Activities
       ISSUE_CREATION_FAILURE_PATTERNS.any? { |pattern| pattern.match?(text) }
     end
 
-    def append_dependency_text(body, upstream_issue)
-      dep_line = "Blocked by #{upstream_issue[:target_repo]}##{upstream_issue[:issue_number]}"
-      "#{body}\n\n## Dependencies\n\n- #{dep_line}"
+    def append_dependency_text(body, upstream_issue, project:, resolved: nil)
+      resolved ||= ProjectConventions::IssueDependencies.convention_value(project)
+      dep_line = ProjectConventions::IssueDependencies.blocked_by_line(
+        project: project,
+        repo: upstream_issue[:target_repo],
+        github_number: upstream_issue[:issue_number],
+        resolved:
+      )
+      append_dependency_lines(body, [ dep_line ], project: project, resolved:)
     end
 
-    def append_blocked_by_text(body, agent_run)
+    def append_blocked_by_text(body, agent_run, project:, resolved: nil)
       blocked_issues = agent_run.project.issues.where(id: agent_run.blocked_by_issue_ids, github_state: "open")
       return body if blocked_issues.empty?
 
-      dep_lines = blocked_issues.map { |issue| "- Blocked by ##{issue.github_number}" }
-      dep_text = dep_lines.join("\n")
+      resolved ||= ProjectConventions::IssueDependencies.convention_value(project)
+      dep_lines = blocked_issues.map do |issue|
+        ProjectConventions::IssueDependencies.depends_on_line(
+          project:,
+          github_number: issue.github_number,
+          resolved:
+        )
+      end
+      append_dependency_lines(body, dep_lines, project: project, resolved:)
+    end
 
-      if body.include?("## Dependencies")
+    def append_dependency_lines(body, dep_lines, project:, resolved: nil)
+      return body if dep_lines.empty?
+
+      heading = ProjectConventions::IssueDependencies.heading(project: project, resolved:)
+      dep_text = dep_lines.map { |line| "- #{line}" }.join("\n")
+
+      if body.include?(heading)
         "#{body}\n#{dep_text}"
       else
-        "#{body}\n\n## Dependencies\n\n#{dep_text}"
+        "#{body}\n\n#{heading}\n\n#{dep_text}"
       end
     end
 

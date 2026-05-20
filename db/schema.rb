@@ -1528,6 +1528,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_135640) do
     t.index ["project_id"], name: "index_project_baselines_on_project_id"
   end
 
+  create_table "project_convention_detections", comment: "Repository-derived convention detections captured for a specific project version.", force: :cascade do |t|
+    t.decimal "confidence", precision: 4, scale: 3, default: "1.0", null: false, comment: "Detector confidence from 0.0 to 1.0."
+    t.datetime "created_at", null: false
+    t.datetime "detected_at", null: false, comment: "Timestamp when the repository scan produced this detection."
+    t.string "detector_key", null: false, comment: "Detector responsible for producing this normalized convention record."
+    t.jsonb "evidence", default: {}, null: false, comment: "Structured supporting evidence with source files and matched signals."
+    t.string "key", null: false, comment: "Convention key detected from repository evidence."
+    t.bigint "project_id", null: false, comment: "Project whose repository conventions were detected."
+    t.bigint "project_version_id", null: false, comment: "Project version whose tree was scanned."
+    t.datetime "updated_at", null: false
+    t.jsonb "value", default: {}, null: false, comment: "Normalized detected convention payload."
+    t.index ["project_id", "key"], name: "index_project_convention_detections_on_project_id_and_key"
+    t.index ["project_id"], name: "index_project_convention_detections_on_project_id"
+    t.index ["project_version_id", "key", "detector_key"], name: "idx_project_convention_detections_unique_detector", unique: true
+    t.index ["project_version_id"], name: "index_project_convention_detections_on_project_version_id"
+  end
+
+  create_table "project_convention_overrides", comment: "Explicit per-project overrides for detected repository conventions.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false, comment: "Disabled overrides act as tombstones against detected defaults."
+    t.string "key", null: false, comment: "Convention key being overridden, such as commit_messages."
+    t.bigint "project_id", null: false, comment: "Project receiving the explicit convention override."
+    t.text "rationale", comment: "User-entered reason for overriding the detected convention."
+    t.datetime "updated_at", null: false
+    t.jsonb "value", default: {}, null: false, comment: "Explicit project-scoped convention override payload."
+    t.index ["project_id", "key"], name: "index_project_convention_overrides_on_project_id_and_key", unique: true
+    t.index ["project_id"], name: "index_project_convention_overrides_on_project_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -2427,6 +2456,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_135640) do
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_baselines", "projects"
+  add_foreign_key "project_convention_detections", "project_versions"
+  add_foreign_key "project_convention_detections", "projects"
+  add_foreign_key "project_convention_overrides", "projects"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"

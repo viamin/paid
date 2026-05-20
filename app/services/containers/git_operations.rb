@@ -959,9 +959,9 @@ module Containers
 
     def commit_message
       subject = if agent_run.issue.present?
-        ConventionalCommitTitle.for_issue(agent_run.issue)
+        ConventionalCommitTitle.for_issue(agent_run.issue, project: agent_run.project, style_key: "commit_style")
       else
-        "chore: apply agent changes"
+        ConventionalCommitTitle.for_issue(nil, fallback_type: "chore", project: agent_run.project, style_key: "commit_style")
       end
 
       trailer = agent_run.effective_runner_record&.agent_co_author_trailer.presence
