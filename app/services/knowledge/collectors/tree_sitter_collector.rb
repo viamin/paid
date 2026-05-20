@@ -312,7 +312,7 @@ module Knowledge
             absolute_path: path,
             relative_path: relative,
             language: language,
-            content: File.read(path)
+            content: (File.size(path) <= 512_000) ? File.read(path) : nil
           }
         rescue Errno::ENOENT, Errno::EACCES
           nil
