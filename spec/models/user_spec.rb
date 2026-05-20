@@ -171,6 +171,29 @@ RSpec.describe User do
         expect(result).to be false
         expect(user.has_role?(:admin, account)).to be true
       end
+
+      it "destroys the user when removing their last account role" do
+        account = create(:account)
+        user = create(:user, :admin, account: account)
+
+        expect {
+          user.remove_role(:admin, account)
+        }.to change(described_class, :count).by(-1)
+          .and change(AccountMembership, :count).by(-1)
+      end
+
+      it "switches the user's current account when another membership remains" do
+        primary_account = create(:account)
+        user = create(:user, :admin, account: primary_account)
+        secondary_account = create(:account)
+        secondary_membership = create(:account_membership, :member, user: user, account: secondary_account)
+
+        user.remove_role(:admin, primary_account)
+
+        expect(user.reload.account).to eq(secondary_account)
+        expect(user.account_membership_for(primary_account)).to be_nil
+        expect(user.account_membership_for(secondary_account)).to eq(secondary_membership)
+      end
     end
 
     describe "#role_on" do

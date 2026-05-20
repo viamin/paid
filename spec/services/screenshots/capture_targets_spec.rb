@@ -81,6 +81,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "dashboard" ])
     end
 
+    it "maps account administration controllers to the account page target" do
+      targets = described_class.call(changed_files: [ "app/controllers/accounts_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account" ])
+    end
+
     it "maps marketplace entry controllers to representative marketplace routes" do
       targets = described_class.call(changed_files: [ "app/controllers/marketplace_entries_controller.rb" ])
 
@@ -222,6 +228,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/views/projects/_issues.html.erb" ])
 
       expect(targets.map(&:slug)).to eq([ "project_show" ])
+    end
+
+    it "maps the account administration view to the account page target" do
+      targets = described_class.call(changed_files: [ "app/views/accounts/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account" ])
     end
 
     it "maps the clarifying-questions wizard view to its screenshot target" do

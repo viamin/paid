@@ -64,6 +64,12 @@ Rails.application.routes.draw do
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
 
+  # Customer-facing account administration
+  resource :account, only: [ :show, :update ]
+  resources :account_memberships, only: [ :create, :update, :destroy ]
+  resource :account_ownership_transfer, only: [ :create ]
+  resource :account_lifecycle, only: [ :update ]
+
   # Account tenant configuration
   resource :tenant_configuration, only: [ :edit, :update ]
 

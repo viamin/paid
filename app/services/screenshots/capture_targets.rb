@@ -30,6 +30,7 @@ module Screenshots
       mcp_server_definitions
       onboarding
       user_settings
+      account
       quality_dashboard
       chat_sessions
       ab_tests
@@ -73,6 +74,7 @@ module Screenshots
       provider_api_key_show: Target.new(slug: "provider_api_key_show", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}" }, requires_auth: true),
       provider_api_key_edit: Target.new(slug: "provider_api_key_edit", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}/edit" }, requires_auth: true),
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
+      account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
@@ -197,6 +199,10 @@ module Screenshots
       "notifications_controller.rb" => [ :notifications ],
       "onboarding_controller.rb" => [ :onboarding ],
       "user_settings_controller.rb" => [ :user_settings ],
+      "accounts_controller.rb" => [ :account ],
+      "account_memberships_controller.rb" => [ :account ],
+      "account_ownership_transfers_controller.rb" => [ :account ],
+      "account_lifecycles_controller.rb" => [ :account ],
       "tenant_configurations_controller.rb" => [ :tenant_configuration ],
       "service_containers_controller.rb" => %i[service_containers service_container_new service_container_show service_container_edit],
       "mcp_server_definitions_controller.rb" => %i[mcp_server_definitions mcp_server_definition_new mcp_server_definition_show mcp_server_definition_edit],
@@ -319,6 +325,7 @@ module Screenshots
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
+      when /\Aaccounts\// then [ :account ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))

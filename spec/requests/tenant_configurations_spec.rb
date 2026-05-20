@@ -43,6 +43,16 @@ RSpec.describe "TenantConfigurations" do
       expect(setting.features["explicit_pr_automation_decisions"]).to be(true)
     end
 
+    it "records account activity when tenant configuration changes" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+
+      expect do
+        patch tenant_configuration_path, params: tenant_configuration_params(api_key)
+      end.to change(AccountActivityEvent, :count).by(1)
+
+      expect(account.account_activity_events.recent.first.action).to eq("tenant_configuration.updated")
+    end
+
     it "updates the tenant marketplace auto-attach override" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 
