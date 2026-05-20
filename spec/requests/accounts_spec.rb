@@ -201,11 +201,26 @@ RSpec.describe "Accounts" do
 
       expect do
         delete account_membership_path(membership)
-      end.to change(AccountMembership, :count).by(-1)
+      end.to change(User, :count).by(-1)
+        .and change(AccountMembership, :count).by(-1)
         .and change(AccountActivityEvent, :count).by(1)
 
       expect(response).to redirect_to(account_path)
       expect(account.account_activity_events.recent.first.action).to eq("membership.removed")
+    end
+
+    it "switches the removed user to another account when they still have one" do
+      membership = create(:account_membership, :viewer, account: account, user: create(:user, account: account))
+      secondary_account = create(:account)
+      create(:account_membership, :member, user: membership.user, account: secondary_account)
+
+      expect do
+        delete account_membership_path(membership)
+      end.to change(AccountMembership, :count).by(-1)
+        .and change(AccountActivityEvent, :count).by(1)
+
+      expect(response).to redirect_to(account_path)
+      expect(membership.user.reload.account).to eq(secondary_account)
     end
 
     it "rolls back the removal when activity recording fails" do

@@ -19,7 +19,7 @@ module Accounts
       email = membership.user.email
 
       ActiveRecord::Base.transaction do
-        membership.destroy!
+        membership.user.revoke_account_access!(account)
 
         Accounts::RecordActivity.call(
           account: account,
