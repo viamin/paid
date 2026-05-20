@@ -411,6 +411,8 @@ end
 
 - **Add table and column comments for non-obvious schema elements**: Use `comment:` on `create_table` and `add_column`/`change_column` in migrations to document purpose. This makes the schema self-documenting via `\d+ tablename` in psql and keeps `db/schema.rb` as the canonical schema reference. Only add comments when the purpose isn't obvious from the name alone.
 
+- **Prefer migration helpers over raw SQL, but be explicit about PostgreSQL-only exceptions**: Use Rails helpers for tables, columns, indexes, and foreign keys whenever possible. When the feature is PostgreSQL-specific and the project does not have a first-class helper — most commonly row-level security (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, `CREATE POLICY`) — keep the SQL narrowly scoped to that feature and wrap the relevant block in `safety_assured`. Do not generalize this into a license to use `execute` for ordinary schema changes.
+
 ```ruby
 create_table :agent_run_phases, comment: "Tracks discrete phases within a single agent run for granular observability" do |t|
   t.references :agent_run, null: false, foreign_key: true
