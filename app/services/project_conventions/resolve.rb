@@ -2,28 +2,13 @@
 
 module ProjectConventions
   class Resolve
-    DEFAULTS = {
-      "commit_style" => {
-        "type" => "conventional_commits",
-        "required" => false,
-        "default_type" => "feat"
-      }.freeze,
-      "pr_title_style" => {
-        "type" => "conventional_commits",
-        "required" => false
-      }.freeze,
-      "issue_dependency_format" => {
-        "depends_on_prefix" => "Depends on",
-        "blocked_by_prefix" => "Blocked by",
-        "heading" => "## Dependencies"
-      }.freeze
-    }.freeze
+    DEFAULTS = Catalog::DEFINITIONS.transform_values { |definition| definition.fetch(:default).deep_dup }.freeze
 
     attr_reader :project, :key, :project_version
 
-    def initialize(project:, key:, project_version: nil)
+    def initialize(project:, key: nil, project_version: nil)
       @project = project
-      @key = key.to_s
+      @key = key&.to_s
       @project_version = project_version
     end
 
@@ -35,76 +20,210 @@ module ProjectConventions
       call(project:, key:, project_version:).fetch(:value)
     end
 
+    def self.profile(project:, project_version: nil)
+      call(project:, project_version:)
+    end
+
     def call
-      resolved_detection = detection_value
-      override = project.project_convention_overrides.find_by(key: key)
+      return profile if key.blank?
 
-      if override
-        detection_base = resolved_detection.present? ? merge_values(default_value, resolved_detection) : default_value
-        value = override.enabled ? merge_values(detection_base, override.value) : default_value
-        return result(
-          value: value,
-          source: "override",
-          enabled: override.enabled,
-          confidence: override.enabled ? 1.0 : 0.0,
-          override: override,
-          detection: detection_record,
-          drift: override.enabled && resolved_detection.present? && value != merge_values(default_value, resolved_detection)
-        )
-      end
-
-      if resolved_detection.present?
-        return result(
-          value: merge_values(default_value, resolved_detection),
-          source: "detection",
-          enabled: true,
-          confidence: detection_record&.confidence.to_f,
-          override: nil,
-          detection: detection_record,
-          drift: false
-        )
-      end
-
-      result(
-        value: default_value,
-        source: default_value.present? ? "default" : "unset",
-        enabled: default_value.present?,
-        confidence: 0.0,
-        override: nil,
-        detection: nil,
-        drift: false
-      )
+      convention_entry(key)
     end
 
     private
 
-    def result(value:, source:, enabled:, confidence:, override:, detection:, drift:)
+    def profile
+      conventions = profile_keys.index_with { |profile_key| convention_entry(profile_key) }
+
+      {
+        project: project,
+        project_version: project_version,
+        conventions: conventions,
+        conflicts: conventions.values.filter_map { |entry| entry[:conflict] }
+      }
+    end
+
+    def profile_keys
+      detection_scope = project.project_convention_detections
+      detection_scope = detection_scope.where(project_version: project_version) if project_version
+
+      (
+        Catalog.known_keys +
+        detection_scope.distinct.pluck(:key) +
+        project.project_convention_overrides.distinct.pluck(:key)
+      ).uniq.sort
+    end
+
+    def convention_entry(entry_key)
+      detected = detected_state(entry_key)
+      override = project.project_convention_overrides.find_by(key: entry_key)
+      default = default_value(entry_key)
+
+      if override&.apply?
+        value = merge_values(detected.fetch(:value), override.value)
+        return result(
+          key: entry_key,
+          category: override.category,
+          value: value,
+          source: "override",
+          enabled: true,
+          confidence: detected.fetch(:confidence, 0.0),
+          policy_mode: override.mode,
+          override: override,
+          detection: detected[:record],
+          detected_value: detected[:value],
+          evidence: detected[:evidence],
+          configured_value: override.value.deep_stringify_keys,
+          detected_at: detected[:detected_at],
+          detected_commit_sha: detected[:commit_sha],
+          conflict: conflict_for(
+            key: entry_key,
+            category: override.category,
+            status: "override_applied",
+            detected: detected,
+            override: override
+          )
+        )
+      end
+
+      if override&.warn?
+        return result(
+          key: entry_key,
+          category: override.category,
+          value: detected.fetch(:value),
+          source: "warning",
+          enabled: true,
+          confidence: detected.fetch(:confidence, 0.0),
+          policy_mode: override.mode,
+          override: override,
+          detection: detected[:record],
+          detected_value: detected[:value],
+          evidence: detected[:evidence],
+          configured_value: override.value.deep_stringify_keys,
+          detected_at: detected[:detected_at],
+          detected_commit_sha: detected[:commit_sha],
+          conflict: conflict_for(
+            key: entry_key,
+            category: override.category,
+            status: "override_warning",
+            detected: detected,
+            override: override
+          )
+        )
+      end
+
+      if override&.ignore?
+        return result(
+          key: entry_key,
+          category: override.category,
+          value: default,
+          source: "override",
+          enabled: false,
+          confidence: 0.0,
+          policy_mode: override.mode,
+          override: override,
+          detection: detected[:record],
+          detected_value: detected[:value],
+          evidence: detected[:evidence],
+          configured_value: override.value.deep_stringify_keys,
+          detected_at: detected[:detected_at],
+          detected_commit_sha: detected[:commit_sha],
+          conflict: conflict_for(
+            key: entry_key,
+            category: override.category,
+            status: "override_ignored_detection",
+            detected: detected,
+            override: override
+          )
+        )
+      end
+
+      if detected[:record]
+        return result(
+          key: entry_key,
+          category: detected[:category],
+          value: detected[:value],
+          source: "detection",
+          enabled: true,
+          confidence: detected[:confidence],
+          policy_mode: nil,
+          override: nil,
+          detection: detected[:record],
+          detected_value: detected[:value],
+          evidence: detected[:evidence],
+          configured_value: nil,
+          detected_at: detected[:detected_at],
+          detected_commit_sha: detected[:commit_sha],
+          conflict: nil
+        )
+      end
+
+      result(
+        key: entry_key,
+        category: Catalog.category_for(entry_key),
+        value: default,
+        source: default.present? ? "default" : "unset",
+        enabled: default.present?,
+        confidence: 0.0,
+        policy_mode: nil,
+        override: nil,
+        detection: nil,
+        detected_value: default,
+        evidence: { "paths" => [], "signals" => [] },
+        configured_value: nil,
+        detected_at: nil,
+        detected_commit_sha: nil,
+        conflict: nil
+      )
+    end
+
+    def result(key:, category:, value:, source:, enabled:, confidence:, policy_mode:, override:, detection:,
+      detected_value:, evidence:, configured_value:, detected_at:, detected_commit_sha:, conflict:)
       {
         key: key,
+        category: category,
         value: value,
         source: source,
         enabled: enabled,
         confidence: confidence,
+        policy_mode: policy_mode,
         override: override,
         detection: detection,
-        drift: drift
+        detected_value: detected_value,
+        evidence: evidence,
+        configured_value: configured_value,
+        detected_at: detected_at,
+        detected_commit_sha: detected_commit_sha,
+        conflict: conflict,
+        drift: conflict.present?
       }
     end
 
-    def detection_record
-      @detection_record ||= begin
-        scope = project.project_convention_detections.where(key: key)
-        scope = scope.where(project_version: project_version) if project_version
-        scope.order(detected_at: :desc, updated_at: :desc, id: :desc).first
-      end
+    def detected_state(entry_key)
+      detections = detection_records(entry_key)
+      primary = detections.max_by { |record| [ record.confidence.to_f, record.detected_at, record.id ] }
+      base_value = merge_values(default_value(entry_key), primary&.value)
+
+      {
+        category: primary&.category || Catalog.category_for(entry_key),
+        confidence: primary&.confidence.to_f,
+        evidence: merge_evidence(detections),
+        detected_at: primary&.detected_at,
+        commit_sha: primary&.project_version_commit_sha,
+        record: primary,
+        records: detections,
+        value: base_value
+      }
     end
 
-    def detection_value
-      detection_record&.value
+    def detection_records(entry_key)
+      scope = project.project_convention_detections.where(key: entry_key)
+      scope = scope.where(project_version: project_version) if project_version
+      scope.order(confidence: :desc, detected_at: :desc, id: :desc).to_a
     end
 
-    def default_value
-      DEFAULTS.fetch(key, {}).deep_dup
+    def default_value(entry_key)
+      Catalog.default_for(entry_key)
     end
 
     def merge_values(base, override)
@@ -113,6 +232,28 @@ module ProjectConventions
       return override if base.blank?
 
       base.deep_merge(override)
+    end
+
+    def merge_evidence(detections)
+      {
+        "paths" => detections.flat_map { |record| Array(record.evidence["paths"]) }.uniq,
+        "signals" => detections.flat_map { |record| Array(record.evidence["signals"]) }.uniq
+      }
+    end
+
+    def conflict_for(key:, category:, status:, detected:, override:)
+      return if override.value.deep_stringify_keys == detected.fetch(:value)
+      return if status == "override_ignored_detection" && detected[:record].blank?
+
+      {
+        key: key,
+        category: category,
+        status: status,
+        detected_value: detected.fetch(:value),
+        configured_value: override.value.deep_stringify_keys,
+        evidence: detected.fetch(:evidence),
+        message: "#{key} #{status.tr('_', ' ')}"
+      }
     end
   end
 end

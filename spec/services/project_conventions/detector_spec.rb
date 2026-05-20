@@ -38,6 +38,7 @@ RSpec.describe ProjectConventions::Detector, :no_db do
 
     detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
 
+    expect(detection[:category]).to eq("hook_system")
     expect(detection[:value]).to include("type" => "lefthook", "path" => "lefthook.yml")
   end
 

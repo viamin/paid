@@ -15,6 +15,7 @@ RSpec.describe ProjectConventions::Resolve do
   it "uses detected conventions when available" do
     create(:project_convention_detection,
       project: project,
+      category: "hook_system",
       key: "hook_manager",
       value: { "type" => "husky", "path" => ".husky", "required" => true })
 
@@ -37,11 +38,11 @@ RSpec.describe ProjectConventions::Resolve do
     result = described_class.call(project:, key: "commit_style")
 
     expect(result[:source]).to eq("override")
-    expect(result[:drift]).to be(true)
+    expect(result[:conflict]).to include(status: "override_applied")
     expect(result[:value]).to include("type" => "plain", "fallback_subject" => "Apply Paid changes")
   end
 
-  it "returns defaults when the override is disabled" do
+  it "returns defaults when the override is ignore mode" do
     create(:project_convention_detection,
       project: project,
       key: "commit_style",
@@ -50,7 +51,7 @@ RSpec.describe ProjectConventions::Resolve do
       project: project,
       key: "commit_style",
       value: { "type" => "plain" },
-      enabled: false)
+      mode: "ignore")
 
     result = described_class.call(project:, key: "commit_style")
 
@@ -72,5 +73,40 @@ RSpec.describe ProjectConventions::Resolve do
     result = described_class.call(project:, key: "commit_style")
 
     expect(result[:value]).to include("type" => "conventional_commits", "required" => true, "default_type" => "fix")
+  end
+
+  it "keeps detected runtime values while surfacing warning-mode conflicts" do
+    create(:project_convention_detection,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "conventional_commits", "required" => true, "default_type" => "feat" })
+    create(:project_convention_override,
+      project: project,
+      key: "commit_style",
+      mode: "warn",
+      value: { "type" => "plain" })
+
+    result = described_class.call(project:, key: "commit_style")
+
+    expect(result[:source]).to eq("warning")
+    expect(result[:value]).to include("type" => "conventional_commits", "required" => true)
+    expect(result[:conflict]).to include(status: "override_warning")
+  end
+
+  it "builds a canonical resolved profile with conflict summaries" do
+    create(:project_convention_detection,
+      project: project,
+      key: "hook_manager",
+      value: { "type" => "lefthook", "path" => "lefthook.yml" })
+    create(:project_convention_override,
+      project: project,
+      key: "commit_style",
+      value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
+
+    profile = described_class.profile(project:)
+
+    expect(profile[:conventions].keys).to include("commit_style", "hook_manager", "issue_dependency_format")
+    expect(profile[:conventions].fetch("hook_manager")).to include(source: "detection")
+    expect(profile[:conflicts].map { |conflict| conflict[:key] }).to include("commit_style")
   end
 end

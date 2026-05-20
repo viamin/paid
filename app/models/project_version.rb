@@ -5,6 +5,7 @@ class ProjectVersion < ApplicationRecord
 
   has_many :collector_runs, dependent: :destroy
   has_many :knowledge_artifacts, through: :collector_runs
+  has_many :project_convention_detections, dependent: :destroy
 
   validates :commit_sha, presence: true, length: { maximum: 40 }
   validates :parent_sha, length: { maximum: 40 }, allow_nil: true

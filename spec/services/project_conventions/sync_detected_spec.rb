@@ -9,6 +9,7 @@ RSpec.describe ProjectConventions::SyncDetected do
   let(:detections) do
     [
       {
+        category: "hook_system",
         key: "hook_manager",
         detector_key: "hooks",
         confidence: 1.0,
@@ -19,6 +20,7 @@ RSpec.describe ProjectConventions::SyncDetected do
   end
   let(:alternate_detection) do
     {
+      category: "hook_system",
       key: "hook_manager",
       detector_key: "readme",
       confidence: 0.6,
@@ -40,8 +42,8 @@ RSpec.describe ProjectConventions::SyncDetected do
     expect(project.project_convention_detections.where(key: "hook_manager").count).to eq(2)
     expect(older_detection.reload.value).to eq("type" => "lefthook")
     expect(
-      project.project_convention_detections.find_by!(project_version: second_version, key: "hook_manager").value
-    ).to eq("type" => "husky")
+      project.project_convention_detections.find_by!(project_version: second_version, key: "hook_manager")
+    ).to have_attributes(category: "hook_system", value: { "type" => "husky" })
   end
 
   it "keeps distinct detector evidence for the same key within one project version" do

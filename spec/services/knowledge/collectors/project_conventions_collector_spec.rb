@@ -60,4 +60,10 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
     expect(recommendation.description).to include("Repository manages hooks with lefthook")
     expect(recommendation.evidence["convention_key"]).to eq("hook_manager")
   end
+
+  it "stores category metadata on emitted artifacts" do
+    artifact = collector.collect.find { |item| item[:identifier] == "hook_manager" }
+
+    expect(artifact.dig(:metadata, :category)).to eq("hook_system")
+  end
 end

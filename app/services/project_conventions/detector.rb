@@ -155,6 +155,7 @@ module ProjectConventions
 
     def build_detection(key:, value:, evidence:, confidence: 1.0)
       {
+        category: Catalog.category_for(key),
         key: key,
         confidence: confidence,
         detector_key: "project_conventions",
