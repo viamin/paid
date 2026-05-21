@@ -33,6 +33,12 @@ module DecompositionPlan
     MAX_DESCRIPTION_LENGTH = 5000
     MAX_TITLE_LENGTH = 255
     MAX_TASKS = 20
+    MAX_COMPONENTS_PER_TASK = {
+      "model" => 3,
+      "service" => 3,
+      "controller" => 2,
+      "view" => 2
+    }.freeze
 
     attr_reader :title, :description, :sub_components, :max_tasks, :layer_order
 
@@ -71,15 +77,17 @@ module DecompositionPlan
     private
 
     def build_tasks
-      grouped = group_components_by_layer
-      tasks = []
-
-      grouped.each do |layer, components|
-        tasks << build_task_for_layer(layer, components)
-      end
+      layer_tasks = build_layer_tasks
+      tasks = layer_tasks.map { |task| build_task_for_layer(task[:layer], task[:components]) }
 
       tasks = [ build_single_task ] if tasks.empty?
       tasks
+    end
+
+    def build_layer_tasks
+      split_oversized_layer_tasks(group_components_by_layer.map do |layer, components|
+        { layer: layer, components: components }
+      end)
     end
 
     def group_components_by_layer
@@ -93,6 +101,42 @@ module DecompositionPlan
       end
 
       grouped
+    end
+
+    def split_oversized_layer_tasks(tasks)
+      remaining_capacity = [ max_tasks - tasks.size, 0 ].max
+
+      tasks.flat_map do |task|
+        split_task_count = split_task_count_for(task)
+        extra_tasks_needed = split_task_count - 1
+
+        if extra_tasks_needed.positive? && extra_tasks_needed <= remaining_capacity
+          remaining_capacity -= extra_tasks_needed
+          split_task(task)
+        else
+          [ task ]
+        end
+      end
+    end
+
+    def split_task_count_for(task)
+      threshold = component_threshold_for(task[:layer])
+      return 1 unless threshold
+
+      (task[:components].size.to_f / threshold).ceil
+    end
+
+    def split_task(task)
+      threshold = component_threshold_for(task[:layer])
+      return [ task ] unless threshold
+
+      task[:components].each_slice(threshold).map do |components|
+        task.merge(components: components)
+      end
+    end
+
+    def component_threshold_for(layer)
+      MAX_COMPONENTS_PER_TASK[layer]
     end
 
     def classify_component(component)
@@ -226,9 +270,6 @@ module DecompositionPlan
     def layer_rank_for(layer)
       layer_order.fetch(layer, DEFAULT_LAYER_ORDER.size)
     end
-
-    # TODO(#453): Split tasks covering too many components into smaller tasks
-    # within the same layer when we have room under MAX_TASKS.
 
     # Attempt to fix DAG issues by removing problematic dependency edges.
     def repair_dag(tasks)
