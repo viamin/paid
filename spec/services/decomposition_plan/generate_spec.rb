@@ -269,6 +269,61 @@ RSpec.describe DecompositionPlan::Generate, :no_db do
         expect(result.tasks.map { |task| task[:scope] }).to eq(%w[view controller service model])
       end
     end
+
+    context "when a layer touches too many components" do
+      let(:title) { "Notification orchestration" }
+      let(:description) { "Add storage, business logic, and endpoints for notifications." }
+      let(:service_threshold) { described_class::MAX_COMPONENTS_PER_TASK.fetch("service") }
+      let(:sub_components) do
+        [ "database" ] +
+          Array.new(service_threshold + 1) { |index| "custom_service_component_#{index}" } +
+          [ "api endpoints" ]
+      end
+
+      it "splits the oversized layer into multiple same-scope tasks" do
+        service_tasks = result.tasks.select { |task| task[:scope] == "service" }
+
+        expect(service_tasks.size).to eq(2)
+        expect(result.tasks.map { |task| task[:scope] }).to eq(%w[model service service controller])
+      end
+
+      it "preserves layer ordering and dependency edges after splitting" do
+        model_task = result.tasks.find { |task| task[:scope] == "model" }
+        service_tasks = result.tasks.select { |task| task[:scope] == "service" }
+        controller_task = result.tasks.find { |task| task[:scope] == "controller" }
+
+        expect(service_tasks.map { |task| task[:deps] }).to all(eq([ model_task[:index] ]))
+        expect(controller_task[:index]).to be > service_tasks.last[:index]
+        expect(controller_task[:deps]).to eq(service_tasks.map { |task| task[:index] })
+      end
+    end
+
+    context "when splitting would exceed max_tasks" do
+      subject(:result) do
+        described_class.call(
+          title: title,
+          description: description,
+          sub_components: sub_components,
+          max_tasks: 4
+        )
+      end
+
+      let(:title) { "Notification orchestration" }
+      let(:description) { "Add storage, business logic, and endpoints for notifications." }
+      let(:service_threshold) { described_class::MAX_COMPONENTS_PER_TASK.fetch("service") }
+      let(:sub_components) do
+        [ "database" ] +
+          Array.new(service_threshold + 1) { |index| "custom_service_component_#{index}" } +
+          [ "api endpoints", "views" ]
+      end
+
+      it "keeps the oversized layer as a single task" do
+        service_tasks = result.tasks.select { |task| task[:scope] == "service" }
+
+        expect(result.task_count).to eq(4)
+        expect(service_tasks.size).to eq(1)
+      end
+    end
   end
 
   describe "immutability" do
