@@ -301,6 +301,7 @@ Use `WORKLOG.md` as persistent working memory across context compactions:
 
 - `docs/ARCHITECTURE.md` - System design and technology stack
 - `docs/AGENT_SYSTEM.md` - Temporal workflows and container management
+- `docs/PATCH_GUARDS.md` - Temporal patch guard registry, sunset policy, and sweep workflow
 - `docs/LLM_STYLE_GUIDE.md` - **Read this first** — concise coding rules for AI assistants (with line refs to full guide)
 - `docs/STYLE_GUIDE.md` - Detailed coding standards, rationale, and examples
 - `db/schema.rb` - Canonical database schema with table and column comments

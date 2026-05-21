@@ -36,6 +36,7 @@ RSpec.describe ApplicationJob, :no_db do
         ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob
+        TemporalPatchGuardSweepJob
         WorktreeOrphanCleanupJob
       ],
       metrics: %w[
