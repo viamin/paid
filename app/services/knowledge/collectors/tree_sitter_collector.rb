@@ -300,8 +300,16 @@ module Knowledge
         root = host_repo_path || scan_path
         return [] if root.blank?
 
-        Dir.glob(File.join(root, "**", "*")).filter_map do |path|
-          next unless File.file?(path)
+        require "find"
+
+        root_basename = File.basename(root)
+        results = []
+        Find.find(root) do |path|
+          if File.directory?(path)
+            basename = File.basename(path)
+            Find.prune if basename != root_basename && IGNORED_PATH_SEGMENTS.include?(basename)
+            next
+          end
 
           relative = relative_path(path)
           next if ignored_path?(relative)
@@ -311,15 +319,17 @@ module Knowledge
           next unless text_file?(path)
           next if File.size(path) > MAX_FALLBACK_FILE_BYTES
 
-          {
+          results << {
             absolute_path: path,
             relative_path: relative,
             language: language,
             content: File.read(path)
           }
         rescue Errno::ENOENT, Errno::EACCES
-          nil
+          next
         end
+
+        results
       end
 
       def ignored_path?(relative_path)

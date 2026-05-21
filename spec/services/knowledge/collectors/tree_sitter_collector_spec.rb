@@ -291,9 +291,9 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         txt_path = File.join(fixture_path, "notes.txt")
         rb_path = File.join(fixture_path, "sample.rb")
 
-        allow(Dir).to receive(:glob).and_return([ txt_path, rb_path ])
-        allow(File).to receive(:file?).with(txt_path).and_return(true)
-        allow(File).to receive(:file?).with(rb_path).and_return(true)
+        allow(Find).to receive(:find).with(fixture_path).and_yield(txt_path).and_yield(rb_path)
+        allow(File).to receive(:directory?).with(txt_path).and_return(false)
+        allow(File).to receive(:directory?).with(rb_path).and_return(false)
         allow(File).to receive(:binread).with(rb_path, 1024).and_call_original
         allow(File).to receive(:read).with(rb_path).and_call_original
         allow(File).to receive(:binread).with(txt_path, 1024).and_call_original
@@ -311,9 +311,9 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         rb_path = File.join(fixture_path, "sample.rb")
         lua_path = File.join(fixture_path, "sample.lua")
 
-        allow(Dir).to receive(:glob).and_return([ rb_path, lua_path ])
-        allow(File).to receive(:file?).with(rb_path).and_return(true)
-        allow(File).to receive(:file?).with(lua_path).and_return(true)
+        allow(Find).to receive(:find).with(fixture_path).and_yield(rb_path).and_yield(lua_path)
+        allow(File).to receive(:directory?).with(rb_path).and_return(false)
+        allow(File).to receive(:directory?).with(lua_path).and_return(false)
         allow(File).to receive(:binread).with(lua_path, 1024).and_call_original
         allow(File).to receive(:read).with(lua_path).and_call_original
         allow(File).to receive(:binread).with(rb_path, 1024).and_call_original
@@ -333,14 +333,38 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
       it "skips oversized supported source files instead of building nil-content artifacts" do
         rb_path = File.join(fixture_path, "sample.rb")
 
-        allow(Dir).to receive(:glob).and_return([ rb_path ])
-        allow(File).to receive(:file?).with(rb_path).and_return(true)
+        allow(Find).to receive(:find).with(fixture_path).and_yield(rb_path)
+        allow(File).to receive(:directory?).with(rb_path).and_return(false)
         allow(File).to receive(:size).with(rb_path)
           .and_return(described_class::MAX_FALLBACK_FILE_BYTES + 1)
         allow(File).to receive(:read).with(rb_path).and_call_original
 
         expect(collector.collect).to eq([])
         expect(File).not_to have_received(:read).with(rb_path)
+      end
+
+      it "prunes ignored directories before visiting their files" do
+        ignored_dir = File.join(fixture_path, "node_modules")
+        ignored_file = File.join(ignored_dir, "ignored.js")
+        root_basename = File.basename(fixture_path)
+
+        allow(Find).to receive(:find).with(fixture_path)
+          .and_yield(fixture_path)
+          .and_yield(ignored_dir)
+          .and_yield(ignored_file)
+        allow(File).to receive(:directory?).with(fixture_path).and_return(true)
+        allow(File).to receive(:directory?).with(ignored_dir).and_return(true)
+        allow(File).to receive(:directory?).with(ignored_file).and_return(false)
+        allow(File).to receive(:basename).and_call_original
+        allow(File).to receive(:basename).with(fixture_path).and_return(root_basename)
+        allow(File).to receive(:basename).with(ignored_dir).and_return("node_modules")
+        allow(Find).to receive(:prune)
+        allow(File).to receive(:binread).with(ignored_file, 1024).and_call_original
+
+        collector.send(:repo_files)
+
+        expect(Find).to have_received(:prune)
+        expect(File).not_to have_received(:binread).with(ignored_file, 1024)
       end
     end
   end
