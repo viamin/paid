@@ -167,6 +167,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     before do
       allow(Temporalio::Workflow).to receive(:patched).and_return(true)
       allow(workflow).to receive(:run_activity).and_return({})
+      allow(workflow).to receive(:maybe_scan_code_scanning_alerts)
+      allow(workflow).to receive(:maybe_check_knowledge_staleness)
+      allow(workflow).to receive(:maybe_evaluate_auto_release)
+      allow(workflow).to receive(:maybe_evaluate_dependabot_auto_merge)
     end
 
     it "skips non-critical activities when rate limit is low" do
@@ -206,16 +210,19 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
 
-    it "skips rate limit check but still runs non-critical activities when patch guard returns false (pre-v872 workflows)" do
+    it "runs the rate limit check unconditionally even when patch returns false" do
       allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
       allow(workflow).to receive(:run_activity)
         .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
         .and_return({ prs_to_trigger: [] })
 
       workflow.send(:maybe_run_non_critical_activities, 1)
 
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckRateLimitActivity, { project_id: 1 }, timeout: 10)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
@@ -292,8 +299,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
 
     before do
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-rate-limit-budget-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with(anything).and_return(true)
     end
@@ -1837,6 +1842,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     def stub_initial_sync(trigger_result:)
       allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, { project_id: project_id }, timeout: 10)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
+      allow(workflow).to receive(:run_activity)
         .with(Activities::FetchIssuesActivity, { project_id: project_id }, timeout: 60)
         .and_return(
           { issues: [ { id: 10 } ], project_id: project_id },
@@ -1861,8 +1869,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     before do
       allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
       allow(Temporalio::Workflow).to receive(:patched).and_call_original
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-rate-limit-budget-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-auto-release-poll-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
