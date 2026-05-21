@@ -198,8 +198,10 @@ jobs:
               capture_job["conclusion"]
             elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
               "skipped"
+            elsif run["conclusion"]
+              run["conclusion"]
             else
-              raise "Could not find a successful capture job, and detect did not complete cleanly, for workflow run #{run.fetch("id")}"
+              raise "Could not determine screenshot capture outcome for workflow run #{run.fetch("id")}"
             end
 
           artifacts = get_json(

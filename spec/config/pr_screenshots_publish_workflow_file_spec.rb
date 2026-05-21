@@ -123,9 +123,10 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include("run ||= fallback_run")
   end
 
-  it "treats missing capture jobs as skipped only when detect completed cleanly" do
+  it "treats missing capture jobs as skipped only when detect completed cleanly and otherwise falls back to the workflow conclusion" do
     expect(resolve_step.fetch("run")).to include('elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])')
-    expect(resolve_step.fetch("run")).to include('"Could not find a successful capture job, and detect did not complete cleanly')
+    expect(resolve_step.fetch("run")).to include('elsif run["conclusion"]')
+    expect(resolve_step.fetch("run")).to include('"Could not determine screenshot capture outcome for workflow run')
   end
 
   it "passes only comment status at the final publish step and normalizes the fallback key before publishing" do
