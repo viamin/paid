@@ -168,7 +168,10 @@ jobs:
           end
 
           def fallback_run_match?(candidate, pr_number, head_ref)
-            candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)
+            return false unless candidate["head_branch"] == head_ref
+
+            pull_requests = Array(candidate["pull_requests"])
+            pull_requests.empty? || matches_pull_request?(candidate, pr_number)
           end
 
           def first_matching_run(repo, headers, pages)

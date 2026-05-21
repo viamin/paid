@@ -119,9 +119,14 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('(matches_head && (matches_pull_request || matches_branch)) ||')
     expect(resolve_step.fetch("run")).to include('recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)')
     expect(resolve_step.fetch("run")).to include('run = first_matching_run(repo, headers, poll_search_pages) do |candidate|')
+  end
+
+  it "falls back to the latest completed branch run when GitHub omits PR metadata for older screenshot runs" do
     expect(resolve_step.fetch("run")).to include('fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|')
     expect(resolve_step.fetch("run")).to include('candidate["status"] == "completed" &&')
-    expect(resolve_step.fetch("run")).to include('candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)')
+    expect(resolve_step.fetch("run")).to include('return false unless candidate["head_branch"] == head_ref')
+    expect(resolve_step.fetch("run")).to include('pull_requests = Array(candidate["pull_requests"])')
+    expect(resolve_step.fetch("run")).to include('pull_requests.empty? || matches_pull_request?(candidate, pr_number)')
     expect(resolve_step.fetch("run")).to include('fallback_run_match?(candidate, pr_number, head_ref)')
     expect(resolve_step.fetch("run")).to include("run ||= fallback_run")
   end
