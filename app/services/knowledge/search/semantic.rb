@@ -3,6 +3,8 @@
 module Knowledge
   class Search
     class Semantic
+      include LineRangeHelpers
+
       attr_reader :project, :query, :artifact_type, :limit
 
       def initialize(project:, query:, artifact_type: nil, limit: 20)
@@ -134,6 +136,8 @@ module Knowledge
           source: "semantic",
           project_version: version_info(version),
           scope_tags: chunk.scope_tags || [],
+          start_line: start_line_for(artifact),
+          end_line: end_line_for(artifact),
           collector_run_id: artifact.collector_run_id,
           status: artifact.status,
           link_count: chunk.outgoing_links.size + chunk.incoming_links.size,

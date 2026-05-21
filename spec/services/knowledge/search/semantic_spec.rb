@@ -16,7 +16,8 @@ RSpec.describe Knowledge::Search::Semantic do
       artifact_type: "route",
       identifier: "GET /api/users",
       content: "GET /api/users → api/users#index",
-      scope_path: "config/routes.rb")
+      scope_path: "config/routes.rb",
+      metadata: { line: 12, start_line: 12, end_line: 18 })
   end
 
   before do
@@ -48,6 +49,7 @@ RSpec.describe Knowledge::Search::Semantic do
         results = described_class.call(project: project, query: "lists all users")
 
         expect(results.first).to have_key(:scope_tags)
+        expect(results.first).to include(start_line: 12, end_line: 18)
         expect(results.first).to have_key(:link_count)
         expect(results.first).to have_key(:created_at)
       end

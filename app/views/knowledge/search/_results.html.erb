@@ -39,7 +39,9 @@
             <% end %>
             <% if result[:scope_path].present? %>
               <div class="mt-2 text-xs text-gray-400">
-                <code><%= result[:scope_path] %></code>
+                <code>
+                  <%= result[:scope_path] %><% if result[:start_line].present? %>:<%= result[:start_line] %><% if result[:end_line].present? && result[:end_line] != result[:start_line] %>-<%= result[:end_line] %><% end %><% end %>
+                </code>
               </div>
             <% end %>
           </div>
