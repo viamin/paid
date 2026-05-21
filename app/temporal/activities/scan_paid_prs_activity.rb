@@ -23,7 +23,9 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
     DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS = 3
-    NO_PROGRESS_ESCALATION_WINDOW = 1.hour
+    # Give the system multiple poll cycles and follow-up runs to recover
+    # before escalating a PR solely for lack of progress.
+    NO_PROGRESS_ESCALATION_WINDOW = 3.hours
     # Floor for re-scanning a PR even when GitHub's `updated_at` has not
     # advanced. `updated_at` does not bump for check-run state changes,
     # unanswered bot review requests, or review-goal retry timers — without
@@ -355,7 +357,6 @@ module Activities
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
 
       if !explicit_pr_decisions &&
-          retry_needed &&
           review_goal_retry_limit_reached?(project, issue, progress_state:) &&
           no_progress_stuck?(project, issue, progress_state) &&
           review_goal_retry_limit_requires_escalation?(project, issue, progress_state:) &&
@@ -1169,26 +1170,38 @@ module Activities
       streak = progress_state.consecutive_unsuccessful_automatic_runs
 
       if progress_state.latest_unsuccessful_review?
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "No meaningful progress for #{no_progress_escalation_window_label} after " \
           "#{streak} consecutive unsuccessful automatic runs; latest run was review"
       elsif issue.draft_phase?
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "No meaningful progress for #{no_progress_escalation_window_label} after " \
           "#{streak} consecutive unsuccessful automatic runs in the current PR cycle"
       else
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "No meaningful progress for #{no_progress_escalation_window_label} after " \
           "#{streak} consecutive unsuccessful automatic runs"
       end
     end
 
     def operational_failure_reason
-      "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+      "No meaningful progress for #{no_progress_escalation_window_label} after " \
         "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
     end
 
     def review_goal_retry_escalation_reason(project, issue, progress_state: nil)
       "Review-goal retry budget exhausted with no meaningful progress for " \
-        "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
+        "#{no_progress_escalation_window_label} " \
         "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
+    end
+
+    def no_progress_escalation_window_label
+      seconds = NO_PROGRESS_ESCALATION_WINDOW.to_i
+
+      if (seconds % 1.hour).zero?
+        hours = seconds / 1.hour
+        "#{hours} #{'hour'.pluralize(hours)}"
+      else
+        minutes = seconds / 1.minute
+        "#{minutes} #{'minute'.pluralize(minutes)}"
+      end
     end
 
     def review_goal_retry_trigger?(project, issue, progress_state:, explicit_pr_decisions:)
