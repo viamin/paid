@@ -15,7 +15,7 @@ The registry is CI-checked by `spec/services/temporal_patch_guards/registry_spec
 
 ## Sunset Rule
 
-A guard becomes removable when the oldest still-running execution for that workflow type started after the guard’s introduction date.
+A guard becomes removable when the oldest still-running execution for that workflow type started no earlier than the guard’s sunset boundary.
 
 The automated sweep stores only a date, not a deployment timestamp, so it evaluates removal conservatively:
 

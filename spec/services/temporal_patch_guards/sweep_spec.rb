@@ -46,7 +46,7 @@ RSpec.describe TemporalPatchGuards::Sweep do
       expect(report.eligible_guards).to be_empty
     end
 
-    it "keeps a guard in place when the oldest running workflow started at the sunset boundary" do
+    it "marks a guard eligible when the oldest running workflow started at the sunset boundary" do
       entry = entry_class.new(
         name: "guard-a",
         workflow_type: "Workflows::GitHubPollWorkflow",
@@ -59,7 +59,7 @@ RSpec.describe TemporalPatchGuards::Sweep do
 
       report = described_class.new(client:, entries: [ entry ]).call
 
-      expect(report.eligible_guards).to be_empty
+      expect(report.eligible_guards.map(&:name)).to eq([ "guard-a" ])
     end
 
     it "queries each workflow type once and uses the oldest running start time for all of its guards" do
