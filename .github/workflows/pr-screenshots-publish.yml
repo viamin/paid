@@ -161,8 +161,8 @@ jobs:
               recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
           end
 
-          def fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
-            current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+          def fallback_run_match?(candidate, pr_number, head_ref)
+            candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)
           end
 
           run = nil
@@ -178,7 +178,7 @@ jobs:
             end
             fallback_run ||= runs.find do |candidate|
               candidate["status"] == "completed" &&
-                fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+                fallback_run_match?(candidate, pr_number, head_ref)
             end
 
             break if run && run["status"] == "completed"

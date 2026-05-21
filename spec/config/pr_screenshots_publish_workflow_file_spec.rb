@@ -118,7 +118,8 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)')
     expect(resolve_step.fetch("run")).to include('fallback_run ||= runs.find do |candidate|')
     expect(resolve_step.fetch("run")).to include('candidate["status"] == "completed" &&')
-    expect(resolve_step.fetch("run")).to include('fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)')
+    expect(resolve_step.fetch("run")).to include('candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)')
+    expect(resolve_step.fetch("run")).to include('fallback_run_match?(candidate, pr_number, head_ref)')
     expect(resolve_step.fetch("run")).to include("run ||= fallback_run")
   end
 
