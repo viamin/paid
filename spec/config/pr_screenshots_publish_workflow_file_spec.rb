@@ -102,7 +102,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
       "HEAD_REF" => "${{ github.event.pull_request.head.ref }}",
       "PR_UPDATED_AT" => "${{ github.event.pull_request.updated_at }}"
     )
-    expect(resolve_step.fetch("run")).to include("poll_attempts = 12")
+    expect(resolve_step.fetch("run")).to include("poll_attempts = 120")
     expect(resolve_step.fetch("run")).to include("poll_interval_seconds = 10")
     expect(resolve_step.fetch("run")).to include("recent_window_seconds = 300")
     expect(resolve_step.fetch("run")).to include('candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha')

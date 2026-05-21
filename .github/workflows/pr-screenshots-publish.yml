@@ -113,7 +113,7 @@ jobs:
           pr_action = ENV.fetch("PR_ACTION")
           token = ENV.fetch("GITHUB_TOKEN")
           output_path = ENV.fetch("GITHUB_OUTPUT")
-          poll_attempts = 12
+          poll_attempts = 120
           poll_interval_seconds = 10
           recent_window_seconds = 300
           headers = {
