@@ -116,6 +116,7 @@ jobs:
           poll_attempts = 120
           poll_interval_seconds = 10
           recent_window_seconds = 300
+          poll_search_pages = 5
           fallback_search_pages = 30
           headers = {
             "Authorization" => "Bearer #{token}",
@@ -170,32 +171,31 @@ jobs:
             candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)
           end
 
-          def first_completed_fallback_run(repo, headers, pr_number, head_ref, pages)
+          def first_matching_run(repo, headers, pages)
             1.upto(pages) do |page|
               runs = get_json(workflow_runs_url(repo, page:), headers).fetch("workflow_runs")
-              fallback_run = runs.find do |candidate|
-                candidate["status"] == "completed" &&
-                  fallback_run_match?(candidate, pr_number, head_ref)
-              end
-              return fallback_run if fallback_run
+              matching_run = runs.find { |candidate| yield(candidate) }
+              return matching_run if matching_run
               break if runs.size < 100
             end
 
             nil
           end
 
+          def first_completed_fallback_run(repo, headers, pr_number, head_ref, pages)
+            first_matching_run(repo, headers, pages) do |candidate|
+              candidate["status"] == "completed" &&
+                fallback_run_match?(candidate, pr_number, head_ref)
+            end
+          end
+
           run = nil
           fallback_run = nil
           poll_attempts.times do
-            runs = get_json(
-              workflow_runs_url(repo),
-              headers
-            ).fetch("workflow_runs")
-
-            run = runs.find do |candidate|
+            run = first_matching_run(repo, headers, poll_search_pages) do |candidate|
               current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
             end
-            fallback_run ||= runs.find do |candidate|
+            fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|
               candidate["status"] == "completed" &&
                 fallback_run_match?(candidate, pr_number, head_ref)
             end

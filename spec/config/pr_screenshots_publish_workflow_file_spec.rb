@@ -106,6 +106,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include("poll_attempts = 120")
     expect(resolve_step.fetch("run")).to include("poll_interval_seconds = 10")
     expect(resolve_step.fetch("run")).to include("recent_window_seconds = 300")
+    expect(resolve_step.fetch("run")).to include("poll_search_pages = 5")
     expect(resolve_step.fetch("run")).to include("fallback_search_pages = 30")
     expect(resolve_step.fetch("run")).to include('candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha')
     expect(resolve_step.fetch("run")).to include('matches_branch = candidate["head_branch"] == head_ref')
@@ -117,17 +118,20 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('!!pull_request_match(candidate, pr_number)')
     expect(resolve_step.fetch("run")).to include('(matches_head && (matches_pull_request || matches_branch)) ||')
     expect(resolve_step.fetch("run")).to include('recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)')
-    expect(resolve_step.fetch("run")).to include('fallback_run ||= runs.find do |candidate|')
+    expect(resolve_step.fetch("run")).to include('run = first_matching_run(repo, headers, poll_search_pages) do |candidate|')
+    expect(resolve_step.fetch("run")).to include('fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|')
     expect(resolve_step.fetch("run")).to include('candidate["status"] == "completed" &&')
     expect(resolve_step.fetch("run")).to include('candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)')
     expect(resolve_step.fetch("run")).to include('fallback_run_match?(candidate, pr_number, head_ref)')
     expect(resolve_step.fetch("run")).to include("run ||= fallback_run")
   end
 
-  it "searches older workflow run pages when the current run never materializes on the first page" do
+  it "searches older workflow run pages during polling and for fallback recovery when the current run is off the first page" do
+    expect(resolve_step.fetch("run")).to include('def first_matching_run(repo, headers, pages)')
     expect(resolve_step.fetch("run")).to include('def workflow_runs_url(repo, page: 1)')
     expect(resolve_step.fetch("run")).to include('page=#{page}')
     expect(resolve_step.fetch("run")).to include('1.upto(pages) do |page|')
+    expect(resolve_step.fetch("run")).to include('first_matching_run(repo, headers, poll_search_pages)')
     expect(resolve_step.fetch("run")).to include('fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)')
   end
 
