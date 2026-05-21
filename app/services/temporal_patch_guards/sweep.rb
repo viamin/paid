@@ -52,7 +52,7 @@ module TemporalPatchGuards
         GuardStatus.new(
           entry: entry,
           oldest_running_start_time: oldest_running_start_time,
-          eligible: oldest_running_start_time.nil? || oldest_running_start_time >= entry.sunset_at
+          eligible: oldest_running_start_time.nil? || oldest_running_start_time > entry.sunset_at
         )
       end
 

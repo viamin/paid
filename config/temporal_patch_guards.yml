@@ -6,8 +6,6 @@ workflows:
   Workflows::GitHubPollWorkflow:
     add-dev-environment-update-v1:
       introduced_on: "2026-03-25"
-    add-rate-limit-budget-v1:
-      introduced_on: "2026-04-07"
     escalation-reason-payload-v1:
       introduced_on: "2026-04-11"
     queue-agent-run-goal-v1:
