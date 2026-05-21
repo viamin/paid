@@ -189,6 +189,11 @@ Rails.application.configure do
       cron: "*/15 * * * *",
       class: "AgentRunPatternDetectorJob",
       description: "Detect goal-level failure patterns in agent runs and notify"
+    },
+    temporal_patch_guard_sweep: {
+      cron: "0 4 1 */3 *",
+      class: "TemporalPatchGuardSweepJob",
+      description: "Audit Temporal workflow patch guards against oldest running executions (quarterly)"
     }
   }
 end

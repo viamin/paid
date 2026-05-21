@@ -210,8 +210,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
 
-    it "runs the rate limit check unconditionally even when patch returns false" do
-      allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+    it "runs the rate limit check before the non-critical activities" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
         .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
