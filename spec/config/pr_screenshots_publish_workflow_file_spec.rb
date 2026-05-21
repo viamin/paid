@@ -93,8 +93,9 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(step("Bootstrap test defaults").fetch("run")).to eq("bin/rails ci:bootstrap_test_defaults")
   end
 
-  it "queries screenshot capture runs by the PR head branch" do
-    expect(resolve_step.fetch("run")).to include('branch=#{head_ref}&per_page=100')
+  it "queries recent screenshot capture runs without relying on GitHub branch filtering" do
+    expect(resolve_step.fetch("run")).to include("runs?event=pull_request&per_page=100")
+    expect(resolve_step.fetch("run")).not_to include("branch=\#{head_ref}")
   end
 
   it "passes the PR head ref to the resolver for branch-based lookup and fallback matching" do
@@ -110,11 +111,11 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('matches_branch && created_at >= (pr_updated_at - recent_window_seconds)')
   end
 
-  it "matches current workflow runs using immutable run head metadata plus recency for the current PR update" do
+  it "matches current workflow runs using immutable run head metadata plus branch and recency for the current PR update" do
     expect(resolve_step.fetch("run")).to include('candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }')
-    expect(resolve_step.fetch("run")).to include("return false unless pull_request")
-    expect(resolve_step.fetch("run")).to include('matches_head?(candidate, head_sha) || recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)')
-    expect(resolve_step.fetch("run")).not_to include('pull_request&.dig("head", "sha") == head_sha')
+    expect(resolve_step.fetch("run")).to include('!!pull_request_match(candidate, pr_number)')
+    expect(resolve_step.fetch("run")).to include('(matches_head && (matches_pull_request || matches_branch)) ||')
+    expect(resolve_step.fetch("run")).to include('recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)')
     expect(resolve_step.fetch("run")).to include('fallback_run ||= runs.find do |candidate|')
     expect(resolve_step.fetch("run")).to include('candidate["status"] == "completed" &&')
     expect(resolve_step.fetch("run")).to include('fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)')

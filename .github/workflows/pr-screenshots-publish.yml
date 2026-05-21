@@ -138,6 +138,10 @@ jobs:
             candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }
           end
 
+          def matches_pull_request?(candidate, pr_number)
+            !!pull_request_match(candidate, pr_number)
+          end
+
           def matches_head?(candidate, head_sha)
             candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
           end
@@ -149,10 +153,12 @@ jobs:
           end
 
           def current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
-            pull_request = pull_request_match(candidate, pr_number)
-            return false unless pull_request
+            matches_branch = candidate["head_branch"] == head_ref
+            matches_head = matches_head?(candidate, head_sha)
+            matches_pull_request = matches_pull_request?(candidate, pr_number)
 
-            matches_head?(candidate, head_sha) || recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
+            (matches_head && (matches_pull_request || matches_branch)) ||
+              recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
           end
 
           def fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
@@ -163,7 +169,7 @@ jobs:
           fallback_run = nil
           poll_attempts.times do
             runs = get_json(
-              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&branch=#{head_ref}&per_page=100",
+              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&per_page=100",
               headers
             ).fetch("workflow_runs")
 
