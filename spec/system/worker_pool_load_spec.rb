@@ -62,6 +62,7 @@ RSpec.describe "Worker pool load behavior" do
       DockerOrphanCleanupJob => "maintenance",
       StaleRunDetectorJob => "maintenance",
       PollWorkflowHealthCheckJob => "maintenance",
+      TemporalPatchGuardSweepJob => "maintenance",
       WorktreeOrphanCleanupJob => "maintenance",
       AgentRunResourceJanitorJob => "maintenance",
       ServiceContainerReconciliationJob => "maintenance",
