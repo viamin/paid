@@ -61,6 +61,7 @@ jobs:
           output_path = ENV.fetch("GITHUB_OUTPUT")
           poll_attempts = 12
           poll_interval_seconds = 10
+          recent_window_seconds = 300
           headers = {
             "Authorization" => "Bearer #{token}",
             "Accept" => "application/vnd.github+json",
@@ -83,19 +84,25 @@ jobs:
             candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }
           end
 
-          def current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at)
-            pull_request = pull_request_match(candidate, pr_number)
-            matches_pull_request_sha = pull_request&.dig("head", "sha") == head_sha
-            matches_head = candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
-            matches_branch = candidate["head_branch"] == head_ref
-            created_at = Time.iso8601(candidate.fetch("created_at"))
-            recent_pr_run = matches_branch && created_at >= (pr_updated_at - 60)
-
-            (pull_request && (matches_pull_request_sha || matches_head)) || recent_pr_run
+          def matches_head?(candidate, head_sha)
+            candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
           end
 
-          def fallback_run_match?(candidate, pr_number, head_ref)
-            pull_request_match(candidate, pr_number) && candidate["head_branch"] == head_ref
+          def recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
+            matches_branch = candidate["head_branch"] == head_ref
+            created_at = Time.iso8601(candidate.fetch("created_at"))
+            matches_branch && created_at >= (pr_updated_at - recent_window_seconds)
+          end
+
+          def current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+            pull_request = pull_request_match(candidate, pr_number)
+            return false unless pull_request
+
+            matches_head?(candidate, head_sha) || recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
+          end
+
+          def fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+            current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
           end
 
           run = nil
@@ -106,9 +113,12 @@ jobs:
               headers
             ).fetch("workflow_runs")
 
-            run = runs.find { |candidate| current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at) }
+            run = runs.find do |candidate|
+              current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+            end
             fallback_run ||= runs.find do |candidate|
-              candidate["status"] == "completed" && fallback_run_match?(candidate, pr_number, head_ref)
+              candidate["status"] == "completed" &&
+                fallback_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
             end
 
             break if run && run["status"] == "completed"
