@@ -13,6 +13,7 @@ module Activities
       source_pull_request_number = input[:source_pull_request_number]
       goal = input[:goal]
       focus = input[:focus] || "general"
+      auto_pick = input.fetch(:auto_pick, false)
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
 
@@ -53,6 +54,7 @@ module Activities
             source_pull_request_number: source_pull_request_number,
             goal: goal,
             focus: focus,
+            auto_pick: auto_pick,
             count_toward_draft_review_round: count_toward_draft_review_round,
             expected_draft_review_count: expected_draft_review_count,
             status: "queued"

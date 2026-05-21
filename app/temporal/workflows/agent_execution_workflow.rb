@@ -145,6 +145,19 @@ module Workflows
             start_to_close_timeout: issue_goal_timeout_seconds,
             retry_policy: NO_RETRY)
 
+          unless result.is_a?(Hash) && result.key?(:sufficient_context)
+            raise Temporalio::Error::ApplicationError.new(
+              "AnalyzeIssueActivity returned an invalid result payload",
+              type: "AnalyzeIssueInvalidResult",
+              non_retryable: true
+            )
+          end
+
+          followup_goal = result[:sufficient_context] ? "create_pr" : "enhance_issue"
+          run_activity(Activities::CreateFollowupRunActivity,
+            { agent_run_id: agent_run_id, goal: followup_goal },
+            timeout: 30)
+
           agent_step_succeeded = true
           return { success: true, agent_run_id: agent_run_id, **result.slice(:sufficient_context) }
         end
