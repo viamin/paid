@@ -121,6 +121,14 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
             expect(m[:metadata][:line_count]).to be >= 1
           end
         end
+
+        it "preserves line ranges for deep-linking" do
+          greet = ruby_artifacts.find { |a| a[:metadata][:name] == "greet" }
+
+          expect(greet[:metadata][:start_line]).to eq(9)
+          expect(greet[:metadata][:end_line]).to eq(11)
+          expect(greet[:metadata][:chunking_strategy]).to eq("ast")
+        end
       end
 
       context "with TypeScript files" do
@@ -215,6 +223,29 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         end
       end
 
+      context "with unsupported source files" do
+        let(:fallback_artifact) { artifacts.find { |a| a[:scope_path] == "sample.lua" } }
+
+        it "falls back to file-level chunking" do
+          expect(fallback_artifact).to include(
+            artifact_type: "structure",
+            identifier: "sample.lua::file"
+          )
+          expect(fallback_artifact[:metadata]).to include(
+            language: "lua",
+            element_type: "file",
+            chunking_strategy: "file_fallback",
+            start_line: 1
+          )
+          expect(fallback_artifact[:chunks]).to contain_exactly(
+            hash_including(
+              chunk_type: "definition",
+              scope_tags: [ "lua", "file", "file_fallback" ]
+            )
+          )
+        end
+      end
+
       it "deduplicates overlapping patterns" do
         # When both "class $NAME" and "class $NAME < $PARENT" match,
         # only the more specific one should be kept
@@ -230,8 +261,14 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         )
       end
 
-      it "returns an empty array" do
-        expect(collector.collect).to eq([])
+      it "returns file-level fallback artifacts" do
+        expect(collector.collect).to include(
+          hash_including(
+            scope_path: "sample.rb",
+            identifier: "sample.rb::file",
+            metadata: hash_including(chunking_strategy: "file_fallback")
+          )
+        )
       end
     end
 
@@ -240,8 +277,94 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
       end
 
-      it "returns an empty array" do
+      it "returns file-level fallback artifacts" do
+        expect(collector.collect).to include(
+          hash_including(
+            scope_path: "sample.ts",
+            identifier: "sample.ts::file",
+            metadata: hash_including(chunking_strategy: "file_fallback")
+          )
+        )
+      end
+
+      it "skips reading files whose extensions cannot produce fallback artifacts" do
+        txt_path = File.join(fixture_path, "notes.txt")
+        rb_path = File.join(fixture_path, "sample.rb")
+
+        allow(Find).to receive(:find).with(fixture_path).and_yield(txt_path).and_yield(rb_path)
+        allow(File).to receive(:directory?).with(txt_path).and_return(false)
+        allow(File).to receive(:directory?).with(rb_path).and_return(false)
+        allow(File).to receive(:binread).with(rb_path, 1024).and_call_original
+        allow(File).to receive(:read).with(rb_path).and_call_original
+        allow(File).to receive(:binread).with(txt_path, 1024).and_call_original
+        allow(File).to receive(:read).with(txt_path).and_call_original
+
+        collector.collect
+
+        expect(File).not_to have_received(:binread).with(txt_path, 1024)
+        expect(File).not_to have_received(:read).with(txt_path)
+        expect(File).to have_received(:binread).with(rb_path, 1024)
+        expect(File).to have_received(:read).with(rb_path)
+      end
+
+      it "skips reading files already covered by AST artifacts" do
+        rb_path = File.join(fixture_path, "sample.rb")
+        lua_path = File.join(fixture_path, "sample.lua")
+
+        allow(Find).to receive(:find).with(fixture_path).and_yield(rb_path).and_yield(lua_path)
+        allow(File).to receive(:directory?).with(rb_path).and_return(false)
+        allow(File).to receive(:directory?).with(lua_path).and_return(false)
+        allow(File).to receive(:binread).with(lua_path, 1024).and_call_original
+        allow(File).to receive(:read).with(lua_path).and_call_original
+        allow(File).to receive(:binread).with(rb_path, 1024).and_call_original
+        allow(File).to receive(:read).with(rb_path).and_call_original
+
+        repo_files = collector.send(:repo_files, exclude_paths: Set["sample.rb"])
+
+        expect(File).not_to have_received(:binread).with(rb_path, 1024)
+        expect(File).not_to have_received(:read).with(rb_path)
+        expect(File).to have_received(:binread).with(lua_path, 1024)
+        expect(File).to have_received(:read).with(lua_path)
+        expect(repo_files).to contain_exactly(
+          hash_including(relative_path: "sample.lua", language: :lua)
+        )
+      end
+
+      it "skips oversized supported source files instead of building nil-content artifacts" do
+        rb_path = File.join(fixture_path, "sample.rb")
+
+        allow(Find).to receive(:find).with(fixture_path).and_yield(rb_path)
+        allow(File).to receive(:directory?).with(rb_path).and_return(false)
+        allow(File).to receive(:size).with(rb_path)
+          .and_return(described_class::MAX_FALLBACK_FILE_BYTES + 1)
+        allow(File).to receive(:read).with(rb_path).and_call_original
+
         expect(collector.collect).to eq([])
+        expect(File).not_to have_received(:read).with(rb_path)
+      end
+
+      it "prunes ignored directories before visiting their files" do
+        ignored_dir = File.join(fixture_path, "node_modules")
+        ignored_file = File.join(ignored_dir, "ignored.js")
+        root_basename = File.basename(fixture_path)
+
+        allow(Find).to receive(:find).with(fixture_path)
+          .and_yield(fixture_path)
+          .and_yield(ignored_dir)
+          .and_yield(ignored_file)
+        allow(File).to receive(:directory?).with(fixture_path).and_return(true)
+        allow(File).to receive(:directory?).with(ignored_dir).and_return(true)
+        allow(File).to receive(:directory?).with(ignored_file).and_return(false)
+        allow(File).to receive(:basename).and_call_original
+        allow(File).to receive(:basename).with(fixture_path).and_return(root_basename)
+        allow(File).to receive(:basename).with(ignored_dir).and_return("node_modules")
+        allow(Find).to receive(:prune)
+        allow(File).to receive(:binread).with(ignored_file, 1024).and_call_original
+
+        collector.send(:repo_files)
+
+        expect(Find).to have_received(:prune)
+        expect(File).not_to have_received(:binread).with(ignored_file, 1024)
       end
     end
   end
