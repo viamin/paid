@@ -24,4 +24,20 @@ RSpec.describe TemporalPatchGuards::Registry do
       expect(described_class.entries).to all(have_attributes(introduced_on: be_a(Date)))
     end
   end
+
+  describe TemporalPatchGuards::Entry do
+    describe "#sunset_at" do
+      it "returns the next UTC midnight regardless of the Rails time zone" do
+        Time.use_zone("Eastern Time (US & Canada)") do
+          entry = described_class.new(
+            name: "guard-a",
+            workflow_type: "Workflows::GitHubPollWorkflow",
+            introduced_on: Date.new(2026, 4, 20)
+          )
+
+          expect(entry.sunset_at).to eq(Time.utc(2026, 4, 21))
+        end
+      end
+    end
+  end
 end

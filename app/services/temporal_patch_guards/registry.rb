@@ -6,7 +6,7 @@ require "yaml"
 module TemporalPatchGuards
   Entry = Data.define(:name, :workflow_type, :introduced_on) do
     def sunset_at
-      introduced_on.next_day.beginning_of_day.utc
+      introduced_on.next_day.to_time(:utc)
     end
   end
 
