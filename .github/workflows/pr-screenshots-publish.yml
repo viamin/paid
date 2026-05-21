@@ -116,6 +116,7 @@ jobs:
           poll_attempts = 120
           poll_interval_seconds = 10
           recent_window_seconds = 300
+          fallback_search_pages = 30
           headers = {
             "Authorization" => "Bearer #{token}",
             "Accept" => "application/vnd.github+json",
@@ -132,6 +133,10 @@ jobs:
             end
 
             JSON.parse(response.body)
+          end
+
+          def workflow_runs_url(repo, page: 1)
+            "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&per_page=100&page=#{page}"
           end
 
           def pull_request_match(candidate, pr_number)
@@ -165,11 +170,25 @@ jobs:
             candidate["head_branch"] == head_ref && matches_pull_request?(candidate, pr_number)
           end
 
+          def first_completed_fallback_run(repo, headers, pr_number, head_ref, pages)
+            1.upto(pages) do |page|
+              runs = get_json(workflow_runs_url(repo, page:), headers).fetch("workflow_runs")
+              fallback_run = runs.find do |candidate|
+                candidate["status"] == "completed" &&
+                  fallback_run_match?(candidate, pr_number, head_ref)
+              end
+              return fallback_run if fallback_run
+              break if runs.size < 100
+            end
+
+            nil
+          end
+
           run = nil
           fallback_run = nil
           poll_attempts.times do
             runs = get_json(
-              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&per_page=100",
+              workflow_runs_url(repo),
               headers
             ).fetch("workflow_runs")
 
@@ -187,6 +206,7 @@ jobs:
             sleep poll_interval_seconds
           end
 
+          fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
           run ||= fallback_run
           raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
 
