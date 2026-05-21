@@ -111,7 +111,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
           lifecycle: base_lifecycle.merge(
             operational_failure_breaker: true,
             no_progress_stuck: true,
-            escalation_reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
+            escalation_reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
           )
         )
 
@@ -121,7 +121,7 @@ RSpec.describe Automation::Strategies::AutoContinue do
           issue_id: pull_request.id,
           pr_number: 42,
           owner_reviewer_login: "alice",
-          reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
+          reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
         )
       end
     end
