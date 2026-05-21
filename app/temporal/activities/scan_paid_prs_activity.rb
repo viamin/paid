@@ -23,7 +23,9 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
     DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS = 3
-    NO_PROGRESS_ESCALATION_WINDOW = 1.hour
+    # Give the system multiple poll cycles and follow-up runs to recover
+    # before escalating a PR solely for lack of progress.
+    NO_PROGRESS_ESCALATION_WINDOW = 3.hours
     # Floor for re-scanning a PR even when GitHub's `updated_at` has not
     # advanced. `updated_at` does not bump for check-run state changes,
     # unanswered bot review requests, or review-goal retry timers — without
@@ -191,9 +193,7 @@ module Activities
       reason = if op_breaker
         operational_failure_reason
       elsif no_progress_stuck && retry_escalation
-        "Review-goal retry budget exhausted with no meaningful progress for " \
-          "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
-          "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
+        review_goal_retry_escalation_reason(project, issue, progress_state:)
       elsif no_progress_stuck && failure_limit
         failure_streak_reason(project, issue, progress_state)
       end
@@ -355,7 +355,6 @@ module Activities
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
 
       if !explicit_pr_decisions &&
-          retry_needed &&
           review_goal_retry_limit_reached?(project, issue, progress_state:) &&
           no_progress_stuck?(project, issue, progress_state) &&
           review_goal_retry_limit_requires_escalation?(project, issue, progress_state:) &&
@@ -1169,26 +1168,38 @@ module Activities
       streak = progress_state.consecutive_unsuccessful_automatic_runs
 
       if progress_state.latest_unsuccessful_review?
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "No meaningful progress for #{no_progress_escalation_window_label} after " \
           "#{streak} consecutive unsuccessful automatic runs; latest run was review"
       elsif issue.draft_phase?
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "No meaningful progress for #{no_progress_escalation_window_label} after " \
           "#{streak} consecutive unsuccessful automatic runs in the current PR cycle"
       else
-        "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+        "No meaningful progress for #{no_progress_escalation_window_label} after " \
           "#{streak} consecutive unsuccessful automatic runs"
       end
     end
 
     def operational_failure_reason
-      "No meaningful progress for #{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes after " \
+      "No meaningful progress for #{no_progress_escalation_window_label} after " \
         "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
     end
 
     def review_goal_retry_escalation_reason(project, issue, progress_state: nil)
       "Review-goal retry budget exhausted with no meaningful progress for " \
-        "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
+        "#{no_progress_escalation_window_label} " \
         "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
+    end
+
+    def no_progress_escalation_window_label
+      seconds = NO_PROGRESS_ESCALATION_WINDOW.to_i
+
+      if (seconds % 1.hour).zero?
+        hours = seconds / 1.hour
+        "#{hours} #{'hour'.pluralize(hours)}"
+      else
+        minutes = seconds / 1.minute
+        "#{minutes} #{'minute'.pluralize(minutes)}"
+      end
     end
 
     def review_goal_retry_trigger?(project, issue, progress_state:, explicit_pr_decisions:)
@@ -1880,9 +1891,10 @@ module Activities
     # Returns [] when the retry limit is reached so no more review-goal runs
     # are queued (#1002). Callers separately decide whether that exhaustion
     # should escalate the PR or let another enabled bot continue review gating.
-    def check_paid_agent_review_status(project, issue)
+    def check_paid_agent_review_status(project, issue, progress_state: nil)
       return [] unless issue
 
+      progress_state ||= pr_progress_state(project, issue)
       current_cycle_review_runs = attempted_automatic_review_runs(project, issue)
       unfinished_run = current_cycle_review_run_in_progress(project, issue)
 
@@ -1892,14 +1904,14 @@ module Activities
                  active_run: true } ]
       end
 
-      return [] if review_goal_retry_limit_reached?(project, issue)
+      return [] if review_goal_retry_limit_reached?(project, issue, progress_state:)
 
       # When a review-goal retry is already being emitted as an explicit
       # review_goal_retry trigger, suppress the sidecar-only pending trigger
       # for mixed-bot projects so the remaining bot can keep gating the PR.
       # Paid-agent-only projects still need paid_agent_review_pending to block
       # draft exit until the retried review is posted.
-      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
+      return [] if review_goal_retry_needed?(project, issue, progress_state:) && !paid_agent_sole_review_method?(project)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
@@ -1920,10 +1932,10 @@ module Activities
       # even when the last finished review attempt post-dates the last create_pr.
       # However, when the run already posted a review on the PR, the feedback is
       # visible — retrying would post a duplicate review on every scan cycle.
-      latest_finished_run = latest_finished_automatic_review_run(project, issue)
+      latest_finished_run = latest_finished_automatic_review_run(project, issue, progress_state:)
       if latest_finished_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES) &&
           latest_finished_run.review_posted_at.blank?
-        failed_count = review_goal_consecutive_failure_count(project, issue)
+        failed_count = review_goal_consecutive_failure_count(project, issue, progress_state:)
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
                  details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]

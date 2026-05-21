@@ -121,18 +121,18 @@ RSpec.describe Coordination::EscalationService do
       result = call_service(
         no_progress_stuck: true,
         operational_failure_breaker: true,
-        escalation_reason: "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures"
+        escalation_reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
       )
 
       expect(result).to be_escalate
-      expect(result.reason).to eq("No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures")
+      expect(result.reason).to eq("No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures")
       expect_logged_decision(
         OrchestrationDecision.last,
         status: "applied",
         inputs: explicit_trigger_decision_inputs,
         outputs: {
           "decision" => "escalate",
-          "reason" => "No meaningful progress for 60 minutes after 3 consecutive provider/infrastructure failures",
+          "reason" => "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures",
           "explicit_trigger" => "no_progress_stuck",
           "policy_source" => "defaults"
         }
