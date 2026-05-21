@@ -40,15 +40,20 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   it "passes the PR head ref to the resolver for branch-based lookup and fallback matching" do
-    expect(resolve_env).to include("HEAD_REF" => "${{ github.event.pull_request.head.ref }}")
-    expect(resolve_step.fetch("run")).to include('matches_head = candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref')
-    expect(resolve_step.fetch("run")).to include("matches_pull_request || matches_head")
+    expect(resolve_env).to include(
+      "HEAD_REF" => "${{ github.event.pull_request.head.ref }}",
+      "PR_UPDATED_AT" => "${{ github.event.pull_request.updated_at }}"
+    )
+    expect(resolve_step.fetch("run")).to include('matches_head = candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha')
+    expect(resolve_step.fetch("run")).to include('matches_branch = candidate["head_branch"] == head_ref')
+    expect(resolve_step.fetch("run")).to include('current_pr_run = matches_branch && created_at >= pr_updated_at')
   end
 
   it "matches PR-attached workflow runs by PR number and embedded PR head sha" do
     expect(resolve_step.fetch("run")).to include('pull_requests = candidate.fetch("pull_requests", [])')
-    expect(resolve_step.fetch("run")).to include('matches_pull_request = pull_requests.any? do |pr|')
-    expect(resolve_step.fetch("run")).to include('pr["number"] == pr_number && pr.dig("head", "sha") == head_sha')
+    expect(resolve_step.fetch("run")).to include('matches_pull_request = pull_requests.any? { |pr| pr["number"] == pr_number }')
+    expect(resolve_step.fetch("run")).to include('matching_pull_request_sha = pull_requests.find { |pr| pr["number"] == pr_number }&.dig("head", "sha")')
+    expect(resolve_step.fetch("run")).to include("(matches_pull_request && matches_sha) || current_pr_run")
   end
 
   it "treats missing capture jobs as skipped only when detect completed cleanly" do

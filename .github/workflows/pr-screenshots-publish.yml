@@ -42,17 +42,20 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
           PR_ACTION: ${{ github.event.action }}
         run: |
           ruby <<'RUBY'
           require "json"
           require "net/http"
+          require "time"
           require "uri"
 
           repo = ENV.fetch("GITHUB_REPOSITORY")
           pr_number = Integer(ENV.fetch("PR_NUMBER"))
           head_sha = ENV.fetch("HEAD_SHA")
           head_ref = ENV.fetch("HEAD_REF")
+          pr_updated_at = Time.iso8601(ENV.fetch("PR_UPDATED_AT"))
           pr_action = ENV.fetch("PR_ACTION")
           token = ENV.fetch("GITHUB_TOKEN")
           output_path = ENV.fetch("GITHUB_OUTPUT")
@@ -83,12 +86,15 @@ jobs:
 
             run = runs.find do |candidate|
               pull_requests = candidate.fetch("pull_requests", [])
-              matches_pull_request = pull_requests.any? do |pr|
-                pr["number"] == pr_number && pr.dig("head", "sha") == head_sha
-              end
-              matches_head = candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref
+              matches_pull_request = pull_requests.any? { |pr| pr["number"] == pr_number }
+              matching_pull_request_sha = pull_requests.find { |pr| pr["number"] == pr_number }&.dig("head", "sha")
+              matches_head = candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
+              matches_branch = candidate["head_branch"] == head_ref
+              matches_sha = matching_pull_request_sha == head_sha || matches_head
+              created_at = Time.iso8601(candidate.fetch("created_at"))
+              current_pr_run = matches_branch && created_at >= pr_updated_at
 
-              matches_pull_request || matches_head
+              (matches_pull_request && matches_sha) || current_pr_run
             end
 
             break if run && run["status"] == "completed"
