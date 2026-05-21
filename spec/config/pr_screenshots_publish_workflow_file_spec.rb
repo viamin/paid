@@ -44,16 +44,20 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
       "HEAD_REF" => "${{ github.event.pull_request.head.ref }}",
       "PR_UPDATED_AT" => "${{ github.event.pull_request.updated_at }}"
     )
+    expect(resolve_step.fetch("run")).to include("poll_attempts = 12")
+    expect(resolve_step.fetch("run")).to include("poll_interval_seconds = 10")
     expect(resolve_step.fetch("run")).to include('matches_head = candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha')
     expect(resolve_step.fetch("run")).to include('matches_branch = candidate["head_branch"] == head_ref')
-    expect(resolve_step.fetch("run")).to include('current_pr_run = matches_branch && created_at >= pr_updated_at')
+    expect(resolve_step.fetch("run")).to include('recent_pr_run = matches_branch && created_at >= (pr_updated_at - 60)')
   end
 
-  it "matches PR-attached workflow runs by PR number and embedded PR head sha" do
-    expect(resolve_step.fetch("run")).to include('pull_requests = candidate.fetch("pull_requests", [])')
-    expect(resolve_step.fetch("run")).to include('matches_pull_request = pull_requests.any? { |pr| pr["number"] == pr_number }')
-    expect(resolve_step.fetch("run")).to include('matching_pull_request_sha = pull_requests.find { |pr| pr["number"] == pr_number }&.dig("head", "sha")')
-    expect(resolve_step.fetch("run")).to include("(matches_pull_request && matches_sha) || current_pr_run")
+  it "matches PR-attached workflow runs by PR number and falls back to the latest completed run for the branch" do
+    expect(resolve_step.fetch("run")).to include('candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }')
+    expect(resolve_step.fetch("run")).to include('matches_pull_request_sha = pull_request&.dig("head", "sha") == head_sha')
+    expect(resolve_step.fetch("run")).to include('(pull_request && (matches_pull_request_sha || matches_head)) || recent_pr_run')
+    expect(resolve_step.fetch("run")).to include('fallback_run ||= runs.find do |candidate|')
+    expect(resolve_step.fetch("run")).to include('candidate["status"] == "completed" && fallback_run_match?(candidate, pr_number, head_ref)')
+    expect(resolve_step.fetch("run")).to include("run ||= fallback_run")
   end
 
   it "treats missing capture jobs as skipped only when detect completed cleanly" do

@@ -59,6 +59,8 @@ jobs:
           pr_action = ENV.fetch("PR_ACTION")
           token = ENV.fetch("GITHUB_TOKEN")
           output_path = ENV.fetch("GITHUB_OUTPUT")
+          poll_attempts = 12
+          poll_interval_seconds = 10
           headers = {
             "Authorization" => "Bearer #{token}",
             "Accept" => "application/vnd.github+json",
@@ -77,32 +79,45 @@ jobs:
             JSON.parse(response.body)
           end
 
+          def pull_request_match(candidate, pr_number)
+            candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }
+          end
+
+          def current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at)
+            pull_request = pull_request_match(candidate, pr_number)
+            matches_pull_request_sha = pull_request&.dig("head", "sha") == head_sha
+            matches_head = candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
+            matches_branch = candidate["head_branch"] == head_ref
+            created_at = Time.iso8601(candidate.fetch("created_at"))
+            recent_pr_run = matches_branch && created_at >= (pr_updated_at - 60)
+
+            (pull_request && (matches_pull_request_sha || matches_head)) || recent_pr_run
+          end
+
+          def fallback_run_match?(candidate, pr_number, head_ref)
+            pull_request_match(candidate, pr_number) && candidate["head_branch"] == head_ref
+          end
+
           run = nil
-          120.times do
+          fallback_run = nil
+          poll_attempts.times do
             runs = get_json(
               "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&branch=#{head_ref}&per_page=100",
               headers
             ).fetch("workflow_runs")
 
-            run = runs.find do |candidate|
-              pull_requests = candidate.fetch("pull_requests", [])
-              matches_pull_request = pull_requests.any? { |pr| pr["number"] == pr_number }
-              matching_pull_request_sha = pull_requests.find { |pr| pr["number"] == pr_number }&.dig("head", "sha")
-              matches_head = candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
-              matches_branch = candidate["head_branch"] == head_ref
-              matches_sha = matching_pull_request_sha == head_sha || matches_head
-              created_at = Time.iso8601(candidate.fetch("created_at"))
-              current_pr_run = matches_branch && created_at >= pr_updated_at
-
-              (matches_pull_request && matches_sha) || current_pr_run
+            run = runs.find { |candidate| current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at) }
+            fallback_run ||= runs.find do |candidate|
+              candidate["status"] == "completed" && fallback_run_match?(candidate, pr_number, head_ref)
             end
 
             break if run && run["status"] == "completed"
 
             run = nil if run && run["status"] != "completed"
-            sleep 10
+            sleep poll_interval_seconds
           end
 
+          run ||= fallback_run
           raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
 
           jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
