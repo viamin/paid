@@ -135,7 +135,7 @@ jobs:
           end
 
           def pull_request_match(candidate, pr_number)
-            candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }
+            Array(candidate["pull_requests"]).find { |pr| pr["number"] == pr_number }
           end
 
           def matches_pull_request?(candidate, pr_number)

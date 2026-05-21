@@ -112,7 +112,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   it "matches current workflow runs using immutable run head metadata plus branch and recency for the current PR update" do
-    expect(resolve_step.fetch("run")).to include('candidate.fetch("pull_requests", []).find { |pr| pr["number"] == pr_number }')
+    expect(resolve_step.fetch("run")).to include('Array(candidate["pull_requests"]).find { |pr| pr["number"] == pr_number }')
     expect(resolve_step.fetch("run")).to include('!!pull_request_match(candidate, pr_number)')
     expect(resolve_step.fetch("run")).to include('(matches_head && (matches_pull_request || matches_branch)) ||')
     expect(resolve_step.fetch("run")).to include('recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)')
