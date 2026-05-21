@@ -77,18 +77,18 @@ jobs:
           run = nil
           120.times do
             runs = get_json(
-              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&head_sha=#{head_sha}&per_page=100",
+              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&branch=#{head_ref}&per_page=100",
               headers
             ).fetch("workflow_runs")
 
             run = runs.find do |candidate|
-              next false unless candidate["head_sha"] == head_sha
-
               pull_requests = candidate.fetch("pull_requests", [])
               if pull_requests.any?
-                pull_requests.any? { |pr| pr["number"] == pr_number }
+                pull_requests.any? do |pr|
+                  pr["number"] == pr_number && pr.dig("head", "sha") == head_sha
+                end
               else
-                candidate["head_branch"] == head_ref
+                candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref
               end
             end
 
