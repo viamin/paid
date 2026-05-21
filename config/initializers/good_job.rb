@@ -117,6 +117,11 @@ Rails.application.configure do
       class: "AutoPickQueueBackfillJob",
       description: "Backfill eager auto-pick queue seeding for already-enabled projects"
     },
+    analyze_issue_followup_backfill: {
+      cron: "15 * * * *",
+      class: "AnalyzeIssueFollowupBackfillJob",
+      description: "Backfill follow-up runs for legacy analyzed issues"
+    },
     service_container_reconciliation: {
       cron: "*/5 * * * *",
       class: "ServiceContainerReconciliationJob",
