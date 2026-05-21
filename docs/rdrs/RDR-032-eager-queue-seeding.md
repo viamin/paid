@@ -366,3 +366,88 @@ Use `INSERT ... ON CONFLICT DO NOTHING` for bulk seeding. **Rejected** per desig
 - Existing queued auto-pick runs continue to be processed
 - `ProcessRunQueueJob` dequeue loop works with both old and new queued runs
 - `max_auto_pick_open_prs` column presence does not cause errors (soft deprecate)
+
+## Amendment A: Sidekiq-style retry backoff for failed runs
+
+**Date**: 2026-05-21
+
+### Motivation
+
+The post-failure re-enqueue hook (`Issue#enqueue_self_if_became_auto_pick_eligible`) shipped alongside the eager-seeding work to keep an issue moving through the queue after a run finishes in `failed` state. The initial backoff curve was a coarse four-tier ladder:
+
+| Consecutive failures | Delay |
+|---|---|
+| 1 | 5 minutes |
+| 2 | 15 minutes |
+| 3 | 1 hour |
+| 4+ | 4 hours |
+
+Two problems with this curve in practice:
+
+1. **First-failure penalty is large relative to the cost of a retry.** A single failure parks an issue for 5 minutes before the next attempt — long enough that the issue is invisible on the dashboard's upcoming-queue view, even though the agent that just finished could pick another run instantly.
+2. **The curve plateaus at 4 hours forever.** A persistently broken issue is retried every 4 hours indefinitely. There is no graceful decay toward "don't try this again any time soon."
+
+Observed effect on `viamin/paid` (2026-05-21): three eligible issues (#2181, #2137, #2148) each had three consecutive timeouts during the day. Under the four-tier ladder each one was sitting in a 1-hour or 4-hour wait window, so the dashboard showed an empty upcoming queue despite three issues being eligible.
+
+### Decision
+
+Adopt Sidekiq's exponential backoff formula from
+[Sidekiq Wiki — Error Handling](https://github.com/sidekiq/sidekiq/wiki/Error-Handling#automatic-job-retry):
+
+```
+delay_seconds = (n ** 4) + 15 + (rand(10) * (n + 1))
+```
+
+Where `n` is the zero-indexed retry attempt: `n=0` is the first retry (scheduled after the first failure), `n=1` is the second retry, and so on. Implementation maps `n = [consecutive_auto_pick_failure_count - 1, 0].max`.
+
+| Retry attempt (`n`) | Delay range | Approx midpoint |
+|---|---|---|
+| 0 | 15–24 s | ~20 s |
+| 1 | 16–34 s | ~26 s |
+| 2 | 31–60 s | ~46 s |
+| 3 | 96–135 s | ~2 min |
+| 5 | 640–699 s | ~11 min |
+| 7 | 2 416–2 495 s | ~41 min |
+| 10 | 10 015–10 124 s | ~2 h 50 min |
+| 24 | ~331 776 s | ~3 d 20 h |
+| 49 (saturation) | ~5 764 800 s | ~66 d 17 h |
+
+Properties this gives us:
+
+- **First retries are nearly free.** The first three retries fire in well under a minute, so transient failures (network blip, race with sync) resolve quickly without burning a queue slot for minutes.
+- **Curve keeps growing well past 4 hours.** A persistently broken issue's retries taper out — by the 10th consecutive failure it's only attempted every ~3 hours; by the 25th, every ~4 days — so it stops consuming queue churn on its own without any human intervention to silence it.
+- **Saturates, doesn't grow unbounded.** `consecutive_auto_pick_failure_count` is bounded at 50 (any further consecutive failures are treated as the 50th), capping the maximum delay at ~72 days. This keeps the query that computes the count predictably small without meaningfully shortening real-world retry horizons.
+- **Jitter prevents thundering herd.** A burst of correlated failures (e.g., GitHub outage) does not all retry at exactly the same wall-clock instant.
+
+### Implementation
+
+Replace `Issue#auto_pick_reenqueue_delay` (`app/models/issue.rb`):
+
+```ruby
+def auto_pick_reenqueue_delay
+  return unless paid_state == "failed"
+
+  n = consecutive_auto_pick_failure_count
+  ((n**4) + 15 + (rand(10) * (n + 1))).seconds
+end
+```
+
+The `paid_state == "failed"` guard is preserved so that re-enqueues following a successful state transition (e.g., `analyzed → new`) remain immediate.
+
+### Trade-offs
+
+**Positive**
+
+- Matches established prior art (Sidekiq's curve has been battle-tested across many Rails apps).
+- Removes the artificial 4-hour ceiling: chronically failing issues taper out naturally instead of cycling every 4 h forever.
+- Aligns the dashboard's "upcoming queue" view with reality: after a single failure the issue is back in the queue within seconds, visible to the operator.
+
+**Negative**
+
+- Slightly more queue churn for issues that fail and recover quickly (3 retries in the first ~2 minutes instead of 1 retry in 5 minutes). Acceptable because each retry still consumes a `max_concurrent_runs` slot, capping the actual blast radius.
+- Removes the previous coarse signal "this issue is in the 4-hour bucket" that some operators may have been reading off the queue. Replace with structured logging on `enqueue_eligible.issue_state_changed` (`wait_seconds` already included).
+
+### Validation
+
+- Existing specs in `spec/models/issue_spec.rb` covering `enqueue_self_if_became_auto_pick_eligible` updated to assert the new delays with `rand` stubbed to a deterministic value.
+- No production migration required — the delay is computed at re-enqueue time, so existing scheduled `ReenqueueEligibleJob` entries keep their previously-computed delays and new enqueues use the new formula.
