@@ -1842,6 +1842,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     def stub_initial_sync(trigger_result:)
       allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, { project_id: project_id }, timeout: 10)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
+      allow(workflow).to receive(:run_activity)
         .with(Activities::FetchIssuesActivity, { project_id: project_id }, timeout: 60)
         .and_return(
           { issues: [ { id: 10 } ], project_id: project_id },
@@ -1866,8 +1869,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     before do
       allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
       allow(Temporalio::Workflow).to receive(:patched).and_call_original
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-rate-limit-budget-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-auto-release-poll-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
