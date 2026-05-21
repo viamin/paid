@@ -256,12 +256,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
-    it "runs AnalyzeIssueActivity without provisioning or running an agent container" do
+    def expect_analyze_issue_followup(goal:)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateFollowupRunActivity, { agent_run_id: 42, goal: goal },
+          timeout: 30)
+    end
+
+    it "runs AnalyzeIssueActivity and queues a create_pr follow-up when context is sufficient" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
         when "Activities::AnalyzeIssueActivity"
           { agent_run_id: 42, sufficient_context: true }
+        when "Activities::CreateFollowupRunActivity"
+          { agent_run_id: 42, followup_agent_run_id: 43, goal: "create_pr" }
         else {}
         end
       end
@@ -272,10 +280,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::AnalyzeIssueActivity, { agent_run_id: 42 },
           start_to_close_timeout: anything, retry_policy: described_class::NO_RETRY)
+      expect_analyze_issue_followup(goal: "create_pr")
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ProvisionContainerActivity, anything, any_args)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RunAgentActivity, anything, any_args)
+    end
+
+    it "queues an enhance_issue follow-up when context is insufficient" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::AnalyzeIssueActivity"
+          { agent_run_id: 42, sufficient_context: false }
+        when "Activities::CreateFollowupRunActivity"
+          { agent_run_id: 42, followup_agent_run_id: 43, goal: "enhance_issue" }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect_analyze_issue_followup(goal: "enhance_issue")
     end
 
     it "uses the issue-goal timeout for AnalyzeIssueActivity" do
@@ -289,11 +315,36 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::AnalyzeIssueActivity"
           expect(opts[:start_to_close_timeout]).to eq(180)
           { agent_run_id: 42, sufficient_context: true }
+        when "Activities::CreateFollowupRunActivity"
+          { agent_run_id: 42, followup_agent_run_id: 43, goal: "create_pr" }
         else {}
         end
       end
 
       workflow.execute(input)
+    end
+
+    it "fails loudly when AnalyzeIssueActivity returns an invalid payload" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::AnalyzeIssueActivity" then {}
+        when "Activities::MarkAgentRunFailedActivity",
+          "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity",
+          "Activities::EnqueueJanitorActivity"
+          {}
+        else {}
+        end
+      end
+
+      expect {
+        workflow.execute(input)
+      }.to raise_error(Temporalio::Error::ApplicationError, /AnalyzeIssueActivity returned an invalid result payload/)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateFollowupRunActivity, anything, any_args)
     end
   end
 
