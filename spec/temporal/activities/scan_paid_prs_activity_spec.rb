@@ -8565,6 +8565,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project: project, issue: new_cycle_issue,
         source_pull_request_number: 42,
         goal: "create_pr",
+        result_commit_sha: "abc123",
         started_at: 90.minutes.ago,
         completed_at: 90.minutes.ago)
       create(:agent_run, :failed,

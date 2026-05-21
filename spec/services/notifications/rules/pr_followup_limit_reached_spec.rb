@@ -19,7 +19,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
-        latest_unsuccessful_run_at: 2.hours.ago,
+        latest_unsuccessful_run_at: 4.hours.ago,
         latest_unsuccessful_run_goal: "create_pr",
         latest_unsuccessful_run_status: "failed"
       )
@@ -50,7 +50,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
           consecutive_operational_failures: 0,
           last_meaningful_progress_at: nil,
           latest_automatic_run_at: nil,
-          latest_unsuccessful_run_at: 2.hours.ago,
+          latest_unsuccessful_run_at: 4.hours.ago,
           latest_unsuccessful_run_goal: "create_pr",
           latest_unsuccessful_run_status: "failed"
         )
@@ -155,7 +155,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
-        latest_unsuccessful_run_at: 2.hours.ago,
+        latest_unsuccessful_run_at: 4.hours.ago,
         latest_unsuccessful_run_goal: "create_pr",
         latest_unsuccessful_run_status: "failed"
       )
@@ -183,7 +183,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
-        latest_unsuccessful_run_at: 2.hours.ago,
+        latest_unsuccessful_run_at: 4.hours.ago,
         latest_unsuccessful_run_goal: "create_pr",
         latest_unsuccessful_run_status: "failed"
       )

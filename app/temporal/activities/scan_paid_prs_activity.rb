@@ -193,9 +193,7 @@ module Activities
       reason = if op_breaker
         operational_failure_reason
       elsif no_progress_stuck && retry_escalation
-        "Review-goal retry budget exhausted with no meaningful progress for " \
-          "#{NO_PROGRESS_ESCALATION_WINDOW / 1.minute} minutes " \
-          "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
+        review_goal_retry_escalation_reason(project, issue, progress_state:)
       elsif no_progress_stuck && failure_limit
         failure_streak_reason(project, issue, progress_state)
       end
@@ -1893,9 +1891,10 @@ module Activities
     # Returns [] when the retry limit is reached so no more review-goal runs
     # are queued (#1002). Callers separately decide whether that exhaustion
     # should escalate the PR or let another enabled bot continue review gating.
-    def check_paid_agent_review_status(project, issue)
+    def check_paid_agent_review_status(project, issue, progress_state: nil)
       return [] unless issue
 
+      progress_state ||= pr_progress_state(project, issue)
       current_cycle_review_runs = attempted_automatic_review_runs(project, issue)
       unfinished_run = current_cycle_review_run_in_progress(project, issue)
 
@@ -1905,14 +1904,14 @@ module Activities
                  active_run: true } ]
       end
 
-      return [] if review_goal_retry_limit_reached?(project, issue)
+      return [] if review_goal_retry_limit_reached?(project, issue, progress_state:)
 
       # When a review-goal retry is already being emitted as an explicit
       # review_goal_retry trigger, suppress the sidecar-only pending trigger
       # for mixed-bot projects so the remaining bot can keep gating the PR.
       # Paid-agent-only projects still need paid_agent_review_pending to block
       # draft exit until the retried review is posted.
-      return [] if review_goal_retry_needed?(project, issue) && !paid_agent_sole_review_method?(project)
+      return [] if review_goal_retry_needed?(project, issue, progress_state:) && !paid_agent_sole_review_method?(project)
 
       # Count all finished review attempts (including failed/timed-out) toward
       # the max_review_rounds limit, but exclude retried runs because retry
@@ -1933,10 +1932,10 @@ module Activities
       # even when the last finished review attempt post-dates the last create_pr.
       # However, when the run already posted a review on the PR, the feedback is
       # visible — retrying would post a duplicate review on every scan cycle.
-      latest_finished_run = latest_finished_automatic_review_run(project, issue)
+      latest_finished_run = latest_finished_automatic_review_run(project, issue, progress_state:)
       if latest_finished_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES) &&
           latest_finished_run.review_posted_at.blank?
-        failed_count = review_goal_consecutive_failure_count(project, issue)
+        failed_count = review_goal_consecutive_failure_count(project, issue, progress_state:)
         max_retries = review_goal_max_retries(project)
         return [ { type: "paid_agent_review_pending",
                  details: "Retrying unsuccessful review-goal run (attempt #{failed_count + 1}/#{max_retries})" } ]
