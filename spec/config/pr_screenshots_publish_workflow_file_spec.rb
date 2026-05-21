@@ -41,12 +41,13 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
 
   it "passes the PR head ref to the resolver for branch-based lookup and fallback matching" do
     expect(resolve_env).to include("HEAD_REF" => "${{ github.event.pull_request.head.ref }}")
-    expect(resolve_step.fetch("run")).to include('if pull_requests.any?')
-    expect(resolve_step.fetch("run")).to include('candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref')
+    expect(resolve_step.fetch("run")).to include('matches_head = candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref')
+    expect(resolve_step.fetch("run")).to include("matches_pull_request || matches_head")
   end
 
   it "matches PR-attached workflow runs by PR number and embedded PR head sha" do
     expect(resolve_step.fetch("run")).to include('pull_requests = candidate.fetch("pull_requests", [])')
+    expect(resolve_step.fetch("run")).to include('matches_pull_request = pull_requests.any? do |pr|')
     expect(resolve_step.fetch("run")).to include('pr["number"] == pr_number && pr.dig("head", "sha") == head_sha')
   end
 

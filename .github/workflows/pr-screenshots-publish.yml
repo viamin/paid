@@ -83,13 +83,12 @@ jobs:
 
             run = runs.find do |candidate|
               pull_requests = candidate.fetch("pull_requests", [])
-              if pull_requests.any?
-                pull_requests.any? do |pr|
-                  pr["number"] == pr_number && pr.dig("head", "sha") == head_sha
-                end
-              else
-                candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref
+              matches_pull_request = pull_requests.any? do |pr|
+                pr["number"] == pr_number && pr.dig("head", "sha") == head_sha
               end
+              matches_head = candidate["head_sha"] == head_sha && candidate["head_branch"] == head_ref
+
+              matches_pull_request || matches_head
             end
 
             break if run && run["status"] == "completed"
