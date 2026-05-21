@@ -125,6 +125,15 @@ jobs:
             "User-Agent" => "paid-pr-screenshots-publish"
           }
 
+          def write_outputs(path:, run_id: "", artifact_present: false, comment_status:, error_message: nil)
+            File.open(path, "a") do |file|
+              file.puts("run_id=#{run_id}")
+              file.puts("artifact_present=#{artifact_present}")
+              file.puts("comment_status=#{comment_status}")
+              file.puts("error_message=#{error_message}") if error_message
+            end
+          end
+
           def get_json(url, headers)
             uri = URI(url)
             request = Net::HTTP::Get.new(uri, headers)
@@ -211,7 +220,16 @@ jobs:
 
           fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
           run ||= fallback_run
-          raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
+
+          unless run
+            write_outputs(
+              path: output_path,
+              comment_status: "capture_failed",
+              error_message: "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+            )
+            warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+            exit 0
+          end
 
           jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
           capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
@@ -224,7 +242,7 @@ jobs:
             elsif run["conclusion"]
               run["conclusion"]
             else
-              raise "Could not determine screenshot capture outcome for workflow run #{run.fetch("id")}"
+              "failure"
             end
 
           artifacts = get_json(
@@ -245,11 +263,12 @@ jobs:
               "capture_failed"
             end
 
-          File.open(output_path, "a") do |file|
-            file.puts("run_id=#{run.fetch("id")}")
-            file.puts("artifact_present=#{artifact_present}")
-            file.puts("comment_status=#{comment_status}")
-          end
+          write_outputs(
+            path: output_path,
+            run_id: run.fetch("id"),
+            artifact_present: artifact_present,
+            comment_status: comment_status
+          )
           RUBY
 
       - name: Download screenshot artifacts

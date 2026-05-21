@@ -132,6 +132,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   it "searches older workflow run pages during polling and for fallback recovery when the current run is off the first page" do
+    expect(resolve_step.fetch("run")).to include("def write_outputs(path:, run_id: \"\", artifact_present: false, comment_status:, error_message: nil)")
     expect(resolve_step.fetch("run")).to include('def first_matching_run(repo, headers, pages)')
     expect(resolve_step.fetch("run")).to include('def workflow_runs_url(repo, page: 1)')
     expect(resolve_step.fetch("run")).to include('page=#{page}')
@@ -140,10 +141,19 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).to include('fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)')
   end
 
+  it "degrades unresolved or ambiguous capture runs to capture_failed instead of failing the publish job" do
+    expect(resolve_step.fetch("run")).to include('comment_status: "capture_failed"')
+    expect(resolve_step.fetch("run")).to include('warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"')
+    expect(resolve_step.fetch("run")).to include("exit 0")
+    expect(resolve_step.fetch("run")).to include('file.puts("error_message=#{error_message}") if error_message')
+    expect(resolve_step.fetch("run")).not_to include('raise "Timed out waiting for PR Screenshots capture workflow')
+    expect(resolve_step.fetch("run")).not_to include('"Could not determine screenshot capture outcome for workflow run')
+  end
+
   it "treats missing capture jobs as skipped only when detect completed cleanly and otherwise falls back to the workflow conclusion" do
     expect(resolve_step.fetch("run")).to include('elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])')
     expect(resolve_step.fetch("run")).to include('elsif run["conclusion"]')
-    expect(resolve_step.fetch("run")).to include('"Could not determine screenshot capture outcome for workflow run')
+    expect(resolve_step.fetch("run")).to include('"failure"')
   end
 
   it "passes only comment status at the final publish step and normalizes the fallback key before publishing" do
