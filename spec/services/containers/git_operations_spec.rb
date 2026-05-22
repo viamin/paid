@@ -592,6 +592,7 @@ RSpec.describe Containers::GitOperations do
       expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
       expect_not_shallow_repo(ordered: true)
       expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
+      expect_git_identity_config(ordered: true)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
@@ -725,6 +726,7 @@ RSpec.describe Containers::GitOperations do
       expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
       expect_not_shallow_repo(ordered: true)
       expect_refresh_remote_branch("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ordered: true)
+      expect_git_identity_config(ordered: true)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
