@@ -111,7 +111,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
 
     before do
-      allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [] })
+      allow(workflow).to receive(:run_activity).and_return({ automation_results: [] })
     end
 
     it "runs ScanPaidPrsActivity" do
@@ -216,7 +216,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
       allow(workflow).to receive(:run_activity)
         .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
-        .and_return({ prs_to_trigger: [] })
+        .and_return({ automation_results: [] })
 
       workflow.send(:maybe_run_non_critical_activities, 1)
 
@@ -230,7 +230,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
       allow(workflow).to receive(:run_activity)
         .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
-        .and_return({ prs_to_trigger: [] })
+        .and_return({ automation_results: [] })
 
       workflow.send(:maybe_run_non_critical_activities, 1)
 
@@ -1849,25 +1849,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
   describe "initial sync for existing PRs" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
-    let(:legacy_pr_scan_result) do
-      {
-        prs_to_trigger: [
-          {
-            issue_id: 10,
-            pr_number: 42,
-            phase: "ready",
-            triggers: [ { type: "paid_agent_review_pending" } ]
-          }
-        ],
-        automation_results: [
-          {
-            decisions: [
-              { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42 }
-            ]
-          }
-        ]
-      }
-    end
 
     def stub_initial_sync(trigger_result:)
       allow(workflow).to receive(:run_activity)
@@ -1938,7 +1919,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "queues a review run when paid_agent_review_pending is the only initial-sync PR signal" do
       execute_initial_sync(trigger_result: {
-        prs_to_trigger: [],
         automation_results: [
           {
             decisions: [
@@ -1961,7 +1941,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "does not queue a create_pr run when an existing PR has no actionable initial-sync followup" do
-      execute_initial_sync(trigger_result: { prs_to_trigger: [], automation_results: [] })
+      execute_initial_sync(trigger_result: { automation_results: [] })
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
@@ -1976,7 +1956,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return({ queued: true })
 
       execute_initial_sync(trigger_result: {
-        prs_to_trigger: [],
         automation_results: [
           {
             decisions: [
@@ -1995,7 +1974,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "skips runs when automation results are all noop" do
       execute_initial_sync(trigger_result: {
-        prs_to_trigger: [],
         automation_results: [
           {
             decisions: [
@@ -2050,9 +2028,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "queues no runs when an initial PR scan returns no actionable triggers" do
-      allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [], automation_results: [] })
+      allow(workflow).to receive(:run_activity).and_return({ automation_results: [] })
 
-      workflow.send(:handle_pr_scan_results, { prs_to_trigger: [], automation_results: [] }, project_id)
+      workflow.send(:handle_pr_scan_results, { automation_results: [] }, project_id)
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, anything, timeout: anything)

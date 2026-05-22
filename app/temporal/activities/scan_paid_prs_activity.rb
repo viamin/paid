@@ -142,6 +142,9 @@ module Activities
       )
 
       {
+        # prs_to_trigger is always empty: the legacy trigger-routing path was
+        # removed. Retained for backward compatibility with in-flight Temporal
+        # workflow histories that expect this key. Remove in a follow-up.
         prs_to_trigger: [],
         automation_results: automation_results,
         pr_issue_ids: paid_prs.map(&:id),
@@ -1095,13 +1098,6 @@ module Activities
         minutes = seconds / 1.minute
         "#{minutes} #{'minute'.pluralize(minutes)}"
       end
-    end
-
-    def review_goal_retry_trigger?(project, issue, progress_state:)
-      retry_limit_reached = review_goal_retry_limit_reached?(project, issue, progress_state:)
-      return true unless retry_limit_reached
-
-      !no_progress_stuck?(project, issue, progress_state)
     end
 
     def followup_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))

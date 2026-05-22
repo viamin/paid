@@ -412,6 +412,10 @@ module Workflows
       end
     end
 
+    # Dead code: the trigger-based routing below was superseded by
+    # Automation::WorkflowDecisionExecutor. Retained temporarily because
+    # in-flight Temporal workflow histories may still reference this method.
+    # Remove in a follow-up once all in-flight histories have rolled forward.
     def handle_pr_trigger(project_id, pr_data)
       trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
 
