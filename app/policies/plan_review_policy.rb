@@ -6,7 +6,7 @@ class PlanReviewPolicy < ApplicationPolicy
   end
 
   def manage?
-    user.present?
+    ProjectPolicy.new(user, record.project).show?
   end
 
   def approve?
@@ -23,7 +23,7 @@ class PlanReviewPolicy < ApplicationPolicy
 
   class Scope < ApplicationPolicy::Scope
     def resolve
-      scope
+      scope.joins(:project).merge(ProjectPolicy::Scope.new(user, Project).resolve)
     end
   end
 end

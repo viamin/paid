@@ -19,7 +19,7 @@
               <h2 class="text-lg font-semibold text-gray-900">
                 <%= link_to review.project.full_name, review.project, class: "text-indigo-600 hover:text-indigo-800" %>
                 —
-                <%= link_to "##{review.issue.github_issue_number}", review.issue.github_url, class: "text-indigo-600 hover:text-indigo-800", target: "_blank" %>
+                <%= link_to "##{review.issue.github_number}", review.issue.github_url, class: "text-indigo-600 hover:text-indigo-800", target: "_blank" %>
                 <%= review.issue.title %>
               </h2>
               <p class="mt-1 text-xs text-gray-500">
