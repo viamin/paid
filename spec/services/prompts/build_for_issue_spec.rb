@@ -87,6 +87,15 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("bundle exec rubocop")
     end
 
+    it "includes repository automation conventions guidance" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).to include("## Repository Automation Conventions")
+      expect(prompt).to include("Commit subjects: Guidance")
+      expect(prompt).to include("PR titles: Guidance")
+      expect(prompt).to include("Depends on #123")
+    end
+
     context "when project responds to detected_language" do
       let(:project_with_language) do
         OpenStruct.new(

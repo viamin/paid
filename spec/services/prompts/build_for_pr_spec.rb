@@ -158,6 +158,13 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("bundle exec rspec")
     end
 
+    it "includes repository automation conventions guidance" do
+      expect(prompt).to include("## Repository Automation Conventions")
+      expect(prompt).to include("Commit subjects:")
+      expect(prompt).to include("PR titles:")
+      expect(prompt).to include("Issue and comment dependencies:")
+    end
+
     it "omits merge conflicts section when rebase succeeded" do
       expect(prompt).not_to include("Merge Conflicts")
     end

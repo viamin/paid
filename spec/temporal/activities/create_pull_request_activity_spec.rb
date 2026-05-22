@@ -122,6 +122,27 @@ RSpec.describe Activities::CreatePullRequestActivity do
       )
     end
 
+    it "enforces allowed PR title types for release-sensitive repos" do
+      create(:project_convention_override,
+        project: project,
+        key: "pr_title_style",
+        value: {
+          "type" => "conventional_commits",
+          "required" => true,
+          "default_type" => "feat",
+          "allowed_types" => %w[feat fix],
+          "significant_for_release" => true
+        })
+      issue.update!(title: "docs: Update release notes")
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        anything,
+        hash_including(title: "feat: Update release notes")
+      )
+    end
+
     it "checks for an existing PR before creating a new one" do
       activity.execute(agent_run_id: agent_run.id)
 

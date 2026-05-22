@@ -2905,7 +2905,8 @@ module Activities
         Prompts::Render.interpolate(fallback_template, variables)
       end
 
-      append_missing_issue_goal_runtime_instructions(rendered, slug, variables)
+      prompt = append_missing_issue_goal_runtime_instructions(rendered, slug, variables)
+      ProjectConventions::InjectIntoPrompt.call(prompt: prompt, project: agent_run.project)
     end
 
     def maybe_assign_ab_test_variant(agent_run, slug, rendered, vars)
