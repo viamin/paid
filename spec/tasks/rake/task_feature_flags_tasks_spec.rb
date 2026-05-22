@@ -4,6 +4,16 @@ require "rails_helper"
 require "rake"
 
 RSpec.describe Rake::Task do
+  let(:test_flag) { :test_feature_flag }
+  let(:test_definition) do
+    FeatureFlags::Definition.new(
+      name: :test_feature_flag,
+      owner: "test",
+      intent: "Test flag",
+      rollout_plan: "None",
+      cleanup_criteria: "None"
+    )
+  end
   let(:enable_task) { described_class["feature_flags:enable"] }
   let(:disable_task) { described_class["feature_flags:disable"] }
   let(:enable_percentage_of_actors_task) { described_class["feature_flags:enable_percentage_of_actors"] }
@@ -21,8 +31,6 @@ RSpec.describe Rake::Task do
     ENV["PROJECT_ID"] = original_project_id
   end
 
-  # feature_flags:{enable,disable,list} each print a status line; silence
-  # those so rspec output stays free of task side-chatter.
   around { |example| SilenceStreams.call(:stdout) { example.run } }
 
   before do
@@ -34,6 +42,9 @@ RSpec.describe Rake::Task do
     list_task.reenable
     status_task.reenable
     FeatureFlags.flipper.features.each(&:remove)
+    stub_const("#{FeatureFlags}::DEFINITIONS", {
+      test_feature_flag: test_definition
+    }.freeze)
   end
 
   context "with feature_flags tasks loaded" do
@@ -42,10 +53,10 @@ RSpec.describe Rake::Task do
       duplicate_repo_project = create(:project, owner: project.owner, repo: project.repo)
       ENV["PROJECT_ID"] = project.id.to_s
 
-      enable_task.invoke("explicit_pr_automation_decisions")
+      enable_task.invoke("test_feature_flag")
 
-      expect(FeatureFlags.enabled?(:explicit_pr_automation_decisions, project: project)).to be(true)
-      expect(FeatureFlags.enabled?(:explicit_pr_automation_decisions, project: duplicate_repo_project)).to be(false)
+      expect(FeatureFlags.enabled?(:test_feature_flag, project: project)).to be(true)
+      expect(FeatureFlags.enabled?(:test_feature_flag, project: duplicate_repo_project)).to be(false)
     end
 
     it "rejects ambiguous owner/repo selectors" do
@@ -60,7 +71,7 @@ RSpec.describe Rake::Task do
       ENV["PROJECT_ID"] = "owner/repo"
 
       expect {
-        enable_task.invoke("explicit_pr_automation_decisions")
+        enable_task.invoke("test_feature_flag")
       }.to raise_error(ArgumentError, "PROJECT_ID must be an integer")
     end
 
@@ -73,24 +84,24 @@ RSpec.describe Rake::Task do
     end
 
     it "configures percentage-of-actors rollouts" do
-      enable_percentage_of_actors_task.invoke("explicit_pr_automation_decisions", "25")
+      enable_percentage_of_actors_task.invoke("test_feature_flag", "25")
 
-      expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_actors]).to eq(25)
+      expect(FeatureFlags.rollout_status(:test_feature_flag)[:percentage_of_actors]).to eq(25)
     end
 
     it "configures percentage-of-time rollouts" do
-      enable_percentage_of_time_task.invoke("explicit_pr_automation_decisions", "10")
+      enable_percentage_of_time_task.invoke("test_feature_flag", "10")
 
-      expect(FeatureFlags.rollout_status(:explicit_pr_automation_decisions)[:percentage_of_time]).to eq(10)
+      expect(FeatureFlags.rollout_status(:test_feature_flag)[:percentage_of_time]).to eq(10)
     end
 
     it "prints full rollout status" do
       ENV["PROJECT_ID"] = nil
-      FeatureFlags.enable_percentage_of_actors(:explicit_pr_automation_decisions, 25)
+      FeatureFlags.enable_percentage_of_actors(:test_feature_flag, 25)
 
       expect {
         SilenceStreams.call(:stdout) do
-          status_task.invoke("explicit_pr_automation_decisions")
+          status_task.invoke("test_feature_flag")
         end
       }.not_to raise_error
     end

@@ -12,10 +12,9 @@ module Activities
       project_id = input[:project_id]
       issue_ids = input[:issue_ids]
       project = Project.find(project_id)
-      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
 
       results = issue_ids.filter_map do |issue_id|
-        evaluate_issue(project, issue_id, explicit_pr_decisions:)
+        evaluate_issue(project, issue_id)
       end
 
       { results: results }
@@ -23,9 +22,9 @@ module Activities
 
     private
 
-    def evaluate_issue(project, issue_id, explicit_pr_decisions:)
+    def evaluate_issue(project, issue_id)
       issue = project.issues.find(issue_id)
-      Automation::IssueEvaluation.call(project:, issue:, explicit_pr_decisions:, logger:)
+      Automation::IssueEvaluation.call(project:, issue:, logger:)
     rescue ActiveRecord::RecordNotFound => e
       logger.warn(
         message: "evaluate_issues.issue_not_found",

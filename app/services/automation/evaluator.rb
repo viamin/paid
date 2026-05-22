@@ -2,7 +2,7 @@
 
 module Automation
   class Evaluator
-    def self.for(record, explicit_pr_decisions: false)
+    def self.for(record)
       evaluator_class =
         if record.is_pull_request?
           PullRequestEvaluator
@@ -10,7 +10,7 @@ module Automation
           IssueEvaluator
         end
 
-      evaluator_class.new(record:, explicit_pr_decisions:)
+      evaluator_class.new(record:)
     end
   end
 end

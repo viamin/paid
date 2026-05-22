@@ -108,11 +108,11 @@ RSpec.describe TenantSetting do
       setting = build(:tenant_setting,
         runner_preferences: { "model_preferences" => { "claude" => "sonnet" } },
         guardrails: { "max_concurrent_runs" => 5 },
-        features: { "explicit_pr_automation_decisions" => true })
+        features: { "test_feature" => true })
 
       expect(setting.configuration["runner_preferences"]["model_preferences"]["claude"]).to eq("sonnet")
       expect(setting.configuration["guardrails"]["max_concurrent_runs"]).to eq(5)
-      expect(setting.configuration["features"]["explicit_pr_automation_decisions"]).to be(true)
+      expect(setting.configuration["features"]["test_feature"]).to be(true)
     end
   end
 

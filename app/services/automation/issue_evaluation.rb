@@ -2,19 +2,18 @@
 
 module Automation
   class IssueEvaluation
-    def self.call(project:, issue:, explicit_pr_decisions:, logger:)
-      new(project:, issue:, explicit_pr_decisions:, logger:).call
+    def self.call(project:, issue:, logger:)
+      new(project:, issue:, logger:).call
     end
 
-    def initialize(project:, issue:, explicit_pr_decisions:, logger:)
+    def initialize(project:, issue:, logger:)
       @project = project
       @issue = issue
-      @explicit_pr_decisions = explicit_pr_decisions
       @logger = logger
     end
 
     def call
-      result = Automation::Evaluator.for(issue, explicit_pr_decisions: explicit_pr_decisions).call
+      result = Automation::Evaluator.for(issue).call
 
       update_paid_state!(result)
 
@@ -30,7 +29,7 @@ module Automation
 
     private
 
-    attr_reader :project, :issue, :explicit_pr_decisions, :logger
+    attr_reader :project, :issue, :logger
 
     def update_paid_state!(result)
       first_decision = result.decisions.reject { |decision| decision.type == "noop" }.first

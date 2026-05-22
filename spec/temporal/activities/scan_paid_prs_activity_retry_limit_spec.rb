@@ -5,15 +5,25 @@ require "rails_helper"
 RSpec.describe Activities::ScanPaidPrsActivity do
   describe "#scan_pr retry-limit phase handling", :no_db do
     let(:activity) { described_class.new }
-    let(:project) { instance_double(ProjectDouble) }
+    let(:project) { instance_double(ProjectDouble, owner_reviewer_login: "viamin") }
     let(:client) { instance_double(GithubClientDouble) }
-    let(:progress_state) { instance_double(ProgressStateDouble, latest_unsuccessful_review?: false) }
+    let(:progress_state) do
+      instance_double(
+        ProgressStateDouble,
+        latest_unsuccessful_review?: false,
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0,
+        last_meaningful_progress_at: nil
+      )
+    end
     let(:issue) do
       instance_double(IssueDouble,
         pr_review_phase: phase,
         id: 123,
         github_number: 42,
         github_creator_login: "paid-bot",
+        draft_review_count: 0,
+        pr_followup_count: 0,
         review_goal_retry_count: 0,
         project: project)
     end
@@ -26,6 +36,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         def escalation_worthy?(limit:); end
         def stuck?(limit:, stale_after:); end
         def latest_unsuccessful_run_at; end
+        def consecutive_unsuccessful_automatic_runs; end
+        def consecutive_operational_failures; end
+        def last_meaningful_progress_at; end
       end)
       stub_const("IssueDouble", Class.new)
       stub_const("PrDataDouble", Class.new do
@@ -57,7 +70,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:fetch_pr_data)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
       allow(activity).to receive(:focus_for).and_return("review_feedback")
-      allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
     end
 
     context "when a restarted PR already has an active create_pr run" do
@@ -75,14 +87,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
         allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:scan_draft_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: true)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(:draft_scan)
 
         result = activity.send(:scan_pr, project, client, issue)
 
         expect(result).to eq(:draft_scan)
         expect(activity).to have_received(:record_focus_resolution).with(project, client, issue)
-        expect(activity).not_to have_received(:active_run_exists?)
         expect(activity).to have_received(:backfill_review_goal_retry_reset_at!).with(issue)
       end
     end
@@ -109,7 +120,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(progress_state).to receive(:stuck?).and_return(true)
         allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:scan_draft_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: true)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(:draft_scan)
 
         result = activity.send(:scan_pr, project, client, issue)
@@ -139,7 +150,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(progress_state).to receive(:stuck?).and_return(true)
         allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:scan_draft_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: true)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(:draft_scan)
 
         activity.send(:scan_pr, project, client, issue)
@@ -163,7 +174,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       def stub_restarted_pr_scan(activity, project, client, issue, pr_data, progress_state)
-        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
         allow(activity).to receive(:backfill_review_goal_retry_reset_at!).with(issue)
         allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue).and_return(true)
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
@@ -177,7 +187,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
         allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:scan_draft_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: false)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(:draft_scan)
       end
 
@@ -185,10 +195,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_restarted_pr_scan(activity, project, client, issue, pr_data, progress_state)
 
         result = activity.send(:scan_pr, project, client, issue)
+        signals = activity.send(:build_lifecycle_signals, project, issue)
 
         expect(result).to eq(:draft_scan)
         expect(activity).to have_received(:backfill_review_goal_retry_reset_at!).with(issue).ordered
-        expect(activity).to have_received(:failure_streak_limit_reached?).with(project, issue).ordered
+        expect(signals[:failure_streak_limit_reached]).to be(false)
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end
@@ -206,7 +217,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
         allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(true)
         allow(activity).to receive(:scan_draft_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: true)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(:draft_scan)
 
         result = activity.send(:scan_pr, project, client, issue)
@@ -246,8 +257,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_data: pr_data,
           checks: [],
           mergeable: true,
-          progress_state: progress_state,
-          explicit_pr_decisions: true
+          progress_state: progress_state
         ).and_return(:ready_scan)
       end
 
@@ -311,28 +321,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           updated_at: Time.current)
       end
 
-      it "dismisses before any retry-limit escalation can fire" do
-        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
+      it "proceeds to escalated-phase scanning instead of early-returning a dismissal" do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
-        allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(true)
-        allow(activity).to receive(:dismiss_escalation_trigger).with(issue, draft: false).and_return(:dismissed)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_escalated_pr)
+          .with(project, client, issue, pr_data: pr_data)
+          .and_return(:escalated_scan)
 
         result = activity.send(:scan_pr, project, client, issue)
 
-        expect(result).to eq(:dismissed)
+        expect(result).to eq(:escalated_scan)
         expect(activity).not_to have_received(:escalate_trigger)
       end
 
-      it "dismisses before the operational failure breaker can re-escalate" do
-        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
+      it "proceeds to escalated-phase scanning even with operational failure breaker active" do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
-        allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(true)
         allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
-        allow(activity).to receive(:dismiss_escalation_trigger).with(issue, draft: false).and_return(:dismissed)
+        allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
+        allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
+        allow(activity).to receive(:scan_escalated_pr)
+          .with(project, client, issue, pr_data: pr_data)
+          .and_return(:escalated_scan)
 
         result = activity.send(:scan_pr, project, client, issue)
 
-        expect(result).to eq(:dismissed)
+        expect(result).to eq(:escalated_scan)
         expect(activity).not_to have_received(:escalate_trigger)
       end
     end
@@ -360,7 +374,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
         allow(activity).to receive(:maybe_restart_draft).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:scan_ready_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: true)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(scan_result)
 
         result = activity.send(:scan_pr, project, client, issue)
@@ -379,26 +393,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           updated_at: Time.current)
       end
 
-      it "preserves legacy escalate_to_owner when explicit decisions are disabled" do
-        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
-        allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
-        allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
-        allow(activity).to receive(:operational_failure_reason).and_return("stale operational failures")
-        allow(activity).to receive(:escalate_trigger).with(issue, reason: "stale operational failures").and_return(:escalated)
-
-        result = activity.send(:scan_pr, project, client, issue)
-
-        expect(result).to eq(:escalated)
-      end
-
-      it "keeps operational failures lifecycle-only when explicit decisions are enabled" do
-        allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(true)
+      it "defers operational failure handling to lifecycle signals" do
         allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
         allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(true)
         allow(activity).to receive(:review_goal_retry_needed?).with(project, issue, progress_state:).and_return(false)
         allow(activity).to receive(:maybe_advance_to_ready).with(project, issue, pr_data).and_return(false)
         allow(activity).to receive(:scan_draft_pr)
-          .with(project, client, issue, pr_data: pr_data, explicit_pr_decisions: true)
+          .with(project, client, issue, pr_data: pr_data)
           .and_return(:draft_scan)
 
         result = activity.send(:scan_pr, project, client, issue)
@@ -718,7 +719,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         id: 7,
         auto_scan_prs: true,
         account: account,
-        github_token: github_token
+        github_token: github_token,
+        max_draft_review_rounds: 3,
+        owner_reviewer_login: "viamin",
+        review_enabled?: false
       )
     end
     let(:account) { instance_double(ExecuteCacheAccountStub, id: 11, tenant_setting: tenant_setting) }
@@ -730,12 +734,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         ExecuteCacheIssueStub,
         id: 123,
         github_number: 42,
-        project: project
+        is_pull_request?: true,
+        project: project,
+        pr_review_phase: "draft",
+        draft_review_count: 0,
+        review_goal_retry_count: 0,
+        pr_followup_count: 0,
+        escalated_phase?: false
       )
     end
     let(:first_progress_state) do
       instance_double(
         ExecuteCacheProgressStateStub,
+        latest_unsuccessful_review?: false,
+        escalation_worthy?: false,
+        stuck?: false,
         consecutive_unsuccessful_automatic_runs: 1,
         consecutive_operational_failures: 0,
         last_meaningful_progress_at: nil,
@@ -748,6 +761,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     let(:second_progress_state) do
       instance_double(
         ExecuteCacheProgressStateStub,
+        latest_unsuccessful_review?: true,
+        escalation_worthy?: true,
+        stuck?: true,
         consecutive_unsuccessful_automatic_runs: 3,
         consecutive_operational_failures: 2,
         last_meaningful_progress_at: nil,
@@ -778,7 +794,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:scan_pr).with(project, github_client, issue).and_return(nil)
       allow(issue).to receive(:update_column).with(:last_pr_scan_at, kind_of(Time))
       allow(activity).to receive(:pending_review_state).with(issue, nil).and_return(nil)
-      allow(FeatureFlags).to receive(:explicit_pr_automation_decisions?).with(project:).and_return(false)
+      allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
       allow(activity).to receive(:logger).and_return(instance_double(Logger, info: true, warn: true))
       allow(PullRequests::ProgressState).to receive(:call)
         .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
@@ -912,6 +928,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         escalation_reason: nil,
         consecutive_unsuccessful_automatic_runs: 3,
         review_goal_retry_count: 1
+      )
+    end
+
+    it "prefers the live GitHub draft state when dismissal is evaluated from lifecycle signals" do
+      allow(activity).to receive(:pr_progress_state).with(project, issue).and_return(progress_state)
+      allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
+        .with(project, issue, progress_state:)
+        .and_return(false)
+      allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
+      allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(true)
+
+      activity.instance_variable_set(:@live_pr_states, { issue.id => { draft: true } })
+
+      signals = activity.send(:build_lifecycle_signals, project, issue)
+
+      expect(signals).to include(
+        escalation_dismissed: true,
+        draft: true
       )
     end
   end
