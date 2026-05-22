@@ -345,29 +345,33 @@ RSpec.describe Issue do
       )
     end
 
-    it "backs off failed issue retries to avoid immediate hot loops" do
+    it "applies a short Sidekiq-style backoff after the first failure" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
       create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      allow(issue).to receive(:rand).with(10).and_return(0)
 
+      # n = max(1 - 1, 0) = 0; delay = 0^4 + 15 + 0 * 1 = 15 seconds.
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(5.minutes.from_now)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
       end
     end
 
-    it "increases failed issue retry backoff for consecutive failures" do
+    it "grows the backoff polynomially across consecutive failures" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
       2.times do
         create(:agent_run, :timeout, project: project, issue: issue, goal: "create_pr", auto_pick: true)
       end
+      allow(issue).to receive(:rand).with(10).and_return(0)
 
+      # n = max(2 - 1, 0) = 1; delay = 1^4 + 15 + 0 * 2 = 16 seconds.
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.minutes.from_now)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(16.seconds.from_now)
       end
     end
 
@@ -377,11 +381,12 @@ RSpec.describe Issue do
       2.times do
         create(:agent_run, :no_output, project: project, issue: issue, goal: "create_pr", auto_pick: true)
       end
+      allow(issue).to receive(:rand).with(10).and_return(0)
 
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.minutes.from_now)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(16.seconds.from_now)
       end
     end
 
