@@ -351,5 +351,74 @@ RSpec.describe Knowledge::CollectorRunner do
         expect(extra.reload.status).to eq("active")
       end
     end
+
+    context "when running a subset of collectors" do
+      let(:other_collector_class) do
+        Class.new(Knowledge::BaseCollector) do
+          def collect
+            [
+              {
+                artifact_type: "other_artifact",
+                scope_path: "README.md",
+                identifier: "readme",
+                content: "docs",
+                metadata: {},
+                chunks: []
+              }
+            ]
+          end
+
+          def collector_type
+            "other_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("test_collector", test_collector_class)
+        described_class.register("other_collector", other_collector_class)
+      end
+
+      it "runs only the requested collector types" do
+        result = described_class.call(
+          project: project,
+          commit_sha: commit_sha,
+          options: { collector_types: [ "test_collector" ] }
+        )
+
+        expect(result[:results]).to contain_exactly(
+          hash_including(collector_type: "test_collector", status: "completed")
+        )
+        expect(CollectorRun.pluck(:collector_type)).to contain_exactly("test_collector")
+      end
+
+      it "memoizes the full collector registry for repeated access" do
+        runner = described_class.new(project: project, commit_sha: commit_sha)
+
+        first_registry = runner.send(:collector_classes)
+        expect(runner.send(:collector_classes)).to be(first_registry)
+      end
+
+      it "does not stale artifacts from non-selected collectors" do
+        old_sha = "b" * 40
+        new_sha = "c" * 40
+
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+
+        old_version = ProjectVersion.find_by!(project:, commit_sha: old_sha)
+        other_run = CollectorRun.find_by!(project_version: old_version, collector_type: "other_collector")
+        other_artifact = KnowledgeArtifact.find_by!(collector_run: other_run, identifier: "readme")
+
+        described_class.call(
+          project: project,
+          commit_sha: new_sha,
+          committed_at: 1.hour.ago,
+          options: { collector_types: [ "test_collector" ] }
+        )
+
+        expect(other_artifact.reload.status).to eq("active")
+      end
+    end
   end
 end
