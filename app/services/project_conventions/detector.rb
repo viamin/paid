@@ -2,10 +2,8 @@
 
 module ProjectConventions
   class Detector
-    RELEASE_PLEASE_CONFIG_PATHS = %w[
-      release-please-config.json
-      .release-please-manifest.json
-    ].freeze
+    RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json"
+    RELEASE_PLEASE_MANIFEST_PATH = ".release-please-manifest.json"
     COMMITLINT_PATHS = %w[
       .commitlintrc
       .commitlintrc.json
@@ -15,7 +13,6 @@ module ProjectConventions
       commitlint.config.cjs
       commitlint.config.mjs
     ].freeze
-
     def self.call(...)
       new(...).call
     end
@@ -42,9 +39,11 @@ module ProjectConventions
     attr_reader :repo_path
 
     def release_please_detections
-      matches = RELEASE_PLEASE_CONFIG_PATHS.filter { |path| repo_file?(path) }
+      config_path = RELEASE_PLEASE_CONFIG_PATH if repo_file?(RELEASE_PLEASE_CONFIG_PATH)
+      manifest_path = RELEASE_PLEASE_MANIFEST_PATH if repo_file?(RELEASE_PLEASE_MANIFEST_PATH)
       workflow_matches = github_workflow_matches(/release-please/i)
-      evidence_paths = matches + workflow_matches.map { |match| match[:path] }
+
+      evidence_paths = [ config_path, manifest_path ].compact + workflow_matches.map { |m| m[:path] }
       return [] if evidence_paths.empty?
 
       evidence = {
@@ -52,22 +51,41 @@ module ProjectConventions
         "signals" => [ "release_please" ]
       }
 
+      config = parse_json_file(config_path) if config_path
+      manifest = parse_json_file(manifest_path) if manifest_path
+
+      packages = extract_packages(config)
+      changelog_sections = extract_changelog_sections(config)
+      allowed_types = changelog_sections.filter_map { |s| s["type"] }
+      hidden_types = changelog_sections.select { |s| s["hidden"] == true }.filter_map { |s| s["type"] }
+
+      release_value = {
+        "type" => "release_please",
+        "required" => true
+      }
+      release_value["packages"] = packages if config.is_a?(Hash)
+      release_value["changelog_sections"] = changelog_sections if changelog_sections.any?
+      release_value["manifest_present"] = true if manifest_path
+      release_value["manifest_versions"] = manifest if manifest && manifest.is_a?(Hash) && manifest.any?
+
+      commit_value = {
+        "type" => "conventional_commits",
+        "required" => true,
+        "default_type" => "feat"
+      }
+      commit_value["allowed_types"] = allowed_types if allowed_types.any?
+      commit_value["hidden_types"] = hidden_types if hidden_types.any?
+
+      pr_title_value = {
+        "type" => "conventional_commits",
+        "required" => true,
+        "significant_for_release" => true
+      }
+
       [
-        build_detection(
-          key: "release_automation",
-          value: { "required" => true, "type" => "release_please" },
-          evidence: evidence
-        ),
-        build_detection(
-          key: "commit_style",
-          value: { "default_type" => "feat", "required" => true, "type" => "conventional_commits" },
-          evidence: evidence
-        ),
-        build_detection(
-          key: "pr_title_style",
-          value: { "required" => true, "type" => "conventional_commits" },
-          evidence: evidence
-        )
+        build_detection(key: "release_automation", value: release_value, evidence:),
+        build_detection(key: "commit_style", value: commit_value, evidence:),
+        build_detection(key: "pr_title_style", value: pr_title_value, evidence:)
       ]
     end
 
@@ -77,10 +95,19 @@ module ProjectConventions
       matches << "package.json" if package_json_match
       return [] if matches.empty?
 
+      value = {
+        "type" => "conventional_commits",
+        "required" => true,
+        "default_type" => "feat"
+      }
+
+      allowed_types = infer_commitlint_types
+      value["allowed_types"] = allowed_types if allowed_types
+
       [
         build_detection(
           key: "commit_style",
-          value: { "default_type" => "feat", "required" => true, "type" => "conventional_commits" },
+          value:,
           evidence: {
             "paths" => matches.uniq,
             "signals" => [ "commitlint" ]
@@ -153,6 +180,58 @@ module ProjectConventions
       )
     end
 
+    def extract_packages(config)
+      return [] unless config.is_a?(Hash)
+
+      packages_hash = config["packages"]
+      if packages_hash.is_a?(Hash)
+        return packages_hash.filter_map do |path, pkg_config|
+          next unless pkg_config.is_a?(Hash)
+
+          entry = { "path" => path }
+          entry["release_type"] = pkg_config["release-type"] if pkg_config["release-type"]
+          entry
+        end
+      end
+
+      root_package_entry(config)
+    end
+
+    def extract_changelog_sections(config)
+      return [] unless config.is_a?(Hash)
+
+      sections = config["changelog-sections"]
+      return [] unless sections.is_a?(Array)
+
+      sections.filter_map do |section|
+        next unless section.is_a?(Hash)
+        next if section["type"].nil?
+
+        entry = { "type" => section["type"] }
+        entry["section"] = section["section"] if section["section"]
+        entry["hidden"] = section["hidden"] if section.key?("hidden")
+        entry
+      end
+    end
+
+    def infer_commitlint_types
+      commitlintrc = find_commitlintrc
+      config =
+        if commitlintrc
+          parse_json_file(commitlintrc)
+        elsif package_json_commitlint_match
+          parse_package_json_commitlint
+        end
+
+      return unless config.is_a?(Hash)
+
+      allowed_types_from_commitlint_config(config)
+    end
+
+    def find_commitlintrc
+      COMMITLINT_PATHS.find { |path| repo_file?(path) && path.end_with?(".json") }
+    end
+
     def build_detection(key:, value:, evidence:, confidence: 1.0)
       {
         category: Catalog.category_for(key),
@@ -173,9 +252,17 @@ module ProjectConventions
 
     def merge_detection_group(items)
       items.reduce do |merged, item|
+        merged_value = merged[:value].deep_merge(item[:value]) do |_key, left_val, right_val|
+          if left_val.is_a?(Array) && right_val.is_a?(Array)
+            left_val | right_val
+          else
+            right_val
+          end
+        end
         merged.merge(
           confidence: [ merged[:confidence], item[:confidence] ].max,
-          evidence: merge_evidence(merged[:evidence], item[:evidence])
+          evidence: merge_evidence(merged[:evidence], item[:evidence]),
+          value: merged_value
         )
       end
     end
@@ -190,11 +277,35 @@ module ProjectConventions
     def package_json_commitlint_match
       return false unless repo_file?("package.json")
 
-      package_json = JSON.parse(read_file("package.json"))
+      package_json = parse_json_file("package.json")
+      return false unless package_json.is_a?(Hash)
+
       package_json.key?("commitlint") ||
         package_json.fetch("devDependencies", {}).key?("@commitlint/config-conventional")
-    rescue JSON::ParserError
-      false
+    end
+
+    def root_package_entry(config)
+      return [] unless config["release-type"]
+
+      [ { "path" => ".", "release_type" => config["release-type"] } ]
+    end
+
+    def parse_package_json_commitlint
+      package_json = parse_json_file("package.json")
+      return unless package_json.is_a?(Hash)
+
+      package_json["commitlint"]
+    end
+
+    def allowed_types_from_commitlint_config(config)
+      rules = config.dig("rules")
+      return unless rules.is_a?(Hash)
+
+      type_enum = rules.dig("type-enum")
+      return unless type_enum.is_a?(Array)
+
+      allowed = type_enum[2]
+      allowed if allowed.is_a?(Array) && allowed.any?
     end
 
     def github_workflow_matches(pattern)
@@ -211,6 +322,14 @@ module ProjectConventions
       paths.filter do |path|
         repo_file?(path) && read_file(path).match?(pattern)
       end
+    end
+
+    def parse_json_file(relative_path)
+      return nil unless repo_file?(relative_path)
+
+      JSON.parse(read_file(relative_path))
+    rescue JSON::ParserError
+      nil
     end
 
     def repo_file?(relative_path)
