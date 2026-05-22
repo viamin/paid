@@ -103,6 +103,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     %w[
       .github/workflows/ci.yml
       .github/workflows/pr-screenshots.yml
+      .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
       .github/workflows/test_prof.yml
       .github/workflows/ephemeral_tests.yml
@@ -122,6 +123,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     %w[
       .github/workflows/ci.yml
       .github/workflows/pr-screenshots.yml
+      .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
       .github/workflows/test_prof.yml
       .github/workflows/ephemeral_tests.yml

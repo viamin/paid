@@ -59,6 +59,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   it "boots Rails in test mode against the workflow postgres service before publishing" do
+    expect(job).to include("runs-on" => "ubuntu-24.04")
     expect(job.fetch("services").fetch("postgres")).to include(
       "image" => "postgres:16.14",
       "ports" => [ "5432:5432" ]
@@ -76,18 +77,34 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
       "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn",
       "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache",
       "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
-      "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright",
-      "RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}"
+      "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
     )
   end
 
-  it "normalizes the fallback key and prepares the schema-only test database before publishing" do
+  it "normalizes the fallback key before publishing" do
     expect(step("Normalize test master key")).to include("if" => "env.RAILS_TEST_KEY == ''")
+    expect(step("Normalize test master key").fetch("env")).to include(
+      "RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}"
+    )
     expect(step("Normalize test master key").fetch("run")).to include(
       'echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"'
     )
+  end
+
+  it "installs JavaScript dependencies and prepares the schema-only test database before publishing" do
     expect(step("Prepare workspace cache directories").fetch("run")).to eq(
       'mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"'
+    )
+    expect(step("Set up Node").fetch("with")).to include(
+      "node-version-file" => ".tool-versions",
+      "cache" => "yarn"
+    )
+    expect(step("Enable Corepack").fetch("run")).to eq("corepack enable")
+    expect(step("Install JavaScript dependencies").fetch("run")).to include(
+      'mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"'
+    )
+    expect(step("Install JavaScript dependencies").fetch("run")).to include(
+      "yarn install --frozen-lockfile && bin/yarn-postinstall"
     )
     expect(step("Set up database").fetch("run")).to eq("bin/rails db:create db:schema:load")
     expect(step("Bootstrap test defaults").fetch("run")).to eq("bin/rails ci:bootstrap_test_defaults")
