@@ -82,6 +82,7 @@ module Workflows
 
       context_result = {}
       tasks = []
+      reviewed_tasks = []
       created_issues = []
       prompt_source = nil
       policy_metadata = {}
@@ -113,6 +114,8 @@ module Workflows
       prompt_source = decompose_result[:prompt_source]
       policy_metadata = decomposition_policy_metadata(decompose_result)
 
+      reviewed_tasks = tasks
+
       # Review signal gate: wait for approval before creating sub-issues
       if tasks.present? && tasks.size > 1
         review_outcome = wait_for_plan_review(
@@ -125,11 +128,13 @@ module Workflows
           policy_metadata: policy_metadata,
           timeout_hours: timeout_hours
         )
+
+        reviewed_tasks = resolve_reviewed_tasks(tasks, review_outcome)
       end
 
       # Step 3: Create sub-issues from the plan
-      if tasks.present? && tasks.size > 1 && review_outcome != :rejected
-        sub_tasks = resolve_plan_tasks(tasks, review_outcome)
+      if reviewed_tasks.present? && reviewed_tasks.size > 1 && review_outcome != :rejected
+        sub_tasks = build_sub_tasks(reviewed_tasks)
 
         decision_step = "create_sub_issues"
         create_result = run_activity(
@@ -153,7 +158,7 @@ module Workflows
         {
           project_id: project_id,
           issue_id: issue_id,
-          task_count: tasks.size
+          task_count: reviewed_tasks.size
         },
         timeout: 30
       )
@@ -165,10 +170,10 @@ module Workflows
         workflow_name: self.class.name,
         workflow_id: workflow_id,
         decision_type: "planning_outcome",
-        outcome: self.class.planning_outcome_for(tasks, review_outcome: review_outcome),
+        outcome: self.class.planning_outcome_for(reviewed_tasks, review_outcome: review_outcome),
         input_context: context_result[:context],
         plan_data: {
-          tasks: tasks,
+          tasks: reviewed_tasks,
           created_issues: created_issues
         },
         metadata: {
@@ -189,7 +194,7 @@ module Workflows
         success: true,
         project_id: project_id,
         issue_id: issue_id,
-        task_count: tasks.size,
+        task_count: reviewed_tasks.size,
         created_issues: created_issues
       }
 
@@ -206,7 +211,7 @@ module Workflows
         outcome: planning_failure_outcome_for(decision_step),
         input_context: context_result[:context],
         plan_data: {
-          tasks: tasks,
+          tasks: reviewed_tasks.presence || tasks,
           created_issues: created_issues
         },
         error_details: {
@@ -246,9 +251,12 @@ module Workflows
       self.class.planning_failure_outcome_for(step)
     end
 
-    def resolve_plan_tasks(tasks, review_outcome)
-      source_tasks = review_outcome == :revised ? @revised_tasks : tasks
-      source_tasks.map { |t| { title: t[:title], body: t[:description] } }
+    def resolve_reviewed_tasks(tasks, review_outcome)
+      review_outcome == :revised ? Array(@revised_tasks) : tasks
+    end
+
+    def build_sub_tasks(tasks)
+      tasks.map { |t| { title: t[:title], body: t[:description] } }
     end
 
     def wait_for_plan_review(project_id:, issue_id:, workflow_id:, tasks:, context:,

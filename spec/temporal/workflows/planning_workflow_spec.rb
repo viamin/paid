@@ -438,7 +438,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
       context "when revise_plan signal arrives" do
         let(:revised_tasks) do
           [
-            { title: "Revised task", description: "Better approach" }
+            { title: "Revised task 1", description: "Better approach" },
+            { title: "Revised task 2", description: "Follow-up implementation" }
           ]
         end
 
@@ -454,6 +455,78 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             .with(Activities::CreateSubIssuesActivity,
               hash_including(sub_tasks: expected),
               timeout: 120, retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+        end
+      end
+
+      context "when revise_plan collapses the plan to one task" do
+        let(:revised_tasks) do
+          [
+            { title: "Revised task", description: "Better approach" }
+          ]
+        end
+
+        before do
+          allow(Temporalio::Workflow).to receive(:sleep) { workflow.revise_plan(revised_tasks) }
+        end
+
+        it "skips sub-issue creation" do
+          result = workflow.execute(input)
+
+          expect(result[:success]).to be true
+          expect(result[:task_count]).to eq(1)
+          expect(result[:created_issues]).to eq([])
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+        end
+
+        it "logs the reviewed plan outcome and updates labels with the revised count" do
+          workflow.execute(input)
+
+          expect(workflow).to have_received(:run_activity)
+            .with(Activities::UpdatePlanningLabelsActivity,
+              hash_including(project_id: 1, issue_id: 2, task_count: 1),
+              timeout: 30)
+          expect(workflow).to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(
+                decision_key: "test-planning-wf:planning_outcome:final",
+                outcome: "single_task_plan",
+                plan_data: hash_including(tasks: revised_tasks)
+              ),
+              timeout: 30,
+              retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+        end
+      end
+
+      context "when revise_plan clears the plan" do
+        let(:revised_tasks) { [] }
+
+        before do
+          allow(Temporalio::Workflow).to receive(:sleep) { workflow.revise_plan(revised_tasks) }
+        end
+
+        it "returns an empty plan without creating sub-issues" do
+          result = workflow.execute(input)
+
+          expect(result[:success]).to be true
+          expect(result[:task_count]).to eq(0)
+          expect(result[:created_issues]).to eq([])
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+        end
+
+        it "logs the empty reviewed plan outcome" do
+          workflow.execute(input)
+
+          expect(workflow).to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(
+                decision_key: "test-planning-wf:planning_outcome:final",
+                outcome: "empty_plan",
+                plan_data: hash_including(tasks: [])
+              ),
+              timeout: 30,
+              retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
         end
       end
 
