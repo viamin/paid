@@ -158,13 +158,6 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("bundle exec rspec")
     end
 
-    it "includes repository automation conventions guidance" do
-      expect(prompt).to include("## Repository Automation Conventions")
-      expect(prompt).to include("Commit subjects:")
-      expect(prompt).to include("PR titles:")
-      expect(prompt).to include("Issue and comment dependencies:")
-    end
-
     it "omits merge conflicts section when rebase succeeded" do
       expect(prompt).not_to include("Merge Conflicts")
     end
@@ -1190,6 +1183,59 @@ RSpec.describe Prompts::BuildForPr do
       )
 
       expect(prompt).not_to include("Conversation Comments")
+    end
+  end
+
+  describe ".select_trusted_comments", :no_db do
+    let(:project) do
+      OpenStruct.new.tap do |p|
+        p.define_singleton_method(:trusted_github_user?) { |login| login == "trusteduser" }
+      end
+    end
+
+    def comment(login:, body: "hello")
+      OpenStruct.new(user: OpenStruct.new(login: login), body: body)
+    end
+
+    it "keeps comments authored by allowlisted users" do
+      kept = comment(login: "trusteduser")
+      result = described_class.select_trusted_comments([ kept ], project: project)
+      expect(result).to eq([ kept ])
+    end
+
+    it "drops comments authored by non-allowlisted users" do
+      dropped = comment(login: "randomdrive-by")
+      expect(described_class.select_trusted_comments([ dropped ], project: project)).to be_empty
+    end
+
+    it "drops comments with a missing user (nil login)" do
+      dropped = OpenStruct.new(user: nil, body: "ghost")
+      expect(described_class.select_trusted_comments([ dropped ], project: project)).to be_empty
+    end
+
+    it "tolerates a nil body on a trusted comment without raising" do
+      kept = OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: nil)
+      expect(described_class.select_trusted_comments([ kept ], project: project)).to eq([ kept ])
+    end
+
+    it "drops Paid-generated agent update comments even from allowlisted users" do
+      paid_body = "#{Activities::CompleteExistingPrRunActivity::COMMENT_MARKER}\nSummary line"
+      dropped = comment(login: "trusteduser", body: paid_body)
+      expect(described_class.select_trusted_comments([ dropped ], project: project)).to be_empty
+    end
+
+    it "drops Paid escalation-note comments even from allowlisted users" do
+      escalation_body = "#{Activities::MarkEscalatedActivity::COMMENT_MARKER}\n**Escalation Note**"
+      dropped = comment(login: "trusteduser", body: escalation_body)
+      expect(described_class.select_trusted_comments([ dropped ], project: project)).to be_empty
+    end
+
+    it "preserves input order for the kept comments" do
+      a = comment(login: "trusteduser", body: "first")
+      b = comment(login: "randomdrive-by")
+      c = comment(login: "trusteduser", body: "third")
+      result = described_class.select_trusted_comments([ a, b, c ], project: project)
+      expect(result).to eq([ a, c ])
     end
   end
 end

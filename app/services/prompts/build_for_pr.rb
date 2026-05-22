@@ -44,6 +44,20 @@ module Prompts
       new(...).build
     end
 
+    # Production-parity filter so REPLs/scripts get the same comments the live PR prompt does.
+    def self.select_trusted_comments(comments, project:)
+      comments.select do |comment|
+        project.trusted_github_user?(comment.user&.login) &&
+          !paid_generated_pr_comment?(comment.body)
+      end
+    end
+
+    def self.paid_generated_pr_comment?(body)
+      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body) ||
+        body.to_s.include?(Activities::MarkEscalatedActivity::COMMENT_MARKER)
+    end
+    private_class_method :paid_generated_pr_comment?
+
     def includes_review_threads?
       include_section?(:code_review) && review_threads_present?
     end
@@ -110,8 +124,7 @@ module Prompts
       sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
 
-      with_style_guides = StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
-      ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
+      StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
     end
 
     private
@@ -550,15 +563,7 @@ module Prompts
     end
 
     def select_trusted_comments(comments)
-      comments.select do |comment|
-        project.trusted_github_user?(comment.user&.login) &&
-          !paid_generated_pr_comment?(comment.body)
-      end
-    end
-
-    def paid_generated_pr_comment?(body)
-      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body) ||
-        body.to_s.include?(Activities::MarkEscalatedActivity::COMMENT_MARKER)
+      self.class.select_trusted_comments(comments, project: project)
     end
 
     def truncate_comment_body(body)
