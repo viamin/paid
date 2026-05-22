@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/hash/deep_merge"
-require "active_support/core_ext/hash/keys"
-
 module ProjectConventions
   class Detector
     RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json"
@@ -256,7 +253,13 @@ module ProjectConventions
 
     def merge_detection_group(items)
       items.reduce do |merged, item|
-        merged_value = merged[:value].deep_merge(item[:value])
+        merged_value = merged[:value].deep_merge(item[:value]) do |_key, left_val, right_val|
+          if left_val.is_a?(Array) && right_val.is_a?(Array)
+            left_val | right_val
+          else
+            right_val
+          end
+        end
         merged.merge(
           confidence: [ merged[:confidence], item[:confidence] ].max,
           evidence: merge_evidence(merged[:evidence], item[:evidence]),

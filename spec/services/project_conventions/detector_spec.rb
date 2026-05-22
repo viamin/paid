@@ -343,7 +343,8 @@ RSpec.describe ProjectConventions::Detector, :no_db do
         packages: { "." => {} },
         "changelog-sections" => [
           { type: "feat", section: "Features" },
-          { type: "fix", section: "Bug Fixes" }
+          { type: "fix", section: "Bug Fixes" },
+          { type: "perf", section: "Performance Improvements" }
         ]
       }.to_json
       write_repo_file("release-please-config.json", config)
@@ -352,7 +353,7 @@ RSpec.describe ProjectConventions::Detector, :no_db do
       detection = described_class.call(repo_path:).find { |item| item[:key] == "commit_style" }
 
       expect(detection[:value]["type"]).to eq("conventional_commits")
-      expect(detection[:value]["allowed_types"]).to include("feat", "fix", "custom")
+      expect(detection[:value]["allowed_types"]).to contain_exactly("feat", "fix", "perf", "custom")
       expect(detection[:confidence]).to eq(1.0)
       expect(detection[:evidence]["signals"]).to contain_exactly("release_please", "commitlint")
     end
