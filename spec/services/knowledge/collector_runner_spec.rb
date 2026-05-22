@@ -393,6 +393,13 @@ RSpec.describe Knowledge::CollectorRunner do
         expect(CollectorRun.pluck(:collector_type)).to contain_exactly("test_collector")
       end
 
+      it "memoizes the full collector registry for repeated access" do
+        runner = described_class.new(project: project, commit_sha: commit_sha)
+
+        first_registry = runner.send(:collector_classes)
+        expect(runner.send(:collector_classes)).to be(first_registry)
+      end
+
       it "does not stale artifacts from non-selected collectors" do
         old_sha = "b" * 40
         new_sha = "c" * 40

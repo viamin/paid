@@ -182,14 +182,16 @@ module Knowledge
       @collector_classes ||= begin
         requested_types = Array(options[:collector_types]).map(&:to_s).uniq
         registry = self.class.registry
-        return registry if requested_types.empty?
+        if requested_types.empty?
+          registry
+        else
+          missing_types = requested_types - registry.keys
+          if missing_types.any?
+            raise ArgumentError, "Unknown collector types: #{missing_types.join(', ')}"
+          end
 
-        missing_types = requested_types - registry.keys
-        if missing_types.any?
-          raise ArgumentError, "Unknown collector types: #{missing_types.join(', ')}"
+          registry.slice(*requested_types)
         end
-
-        registry.slice(*requested_types)
       end
     end
 
