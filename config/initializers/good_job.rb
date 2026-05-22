@@ -225,5 +225,6 @@ Rails.application.config.after_initialize do
 
   "DockerOrphanCleanupJob".constantize.perform_later
   "AutoPickQueueBackfillJob".constantize.perform_later
+  "AnalyzeIssueFollowupBackfillJob".constantize.perform_later
   "PoolReplenishmentJob".constantize.perform_later if "Containers::PoolManager".constantize.enabled?
 end
