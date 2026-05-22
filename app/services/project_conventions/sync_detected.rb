@@ -31,6 +31,7 @@ module ProjectConventions
           project_version: project_version
         )
         record.update!(
+          category: detection.fetch(:category),
           confidence: detection.fetch(:confidence),
           value: detection.fetch(:value),
           evidence: detection.fetch(:evidence),

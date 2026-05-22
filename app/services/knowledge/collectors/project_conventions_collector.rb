@@ -27,6 +27,7 @@ module Knowledge
           identifier: detection.fetch(:key),
           content: JSON.pretty_generate(detection.fetch(:value)),
           metadata: {
+            category: detection.fetch(:category),
             confidence: detection.fetch(:confidence),
             detector_key: detection.fetch(:detector_key),
             evidence: detection.fetch(:evidence)

@@ -4,6 +4,7 @@ FactoryBot.define do
   factory :project_convention_detection do
     project
     project_version { association :project_version, project: project }
+    category { "commit_convention_policy" }
     key { "commit_style" }
     detector_key { "project_conventions" }
     confidence { 1.0 }

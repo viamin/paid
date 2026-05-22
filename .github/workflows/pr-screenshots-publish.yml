@@ -16,23 +16,92 @@ jobs:
         contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
         || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     permissions:
       contents: write
       actions: read
       issues: write
       pull-requests: write
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_TEST_DATABASE: paid_test
+      DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
+      SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
+      SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
+      SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
+      SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+      SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
+      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Checkout trusted base-branch code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            echo "RAILS_TEST_KEY=$RAILS_MASTER_KEY_FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Resolve PR capture run
         id: resolve
@@ -42,26 +111,23 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
           PR_ACTION: ${{ github.event.action }}
         run: |
           ruby <<'RUBY'
           require "json"
           require "net/http"
+          require "time"
           require "uri"
 
-          repo = ENV.fetch("GITHUB_REPOSITORY")
-          pr_number = Integer(ENV.fetch("PR_NUMBER"))
-          head_sha = ENV.fetch("HEAD_SHA")
-          head_ref = ENV.fetch("HEAD_REF")
-          pr_action = ENV.fetch("PR_ACTION")
-          token = ENV.fetch("GITHUB_TOKEN")
-          output_path = ENV.fetch("GITHUB_OUTPUT")
-          headers = {
-            "Authorization" => "Bearer #{token}",
-            "Accept" => "application/vnd.github+json",
-            "X-GitHub-Api-Version" => "2022-11-28",
-            "User-Agent" => "paid-pr-screenshots-publish"
-          }
+          def write_outputs(path:, run_id: "", artifact_present: false, comment_status:, error_message: nil)
+            File.open(path, "a") do |file|
+              file.puts("run_id=#{run_id}")
+              file.puts("artifact_present=#{artifact_present}")
+              file.puts("comment_status=#{comment_status}")
+              file.puts("error_message=#{error_message}") if error_message
+            end
+          end
 
           def get_json(url, headers)
             uri = URI(url)
@@ -74,66 +140,159 @@ jobs:
             JSON.parse(response.body)
           end
 
-          run = nil
-          120.times do
-            runs = get_json(
-              "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&head_sha=#{head_sha}&per_page=100",
-              headers
-            ).fetch("workflow_runs")
-
-            run = runs.find do |candidate|
-              next false unless candidate["head_sha"] == head_sha
-
-              pull_requests = candidate.fetch("pull_requests", [])
-              if pull_requests.any?
-                pull_requests.any? { |pr| pr["number"] == pr_number }
-              else
-                candidate["head_branch"] == head_ref
-              end
-            end
-
-            break if run && run["status"] == "completed"
-
-            run = nil if run && run["status"] != "completed"
-            sleep 10
+          def workflow_runs_url(repo, page: 1)
+            "https://api.github.com/repos/#{repo}/actions/workflows/pr-screenshots.yml/runs?event=pull_request&per_page=100&page=#{page}"
           end
 
-          raise "Timed out waiting for PR Screenshots capture workflow for #{head_sha}" unless run
+          def pull_request_match(candidate, pr_number)
+            Array(candidate["pull_requests"]).find { |pr| pr["number"] == pr_number }
+          end
 
-          jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
-          capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
-          detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
-          capture_conclusion =
-            if capture_job
-              capture_job["conclusion"]
-            elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
-              "skipped"
-            else
-              raise "Could not find a successful capture job, and detect did not complete cleanly, for workflow run #{run.fetch("id")}"
+          def matches_pull_request?(candidate, pr_number)
+            !!pull_request_match(candidate, pr_number)
+          end
+
+          def matches_head?(candidate, head_sha)
+            candidate["head_sha"] == head_sha || candidate.dig("head_commit", "id") == head_sha
+          end
+
+          def recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
+            matches_branch = candidate["head_branch"] == head_ref
+            created_at = Time.iso8601(candidate.fetch("created_at"))
+            matches_branch && created_at >= (pr_updated_at - recent_window_seconds)
+          end
+
+          def current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+            matches_branch = candidate["head_branch"] == head_ref
+            matches_head = matches_head?(candidate, head_sha)
+            matches_pull_request = matches_pull_request?(candidate, pr_number)
+
+            (matches_head && (matches_pull_request || matches_branch)) ||
+              recent_pr_run?(candidate, head_ref, pr_updated_at, recent_window_seconds)
+          end
+
+          def fallback_run_match?(candidate, pr_number, head_ref)
+            return false unless candidate["head_branch"] == head_ref
+
+            pull_requests = Array(candidate["pull_requests"])
+            pull_requests.empty? || matches_pull_request?(candidate, pr_number)
+          end
+
+          def first_matching_run(repo, headers, pages)
+            1.upto(pages) do |page|
+              runs = get_json(workflow_runs_url(repo, page:), headers).fetch("workflow_runs")
+              matching_run = runs.find { |candidate| yield(candidate) }
+              return matching_run if matching_run
+              break if runs.size < 100
             end
 
-          artifacts = get_json(
-            "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
-            headers
-          ).fetch("artifacts")
-          artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
+            nil
+          end
 
-          comment_status =
-            case capture_conclusion
-            when "success"
-              "success"
-            when "skipped"
-              pr_action == "synchronize" ? "no_ui_changes" : "skip"
-            when "cancelled"
-              "skip"
-            else
-              "capture_failed"
+          def first_completed_fallback_run(repo, headers, pr_number, head_ref, pages)
+            first_matching_run(repo, headers, pages) do |candidate|
+              candidate["status"] == "completed" &&
+                fallback_run_match?(candidate, pr_number, head_ref)
+            end
+          end
+
+          repo = ENV.fetch("GITHUB_REPOSITORY")
+          pr_number = Integer(ENV.fetch("PR_NUMBER"))
+          head_sha = ENV.fetch("HEAD_SHA")
+          head_ref = ENV.fetch("HEAD_REF")
+          pr_updated_at = Time.iso8601(ENV.fetch("PR_UPDATED_AT"))
+          pr_action = ENV.fetch("PR_ACTION")
+          token = ENV.fetch("GITHUB_TOKEN")
+          output_path = ENV.fetch("GITHUB_OUTPUT")
+          poll_attempts = 120
+          poll_interval_seconds = 10
+          recent_window_seconds = 300
+          poll_search_pages = 5
+          fallback_search_pages = 30
+          headers = {
+            "Authorization" => "Bearer #{token}",
+            "Accept" => "application/vnd.github+json",
+            "X-GitHub-Api-Version" => "2022-11-28",
+            "User-Agent" => "paid-pr-screenshots-publish"
+          }
+
+          begin
+            run = nil
+            fallback_run = nil
+            poll_attempts.times do
+              run = first_matching_run(repo, headers, poll_search_pages) do |candidate|
+                current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+              end
+              fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|
+                candidate["status"] == "completed" &&
+                  fallback_run_match?(candidate, pr_number, head_ref)
+              end
+
+              break if run && run["status"] == "completed"
+
+              run = nil if run && run["status"] != "completed"
+              sleep poll_interval_seconds
             end
 
-          File.open(output_path, "a") do |file|
-            file.puts("run_id=#{run.fetch("id")}")
-            file.puts("artifact_present=#{artifact_present}")
-            file.puts("comment_status=#{comment_status}")
+            fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
+            run ||= fallback_run
+
+            unless run
+              write_outputs(
+                path: output_path,
+                comment_status: "capture_failed",
+                error_message: "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+              )
+              warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+              exit 0
+            end
+
+            jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
+            capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
+            detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
+            capture_conclusion =
+              if capture_job
+                capture_job["conclusion"]
+              elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
+                "skipped"
+              elsif run["conclusion"]
+                run["conclusion"]
+              else
+                "failure"
+              end
+
+            artifacts = get_json(
+              "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
+              headers
+            ).fetch("artifacts")
+            artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
+
+            comment_status =
+              case capture_conclusion
+              when "success"
+                "success"
+              when "skipped"
+                pr_action == "synchronize" ? "no_ui_changes" : "skip"
+              when "cancelled"
+                "skip"
+              else
+                "capture_failed"
+              end
+
+            write_outputs(
+              path: output_path,
+              run_id: run.fetch("id"),
+              artifact_present: artifact_present,
+              comment_status: comment_status
+            )
+          rescue StandardError => e
+            write_outputs(
+              path: output_path,
+              comment_status: "capture_failed",
+              error_message: "#{e.class}: #{e.message}"
+            )
+            warn "Failed to resolve PR Screenshots capture workflow for #{head_sha}: #{e.class}: #{e.message}"
+            exit 0
           end
           RUBY
 
@@ -149,25 +308,7 @@ jobs:
       - name: Publish screenshots and refresh PR comment
         if: steps.resolve.outputs.comment_status != 'skip'
         env:
-          BUNDLE_FROZEN: "true"
-          RAILS_ENV: test
-          SECRET_KEY_BASE: test-secret-key-base
-          RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
-          PAID_TEST_DATABASE: paid_test
-          npm_config_cache: ${{ github.workspace }}/.cache/npm
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
-          SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
-          SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
-          SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
-          SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
-          SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
-          SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
-          GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           SCREENSHOT_COMMENT_STATUS: ${{ steps.resolve.outputs.comment_status }}
-          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
         run: |
           export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"
           bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download

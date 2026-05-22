@@ -1529,6 +1529,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150840) do
   end
 
   create_table "project_convention_detections", comment: "Repository-derived convention detections captured for a specific project version.", force: :cascade do |t|
+    t.string "category", comment: "Typed convention category, such as commit_convention_policy or hook_system."
     t.decimal "confidence", precision: 4, scale: 3, default: "1.0", null: false, comment: "Detector confidence from 0.0 to 1.0."
     t.datetime "created_at", null: false
     t.datetime "detected_at", null: false, comment: "Timestamp when the repository scan produced this detection."
@@ -1546,9 +1547,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150840) do
   end
 
   create_table "project_convention_overrides", comment: "Explicit per-project overrides for detected repository conventions.", force: :cascade do |t|
+    t.string "category", comment: "Typed convention category, such as commit_convention_policy or hook_system."
     t.datetime "created_at", null: false
     t.boolean "enabled", default: true, null: false, comment: "Disabled overrides act as tombstones against detected defaults."
     t.string "key", null: false, comment: "Convention key being overridden, such as commit_messages."
+    t.string "mode", default: "apply", null: false, comment: "Override handling policy: apply, warn, or ignore."
     t.bigint "project_id", null: false, comment: "Project receiving the explicit convention override."
     t.text "rationale", comment: "User-entered reason for overriding the detected convention."
     t.datetime "updated_at", null: false
