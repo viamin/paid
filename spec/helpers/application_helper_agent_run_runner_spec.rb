@@ -85,5 +85,28 @@ RSpec.describe ApplicationHelper, :db do
 
       expect(helper.agent_run_display_duration_seconds(run)).to eq(45)
     end
+
+    it "returns the live duration for running runs" do
+      run = Struct.new(:duration_seconds, :started_at, :paused_at, :completed_at, :created_at, :duration, keyword_init: true) do
+        def running? = true
+      end.new(
+        duration_seconds: nil,
+        started_at: Time.current - 12.seconds,
+        paused_at: nil,
+        completed_at: nil,
+        created_at: Time.current - 20.seconds,
+        duration: 12
+      )
+
+      expect(helper.agent_run_display_duration_seconds(run)).to eq(12)
+    end
+
+    it "returns nil for lightweight run objects that omit optional timestamp methods" do
+      run = Struct.new(:duration_seconds, keyword_init: true) do
+        def running? = false
+      end.new(duration_seconds: nil)
+
+      expect(helper.agent_run_display_duration_seconds(run)).to be_nil
+    end
   end
 end

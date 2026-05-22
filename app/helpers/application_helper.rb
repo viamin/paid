@@ -78,18 +78,28 @@ module ApplicationHelper
   end
 
   def agent_run_display_duration_seconds(agent_run)
-    return agent_run.duration_seconds if agent_run.duration_seconds.present?
-    if agent_run.paused_at.present? && agent_run.started_at.present?
-      return [ (agent_run.paused_at - agent_run.started_at).to_i, 0 ].max
+    duration_seconds = agent_run.respond_to?(:duration_seconds) ? agent_run.duration_seconds : nil
+    return duration_seconds if duration_seconds.present?
+
+    started_at = agent_run.respond_to?(:started_at) ? agent_run.started_at : nil
+    paused_at = agent_run.respond_to?(:paused_at) ? agent_run.paused_at : nil
+    if paused_at.present? && started_at.present?
+      return [ (paused_at - started_at).to_i, 0 ].max
     end
-    return agent_run.duration if agent_run.running?
 
-    return nil unless agent_run.completed_at.present?
+    if agent_run.respond_to?(:running?) && agent_run.running?
+      duration = agent_run.respond_to?(:duration) ? agent_run.duration : nil
+      return duration if duration.present?
+    end
 
-    start_time = agent_run.started_at || agent_run.created_at
+    completed_at = agent_run.respond_to?(:completed_at) ? agent_run.completed_at : nil
+    return nil unless completed_at.present?
+
+    created_at = agent_run.respond_to?(:created_at) ? agent_run.created_at : nil
+    start_time = started_at || created_at
     return nil unless start_time.present?
 
-    [ (agent_run.completed_at - start_time).to_i, 0 ].max
+    [ (completed_at - start_time).to_i, 0 ].max
   end
 
   AGENT_RUN_PRIORITY_STYLES = {
