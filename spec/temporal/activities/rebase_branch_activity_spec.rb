@@ -82,6 +82,11 @@ RSpec.describe Activities::RebaseBranchActivity do
 
     context "when rebase has conflicts" do
       before do
+        bot_identity = Github::BotIdentity.new(
+          app_slug: "paid-agents",
+          name: "Paid Agent",
+          email: "paid-agents@paid-agents.com"
+        )
         success_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
         conflict_result = Containers::Provision::Result.failure(
           error: "rebase failed",
@@ -89,6 +94,14 @@ RSpec.describe Activities::RebaseBranchActivity do
           stderr: "Failed to merge in the changes.",
           exit_code: 1
         )
+
+        allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+          .and_return(success_result)
 
         # unshallow check + fetch (shallow clone -> full history)
         allow(container_service).to receive(:execute)
