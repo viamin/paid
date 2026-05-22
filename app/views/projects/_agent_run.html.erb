@@ -25,11 +25,7 @@
     <%= agent_run_runner_display(agent_run) %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <% elapsed = if agent_run.duration_seconds.present?
-         agent_run.duration_seconds
-       elsif agent_run.running? && agent_run.started_at.present?
-         (Time.current - agent_run.started_at).to_i
-       end %>
+    <% elapsed = agent_run_display_duration_seconds(agent_run) %>
     <% if elapsed %>
       <%= elapsed %>s
     <% else %>
