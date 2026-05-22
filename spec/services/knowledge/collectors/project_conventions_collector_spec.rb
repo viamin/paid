@@ -30,6 +30,15 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
     fixture_path.join("bin/ci").write("#!/usr/bin/env bash\nbundle exec rspec\n")
   end
 
+  def build_collector(version:, run:, path:)
+    described_class.new(
+      project: project,
+      project_version: version,
+      collector_run: run,
+      options: { scan_path: path.to_s }
+    )
+  end
+
   it "stores convention artifacts and syncs first-class detections" do
     artifacts = collector.collect
 
@@ -65,5 +74,30 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
     artifact = collector.collect.find { |item| item[:identifier] == "hook_manager" }
 
     expect(artifact.dig(:metadata, :category)).to eq("hook_system")
+  end
+
+  it "refreshes detections per project version when repository conventions change" do
+    collector.collect
+    second_project_version = create(:project_version, project: project)
+    second_collector_run = create(:collector_run, project_version: second_project_version, collector_type: "project_conventions")
+    second_fixture_path = build_husky_fixture
+
+    build_collector(version: second_project_version, run: second_collector_run, path: second_fixture_path).collect
+
+    first_detection = project.project_convention_detections.find_by!(project_version: project_version, key: "hook_manager")
+    second_detection = project.project_convention_detections.find_by!(project_version: second_project_version, key: "hook_manager")
+
+    expect(first_detection.value).to include("type" => "lefthook")
+    expect(second_detection.value).to include("type" => "husky")
+  ensure
+    FileUtils.rm_rf(second_fixture_path) if defined?(second_fixture_path)
+  end
+
+  def build_husky_fixture
+    Pathname(Dir.mktmpdir).tap do |path|
+      path.join(".husky").mkpath
+      path.join("bin").mkpath
+      path.join("bin/ci").write("#!/usr/bin/env bash\nbundle exec rspec\n")
+    end
   end
 end

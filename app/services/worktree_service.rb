@@ -21,6 +21,7 @@ class WorktreeService
 
   DEFAULT_WORKSPACE_ROOT = "/var/paid/workspaces"
   FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+  STALE_WORKTREE_GLOBS = %w[paid-agent-* paid-checkout-* paid-conflict-*].freeze
 
   def self.workspace_root
     Rails.application.config.x.workspace_root || DEFAULT_WORKSPACE_ROOT
@@ -231,15 +232,17 @@ class WorktreeService
   def cleanup_stale_worktrees(older_than: 24.hours)
     return unless Dir.exist?(worktrees_path)
 
-    Dir.glob(File.join(worktrees_path, "paid-agent-*")).each do |path|
-      next unless File.directory?(path)
-      next unless File.mtime(path) < older_than.ago
+    STALE_WORKTREE_GLOBS.each do |glob|
+      Dir.glob(File.join(worktrees_path, glob)).each do |path|
+        next unless File.directory?(path)
+        next unless File.mtime(path) < older_than.ago
 
-      run_git(
-        "worktree", "remove", path, "--force",
-        chdir: project_repo_path,
-        raise_on_error: false
-      )
+        run_git(
+          "worktree", "remove", path, "--force",
+          chdir: project_repo_path,
+          raise_on_error: false
+        )
+      end
     end
 
     run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
@@ -274,6 +277,36 @@ class WorktreeService
 
       if defined?(temp_branch) && temp_branch.present?
         run_git("branch", "-D", temp_branch, chdir: project_repo_path, raise_on_error: false)
+      end
+
+      run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
+    end
+  end
+
+  # Creates a short-lived detached worktree for read-only maintenance or
+  # analysis against an exact commit SHA.
+  #
+  # @param ref [String] Commit SHA or other git rev to check out
+  # @yieldparam worktree_path [String] Path to the temporary worktree
+  # @return [Object] the block result
+  def with_temporary_checkout(ref)
+    ensure_cloned
+
+    temp_path = File.join(worktrees_path, "paid-checkout-#{SecureRandom.hex(6)}")
+
+    @mutex.synchronize do
+      FileUtils.mkdir_p(worktrees_path)
+      run_git(
+        "worktree", "add", "--detach", temp_path, ref,
+        chdir: project_repo_path
+      )
+    end
+
+    yield temp_path
+  ensure
+    @mutex.synchronize do
+      if defined?(temp_path) && temp_path.present? && Dir.exist?(temp_path)
+        run_git("worktree", "remove", temp_path, "--force", chdir: project_repo_path, raise_on_error: false)
       end
 
       run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)

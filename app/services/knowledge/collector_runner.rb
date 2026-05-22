@@ -35,7 +35,7 @@ module Knowledge
       project_version = resolve_project_version
       results = run_collectors(project_version)
 
-      if should_mark_stale_artifacts?(results)
+      if should_mark_stale_artifacts?(results) && full_collection_run?
         mark_stale_artifacts(project_version, preserved_collector_types(results))
       end
 
@@ -179,7 +179,25 @@ module Knowledge
     end
 
     def collector_classes
-      self.class.registry
+      @collector_classes ||= begin
+        requested_types = Array(options[:collector_types]).map(&:to_s).uniq
+        registry = self.class.registry
+        if requested_types.empty?
+          registry
+        else
+          missing_types = requested_types - registry.keys
+          if missing_types.any?
+            raise ArgumentError, "Unknown collector types: #{missing_types.join(', ')}"
+          end
+
+          registry.slice(*requested_types)
+        end
+      end
+    end
+
+    def full_collection_run?
+      requested_types = Array(options[:collector_types]).map(&:to_s).uniq
+      requested_types.empty? || requested_types.sort == self.class.registry.keys.sort
     end
 
     def skipped_artifacts_count(collector_type:, preserve_existing_artifacts:)
