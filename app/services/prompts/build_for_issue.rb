@@ -108,7 +108,8 @@ module Prompts
       ].compact.join("\n\n")
 
       with_knowledge = inject_knowledge_context(base_prompt)
-      StyleGuides::InjectIntoPrompt.call(prompt: with_knowledge, project: project)
+      with_style_guides = StyleGuides::InjectIntoPrompt.call(prompt: with_knowledge, project: project)
+      ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
     end
 
     # Fetches and formats trusted issue comments as a prompt section.

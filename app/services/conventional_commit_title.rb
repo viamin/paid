@@ -22,17 +22,26 @@ class ConventionalCommitTitle
     end
 
     def for_issue(issue, fallback_type: nil, project: issue&.project, style_key: "commit_style")
-      style = style_for(project, style_key)
+      style_entry = style_entry_for(project, style_key)
+      style = style_entry.fetch(:value)
       return plain_title_for(issue, style) if style["type"] == "plain"
 
-      normalized = normalize(issue&.title)
+      normalized = normalized_title_for(issue, style, style_entry:, style_key:)
       return normalized if normalized
 
       title = sanitize_subject(issue&.title)
-      fallback_type ||= style["default_type"] || "feat"
+      fallback_type = normalized_fallback_type(style, fallback_type: fallback_type)
       return "#{fallback_type}: apply agent changes" if title.blank?
 
-      "#{infer_type(issue, title: title, fallback_type: fallback_type)}: #{title}"
+      inferred_type = infer_type(issue, title: title, fallback_type: fallback_type)
+      inferred_type = enforce_allowed_type(
+        inferred_type,
+        original_title: issue&.title,
+        style: style,
+        style_entry: style_entry,
+        style_key: style_key
+      )
+      "#{inferred_type}: #{title}"
     end
 
     private
@@ -44,21 +53,56 @@ class ConventionalCommitTitle
       style["fallback_subject"].presence || "Apply agent changes"
     end
 
-    def style_for(project, style_key)
-      return default_style(style_key) unless project
+    def style_entry_for(project, style_key)
+      return default_style_entry(style_key) unless project
 
-      ProjectConventions::Resolve.call(project:, key: style_key).fetch(:value)
+      ProjectConventions::AutomationProfile.for(project:).convention(style_key)
+    end
+
+    def default_style_entry(style_key)
+      value = ProjectConventions::Catalog.default_for(style_key)
+
+      {
+        key: style_key,
+        value: value,
+        enabled: value.present?,
+        source: value.present? ? "default" : "unset"
+      }
     rescue ActiveRecord::ActiveRecordError => e
       Rails.logger.warn(
         message: "conventional_commit_title.style_lookup_failed",
         key: style_key,
         error: e.message
       )
-      default_style(style_key)
+
+      {
+        key: style_key,
+        value: ProjectConventions::Catalog.default_for(style_key),
+        enabled: true,
+        source: "default"
+      }
     end
 
-    def default_style(style_key)
-      ProjectConventions::Catalog.default_for(style_key)
+    def normalized_title_for(issue, style, style_entry:, style_key:)
+      normalized = normalize(issue&.title)
+      return unless normalized
+
+      type = normalized[CONVENTIONAL_PATTERN, :type]&.downcase
+      type = enforce_allowed_type(type, original_title: issue&.title, style:, style_entry:, style_key:) if type
+      return normalized if type == normalized[CONVENTIONAL_PATTERN, :type]&.downcase
+
+      title = sanitize_subject(issue&.title)
+      return if title.blank?
+
+      "#{type}: #{title}"
+    end
+
+    def normalized_fallback_type(style, fallback_type:)
+      preferred = fallback_type.presence || style["default_type"].presence || "feat"
+      allowed_types = Array(style["allowed_types"]).filter_map(&:presence)
+      return preferred if allowed_types.empty? || allowed_types.include?(preferred)
+
+      allowed_types.first
     end
 
     def infer_type(issue, title:, fallback_type:)
@@ -70,6 +114,25 @@ class ConventionalCommitTitle
       end
 
       fallback_type
+    end
+
+    def enforce_allowed_type(type, original_title:, style:, style_entry:, style_key:)
+      allowed_types = Array(style["allowed_types"]).filter_map(&:presence)
+      return type if type.blank? || allowed_types.empty? || allowed_types.include?(type)
+
+      Rails.logger.warn(
+        message: "conventional_commit_title.disallowed_type",
+        key: style_key,
+        source: style_entry[:source],
+        required: style.fetch("required", false),
+        disallowed_type: type,
+        allowed_types: allowed_types,
+        title: original_title.to_s
+      )
+
+      return type unless style.fetch("required", false)
+
+      normalized_fallback_type(style, fallback_type: type)
     end
 
     def sanitize_subject(title)

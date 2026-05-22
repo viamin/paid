@@ -52,7 +52,7 @@ RSpec.describe ProjectConventions::IssueDependencies do
   it "falls back to defaults when convention lookup hits an Active Record error" do
     error = ActiveRecord::StatementInvalid.new("db unavailable")
 
-    allow(ProjectConventions::Resolve).to receive(:call).and_raise(error)
+    allow(ProjectConventions::Resolve).to receive(:profile).and_raise(error)
     allow(Rails.logger).to receive(:warn)
 
     expect(described_class.depends_on_line(project: first_project, github_number: 12)).to eq("Depends on #12")
@@ -60,7 +60,8 @@ RSpec.describe ProjectConventions::IssueDependencies do
       .to eq("Blocked by acme/repo#34")
     expect(described_class.heading(project: first_project)).to eq("## Dependencies")
     expect(Rails.logger).to have_received(:warn).with(
-      message: "issue_dependencies.convention_lookup_failed",
+      message: "project_conventions.automation_profile_lookup_failed",
+      project_id: first_project.id,
       error: "db unavailable"
     ).at_least(:once)
   end
