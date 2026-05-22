@@ -15,7 +15,7 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
     commit_sha = worktree_service.current_commit_sha
 
     project.update!(knowledge_status: "collecting") if project.knowledge_status.in?(%w[pending stale])
-    detect_import_conventions(project, commit_sha) unless project.project_convention_detections.exists?
+    detect_import_conventions(project, commit_sha)
 
     RunCollectorsJob.perform_later(
       project.id,

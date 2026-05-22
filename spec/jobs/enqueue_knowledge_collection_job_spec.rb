@@ -43,12 +43,20 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       )
     end
 
-    it "skips import-time convention detection after conventions already exist" do
-      create(:project_convention_detection, project: project)
+    it "still runs import-time convention detection when older conventions already exist" do
+      create(
+        :project_convention_detection,
+        project: project,
+        project_version: create(:project_version, project: project, commit_sha: "b" * 40)
+      )
 
       described_class.new.perform(project.id)
 
-      expect(ProjectConventions::DetectForImport).not_to have_received(:call)
+      expect(ProjectConventions::DetectForImport).to have_received(:call).with(
+        project: project,
+        commit_sha: commit_sha,
+        branch: "main"
+      )
     end
 
     it "uses the project default_branch" do
