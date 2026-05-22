@@ -4,21 +4,18 @@ module Automation
   class PullRequestEvaluator
     include LabelPolicy
 
-    def initialize(record:, explicit_pr_decisions: false)
+    def initialize(record:)
       @record = record
       @project = record.project
-      @explicit_pr_decisions = explicit_pr_decisions
     end
 
     def call(scan: nil, lifecycle: nil)
-      return explicit_scan_decisions(scan, lifecycle: lifecycle) if explicit_pr_decisions
-
-      label_decision_for(project, record)
+      explicit_scan_decisions(scan, lifecycle: lifecycle)
     end
 
     private
 
-    attr_reader :record, :project, :explicit_pr_decisions
+    attr_reader :record, :project
 
     # Delegates to {Strategies::AutoContinue}, which applies lifecycle
     # gates (circuit breakers, counter limits, phase transitions) before

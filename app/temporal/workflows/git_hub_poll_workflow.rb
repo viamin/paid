@@ -407,20 +407,15 @@ module Workflows
     end
 
     def handle_pr_scan_results(scan_result, project_id)
-      if feature_flag_enabled?(:explicit_pr_automation_decisions, project_id:)
-        (scan_result[:automation_results] || []).each do |result|
-          handle_automation_result(result, project_id)
-        end
-        return
-      end
-
-      return if scan_result[:prs_to_trigger].blank?
-
-      scan_result[:prs_to_trigger].each do |pr_data|
-        handle_pr_trigger(project_id, pr_data)
+      (scan_result[:automation_results] || []).each do |result|
+        handle_automation_result(result, project_id)
       end
     end
 
+    # Dead code: the trigger-based routing below was superseded by
+    # Automation::WorkflowDecisionExecutor. Retained temporarily because
+    # in-flight Temporal workflow histories may still reference this method.
+    # Remove in a follow-up once all in-flight histories have rolled forward.
     def handle_pr_trigger(project_id, pr_data)
       trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
 

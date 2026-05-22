@@ -296,6 +296,7 @@ module Automation
           issue_id: signals.issue_id,
           pr_number: signals.pr_number,
           phase: signals.phase,
+          draft: signals.draft,
           triggers: filtered.freeze,
           focus: signals.focus,
           counters: signals.counters,

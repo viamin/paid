@@ -102,12 +102,12 @@ RSpec.describe Activities::EvaluateIssuesActivity do
                is_pull_request: true, github_number: 99)
       end
 
-      it "returns execute_agent with source_pull_request_number" do
+      it "returns none because pull request automation requires scan data" do
         result = activity.execute(project_id: project.id, issue_ids: [ pull_request.id ])
 
         evaluation = result[:results].first
-        expect(evaluation[:action]).to eq("execute_agent")
-        expect(evaluation[:source_pull_request_number]).to eq(99)
+        expect(evaluation[:action]).to eq("none")
+        expect(evaluation[:decisions]).to eq([ { type: "noop" } ])
       end
     end
 

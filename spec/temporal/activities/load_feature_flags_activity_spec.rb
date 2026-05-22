@@ -18,13 +18,9 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
       )
     end
 
-    it "returns a workflow-safe snapshot of project-scoped flags" do
-      FeatureFlags.enable!(:explicit_pr_automation_decisions, project:)
-
+    it "returns an empty snapshot when no flags are registered" do
       expect(activity.execute(project_id: project.id)).to eq(
-        flags: {
-          explicit_pr_automation_decisions: true
-        },
+        flags: {},
         project_missing: false
       )
     end

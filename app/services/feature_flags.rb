@@ -7,15 +7,7 @@ class FeatureFlags
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
 
-  DEFINITIONS = {
-    explicit_pr_automation_decisions: Definition.new(
-      name: :explicit_pr_automation_decisions,
-      owner: "infrastructure",
-      intent: "Stage the PR automation decision refactor for the #1077 bug class behind an explicit gate.",
-      rollout_plan: "Enable per project/repo during validation, monitor the new decision path, then promote to the default rollout.",
-      cleanup_criteria: "Remove after the explicit-decision path is the only implementation and the legacy branch is deleted."
-    )
-  }.freeze
+  DEFINITIONS = {}.freeze
 
   class << self
     def definitions
@@ -90,10 +82,6 @@ class FeatureFlags
       DEFINITIONS.keys.index_with do |flag_name|
         enabled?(flag_name, project:, actor:)
       end
-    end
-
-    def explicit_pr_automation_decisions?(project: nil)
-      enabled?(:explicit_pr_automation_decisions, project:)
     end
 
     def flipper

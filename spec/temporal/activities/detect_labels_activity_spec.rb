@@ -290,31 +290,13 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
-    context "when a pull request has build label" do
+    context "when a pull request with build label has no scan data" do
       let(:pull_request) do
         create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
                is_pull_request: true, github_number: 99)
       end
 
-      it "returns execute_agent with source_pull_request_number" do
-        result = activity.execute(project_id: project.id, issue_id: pull_request.id)
-
-        expect(result[:action]).to eq("execute_agent")
-        expect(result[:source_pull_request_number]).to eq(99)
-      end
-    end
-
-    context "when explicit PR decisions are enabled for a build-labeled pull request" do
-      let(:pull_request) do
-        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
-               is_pull_request: true, github_number: 99)
-      end
-
-      before do
-        FeatureFlags.enable!(:explicit_pr_automation_decisions, project:)
-      end
-
-      it "returns noop instead of generic execute_agent" do
+      it "returns noop because the PR evaluator requires scan data" do
         result = activity.execute(project_id: project.id, issue_id: pull_request.id)
 
         expect(result[:action]).to eq("none")
@@ -469,13 +451,12 @@ RSpec.describe Activities::DetectLabelsActivity do
         expect(pull_request.reload.paid_state).to eq("completed")
       end
 
-      it "returns noop when the explicit-decision flag is enabled for an automation-labeled PR" do
+      it "returns noop for an automation-labeled PR without scan data" do
         pull_request = create(:issue, :pull_request,
           project: automation_project,
           labels: [ automation_project.automation_label_name ],
           paid_state: "new",
           github_number: 78)
-        FeatureFlags.enable!(:explicit_pr_automation_decisions, project: automation_project)
 
         result = activity.execute(project_id: automation_project.id, issue_id: pull_request.id)
 

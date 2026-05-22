@@ -9,8 +9,7 @@ module Activities
       issue_id = input[:issue_id]
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
-      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
-      Automation::IssueEvaluation.call(project:, issue:, explicit_pr_decisions:, logger:)
+      Automation::IssueEvaluation.call(project:, issue:, logger:)
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
