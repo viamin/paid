@@ -58,7 +58,7 @@ module Workflows
       end
 
       def planning_success_outcomes
-        %w[empty_plan single_task_plan sub_issues_created plan_review_approved plan_review_timeout]
+        %w[empty_plan single_task_plan sub_issues_created plan_review_approved plan_review_timed_out]
       end
 
       def planning_failure_outcome_for(step)
