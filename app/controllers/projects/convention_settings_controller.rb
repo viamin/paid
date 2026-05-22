@@ -2,7 +2,7 @@
 
 module Projects
   class ConventionSettingsController < ApplicationController
-    OVERRIDE_ACTIONS = %w[apply dismiss ignore].freeze
+    OVERRIDE_ACTIONS = %w[apply warn ignore].freeze
     RECOMMENDATION_ACTIONS = %w[apply dismiss].freeze
 
     before_action :set_project

@@ -37,7 +37,7 @@ RSpec.describe "Projects::ConventionSettings" do
                project_version: project_version,
                key: "commit_style",
                value: { "type" => "conventional_commits" },
-               evidence: { "paths" => [".commitlintrc"], "signals" => ["commitlint"] },
+               evidence: { "paths" => [ ".commitlintrc" ], "signals" => [ "commitlint" ] },
                confidence: 0.9)
 
         get project_convention_settings_path(project)
@@ -120,6 +120,16 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response).to have_http_status(:ok)
       override = project.project_convention_overrides.find_by(key: "commit_style")
       expect(override.mode).to eq("ignore")
+    end
+
+    it "creates an override with warn mode" do
+      post update_override_project_convention_settings_path(project),
+           params: { key: "commit_style", mode: "warn", value: '{}' },
+           headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:ok)
+      override = project.project_convention_overrides.find_by(key: "commit_style")
+      expect(override.mode).to eq("warn")
     end
 
     it "rejects an invalid mode" do

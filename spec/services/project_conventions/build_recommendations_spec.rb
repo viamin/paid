@@ -16,7 +16,7 @@ RSpec.describe ProjectConventions::BuildRecommendations do
                project_version: project_version,
                key: "commit_style",
                value: { "type" => "conventional_commits", "required" => true },
-               evidence: { "paths" => [".commitlintrc.json"], "signals" => ["commitlint"] },
+               evidence: { "paths" => [ ".commitlintrc.json" ], "signals" => [ "commitlint" ] },
                confidence: 0.95)
       end
 
@@ -45,7 +45,7 @@ RSpec.describe ProjectConventions::BuildRecommendations do
                project_version: project_version,
                key: "hook_manager",
                value: { "type" => "husky", "path" => ".husky" },
-               evidence: { "paths" => [".husky/pre-commit"], "signals" => ["husky"] },
+               evidence: { "paths" => [ ".husky/pre-commit" ], "signals" => [ "husky" ] },
                confidence: 0.90)
       end
 
@@ -91,7 +91,7 @@ RSpec.describe ProjectConventions::BuildRecommendations do
                project_version: project_version,
                key: "commit_style",
                value: { "type" => "conventional_commits", "required" => true },
-               evidence: { "paths" => ["commitlint.config.js"], "signals" => ["commitlint"] },
+               evidence: { "paths" => [ "commitlint.config.js" ], "signals" => [ "commitlint" ] },
                confidence: 0.95)
         described_class.call(project: project)
       end

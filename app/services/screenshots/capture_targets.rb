@@ -36,6 +36,7 @@ module Screenshots
       ab_tests
       style_guides
       knowledge_search
+      project_convention_settings
     ].freeze
 
     AUTHENTICATED_SHARED_TARGET_KEYS = (SHARED_TARGET_KEYS - [ :sign_in ]).freeze
@@ -137,6 +138,7 @@ module Screenshots
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
       project_agent_run_show: Target.new(slug: "project_agent_run_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}" }, requires_auth: true),
       project_quality_dashboard: Target.new(slug: "project_quality_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/quality_dashboard" }, requires_auth: true),
+      project_convention_settings: Target.new(slug: "project_convention_settings", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/convention_settings" }, requires_auth: true),
       project_bundle_performance_dashboard: Target.new(slug: "project_bundle_performance_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/bundle_performance_dashboard" }, requires_auth: true),
       project_cost_snapshot: Target.new(slug: "project_cost_snapshot", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/cost_snapshot" }, requires_auth: true),
       project_cost_dashboard: Target.new(slug: "project_cost_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/cost_dashboard" }, requires_auth: true),
@@ -242,7 +244,8 @@ module Screenshots
       "projects/service_containers_controller.rb" => [ :project_edit ],
       "projects/mcp_servers_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ],
-      "projects/screenshot_configs_controller.rb" => [ :project_edit ]
+      "projects/screenshot_configs_controller.rb" => [ :project_edit ],
+      "projects/convention_settings_controller.rb" => [ :project_convention_settings ]
     }.freeze
 
     def targets_for(path)
@@ -356,6 +359,7 @@ module Screenshots
       when /\Aprojects\/cost_snapshots\// then [ :project_cost_snapshot ]
       when /\Aworkflow_statuses\// then [ :workflow_status ]
       when /\Aprojects\/quality_dashboards\// then [ :project_quality_dashboard ]
+      when /\Aprojects\/convention_settings\// then [ :project_convention_settings ]
       when /\Aprojects\/knowledge_recommendations\// then [ :project_knowledge_recommendations ]
       when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
       else
