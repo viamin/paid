@@ -781,6 +781,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
+        .with(Activities::DismissEscalationActivity, hash_including(issue_id: 10, draft: true), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 0), timeout: 30)
     end
 

@@ -8939,7 +8939,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         hash_including(
           pr_number: 42,
           phase: "escalated",
-          draft: false,
+          draft: true,
           triggers: contain_exactly(hash_including(type: "dismiss_escalation"))
         )
       )

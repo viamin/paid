@@ -78,6 +78,7 @@ module Activities
 
     def execute(input)
       @pr_progress_states = {}
+      @live_pr_states = {}
 
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -255,8 +256,18 @@ module Activities
         draft_review_count: issue.draft_review_count,
         review_goal_retry_count: issue.review_goal_retry_count,
         pr_followup_count: issue.pr_followup_count,
-        draft: issue.pr_review_phase.in?(%w[draft restarted])
+        draft: live_pr_draft_state(issue) { issue.pr_review_phase.in?(%w[draft restarted]) }
       }
+    end
+
+    def live_pr_draft_state(issue)
+      return yield unless live_pr_states.key?(issue.id)
+
+      live_pr_states.dig(issue.id, :draft)
+    end
+
+    def live_pr_states
+      @live_pr_states ||= {}
     end
 
     def pending_review_state(issue, result)
@@ -338,6 +349,7 @@ module Activities
         pr_data = fetch_pr_data(client, project, issue)
         return :skipped if pr_data.nil?
       end
+      live_pr_states[issue.id] = { draft: pr_data.draft == true }
 
       progress_state ||= pr_progress_state(
         project,

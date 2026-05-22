@@ -930,6 +930,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         review_goal_retry_count: 1
       )
     end
+
+    it "prefers the live GitHub draft state when dismissal is evaluated from lifecycle signals" do
+      allow(activity).to receive(:pr_progress_state).with(project, issue).and_return(progress_state)
+      allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(false)
+      allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
+        .with(project, issue, progress_state:)
+        .and_return(false)
+      allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
+      allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(true)
+
+      activity.instance_variable_set(:@live_pr_states, { issue.id => { draft: true } })
+
+      signals = activity.send(:build_lifecycle_signals, project, issue)
+
+      expect(signals).to include(
+        escalation_dismissed: true,
+        draft: true
+      )
+    end
   end
 
   describe "#no_progress_stuck?", :no_db do
