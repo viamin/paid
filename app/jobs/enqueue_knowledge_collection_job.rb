@@ -15,11 +15,29 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
     commit_sha = worktree_service.current_commit_sha
 
     project.update!(knowledge_status: "collecting") if project.knowledge_status.in?(%w[pending stale])
+    detect_import_conventions(project, commit_sha)
 
     RunCollectorsJob.perform_later(
       project.id,
       commit_sha,
       branch: project.default_branch
+    )
+  end
+
+  private
+
+  def detect_import_conventions(project, commit_sha)
+    ProjectConventions::DetectForImport.call(
+      project: project,
+      commit_sha: commit_sha,
+      branch: project.default_branch
+    )
+  rescue StandardError => e
+    Rails.logger.error(
+      message: "knowledge.import_convention_detection_failed",
+      project_id: project.id,
+      commit_sha: commit_sha,
+      error: e.message
     )
   end
 end
