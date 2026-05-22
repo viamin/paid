@@ -113,13 +113,16 @@ module Activities
         end
 
         result = scan_pr(project, client, issue)
-        next if result == :skipped
+        lifecycle_signals = build_lifecycle_signals(project, issue)
+        if result == :skipped
+          collect_scan_result(issue, nil, automation_results, lifecycle: lifecycle_signals)
+          next
+        end
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
         progress_states << serialized_pr_progress_state(project, issue)
-        collect_scan_result(issue, result, automation_results,
-          lifecycle: build_lifecycle_signals(project, issue))
+        collect_scan_result(issue, result, automation_results, lifecycle: lifecycle_signals)
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
 
