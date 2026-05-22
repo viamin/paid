@@ -208,7 +208,7 @@ RSpec.describe ProjectConventions::Detector, :no_db do
     it "extracts allowed types from commitlint type-enum rule" do
       config = {
         rules: {
-          "type-enum" => [2, "always", %w[feat fix docs chore]]
+          "type-enum" => [ 2, "always", %w[feat fix docs chore] ]
         }
       }.to_json
       write_repo_file(".commitlintrc.json", config)
@@ -302,8 +302,8 @@ RSpec.describe ProjectConventions::Detector, :no_db do
   end
 
   describe "agent-harness-style monorepo" do
-    it "detects multi-package release-please with per-package release types" do
-      config = {
+    let(:monorepo_release_please_config) do
+      {
         packages: {
           "." => { "release-type" => "simple" },
           "packages/agent-harness" => { "release-type" => "ruby" },
@@ -315,7 +315,10 @@ RSpec.describe ProjectConventions::Detector, :no_db do
           { type: "docs", section: "Documentation", hidden: true }
         ]
       }.to_json
-      write_repo_file("release-please-config.json", config)
+    end
+
+    it "detects multi-package release-please with per-package release types" do
+      write_repo_file("release-please-config.json", monorepo_release_please_config)
       write_repo_file(".release-please-manifest.json", '{"." :"1.0.0","packages/agent-harness":"2.3.4","packages/paid":"0.45.0"}')
 
       detections = described_class.call(repo_path:)
@@ -344,7 +347,7 @@ RSpec.describe ProjectConventions::Detector, :no_db do
         ]
       }.to_json
       write_repo_file("release-please-config.json", config)
-      write_repo_file(".commitlintrc.json", '{"rules":{"type-enum":[2,"always",["feat","fix","custom"]}}')
+      write_repo_file(".commitlintrc.json", '{"rules":{"type-enum":[2,"always",["feat","fix","custom"]]}}')
 
       detection = described_class.call(repo_path:).find { |item| item[:key] == "commit_style" }
 

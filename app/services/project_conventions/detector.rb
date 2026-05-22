@@ -13,8 +13,6 @@ module ProjectConventions
       commitlint.config.cjs
       commitlint.config.mjs
     ].freeze
-    DEFAULT_CONVENTIONAL_COMMIT_TYPES = %w[feat fix docs style refactor perf test build ci chore revert].freeze
-
     def self.call(...)
       new(...).call
     end
@@ -45,12 +43,12 @@ module ProjectConventions
       manifest_path = RELEASE_PLEASE_MANIFEST_PATH if repo_file?(RELEASE_PLEASE_MANIFEST_PATH)
       workflow_matches = github_workflow_matches(/release-please/i)
 
-      evidence_paths = [config_path, manifest_path].compact + workflow_matches.map { |m| m[:path] }
+      evidence_paths = [ config_path, manifest_path ].compact + workflow_matches.map { |m| m[:path] }
       return [] if evidence_paths.empty?
 
       evidence = {
         "paths" => evidence_paths.uniq,
-        "signals" => ["release_please"]
+        "signals" => [ "release_please" ]
       }
 
       config = parse_json_file(config_path) if config_path
@@ -65,7 +63,7 @@ module ProjectConventions
         "type" => "release_please",
         "required" => true
       }
-      release_value["packages"] = packages if packages.any?
+      release_value["packages"] = packages if config.is_a?(Hash)
       release_value["changelog_sections"] = changelog_sections if changelog_sections.any?
       release_value["manifest_present"] = true if manifest_path
       release_value["manifest_versions"] = manifest if manifest && manifest.is_a?(Hash) && manifest.any?
@@ -112,7 +110,7 @@ module ProjectConventions
           value:,
           evidence: {
             "paths" => matches.uniq,
-            "signals" => ["commitlint"]
+            "signals" => [ "commitlint" ]
           },
           confidence: 0.95
         )
@@ -130,8 +128,8 @@ module ProjectConventions
             "type" => "lefthook"
           },
           evidence: {
-            "paths" => [lefthook_path],
-            "signals" => ["repo_managed_hooks"]
+            "paths" => [ lefthook_path ],
+            "signals" => [ "repo_managed_hooks" ]
           }
         )
       end
@@ -140,7 +138,7 @@ module ProjectConventions
         return build_detection(
           key: "hook_manager",
           value: { "path" => ".husky", "required" => true, "type" => "husky" },
-          evidence: { "paths" => [".husky"], "signals" => ["repo_managed_hooks"] }
+          evidence: { "paths" => [ ".husky" ], "signals" => [ "repo_managed_hooks" ] }
         )
       end
 
@@ -149,7 +147,7 @@ module ProjectConventions
       build_detection(
         key: "hook_manager",
         value: { "path" => ".githooks", "required" => true, "type" => "githooks" },
-        evidence: { "paths" => [".githooks"], "signals" => ["repo_managed_hooks"] }
+        evidence: { "paths" => [ ".githooks" ], "signals" => [ "repo_managed_hooks" ] }
       )
     end
 
@@ -159,7 +157,7 @@ module ProjectConventions
       build_detection(
         key: "ci_entrypoint",
         value: { "command" => "bin/ci", "required" => true },
-        evidence: { "paths" => ["bin/ci"], "signals" => ["repo_ci_entrypoint"] }
+        evidence: { "paths" => [ "bin/ci" ], "signals" => [ "repo_ci_entrypoint" ] }
       )
     end
 
@@ -177,7 +175,7 @@ module ProjectConventions
           "depends_on_prefix" => "Depends on",
           "heading" => "## Dependencies"
         },
-        evidence: { "paths" => matched_paths, "signals" => ["explicit_dependency_wording"] },
+        evidence: { "paths" => matched_paths, "signals" => [ "explicit_dependency_wording" ] },
         confidence: 0.85
       )
     end
@@ -257,7 +255,7 @@ module ProjectConventions
       items.reduce do |merged, item|
         merged_value = merged[:value].deep_merge(item[:value])
         merged.merge(
-          confidence: [merged[:confidence], item[:confidence]].max,
+          confidence: [ merged[:confidence], item[:confidence] ].max,
           evidence: merge_evidence(merged[:evidence], item[:evidence]),
           value: merged_value
         )
