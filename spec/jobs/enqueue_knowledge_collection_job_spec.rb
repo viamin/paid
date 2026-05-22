@@ -84,6 +84,18 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       )
     end
 
+    it "re-raises import convention checkout errors for retry_on to handle" do
+      allow(ProjectConventions::DetectForImport).to receive(:call).and_raise(WorktreeService::Error, "checkout failed")
+
+      expect { described_class.new.perform(project.id) }.to raise_error(WorktreeService::Error, "checkout failed")
+    end
+
+    it "re-raises missing checkout errors for retry_on to handle" do
+      allow(ProjectConventions::DetectForImport).to receive(:call).and_raise(Errno::ENOENT, "No such file or directory")
+
+      expect { described_class.new.perform(project.id) }.to raise_error(Errno::ENOENT)
+    end
+
     it "raises WorktreeService::Error for retry_on to handle" do
       allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
 

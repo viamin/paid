@@ -32,6 +32,8 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
       commit_sha: commit_sha,
       branch: project.default_branch
     )
+  rescue WorktreeService::Error, Errno::ENOENT
+    raise
   rescue StandardError => e
     Rails.logger.error(
       message: "knowledge.import_convention_detection_failed",
