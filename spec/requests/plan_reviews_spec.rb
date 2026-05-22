@@ -14,8 +14,9 @@ class PlanReviewTemporalClientDouble
 end
 
 RSpec.describe "Plan reviews" do
-  let(:user) { create(:user, :owner) }
-  let(:project) { create(:project, account: user.account) }
+  let(:owner) { create(:user, :owner) }
+  let(:user) { owner }
+  let(:project) { create(:project, account: owner.account) }
   let(:issue) { create(:issue, project:) }
   let(:workflow_handle) { instance_double(PlanReviewWorkflowHandleDouble, signal: true) }
   let(:temporal_client) do
@@ -51,6 +52,19 @@ RSpec.describe "Plan reviews" do
   end
 
   describe "POST /plan_reviews/:id/approve" do
+    it "rejects viewers who can see the project but cannot mutate it" do
+      viewer = create(:user, :viewer, account: owner.account)
+      review = create_plan_review(project:, issue:, workflow_id: "workflow-open")
+      sign_out owner
+      sign_in viewer
+
+      post approve_plan_review_path(review)
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to include("not authorized")
+      expect(workflow_handle).not_to have_received(:signal)
+    end
+
     it "does not allow approving a review outside the user's scope" do
       other_account = create(:account)
       hidden_project = create(:project, account: other_account)

@@ -6,7 +6,7 @@ class PlanReviewPolicy < ApplicationPolicy
   end
 
   def manage?
-    ProjectPolicy.new(user, record.project).show?
+    ProjectPolicy.new(user, record.project).update?
   end
 
   def approve?

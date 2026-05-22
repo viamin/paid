@@ -117,7 +117,7 @@ module Workflows
       reviewed_tasks = tasks
 
       # Review signal gate: wait for approval before creating sub-issues
-      if tasks.present? && tasks.size > 1
+      if plan_review_required?(tasks)
         review_outcome = wait_for_plan_review(
           project_id: project_id,
           issue_id: issue_id,
@@ -249,6 +249,10 @@ module Workflows
 
     def planning_failure_outcome_for(step)
       self.class.planning_failure_outcome_for(step)
+    end
+
+    def plan_review_required?(tasks)
+      tasks.present? && tasks.size > 1 && Temporalio::Workflow.patched("planning-review-signal-gate-v1")
     end
 
     def resolve_reviewed_tasks(tasks, review_outcome)
