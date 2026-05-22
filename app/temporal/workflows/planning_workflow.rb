@@ -11,22 +11,36 @@ module Workflows
   # 1. Fetch the issue and project context
   # 2. Gather codebase knowledge via semantic search
   # 3. Decompose the feature into sub-tasks using LLM
-  # 4. Create sub-issues in GitHub
-  # 5. Update labels on the parent issue
-  #
-  # TODO(#694): Add a plan review/approval signal gate between steps 3 and 4
-  # so stakeholders can review the decomposed plan before sub-issues are created.
+  # 4. Wait for plan review approval (signal gate: approve_plan / reject_plan / revise_plan)
+  # 5. Create sub-issues in GitHub
+  # 6. Update labels on the parent issue
   class PlanningWorkflow < BaseWorkflow
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
+    DEFAULT_PLAN_REVIEW_TIMEOUT_HOURS = 24
+
+    workflow_signal
+    def approve_plan
+      @plan_review_decision = :approved
+      @plan_review_cancel_proc&.call
+    end
+
+    workflow_signal
+    def reject_plan
+      @plan_review_decision = :rejected
+      @plan_review_cancel_proc&.call
+    end
+
+    workflow_signal
+    def revise_plan(revised_tasks)
+      @plan_review_decision = :revised
+      @revised_tasks = deep_symbolize(revised_tasks)
+      @plan_review_cancel_proc&.call
+    end
 
     class << self
       def outcome_mappings
         {
-          success: [
-            planning_outcome_for([]),
-            planning_outcome_for([ { title: "One task" } ]),
-            planning_outcome_for([ { title: "Task one" }, { title: "Task two" } ])
-          ].uniq,
+          success: planning_success_outcomes + %w[plan_review_rejected],
           failure: {
             "decompose_feature" => planning_failure_outcome_for("decompose_feature"),
             "create_sub_issues" => planning_failure_outcome_for("create_sub_issues"),
@@ -35,11 +49,16 @@ module Workflows
         }
       end
 
-      def planning_outcome_for(tasks)
+      def planning_outcome_for(tasks, review_outcome: nil)
+        return "plan_review_rejected" if review_outcome == :rejected
         return "empty_plan" if tasks.empty?
         return "single_task_plan" if tasks.one?
 
         "sub_issues_created"
+      end
+
+      def planning_success_outcomes
+        %w[empty_plan single_task_plan sub_issues_created plan_review_approved plan_review_timed_out]
       end
 
       def planning_failure_outcome_for(step)
@@ -55,6 +74,7 @@ module Workflows
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       workflow_id = Temporalio::Workflow.info.workflow_id
+      timeout_hours = input[:plan_review_timeout_hours] || DEFAULT_PLAN_REVIEW_TIMEOUT_HOURS
 
       Temporalio::Workflow.logger.info(
         "PlanningWorkflow started for project=#{project_id} issue=#{issue_id}"
@@ -62,10 +82,12 @@ module Workflows
 
       context_result = {}
       tasks = []
+      reviewed_tasks = []
       created_issues = []
       prompt_source = nil
       policy_metadata = {}
       decision_step = "fetch_planning_context"
+      review_outcome = nil
 
       # Step 1: Fetch knowledge base context for informed decomposition
       context_result = run_activity(
@@ -92,9 +114,27 @@ module Workflows
       prompt_source = decompose_result[:prompt_source]
       policy_metadata = decomposition_policy_metadata(decompose_result)
 
-      # Step 3: Create sub-issues from the plan (skip if single-task or empty)
-      if tasks.present? && tasks.size > 1
-        sub_tasks = tasks.map { |t| { title: t[:title], body: t[:description] } }
+      reviewed_tasks = tasks
+
+      # Review signal gate: wait for approval before creating sub-issues
+      if plan_review_required?(tasks)
+        review_outcome = wait_for_plan_review(
+          project_id: project_id,
+          issue_id: issue_id,
+          workflow_id: workflow_id,
+          tasks: tasks,
+          context: context_result[:context],
+          prompt_source: prompt_source,
+          policy_metadata: policy_metadata,
+          timeout_hours: timeout_hours
+        )
+
+        reviewed_tasks = resolve_reviewed_tasks(tasks, review_outcome)
+      end
+
+      # Step 3: Create sub-issues from the plan
+      if reviewed_tasks.present? && reviewed_tasks.size > 1 && review_outcome != :rejected
+        sub_tasks = build_sub_tasks(reviewed_tasks)
 
         decision_step = "create_sub_issues"
         create_result = run_activity(
@@ -118,7 +158,7 @@ module Workflows
         {
           project_id: project_id,
           issue_id: issue_id,
-          task_count: tasks.size
+          task_count: reviewed_tasks.size
         },
         timeout: 30
       )
@@ -130,16 +170,17 @@ module Workflows
         workflow_name: self.class.name,
         workflow_id: workflow_id,
         decision_type: "planning_outcome",
-        outcome: planning_outcome_for(tasks),
+        outcome: self.class.planning_outcome_for(reviewed_tasks, review_outcome: review_outcome),
         input_context: context_result[:context],
         plan_data: {
-          tasks: tasks,
+          tasks: reviewed_tasks,
           created_issues: created_issues
         },
         metadata: {
           prompt_source: prompt_source,
           **policy_metadata,
           failed_step: nil,
+          plan_review_outcome: review_outcome&.to_s,
           activity_boundaries: %w[
             Activities::FetchPlanningContextActivity
             Activities::DecomposeFeatureActivity
@@ -153,7 +194,7 @@ module Workflows
         success: true,
         project_id: project_id,
         issue_id: issue_id,
-        task_count: tasks.size,
+        task_count: reviewed_tasks.size,
         created_issues: created_issues
       }
 
@@ -170,7 +211,7 @@ module Workflows
         outcome: planning_failure_outcome_for(decision_step),
         input_context: context_result[:context],
         plan_data: {
-          tasks: tasks,
+          tasks: reviewed_tasks.presence || tasks,
           created_issues: created_issues
         },
         error_details: {
@@ -208,6 +249,71 @@ module Workflows
 
     def planning_failure_outcome_for(step)
       self.class.planning_failure_outcome_for(step)
+    end
+
+    def plan_review_required?(tasks)
+      tasks.present? && tasks.size > 1 && Temporalio::Workflow.patched("planning-review-signal-gate-v1")
+    end
+
+    def resolve_reviewed_tasks(tasks, review_outcome)
+      review_outcome == :revised ? Array(@revised_tasks) : tasks
+    end
+
+    def build_sub_tasks(tasks)
+      tasks.map { |t| { title: t[:title], body: t[:description] } }
+    end
+
+    def wait_for_plan_review(project_id:, issue_id:, workflow_id:, tasks:, context:,
+                             prompt_source:, policy_metadata:, timeout_hours:)
+      @plan_review_decision = nil
+      @revised_tasks = nil
+
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:plan_review:pending",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: "planning_outcome",
+        outcome: "plan_pending_review",
+        input_context: context,
+        plan_data: { tasks: tasks },
+        metadata: {
+          prompt_source: prompt_source,
+          **policy_metadata
+        }
+      )
+
+      cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
+
+      begin
+        timeout_seconds = timeout_hours.to_i * 3600
+        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
+      rescue Temporalio::Error::CanceledError
+        # Signal arrived — decision is in @plan_review_decision
+      ensure
+        @plan_review_cancel_proc = nil
+      end
+
+      decision = @plan_review_decision || :timed_out
+
+      safe_log_decomposition_decision(
+        project_id: project_id,
+        issue_id: issue_id,
+        decision_key: "#{workflow_id}:plan_review:#{decision}",
+        workflow_name: self.class.name,
+        workflow_id: workflow_id,
+        decision_type: "planning_outcome",
+        outcome: "plan_review_#{decision}",
+        input_context: context,
+        plan_data: { tasks: decision == :revised ? @revised_tasks : tasks },
+        metadata: {
+          prompt_source: prompt_source,
+          **policy_metadata
+        }
+      )
+
+      decision
     end
 
     def safe_log_decomposition_decision(payload)

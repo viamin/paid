@@ -213,6 +213,8 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
+  validates :plan_review_timeout_hours,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 720 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
   validates :max_tokens_per_run,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },

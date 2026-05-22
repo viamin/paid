@@ -135,6 +135,13 @@ Rails.application.routes.draw do
 
   get "strategy_reviews", to: "strategy_reviews#queue", as: :strategy_reviews_queue
 
+  # Plan review management for pending feature decomposition plans
+  resources :plan_reviews, only: [ :index ] do
+    post :approve, on: :member
+    post :reject, on: :member
+    post :revise, on: :member
+  end
+
   # Style guide management
   resources :style_guides do
     post :compress, on: :member

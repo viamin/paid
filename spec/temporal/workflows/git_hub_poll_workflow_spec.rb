@@ -9,6 +9,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     allow(workflow).to receive(:quality_gate_allows_run?).and_return(true)
   end
 
+  def stub_planning_workflow_start(workflow, timeout_patch:)
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::LoadFeatureFlagsActivity, anything, timeout: anything)
+      .and_return({ flags: {} })
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+      .and_return({ has_capacity: true })
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("feature-orchestration-start-v1").and_return(false)
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("planning-review-timeout-v1").and_return(timeout_patch)
+    allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+  end
+
   describe "#execute" do
     it "is defined as a Temporal workflow" do
       expect(described_class).to be < Workflows::BaseWorkflow
@@ -422,16 +436,32 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "starts PlanningWorkflow for start_planning decisions" do
       evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
 
+      stub_planning_workflow_start(workflow, timeout_patch: true)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::LoadFeatureFlagsActivity, anything, timeout: anything)
-        .and_return({ flags: {} })
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-        .and_return({ has_capacity: true })
-      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+        .with(Activities::FetchPlanReviewTimeoutActivity, anything, timeout: anything)
+        .and_return({ plan_review_timeout_hours: 24 })
 
       workflow.send(:handle_automation_result, evaluation, project_id)
 
+      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+        Workflows::PlanningWorkflow,
+        { project_id: project_id, issue_id: 20, plan_review_timeout_hours: 24 },
+        hash_including(
+          id: /\Aplan-#{project_id}-20-/,
+          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+        )
+      )
+    end
+
+    it "preserves the legacy PlanningWorkflow child input before the timeout patch" do
+      evaluation = { decisions: [ { type: "start_planning", issue_id: 20 } ] }
+
+      stub_planning_workflow_start(workflow, timeout_patch: false)
+
+      workflow.send(:handle_automation_result, evaluation, project_id)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::FetchPlanReviewTimeoutActivity, anything, timeout: anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::PlanningWorkflow,
         { project_id: project_id, issue_id: 20 },

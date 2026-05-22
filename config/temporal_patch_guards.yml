@@ -28,3 +28,8 @@ workflows:
       introduced_on: "2026-04-27"
     feature-orchestration-start-v1:
       introduced_on: "2026-05-05"
+    planning-review-timeout-v1:
+      introduced_on: "2026-05-22"
+  Workflows::PlanningWorkflow:
+    planning-review-signal-gate-v1:
+      introduced_on: "2026-05-22"

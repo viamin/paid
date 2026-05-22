@@ -100,6 +100,7 @@ module Screenshots
       prompt_reviews_queue: Target.new(slug: "prompt_reviews_queue", path_builder: "/prompt_reviews", requires_auth: true),
       prompt_reviews: Target.new(slug: "prompt_reviews", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews" }, requires_auth: true),
       prompt_review_show: Target.new(slug: "prompt_review_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}/reviews/#{seed_data.fetch(:pending_prompt_version).id}" }, requires_auth: true),
+      plan_reviews: Target.new(slug: "plan_reviews", path_builder: "/plan_reviews", requires_auth: true),
       strategy_reviews_queue: Target.new(slug: "strategy_reviews_queue", path_builder: "/strategy_reviews", requires_auth: true),
       strategy_reviews: Target.new(slug: "strategy_reviews", path_builder: ->(seed_data) { "/strategies/#{seed_data.fetch(:strategy).id}/reviews" }, requires_auth: true),
       strategy_review_show: Target.new(slug: "strategy_review_show", path_builder: ->(seed_data) { "/strategies/#{seed_data.fetch(:strategy).id}/reviews/#{seed_data.fetch(:pending_strategy_version).id}" }, requires_auth: true),
@@ -186,6 +187,7 @@ module Screenshots
       "agent_runs_controller.rb" => [ :agent_runs ],
       "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
+      "plan_reviews_controller.rb" => [ :plan_reviews ],
       "strategy_reviews_controller.rb" => %i[strategy_reviews_queue strategy_reviews strategy_review_show],
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
@@ -336,6 +338,7 @@ module Screenshots
       when "agent_runs/_detail.html.erb", "agent_runs/_detail_actions.html.erb" then [ :project_agent_run_show ]
       when /\Aagent_runs\// then [ :agent_runs ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
+      when /\Aplan_reviews\// then [ :plan_reviews ]
       when /\Astrategy_reviews\// then strategy_review_targets(relative_path.delete_prefix("strategy_reviews/"))
       when /\Aab_tests\// then ab_test_targets(relative_path.delete_prefix("ab_tests/"))
       when /\Aprompts\// then prompts_targets(relative_path.delete_prefix("prompts/"))

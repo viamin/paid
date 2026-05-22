@@ -1,0 +1,98 @@
+<% content_for(:title) { "Plan Reviews" } %>
+
+<div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+  <h1 class="text-2xl font-bold text-gray-900">Plan Reviews</h1>
+  <p class="mt-1 text-sm text-gray-600">
+    Pending feature decomposition plans awaiting review. Approve, reject, or revise before sub-issues are created.
+  </p>
+
+  <% if @plan_reviews.blank? %>
+    <div class="mt-8 text-center text-gray-500">
+      <p>No pending plan reviews.</p>
+    </div>
+  <% else %>
+    <div class="mt-6 space-y-6">
+      <% @plan_reviews.each do |review| %>
+        <div class="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+          <div class="flex items-start justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900">
+                <%= link_to review.project.full_name, review.project, class: "text-indigo-600 hover:text-indigo-800" %>
+                —
+                <%= link_to "##{review.issue.github_number}", review.issue.github_url, class: "text-indigo-600 hover:text-indigo-800", target: "_blank" %>
+                <%= review.issue.title %>
+              </h2>
+              <p class="mt-1 text-xs text-gray-500">
+                Created <%= time_ago_in_words(review.created_at) %> ago
+                · Workflow <code class="text-xs bg-gray-100 px-1 py-0.5 rounded"><%= review.workflow_id %></code>
+              </p>
+            </div>
+          </div>
+
+          <% tasks = Array(review.plan_data&.dig("tasks")) %>
+          <% if tasks.present? %>
+            <div class="mt-4">
+              <h3 class="text-sm font-medium text-gray-700 mb-2">Proposed Sub-Tasks</h3>
+              <ol class="list-decimal list-inside space-y-2">
+                <% tasks.each do |task| %>
+                  <li class="text-sm text-gray-800">
+                    <strong><%= task["title"] %></strong>
+                    <span class="text-gray-500">— <%= truncate(task["description"], length: 80) %></span>
+                  </li>
+                <% end %>
+              </ol>
+            </div>
+
+            <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <h3 class="text-sm font-medium text-amber-900">Revise Plan</h3>
+              <p class="mt-1 text-sm text-amber-800">
+                Edit the task titles or descriptions below to send a revised decomposition plan to the workflow.
+              </p>
+
+              <%= form_with url: revise_plan_review_path(review), method: :post, class: "mt-4 space-y-4" do %>
+                <% tasks.each_with_index do |task, index| %>
+                  <% title_id = "review_#{review.id}_task_#{index}_title" %>
+                  <% description_id = "review_#{review.id}_task_#{index}_description" %>
+                  <fieldset class="space-y-3 rounded-md border border-amber-200 bg-white p-4">
+                    <legend class="px-1 text-sm font-medium text-gray-900">Task <%= index + 1 %></legend>
+
+                    <div>
+                      <%= label_tag title_id, "Title", class: "block text-sm font-medium text-gray-700" %>
+                      <%= text_field_tag "tasks[][title]", task["title"],
+                            id: title_id,
+                            class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+                    </div>
+
+                    <div>
+                      <%= label_tag description_id, "Description", class: "block text-sm font-medium text-gray-700" %>
+                      <%= text_area_tag "tasks[][description]", task["description"], rows: 3,
+                            id: description_id,
+                            class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+                    </div>
+                  </fieldset>
+                <% end %>
+
+                <div>
+                  <%= submit_tag "Revise", class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-700" %>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
+
+          <div class="mt-4 flex items-center gap-3">
+            <%= button_to approve_plan_review_path(review), method: :post,
+                  class: "inline-flex items-center rounded-md bg-green-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-green-700" do %>
+              Approve
+            <% end %>
+
+            <%= button_to reject_plan_review_path(review), method: :post,
+                  class: "inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700",
+                  form: { data: { turbo_confirm: "Reject this plan? No sub-issues will be created." } } do %>
+              Reject
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</div>
