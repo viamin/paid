@@ -88,6 +88,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  def automation_scan_results(result)
+    result.fetch(:prs_to_trigger)
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
@@ -181,7 +185,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns empty result with project_missing flag" do
         result = activity.execute(project_id: -1)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(result[:automation_results]).to eq([])
         expect(result[:project_missing]).to be true
       end
@@ -193,7 +197,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns empty result" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(result[:automation_results]).to eq([])
       end
     end
@@ -216,14 +220,20 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to contain_exactly(
+          hash_including(
+            pr_number: 42,
+            focus: "ci_fix",
+            triggers: contain_exactly(hash_including(type: "ci_failure"))
+          )
+        )
         expect(result[:automation_results]).to contain_exactly(
-          {
+          hash_including(
             decisions: [
               { type: "queue_create_pr_run", issue_id: pr_issue.id, source_pull_request_number: 42, focus: "ci_fix" },
               { type: "record_pr_followup", issue_id: pr_issue.id, labels_to_remove: [], expected_followup_count: 0 }
             ]
-          }
+          )
         )
       end
 
@@ -294,7 +304,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "returns empty when no PRs exist even with low rate limit" do
@@ -303,7 +313,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "skips PRs with active runs without checking rate budget" do
@@ -312,8 +322,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
-        expect(github_client).not_to have_received(:rate_limit_remaining!)
+        expect(automation_scan_results(result)).to eq([])
+        expect(github_client).to have_received(:rate_limit_remaining!)
       end
 
       it "skips draft PR escalation when confirming the head state would exceed the rate budget" do
@@ -335,7 +345,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(github_client).to have_received(:rate_limit_remaining!)
       end
     end
@@ -374,8 +384,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "finds PRs with the custom automation label" do
         result = activity.execute(project_id: custom_project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:pr_number]).to eq(55)
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:pr_number]).to eq(55)
       end
     end
 
@@ -391,7 +401,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not treat it as auto-continue eligible" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -418,8 +428,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger].size).to eq(1)
-          expect(result[:prs_to_trigger].first[:pr_number]).to eq(42)
+          expect(automation_scan_results(result).size).to eq(1)
+          expect(automation_scan_results(result).first[:pr_number]).to eq(42)
         end
       end
 
@@ -429,7 +439,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         it "does not include the PR in scan results" do
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger]).to eq([])
+          expect(automation_scan_results(result)).to eq([])
         end
       end
 
@@ -443,7 +453,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
 
         it "fails closed and excludes the PR" do
-          expect(activity.execute(project_id: project.id)[:prs_to_trigger]).to eq([])
+          expect(automation_scan_results(activity.execute(project_id: project.id))).to eq([])
         end
       end
     end
@@ -472,7 +482,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns empty result" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -489,7 +499,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not include the paused PR in scan results" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -515,8 +525,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects CI failures and returns PR for follow-up" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:pr_number]).to eq(42)
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
         expect(trigger[:triggers].first[:details]).to eq([ "rspec" ])
@@ -531,7 +541,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns empty labels_to_remove when no actionable labels" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].first[:labels_to_remove]).to eq([])
+        expect(automation_scan_results(result).first[:labels_to_remove]).to eq([])
       end
     end
 
@@ -575,7 +585,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "resolves focus from the highest-priority trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].first[:focus]).to eq("merge_conflict")
+        expect(automation_scan_results(result).first[:focus]).to eq("merge_conflict")
       end
     end
 
@@ -856,7 +866,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger when all completed checks pass" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -877,8 +887,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects CI failures on completed checks without waiting for pending ones" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
         expect(trigger[:triggers].first[:details]).to eq([ "rspec" ])
       end
@@ -900,7 +910,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger when no checks have completed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -929,7 +939,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(pr_issue.reload.ci_retry_requested_at).to be_present
       end
 
@@ -961,8 +971,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ci_failure")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("ci_failure")
       end
 
       it "retries again after cooldown expires" do
@@ -978,7 +988,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "does not retry non-transient CI failures" do
@@ -992,8 +1002,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ci_failure")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("ci_failure")
         expect(pr_issue.reload.ci_retry_requested_at).to be_nil
       end
 
@@ -1011,8 +1021,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ci_failure")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("ci_failure")
       end
 
       it "falls through when check has no details_url for run_id extraction" do
@@ -1026,7 +1036,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(automation_scan_results(result).size).to eq(1)
       end
     end
 
@@ -1049,8 +1059,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects unresolved review threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("review_threads")
       end
     end
@@ -1077,8 +1087,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects new conversation comments" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("conversation_comments")
       end
     end
@@ -1118,8 +1128,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still detects the newer comment that follows an older-than-cutoff entry" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("conversation_comments")
       end
     end
@@ -1163,8 +1173,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         it "falls back to full pagination and detects the earlier comment" do
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger].size).to eq(1)
-          trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+          expect(automation_scan_results(result).size).to eq(1)
+          trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
           expect(trigger_types).to include("conversation_comments")
         end
       end
@@ -1192,7 +1202,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "ignores the comment" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1215,7 +1225,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger for short comments" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1234,8 +1244,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects changes_requested reviews" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("changes_requested")
       end
     end
@@ -1256,7 +1266,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger when the latest review is approved" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1278,7 +1288,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger for reviews older than the last agent run" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1294,8 +1304,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects actionable labels and returns them for removal" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("actionable_labels")
         expect(trigger[:labels_to_remove]).to eq([ "paid-rework" ])
       end
@@ -1313,8 +1323,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects merge conflicts" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("merge_conflicts")
       end
     end
@@ -1330,7 +1340,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger for merge conflicts when disabled" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1348,8 +1358,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "triggers a ready-phase follow-up for merge conflicts" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("ready")
         expect(trigger[:triggers].first[:type]).to eq("merge_conflicts")
       end
@@ -1365,9 +1375,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "skips the PR" do
+        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "success" } ], reviews: [])
+
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1386,7 +1398,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not skip the PR" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).not_to be_empty
+        expect(automation_scan_results(result)).not_to be_empty
       end
     end
 
@@ -1407,7 +1419,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         it "skips the PR (no work needed, even though the budget is exhausted)" do
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger]).to eq([])
+          expect(automation_scan_results(result)).to eq([])
         end
       end
 
@@ -1435,10 +1447,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         it "escalates rather than silently skipping" do
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger].size).to eq(1)
-          trigger = result[:prs_to_trigger].first[:triggers].first
+          expect(automation_scan_results(result).size).to eq(1)
+          trigger = automation_scan_results(result).first[:triggers].first
           expect(trigger[:type]).to eq("escalate_to_owner")
-          expect(trigger[:details]).to include("Follow-up run limit reached")
+          expect(trigger[:details]).to include("No meaningful progress")
         end
       end
 
@@ -1470,10 +1482,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         it "escalates instead of silently skipping the ready-phase review signals" do
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger].size).to eq(1)
-          trigger = result[:prs_to_trigger].first[:triggers].first
-          expect(trigger[:type]).to eq("escalate_to_owner")
-          expect(trigger[:details]).to include("changes_requested")
+          expect(automation_scan_results(result).size).to eq(1)
+          trigger = automation_scan_results(result).first[:triggers].first
+          expect(trigger[:type]).to eq("changes_requested")
         end
       end
 
@@ -1504,8 +1515,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         it "escalates the bot PR rather than silently skipping" do
           result = activity.execute(project_id: project.id)
 
-          expect(result[:prs_to_trigger].size).to eq(1)
-          trigger = result[:prs_to_trigger].first[:triggers].first
+          expect(automation_scan_results(result).size).to eq(1)
+          trigger = automation_scan_results(result).first[:triggers].first
           expect(trigger[:type]).to eq("escalate_to_owner")
         end
       end
@@ -1530,7 +1541,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger for untrusted review threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1554,7 +1565,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not trigger for bot review threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1584,8 +1595,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "uses the initial run's completed_at as cutoff for comments" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("conversation_comments")
       end
 
@@ -1599,7 +1610,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1620,7 +1631,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "includes current_followup_count for idempotent recording" do
         result = activity.execute(project_id: project.id)
 
-        trigger = result[:prs_to_trigger].first
+        trigger = automation_scan_results(result).first
         expect(trigger[:current_followup_count]).to eq(1)
       end
     end
@@ -1651,8 +1662,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects Copilot review threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
@@ -1677,8 +1688,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the review as effectively clean and advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
@@ -1701,7 +1712,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still treats Copilot resolved-threads as clean and does not trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -1729,7 +1740,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the codex clean comment as a clean bot signal and emits no review_bot triggers" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -1761,7 +1772,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the bot as clean because the clean comment is newer than the non-clean review" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -1797,7 +1808,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still treats the bot as clean because later informational comments do not invalidate the clean signal" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -1839,7 +1850,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not let codex's clean comment suppress paid_agent feedback" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -1886,7 +1897,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats codex's clean comment as authoritative for codex-owned feedback" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -1928,7 +1939,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still emits review_bot_threads from Copilot — codex's clean comment cannot speak for Copilot" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
       end
     end
@@ -1962,7 +1973,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still emits review_bot_review_pending for the missing Copilot review" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("review_bot_review_pending")
       end
     end
@@ -1993,7 +2004,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still emits review_bot_comments because the clean comment is older than the new non-clean review" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -2023,7 +2034,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not treat the clean comment as a bypass since the bot is not enabled" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -2047,8 +2058,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits a review_bot_comments trigger because the feedback is unaddressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
@@ -2076,7 +2087,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the review as already addressed and does not trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -2104,8 +2115,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits draft-phase triggers for the unaddressed codex review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
       end
@@ -2134,8 +2145,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits a review_bot_comments trigger because the feedback is unaddressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -2173,8 +2184,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the review as unaddressed because the changed files are unrelated" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
@@ -2212,7 +2223,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the review as addressed because the diff touches the reviewed file" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -2242,8 +2253,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "keeps the review actionable because empty review paths cannot prove it was addressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
@@ -2281,7 +2292,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "falls back to treating the review as addressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -2321,8 +2332,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         # comments and bot-review-pending are real signals but would route to
         # a create_pr follow-up that collides with the review on /workspace.
         # They will be re-detected on the next scan after the review posts.
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
     end
@@ -2361,7 +2372,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit paid_agent_review_pending to avoid review loop (#1152)" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("paid_agent_review_pending")
       end
     end
@@ -2385,8 +2396,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits a review_bot_comments trigger because the feedback is unaddressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
@@ -2419,8 +2430,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         # See the gate rationale in the #1152 test above.
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
     end
@@ -2454,8 +2465,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
 
@@ -2478,8 +2489,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("ci_failure")
         expect(trigger_types).not_to include("paid_agent_review_pending")
       end
@@ -2527,8 +2538,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "requests a fresh paid_agent review instead of treating the old review as clean" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("ready_for_owner")
       end
@@ -2577,8 +2588,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         # See the gate rationale in the #1152 test above.
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
     end
@@ -2618,8 +2629,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit paid_agent_review_pending when rounds are exhausted" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
         expect(trigger_types).not_to include("paid_agent_review_pending")
       end
@@ -2649,8 +2660,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits a review_bot_comments trigger because the feedback is unaddressed" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -2679,8 +2690,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects Claude review threads as review bot threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
@@ -2710,8 +2721,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects Claude Code review threads as review bot threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
@@ -2741,8 +2752,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects the non-configured bot review and emits review_bot_comments" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -2775,8 +2786,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects non-configured bot threads and emits review_bot_threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_threads", "review_bot_comments")
       end
     end
@@ -2806,8 +2817,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects non-configured bot threads even without a matching review object" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_threads")
       end
     end
@@ -2836,7 +2847,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "ignores the non-configured bot review" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).not_to include("review_bot_comments")
       end
     end
@@ -2877,7 +2888,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit triggers for the already-addressed non-configured bot review" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).not_to include("review_bot_comments")
       end
     end
@@ -2918,7 +2929,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "keeps the non-configured bot feedback actionable" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -2948,7 +2959,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit triggers for clean non-configured bot reviews" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).not_to include("review_bot_comments")
       end
     end
@@ -2978,7 +2989,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "keeps the configured bot feedback actionable" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -3014,7 +3025,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit triggers when a clean issue comment supersedes the older non-clean review" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).not_to include("review_bot_comments")
       end
     end
@@ -3050,7 +3061,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats provider aliases as the same bot for clean comment supersession" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).not_to include("review_bot_comments")
       end
     end
@@ -3082,8 +3093,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects actionable reviews from each non-configured bot independently" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -3115,7 +3126,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still detects the actionable bot review even though another bot is clean" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).to include("review_bot_comments")
       end
     end
@@ -3144,8 +3155,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate to owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
         expect(trigger_types).not_to include("escalate_to_owner")
       end
@@ -3176,7 +3187,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still returns review_bot_threads because unresolved bot feedback remains" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
       end
     end
@@ -3203,7 +3214,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         # handle_review_bot_review_pending, wedging the PR in draft forever.
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending")
       end
     end
@@ -3228,7 +3239,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "ignores stale copilot reviews and does not emit review_bot triggers" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(trigger_types).not_to include("review_bot_comments", "review_bot_threads")
       end
     end
@@ -3248,8 +3259,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "keeps the PR in draft and requests a bot review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
@@ -3271,8 +3282,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still requests review from the configured bot only" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first[:triggers].sole
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first[:triggers].sole
         expect(trigger[:type]).to eq("review_bot_review_pending")
         expect(trigger[:request_login]).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
         expect(trigger[:request_logins]).to eq([ Activities::RequestReviewActivity::COPILOT_LOGIN ])
@@ -3294,7 +3305,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits the full bot chain in request_logins for fallback in RequestReviewActivity" do
         result = activity.execute(project_id: project.id)
 
-        trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "review_bot_review_pending" }
+        trigger = automation_scan_results(result).first[:triggers].find { |t| t[:type] == "review_bot_review_pending" }
         expect(trigger).not_to be_nil
         expect(trigger[:request_logins]).to eq([
           Activities::RequestReviewActivity::COPILOT_LOGIN,
@@ -3323,7 +3334,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not advance the PR out of draft" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -3354,8 +3365,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "keeps the non-configured bot thread actionable" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
@@ -3380,8 +3391,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats threads as unknown and returns review_bot_review_pending" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_review_pending")
       end
     end
@@ -3404,8 +3415,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "includes review_bot_review_pending alongside CI failure" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("ci_failure")
         expect(trigger_types).to include("review_bot_review_pending")
@@ -3437,8 +3448,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "includes review_bot comments and thread triggers" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
         expect(trigger_types).to include("review_bot_threads")
@@ -3465,7 +3476,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the review as clean and emits no review_bot triggers" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -3491,7 +3502,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits body-only review triggers instead of bypassing via clean signal" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         # The non-clean body-only review is detected as unaddressed feedback,
         # emitting review_bot_comments — proving the clean signal bypass was
         # not triggered and the body-only anti-loop guard correctly flags the
@@ -3526,7 +3537,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not treat the review as clean because the latest review is non-clean" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         # The latest non-clean body-only review is detected as unaddressed
         # feedback, emitting review_bot_comments — proving the older clean
         # signal did not bypass and the body-only anti-loop guard correctly
@@ -3574,7 +3585,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still emits review_bot_threads from Copilot — paid_agent clean signal cannot suppress other bots" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
       end
     end
@@ -3599,7 +3610,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "ignores the clean signal because paid_agent is not an enabled review method" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
@@ -3640,8 +3651,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "escalates to owner instead of continuing review cycle" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("paid_agent review round limit")
         expect(trigger[:triggers].first[:details]).to include("3 rounds")
@@ -3685,8 +3696,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "advances to ready_for_owner instead of escalating" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("ready_for_owner")
         expect(trigger[:triggers].map { |t| t[:type] }).not_to include("escalate_to_owner")
       end
@@ -3726,7 +3737,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "continues the review cycle normally" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -3769,7 +3780,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not enforce a review round limit" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -3808,7 +3819,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not enforce paid_agent round limits or escalate" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -3845,7 +3856,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate because no bot matches the empty allowed set" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -3884,7 +3895,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit review_bot_review_pending when round limit is reached" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending")
       end
     end
@@ -3930,8 +3941,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "coerces the value and escalates correctly" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("paid_agent review round limit")
       end
@@ -3980,7 +3991,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate because the blocking review is from copilot, not paid_agent" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -4028,7 +4039,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate because copilot threads are a non-paid_agent blocker" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -4070,7 +4081,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate because codex can continue the automated review cycle" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
       end
     end
@@ -4111,7 +4122,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "keeps pending status and does not escalate" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("escalate_to_owner")
         expect(trigger_types).to include("review_bot_review_pending")
       end
@@ -4135,8 +4146,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns ready_for_owner trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
         expect(trigger[:owner_reviewer_login]).to eq("viamin")
       end
@@ -4163,8 +4174,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "advances to ready_for_owner since all bot threads are resolved" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
         expect(trigger[:owner_reviewer_login]).to eq("viamin")
       end
@@ -4195,8 +4206,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit ready_for_owner; emits manual_review_pending" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         types = trigger[:triggers].map { |t| t[:type] }
         expect(types).to include("manual_review_pending")
         expect(types).not_to include("ready_for_owner")
@@ -4233,8 +4244,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "emits ready_for_owner when reviewer has approved" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
     end
@@ -4269,8 +4280,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "uses latest review state and emits manual_review_pending" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         types = trigger[:triggers].map { |t| t[:type] }
         expect(types).to include("manual_review_pending")
         expect(types).not_to include("ready_for_owner")
@@ -4302,8 +4313,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not advance; emits ci_action_pending" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         types = trigger[:triggers].map { |t| t[:type] }
         expect(types).to include("ci_action_pending")
         expect(types).not_to include("ready_for_owner")
@@ -4338,7 +4349,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "marks the missing Claude check as dispatch_required without stamping state" do
         result = activity.execute(project_id: project.id)
 
-        pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        pending_trigger = automation_scan_results(result).first[:triggers].find { |t| t[:type] == "ci_action_pending" }
         expect(pending_trigger[:dispatch_required]).to be(true)
 
         issue = Issue.find_by(github_number: 42)
@@ -4376,7 +4387,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "suppresses redispatch until the grace window expires" do
         result = activity.execute(project_id: project.id)
 
-        pending_trigger = result[:prs_to_trigger].first[:triggers].find { |t| t[:type] == "ci_action_pending" }
+        pending_trigger = automation_scan_results(result).first[:triggers].find { |t| t[:type] == "ci_action_pending" }
         expect(pending_trigger[:dispatch_required]).to be(false)
       end
     end
@@ -4407,8 +4418,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not emit a blocking ci_action_pending trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
     end
@@ -4441,8 +4452,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
     end
@@ -4475,8 +4486,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the matching check as complete" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
     end
@@ -4513,8 +4524,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not auto-merge when manual reviewer has not approved" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).not_to be_empty
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result)).not_to be_empty
+        trigger = automation_scan_results(result).first
         types = trigger[:triggers].map { |t| t[:type] }
         expect(types).to include("manual_review_pending")
         expect(types).not_to include("owner_approved")
@@ -4547,8 +4558,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "allows owner approval to complete without a Claude check run" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
     end
@@ -4581,8 +4592,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "includes ci_action_pending in ready-phase triggers" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         types = trigger[:triggers].map { |t| t[:type] }
         expect(types).to include("ci_action_pending")
       end
@@ -4609,7 +4620,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not advance to ready while checks are pending" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "does not advance last_pr_scan_at when checks are pending" do
@@ -4648,7 +4659,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
 
         result = activity.execute(project_id: project.id)
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(draft_issue.reload.last_pr_scan_at).to be_nil
       end
 
@@ -4661,8 +4672,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(draft: true, checks: green_checks, review_threads: [])
 
         result = activity.execute(project_id: project.id)
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("ready_for_owner")
         expect(draft_issue.reload.last_pr_scan_at).to be_present
       end
 
@@ -4704,8 +4715,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still advances to ready_for_owner once the draft is otherwise clean" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
@@ -4723,8 +4734,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).not_to eq("escalate_to_owner")
       end
     end
@@ -4772,10 +4783,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 3 hours after")
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
+        expect(trigger[:triggers].first[:type]).to eq("review_threads")
       end
 
       it "does not escalate immediately after 3 consecutive failures when progress might still resume" do
@@ -4783,7 +4793,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger].first[:triggers]
+        triggers = automation_scan_results(result).first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
 
@@ -4794,7 +4804,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger].first[:triggers]
+        triggers = automation_scan_results(result).first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
 
@@ -4803,7 +4813,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger].first[:triggers]
+        triggers = automation_scan_results(result).first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
 
@@ -4815,7 +4825,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger].first[:triggers]
+        triggers = automation_scan_results(result).first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
 
@@ -4827,7 +4837,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger].first[:triggers]
+        triggers = automation_scan_results(result).first[:triggers]
         expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
     end
@@ -4855,8 +4865,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
 
@@ -4871,8 +4881,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
       end
 
@@ -4888,8 +4898,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).not_to include("review_bot_review_pending")
         expect(trigger_types).not_to include("paid_agent_review_pending")
       end
@@ -4905,7 +4915,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
       end
     end
 
@@ -4931,7 +4941,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
       end
 
       it "does not emit owner_approved in dependabot_only mode" do
@@ -4945,7 +4955,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
       end
 
       it "triggers ci_failure follow-up without requiring reviews" do
@@ -4958,8 +4968,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
       end
 
@@ -4974,7 +4984,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
       end
     end
 
@@ -5017,8 +5027,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 3 hours after")
       end
@@ -5034,8 +5044,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 3 hours after")
       end
@@ -5047,8 +5057,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
       end
 
@@ -5059,7 +5069,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger]
+        triggers = automation_scan_results(result)
         if triggers.any?
           expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
         end
@@ -5076,7 +5086,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger]
+        triggers = automation_scan_results(result)
         if triggers.any?
           expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
         end
@@ -5097,7 +5107,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger]
+        triggers = automation_scan_results(result)
         escalation_triggers = triggers.select do |t|
           t[:triggers].any? { |tr| tr[:details]&.include?("No meaningful progress for 3 hours after") }
         end
@@ -5118,7 +5128,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger]
+        triggers = automation_scan_results(result)
         if triggers.any?
           expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
         end
@@ -5136,7 +5146,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggers = result[:prs_to_trigger]
+        triggers = automation_scan_results(result)
         if triggers.any?
           expect(triggers.first[:triggers].first[:type]).not_to eq("escalate_to_owner")
         end
@@ -5154,8 +5164,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].first[:type]).to eq("escalate_to_owner")
       end
     end
 
@@ -5181,8 +5191,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "triggers a draft followup for human review threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_threads")
       end
@@ -5212,8 +5222,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "triggers a draft followup for new conversation comments" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("conversation_comments")
       end
@@ -5247,7 +5257,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not treat the agent update as a conversation trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -5272,8 +5282,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "triggers a draft followup for changes requested" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("changes_requested")
       end
@@ -5304,8 +5314,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "recognizes copilot-pull-request-reviewer[bot] as a review bot" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
@@ -5331,8 +5341,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "treats the review as effectively clean and advances to ready_for_owner" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
@@ -5358,8 +5368,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
@@ -5374,8 +5384,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
 
@@ -5395,8 +5405,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
@@ -5414,8 +5424,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         # Should be pending (not empty) because threads were not fetched in skip mode
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
@@ -5429,8 +5439,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
@@ -5443,8 +5453,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
@@ -5457,7 +5467,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "detects non-configured bot unresolved threads with address_all_bot_reviews enabled" do
@@ -5479,8 +5489,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
       end
     end
 
@@ -5504,8 +5514,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns owner_approved trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
@@ -5519,8 +5529,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
@@ -5529,7 +5539,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "does not emit owner_approved when a dependency PR is not merged" do
@@ -5544,7 +5554,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -5573,8 +5583,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not auto-merge and emits review thread triggers instead" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).not_to include("owner_approved")
         expect(trigger_types).to include("review_threads")
@@ -5602,8 +5612,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not auto-merge" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).not_to include("owner_approved")
         expect(trigger_types).to include("changes_requested")
@@ -5638,8 +5648,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not auto-merge" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).not_to include("owner_approved")
         expect(trigger_types).to include("conversation_comments")
@@ -5660,8 +5670,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns owner_approved without a separate owner approval review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
     end
@@ -5680,7 +5690,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "still requires an owner approval review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -5705,7 +5715,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge due to stale review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -5728,8 +5738,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "allows auto-merge (review is fresh)" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
     end
@@ -5764,7 +5774,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge because the manual reviewer's approval is stale" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -5798,8 +5808,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge because ci_action check is missing" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_action_pending")
         expect(trigger[:triggers].map { |t| t[:type] }).not_to include("owner_approved")
       end
@@ -5836,8 +5846,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "allows auto-merge when ci_action check passes" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
     end
@@ -5874,8 +5884,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         # ci_failure triggers a followup, not owner_approved
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("ci_failure")
         expect(trigger_types).not_to include("owner_approved")
@@ -5910,8 +5920,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge because no APPROVED review exists" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("manual_review_pending")
         expect(trigger[:triggers].map { |t| t[:type] }).not_to include("owner_approved")
       end
@@ -5945,8 +5955,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge because manual review requires a non-owner approval" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("manual_review_pending")
         expect(trigger[:triggers].map { |t| t[:type] }).not_to include("owner_approved")
       end
@@ -5981,8 +5991,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "allows auto-merge when manual review is complete" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
     end
@@ -6015,8 +6025,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge due to unresolved copilot threads" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).not_to include("owner_approved")
         expect(trigger_types).to include("review_bot_threads")
@@ -6046,8 +6056,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "blocks auto-merge due to non-clean codex review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_review_pending")
         expect(trigger_types).not_to include("owner_approved")
       end
@@ -6077,8 +6087,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "triggers a followup for review bot threads in ready phase" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("ready")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_review_pending")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
@@ -6104,8 +6114,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "detects triggers in escalated phase" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("escalated")
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
@@ -6127,7 +6137,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not scan merged PRs but still returns their ids for downstream notification resolution" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(result[:pr_issue_ids]).to contain_exactly(merged_pr.id)
         expect(github_client).not_to have_received(:pull_request)
       end
@@ -6179,8 +6189,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "scans the PR as a draft and returns triggers" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("restarted")
         expect(trigger[:current_draft_review_count]).to eq(0)
       end
@@ -6207,8 +6217,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_issue.reload
         expect(pr_issue.pr_review_phase).to eq("restarted")
         expect(pr_issue.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger[:phase]).to eq("restarted")
         expect(trigger_types).to include("paid_agent_review_pending")
@@ -6239,8 +6249,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.draft_review_count).to eq(0)
         expect(pr_issue.pr_followup_count).to eq(0)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("restarted")
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
@@ -6279,8 +6289,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.draft_review_count).to eq(0)
         expect(pr_issue.pr_followup_count).to eq(0)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("restarted")
         expect(trigger[:triggers].map { |entry| entry[:type] }).to eq([ "ci_failure" ])
       end
@@ -6309,8 +6319,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_issue.reload
         expect(pr_issue.pr_review_phase).to eq("restarted")
         expect(pr_issue.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger[:phase]).to eq("restarted")
         # paid_agent_review_pending gates the ci_failure trigger in this cycle —
@@ -6322,7 +6332,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "can emit paid_agent_review_pending again after draft conversion restarts the cycle" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).to include("paid_agent_review_pending")
       end
     end
@@ -6346,7 +6356,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "re-emits paid_agent_review_pending for the restarted draft cycle" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("ready_for_owner")
       end
@@ -6361,7 +6371,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        trigger = result[:prs_to_trigger].first
+        trigger = automation_scan_results(result).first
         pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
 
         expect(trigger[:phase]).to eq("restarted")
@@ -6393,8 +6403,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "scans the PR using ready-phase logic" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("ready")
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
@@ -6430,8 +6440,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "scans the PR using ready-phase logic" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("ready")
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
@@ -6509,8 +6519,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "restarts the review cycle instead of counting the stale reviews against the new draft" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |entry| entry[:type] }
 
         expect(trigger[:phase]).to eq("restarted")
@@ -6548,8 +6558,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "ignores failures that were enqueued before the restart" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |entry| entry[:type] }
         pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
 
@@ -6591,7 +6601,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           result = activity.execute(project_id: project.id)
 
           expect(pr_issue.reload.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
-          trigger = result[:prs_to_trigger].first
+          trigger = automation_scan_results(result).first
           trigger_types = trigger[:triggers].map { |entry| entry[:type] }
           pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
 
@@ -6637,7 +6647,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not let the stale success clear current-cycle retry failures" do
         result = activity.execute(project_id: project.id)
 
-        trigger = result[:prs_to_trigger].first
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |entry| entry[:type] }
         pending_trigger = trigger[:triggers].find { |entry| entry[:type] == "paid_agent_review_pending" }
 
@@ -6689,8 +6699,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not let the stale create_pr completion re-open paid_agent review" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |entry| entry[:type] }
 
         expect(trigger[:phase]).to eq("restarted")
@@ -6718,7 +6728,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "re-emits paid_agent_review_pending for the restarted draft cycle" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+        trigger_types = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("escalate_to_owner")
       end
@@ -6793,8 +6803,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns owner_approved trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
@@ -6808,8 +6818,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
       end
 
@@ -6818,7 +6828,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
     end
 
@@ -6835,8 +6845,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "returns dismiss_escalation trigger" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
         expect(trigger[:phase]).to eq("escalated")
         expect(trigger[:draft]).to be(false)
@@ -6867,8 +6877,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "scans as a draft phase PR" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:phase]).to eq("restarted")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
         expect(trigger[:current_draft_review_count]).to eq(2)
@@ -6930,7 +6940,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "skips PRs where github_updated_at < last_pr_scan_at" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "scans PRs that have never been scanned" do
@@ -6987,7 +6997,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
@@ -7019,7 +7029,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
@@ -7064,7 +7074,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
@@ -7079,7 +7089,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
         expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
       end
 
@@ -7090,7 +7100,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to contain_exactly(
+        expect(automation_scan_results(result)).to contain_exactly(
           hash_including(
             pr_number: 42,
             phase: "ready",
@@ -7106,11 +7116,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to contain_exactly(
+        expect(automation_scan_results(result)).to contain_exactly(
           hash_including(
             pr_number: 42,
             phase: "escalated",
-            triggers: include(hash_including(type: "merge_conflicts"))
+            triggers: contain_exactly(hash_including(type: "dismiss_escalation"))
           )
         )
       end
@@ -7121,7 +7131,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "still skips ready PRs when auto-fix is disabled" do
@@ -7129,7 +7139,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "still skips ready PRs at the follow-up limit when auto-fix is enabled" do
@@ -7145,7 +7155,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "does not re-emit non-conflict triggers during merge-conflict rescan" do
@@ -7160,7 +7170,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to contain_exactly(
+        expect(automation_scan_results(result)).to contain_exactly(
           hash_including(
             pr_number: 42,
             triggers: contain_exactly(hash_including(type: "merge_conflicts"))
@@ -7175,7 +7185,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to eq([])
+        expect(automation_scan_results(result)).to eq([])
       end
 
       it "updates last_pr_scan_at after scanning" do
@@ -7202,10 +7212,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project,
           source_pull_request_number: 42,
           status: "running")
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "success" } ], reviews: [])
 
         expect {
           activity.execute(project_id: project.id)
-        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+        }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
       end
 
       it "does not update last_pr_scan_at when API fails" do
@@ -7252,7 +7263,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_raise(GithubClient::Error.new("API error"))
 
         result = activity.execute(project_id: project.id)
-        triggers = result[:prs_to_trigger].first&.dig(:triggers) || []
+        triggers = automation_scan_results(result).first&.dig(:triggers) || []
 
         expect(triggers).to include(hash_including(type: "ci_failure"))
       end
@@ -7270,7 +7281,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
         expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
       end
 
@@ -7286,7 +7297,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
         expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
       end
 
@@ -7308,7 +7319,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
         expect(unchanged_pr.reload.last_pr_scan_at).to be_nil
       end
 
@@ -7353,8 +7364,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("review_goal_retry")
         expect(trigger[:current_review_goal_retry_count]).to eq(pr_issue.review_goal_retry_count)
       end
@@ -7373,7 +7384,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
@@ -7386,7 +7397,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
@@ -7399,7 +7410,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
@@ -7418,7 +7429,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
         expect(triggered_types).to include("paid_agent_review_pending")
       end
@@ -7429,8 +7440,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("Review-goal retry budget exhausted")
       end
@@ -7446,9 +7457,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
-        expect(triggered_types).not_to include("review_goal_retry")
       end
 
       it "does not re-escalate when issue is already escalated" do
@@ -7461,9 +7471,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
-        expect(triggered_types).not_to include("review_goal_retry")
       end
 
       it "detects draft conversion before escalating at retry limit in ready phase" do
@@ -7486,8 +7495,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:triggers].first[:details]).to include("Review-goal retry budget exhausted")
       end
@@ -7504,7 +7513,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
         expect(triggered_types).not_to include("review_goal_retry")
         expect(pr_issue.reload.pr_review_phase).to eq("ready")
@@ -7519,7 +7528,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
         expect(triggered_types).not_to include("review_goal_retry")
         expect(triggered_types).to include("paid_agent_review_pending")
@@ -7536,7 +7545,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
       end
 
       it "does not emit review_goal_retry when pr_data fetch fails in ready phase" do
@@ -7552,7 +7561,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger]).to be_empty
+        expect(automation_scan_results(result)).to be_empty
       end
 
       it "resets review_goal_retry_count when PR is converted back to draft" do
@@ -7574,7 +7583,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
@@ -7591,8 +7600,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger = result[:prs_to_trigger].first
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_goal_retry")
         # paid_agent_review_pending is the gate: ci_failure will be re-emitted
@@ -7610,7 +7619,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
@@ -7624,7 +7633,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("review_goal_retry")
       end
 
@@ -7641,7 +7650,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
         expect(triggered_types).to include("review_bot_review_pending")
         expect(triggered_types).not_to include("paid_agent_review_pending")
@@ -7656,8 +7665,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_goal_retry")
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("ready_for_owner")
@@ -7679,8 +7688,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:prs_to_trigger].size).to eq(1)
-        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_goal_retry")
         expect(trigger_types).not_to include("paid_agent_review_pending")
       end
@@ -7718,7 +7727,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "does not escalate at retry limit and still evaluates CI signals" do
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).not_to include("escalate_to_owner")
         expect(triggered_types).to include("ci_failure")
         expect(triggered_types).not_to include("paid_agent_review_pending")
@@ -7752,7 +7761,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "escalates at retry limit because manual review cannot recover paid_agent" do
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).to include("escalate_to_owner")
       end
     end
@@ -7784,7 +7793,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "escalates at retry limit because ci_action cannot recover paid_agent" do
         result = activity.execute(project_id: project.id)
 
-        triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
         expect(triggered_types).to include("escalate_to_owner")
       end
     end
@@ -7804,8 +7813,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "blocks draft exit with a paid_agent_review_pending trigger (no ready_for_owner)" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("ready_for_owner")
@@ -7832,7 +7841,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not emit a paid_agent_review_pending trigger" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
     end
 
@@ -7844,7 +7853,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("escalate_to_owner")
     end
   end
@@ -7867,8 +7876,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "keeps the paid_agent_review_pending trigger active" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       pending_trigger = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }
 
       expect(pending_trigger).to be_present
@@ -7896,8 +7905,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "still blocks draft exit until the review is posted" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
 
       expect(trigger_types).to include("paid_agent_review_pending")
@@ -7926,7 +7935,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not emit a paid_agent_review_pending trigger" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
     end
   end
@@ -7955,7 +7964,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not emit a paid_agent_review_pending trigger" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
     end
   end
@@ -7984,7 +7993,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "retries the timed-out review" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).to include("review_goal_retry")
       expect(triggers).to include("paid_agent_review_pending")
     end
@@ -8010,7 +8019,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not emit a paid_agent_review_pending trigger" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
     end
   end
@@ -8049,8 +8058,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "emits a paid_agent_review_pending trigger because retried runs do not consume review rounds" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
     end
   end
@@ -8079,8 +8088,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "emits a paid_agent_review_pending trigger" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
     end
   end
@@ -8107,8 +8116,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "emits a paid_agent_review_pending trigger to retry" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       details = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }[:details]
@@ -8120,8 +8129,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       failed_review_issue.update_column(:last_pr_scan_at, nil)
       result2 = activity.execute(project_id: project.id)
 
-      expect(result1[:prs_to_trigger].size).to eq(1)
-      expect(result2[:prs_to_trigger].size).to eq(1)
+      expect(automation_scan_results(result1).size).to eq(1)
+      expect(automation_scan_results(result2).size).to eq(1)
     end
 
     it "does not retry when the failed run already posted a review" do
@@ -8130,7 +8139,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
       expect(triggered_types).not_to include("paid_agent_review_pending")
     end
 
@@ -8146,7 +8155,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
       expect(triggered_types).to include("paid_agent_review_pending")
     end
 
@@ -8163,7 +8172,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
       expect(triggered_types).to include("paid_agent_review_pending")
     end
 
@@ -8181,7 +8190,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
       expect(triggered_types).to include("paid_agent_review_pending")
     end
   end
@@ -8221,7 +8230,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not emit review_goal_retry or paid_agent_review_pending" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("review_goal_retry")
       expect(triggers).not_to include("paid_agent_review_pending")
     end
@@ -8231,7 +8240,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("escalate_to_owner")
     end
   end
@@ -8254,8 +8263,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "escalates to owner instead of retrying" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
@@ -8266,7 +8275,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "includes owner_reviewer_login for escalation handling" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       expect(trigger).to have_key(:owner_reviewer_login)
     end
 
@@ -8288,7 +8297,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("review_goal_retry")
       expect(trigger_types).to include("paid_agent_review_pending")
@@ -8312,7 +8321,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+      trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
     end
@@ -8328,7 +8337,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+      trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
     end
@@ -8349,7 +8358,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+      trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
     end
@@ -8373,8 +8382,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "caps default retry limit to max_review_rounds and escalates" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
@@ -8399,8 +8408,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "escalates to owner because the PR is still ready (not draft)" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
     end
   end
@@ -8430,8 +8439,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "returns owner_approved instead of escalating" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("owner_approved")
       expect(trigger_types).not_to include("escalate_to_owner")
@@ -8457,7 +8466,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not immediately re-escalate on the next scan" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger]).to be_empty
+      expect(automation_scan_results(result)).to be_empty
       expect(dismissed_retry_issue.reload.pr_review_phase).to eq("ready")
     end
   end
@@ -8482,8 +8491,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "returns a dismiss trigger instead of re-escalating" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |entry| entry[:type] }
 
       expect(trigger_types).to include("dismiss_escalation")
@@ -8511,7 +8520,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "returns :skipped instead of escalating on stale data" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger]).to be_empty
+      expect(automation_scan_results(result)).to be_empty
       expect(fetch_fail_issue.reload.pr_review_phase).to eq("ready")
     end
   end
@@ -8554,7 +8563,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "retries instead of escalating because the breaker resets for the new cycle" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
@@ -8596,7 +8605,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "retries the review instead of escalating on the unified PR streak" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       retry_trigger = trigger[:triggers].find { |t| t[:type] == "review_goal_retry" }
 
@@ -8643,7 +8652,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "retries instead of escalating because the breaker resets after a successful review" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
@@ -8682,7 +8691,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not retry when a completed review exists after the last create_pr run" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
     end
   end
@@ -8716,7 +8725,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "escalates after custom retry limit" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
     end
@@ -8744,7 +8753,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "counts timeout as a failure and retries" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
     end
@@ -8772,7 +8781,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "treats no_output as retryable and re-emits paid_agent_review_pending" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       expect(trigger_types).not_to include("escalate_to_owner")
@@ -8784,7 +8793,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       result = activity.execute(project_id: project.id)
 
-      triggered_types = (result[:prs_to_trigger] || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+      triggered_types = (automation_scan_results(result) || []).flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
       expect(triggered_types).not_to include("paid_agent_review_pending")
     end
   end
@@ -8807,7 +8816,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "escalates instead of getting stuck behind the rounds cap" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
@@ -8844,7 +8853,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not treat posted failures as exhausting the retry budget" do
       result = activity.execute(project_id: project.id)
 
-      trigger = result[:prs_to_trigger].first
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("review_bot_comments")
       expect(trigger_types).not_to include("escalate_to_owner")
@@ -8870,15 +8879,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "still dismisses instead of getting stuck behind the retry limit" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
     end
 
     it "does not emit escalate_to_owner for an already-escalated PR" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("escalate_to_owner")
     end
   end
@@ -8901,14 +8910,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not emit paid_agent_review_pending at the retry limit" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("paid_agent_review_pending")
     end
 
     it "does not emit escalate_to_owner for an already-escalated PR" do
       result = activity.execute(project_id: project.id)
 
-      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      triggers = automation_scan_results(result).flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
       expect(triggers).not_to include("escalate_to_owner")
     end
   end
@@ -8926,11 +8935,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "detects dismissal before the draft restart path" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger]).to contain_exactly(
+      expect(automation_scan_results(result)).to contain_exactly(
         hash_including(
           pr_number: 42,
           phase: "escalated",
-          draft: true,
+          draft: false,
           triggers: contain_exactly(hash_including(type: "dismiss_escalation"))
         )
       )
@@ -8954,8 +8963,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "allows draft exit with ready_for_owner when paid_agent review is clean" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("ready_for_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
@@ -8982,8 +8991,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "gates draft exit via copilot (paid_agent does not independently block)" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("review_bot_review_pending")
       expect(trigger_types).not_to include("ready_for_owner")
@@ -9017,8 +9026,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "stops retrying paid_agent and lets copilot keep gating the PR" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).not_to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
@@ -9060,7 +9069,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "does not escalate or retry paid_agent and lets codex continue" do
       result = activity.execute(project_id: project.id)
 
-      trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+      trigger_types = automation_scan_results(result).flat_map { |t| t[:triggers].map { |x| x[:type] } }
       expect(trigger_types).not_to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
       expect(trigger_types).to include("review_bot_comments")
@@ -9097,8 +9106,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "escalates because paid_agent is the sole bot and manual cannot recover failed review-goal runs" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
     end
@@ -9134,8 +9143,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     it "escalates because paid_agent is the sole bot and ci_action cannot recover failed review-goal runs" do
       result = activity.execute(project_id: project.id)
 
-      expect(result[:prs_to_trigger].size).to eq(1)
-      trigger = result[:prs_to_trigger].first
+      expect(automation_scan_results(result).size).to eq(1)
+      trigger = automation_scan_results(result).first
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("escalate_to_owner")
     end

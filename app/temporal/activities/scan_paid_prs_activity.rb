@@ -91,6 +91,7 @@ module Activities
 
       scanned_count = 0
       unchanged_count = 0
+      prs_to_trigger = []
       automation_results = []
       pending_review_states = []
       progress_states = []
@@ -103,7 +104,7 @@ module Activities
               issue.update_column(:last_pr_scan_at, Time.current)
               pending_review_states << pending_review_state(issue, result)
               progress_states << serialized_pr_progress_state(project, issue)
-              collect_scan_result(issue, result, automation_results,
+              collect_scan_result(issue, result, prs_to_trigger, automation_results,
                 lifecycle: build_lifecycle_signals(project, issue))
               next
             end
@@ -114,15 +115,12 @@ module Activities
 
         result = scan_pr(project, client, issue)
         lifecycle_signals = build_lifecycle_signals(project, issue)
-        if result == :skipped
-          collect_scan_result(issue, nil, automation_results, lifecycle: lifecycle_signals)
-          next
-        end
+        next if result == :skipped
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
         progress_states << serialized_pr_progress_state(project, issue)
-        collect_scan_result(issue, result, automation_results, lifecycle: lifecycle_signals)
+        collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle: lifecycle_signals)
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
 
@@ -145,10 +143,7 @@ module Activities
       )
 
       {
-        # prs_to_trigger is always empty: the legacy trigger-routing path was
-        # removed. Retained for backward compatibility with in-flight Temporal
-        # workflow histories that expect this key. Remove in a follow-up.
-        prs_to_trigger: [],
+        prs_to_trigger: prs_to_trigger,
         automation_results: automation_results,
         pr_issue_ids: paid_prs.map(&:id),
         pending_review_states: pending_review_states.compact,
@@ -163,12 +158,68 @@ module Activities
 
     private
 
-    def collect_scan_result(issue, result, automation_results, lifecycle:)
+    def collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle:)
       automation_result = Automation::Evaluator.for(issue)
         .call(scan: result, lifecycle: lifecycle)
+
+      legacy_trigger = legacy_trigger_payload(issue, result, lifecycle, automation_result)
+      prs_to_trigger << legacy_trigger if legacy_trigger
+
+      metadata = {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        lifecycle_phase: lifecycle&.dig(:phase),
+        lifecycle_draft: lifecycle&.dig(:draft),
+        owner_reviewer_login: lifecycle&.dig(:owner_reviewer_login)
+      }
+      metadata.merge!(result.except(:decisions)) if result.is_a?(Hash)
+
       return if automation_result.decisions.all? { |decision| decision.type == "noop" }
 
-      automation_results << automation_result.to_h
+      automation_results << metadata.merge(automation_result.to_h)
+    end
+
+    def legacy_trigger_payload(issue, result, lifecycle, automation_result)
+      decisions = automation_result.decisions
+      escalate = decisions.find { |decision| decision.type == "escalate" }
+      return {
+        pr_number: issue.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        owner_reviewer_login: escalate.payload[:owner_reviewer_login],
+        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason] } ]
+      } if escalate
+
+      dismiss = decisions.find { |decision| decision.type == "dismiss_escalation" }
+      return {
+        pr_number: issue.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        triggers: [ { type: "dismiss_escalation" } ]
+      } if dismiss
+
+      return result if result.is_a?(Hash)
+
+      mark_ready = decisions.find { |decision| decision.type == "mark_ready" }
+      return {
+        pr_number: issue.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        owner_reviewer_login: mark_ready.payload[:owner_reviewer_login],
+        triggers: [ { type: "ready_for_owner" } ]
+      } if mark_ready
+
+      merge = decisions.find { |decision| decision.type == "merge" }
+      return {
+        pr_number: issue.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        triggers: [ { type: "owner_approved" } ]
+      } if merge
+
+      nil
     end
 
     def build_lifecycle_signals(project, issue)
@@ -321,6 +372,8 @@ module Activities
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
+        return nil if escalation_dismissed?(issue)
+
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
@@ -334,6 +387,7 @@ module Activities
     def merge_retry_trigger(result, retry_trigger, issue)
       return result unless retry_trigger
       return result if result == :skipped
+      return result if issue.pr_review_phase == "escalated"
 
       if result.is_a?(Hash)
         result[:triggers] = [ retry_trigger ] + (result[:triggers] || [])

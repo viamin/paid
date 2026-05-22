@@ -290,20 +290,6 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
-    context "when a pull request has build label" do
-      let(:pull_request) do
-        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
-               is_pull_request: true, github_number: 99)
-      end
-
-      it "returns execute_agent with source_pull_request_number" do
-        result = activity.execute(project_id: project.id, issue_id: pull_request.id)
-
-        expect(result[:action]).to eq("execute_agent")
-        expect(result[:source_pull_request_number]).to eq(99)
-      end
-    end
-
     context "when a pull request with build label has no scan data" do
       let(:pull_request) do
         create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",

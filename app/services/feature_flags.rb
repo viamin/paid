@@ -7,8 +7,7 @@ class FeatureFlags
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
 
-  DEFINITIONS = {
-  }.freeze
+  DEFINITIONS = {}.freeze
 
   class << self
     def definitions
