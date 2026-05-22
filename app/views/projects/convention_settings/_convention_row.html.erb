@@ -85,6 +85,7 @@
           data: { turbo_stream: true },
           class: "inline-flex items-center gap-2" do |f| %>
       <%= f.hidden_field :key, value: key %>
+      <%= f.hidden_field :value, value: (entry[:detected_value].presence || {}).to_json %>
       <%= f.select :mode, options_for_select([["Apply", "apply"], ["Warn", "warn"], ["Ignore", "ignore"]], selected: entry[:policy_mode]),
             {},
             class: "rounded-md border-gray-300 py-1 pl-2 pr-8 text-xs text-gray-900" %>
