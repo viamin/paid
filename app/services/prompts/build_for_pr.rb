@@ -124,7 +124,8 @@ module Prompts
       sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
 
-      StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
+      with_style_guides = StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
+      ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
     end
 
     private

@@ -150,6 +150,13 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Fix forward")
     end
 
+    it "includes repository automation conventions guidance" do
+      expect(prompt).to include("## Repository Automation Conventions")
+      expect(prompt).to include("Commit subjects: Guidance")
+      expect(prompt).to include("PR titles: Guidance")
+      expect(prompt).to include("Depends on #123")
+    end
+
     it "includes language-specific lint command for ruby" do
       expect(prompt).to include("bundle exec rubocop")
     end
@@ -1013,6 +1020,7 @@ RSpec.describe Prompts::BuildForPr do
 
     before do
       allow(StyleGuides::InjectIntoPrompt).to receive(:call) { |prompt:, project:| prompt }
+      allow(ProjectConventions::InjectIntoPrompt).to receive(:call) { |prompt:, project:| prompt }
       allow(Prompts::Render).to receive(:call) do |slug:, project:, variables:, fallback:|
         fallback.call
       end
