@@ -4,6 +4,8 @@ module Activities
   class QueueAgentRunActivity < BaseActivity
     activity_name "QueueAgentRun"
 
+    TRUSTED_ISSUE_GOALS = %w[create_pr].freeze
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -20,6 +22,9 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      untrusted_result = skip_untrusted_issue(project: project, issue: issue, goal: goal)
+      return untrusted_result if untrusted_result
+
       respect_requested = input.key?(:agent_type) || input.key?(:runner_id)
       provider_id, agent_type = resolve_runner_selection(
         project: project,
@@ -118,6 +123,20 @@ module Activities
     end
 
     private
+
+    def skip_untrusted_issue(project:, issue:, goal:)
+      return unless issue.present? && TRUSTED_ISSUE_GOALS.include?(goal) && issue.untrusted?
+
+      logger.info(
+        message: "queue_agent_run.untrusted_issue_skipped",
+        project_id: project.id,
+        issue_id: issue.id,
+        github_creator_login: issue.github_creator_login,
+        goal: goal
+      )
+
+      { queued: false, skipped: true, reason: "untrusted_issue", goal: goal }
+    end
 
     def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, agent_type_provided:, runner_id_provided:)
       AgentRuns::RunnerResolver.call(

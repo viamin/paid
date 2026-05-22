@@ -238,6 +238,20 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.custom_prompt).to eq("Do something")
     end
 
+    it "skips untrusted create_pr issues without creating an agent run" do
+      project.update!(allowed_github_usernames: [ "viamin" ])
+      untrusted_issue = create(:issue,
+        project: project,
+        github_creator_login: "dependabot[bot]",
+        github_number: 3622)
+
+      result = activity.execute(project_id: project.id, issue_id: untrusted_issue.id, goal: "create_pr")
+
+      expect(result).to include(queued: false, skipped: true, reason: "untrusted_issue", goal: "create_pr")
+      expect(AgentRun.where(project: project, issue: untrusted_issue)).to be_empty
+      expect(ProcessRunQueueJob).not_to have_been_enqueued
+    end
+
     context "when a duplicate run exists" do
       it "returns existing run when a queued run exists for the same issue" do
         existing = create(:agent_run, :queued, project: project, issue: issue)

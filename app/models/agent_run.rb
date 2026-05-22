@@ -1694,7 +1694,11 @@ class AgentRun < ApplicationRecord
   # @return [String, nil] The built prompt, or nil if no issue is attached
   def prompt_for_issue
     return nil unless issue
-    return nil unless issue.trusted?
+    unless issue.trusted?
+      raise Prompts::BuildForIssue::UntrustedIssueError,
+        "Cannot build prompt for issue ##{issue.github_number} " \
+        "from untrusted user: #{issue.github_creator_login}"
+    end
 
     Prompts::BuildForIssue.call(issue: issue, project: project, github_client: project.github_token&.client, agent_run: self)
   end

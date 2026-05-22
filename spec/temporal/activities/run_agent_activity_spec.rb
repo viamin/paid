@@ -2804,6 +2804,20 @@ expect(container_service).to receive(:execute).with(
       }.to raise_error(Temporalio::Error::ApplicationError, /No prompt available/)
     end
 
+    it "raises a clear non-retryable error when issue prompt building rejects an untrusted issue" do
+      agent_run = create(:agent_run, :with_custom_prompt, project: project, container_id: "abc123")
+      allow(agent_run).to receive(:effective_prompt)
+        .and_raise(Prompts::BuildForIssue::UntrustedIssueError, "Cannot build prompt for issue #3622")
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("UntrustedIssue")
+        expect(error.non_retryable).to be(true)
+      }
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       allow(AgentRun).to receive(:find).and_call_original
 
