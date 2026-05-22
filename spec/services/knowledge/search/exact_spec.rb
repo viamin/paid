@@ -14,7 +14,8 @@ RSpec.describe Knowledge::Search::Exact do
       artifact_type: "route",
       identifier: "POST /api/users",
       content: "POST /api/users → api/users#create",
-      scope_path: "config/routes.rb")
+      scope_path: "config/routes.rb",
+      metadata: { line: 4, start_line: 4, end_line: 9 })
   end
 
   let!(:route_chunk) do
@@ -77,6 +78,7 @@ RSpec.describe Knowledge::Search::Exact do
       results = described_class.call(project: project, query: "POST /api/users")
 
       expect(results.first).to have_key(:scope_tags)
+      expect(results.first).to include(start_line: 4, end_line: 9)
     end
 
     it "includes internal scoring fields" do

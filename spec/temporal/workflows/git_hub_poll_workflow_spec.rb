@@ -93,29 +93,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
-  describe "ScanPaidPrsActivity patch guard" do
+  describe "#maybe_scan_paid_prs" do
     let(:workflow) { described_class.new }
 
     before do
       allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [] })
     end
 
-    it "runs ScanPaidPrsActivity when patched returns true" do
-      allow(Temporalio::Workflow).to receive(:patched).with("add-scan-paid-prs-v1").and_return(true)
-
+    it "runs ScanPaidPrsActivity" do
       workflow.send(:maybe_scan_paid_prs, 1)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
-    end
-
-    it "skips ScanPaidPrsActivity when patched returns false" do
-      allow(Temporalio::Workflow).to receive(:patched).with("add-scan-paid-prs-v1").and_return(false)
-
-      workflow.send(:maybe_scan_paid_prs, 1)
-
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
     end
   end
 
@@ -178,6 +167,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     before do
       allow(Temporalio::Workflow).to receive(:patched).and_return(true)
       allow(workflow).to receive(:run_activity).and_return({})
+      allow(workflow).to receive(:maybe_scan_code_scanning_alerts)
+      allow(workflow).to receive(:maybe_check_knowledge_staleness)
+      allow(workflow).to receive(:maybe_evaluate_auto_release)
+      allow(workflow).to receive(:maybe_evaluate_dependabot_auto_merge)
     end
 
     it "skips non-critical activities when rate limit is low" do
@@ -217,44 +210,35 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
 
-    it "skips rate limit check but still runs non-critical activities when patch guard returns false (pre-v872 workflows)" do
-      allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+    it "runs the rate limit check before the non-critical activities" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
       allow(workflow).to receive(:run_activity)
         .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
         .and_return({ prs_to_trigger: [] })
 
       workflow.send(:maybe_run_non_critical_activities, 1)
 
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckRateLimitActivity, { project_id: 1 }, timeout: 10)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
   end
 
-  describe "CheckKnowledgeStalenessActivity patch guard" do
+  describe "#maybe_check_knowledge_staleness" do
     let(:workflow) { described_class.new }
 
     before do
       allow(workflow).to receive(:run_activity).and_return({})
     end
 
-    it "runs CheckKnowledgeStalenessActivity when patched returns true" do
-      allow(Temporalio::Workflow).to receive(:patched).with("add-check-knowledge-staleness-v1").and_return(true)
-
+    it "runs CheckKnowledgeStalenessActivity" do
       workflow.send(:maybe_check_knowledge_staleness, 1)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckKnowledgeStalenessActivity, { project_id: 1 }, timeout: 30)
-    end
-
-    it "skips CheckKnowledgeStalenessActivity when patched returns false" do
-      allow(Temporalio::Workflow).to receive(:patched).with("add-check-knowledge-staleness-v1").and_return(false)
-
-      workflow.send(:maybe_check_knowledge_staleness, 1)
-
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CheckKnowledgeStalenessActivity, anything, timeout: anything)
     end
   end
 
@@ -314,10 +298,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
 
     before do
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-scan-security-alerts-v1").and_return(true)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-rate-limit-budget-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with(anything).and_return(true)
     end
@@ -592,9 +572,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity).and_return({})
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:patched)
-        .with("draft-followup-direct-start-v1")
-        .and_return(true)
-      allow(Temporalio::Workflow).to receive(:patched)
         .with("escalation-reason-payload-v1")
         .and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
@@ -851,43 +828,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
             goal: "create_pr",
             focus: "ci_fix"
           ),
-          timeout: 30)
-    end
-
-    it "replays the legacy draft followup command sequence before the patch" do
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("draft-followup-direct-start-v1")
-        .and_return(false)
-
-      workflow.send(:handle_pr_trigger, project_id,
-        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
-
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, goal: "create_pr", focus: "general" },
-          timeout: 30)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::RecordDraftReviewActivity,
-          { issue_id: 10, expected_draft_review_count: 1 }, timeout: 30)
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
-    end
-
-    it "omits goal from legacy draft followup queue input before the goal patch" do
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("draft-followup-direct-start-v1")
-        .and_return(false)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("queue-agent-run-goal-v1")
-        .and_return(false)
-
-      workflow.send(:handle_pr_trigger, project_id,
-        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
-
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42, focus: "general" },
           timeout: 30)
     end
 
@@ -1901,6 +1841,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     def stub_initial_sync(trigger_result:)
       allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, { project_id: project_id }, timeout: 10)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
+      allow(workflow).to receive(:run_activity)
         .with(Activities::FetchIssuesActivity, { project_id: project_id }, timeout: 60)
         .and_return(
           { issues: [ { id: 10 } ], project_id: project_id },
@@ -1926,14 +1869,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
       allow(Temporalio::Workflow).to receive(:patched).and_call_original
       allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-rate-limit-budget-v1").and_return(false)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-scan-paid-prs-v1").and_return(true)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-scan-security-alerts-v1").and_return(false)
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("add-check-knowledge-staleness-v1").and_return(false)
-      allow(Temporalio::Workflow).to receive(:patched)
         .with("add-auto-release-poll-v1").and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("add-dependabot-auto-merge-poll-v1").and_return(false)
@@ -1957,6 +1892,12 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity)
         .with(Activities::RecordPollHeartbeatActivity, anything, timeout: anything)
         .and_return({ recorded: true })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, { project_id: project_id }, timeout: 120)
+        .and_return({})
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckKnowledgeStalenessActivity, { project_id: project_id }, timeout: 30)
+        .and_return({})
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
         .and_return(flags: { explicit_pr_automation_decisions: false }, project_missing: false)
@@ -2054,8 +1995,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     before do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:patched).and_call_original
-      allow(Temporalio::Workflow).to receive(:patched)
-        .with("draft-followup-direct-start-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("queue-agent-run-goal-v1").and_return(true)
       allow(Temporalio::Workflow).to receive(:patched)

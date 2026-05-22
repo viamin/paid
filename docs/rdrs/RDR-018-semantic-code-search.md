@@ -423,13 +423,17 @@ module SemanticSearch
     end
 
     # Splits a source file into semantic chunks (function/class/module level).
-    # Falls back to file-level chunking when AST parsing is unavailable.
+    # Live implementation note: chunking now happens in
+    # Knowledge::Collectors::TreeSitterCollector, not
+    # app/services/knowledge/embeddings/generate.rb.
+    # It emits AST definition artifacts for supported languages and
+    # file-level fallback artifacts for unsupported files or when AST
+    # parsing is unavailable.
     def chunk_file(file_path)
       content = File.read(file_path)
       language = detect_language(file_path)
 
-      # TODO(#66): Implement AST-aware chunking via tree-sitter for
-      # function/class-level granularity. For now, chunk at file level.
+      # Historical pseudo-code only. See the collector for the live behavior.
       [{
         path: file_path, id: file_path, type: "file",
         content: content, language: language,

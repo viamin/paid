@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_20_150554) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_20_150840) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1879,6 +1879,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150554) do
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
     t.string "fallback_role", limit: 30, default: "standard", null: false
+    t.bigint "integration_credential_id"
     t.jsonb "log_data"
     t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
@@ -1890,6 +1891,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150554) do
     t.integer "weight", default: 1, null: false
     t.index ["auth_type"], name: "index_runners_on_auth_type"
     t.index ["discarded_at"], name: "index_runners_on_discarded_at"
+    t.index ["integration_credential_id"], name: "index_runners_on_integration_credential_id"
     t.index ["provider_api_key_id"], name: "index_runners_on_provider_api_key_id"
     t.index ["tier_model_ids"], name: "index_runners_on_tier_model_ids", using: :gin
     t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
@@ -1897,8 +1899,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150554) do
     t.index ["user_id", "runner_key", "provider_api_key_id", "name"], name: "idx_runners_unique_api_key", unique: true, where: "(((auth_type)::text = 'api_key'::text) AND (discarded_at IS NULL))"
     t.index ["user_id", "runner_key"], name: "idx_runners_unique_subscription", unique: true, where: "(((auth_type)::text = 'subscription'::text) AND (discarded_at IS NULL))"
     t.index ["user_id"], name: "index_runners_on_user_id"
-    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR discarded_at IS NOT NULL", name: "runners_api_key_requires_key"
-    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "runners_subscription_invariants"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL OR integration_credential_id IS NOT NULL OR discarded_at IS NOT NULL", name: "runners_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND integration_credential_id IS NULL AND fallback_role::text = 'standard'::text", name: "runners_subscription_invariants"
     t.check_constraint "weight >= 1", name: "runners_weight_positive"
   end
 
@@ -2494,6 +2496,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150554) do
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
   add_foreign_key "runner_states", "users", on_delete: :cascade
+  add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
   add_foreign_key "runners", "users", on_delete: :cascade
   add_foreign_key "scaling_experiment_assignments", "issues", on_delete: :nullify

@@ -117,6 +117,11 @@ Rails.application.configure do
       class: "AutoPickQueueBackfillJob",
       description: "Backfill eager auto-pick queue seeding for already-enabled projects"
     },
+    analyze_issue_followup_backfill: {
+      cron: "15 * * * *",
+      class: "AnalyzeIssueFollowupBackfillJob",
+      description: "Backfill follow-up runs for legacy analyzed issues"
+    },
     service_container_reconciliation: {
       cron: "*/5 * * * *",
       class: "ServiceContainerReconciliationJob",
@@ -189,6 +194,11 @@ Rails.application.configure do
       cron: "*/15 * * * *",
       class: "AgentRunPatternDetectorJob",
       description: "Detect goal-level failure patterns in agent runs and notify"
+    },
+    temporal_patch_guard_sweep: {
+      cron: "0 4 1 */3 *",
+      class: "TemporalPatchGuardSweepJob",
+      description: "Audit Temporal workflow patch guards against oldest running executions (quarterly)"
     }
   }
 end

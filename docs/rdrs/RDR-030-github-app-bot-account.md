@@ -22,7 +22,7 @@ Today every repository action Paid takes — opening PRs, pushing branches, comm
 4. **No way to scope Paid's access independently of the user.** Revoking Paid means revoking a PAT that may also be used elsewhere; we cannot install/uninstall Paid on a per-repo basis the way customers expect.
 5. **We already operate one GitHub App** (`paid-code-reviewer[bot]`, App ID `3340381`) for posting agent reviews. Customers see two distinct integrations (PAT + review bot) when they should see one.
 
-The desired end state: a **Paid GitHub App** that customers install on the orgs/repos they want Paid to operate on. Paid acts as the bot identity for all repo writes, and the PAT path remains as a fallback for cases the App can't cover (e.g., GitHub Enterprise Server without the App, BYO-app self-hosters who want their own identity).
+The desired end state: a dedicated **`paid-agents` GitHub App** that customers install on the orgs/repos they want Paid to operate on, mirroring the operational pattern already used by `paid-code-reviewer[bot]`. `paid-agents[bot]` acts as the bot identity for all repo writes, and the PAT path remains as a fallback for cases the App can't cover (e.g., GitHub Enterprise Server without the App, BYO-app self-hosters who want their own identity).
 
 ## Context
 
@@ -58,7 +58,7 @@ The desired end state: a **Paid GitHub App** that customers install on the orgs/
 | Rate limit | 5,000 / hr per user | 5,000 / hr per **installation**, scales with repo count up to 12,500/hr |
 | Permissions | User's permissions, with PAT-level scopes | Fine-grained, declared at app level, granted at install |
 | Revocation | User revokes PAT (also affects other tools) | Customer uninstalls app from a single repo or org |
-| PR authorship | Pasting user | `paid[bot]` (or whatever slug we register) |
+| PR authorship | Pasting user | `paid-agents[bot]` (or the configured app slug) |
 | Webhooks | Not used | Available; first-class support for events |
 | Multi-repo | One PAT covers all repos user can see | Granular: install only on repos customer wants |
 
@@ -69,7 +69,7 @@ When a PR is opened with an installation token, GitHub records the author as `<a
 - **CODEOWNERS / required reviews**: branch protection rules that require approval from "someone other than the author" now actually fire for a human reviewer, because the bot — not the human — is the author.
 - **Auto-merge gates**: rules like "require N human approvals" can finally distinguish agent PRs from human PRs cleanly.
 - **Audit / observability**: `git log --author` and PR filters cleanly separate Paid-generated commits from human commits.
-- **`scan_paid_prs_activity.rb`** currently maintains heuristic bot-login allowlists; with a stable `paid[bot]` author we can simplify those checks and stop relying on commit message conventions.
+- **`scan_paid_prs_activity.rb`** currently maintains heuristic bot-login allowlists; with a stable `paid-agents[bot]` author we can simplify those checks and stop relying on commit message conventions.
 
 ### Installation Token Plumbing (already exists)
 
@@ -88,9 +88,11 @@ Three plausible deployment shapes:
 
 - **Single canonical app** — one "Paid" app that everyone installs. Best UX, simplest ops, but unusable for self-hosters who can't reach the canonical app or whose repos are on GitHub Enterprise Server.
 - **Per-tenant apps via manifest flow** — each Paid deployment registers its own app via [GitHub's app-manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest). Works everywhere but adds setup friction and means "Paid" appears under different bot names for different deployments.
-- **Hybrid (chosen)** — SaaS customers install a single canonical `paid[bot]`. Self-hosters and Enterprise users register their own app via manifest flow on first-run admin setup, and the rest of the system treats whichever app is configured as "the Paid app" for that deployment.
+- **Hybrid (chosen)** — SaaS customers install a single canonical `paid-agents[bot]`. Self-hosters and Enterprise users register their own app via manifest flow on first-run admin setup, and the rest of the system treats whichever app is configured as "the Paid app" for that deployment.
 
 The hybrid model lines up with how `paid-code-reviewer` already works: the App ID and private key are read from `ENV` first, then Rails credentials, with a `configured?` predicate. Self-hosters override; SaaS uses the default. We will mirror that pattern.
+
+Until full app-backed repository auth is enabled everywhere, agent-run git commit metadata should resolve from the same deployment-level `paid-agents` identity source. That lets PAT-backed projects keep working while commits already align with the configured bot identity; deployments that have not configured `paid_agent_*` metadata yet may fall back to the legacy `Paid Agent <agent@paid.dev>` identity temporarily.
 
 ### PAT Coexistence
 
@@ -105,7 +107,7 @@ A project chooses one at creation; Paid prefers the App when both are configured
 
 ### Approach
 
-1. Register a canonical **`paid` GitHub App** for SaaS. Mirror the credential-config pattern from `paid-code-reviewer` (`PAID_APP_ID`, `PAID_APP_PRIVATE_KEY` env, then Rails credentials).
+1. Register a canonical **`paid-agents` GitHub App** for SaaS. Mirror the credential-config pattern from `paid-code-reviewer` (`PAID_AGENT_APP_ID`, `PAID_AGENT_APP_PRIVATE_KEY` env, then Rails credentials).
 2. Add an **app-manifest flow** in admin settings that lets a self-hoster register their own app and have the resulting App ID + private key written into local credentials.
 3. Generalize `Github::ReviewBotInstallationToken` into `Github::AppInstallation` — a per-`(app_id, repo_full_name)` token-mint service with TTL caching.
 4. Add models: `GithubInstallation` (per-account record of which org/user installed Paid, with installation ID and granted repos) and a nullable `Project#github_installation_id` alongside the existing `Project#github_token_id`.
@@ -126,7 +128,7 @@ A project chooses one at creation; Paid prefers the App when both are configured
 │  │  Github::AppRegistry.current                                             │ │
 │  │   ├─ app_id         (ENV → credentials)                                  │ │
 │  │   ├─ private_key    (ENV → credentials)                                  │ │
-│  │   ├─ slug           ("paid" canonical, or self-hoster's choice)          │ │
+│  │   ├─ slug           ("paid-agents" canonical, or self-hoster's choice)   │ │
 │  │   └─ configured?    (false → PAT-only mode)                              │ │
 │  │                                                                          │ │
 │  │  Self-hosters bootstrap via manifest flow at /admin/github_app/setup,    │ │
@@ -181,7 +183,7 @@ A project chooses one at creation; Paid prefers the App when both are configured
 2. **PAT kept as fallback** — avoids forced-migration churn for existing customers, covers GHES + locked-down orgs, gives us a break-glass.
 3. **Reuse `paid-code-reviewer` patterns** — the JWT-sign + installation-token plumbing is already in production for review posts; we are generalizing, not inventing.
 4. **Per-project credential resolver** — keeps activities and services agnostic to whether they're talking via App or PAT. Migration becomes a per-project flag flip, not a code change.
-5. **Stable bot author identity** — the App's `<slug>[bot]` PR authorship is the architectural payoff: it's what lets human-in-the-loop approval workflows finally function.
+5. **Stable bot author identity** — the App's `paid-agents[bot]` PR authorship is the architectural payoff: it's what lets human-in-the-loop approval workflows finally function.
 
 ### Implementation Sketch
 
@@ -194,15 +196,15 @@ module Github
     end
 
     def self.app_id
-      ENV["PAID_APP_ID"].presence || credentials_dig(:paid_app_id)
+      ENV["PAID_AGENT_APP_ID"].presence || credentials_dig(:paid_agent_app_id)
     end
 
     def self.slug
-      ENV["PAID_APP_SLUG"].presence || credentials_dig(:paid_app_slug) || "paid"
+      ENV["PAID_AGENT_APP_SLUG"].presence || credentials_dig(:paid_agent_app_slug) || "paid-agents"
     end
 
     def self.private_key
-      ENV["PAID_APP_PRIVATE_KEY"].presence || credentials_dig(:paid_app_private_key)
+      ENV["PAID_AGENT_APP_PRIVATE_KEY"].presence || credentials_dig(:paid_agent_app_private_key)
     end
 
     def self.bot_login
@@ -286,7 +288,7 @@ end
 
 ### Alternative 1: Single Canonical App, No Manifest Flow
 
-**Description**: Ship one `paid` GitHub App and require everyone to install it.
+**Description**: Ship one `paid-agents` GitHub App and require everyone to install it.
 **Pros**: Simplest UX, single bot identity globally, easiest support.
 **Cons**: Self-hosters and GHES users can't install Anthropic's canonical app on their network. Cuts out the on-prem segment entirely.
 **Reason for rejection**: Paid explicitly supports self-hosted deployments. A choice that breaks that segment is non-starter.
@@ -320,7 +322,7 @@ end
 - **Cleaner audit trail.** Bot-authored PRs and commits separate cleanly from human work in `git log` and on the PR list.
 - **Better rate limits.** Per-installation quota, scales with installed repo count.
 - **Granular revocation.** Customers uninstall Paid from a single repo, not by revoking a token they may use elsewhere.
-- **Unified GitHub presence.** One Paid GitHub App identity for repo writes + reviews, instead of "PAT plus paid-code-reviewer."
+- **Unified GitHub presence.** One `paid-agents` GitHub App identity for repo writes, aligned closely with the existing `paid-code-reviewer` app model instead of "PAT plus paid-code-reviewer."
 - **Reduces ad-hoc bot heuristics.** Stable author login lets us simplify several `scan_paid_prs_activity.rb` allowlists.
 
 ### Negative Consequences
@@ -340,8 +342,8 @@ end
   **Mitigation**: Validate the RSA key parses (mirroring `ReviewBotInstallationToken#rsa_private_key`) before persisting; surface a clear error if not.
 - **Risk**: App suspended or uninstalled mid-workflow.
   **Mitigation**: Webhook subscription to `installation.suspend` / `installation.deleted` events updates `GithubInstallation` state; in-flight workflows surface a clear "Paid lost access to this repo" error rather than retry-looping.
-- **Risk**: PR authored by `paid[bot]` triggers customer CI rules that whitelist humans only.
-  **Mitigation**: Documented during install ("Paid will appear as `<slug>[bot]` on PRs — update CI allowlists"); we cannot fix this for them but we can warn.
+- **Risk**: PR authored by `paid-agents[bot]` triggers customer CI rules that whitelist humans only.
+  **Mitigation**: Documented during install ("Paid will appear as `paid-agents[bot]` on PRs — update CI allowlists"); we cannot fix this for them but we can warn.
 - **Risk**: Existing `BOT_LOGIN` allowlists in `scan_paid_prs_activity.rb` confuse the new bot author with a reviewer bot.
   **Mitigation**: Audit and split the lists explicitly — author-bot vs reviewer-bot. Add specs covering the case where the same `[bot]` slug appears as both author and reviewer (unlikely but possible if a self-hoster names them identically).
 
@@ -349,7 +351,7 @@ end
 
 ### Prerequisites
 
-- [ ] Decide on canonical app slug (`paid`, `paid-bot`, or similar) and register the App in the Anthropic GitHub org with required permissions enumerated below.
+- [ ] Decide whether `paid-agents` is the canonical app slug and register the App with required permissions enumerated below.
 - [ ] Mint and store the canonical app's private key in Rails credentials.
 - [ ] Confirm webhook ingress story for SaaS (does Paid expose a public webhook endpoint, or do we keep polling and use webhooks only opportunistically?).
 
@@ -447,7 +449,7 @@ Subscribe to events: `installation`, `installation_repositories`, `pull_request`
 
 ### Test Scenarios
 
-1. **Project with App credential opens a PR** → PR author is `paid[bot]`; CODEOWNERS approval-from-other gates fire correctly.
+1. **Project with App credential opens a PR** → PR author is `paid-agents[bot]`; CODEOWNERS approval-from-other gates fire correctly.
 2. **Project with PAT opens a PR** → PR author is the PAT user (unchanged behavior).
 3. **Token cache expires mid-activity** → resolver mints a fresh token; activity continues without surfacing an error.
 4. **Customer uninstalls app** → next activity using that installation fails clearly with "Paid no longer has access"; no silent retry loop.
@@ -493,4 +495,4 @@ Subscribe to events: `installation`, `installation_repositories`, `pull_request`
 
 - After this RDR is implemented, RDR-012's "PAT vs GitHub App" section should be annotated to point here for the auth decision while the polling/caching/Projects-V2 decisions remain authoritative.
 - Webhook ingress is out of scope for this RDR — assume polling stays in place and webhooks are an opportunistic optimization. If we add webhook-driven event ingestion, that's a follow-up RDR.
-- The `paid-code-reviewer` App stays distinct for now (different scopes, different identity, separate review surface). Future consolidation into a single `paid` App with both review and write permissions is possible but not in scope here.
+- The `paid-code-reviewer` App stays distinct for now (different scopes, different identity, separate review surface). Future consolidation into a single `paid-agents` App with both review and write permissions is possible but not in scope here.

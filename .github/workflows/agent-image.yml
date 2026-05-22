@@ -122,7 +122,7 @@ jobs:
 
       - name: Set up Ruby
         if: steps.changes.outputs.image_relevant == 'true'
-        uses: ruby/setup-ruby@97ecb7b512899eb71ab1bf2310a624c6f1589ac6
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -273,7 +273,7 @@ jobs:
 
       - name: Build paid-agent image
         if: steps.changes.outputs.image_relevant == 'true'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: ./docker/agent
           file: ./docker/agent/Dockerfile

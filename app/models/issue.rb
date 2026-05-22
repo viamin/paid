@@ -592,27 +592,30 @@ class Issue < ApplicationRecord
     )
   end
 
+  # Sidekiq's retry curve: (n ** 4) + 15 + jitter seconds, where n is the
+  # zero-indexed retry attempt (n=0 is the first retry, after the first
+  # failure). Lenient on the first few retries (~20s, ~26s, ~46s, ~2m, ~5m)
+  # then grows quickly (~11m, ~22m, ~41m at n=5-7) and keeps growing — at
+  # n=24 the delay is ~3.8 days, at n=49 it's ~72 days. See
+  # https://github.com/sidekiq/sidekiq/wiki/Error-Handling#automatic-job-retry.
   def auto_pick_reenqueue_delay
     return unless paid_state == "failed"
 
-    case [ consecutive_auto_pick_failure_count, 1 ].max
-    when 1
-      5.minutes
-    when 2
-      15.minutes
-    when 3
-      1.hour
-    else
-      4.hours
-    end
+    n = [ consecutive_auto_pick_failure_count - 1, 0 ].max
+    ((n**4) + 15 + (rand(10) * (n + 1))).seconds
   end
 
+  # Counts the most recent consecutive failed/no_output auto-pick runs.
+  # Bounded at 50 so the retry curve can keep growing past the ~2-hour
+  # mark (n=10 produces ~3h, n=49 produces ~72 days) without scanning
+  # an unbounded number of historical runs. A 51st consecutive failure
+  # is treated the same as the 50th.
   def consecutive_auto_pick_failure_count
     statuses = agent_runs
       .where(auto_pick: true, goal: %w[create_pr analyze_issue])
       .finished
       .order(created_at: :desc, id: :desc)
-      .limit(10)
+      .limit(50)
       .pluck(:status)
 
     statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count

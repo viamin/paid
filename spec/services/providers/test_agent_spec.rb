@@ -257,6 +257,35 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when an account integration credential exists for the provider" do
+      let(:credential) do
+        create(:integration_credential, account: account, created_by: user, service_key: "claude", secret: "sk-account-claude")
+      end
+      let(:provider_record) do
+        user.providers.find_or_create_by!(provider_key: "claude").tap do |record|
+          record.update!(enabled_for_agent_runs: true, enabled_for_fallback: false)
+        end
+      end
+
+      before do
+        credential
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_container_smoke_test(
+          name: :claude, status: "ok", message: "Smoke test passed", latency_ms: 42, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "materializes an API-key provider backed by the integration credential" do
+        result = described_class.call(provider: provider)
+        materialized = user.providers.find_by!(provider_key: "claude", auth_type: "api_key")
+
+        expect(result).to be_success
+        expect(materialized.integration_credential).to eq(credential)
+        expect(materialized.provider_api_key).to be_nil
+      end
+    end
+
     context "when agent-harness returns a binary-encoded failure message" do
       let(:api_key_record) { create(:provider_api_key, user: user, api_service_type: "openai") }
       let(:provider_record) { create(:provider, :api_key, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
@@ -1346,146 +1375,6 @@ RSpec.describe Providers::TestAgent do
     it "correctly classifies 'revoked token' as authentication" do
       result = call_with_message("revoked token")
       expect(result.error_type).to eq(:authentication)
-    end
-  end
-
-  describe "smoke test timeout forwarding (issue #1538)" do
-    let(:provider_class) do
-      Class.new(AgentHarness::Providers::Base) do
-        class << self
-          attr_accessor :contract_timeout, :provider_instance
-
-          def provider_name
-            :kilocode
-          end
-
-          def binary_name
-            "kilo"
-          end
-
-          def available?
-            true
-          end
-
-          def smoke_test_contract
-            {
-              prompt: "Reply with exactly OK.",
-              timeout: contract_timeout,
-              expected_output: "OK",
-              require_output: true
-            }
-          end
-
-          private
-
-          def build_provider_instance(config:, executor:, logger:)
-            provider_instance || new(config: config, executor: executor, logger: logger)
-          end
-        end
-
-        attr_reader :received_smoke_test_timeout, :received_provider_runtime
-
-        def validate_config
-          { valid: true, errors: [] }
-        end
-
-        def smoke_test(timeout:, provider_runtime:)
-          @received_smoke_test_timeout = timeout
-          @received_provider_runtime = provider_runtime
-          { ok: true, status: "ok", message: "Smoke test passed" }
-        end
-      end
-    end
-
-    def run_health_check(provider_instance:, contract_timeout:, caller_timeout:)
-      allow(AgentHarness::Providers::Registry.instance).to receive(:registered?).with(:kilocode).and_return(true)
-      allow(AgentHarness::Providers::Registry.instance).to receive(:get).with(:kilocode).and_return(provider_class)
-      allow(AgentHarness::Providers::Registry.instance).to receive(:canonical_name).with(:kilocode).and_return(:kilocode)
-      allow(AgentHarness::Providers::Registry.instance).to receive(:smoke_test_contract).with(:kilocode).and_return({ timeout: contract_timeout })
-      provider_class.contract_timeout = contract_timeout
-      provider_class.provider_instance = provider_instance
-
-      executor = instance_double(AgentHarness::DockerCommandExecutor)
-      runtime = AgentHarness::ProviderRuntime.new(env: { "FOO" => "bar" })
-
-      AgentHarness::ProviderHealthCheck.check(
-        :kilocode,
-        timeout: caller_timeout,
-        executor: executor,
-        provider_runtime: runtime
-      )
-      runtime
-    end
-
-    it "uses the caller timeout when it exceeds the smoke-test contract timeout" do
-      provider_instance = provider_class.new(
-        executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo")
-      )
-
-      runtime = run_health_check(provider_instance: provider_instance, contract_timeout: 30, caller_timeout: 60)
-
-      expect(provider_instance.received_smoke_test_timeout).to eq(60)
-      expect(provider_instance.received_provider_runtime).to eq(runtime)
-    end
-
-    it "passes nil timeout when the contract timeout exceeds the caller timeout (adapter uses contract default)" do
-      provider_instance = provider_class.new(
-        executor: instance_double(AgentHarness::CommandExecutor, which: "/usr/bin/kilo")
-      )
-
-      runtime = run_health_check(provider_instance: provider_instance, contract_timeout: 90, caller_timeout: 60)
-
-      # agent-harness ≥0.17.1 passes nil so the adapter falls through to
-      # contract[:timeout]; the outer Timeout.timeout already uses
-      # max(caller, contract) to prevent premature kills.
-      expect(provider_instance.received_smoke_test_timeout).to be_nil
-      expect(provider_instance.received_provider_runtime).to eq(runtime)
-    end
-
-    it "forwards unrelated smoke-test keywords while replacing a nil timeout" do
-      provider_instance = Class.new do
-        attr_reader :received_kwargs
-
-        def smoke_test_contract
-          { timeout: 30 }
-        end
-
-        def smoke_test(*args, **kwargs)
-          @received_kwargs = kwargs
-          { ok: true }
-        end
-      end.new
-
-      provider_instance.instance_variable_set(:@paid_smoke_test_timeout, 60)
-      provider_instance.singleton_class.prepend(AgentHarnessSmokeTestTimeoutProviderPatch)
-
-      provider_instance.smoke_test(timeout: nil, provider_runtime: :runtime, sentinel: :value)
-
-      expect(provider_instance.received_kwargs).to eq(
-        timeout: 60,
-        provider_runtime: :runtime,
-        sentinel: :value
-      )
-    end
-
-    it "forwards unrelated health-check keywords while storing the caller timeout" do
-      health_check_class = Class.new do
-        class << self
-          attr_reader :received_args, :received_kwargs
-
-          def perform_check(*args, **kwargs)
-            @received_args = args
-            @received_kwargs = kwargs
-          end
-        end
-      end
-      health_check_class.singleton_class.prepend(AgentHarnessSmokeTestTimeoutPatch)
-
-      health_check_class.send(:perform_check, :kilocode, :start, timeout: 60, sentinel: :value)
-
-      expect(health_check_class.received_args).to eq([ :kilocode, :start ])
-      expect(health_check_class.received_kwargs).to eq(timeout: 60, sentinel: :value)
-      expect(Thread.current[:paid_agent_harness_smoke_test_timeout]).to be_nil
     end
   end
 

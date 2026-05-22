@@ -116,19 +116,17 @@ module Workflows
       workflow_error = nil
 
       begin
-        if Temporalio::Workflow.patched("agent-execution-quality-gate-v1")
-          gate_result = check_quality_gate(
-            project_id: project_id,
-            issue_id: issue_id,
-            agent_run_id: agent_run_id,
-            source_pull_request_number: source_pull_request_number
-          )
-          unless gate_result.fetch(:allowed, true)
-            run_activity(Activities::MarkAgentRunFailedActivity,
-              { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
+        gate_result = check_quality_gate(
+          project_id: project_id,
+          issue_id: issue_id,
+          agent_run_id: agent_run_id,
+          source_pull_request_number: source_pull_request_number
+        )
+        unless gate_result.fetch(:allowed, true)
+          run_activity(Activities::MarkAgentRunFailedActivity,
+            { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
 
-            return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
-          end
+          return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
         end
 
         if goal == "enhance_issue"
@@ -147,6 +145,19 @@ module Workflows
             start_to_close_timeout: issue_goal_timeout_seconds,
             retry_policy: NO_RETRY)
 
+          unless result.is_a?(Hash) && result.key?(:sufficient_context)
+            raise Temporalio::Error::ApplicationError.new(
+              "AnalyzeIssueActivity returned an invalid result payload",
+              type: "AnalyzeIssueInvalidResult",
+              non_retryable: true
+            )
+          end
+
+          followup_goal = result[:sufficient_context] ? "create_pr" : "enhance_issue"
+          run_activity(Activities::CreateFollowupRunActivity,
+            { agent_run_id: agent_run_id, goal: followup_goal },
+            timeout: 30)
+
           agent_step_succeeded = true
           return { success: true, agent_run_id: agent_run_id, **result.slice(:sufficient_context) }
         end
@@ -162,10 +173,8 @@ module Workflows
         # Always run unconditionally — returns empty lists when no MCP servers
         # are configured. Must run before container provisioning so sidecar
         # URLs are available when the agent starts.
-        if Temporalio::Workflow.patched("provision_mcp_servers_v1")
-          run_activity(Activities::ProvisionMcpServersActivity,
-            { agent_run_id: agent_run_id }, timeout: 120)
-        end
+        run_activity(Activities::ProvisionMcpServersActivity,
+          { agent_run_id: agent_run_id }, timeout: 120)
 
         # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
@@ -178,9 +187,7 @@ module Workflows
         # effectively pausing the workflow until credentials are available.
         skip_clone = goal.in?(%w[create_issue enhance_issue analyze_issue]) && source_pull_request_number.blank?
         unless skip_clone
-          if Temporalio::Workflow.patched("check_proxy_health_before_clone")
-            ensure_proxy_healthy(agent_run_id)
-          end
+          ensure_proxy_healthy(agent_run_id)
         end
 
         # Step 3: Clone repo and create branch inside the container.
@@ -289,9 +296,7 @@ module Workflows
           # Step 5: Push branch (inside container)
           # Re-check proxy health before push — the agent may have run for
           # a long time and the proxy could have gone down in the meantime.
-          if Temporalio::Workflow.patched("check_proxy_health_before_push")
-            ensure_proxy_healthy(agent_run_id)
-          end
+          ensure_proxy_healthy(agent_run_id)
 
           run_activity(Activities::PushBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 60)
@@ -438,20 +443,18 @@ module Workflows
             end
           end
 
-          if Temporalio::Workflow.patched("provision_mcp_servers_v1")
-            begin
-              run_activity(Activities::CleanupMcpServersActivity,
-                { agent_run_id: agent_run_id },
-                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-                retry_policy: CLEANUP_RETRY_POLICY)
-            rescue => e
-              Temporalio::Workflow.logger.warn(
-                message: "agent_execution.cleanup_mcp_servers_failed",
-                agent_run_id: agent_run_id,
-                error_class: e.class.name,
-                error: e.message
-              )
-            end
+          begin
+            run_activity(Activities::CleanupMcpServersActivity,
+              { agent_run_id: agent_run_id },
+              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+              retry_policy: CLEANUP_RETRY_POLICY)
+          rescue => e
+            Temporalio::Workflow.logger.warn(
+              message: "agent_execution.cleanup_mcp_servers_failed",
+              agent_run_id: agent_run_id,
+              error_class: e.class.name,
+              error: e.message
+            )
           end
 
           begin
@@ -558,22 +561,11 @@ module Workflows
     # when :reviewers is not supplied, so the workflow does not need to know
     # which bot is enabled.
     #
-    # The :reviewers argument is gated behind a workflow patch so that
-    # in-flight AgentExecutionWorkflow executions started before this
-    # deployment — whose history recorded the old `reviewers: [copilot]`
-    # payload — can replay without a non-determinism error. Histories
-    # captured after the patch use the new project-resolved form.
     def request_review_bot_review(project_id, pr_number)
       return unless pr_number
 
-      input = if Temporalio::Workflow.patched("request_review_resolve_reviewer_from_project")
-        { project_id: project_id, pr_number: pr_number }
-      else
-        { project_id: project_id, pr_number: pr_number,
-          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }
-      end
-
-      run_activity(Activities::RequestReviewActivity, input, timeout: 60)
+      run_activity(Activities::RequestReviewActivity,
+        { project_id: project_id, pr_number: pr_number }, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
@@ -586,32 +578,18 @@ module Workflows
     end
 
     def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
-      if Temporalio::Workflow.patched("resolve_review_threads_with_prompt_thread_ids")
-        return unless pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
+      return unless pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
 
-        resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
-      else
-        return unless pr_run_without_prompt
-
-        resolve_review_threads(agent_run_id)
-      end
+      resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
     end
 
     def resolve_no_change_followup_review_threads(agent_run_id, source_pull_request_number, pr_run_without_prompt, pr_prompt_result, agent_result)
-      if Temporalio::Workflow.patched("resolve_review_threads_with_prompt_thread_ids")
-        return unless source_pull_request_number && pr_run_without_prompt &&
-          pr_prompt_result[:includes_review_threads] &&
-          pr_prompt_result[:review_thread_ids].present? &&
-          agent_result[:review_threads_already_addressed]
+      return unless source_pull_request_number && pr_run_without_prompt &&
+        pr_prompt_result[:includes_review_threads] &&
+        pr_prompt_result[:review_thread_ids].present? &&
+        agent_result[:review_threads_already_addressed]
 
-        resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
-      else
-        return unless source_pull_request_number && pr_run_without_prompt &&
-          pr_prompt_result[:includes_review_threads] &&
-          agent_result[:review_threads_already_addressed]
-
-        resolve_review_threads(agent_run_id)
-      end
+      resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
     end
 
     def resolve_review_threads(agent_run_id, thread_ids: nil)

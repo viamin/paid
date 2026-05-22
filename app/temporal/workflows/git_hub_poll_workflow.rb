@@ -187,20 +187,17 @@ module Workflows
     # sufficient budget remains. Issue detection (FetchIssues + DetectLabels)
     # is prioritized as core work; PR scanning, security alerts, and knowledge
     # staleness checks are skipped when budget is low.
-    # TODO(#872): Remove patch guard after all pre-v872 workflows have continued-as-new
     def maybe_run_non_critical_activities(project_id)
-      if Temporalio::Workflow.patched("add-rate-limit-budget-v1")
-        rate_limit = run_activity(Activities::CheckRateLimitActivity,
-          { project_id: project_id }, timeout: 10)
+      rate_limit = run_activity(Activities::CheckRateLimitActivity,
+        { project_id: project_id }, timeout: 10)
 
-        if rate_limit[:rate_limit_low]
-          Temporalio::Workflow.logger.info(
-            message: "poll.non_critical_skipped_budget_low",
-            project_id: project_id,
-            rate_limit_remaining: rate_limit[:rate_limit_remaining]
-          )
-          return nil
-        end
+      if rate_limit[:rate_limit_low]
+        Temporalio::Workflow.logger.info(
+          message: "poll.non_critical_skipped_budget_low",
+          project_id: project_id,
+          rate_limit_remaining: rate_limit[:rate_limit_remaining]
+        )
+        return nil
       end
 
       scan_result = maybe_scan_paid_prs(project_id)
@@ -212,10 +209,7 @@ module Workflows
     end
 
     # Scan paid-generated PRs for follow-up work.
-    # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
     def maybe_scan_paid_prs(project_id)
-      return unless Temporalio::Workflow.patched("add-scan-paid-prs-v1")
-
       scan_result = run_activity(Activities::ScanPaidPrsActivity,
         { project_id: project_id }, timeout: 120)
 
@@ -226,10 +220,7 @@ module Workflows
     # Scan for CodeQL code scanning alerts and create synthetic issues.
     # Code scanning issues are picked up naturally by AutoPick — no immediate
     # agent runs are triggered here.
-    # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
     def maybe_scan_code_scanning_alerts(project_id)
-      return unless Temporalio::Workflow.patched("add-scan-security-alerts-v1")
-
       run_activity(Activities::ScanSecurityAlertsActivity,
         { project_id: project_id }, timeout: 120)
     rescue Temporalio::Error::ActivityError => e
@@ -244,10 +235,7 @@ module Workflows
     end
 
     # Check if the project's knowledge base needs refreshing after HEAD advances.
-    # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
     def maybe_check_knowledge_staleness(project_id)
-      return unless Temporalio::Workflow.patched("add-check-knowledge-staleness-v1")
-
       run_activity(Activities::CheckKnowledgeStalenessActivity,
         { project_id: project_id }, timeout: 30)
     rescue Temporalio::Error::CanceledError
@@ -786,23 +774,6 @@ module Workflows
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
       return unless quality_gate_allows_run?(project_id, pr_data, goal: "create_pr")
-
-      # TODO(#220): Remove patch guard after all long-running GitHubPollWorkflows
-      # have continued-as-new past this point (i.e. no workflow history contains
-      # the legacy queue-then-record command sequence).
-      unless Temporalio::Workflow.patched("draft-followup-direct-start-v1")
-        legacy_input = { project_id: project_id, issue_id: issue_id,
-          source_pull_request_number: pr_number }
-        legacy_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
-        legacy_input[:focus] = pr_data[:focus] if pr_data[:focus].present?
-        run_activity(Activities::QueueAgentRunActivity, legacy_input, timeout: 30)
-        run_activity(Activities::RecordDraftReviewActivity,
-          {
-            issue_id: issue_id,
-            expected_draft_review_count: pr_data[:current_draft_review_count]
-          }, timeout: 30)
-        return
-      end
 
       draft_input = {
         project_id: project_id,

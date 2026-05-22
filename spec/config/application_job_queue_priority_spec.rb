@@ -21,6 +21,7 @@ RSpec.describe ApplicationJob, :no_db do
         RetryTimedOutIssueGoalJob
       ],
       maintenance: %w[
+        AnalyzeIssueFollowupBackfillJob
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
         AgentRunResourceJanitorJob
@@ -36,6 +37,7 @@ RSpec.describe ApplicationJob, :no_db do
         ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob
+        TemporalPatchGuardSweepJob
         WorktreeOrphanCleanupJob
       ],
       metrics: %w[

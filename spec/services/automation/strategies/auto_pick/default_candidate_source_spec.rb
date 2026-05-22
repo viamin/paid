@@ -190,6 +190,24 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(described_class.eligible_scope(project).pluck(:labels)).to include([ "planning" ])
     end
+
+    it "matches allowlist entries case-insensitively against github_creator_login" do
+      project.update!(allowed_github_usernames: [ "Viamin" ])
+      issue = create(:issue, project: project, github_creator_login: "viamin")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "excludes issues whose creator is not in the allowlist regardless of case" do
+      project.update!(allowed_github_usernames: [ "Viamin" ])
+      create(:issue, project: project, github_creator_login: "otheruser")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
   end
 
   describe ".eligible_issue_ids" do

@@ -68,10 +68,10 @@ module AgentRuns
       configured_runner = configured_runner_from_raw_settings(settings)
       base_runner = runnable_runner(selected_runner) || runnable_runner(configured_runner)
       fallback_runner = Runner.first_enabled_for_owner(owner) || Runner.ensure_default_for(owner)
-      tenant_api_key_runner(base_runner, owner) ||
+      account_managed_runner(base_runner, owner) ||
         base_runner ||
-        tenant_api_key_runner(configured_runner, owner) ||
-        tenant_api_key_runner(fallback_runner, owner) ||
+        account_managed_runner(configured_runner, owner) ||
+        account_managed_runner(fallback_runner, owner) ||
         fallback_runner
     end
 
@@ -97,36 +97,44 @@ module AgentRuns
       runner
     end
 
-    def tenant_api_key_runner(base_runner, owner)
+    def account_managed_runner(base_runner, owner)
       return unless base_runner
       return unless runner_runnable?(base_runner)
 
-      service_type = tenant_api_key_service_type_for(base_runner)
-      return unless service_type
-
-      api_key = project.account.tenant_setting&.provider_api_key_for(service_type)
-      return unless api_key
-      return unless api_key.compatible_with?(base_runner.runner_key)
+      credential = resolve_account_credential(base_runner)
+      return unless credential.present?
+      return if credential.provider_api_key? && !credential.provider_api_key.compatible_with?(base_runner.runner_key)
 
       owner.runners.kept_only.find_or_create_by!(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
-        provider_api_key: api_key
+        provider_api_key: credential.provider_api_key,
+        integration_credential: credential.integration_credential
       ) do |runner|
-        runner.config = tenant_api_key_runner_config(base_runner, api_key)
+        runner.config = account_managed_runner_config(base_runner, credential)
       end.tap do |runner|
-        config = tenant_api_key_runner_config(base_runner, api_key)
+        config = account_managed_runner_config(base_runner, credential)
         runner.update!(config: config) if config != runner.config
       end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
       owner.runners.kept_only.find_by(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
-        provider_api_key: api_key
+        provider_api_key: credential&.provider_api_key,
+        integration_credential: credential&.integration_credential
       )
     end
 
-    def tenant_api_key_service_type_for(base_runner)
+    def resolve_account_credential(base_runner)
+      LlmCredentials::AccountResolver.call(
+        account: project.account,
+        runner_key: base_runner.runner_key,
+        api_service_type: account_credential_service_type_for(base_runner),
+        tenant_setting: project.account.tenant_setting
+      )
+    end
+
+    def account_credential_service_type_for(base_runner)
       return base_runner.aider_required_api_service_type if base_runner.runner_key == "aider"
       return base_runner.pi_required_api_service_type if base_runner.runner_key == "pi"
 
@@ -136,19 +144,21 @@ module AgentRuns
       nil
     end
 
-    def tenant_api_key_runner_config(base_runner, api_key)
+    def account_managed_runner_config(base_runner, credential)
+      api_service_type = credential.provider_api_key&.api_service_type || account_credential_service_type_for(base_runner)
+
       case base_runner.runner_key
       when "aider"
         {
           "aider" => {
-            "api_provider" => api_key.api_service_type,
+            "api_provider" => api_service_type,
             "model" => base_runner.aider_model_id
           }.compact
         }
       when "pi"
         config = {
           "pi" => {
-            "api_provider" => api_key.api_service_type
+            "api_provider" => api_service_type
           }
         }
 
