@@ -183,16 +183,18 @@ module ProjectConventions
     def extract_packages(config)
       return [] unless config.is_a?(Hash)
 
-      packages_hash = config["packages"] || {}
-      return [] unless packages_hash.is_a?(Hash)
+      packages_hash = config["packages"]
+      if packages_hash.is_a?(Hash)
+        return packages_hash.filter_map do |path, pkg_config|
+          next unless pkg_config.is_a?(Hash)
 
-      packages_hash.filter_map do |path, pkg_config|
-        next unless pkg_config.is_a?(Hash)
-
-        entry = { "path" => path }
-        entry["release_type"] = pkg_config["release-type"] if pkg_config["release-type"]
-        entry
+          entry = { "path" => path }
+          entry["release_type"] = pkg_config["release-type"] if pkg_config["release-type"]
+          entry
+        end
       end
+
+      root_package_entry(config)
     end
 
     def extract_changelog_sections(config)
@@ -214,19 +216,16 @@ module ProjectConventions
 
     def infer_commitlint_types
       commitlintrc = find_commitlintrc
-      return unless commitlintrc
+      config =
+        if commitlintrc
+          parse_json_file(commitlintrc)
+        elsif package_json_commitlint_match
+          parse_package_json_commitlint
+        end
 
-      config = parse_json_file(commitlintrc)
       return unless config.is_a?(Hash)
 
-      rules = config.dig("rules")
-      return unless rules.is_a?(Hash)
-
-      type_enum = rules.dig("type-enum")
-      return unless type_enum.is_a?(Array)
-
-      allowed = type_enum[2]
-      allowed if allowed.is_a?(Array) && allowed.any?
+      allowed_types_from_commitlint_config(config)
     end
 
     def find_commitlintrc
@@ -283,6 +282,30 @@ module ProjectConventions
 
       package_json.key?("commitlint") ||
         package_json.fetch("devDependencies", {}).key?("@commitlint/config-conventional")
+    end
+
+    def root_package_entry(config)
+      return [] unless config["release-type"]
+
+      [ { "path" => ".", "release_type" => config["release-type"] } ]
+    end
+
+    def parse_package_json_commitlint
+      package_json = parse_json_file("package.json")
+      return unless package_json.is_a?(Hash)
+
+      package_json["commitlint"]
+    end
+
+    def allowed_types_from_commitlint_config(config)
+      rules = config.dig("rules")
+      return unless rules.is_a?(Hash)
+
+      type_enum = rules.dig("type-enum")
+      return unless type_enum.is_a?(Array)
+
+      allowed = type_enum[2]
+      allowed if allowed.is_a?(Array) && allowed.any?
     end
 
     def github_workflow_matches(pattern)

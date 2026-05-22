@@ -102,6 +102,16 @@ RSpec.describe ProjectConventions::Detector, :no_db do
       )
     end
 
+    it "treats a top-level release type as the root package for single-package configs" do
+      write_repo_file("release-please-config.json", '{"release-type":"ruby"}')
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "release_automation" }
+
+      expect(detection[:value]["packages"]).to contain_exactly(
+        a_hash_including("path" => ".", "release_type" => "ruby")
+      )
+    end
+
     it "parses changelog sections to infer commit types" do
       config = {
         packages: { "." => {} },
@@ -232,6 +242,24 @@ RSpec.describe ProjectConventions::Detector, :no_db do
       detection = described_class.call(repo_path:).find { |item| item[:key] == "commit_style" }
 
       expect(detection).not_to be_nil
+      expect(detection[:evidence]["paths"]).to include("package.json")
+    end
+
+    it "extracts allowed types from package.json commitlint config" do
+      write_repo_file(
+        "package.json",
+        {
+          commitlint: {
+            rules: {
+              "type-enum" => [ 2, "always", %w[feat fix docs] ]
+            }
+          }
+        }.to_json
+      )
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "commit_style" }
+
+      expect(detection[:value]["allowed_types"]).to contain_exactly("feat", "fix", "docs")
       expect(detection[:evidence]["paths"]).to include("package.json")
     end
   end
