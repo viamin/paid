@@ -388,11 +388,18 @@ module Workflows
         return
       end
 
+      timeout_config = run_activity(Activities::FetchPlanReviewTimeoutActivity,
+        { project_id: project_id }, timeout: 10)
+
       workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
 
       Temporalio::Workflow.start_child_workflow(
         Workflows::PlanningWorkflow,
-        { project_id: project_id, issue_id: issue_id },
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          plan_review_timeout_hours: timeout_config[:plan_review_timeout_hours]
+        },
         id: workflow_id,
         task_queue: Paid::AGENT_TASK_QUEUE,
         parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_20_150840) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_22_004053) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1655,6 +1655,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_150840) do
     t.string "name", null: false
     t.string "owner", null: false
     t.string "owner_reviewer_login"
+    t.integer "plan_review_timeout_hours", default: 24, null: false, comment: "Maximum hours to wait for plan review approval before auto-approving."
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false

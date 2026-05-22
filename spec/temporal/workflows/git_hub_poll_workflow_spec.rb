@@ -428,13 +428,16 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::FetchPlanReviewTimeoutActivity, anything, timeout: anything)
+        .and_return({ plan_review_timeout_hours: 24 })
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
 
       workflow.send(:handle_automation_result, evaluation, project_id)
 
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::PlanningWorkflow,
-        { project_id: project_id, issue_id: 20 },
+        { project_id: project_id, issue_id: 20, plan_review_timeout_hours: 24 },
         hash_including(
           id: /\Aplan-#{project_id}-20-/,
           parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
