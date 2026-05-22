@@ -580,6 +580,120 @@ RSpec.describe WorktreeService do
     end
   end
 
+  describe "#with_temporary_worktree" do
+    let(:branch_name) { "feature/test-branch" }
+    let(:temp_branch) { "paid-conflict/branch123" }
+    let(:temp_path) { File.join(worktrees_path, "paid-conflict-path456") }
+
+    before do
+      allow(service).to receive(:ensure_cloned)
+      FileUtils.mkdir_p(repo_path)
+      FileUtils.mkdir_p(worktrees_path)
+      allow(SecureRandom).to receive(:hex).and_return("branch123", "path456")
+      allow(Dir).to receive(:exist?).and_call_original
+      allow(Dir).to receive(:exist?).with(temp_path).and_return(true)
+    end
+
+    def expect_temporary_worktree_cleanup(temp_branch:, temp_path:)
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "remove", temp_path, "--force",
+        chdir: repo_path,
+        raise_on_error: false
+      )
+      expect(service).to receive(:run_git).ordered.with(
+        "branch", "-D", temp_branch,
+        chdir: repo_path,
+        raise_on_error: false
+      )
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "prune",
+        chdir: repo_path,
+        raise_on_error: false
+      )
+    end
+
+    it "creates, yields, and removes the temporary worktree on success" do
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "add", "--force", "-B", temp_branch, temp_path, "origin/#{branch_name}",
+        chdir: repo_path
+      )
+      expect_temporary_worktree_cleanup(temp_branch:, temp_path:)
+
+      result = service.with_temporary_worktree(branch_name) do |path|
+        expect(path).to eq(temp_path)
+        :ok
+      end
+
+      expect(result).to eq(:ok)
+    end
+
+    it "removes the temporary worktree on error" do
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "add", "--force", "-B", temp_branch, temp_path, "origin/#{branch_name}",
+        chdir: repo_path
+      )
+      expect_temporary_worktree_cleanup(temp_branch:, temp_path:)
+
+      expect do
+        service.with_temporary_worktree(branch_name) { |_path| raise "boom" }
+      end.to raise_error("boom")
+    end
+  end
+
+  describe "#with_temporary_checkout" do
+    let(:ref) { "a" * 40 }
+    let(:temp_path) { File.join(worktrees_path, "paid-checkout-checkout123") }
+
+    before do
+      allow(service).to receive(:ensure_cloned)
+      FileUtils.mkdir_p(repo_path)
+      FileUtils.mkdir_p(worktrees_path)
+      allow(SecureRandom).to receive(:hex).and_return("checkout123")
+      allow(Dir).to receive(:exist?).and_call_original
+      allow(Dir).to receive(:exist?).with(temp_path).and_return(true)
+    end
+
+    def expect_temporary_checkout_cleanup(temp_path:)
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "remove", temp_path, "--force",
+        chdir: repo_path,
+        raise_on_error: false
+      )
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "prune",
+        chdir: repo_path,
+        raise_on_error: false
+      )
+    end
+
+    it "creates, yields, and removes the temporary checkout on success" do
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "add", "--detach", temp_path, ref,
+        chdir: repo_path
+      )
+      expect_temporary_checkout_cleanup(temp_path:)
+
+      result = service.with_temporary_checkout(ref) do |path|
+        expect(path).to eq(temp_path)
+        :ok
+      end
+
+      expect(result).to eq(:ok)
+    end
+
+    it "removes the temporary checkout on error" do
+      expect(service).to receive(:run_git).ordered.with(
+        "worktree", "add", "--detach", temp_path, ref,
+        chdir: repo_path
+      )
+      expect_temporary_checkout_cleanup(temp_path:)
+
+      expect do
+        service.with_temporary_checkout(ref) { |_path| raise "boom" }
+      end.to raise_error("boom")
+    end
+  end
+
   describe "error classes" do
     describe "CloneError" do
       it "is a subclass of Error" do
