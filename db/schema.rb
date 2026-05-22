@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_22_004053) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_22_191000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1560,6 +1560,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_004053) do
     t.index ["project_id"], name: "index_project_convention_overrides_on_project_id"
   end
 
+  create_table "project_convention_recommendations", comment: "Actionable convention-based recommendations for a project, with dismissal and audit tracking.", force: :cascade do |t|
+    t.string "action_type", limit: 50, null: false, comment: "Recommended action: apply_in_paid, open_pr, apply_github_side"
+    t.datetime "applied_at", comment: "When the recommendation was applied"
+    t.bigint "applied_by_id", comment: "User who applied the recommendation"
+    t.string "convention_key", limit: 100, null: false, comment: "Convention key this recommendation relates to (e.g. commit_style, hook_manager)"
+    t.datetime "created_at", null: false
+    t.text "description", null: false, comment: "Explanation of why the recommendation exists and what it does"
+    t.string "dismissal_reason", comment: "User-provided reason for dismissal"
+    t.datetime "dismissed_at", comment: "When the recommendation was dismissed"
+    t.bigint "dismissed_by_id", comment: "User who dismissed the recommendation"
+    t.jsonb "evidence", default: {}, null: false, comment: "Supporting evidence from detection that triggered this recommendation"
+    t.datetime "generated_at", comment: "When the recommendation was generated from detection data"
+    t.bigint "project_id", null: false, comment: "The project this recommendation belongs to"
+    t.string "status", limit: 30, default: "pending", null: false, comment: "Lifecycle: pending, applied, dismissed"
+    t.string "title", limit: 255, null: false, comment: "Short human-readable recommendation title"
+    t.datetime "updated_at", null: false
+    t.index ["applied_by_id"], name: "index_project_convention_recommendations_on_applied_by_id"
+    t.index ["dismissed_by_id"], name: "index_project_convention_recommendations_on_dismissed_by_id"
+    t.index ["project_id", "convention_key", "action_type"], name: "index_convention_recs_on_project_key_action", unique: true, where: "((status)::text = 'pending'::text)"
+    t.index ["project_id", "status"], name: "index_convention_recs_on_project_status"
+    t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -2465,6 +2488,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_004053) do
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"
   add_foreign_key "project_convention_overrides", "projects"
+  add_foreign_key "project_convention_recommendations", "projects"
+  add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
+  add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"
