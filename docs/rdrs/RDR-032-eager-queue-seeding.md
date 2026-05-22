@@ -427,7 +427,7 @@ Replace `Issue#auto_pick_reenqueue_delay` (`app/models/issue.rb`):
 def auto_pick_reenqueue_delay
   return unless paid_state == "failed"
 
-  n = consecutive_auto_pick_failure_count
+  n = [ consecutive_auto_pick_failure_count - 1, 0 ].max
   ((n**4) + 15 + (rand(10) * (n + 1))).seconds
 end
 ```
