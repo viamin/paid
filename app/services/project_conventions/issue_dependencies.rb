@@ -23,7 +23,7 @@ module ProjectConventions
         message: "issue_dependencies.convention_lookup_failed",
         error: e.message
       )
-      Resolve::DEFAULTS.fetch("issue_dependency_format")
+      Catalog.default_for("issue_dependency_format")
     end
   end
 end

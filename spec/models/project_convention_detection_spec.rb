@@ -24,4 +24,19 @@ RSpec.describe ProjectConventionDetection do
     expect(detection).not_to be_valid
     expect(detection.errors[:project]).to include("must match the project version's project")
   end
+
+  it "derives category from the convention key" do
+    detection = build(:project_convention_detection, key: "hook_manager", category: nil)
+
+    detection.validate
+
+    expect(detection.category).to eq("hook_system")
+  end
+
+  it "requires a category when no convention key is available to derive one" do
+    detection = build(:project_convention_detection, key: nil, category: nil)
+
+    expect(detection).not_to be_valid
+    expect(detection.errors[:category]).to include("can't be blank")
+  end
 end

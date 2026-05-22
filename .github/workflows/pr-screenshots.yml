@@ -1,4 +1,5 @@
 name: PR Screenshots
+run-name: PR Screenshots (#${{ github.event.pull_request.number }})
 
 on:
   pull_request:
