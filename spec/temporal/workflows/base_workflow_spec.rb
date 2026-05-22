@@ -7,8 +7,8 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
     Class.new(described_class) do
       def execute(input)
         [
-          feature_flag_enabled?(:explicit_pr_automation_decisions, project_id: input[:project_id]),
-          feature_flag_enabled?(:explicit_pr_automation_decisions, project_id: input[:project_id])
+          feature_flag_enabled?(:test_flag, project_id: input[:project_id]),
+          feature_flag_enabled?(:test_flag, project_id: input[:project_id])
         ]
       end
     end
@@ -50,9 +50,9 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
           policy_metadata: {
             policy_source: "coordination_policy",
             policy_key: "feature_decomposition",
-            coordination_policy_id: 12,
-            coordination_policy_version_id: 34,
-            coordination_policy_version: 5
+            "coordination_policy_id" => 12,
+            "coordination_policy_version_id" => 34,
+            "coordination_policy_version" => 5
           }
         },
         type: "DecompositionFailed"
@@ -72,7 +72,7 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
     it "loads the workflow flag snapshot through an activity and memoizes it per project" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, { project_id: 123 }, timeout: 10)
-        .and_return(flags: { explicit_pr_automation_decisions: true }, project_missing: false)
+        .and_return(flags: { test_flag: true }, project_missing: false)
 
       expect(workflow.execute(project_id: 123)).to eq([ true, true ])
       expect(workflow).to have_received(:run_activity).once

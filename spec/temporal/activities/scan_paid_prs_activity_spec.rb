@@ -198,7 +198,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when explicit PR decisions are enabled" do
+    context "when automation results are produced" do
       let(:pr_issue) do
         create(:issue, :pull_request,
           project: project,
@@ -208,7 +208,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       before do
-        FeatureFlags.enable!(:explicit_pr_automation_decisions, project:)
         pr_issue
       end
 
@@ -242,41 +241,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         active_run_gate_queries = queries.grep(/FROM "agent_runs".*"status" IN .*"goal" =/)
         expect(active_run_gate_queries.size).to eq(1)
       end
-    end
 
-    context "when explicit PR decisions are disabled" do
-      let(:pr_issue) do
-        create(:issue, :pull_request,
-          project: project,
-          github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
-          paid_state: "completed")
-      end
-
-      before do
-        FeatureFlags.disable!(:explicit_pr_automation_decisions, project:)
-        pr_issue
-      end
-
-      it "returns only legacy trigger payloads" do
-        stub_github_for_pr(checks: [ { name: "rspec", conclusion: "failure" } ])
-
-        result = activity.execute(project_id: project.id)
-
-        expect(result[:prs_to_trigger]).not_to be_empty
-        expect(result[:automation_results]).to eq([])
-      end
-
-      it "does not build lifecycle signals for legacy trigger payloads" do
+      it "builds lifecycle signals for each scanned PR" do
         allow(activity).to receive(:scan_pr).and_return({ pr_number: 42, triggers: [ { type: "ci_failure" } ] })
         allow(activity).to receive(:build_lifecycle_signals).and_call_original
 
         activity.execute(project_id: project.id)
 
-        expect(activity).not_to have_received(:build_lifecycle_signals)
+        expect(activity).to have_received(:build_lifecycle_signals)
       end
 
-      it "logs legacy trigger counts when rate limiting interrupts the scan" do
+      it "logs automation result counts when rate limiting interrupts the scan" do
         create(:issue, :pull_request,
           project: project,
           github_number: 43,
@@ -6902,7 +6877,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "with structured logging" do
       before do
-        FeatureFlags.disable!(:explicit_pr_automation_decisions, project:)
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
@@ -6924,7 +6898,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "logs legacy trigger totals when explicit decisions are disabled" do
+      it "logs trigger totals from automation results" do
         allow(Rails.logger).to receive(:info)
         allow(activity).to receive(:scan_pr).and_return({ pr_number: 42, triggers: [ { type: "ci_failure" } ] })
 

@@ -4,10 +4,9 @@ module Automation
   class IssueEvaluator
     include LabelPolicy
 
-    def initialize(record:, explicit_pr_decisions: false)
+    def initialize(record:)
       @record = record
       @project = record.project
-      @explicit_pr_decisions = explicit_pr_decisions
     end
 
     def call
@@ -16,6 +15,6 @@ module Automation
 
     private
 
-    attr_reader :record, :project, :explicit_pr_decisions
+    attr_reader :record, :project
   end
 end

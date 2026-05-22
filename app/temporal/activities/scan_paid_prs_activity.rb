@@ -88,11 +88,9 @@ module Activities
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
       scanned_prs = paid_prs.reject { |issue| merged_issue?(issue) }
-      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
 
       scanned_count = 0
       unchanged_count = 0
-      prs_to_trigger = []
       automation_results = []
       pending_review_states = []
       progress_states = []
@@ -105,9 +103,8 @@ module Activities
               issue.update_column(:last_pr_scan_at, Time.current)
               pending_review_states << pending_review_state(issue, result)
               progress_states << serialized_pr_progress_state(project, issue)
-              collect_scan_result(issue, result, prs_to_trigger, automation_results,
-                explicit_pr_decisions:,
-                lifecycle: explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil)
+              collect_scan_result(issue, result, automation_results,
+                lifecycle: build_lifecycle_signals(project, issue))
               next
             end
           end
@@ -116,30 +113,20 @@ module Activities
         end
 
         result = scan_pr(project, client, issue)
-        # Only count as scanned when the scan actually completed — scan_pr
-        # returns :skipped when short-circuited (active run exists) or when
-        # API failures prevented full evaluation.
         next if result == :skipped
-        # TODO(#1121): build_lifecycle_signals re-queries gates that scan_pr
-        # already evaluated (operational_failure_breaker?, active_run_exists?,
-        # etc.), roughly doubling gate-check DB queries per PR. Once the
-        # strategy fully owns gate evaluation, scan_pr should stop evaluating
-        # gates itself and defer to the signals/strategy path.
         scanned_count += 1
         issue.update_column(:last_pr_scan_at, Time.current)
         pending_review_states << pending_review_state(issue, result)
         progress_states << serialized_pr_progress_state(project, issue)
-        lifecycle = explicit_pr_decisions ? build_lifecycle_signals(project, issue) : nil
-        collect_scan_result(issue, result, prs_to_trigger, automation_results,
-          explicit_pr_decisions:,
-          lifecycle:)
+        collect_scan_result(issue, result, automation_results,
+          lifecycle: build_lifecycle_signals(project, issue))
       rescue Temporalio::Error::ApplicationError => e
         raise unless e.type == "RateLimit"
 
         logger.warn(
           message: "pr_scanner.rate_budget_exhausted_mid_scan",
           project_id: project_id,
-          prs_collected: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size,
+          prs_collected: automation_results.size,
           prs_remaining: scanned_prs.size - index - 1
         )
         break
@@ -151,11 +138,11 @@ module Activities
         prs_found: paid_prs.size,
         prs_scanned: scanned_count,
         prs_skipped_unchanged: unchanged_count,
-        prs_triggered: explicit_pr_decisions ? automation_results.size : prs_to_trigger.size
+        prs_triggered: automation_results.size
       )
 
       {
-        prs_to_trigger: prs_to_trigger,
+        prs_to_trigger: [],
         automation_results: automation_results,
         pr_issue_ids: paid_prs.map(&:id),
         pending_review_states: pending_review_states.compact,
@@ -170,17 +157,12 @@ module Activities
 
     private
 
-    def collect_scan_result(issue, result, prs_to_trigger, automation_results, explicit_pr_decisions:, lifecycle:)
-      if explicit_pr_decisions
-        automation_result = Automation::Evaluator.for(issue, explicit_pr_decisions: true)
-          .call(scan: result, lifecycle: lifecycle)
-        return if automation_result.decisions.all? { |decision| decision.type == "noop" }
+    def collect_scan_result(issue, result, automation_results, lifecycle:)
+      automation_result = Automation::Evaluator.for(issue)
+        .call(scan: result, lifecycle: lifecycle)
+      return if automation_result.decisions.all? { |decision| decision.type == "noop" }
 
-        automation_results << automation_result.to_h
-        return
-      end
-
-      prs_to_trigger << result if result
+      automation_results << automation_result.to_h
     end
 
     def build_lifecycle_signals(project, issue)
@@ -287,41 +269,12 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
-      explicit_pr_decisions = FeatureFlags.explicit_pr_automation_decisions?(project:)
-
       record_focus_resolution(project, client, issue)
-      return :skipped if !explicit_pr_decisions && active_run_exists?(project, issue)
 
       backfill_review_goal_retry_reset_at!(issue)
 
       pr_data = nil
       progress_state = nil
-
-      if !explicit_pr_decisions &&
-          issue.pr_review_phase.in?(%w[draft restarted]) &&
-          failure_streak_limit_reached?(project, issue)
-        check_rate_budget!(client)
-        pr_data = fetch_pr_data(client, project, issue)
-        return :skipped if pr_data.nil?
-
-        progress_state = pr_progress_state(
-          project,
-          issue,
-          current_head_sha: pr_head_sha(pr_data),
-          current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
-        )
-
-        if no_progress_stuck?(project, issue, progress_state) && pr_data.draft
-          reason = if progress_state.latest_unsuccessful_review? &&
-              review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
-            review_goal_retry_escalation_reason(project, issue, progress_state:)
-          else
-            failure_streak_reason(project, issue, progress_state)
-          end
-
-          return escalate_trigger(issue, reason:)
-        end
-      end
 
       if pr_data.nil?
         check_rate_budget!(client)
@@ -336,35 +289,10 @@ module Activities
         current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
       )
 
-      # Owner dismissal must win before any breaker can re-escalate the PR.
-      # Otherwise an escalated PR with the label removed can get stuck in an
-      # immediate re-escalation loop on the next scan when old failures are
-      # still present.
-      if !explicit_pr_decisions && issue.pr_review_phase == "escalated" && escalation_dismissed?(issue)
-        return dismiss_escalation_trigger(issue, draft: pr_data&.draft)
-      end
-
-      # Provider/infrastructure bursts are now a lifecycle-owned signal when
-      # explicit PR automation decisions are enabled. The legacy workflow path
-      # only consumes prs_to_trigger, so preserve its direct escalate trigger
-      # until that rollout is complete.
-      if operational_failure_breaker?(project, issue, progress_state) && !explicit_pr_decisions
-        return escalate_trigger(issue, reason: operational_failure_reason)
-      end
-
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
 
-      if !explicit_pr_decisions &&
-          review_goal_retry_limit_reached?(project, issue, progress_state:) &&
-          no_progress_stuck?(project, issue, progress_state) &&
-          review_goal_retry_limit_requires_escalation?(project, issue, progress_state:) &&
-          issue.pr_review_phase.in?(%w[draft restarted])
-        return escalate_trigger(issue,
-          reason: review_goal_retry_escalation_reason(project, issue, progress_state:))
-      end
-
       retry_trigger = nil
-      if retry_needed && review_goal_retry_trigger?(project, issue, progress_state:, explicit_pr_decisions:)
+      if retry_needed
         failed_count = review_goal_consecutive_failure_count(project, issue, progress_state:)
         max_retries = review_goal_max_retries(project)
         retry_trigger = {
@@ -376,21 +304,21 @@ module Activities
       result = case issue.pr_review_phase
       when "draft", "restarted"
         if maybe_advance_to_ready(project, issue, pr_data)
-          scan_ready_pr(project, client, issue, pr_data: pr_data, explicit_pr_decisions:)
+          scan_ready_pr(project, client, issue, pr_data: pr_data)
         else
-          scan_draft_pr(project, client, issue, pr_data: pr_data, explicit_pr_decisions:)
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
         end
       when "ready"
         if maybe_restart_draft(project, issue, pr_data)
-          scan_draft_pr(project, client, issue, pr_data: pr_data, explicit_pr_decisions:)
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
-          scan_ready_pr(project, client, issue, pr_data: pr_data, explicit_pr_decisions:)
+          scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
         if maybe_restart_draft(project, issue, pr_data)
-          scan_draft_pr(project, client, issue, pr_data: pr_data, explicit_pr_decisions:)
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
-          scan_escalated_pr(project, client, issue, pr_data: pr_data, explicit_pr_decisions:)
+          scan_escalated_pr(project, client, issue, pr_data: pr_data)
         end
       end
 
@@ -433,11 +361,7 @@ module Activities
       issue.draft_phase? && no_progress_stuck?(project, issue)
     end
 
-    def scan_draft_pr(project, client, issue, pr_data: nil, explicit_pr_decisions: false)
-      if draft_review_limit_reached?(project, issue) && !explicit_pr_decisions
-        return escalate_trigger(issue, reason: failure_streak_reason(project, issue))
-      end
-
+    def scan_draft_pr(project, client, issue, pr_data: nil)
       check_rate_budget!(client)
 
       if bot_user?(issue.github_creator_login)
@@ -640,7 +564,7 @@ module Activities
 
     # --- Ready phase scanning ---
 
-    def scan_ready_pr(project, client, issue, pr_data:, explicit_pr_decisions: false)
+    def scan_ready_pr(project, client, issue, pr_data:)
       return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
@@ -655,8 +579,7 @@ module Activities
           pr_data: pr_data,
           checks: checks,
           mergeable: mergeable,
-          progress_state: progress_state,
-          explicit_pr_decisions:
+          progress_state: progress_state
         )
       end
 
@@ -665,27 +588,6 @@ module Activities
       if auto_merge_eligible?(project, client, issue,
            pr_data: pr_data, checks: checks, reviews: reviews)
         return owner_approved_trigger(issue)
-      end
-
-      if !explicit_pr_decisions &&
-          review_goal_retry_limit_requires_escalation?(project, issue, progress_state:) &&
-          no_progress_stuck?(project, issue, progress_state)
-        return escalate_trigger(issue,
-          reason: review_goal_retry_escalation_reason(project, issue, progress_state:))
-      end
-
-      # Follow-up budget exhausted: inspect the full ready-phase trigger set
-      # before skipping. The unified streak can now be exhausted by draft-era
-      # failures, so ready-only signals like changes_requested reviews,
-      # unresolved threads, or conversation comments still need to surface
-      # even when no ready-phase follow-up has run yet.
-      if followup_limit_reached?(project, issue, progress_state) && !explicit_pr_decisions
-        triggers = detect_ready_triggers(project, client, issue,
-          pr_data: pr_data, checks: checks, reviews: reviews)
-        return :skipped if triggers.nil?
-        return followup_limit_escalation(issue, triggers, progress_state:) if triggers.any?
-
-        return nil
       end
 
       triggers = detect_ready_triggers(project, client, issue,
@@ -709,15 +611,10 @@ module Activities
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
     # Auto-merge is handled by EvaluateDependabotAutoMergeActivity + DependabotAutoMergeJob.
     # This method only detects follow-up triggers (CI failures, merge conflicts, labels).
-    def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:, progress_state:,
-      explicit_pr_decisions: false)
+    def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:, progress_state:)
       triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
 
       return nil if triggers.empty?
-
-      if followup_limit_reached?(project, issue, progress_state) && !explicit_pr_decisions
-        return followup_limit_escalation(issue, triggers, progress_state:)
-      end
 
       log_triggers(project, issue, triggers)
 
@@ -753,7 +650,7 @@ module Activities
 
     # --- Escalated phase scanning ---
 
-    def scan_escalated_pr(project, client, issue, pr_data: nil, explicit_pr_decisions: false)
+    def scan_escalated_pr(project, client, issue, pr_data: nil)
       pr_data ||= fetch_pr_data(client, project, issue)
 
       # Owner approval on an escalated PR unblocks auto-merge.
@@ -774,8 +671,6 @@ module Activities
           end
         end
       end
-
-      return nil if followup_limit_reached?(project, issue) && !explicit_pr_decisions
 
       triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
       return :skipped if triggers.nil?
@@ -1202,9 +1097,7 @@ module Activities
       end
     end
 
-    def review_goal_retry_trigger?(project, issue, progress_state:, explicit_pr_decisions:)
-      return true if explicit_pr_decisions
-
+    def review_goal_retry_trigger?(project, issue, progress_state:)
       retry_limit_reached = review_goal_retry_limit_reached?(project, issue, progress_state:)
       return true unless retry_limit_reached
 

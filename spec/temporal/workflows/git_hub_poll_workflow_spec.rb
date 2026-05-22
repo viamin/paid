@@ -1930,7 +1930,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .and_return({})
       allow(workflow).to receive(:run_activity)
         .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
-        .and_return(flags: { explicit_pr_automation_decisions: false }, project_missing: false)
+        .and_return(flags: {}, project_missing: false)
       allow(workflow).to receive(:run_activity)
         .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
         .and_return({ results: [ { decisions: [ { type: "noop" } ], action: "none", issue_id: 10, project_id: project_id } ] })
@@ -1938,12 +1938,12 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "queues a review run when paid_agent_review_pending is the only initial-sync PR signal" do
       execute_initial_sync(trigger_result: {
-        prs_to_trigger: [
+        prs_to_trigger: [],
+        automation_results: [
           {
-            issue_id: 10,
-            pr_number: 42,
-            phase: "ready",
-            triggers: [ { type: "paid_agent_review_pending" } ]
+            decisions: [
+              { type: "queue_review_run", issue_id: 10, source_pull_request_number: 42, focus: "general" }
+            ]
           }
         ]
       })
@@ -1961,7 +1961,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "does not queue a create_pr run when an existing PR has no actionable initial-sync followup" do
-      execute_initial_sync(trigger_result: { prs_to_trigger: [] })
+      execute_initial_sync(trigger_result: { prs_to_trigger: [], automation_results: [] })
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
@@ -1970,10 +1970,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: 30)
     end
 
-    it "executes flagged explicit PR automation decisions instead of legacy trigger translation" do
+    it "executes automation decisions from scan results" do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
-        .and_return(flags: { explicit_pr_automation_decisions: true }, project_missing: false)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
 
       execute_initial_sync(trigger_result: {
         prs_to_trigger: [],
@@ -1993,23 +1993,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           timeout: 30)
     end
 
-    it "ignores explicit PR automation results when the rollout flag is disabled" do
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
-        .and_return({ queued: true })
+    it "skips runs when automation results are all noop" do
+      execute_initial_sync(trigger_result: {
+        prs_to_trigger: [],
+        automation_results: [
+          {
+            decisions: [
+              { type: "noop" }
+            ]
+          }
+        ]
+      })
 
-      workflow.send(:handle_pr_scan_results, legacy_pr_scan_result, project_id)
-
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          hash_including(project_id: project_id, issue_id: 10,
-            source_pull_request_number: 42, goal: "review"),
-          timeout: 30)
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          hash_including(project_id: project_id, issue_id: 10,
-            source_pull_request_number: 42, goal: "create_pr"),
-          timeout: 30)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
     end
   end
 
@@ -2053,9 +2050,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "queues no runs when an initial PR scan returns no actionable triggers" do
-      allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [] })
+      allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [], automation_results: [] })
 
-      workflow.send(:handle_pr_scan_results, { prs_to_trigger: [] }, project_id)
+      workflow.send(:handle_pr_scan_results, { prs_to_trigger: [], automation_results: [] }, project_id)
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, anything, timeout: anything)

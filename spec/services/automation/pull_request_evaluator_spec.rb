@@ -13,27 +13,13 @@ RSpec.describe Automation::PullRequestEvaluator do
         github_number: 42)
     end
 
-    it "keeps legacy initial-sync create_pr behavior when the flag is disabled" do
-      result = described_class.new(record: pull_request, explicit_pr_decisions: false).call
-
-      expect(result.to_h).to eq(
-        decisions: [
-          {
-            type: "queue_create_pr_run",
-            issue_id: pull_request.id,
-            source_pull_request_number: 42
-          }
-        ]
-      )
-    end
-
-    it "returns noop for initial-sync PR evaluation when the flag is enabled" do
-      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call
+    it "returns noop for initial-sync PR evaluation without scan data" do
+      result = described_class.new(record: pull_request).call
 
       expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
     end
 
-    it "selects auto-continue through Automation::Strategies::Select for explicit PR decisions" do
+    it "selects auto-continue through Automation::Strategies::Select" do
       selected_strategy = instance_double(Automation::Strategies::AutoContinue)
       result = Automation::Result.noop
 
@@ -42,7 +28,7 @@ RSpec.describe Automation::PullRequestEvaluator do
         .and_return(selected_strategy)
       allow(selected_strategy).to receive(:evaluate).and_return(result)
 
-      described_class.new(record: pull_request, explicit_pr_decisions: true).call(
+      described_class.new(record: pull_request).call(
         scan: { issue_id: pull_request.id, pr_number: 42, phase: "ready", triggers: [] }
       )
 
@@ -54,7 +40,7 @@ RSpec.describe Automation::PullRequestEvaluator do
     end
 
     it "maps paid_agent review signals to an explicit review decision" do
-      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+      result = described_class.new(record: pull_request).call(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
         phase: "ready",
@@ -74,7 +60,7 @@ RSpec.describe Automation::PullRequestEvaluator do
     end
 
     it "suppresses create_pr followup when paid_agent_review_pending coexists with other triggers (#1135)" do
-      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+      result = described_class.new(record: pull_request).call(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
         phase: "draft",
@@ -93,7 +79,7 @@ RSpec.describe Automation::PullRequestEvaluator do
     it "forwards the review-bot fallback chain into the request_review decision" do
       chain = [ Activities::RequestReviewActivity::COPILOT_LOGIN,
                 Activities::RequestReviewActivity::CODEX_LOGIN ]
-      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+      result = described_class.new(record: pull_request).call(scan: {
         issue_id: pull_request.id, pr_number: 42, phase: "draft", current_draft_review_count: 0,
         triggers: [ { type: "review_bot_review_pending",
                       request_login: chain.first, request_logins: chain } ]
@@ -104,9 +90,7 @@ RSpec.describe Automation::PullRequestEvaluator do
     end
 
     it "falls back to the legacy single request_login when request_logins is absent" do
-      # Backward compatibility for in-flight workflow histories whose recorded
-      # scan output pre-dates the chain field.
-      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+      result = described_class.new(record: pull_request).call(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
         phase: "draft",
@@ -121,7 +105,7 @@ RSpec.describe Automation::PullRequestEvaluator do
     end
 
     it "suppresses create_pr followup even with active_run and multiple triggers (#1135)" do
-      result = described_class.new(record: pull_request, explicit_pr_decisions: true).call(scan: {
+      result = described_class.new(record: pull_request).call(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
         phase: "ready",
@@ -139,10 +123,6 @@ RSpec.describe Automation::PullRequestEvaluator do
     end
   end
 
-  # Regression coverage for PR #1077: the evaluator must distinguish between
-  # initial label-based sync of an existing PR (which should never implicitly
-  # queue a create_pr) and PR follow-up scanning (which produces explicit goal
-  # decisions based on scan triggers).
   describe "#1077 regression: initial sync vs PR follow-up decision paths" do
     let(:project) do
       create(:project,
@@ -152,11 +132,11 @@ RSpec.describe Automation::PullRequestEvaluator do
     end
 
     context "with an initial sync of an existing PR (no scan payload)" do
-      it "returns noop for an automation-labeled PR when the explicit flag is enabled" do
+      it "returns noop for an automation-labeled PR without scan data" do
         pr = create(:issue, :pull_request,
           project: project, labels: [ "paid-automation" ], paid_state: "new", github_number: 7)
 
-        result = described_class.new(record: pr, explicit_pr_decisions: true).call
+        result = described_class.new(record: pr).call
 
         expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
       end
@@ -168,7 +148,7 @@ RSpec.describe Automation::PullRequestEvaluator do
           paid_state: "completed",
           github_number: 42)
 
-        result = described_class.new(record: pr, explicit_pr_decisions: true).call
+        result = described_class.new(record: pr).call
 
         expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
       end
@@ -178,7 +158,7 @@ RSpec.describe Automation::PullRequestEvaluator do
       let(:pr) { create(:issue, :pull_request, project: project, github_number: 42) }
 
       it "emits queue_create_pr_run with source_pull_request_number for ready-phase CI failure" do
-        result = described_class.new(record: pr, explicit_pr_decisions: true).call(scan: {
+        result = described_class.new(record: pr).call(scan: {
           issue_id: pr.id,
           pr_number: 42,
           phase: "ready",
@@ -194,7 +174,7 @@ RSpec.describe Automation::PullRequestEvaluator do
       end
 
       it "emits queue_create_pr_run tagged for draft round tracking on draft-phase follow-ups" do
-        result = described_class.new(record: pr, explicit_pr_decisions: true).call(scan: {
+        result = described_class.new(record: pr).call(scan: {
           issue_id: pr.id,
           pr_number: 42,
           phase: "draft",
@@ -218,7 +198,7 @@ RSpec.describe Automation::PullRequestEvaluator do
       let(:pr) { create(:issue, :pull_request, project: project, github_number: 42) }
 
       it "queues a review run and does NOT queue a default create_pr" do
-        result = described_class.new(record: pr, explicit_pr_decisions: true).call(scan: {
+        result = described_class.new(record: pr).call(scan: {
           issue_id: pr.id,
           pr_number: 42,
           phase: "draft",
