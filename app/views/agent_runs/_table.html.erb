@@ -31,10 +31,9 @@
                       <%= agent_run_context_display(run) %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      <% if run.duration_seconds.present? %>
-                        <%= run.duration_seconds %>s
-                      <% elsif run.running? && run.started_at.present? %>
-                        <%= (Time.current - run.started_at).to_i %>s
+                      <% elapsed = agent_run_display_duration_seconds(run) %>
+                      <% if elapsed %>
+                        <%= elapsed %>s
                       <% else %>
                         <span class="text-gray-400">-</span>
                       <% end %>
