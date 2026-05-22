@@ -105,26 +105,6 @@ jobs:
           require "time"
           require "uri"
 
-          repo = ENV.fetch("GITHUB_REPOSITORY")
-          pr_number = Integer(ENV.fetch("PR_NUMBER"))
-          head_sha = ENV.fetch("HEAD_SHA")
-          head_ref = ENV.fetch("HEAD_REF")
-          pr_updated_at = Time.iso8601(ENV.fetch("PR_UPDATED_AT"))
-          pr_action = ENV.fetch("PR_ACTION")
-          token = ENV.fetch("GITHUB_TOKEN")
-          output_path = ENV.fetch("GITHUB_OUTPUT")
-          poll_attempts = 120
-          poll_interval_seconds = 10
-          recent_window_seconds = 300
-          poll_search_pages = 5
-          fallback_search_pages = 30
-          headers = {
-            "Authorization" => "Bearer #{token}",
-            "Accept" => "application/vnd.github+json",
-            "X-GitHub-Api-Version" => "2022-11-28",
-            "User-Agent" => "paid-pr-screenshots-publish"
-          }
-
           def write_outputs(path:, run_id: "", artifact_present: false, comment_status:, error_message: nil)
             File.open(path, "a") do |file|
               file.puts("run_id=#{run_id}")
@@ -201,74 +181,104 @@ jobs:
             end
           end
 
-          run = nil
-          fallback_run = nil
-          poll_attempts.times do
-            run = first_matching_run(repo, headers, poll_search_pages) do |candidate|
-              current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+          repo = ENV.fetch("GITHUB_REPOSITORY")
+          pr_number = Integer(ENV.fetch("PR_NUMBER"))
+          head_sha = ENV.fetch("HEAD_SHA")
+          head_ref = ENV.fetch("HEAD_REF")
+          pr_updated_at = Time.iso8601(ENV.fetch("PR_UPDATED_AT"))
+          pr_action = ENV.fetch("PR_ACTION")
+          token = ENV.fetch("GITHUB_TOKEN")
+          output_path = ENV.fetch("GITHUB_OUTPUT")
+          poll_attempts = 120
+          poll_interval_seconds = 10
+          recent_window_seconds = 300
+          poll_search_pages = 5
+          fallback_search_pages = 30
+          headers = {
+            "Authorization" => "Bearer #{token}",
+            "Accept" => "application/vnd.github+json",
+            "X-GitHub-Api-Version" => "2022-11-28",
+            "User-Agent" => "paid-pr-screenshots-publish"
+          }
+
+          begin
+            run = nil
+            fallback_run = nil
+            poll_attempts.times do
+              run = first_matching_run(repo, headers, poll_search_pages) do |candidate|
+                current_run_match?(candidate, pr_number, head_sha, head_ref, pr_updated_at, recent_window_seconds)
+              end
+              fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|
+                candidate["status"] == "completed" &&
+                  fallback_run_match?(candidate, pr_number, head_ref)
+              end
+
+              break if run && run["status"] == "completed"
+
+              run = nil if run && run["status"] != "completed"
+              sleep poll_interval_seconds
             end
-            fallback_run ||= first_matching_run(repo, headers, poll_search_pages) do |candidate|
-              candidate["status"] == "completed" &&
-                fallback_run_match?(candidate, pr_number, head_ref)
+
+            fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
+            run ||= fallback_run
+
+            unless run
+              write_outputs(
+                path: output_path,
+                comment_status: "capture_failed",
+                error_message: "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+              )
+              warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+              exit 0
             end
 
-            break if run && run["status"] == "completed"
+            jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
+            capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
+            detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
+            capture_conclusion =
+              if capture_job
+                capture_job["conclusion"]
+              elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
+                "skipped"
+              elsif run["conclusion"]
+                run["conclusion"]
+              else
+                "failure"
+              end
 
-            run = nil if run && run["status"] != "completed"
-            sleep poll_interval_seconds
-          end
+            artifacts = get_json(
+              "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
+              headers
+            ).fetch("artifacts")
+            artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
 
-          fallback_run ||= first_completed_fallback_run(repo, headers, pr_number, head_ref, fallback_search_pages)
-          run ||= fallback_run
+            comment_status =
+              case capture_conclusion
+              when "success"
+                "success"
+              when "skipped"
+                pr_action == "synchronize" ? "no_ui_changes" : "skip"
+              when "cancelled"
+                "skip"
+              else
+                "capture_failed"
+              end
 
-          unless run
+            write_outputs(
+              path: output_path,
+              run_id: run.fetch("id"),
+              artifact_present: artifact_present,
+              comment_status: comment_status
+            )
+          rescue StandardError => e
             write_outputs(
               path: output_path,
               comment_status: "capture_failed",
-              error_message: "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+              error_message: "#{e.class}: #{e.message}"
             )
-            warn "Timed out waiting for PR Screenshots capture workflow for #{head_sha}"
+            warn "Failed to resolve PR Screenshots capture workflow for #{head_sha}: #{e.class}: #{e.message}"
             exit 0
           end
-
-          jobs = get_json(run.fetch("jobs_url"), headers).fetch("jobs")
-          capture_job = jobs.find { |job| job["name"] == "Capture" || job["name"] == "capture" }
-          detect_job = jobs.find { |job| job["name"] == "Detect" || job["name"] == "detect" }
-          capture_conclusion =
-            if capture_job
-              capture_job["conclusion"]
-            elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])
-              "skipped"
-            elsif run["conclusion"]
-              run["conclusion"]
-            else
-              "failure"
-            end
-
-          artifacts = get_json(
-            "https://api.github.com/repos/#{repo}/actions/runs/#{run.fetch("id")}/artifacts?per_page=100",
-            headers
-          ).fetch("artifacts")
-          artifact_present = artifacts.any? { |artifact| artifact["name"] == "pr-screenshots" && !artifact["expired"] }
-
-          comment_status =
-            case capture_conclusion
-            when "success"
-              "success"
-            when "skipped"
-              pr_action == "synchronize" ? "no_ui_changes" : "skip"
-            when "cancelled"
-              "skip"
-            else
-              "capture_failed"
-            end
-
-          write_outputs(
-            path: output_path,
-            run_id: run.fetch("id"),
-            artifact_present: artifact_present,
-            comment_status: comment_status
-          )
           RUBY
 
       - name: Download screenshot artifacts

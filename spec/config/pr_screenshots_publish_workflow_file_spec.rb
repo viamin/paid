@@ -150,6 +150,13 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
     expect(resolve_step.fetch("run")).not_to include('"Could not determine screenshot capture outcome for workflow run')
   end
 
+  it "degrades unexpected resolver errors to capture_failed instead of failing the publish job" do
+    expect(resolve_step.fetch("run")).to include("rescue StandardError => e")
+    expect(resolve_step.fetch("run")).to include('error_message: "#{e.class}: #{e.message}"')
+    expect(resolve_step.fetch("run")).to include('warn "Failed to resolve PR Screenshots capture workflow for #{head_sha}: #{e.class}: #{e.message}"')
+    expect(resolve_step.fetch("run")).to include("exit 0")
+  end
+
   it "treats missing capture jobs as skipped only when detect completed cleanly and otherwise falls back to the workflow conclusion" do
     expect(resolve_step.fetch("run")).to include('elsif detect_job && %w[success neutral skipped].include?(detect_job["conclusion"])')
     expect(resolve_step.fetch("run")).to include('elsif run["conclusion"]')
