@@ -68,8 +68,7 @@ module Projects
       override = @project.project_convention_overrides.find_or_initialize_by(key: key)
       override.assign_attributes(
         value: override_value_params,
-        mode: override_mode_param,
-        enabled: true
+        mode: override_mode_param
       )
       override.save!
     end

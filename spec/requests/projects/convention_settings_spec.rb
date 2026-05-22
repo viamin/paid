@@ -110,6 +110,7 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response.media_type).to eq("text/vnd.turbo-stream.html")
       override = project.project_convention_overrides.find_by(key: "commit_style")
       expect(override.mode).to eq("apply")
+      expect(override.enabled).to be(true)
     end
 
     it "creates an override with ignore mode" do
@@ -120,6 +121,7 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response).to have_http_status(:ok)
       override = project.project_convention_overrides.find_by(key: "commit_style")
       expect(override.mode).to eq("ignore")
+      expect(override.enabled).to be(false)
     end
 
     it "creates an override with warn mode" do
@@ -130,6 +132,7 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response).to have_http_status(:ok)
       override = project.project_convention_overrides.find_by(key: "commit_style")
       expect(override.mode).to eq("warn")
+      expect(override.enabled).to be(true)
     end
 
     it "rejects an invalid mode" do
