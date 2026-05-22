@@ -36,6 +36,18 @@ RSpec.describe Containers::GitOperations do
       .and_return(staged_result)
   end
 
+  def expect_git_identity_config(ordered: false)
+    receive_name = expect(container_service).to receive(:execute)
+      .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+      .and_return(success_result)
+    receive_name = receive_name.ordered if ordered
+
+    receive_email = expect(container_service).to receive(:execute)
+      .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+      .and_return(success_result)
+    receive_email.ordered if ordered
+  end
+
   describe "#clone_and_setup_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
     let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
@@ -433,6 +445,7 @@ RSpec.describe Containers::GitOperations do
   describe "#push_branch" do
     let(:head_sha) { "def456789012345678901234567890abcdef1234" }
     let(:remote_sha) { "abc9999999999999999999999999999999999999" }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
     let(:stale_push_result) do
       Containers::Provision::Result.failure(
         error: "Command exited with code 1",
@@ -445,6 +458,7 @@ RSpec.describe Containers::GitOperations do
     before do
       agent_run.update!(branch_name: "paid/test-branch")
       create(:worktree, project: project, agent_run: agent_run, branch_name: "paid/test-branch", status: "active")
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
 
       allow(container_service).to receive(:execute)
         .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
@@ -454,6 +468,14 @@ RSpec.describe Containers::GitOperations do
       allow(container_service).to receive(:execute)
         .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
         .and_return(sha_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
     end
 
     it "pushes the branch with --no-verify and returns the commit SHA" do
@@ -738,6 +760,17 @@ RSpec.describe Containers::GitOperations do
   describe "#commit_uncommitted_changes" do
     let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
     let(:status_failure) { Containers::Provision::Result.failure(error: "fatal: container unavailable", stderr: "container unavailable", exit_code: 1) }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
+
+    before do
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+    end
 
     it "returns false when working tree is clean" do
       allow(container_service).to receive(:execute)
@@ -777,6 +810,29 @@ RSpec.describe Containers::GitOperations do
       expect(container_service).to receive(:execute)
         .with([ "git", "commit", "--no-verify", "-m", "feat: Add queue monitoring dashboard" ], timeout: nil, stream: false)
         .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "re-seeds git identity before the fallback auto-commit" do
+      issue = create(:issue, project: project, title: "Add queue monitoring dashboard")
+      agent_run.update!(issue: issue)
+      stub_auto_commit_prerequisites
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "feat: Add queue monitoring dashboard" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
 
       expect(git_ops.commit_uncommitted_changes).to be true
     end
@@ -1346,8 +1402,18 @@ RSpec.describe Containers::GitOperations do
   describe "#rebase_onto" do
     let(:fetch_result) { success_result }
     let(:shallow_true_result) { Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0) }
+    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
 
     before do
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.name", "Paid Agent" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "config", "user.email", "paid-agents@paid-agents.com" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
         .and_return(shallow_true_result)
@@ -1388,10 +1454,18 @@ RSpec.describe Containers::GitOperations do
           .and_return(success_result)
           .ordered
 
+        expect_git_identity_config(ordered: true)
+
         expect(container_service).to receive(:execute)
           .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
           .and_return(success_result)
           .ordered
+
+        git_ops.rebase_onto("main")
+      end
+
+      it "re-seeds git identity before rebasing existing PR branches" do
+        expect_git_identity_config
 
         git_ops.rebase_onto("main")
       end

@@ -519,6 +519,7 @@ module Containers
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
 
       validate_staged_files!
+      configure_git_identity!(error_class: Error)
 
       commit_result = execute_git("commit", "--no-verify", "-m", commit_message)
       raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
@@ -613,6 +614,7 @@ module Containers
       unshallow
 
       fetch_branch(onto_branch)
+      configure_git_identity!(error_class: Error)
 
       result = execute_git("rebase", "origin/#{onto_branch}")
       if rebase_conflict?(result)
@@ -696,6 +698,7 @@ module Containers
     end
 
     def recover_branch_drift!(branch)
+      configure_git_identity!(error_class: PushError)
       result = execute_git("rebase", "origin/#{branch}")
       return if result.success?
 
@@ -911,7 +914,7 @@ module Containers
       end
     end
 
-    def configure_git_identity!
+    def configure_git_identity!(error_class: CloneError)
       identity = Github::BotIdentity.for_git
 
       {
@@ -919,7 +922,7 @@ module Containers
         "user.email" => identity.email
       }.each do |key, value|
         result = execute_git("config", key, value)
-        raise CloneError, "Failed to configure git #{key}: #{error_with_stderr(result)}" if result.failure?
+        raise error_class, "Failed to configure git #{key}: #{error_with_stderr(result)}" if result.failure?
       end
     end
 
