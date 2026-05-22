@@ -265,6 +265,9 @@ module Workflows
 
     def wait_for_plan_review(project_id:, issue_id:, workflow_id:, tasks:, context:,
                              prompt_source:, policy_metadata:, timeout_hours:)
+      @plan_review_decision = nil
+      @revised_tasks = nil
+
       safe_log_decomposition_decision(
         project_id: project_id,
         issue_id: issue_id,
@@ -281,13 +284,11 @@ module Workflows
         }
       )
 
-      @plan_review_decision = nil
-      @revised_tasks = nil
       cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
 
       begin
         timeout_seconds = timeout_hours.to_i * 3600
-        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation)
+        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
       rescue Temporalio::Error::CanceledError
         # Signal arrived — decision is in @plan_review_decision
       ensure

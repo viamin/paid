@@ -456,6 +456,41 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         end
       end
 
+      context "when approve_plan arrives while pending review is still being logged" do
+        before do
+          allow(Temporalio::Workflow).to receive(:sleep)
+          allow(workflow).to receive(:run_activity) do |activity_class, activity_input, **_opts|
+            case activity_class.name
+            when "Activities::FetchPlanningContextActivity"
+              { context: { issue_title: "Feature", knowledge_snippets: [] } }
+            when "Activities::DecomposeFeatureActivity"
+              { tasks: tasks }
+            when "Activities::LogDecompositionDecisionActivity"
+              workflow.approve_plan if activity_input[:decision_key] == "test-planning-wf:plan_review:pending"
+              { decomposition_decision_id: 1 }
+            when "Activities::CreateSubIssuesActivity"
+              { created_issues: [ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ] }
+            when "Activities::UpdatePlanningLabelsActivity"
+              { success: true }
+            else
+              {}
+            end
+          end
+        end
+
+        it "does not lose the signal or sleep until timeout" do
+          result = workflow.execute(input)
+
+          expect(result[:success]).to be true
+          expect(result[:created_issues]).to eq([ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ])
+          expect(Temporalio::Workflow).not_to have_received(:sleep)
+          expect(workflow).to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:approved", outcome: "plan_review_approved"),
+              timeout: 30, retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+        end
+      end
+
       context "when reject_plan signal arrives" do
         before do
           allow(Temporalio::Workflow).to receive(:sleep) { workflow.reject_plan }

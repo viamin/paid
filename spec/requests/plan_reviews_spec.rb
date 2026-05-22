@@ -49,6 +49,22 @@ RSpec.describe "Plan reviews" do
       expect(response.body).to include(visible_review.issue.title, "Visible task")
       expect(response.body).not_to include(stale_issue.title, hidden_issue.title)
     end
+
+    it "renders a revise form for each pending review" do
+      visible_review = create_plan_review(
+        project:,
+        issue:,
+        workflow_id: "workflow-open",
+        plan_data: { "tasks" => [ { "title" => "Visible task", "description" => "Visible description" } ] }
+      )
+
+      get plan_reviews_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(revise_plan_review_path(visible_review))
+      expect(response.body).to include(%(name="tasks[][title]"))
+      expect(response.body).to include(%(name="tasks[][description]"))
+    end
   end
 
   describe "POST /plan_reviews/:id/approve" do
@@ -101,6 +117,29 @@ RSpec.describe "Plan reviews" do
       expect(response).to redirect_to(plan_reviews_path)
       expect(flash[:alert]).to eq("The plan review workflow is no longer active.")
       expect(flash[:notice]).to be_nil
+    end
+  end
+
+  describe "POST /plan_reviews/:id/revise" do
+    it "signals the workflow with revised tasks" do
+      review = create_plan_review(project:, issue:, workflow_id: "workflow-open")
+
+      post revise_plan_review_path(review), params: {
+        tasks: [
+          { title: "Revised task 1", description: "Better approach" },
+          { title: "Revised task 2", description: "Follow-up implementation" }
+        ]
+      }
+
+      expect(response).to redirect_to(plan_reviews_path)
+      expect(flash[:notice]).to eq("Plan revised. Sub-issues will be created with the updated plan.")
+      expect(workflow_handle).to have_received(:signal).with(
+        "revise_plan",
+        [
+          { title: "Revised task 1", description: "Better approach" },
+          { title: "Revised task 2", description: "Follow-up implementation" }
+        ]
+      )
     end
   end
 
