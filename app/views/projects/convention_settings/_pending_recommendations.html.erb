@@ -43,12 +43,16 @@
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
                   <div class="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-                    <%= button_to "Apply",
-                          update_recommendation_project_convention_settings_path(project),
-                          method: :patch,
-                          params: { id: rec.id, action_type: "apply" },
-                          form: { data: { turbo_stream: true } },
-                          class: "inline-flex items-center rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-500" %>
+                    <% if rec.apply_in_paid? %>
+                      <%= button_to "Apply",
+                            update_recommendation_project_convention_settings_path(project),
+                            method: :patch,
+                            params: { id: rec.id, action_type: "apply" },
+                            form: { data: { turbo_stream: true } },
+                            class: "inline-flex items-center rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-500" %>
+                    <% else %>
+                      <span class="text-xs text-gray-400">Manual action outside Paid</span>
+                    <% end %>
 
                     <%= form_with url: update_recommendation_project_convention_settings_path(project),
                           method: :patch,

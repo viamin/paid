@@ -51,4 +51,8 @@ class ProjectConventionRecommendation < ApplicationRecord
   def resolved?
     status.in?(%w[applied dismissed])
   end
+
+  def apply_in_paid?
+    action_type == "apply_in_paid"
+  end
 end

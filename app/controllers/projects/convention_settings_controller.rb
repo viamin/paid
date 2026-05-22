@@ -78,10 +78,23 @@ module Projects
 
       case params[:action_type]
       when "apply"
-        @recommendation.apply!(applied_by: current_user)
+        apply_recommendation!
       when "dismiss"
         @recommendation.dismiss!(dismissed_by: current_user, reason: dismissal_reason_param)
       end
+    end
+
+    def apply_recommendation!
+      raise ArgumentError, "This recommendation cannot be applied automatically" unless @recommendation.apply_in_paid?
+
+      override = @project.project_convention_overrides.find_or_initialize_by(key: @recommendation.convention_key)
+      override.assign_attributes(
+        value: recommendation_override_value,
+        mode: "apply"
+      )
+      override.save!
+
+      @recommendation.apply!(applied_by: current_user)
     end
 
     def render_update_error(status:, message:)
@@ -122,6 +135,13 @@ module Projects
 
       @recommendation.errors.add(:dismissal_reason, "can't be blank")
       raise ActiveRecord::RecordInvalid, @recommendation
+    end
+
+    def recommendation_override_value
+      value = @recommendation.evidence.is_a?(Hash) ? @recommendation.evidence["detected_value"] : nil
+      return value if value.is_a?(Hash)
+
+      raise ArgumentError, "Recommendation is missing detected configuration"
     end
   end
 end

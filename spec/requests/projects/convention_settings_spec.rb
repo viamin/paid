@@ -164,20 +164,33 @@ RSpec.describe "Projects::ConventionSettings" do
   end
 
   describe "PATCH /projects/:project_id/convention_settings/update_recommendation" do
-    let!(:recommendation) { create(:project_convention_recommendation, project: project) }
+    let!(:recommendation) do
+      create(:project_convention_recommendation,
+             project: project,
+             evidence: {
+               "paths" => [ ".commitlintrc.json" ],
+               "signals" => [ "commitlint" ],
+               "confidence" => 0.95,
+               "detected_value" => { "type" => "conventional_commits", "required" => true }
+             })
+    end
 
     before do
       sign_in user
       user.add_role(:admin, account)
     end
 
-    it "applies a recommendation" do
+    it "applies an apply_in_paid recommendation by creating an override" do
       patch update_recommendation_project_convention_settings_path(project),
             params: { id: recommendation.id, action_type: "apply" },
             headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
       expect(response.media_type).to eq("text/vnd.turbo-stream.html")
       expect(recommendation.reload.status).to eq("applied")
+      expect(project.project_convention_overrides.find_by(key: recommendation.convention_key)).to have_attributes(
+        mode: "apply",
+        value: recommendation.evidence.fetch("detected_value")
+      )
     end
 
     it "dismisses a recommendation with a reason" do
@@ -200,6 +213,19 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(recommendation.reload.status).to eq("pending")
     end
 
+    it "rejects apply for recommendations without automated backing behavior" do
+      recommendation.update!(action_type: "open_pr")
+
+      patch update_recommendation_project_convention_settings_path(project),
+            params: { id: recommendation.id, action_type: "apply" },
+            headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:bad_request)
+      expect(response.body).to include("cannot be applied automatically")
+      expect(recommendation.reload.status).to eq("pending")
+      expect(project.project_convention_overrides.find_by(key: recommendation.convention_key)).to be_nil
+    end
+
     it "rejects updates to already-resolved recommendations" do
       recommendation.apply!(applied_by: user)
 
@@ -217,6 +243,20 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("Dismissal reason can&#39;t be blank")
       expect(recommendation.reload.status).to eq("pending")
+    end
+  end
+
+  describe "GET /projects/:project_id/convention_settings for manual recommendations" do
+    before do
+      sign_in user
+      user.add_role(:admin, account)
+      create(:project_convention_recommendation, project: project, action_type: "open_pr", title: "Install repo-managed hook configuration")
+    end
+
+    it "renders non-automated recommendations as dismiss-only" do
+      get project_convention_settings_path(project)
+
+      expect(response.body).to include("Manual action outside Paid")
     end
   end
 end

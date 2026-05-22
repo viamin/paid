@@ -105,8 +105,12 @@ module ProjectConventions
 
     def sync_recommendations(recommendations)
       existing_by_key_action = project.project_convention_recommendations
-        .where(status: "pending")
-        .index_by { |rec| "#{rec.convention_key}:#{rec.action_type}" }
+        .order(Arel.sql("CASE status WHEN 'pending' THEN 0 WHEN 'applied' THEN 1 ELSE 2 END"), generated_at: :desc, id: :desc)
+        .to_a
+        .each_with_object({}) do |rec, indexed|
+          lookup_key = "#{rec.convention_key}:#{rec.action_type}"
+          indexed[lookup_key] ||= rec
+        end
 
       recommendations.each do |rec_attrs|
         lookup_key = "#{rec_attrs[:convention_key]}:#{rec_attrs[:action_type]}"
@@ -119,7 +123,7 @@ module ProjectConventions
         end
       end
 
-      existing_by_key_action.each_value do |stale|
+      existing_by_key_action.each_value.select(&:pending?).each do |stale|
         stale.dismiss!(dismissed_by: nil, reason: "Convention no longer detected")
       end
     end

@@ -106,6 +106,69 @@ RSpec.describe ProjectConventions::BuildRecommendations do
       end
     end
 
+    context "when recommendation was previously dismissed" do
+      let(:project_version) { create(:project_version, project: project) }
+      let!(:recommendation) do
+        create(:project_convention_recommendation,
+               project: project,
+               convention_key: "commit_style",
+               action_type: "apply_in_paid",
+               status: "dismissed",
+               dismissal_reason: "Not needed")
+      end
+
+      before do
+        create(:project_convention_detection,
+               project: project,
+               project_version: project_version,
+               key: "commit_style",
+               value: { "type" => "conventional_commits", "required" => true },
+               evidence: { "paths" => [ ".commitlintrc.json" ], "signals" => [ "commitlint" ] },
+               confidence: 0.95)
+      end
+
+      it "preserves the resolved row instead of recreating a pending recommendation" do
+        expect {
+          described_class.call(project: project)
+        }.not_to change { project.project_convention_recommendations.count }
+
+        expect(recommendation.reload).to be_dismissed
+        expect(project.project_convention_recommendations.pending).to be_empty
+        expect(recommendation.description).to include(".commitlintrc.json")
+      end
+    end
+
+    context "when recommendation was previously applied" do
+      let(:project_version) { create(:project_version, project: project) }
+      let!(:recommendation) do
+        create(:project_convention_recommendation,
+               project: project,
+               convention_key: "commit_style",
+               action_type: "apply_in_paid",
+               status: "applied")
+      end
+
+      before do
+        create(:project_convention_detection,
+               project: project,
+               project_version: project_version,
+               key: "commit_style",
+               value: { "type" => "conventional_commits", "required" => true },
+               evidence: { "paths" => [ "commitlint.config.js" ], "signals" => [ "commitlint" ] },
+               confidence: 0.95)
+      end
+
+      it "updates the existing applied row instead of generating a new pending recommendation" do
+        expect {
+          described_class.call(project: project)
+        }.not_to change { project.project_convention_recommendations.count }
+
+        expect(recommendation.reload).to be_applied
+        expect(project.project_convention_recommendations.pending).to be_empty
+        expect(recommendation.description).to include("commitlint.config.js")
+      end
+    end
+
     context "when convention is no longer detected" do
       let(:project_version) { create(:project_version, project: project) }
 
