@@ -48,6 +48,21 @@ RSpec.describe Containers::GitOperations do
     receive_email.ordered if ordered
   end
 
+  def stub_successful_auto_commit_with_issue(issue)
+    status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+    agent_run.update!(issue: issue)
+
+    allow(container_service).to receive(:execute)
+      .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+      .and_return(status_result)
+    allow(container_service).to receive(:execute)
+      .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+      .and_return(success_result)
+    allow(container_service).to receive(:execute)
+      .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+      .and_return(Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0))
+  end
+
   describe "#clone_and_setup_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
     let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
@@ -883,26 +898,35 @@ RSpec.describe Containers::GitOperations do
     end
 
     it "uses the resolved plain commit style when the project overrides away from conventional commits" do
-      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       issue = create(:issue, project: project, title: "Tidy workspace")
       create(:project_convention_override,
         project: project,
         key: "commit_style",
         value: { "type" => "plain", "fallback_subject" => "Apply Paid changes" })
-      agent_run.update!(issue: issue)
-
-      allow(container_service).to receive(:execute)
-        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
-        .and_return(status_result)
-      allow(container_service).to receive(:execute)
-        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
-        .and_return(success_result)
-      allow(container_service).to receive(:execute)
-        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
-        .and_return(Containers::Provision::Result.success(stdout: "file.rb\n", stderr: "", exit_code: 0))
+      stub_successful_auto_commit_with_issue(issue)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "commit", "--no-verify", "-m", "Tidy workspace" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "enforces allowed conventional commit types for the auto-commit safety net" do
+      issue = create(:issue, project: project, title: "docs: Update architecture guide")
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: {
+          "type" => "conventional_commits",
+          "required" => true,
+          "default_type" => "feat",
+          "allowed_types" => %w[feat fix]
+        })
+      stub_successful_auto_commit_with_issue(issue)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "feat: Update architecture guide" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true

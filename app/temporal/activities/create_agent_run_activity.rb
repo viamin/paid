@@ -69,6 +69,7 @@ module Activities
             ),
             Prompts::BuildForIssue.service_environment_section_for(project: project)
           ].reject(&:blank?).join("\n\n")
+          custom_prompt = ProjectConventions::InjectIntoPrompt.call(prompt: custom_prompt, project: project)
         end
       end
 

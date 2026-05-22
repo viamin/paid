@@ -92,18 +92,47 @@ RSpec.describe ConventionalCommitTitle do
       expect(described_class.for_issue(nil, project: project)).to eq("Apply Paid changes")
     end
 
+    it "enforces allowed types when the repo requires conventional commits" do
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: {
+          "type" => "conventional_commits",
+          "required" => true,
+          "default_type" => "feat",
+          "allowed_types" => %w[feat fix]
+        })
+      issue = create(:issue, project: project, title: "docs: Update architecture guide")
+
+      expect(described_class.for_issue(issue, project: project)).to eq("feat: Update architecture guide")
+    end
+
+    it "preserves disallowed types as guidance when the repo does not require them" do
+      create(:project_convention_override,
+        project: project,
+        key: "commit_style",
+        value: {
+          "type" => "conventional_commits",
+          "required" => false,
+          "allowed_types" => %w[feat fix]
+        })
+      issue = create(:issue, project: project, title: "docs: Update architecture guide")
+
+      expect(described_class.for_issue(issue, project: project)).to eq("docs: Update architecture guide")
+    end
+
     it "logs and falls back to defaults when convention lookup hits an Active Record error" do
       issue = create(:issue, project: project, title: "Worker pool tuning")
       error = ActiveRecord::ConnectionNotEstablished.new("database unavailable")
 
-      allow(ProjectConventions::Resolve).to receive(:call).and_raise(error)
+      allow(ProjectConventions::Resolve).to receive(:profile).and_raise(error)
       allow(Rails.logger).to receive(:warn)
 
       expect(described_class.for_issue(issue, project: project)).to eq("feat: Worker pool tuning")
       expect(Rails.logger).to have_received(:warn).with(
         hash_including(
-          message: "conventional_commit_title.style_lookup_failed",
-          key: "commit_style",
+          message: "project_conventions.automation_profile_lookup_failed",
+          project_id: project.id,
           error: "database unavailable"
         )
       )
