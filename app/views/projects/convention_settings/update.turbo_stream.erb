@@ -1,6 +1,6 @@
 <% if @update_succeeded %>
   <%= turbo_stream.replace "conventions_table_section" do %>
-    <%= render "projects/convention_settings/conventions_table", profile: @profile %>
+    <%= render "projects/convention_settings/conventions_table", profile: @profile, project: @project %>
   <% end %>
   <%= turbo_stream.replace "pending_recommendations_section" do %>
     <%= render "projects/convention_settings/pending_recommendations", recommendations: @pending_recommendations, project: @project %>

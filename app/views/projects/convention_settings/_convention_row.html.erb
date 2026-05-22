@@ -1,4 +1,4 @@
-<tr id="<%= "convention_#{key}" %>">
+<tr id="convention_<%= key %>">
   <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
     <%= key.to_s.humanize %>
   </td>
@@ -80,7 +80,7 @@
     <% end %>
   </td>
   <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
-    <%= form_with url: update_override_project_convention_settings_path(@project),
+    <%= form_with url: update_override_project_convention_settings_path(project),
           method: :post,
           data: { turbo_stream: true },
           class: "inline-flex items-center gap-2" do |f| %>

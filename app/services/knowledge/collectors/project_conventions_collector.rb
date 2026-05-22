@@ -6,7 +6,6 @@ module Knowledge
       def collect
         detections = ProjectConventions::Detector.call(repo_path: host_repo_path)
         ProjectConventions::SyncDetected.call(project:, project_version:, detections:)
-        ProjectConventions::SyncRecommendations.call(project:, detections:)
         ProjectConventions::BuildRecommendations.call(project:)
 
         detections.map do |detection|

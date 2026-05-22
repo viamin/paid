@@ -40,7 +40,7 @@
     </div>
   <% end %>
 
-  <%= render "projects/convention_settings/conventions_table", profile: @profile %>
+  <%= render "projects/convention_settings/conventions_table", profile: @profile, project: @project %>
 
   <%= render "projects/convention_settings/pending_recommendations",
              recommendations: @pending_recommendations,

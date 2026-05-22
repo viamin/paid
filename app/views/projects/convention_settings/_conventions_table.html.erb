@@ -19,7 +19,7 @@
         </thead>
         <tbody class="divide-y divide-gray-200 bg-white">
           <% conventions.each do |key, entry| %>
-            <%= render "projects/convention_settings/convention_row", key: key, entry: entry %>
+            <%= render "projects/convention_settings/convention_row", key: key, entry: entry, project: project %>
           <% end %>
         </tbody>
       </table>
