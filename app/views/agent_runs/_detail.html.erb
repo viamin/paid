@@ -58,11 +58,7 @@
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">
         <dt class="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-          <% elapsed = if agent_run.duration_seconds.present?
-               agent_run.duration_seconds
-             elsif agent_run.running? && agent_run.started_at.present?
-               (Time.current - agent_run.started_at).to_i
-             end %>
+          <% elapsed = agent_run_display_duration_seconds(agent_run) %>
           <% if elapsed %>
             <%= elapsed %>s
           <% else %>

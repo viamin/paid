@@ -77,6 +77,21 @@ module ApplicationHelper
     )
   end
 
+  def agent_run_display_duration_seconds(agent_run)
+    return agent_run.duration_seconds if agent_run.duration_seconds.present?
+    if agent_run.paused_at.present? && agent_run.started_at.present?
+      return [ (agent_run.paused_at - agent_run.started_at).to_i, 0 ].max
+    end
+    return agent_run.duration if agent_run.running?
+
+    return nil unless agent_run.completed_at.present?
+
+    start_time = agent_run.started_at || agent_run.created_at
+    return nil unless start_time.present?
+
+    [ (agent_run.completed_at - start_time).to_i, 0 ].max
+  end
+
   AGENT_RUN_PRIORITY_STYLES = {
     label_p1: { bg: "bg-red-100", text: "text-red-700" },
     manual: { bg: "bg-sky-100", text: "text-sky-700" },
