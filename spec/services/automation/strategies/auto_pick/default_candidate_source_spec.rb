@@ -227,6 +227,38 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
   end
 
+  describe ".tracker_ids_blocked_by_open_references" do
+    it "enqueues DependencyBackfillJob for referenced issues not in the database" do
+      tracker = create(:issue, project: project, github_number: 1, title: "Tracker",
+        body: "## Completion Criteria\n- [ ] #99\n- [ ] #100")
+      _closed_ref = create(:issue, project: project, github_number: 100,
+        github_state: "closed", is_pull_request: false)
+
+      scope = Issue.where(id: tracker.id)
+
+      allow(DependencyBackfillJob).to receive(:perform_later)
+
+      described_class.tracker_ids_blocked_by_open_references(scope, project)
+
+      expect(DependencyBackfillJob).to have_received(:perform_later).with(project.id, [ 99 ])
+    end
+
+    it "does not enqueue backfill when all referenced issues exist in the database" do
+      tracker = create(:issue, project: project, github_number: 1, title: "Tracker",
+        body: "## Completion Criteria\n- [ ] #100")
+      _closed_ref = create(:issue, project: project, github_number: 100,
+        github_state: "closed", is_pull_request: false)
+
+      scope = Issue.where(id: tracker.id)
+
+      allow(DependencyBackfillJob).to receive(:perform_later)
+
+      described_class.tracker_ids_blocked_by_open_references(scope, project)
+
+      expect(DependencyBackfillJob).not_to have_received(:perform_later)
+    end
+  end
+
   describe "interface compliance" do
     it "responds to every method declared by the CandidateSource interface" do
       %i[eligible_issue_ids eligible_scope next_candidate].each do |method_name|
