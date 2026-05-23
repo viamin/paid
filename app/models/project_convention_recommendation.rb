@@ -79,4 +79,20 @@ class ProjectConventionRecommendation < ApplicationRecord
   def auto_dismissed?
     dismissed? && dismissed_by_id.nil? && dismissal_reason == AUTO_DISMISSAL_REASON
   end
+
+  def open_pr_application_in_progress?
+    return false unless open_pr?
+
+    if ActiveJob::Base.queue_adapter.is_a?(ActiveJob::QueueAdapters::TestAdapter)
+      ActiveJob::Base.queue_adapter.enqueued_jobs.any? do |job|
+        job[:job] == ProjectConventions::OpenHookGuardrailPullRequestJob &&
+          job[:args].second == id
+      end
+    else
+      GoodJob::Job.where(
+        concurrency_key: ProjectConventions::OpenHookGuardrailPullRequestJob.concurrency_key_for(id),
+        finished_at: nil
+      ).exists?
+    end
+  end
 end

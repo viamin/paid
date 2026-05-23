@@ -123,19 +123,19 @@ module Projects
     end
 
     def open_recommendation_pull_request!
-      result = ProjectConventions::OpenHookGuardrailPullRequest.call(
-        project: @project,
-        recommendation: @recommendation
-      )
-      @recommendation.apply!(applied_by: current_user)
-      if result.already_configured
-        @success_message = "Repo-managed hook guardrail is already configured."
-      else
-        @success_message = "Opened pull request:"
-        @pull_request_url = result.pull_request_url
+      if @recommendation.open_pr_application_in_progress?
+        @success_message = "Repo-managed hook guardrail pull request creation is already in progress."
+        return
       end
-    rescue ProjectConventions::OpenHookGuardrailPullRequest::Error => e
-      raise ArgumentError, e.message
+
+      ProjectConventions::OpenHookGuardrailPullRequestJob.perform_later(
+        @project.id,
+        @recommendation.id,
+        current_user.id
+      )
+      @success_message = "Repo-managed hook guardrail pull request creation is in progress."
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      @success_message = "Repo-managed hook guardrail pull request creation is already in progress."
     end
 
     def override_mode_param

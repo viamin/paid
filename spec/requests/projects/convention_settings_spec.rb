@@ -231,21 +231,35 @@ RSpec.describe "Projects::ConventionSettings" do
         action_type: "open_pr",
         evidence: recommendation.evidence.merge("strategy" => open_pr_strategy)
       )
-      result = open_pr_result
-      allow(ProjectConventions::OpenHookGuardrailPullRequest).to receive(:call).and_return(result)
 
-      patch update_recommendation_project_convention_settings_path(project),
-            params: { id: recommendation.id, action_type: "apply" },
-            headers: { "Accept" => "text/vnd.turbo-stream.html" }
+      expect {
+        patch update_recommendation_project_convention_settings_path(project),
+              params: { id: recommendation.id, action_type: "apply" },
+              headers: { "Accept" => "text/vnd.turbo-stream.html" }
+      }.to have_enqueued_job(ProjectConventions::OpenHookGuardrailPullRequestJob)
+        .with(project.id, recommendation.id, user.id)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Opened pull request")
-      expect(response.body).to include("https://github.com/acme/widgets/pull/42")
-      expect(recommendation.reload.status).to eq("applied")
-      expect(ProjectConventions::OpenHookGuardrailPullRequest).to have_received(:call).with(
-        project: project,
-        recommendation: recommendation
+      expect(response.body).to include("pull request creation is in progress")
+      expect(recommendation.reload.status).to eq("pending")
+      expect(recommendation.open_pr_application_in_progress?).to be(true)
+    end
+
+    it "does not enqueue a duplicate open_pr job while one is already in progress" do
+      recommendation.update!(
+        action_type: "open_pr",
+        evidence: recommendation.evidence.merge("strategy" => open_pr_strategy)
       )
+      ProjectConventions::OpenHookGuardrailPullRequestJob.perform_later(project.id, recommendation.id, user.id)
+
+      expect {
+        patch update_recommendation_project_convention_settings_path(project),
+              params: { id: recommendation.id, action_type: "apply" },
+              headers: { "Accept" => "text/vnd.turbo-stream.html" }
+      }.not_to have_enqueued_job(ProjectConventions::OpenHookGuardrailPullRequestJob)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("already in progress")
     end
 
     it "rejects updates to already-resolved recommendations" do
@@ -317,12 +331,5 @@ RSpec.describe "Projects::ConventionSettings" do
       "validator_path" => ".paid/hooks/validate-commit-msg",
       "allowed_types" => %w[feat fix]
     }
-  end
-
-  def open_pr_result
-    ProjectConventions::OpenHookGuardrailPullRequest::Result.new(
-      pull_request_url: "https://github.com/acme/widgets/pull/42",
-      already_configured: false
-    )
   end
 end
