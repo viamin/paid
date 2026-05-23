@@ -286,7 +286,16 @@ RSpec.describe ProjectConventions::Detector, :no_db do
 
       detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
 
-      expect(detection[:value]).to include("type" => "husky", "path" => ".husky")
+      expect(detection[:value]).to include("type" => "husky", "path" => ".husky", "husky_legacy" => false)
+    end
+
+    it "detects legacy husky init script support" do
+      write_repo_file(".husky/pre-commit", "#!/bin/sh\n")
+      write_repo_file(".husky/_/husky.sh", "#!/bin/sh\n")
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection[:value]).to include("type" => "husky", "path" => ".husky", "husky_legacy" => true)
     end
 
     it "detects .githooks directory" do
@@ -295,6 +304,58 @@ RSpec.describe ProjectConventions::Detector, :no_db do
       detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
 
       expect(detection[:value]).to include("type" => "githooks", "path" => ".githooks")
+    end
+
+    it "detects core.hooksPath-backed .githooks setups" do
+      write_repo_file(".git/config", <<~CFG)
+        [core]
+          hooksPath = .githooks
+      CFG
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection[:value]).to include("type" => "githooks", "path" => ".githooks")
+      expect(detection[:evidence]["signals"]).to include("core_hooks_path")
+    end
+
+    it "detects mixed-case core.hooksPath-backed .githooks setups" do
+      write_repo_file(".git/config", <<~CFG)
+        [Core]
+          hookspath = .githooks/commit-hooks
+      CFG
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection[:value]).to include("type" => "githooks", "path" => ".githooks/commit-hooks")
+      expect(detection[:evidence]["signals"]).to include("core_hooks_path")
+    end
+
+    it "ignores non-.githooks core.hooksPath-backed paths" do
+      write_repo_file(".git/config", <<~CFG)
+        [core]
+          hooksPath = .githooks-backup
+      CFG
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection).to be_nil
+    end
+
+    it "detects core.hooksPath from linked worktree checkout" do
+      common_dir = repo_path.join(".common-git")
+      common_dir.mkpath
+      common_dir.join("config").write("[core]\n\thooksPath = .githooks\n")
+
+      wt_dir = repo_path.join(".common-git", "worktrees", "my-worktree")
+      wt_dir.mkpath
+      wt_dir.join("commondir").write("../..")
+
+      repo_path.join(".git").write("gitdir: #{wt_dir}\n")
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection[:value]).to include("type" => "githooks", "path" => ".githooks")
+      expect(detection[:evidence]["signals"]).to include("core_hooks_path")
     end
 
     it "prefers lefthook over husky over githooks" do

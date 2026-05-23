@@ -22,7 +22,10 @@ RSpec.describe ProjectConventions::BuildRecommendations do
 
       it "creates a recommendation" do
         described_class.call(project: project)
-        rec = project.project_convention_recommendations.pending.first
+        rec = project.project_convention_recommendations.find_by!(
+          convention_key: "commit_style",
+          action_type: "apply_in_paid"
+        )
         expect(rec).to be_present
         expect(rec.convention_key).to eq("commit_style")
         expect(rec.action_type).to eq("apply_in_paid")
@@ -31,7 +34,10 @@ RSpec.describe ProjectConventions::BuildRecommendations do
 
       it "includes evidence in the recommendation description" do
         described_class.call(project: project)
-        rec = project.project_convention_recommendations.pending.first
+        rec = project.project_convention_recommendations.find_by!(
+          convention_key: "commit_style",
+          action_type: "apply_in_paid"
+        )
         expect(rec.description).to include(".commitlintrc.json")
       end
     end
@@ -43,18 +49,57 @@ RSpec.describe ProjectConventions::BuildRecommendations do
         create(:project_convention_detection,
                project: project,
                project_version: project_version,
+               key: "commit_style",
+               value: { "type" => "conventional_commits", "required" => true, "allowed_types" => %w[feat fix] },
+               evidence: { "paths" => [ ".commitlintrc.json" ], "signals" => [ "commitlint" ] },
+               confidence: 0.95)
+        create(:project_convention_detection,
+               project: project,
+               project_version: project_version,
                key: "hook_manager",
-               value: { "type" => "husky", "path" => ".husky" },
+               value: { "type" => "husky", "path" => ".husky", "husky_legacy" => false },
                evidence: { "paths" => [ ".husky/pre-commit" ], "signals" => [ "husky" ] },
                confidence: 0.90)
       end
 
       it "creates a hook manager recommendation" do
         described_class.call(project: project)
-        rec = project.project_convention_recommendations.pending.first
+        rec = project.project_convention_recommendations.find_by!(
+          convention_key: "hook_manager",
+          action_type: "open_pr"
+        )
         expect(rec).to be_present
         expect(rec.convention_key).to eq("hook_manager")
         expect(rec.action_type).to eq("open_pr")
+        expect(rec.evidence.dig("strategy", "manager_type")).to eq("husky")
+        expect(rec.evidence.dig("strategy", "husky_legacy")).to be(false)
+        expect(rec.description).to include("allowed types: feat, fix")
+      end
+    end
+
+    context "when conventional commits are detected without a managed hook system" do
+      let(:project_version) { create(:project_version, project: project) }
+
+      before do
+        create(:project_convention_detection,
+               project: project,
+               project_version: project_version,
+               key: "commit_style",
+               value: { "type" => "conventional_commits", "required" => true },
+               evidence: { "paths" => [ "release-please-config.json" ], "signals" => [ "release_please" ] },
+               confidence: 1.0)
+      end
+
+      it "creates a safe manual recommendation instead of guessing a hook manager" do
+        described_class.call(project: project)
+        rec = project.project_convention_recommendations.find_by!(
+          convention_key: "hook_manager",
+          action_type: "manual_review"
+        )
+
+        expect(rec.action_type).to eq("manual_review")
+        expect(rec.title).to include("Choose a repo-managed hook strategy")
+        expect(rec.description).to include("no repo-managed hook system")
       end
     end
 
@@ -99,14 +144,22 @@ RSpec.describe ProjectConventions::BuildRecommendations do
       it "updates existing recommendation instead of duplicating" do
         expect {
           described_class.call(project: project)
-        }.not_to change { project.project_convention_recommendations.pending.count }
+        }.not_to change {
+          project.project_convention_recommendations.where(convention_key: "commit_style", action_type: "apply_in_paid").count
+        }
 
-        rec = project.project_convention_recommendations.pending.first
+        rec = project.project_convention_recommendations.find_by!(
+          convention_key: "commit_style",
+          action_type: "apply_in_paid"
+        )
         expect(rec.title).to include("conventional commit")
       end
 
       it "refreshes generated_at when detector output is regenerated" do
-        recommendation = project.project_convention_recommendations.pending.first
+        recommendation = project.project_convention_recommendations.find_by!(
+          convention_key: "commit_style",
+          action_type: "apply_in_paid"
+        )
         original_generated_at = 2.days.ago.change(usec: 0)
         recommendation.update!(generated_at: original_generated_at)
 
@@ -142,10 +195,12 @@ RSpec.describe ProjectConventions::BuildRecommendations do
       it "preserves a manual dismissal instead of recreating a pending recommendation" do
         expect {
           described_class.call(project: project)
-        }.not_to change { project.project_convention_recommendations.count }
+        }.not_to change {
+          project.project_convention_recommendations.where(convention_key: "commit_style", action_type: "apply_in_paid").count
+        }
 
         expect(recommendation.reload).to be_dismissed
-        expect(project.project_convention_recommendations.pending).to be_empty
+        expect(project.project_convention_recommendations.pending.where(convention_key: "commit_style")).to be_empty
         expect(recommendation.description).to include(".commitlintrc.json")
       end
     end
@@ -175,7 +230,9 @@ RSpec.describe ProjectConventions::BuildRecommendations do
       it "reopens the same recommendation as pending" do
         expect {
           described_class.call(project: project)
-        }.not_to change { project.project_convention_recommendations.count }
+        }.not_to change {
+          project.project_convention_recommendations.where(convention_key: "commit_style", action_type: "apply_in_paid").count
+        }
 
         expect(recommendation.reload).to be_pending
         expect(recommendation.dismissal_reason).to be_nil
@@ -206,10 +263,12 @@ RSpec.describe ProjectConventions::BuildRecommendations do
       it "updates the existing applied row instead of generating a new pending recommendation" do
         expect {
           described_class.call(project: project)
-        }.not_to change { project.project_convention_recommendations.count }
+        }.not_to change {
+          project.project_convention_recommendations.where(convention_key: "commit_style", action_type: "apply_in_paid").count
+        }
 
         expect(recommendation.reload).to be_applied
-        expect(project.project_convention_recommendations.pending).to be_empty
+        expect(project.project_convention_recommendations.pending.where(convention_key: "commit_style")).to be_empty
         expect(recommendation.description).to include("commitlint.config.js")
       end
     end

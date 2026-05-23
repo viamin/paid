@@ -50,7 +50,8 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
   # transactional rollback.
   after do
     connection = ActiveRecord::Base.connection
-    unless connection.column_exists?(:providers, :agent_co_author_trailer)
+    if connection.data_source_exists?(:providers) &&
+        !connection.column_exists?(:providers, :agent_co_author_trailer)
       connection.add_column(:providers, :agent_co_author_trailer, :text)
     end
     if connection.column_exists?(:projects, :agent_co_author_trailer)

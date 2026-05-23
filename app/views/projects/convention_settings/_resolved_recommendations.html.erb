@@ -23,7 +23,14 @@
                 <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                   <%= rec.action_type.humanize %>
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-900"><%= rec.title %></td>
+                <td class="px-4 py-3 text-sm text-gray-900">
+                  <p class="font-medium"><%= rec.title %></p>
+                  <% if rec.pull_request_url.present? %>
+                    <p class="mt-1 text-xs text-gray-500">
+                      <%= link_to "View pull request", rec.pull_request_url, class: "underline" %>
+                    </p>
+                  <% end %>
+                </td>
                 <td class="whitespace-nowrap px-4 py-3 text-sm">
                   <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
                     <%= case rec.status
