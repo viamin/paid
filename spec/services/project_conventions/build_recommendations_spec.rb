@@ -57,7 +57,7 @@ RSpec.describe ProjectConventions::BuildRecommendations do
                project: project,
                project_version: project_version,
                key: "hook_manager",
-               value: { "type" => "husky", "path" => ".husky" },
+               value: { "type" => "husky", "path" => ".husky", "husky_legacy" => false },
                evidence: { "paths" => [ ".husky/pre-commit" ], "signals" => [ "husky" ] },
                confidence: 0.90)
       end
@@ -72,6 +72,7 @@ RSpec.describe ProjectConventions::BuildRecommendations do
         expect(rec.convention_key).to eq("hook_manager")
         expect(rec.action_type).to eq("open_pr")
         expect(rec.evidence.dig("strategy", "manager_type")).to eq("husky")
+        expect(rec.evidence.dig("strategy", "husky_legacy")).to be(false)
         expect(rec.description).to include("allowed types: feat, fix")
       end
     end

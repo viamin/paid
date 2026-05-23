@@ -286,7 +286,16 @@ RSpec.describe ProjectConventions::Detector, :no_db do
 
       detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
 
-      expect(detection[:value]).to include("type" => "husky", "path" => ".husky")
+      expect(detection[:value]).to include("type" => "husky", "path" => ".husky", "husky_legacy" => false)
+    end
+
+    it "detects legacy husky init script support" do
+      write_repo_file(".husky/pre-commit", "#!/bin/sh\n")
+      write_repo_file(".husky/_/husky.sh", "#!/bin/sh\n")
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection[:value]).to include("type" => "husky", "path" => ".husky", "husky_legacy" => true)
     end
 
     it "detects .githooks directory" do

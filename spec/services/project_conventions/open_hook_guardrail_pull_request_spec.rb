@@ -48,6 +48,35 @@ RSpec.describe ProjectConventions::OpenHookGuardrailPullRequest do
     )
   end
 
+  it "preserves the Husky legacy preamble when the repo uses husky.sh" do
+    repo_path = create_repo!(
+      ".husky/pre-commit" => "#!/bin/sh\n",
+      ".husky/_/husky.sh" => "#!/bin/sh\n",
+      ".commitlintrc.json" => '{"rules":{"type-enum":[2,"always",["feat","fix"]]}}'
+    )
+    recommendation = build_recommendation("husky", ".husky/commit-msg", husky_legacy: true)
+
+    stub_worktree(repo_path)
+
+    described_class.call(project: project, recommendation: recommendation)
+
+    expect(repo_path.join(".husky/commit-msg").read).to include('. "$(dirname -- "$0")/_/husky.sh"')
+  end
+
+  it "omits the legacy Husky preamble for current Husky repos" do
+    repo_path = create_repo!(
+      ".husky/pre-commit" => "#!/bin/sh\n",
+      ".commitlintrc.json" => '{"rules":{"type-enum":[2,"always",["feat","fix"]]}}'
+    )
+    recommendation = build_recommendation("husky", ".husky/commit-msg", husky_legacy: false)
+
+    stub_worktree(repo_path)
+
+    described_class.call(project: project, recommendation: recommendation)
+
+    expect(repo_path.join(".husky/commit-msg").read).not_to include("husky.sh")
+  end
+
   it "updates lefthook.yml instead of writing a raw Git hook" do
     repo_path = create_repo!(
       "lefthook.yml" => "pre-commit:\n  commands:\n    lint:\n      run: bin/lint\n"
@@ -74,7 +103,7 @@ RSpec.describe ProjectConventions::OpenHookGuardrailPullRequest do
     end
   end
 
-  def build_recommendation(manager_type, hook_path)
+  def build_recommendation(manager_type, hook_path, husky_legacy: nil)
     create(:project_convention_recommendation,
            project: project,
            action_type: "open_pr",
@@ -82,6 +111,7 @@ RSpec.describe ProjectConventions::OpenHookGuardrailPullRequest do
              "strategy" => {
                "manager_type" => manager_type,
                "hook_path" => hook_path,
+               "husky_legacy" => husky_legacy,
                "validator_path" => ".paid/hooks/validate-commit-msg",
                "allowed_types" => allowed_types
              }

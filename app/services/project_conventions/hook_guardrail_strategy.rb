@@ -62,6 +62,7 @@ module ProjectConventions
       manager_type = hook_manager_value["type"].presence || "none"
       manager_path = hook_manager_value["path"].presence
       {
+        "husky_legacy" => hook_manager_value["husky_legacy"],
         "manager_type" => manager_type,
         "manager_path" => manager_path,
         "validator_path" => ".paid/hooks/validate-commit-msg",

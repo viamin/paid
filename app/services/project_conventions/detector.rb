@@ -137,7 +137,12 @@ module ProjectConventions
       if directory_exists?(".husky")
         return build_detection(
           key: "hook_manager",
-          value: { "path" => ".husky", "required" => true, "type" => "husky" },
+          value: {
+            "husky_legacy" => repo_file?(".husky/_/husky.sh"),
+            "path" => ".husky",
+            "required" => true,
+            "type" => "husky"
+          },
           evidence: { "paths" => [ ".husky" ], "signals" => [ "repo_managed_hooks" ] }
         )
       end

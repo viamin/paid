@@ -178,7 +178,7 @@ module ProjectConventions
 
     def default_hook_script
       lines = [ "#!/bin/sh" ]
-      lines << '. "$(dirname -- "$0")/_/husky.sh"' if strategy.fetch("manager_type") == "husky"
+      lines << '. "$(dirname -- "$0")/_/husky.sh"' if strategy.fetch("manager_type") == "husky" && strategy["husky_legacy"]
       lines.join("\n") + "\n"
     end
 
