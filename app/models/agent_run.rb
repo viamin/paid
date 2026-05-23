@@ -808,8 +808,8 @@ class AgentRun < ApplicationRecord
 
   # When a run has both an associated issue AND a source PR, labels from
   # both records are considered (highest configured tier wins). Label
-  # name matching is case-sensitive on both the Ruby and SQL sides; an
-  # issue tagged "p1" will not match a configured tier of "P1".
+  # name matching is case-insensitive on both the Ruby and SQL sides, so
+  # an issue tagged "p1" still matches a configured tier of "P1".
   def compute_label_priority_tier
     return nil unless project
 
@@ -822,7 +822,7 @@ class AgentRun < ApplicationRecord
     Project::PRIORITY_TIERS.find do |tier|
       label_name = project.priority_label_for(tier)
       next false if label_name.blank?
-      label_sources.any? { |labels| labels.include?(label_name) }
+      label_sources.any? { |labels| labels.any? { |label| label.casecmp?(label_name) } }
     end
   end
   private :compute_label_priority_tier
@@ -954,17 +954,29 @@ class AgentRun < ApplicationRecord
   # correlated subqueries. Reads per-project label names from
   # `projects.priority_labels` jsonb, falling back to literal tier keys
   # (P1/P2/P3) when the project's mapping is empty so behavior matches
-  # Project#effective_priority_labels. Element matching is case-sensitive.
+  # Project#effective_priority_labels. Element matching is case-insensitive.
   #
   # NOTE: This SQL contains no interpolated values — the tier names are
   # hardcoded literals — so it is not a SQL injection vector.
   QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
     CASE
       WHEN trigger_type = 'manual' THEN 0
-      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1')) THEN 1
-      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2')) THEN 2
+      WHEN EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(issue_labels.labels) AS label(value)
+        WHERE LOWER(label.value) = LOWER(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1'))
+      ) THEN 1
+      WHEN EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(issue_labels.labels) AS label(value)
+        WHERE LOWER(label.value) = LOWER(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2'))
+      ) THEN 2
       WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
-      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3')) THEN 4
+      WHEN EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(issue_labels.labels) AS label(value)
+        WHERE LOWER(label.value) = LOWER(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3'))
+      ) THEN 4
       ELSE 5
     END
   SQL

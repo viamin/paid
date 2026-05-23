@@ -222,7 +222,6 @@ module Automation
           # P3/unlabeled, and P3 beats unlabeled.
           def priority_label_order_node(project)
             effective = project.effective_priority_labels
-            issues = Issue.arel_table
             priority_case = Arel::Nodes::Case.new
             configured_tiers = 0
 
@@ -231,11 +230,13 @@ module Automation
               next if label_name.blank?
 
               configured_tiers += 1
-              condition = Arel::Nodes::InfixOperation.new(
-                "@>",
-                issues[:labels],
-                Arel::Nodes::NamedFunction.new("jsonb_build_array", [ Arel::Nodes.build_quoted(label_name) ])
-              )
+              condition = Arel.sql(<<~SQL.squish)
+                EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements_text(issues.labels) AS label(value)
+                  WHERE LOWER(label.value) = LOWER(#{Issue.connection.quote(label_name)})
+                )
+              SQL
               priority_case.when(condition).then(index + 1)
             end
 

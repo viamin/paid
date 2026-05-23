@@ -2278,6 +2278,12 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_tier).to eq(:label_p1)
     end
 
+    it "matches configured priority labels case-insensitively" do
+      run = queued_run_with_issue_labels([ "CRITICAL" ], trigger_type: "automatic")
+
+      expect(run.queue_priority_tier).to eq(:label_p1)
+    end
+
     it "ranks manual above P1 within the same project" do
       p1 = queued_run_with_issue_labels([ "critical" ], trigger_type: "automatic", created_at: 2.minutes.ago)
       manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
@@ -2304,6 +2310,15 @@ RSpec.describe AgentRun do
 
       ordered = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).to_a
       expect(ordered).to eq([ auto_continue, p3, auto_pick ])
+    end
+
+    it "orders queued runs by priority labels case-insensitively" do
+      auto_pick = create(:agent_run, :queued, project: project, trigger_type: "automatic", created_at: 3.minutes.ago)
+      p1 = queued_run_with_issue_labels([ "CRITICAL" ], trigger_type: "automatic", created_at: 2.minutes.ago)
+      p2 = queued_run_with_issue_labels([ "HIGH" ], trigger_type: "automatic", created_at: 1.minute.ago)
+
+      ordered = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).to_a
+      expect(ordered).to eq([ p1, p2, auto_pick ])
     end
 
     it "picks the highest priority when multiple labels are present" do
