@@ -18,7 +18,7 @@ module Activities
         QueueAgentRunActivity.new.execute(queue_input(agent_run, goal))
       end
 
-      {
+      response = {
         agent_run_id: agent_run.id,
         followup_agent_run_id: result[:agent_run_id],
         goal: goal,
@@ -26,6 +26,9 @@ module Activities
         duplicate: result.fetch(:duplicate, false),
         cross_goal: result.fetch(:cross_goal, false)
       }
+      response[:skipped] = true if result[:skipped]
+      response[:reason] = result[:reason] if result[:reason]
+      response
     end
 
     private
