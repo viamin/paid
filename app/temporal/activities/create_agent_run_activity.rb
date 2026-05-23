@@ -122,6 +122,7 @@ module Activities
         # tracking and audit). Non-fatal — runs proceed with default pricing
         # if no LlmModel records exist yet.
         select_model(agent_run)
+        policy_evaluation = apply_policy_controls(agent_run)
         assign_configuration_bundle(agent_run)
 
         log_scope_analysis(agent_run, scope_result)
@@ -135,7 +136,7 @@ module Activities
           prompt_version_id: prompt_version&.id
         )
 
-        {
+        result = {
           agent_run_id: agent_run.id,
           focus: agent_run.focus,
           runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
@@ -148,6 +149,8 @@ module Activities
             sub_components: scope_result.sub_components
           } : nil
         }
+        result[:paused] = true if policy_evaluation.paused
+        result
       end
     end
 
@@ -251,6 +254,7 @@ module Activities
         force: false,
         account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
       )
+      policy_evaluation = apply_policy_controls(agent_run)
       assign_configuration_bundle(agent_run)
 
       logger.info(
@@ -266,7 +270,8 @@ module Activities
         runner_attempt_count: runner_attempt_count_for(agent_run, user_settings),
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
-        max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings)
+        max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings),
+        paused: policy_evaluation.paused
       }
     end
 
@@ -367,6 +372,47 @@ module Activities
 
     def assign_configuration_bundle(agent_run)
       ConfigurationBundles::AssignToRun.call(agent_run: agent_run)
+    end
+
+    def apply_policy_controls(agent_run)
+      evaluation = PolicyControls::Evaluate.call(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        goal: agent_run.goal,
+        runner: agent_run.runner,
+        model: agent_run.model_selection&.llm_model,
+        prompt: agent_run.custom_prompt,
+        target_branch: agent_run.project.default_branch,
+        service_containers: agent_run.project.service_containers
+      )
+
+      attributes = {
+        guardrail_context: agent_run.guardrail_context.to_h.merge(
+          "policy_controls" => evaluation.to_h
+        )
+      }
+      if agent_run.custom_prompt.present? || evaluation.sanitized_prompt.present?
+        attributes[:custom_prompt] = evaluation.sanitized_prompt if evaluation.sanitized_prompt != agent_run.custom_prompt
+      end
+
+      if evaluation.paused
+        attributes[:status] = "paused"
+        attributes[:paused_at] = Time.current
+        attributes[:error_message] = evaluation.reason
+      end
+
+      agent_run.update!(attributes)
+
+      return evaluation unless evaluation.paused
+
+      logger.info(
+        message: "agent_execution.policy_controls_paused",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        reason: evaluation.reason,
+        risk_score: evaluation.risk_score
+      )
+      evaluation
     end
 
     def resolve_user_settings(project)
