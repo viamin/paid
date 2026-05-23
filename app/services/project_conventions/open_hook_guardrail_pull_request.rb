@@ -85,7 +85,6 @@ module ProjectConventions
 
     def push_branch!(worktree_path)
       branch_name = "paid/hook-guardrails-#{project.id}-#{Time.current.utc.strftime('%Y%m%d%H%M%S')}"
-      worktree_service.run_worktree_command(worktree_path, "branch", "-m", branch_name)
       worktree_service.run_worktree_command(worktree_path, "commit", "-m", "chore: install repo-managed commit-msg guardrail")
       worktree_service.run_worktree_command(worktree_path, "push", "origin", "HEAD:refs/heads/#{branch_name}")
       branch_name
