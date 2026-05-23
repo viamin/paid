@@ -326,6 +326,9 @@ module Issues
         .where(github_number: referenced_numbers)
         .index_by(&:github_number)
 
+      missing_numbers = referenced_numbers.reject { |number| project_issues.key?(number) }
+      DependencyBackfillJob.perform_later(issue.project_id, missing_numbers) if missing_numbers.any?
+
       adj = adjacency || IssueDependency.account_adjacency(issue.project.account)
 
       referenced_numbers.each do |number|

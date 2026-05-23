@@ -164,6 +164,9 @@ module Automation
               github_number: all_referenced_numbers
             ).pluck(:github_number, :github_state).to_h
 
+            unknown_numbers = all_referenced_numbers.reject { |num| referenced_states.key?(num) }
+            DependencyBackfillJob.perform_later(project.id, unknown_numbers) if unknown_numbers.any?
+
             blocked_with_refs = with_refs.filter_map do |issue_id, refs|
               issue_id if refs.any? do |num|
                 state = referenced_states[num]

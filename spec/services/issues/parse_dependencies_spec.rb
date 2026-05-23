@@ -890,4 +890,27 @@ RSpec.describe Issues::ParseDependencies do
       end
     end
   end
+
+  describe "missing issue backfill" do
+    it "enqueues DependencyBackfillJob when a local dependency references an issue not in the database" do
+      issue = create(:issue, project: project, body: "Depends on #99999")
+
+      allow(DependencyBackfillJob).to receive(:perform_later)
+
+      described_class.call(issue: issue)
+
+      expect(DependencyBackfillJob).to have_received(:perform_later).with(project.id, [ 99999 ])
+    end
+
+    it "does not enqueue backfill when all local dependencies exist in the database" do
+      dep = create(:issue, project: project, github_number: 100)
+      issue = create(:issue, project: project, body: "Depends on ##{dep.github_number}")
+
+      allow(DependencyBackfillJob).to receive(:perform_later)
+
+      described_class.call(issue: issue)
+
+      expect(DependencyBackfillJob).not_to have_received(:perform_later)
+    end
+  end
 end
