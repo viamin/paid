@@ -25,6 +25,14 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.next_candidate(project)).to eq(p1)
     end
 
+    it "matches configured priority labels case-insensitively" do
+      project.update!(priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" })
+      _p3 = create(:issue, project: project, github_number: 1, labels: [ "p3" ])
+      p1 = create(:issue, project: project, github_number: 2, labels: [ "p1" ])
+
+      expect(described_class.next_candidate(project)).to eq(p1)
+    end
+
     it "prefers runnable dependency-tree roots over standalone issues" do
       _standalone = create(:issue, project: project, github_number: 1, github_state: "open")
       blocker = create(:issue, project: project, github_number: 2, github_state: "open")
