@@ -85,16 +85,15 @@ module Projects
     end
 
     def apply_recommendation!
-      raise ArgumentError, "This recommendation cannot be applied automatically" unless @recommendation.apply_in_paid?
+      unless @recommendation.applyable_via_paid?
+        raise ArgumentError, "This recommendation cannot be applied automatically"
+      end
 
-      override = @project.project_convention_overrides.find_or_initialize_by(key: @recommendation.convention_key)
-      override.assign_attributes(
-        value: recommendation_override_value,
-        mode: "apply"
-      )
-      override.save!
-
-      @recommendation.apply!(applied_by: current_user)
+      if @recommendation.apply_in_paid?
+        apply_in_paid_recommendation!
+      elsif @recommendation.open_pr?
+        open_recommendation_pull_request!
+      end
     end
 
     def render_update_error(status:, message:)
@@ -109,6 +108,34 @@ module Projects
           render :index, status: status
         end
       end
+    end
+
+    def apply_in_paid_recommendation!
+      override = @project.project_convention_overrides.find_or_initialize_by(key: @recommendation.convention_key)
+      override.assign_attributes(
+        value: recommendation_override_value,
+        mode: "apply"
+      )
+      override.save!
+
+      @recommendation.apply!(applied_by: current_user)
+      @success_message = "Applied recommendation in Paid."
+    end
+
+    def open_recommendation_pull_request!
+      result = ProjectConventions::OpenHookGuardrailPullRequest.call(
+        project: @project,
+        recommendation: @recommendation
+      )
+      @recommendation.apply!(applied_by: current_user)
+      @success_message =
+        if result.already_configured
+          "Repo-managed hook guardrail is already configured."
+        else
+          "Opened pull request: #{view_context.link_to(result.pull_request_url, result.pull_request_url, class: 'underline')}".html_safe
+        end
+    rescue ProjectConventions::OpenHookGuardrailPullRequest::Error => e
+      raise ArgumentError, e.message
     end
 
     def override_mode_param

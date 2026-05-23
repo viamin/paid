@@ -297,6 +297,18 @@ RSpec.describe ProjectConventions::Detector, :no_db do
       expect(detection[:value]).to include("type" => "githooks", "path" => ".githooks")
     end
 
+    it "detects core.hooksPath-backed .githooks setups" do
+      write_repo_file(".git/config", <<~CFG)
+        [core]
+          hooksPath = .githooks
+      CFG
+
+      detection = described_class.call(repo_path:).find { |item| item[:key] == "hook_manager" }
+
+      expect(detection[:value]).to include("type" => "githooks", "path" => ".githooks")
+      expect(detection[:evidence]["signals"]).to include("core_hooks_path")
+    end
+
     it "prefers lefthook over husky over githooks" do
       write_repo_file("lefthook.yml", "pre-commit:\n  commands: {}\n")
       write_repo_file(".husky/pre-commit", "#!/bin/sh\n")

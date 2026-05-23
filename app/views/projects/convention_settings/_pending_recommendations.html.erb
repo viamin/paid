@@ -44,7 +44,7 @@
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
                   <div class="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-                    <% if rec.apply_in_paid? %>
+                    <% if rec.applyable_via_paid? %>
                       <%= button_to "Apply",
                             update_recommendation_project_convention_settings_path(project),
                             method: :patch,

@@ -66,8 +66,9 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
       action_type: "open_pr"
     )
 
-    expect(recommendation.description).to include("Repository manages hooks with lefthook")
+    expect(recommendation.description).to include("Detected lefthook hooks")
     expect(recommendation.evidence["detected_value"]).to include("type" => "lefthook")
+    expect(recommendation.evidence.dig("strategy", "manager_type")).to eq("lefthook")
     expect(project.knowledge_recommendations).to be_empty
   end
 

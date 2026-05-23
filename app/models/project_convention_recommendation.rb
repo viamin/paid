@@ -68,6 +68,14 @@ class ProjectConventionRecommendation < ApplicationRecord
     action_type == "apply_in_paid"
   end
 
+  def open_pr?
+    action_type == "open_pr"
+  end
+
+  def applyable_via_paid?
+    apply_in_paid? || open_pr?
+  end
+
   def auto_dismissed?
     dismissed? && dismissed_by_id.nil? && dismissal_reason == AUTO_DISMISSAL_REASON
   end

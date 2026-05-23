@@ -142,6 +142,15 @@ module ProjectConventions
         )
       end
 
+      configured_hooks_path = git_config_hooks_path
+      if configured_hooks_path&.start_with?(".githooks")
+        return build_detection(
+          key: "hook_manager",
+          value: { "path" => configured_hooks_path, "required" => true, "type" => "githooks" },
+          evidence: { "paths" => [ ".git/config", configured_hooks_path ].uniq, "signals" => [ "core_hooks_path" ] }
+        )
+      end
+
       return unless directory_exists?(".githooks")
 
       build_detection(
@@ -342,6 +351,44 @@ module ProjectConventions
 
     def read_file(relative_path)
       repo_path.join(relative_path).read
+    end
+
+    def git_config_hooks_path
+      git_dir = resolved_git_dir
+      return unless git_dir
+
+      config_path = git_dir.join("config")
+      return unless config_path.file?
+
+      current_section = nil
+      config_path.each_line do |line|
+        stripped = line.strip
+        next if stripped.start_with?("#", ";") || stripped.empty?
+
+        if stripped.start_with?("[") && stripped.end_with?("]")
+          current_section = stripped.delete_prefix("[").delete_suffix("]")
+          next
+        end
+
+        next unless current_section == "core"
+
+        key, value = stripped.split("=", 2).map { |part| part&.strip }
+        return value if key == "hooksPath" && value.present?
+      end
+
+      nil
+    end
+
+    def resolved_git_dir
+      dot_git = repo_path.join(".git")
+      return dot_git if dot_git.directory?
+      return unless dot_git.file?
+
+      target = dot_git.read.lines.first.to_s.split(":", 2).last.to_s.strip
+      return if target.blank?
+
+      path = Pathname(target)
+      path.absolute? ? path : repo_path.join(path)
     end
   end
 end

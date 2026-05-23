@@ -214,7 +214,7 @@ RSpec.describe "Projects::ConventionSettings" do
     end
 
     it "rejects apply for recommendations without automated backing behavior" do
-      recommendation.update!(action_type: "open_pr")
+      recommendation.update!(action_type: "manual_review")
 
       patch update_recommendation_project_convention_settings_path(project),
             params: { id: recommendation.id, action_type: "apply" },
@@ -224,6 +224,28 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response.body).to include("cannot be applied automatically")
       expect(recommendation.reload.status).to eq("pending")
       expect(project.project_convention_overrides.find_by(key: recommendation.convention_key)).to be_nil
+    end
+
+    it "applies an open_pr recommendation by opening a repo-managed hook PR" do
+      recommendation.update!(
+        action_type: "open_pr",
+        evidence: recommendation.evidence.merge("strategy" => open_pr_strategy)
+      )
+      result = open_pr_result
+      allow(ProjectConventions::OpenHookGuardrailPullRequest).to receive(:call).and_return(result)
+
+      patch update_recommendation_project_convention_settings_path(project),
+            params: { id: recommendation.id, action_type: "apply" },
+            headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Opened pull request")
+      expect(response.body).to include("https://github.com/acme/widgets/pull/42")
+      expect(recommendation.reload.status).to eq("applied")
+      expect(ProjectConventions::OpenHookGuardrailPullRequest).to have_received(:call).with(
+        project: project,
+        recommendation: recommendation
+      )
     end
 
     it "rejects updates to already-resolved recommendations" do
@@ -265,5 +287,42 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(row.text).to include("Manual action outside Paid")
       expect(submit_labels).to contain_exactly("Dismiss")
     end
+  end
+
+  describe "GET /projects/:project_id/convention_settings for open_pr recommendations" do
+    let!(:recommendation) do
+      create(:project_convention_recommendation, project: project, action_type: "open_pr", title: "Install repo-managed hooks")
+    end
+
+    before do
+      sign_in user
+      user.add_role(:admin, account)
+    end
+
+    it "renders open_pr recommendations as applyable within Paid" do
+      get project_convention_settings_path(project)
+
+      row = Nokogiri::HTML(response.body).at_css("tr##{dom_id(recommendation)}")
+      submit_labels = row.css("input[type='submit'], button").map { |node| node["value"].presence || node.text.strip }
+
+      expect(row.text).not_to include("Manual action outside Paid")
+      expect(submit_labels).to include("Apply", "Dismiss")
+    end
+  end
+
+  def open_pr_strategy
+    {
+      "manager_type" => "husky",
+      "hook_path" => ".husky/commit-msg",
+      "validator_path" => ".paid/hooks/validate-commit-msg",
+      "allowed_types" => %w[feat fix]
+    }
+  end
+
+  def open_pr_result
+    ProjectConventions::OpenHookGuardrailPullRequest::Result.new(
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+      already_configured: false
+    )
   end
 end
