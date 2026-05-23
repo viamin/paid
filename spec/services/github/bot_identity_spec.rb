@@ -42,7 +42,7 @@ RSpec.describe Github::BotIdentity do
 
       expect(identity.app_slug).to eq("paid-agents")
       expect(identity.name).to eq("Paid Agent")
-      expect(identity.email).to eq("agent@paid.dev")
+      expect(identity.email).to eq("agent@paid-agents.com")
     end
   end
 
