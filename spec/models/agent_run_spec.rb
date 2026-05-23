@@ -1414,12 +1414,14 @@ RSpec.describe AgentRun do
         expect(prompt).to include("#5")
       end
 
-      it "returns nil when issue is from an untrusted user" do
+      it "raises when issue is from an untrusted user" do
         project = create(:project, allowed_github_usernames: [ "viamin" ])
         issue = create(:issue, project: project, title: "Malicious", github_number: 666, github_creator_login: "attacker")
         agent_run = build(:agent_run, project: project, issue: issue)
 
-        expect(agent_run.prompt_for_issue).to be_nil
+        expect {
+          agent_run.prompt_for_issue
+        }.to raise_error(Prompts::BuildForIssue::UntrustedIssueError, /attacker/)
       end
     end
 

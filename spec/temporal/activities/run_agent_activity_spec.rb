@@ -2804,6 +2804,18 @@ expect(container_service).to receive(:execute).with(
       }.to raise_error(Temporalio::Error::ApplicationError, /No prompt available/)
     end
 
+    it "raises UntrustedIssue when prompt building rejects an untrusted issue" do
+      allow(agent_run).to receive(:effective_prompt)
+        .and_raise(Prompts::BuildForIssue::UntrustedIssueError, "Issue #1 creator 'attacker' is not trusted")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.message).to include("Issue #1 creator 'attacker' is not trusted")
+        expect(error.type).to eq("UntrustedIssue")
+      }
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       allow(AgentRun).to receive(:find).and_call_original
 

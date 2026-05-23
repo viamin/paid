@@ -196,21 +196,8 @@ module OrchestrationStrategies
         ],
         "planning_outcomes" => planning_mappings[:success] + planning_mappings[:failure].values,
         "parallelization_outcomes" => parallelization_mappings[:success] + parallelization_mappings[:failure].values,
-        "known_failure_types" => %w[
-          AllProvidersExhausted
-          AgentExecutionFailed
-          IssueDraftInvalid
-          McpProvisioningFailed
-          MissingPrompt
-          MissingUser
-          ContainerNotProvisioned
-          ProxyUnavailable
-          RateLimit
-        ],
-        "known_failure_classes" => %w[
-          GithubClient::RateLimitError
-          GithubClient::AuthenticationError
-        ]
+        "known_failure_types" => Workflows::AgentExecutionWorkflow::KNOWN_FAILURE_TYPES,
+        "known_failure_classes" => Workflows::AgentExecutionWorkflow::KNOWN_FAILURE_CLASSES
       }
     end
 

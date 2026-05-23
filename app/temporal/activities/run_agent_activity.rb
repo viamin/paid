@@ -122,7 +122,16 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
-        prompt = agent_run.effective_prompt
+        prompt = begin
+          agent_run.effective_prompt
+        rescue Prompts::BuildForIssue::UntrustedIssueError => error
+          raise Temporalio::Error::ApplicationError.new(
+            error.message,
+            type: "UntrustedIssue",
+            non_retryable: true
+          )
+        end
+
         unless prompt
           raise Temporalio::Error::ApplicationError.new(
             "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
