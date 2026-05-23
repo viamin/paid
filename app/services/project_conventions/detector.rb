@@ -143,7 +143,7 @@ module ProjectConventions
       end
 
       configured_hooks_path = git_config_hooks_path
-      if configured_hooks_path&.start_with?(".githooks")
+      if managed_githooks_path?(configured_hooks_path)
         return build_detection(
           key: "hook_manager",
           value: { "path" => configured_hooks_path, "required" => true, "type" => "githooks" },
@@ -366,17 +366,23 @@ module ProjectConventions
         next if stripped.start_with?("#", ";") || stripped.empty?
 
         if stripped.start_with?("[") && stripped.end_with?("]")
-          current_section = stripped.delete_prefix("[").delete_suffix("]")
+          current_section = stripped.delete_prefix("[").delete_suffix("]").downcase
           next
         end
 
         next unless current_section == "core"
 
         key, value = stripped.split("=", 2).map { |part| part&.strip }
-        return value if key == "hooksPath" && value.present?
+        return value if key&.downcase == "hookspath" && value.present?
       end
 
       nil
+    end
+
+    def managed_githooks_path?(path)
+      return false if path.blank?
+
+      path == ".githooks" || path.start_with?(".githooks/")
     end
 
     def resolved_git_dir
