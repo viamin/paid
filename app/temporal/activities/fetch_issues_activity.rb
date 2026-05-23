@@ -51,6 +51,9 @@ module Activities
         enhance_issue_rechecks = enhance_issue_result[:rechecks]
         sync_changed ||= enhance_issue_result[:changed]
 
+        needs_input_changed = detect_needs_input_label_removals(project, synced_issues)
+        sync_changed ||= needs_input_changed
+
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
         sync_changed ||= closed_count.positive?
 
@@ -394,6 +397,31 @@ module Activities
           paid_state: "needs_input"
         )
       end
+    end
+
+    def detect_needs_input_label_removals(project, synced_issues)
+      needs_input_label = project.label_for_stage("needs_input") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
+      changed = false
+
+      synced_issues.each do |issue_data|
+        next unless Array(issue_data[:removed_labels]).include?(needs_input_label)
+
+        issue = project.issues.find(issue_data[:id])
+        next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
+
+        issue.update!(paid_state: "new")
+        changed = true
+
+        logger.info(
+          message: "github_sync.needs_input_label_removed",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number
+        )
+      end
+
+      changed
     end
 
     # Parses dependency and parent/child relationships from issue comments.
