@@ -6,10 +6,11 @@ module Issues
       new(...).call
     end
 
-    def initialize(issue, project:, skip_project_gate: false)
+    def initialize(issue, project:, skip_project_gate: false, no_runner_retry_count: 0)
       @issue = issue
       @project = project
       @skip_project_gate = skip_project_gate
+      @no_runner_retry_count = no_runner_retry_count
     end
 
     def call
@@ -26,7 +27,8 @@ module Issues
       goal = seeded_goal
       runner = resolve_runner(goal)
       unless runner
-        log_no_runner
+        retry_schedule = schedule_no_runner_retry
+        log_no_runner(retry_schedule)
         return nil
       end
 
@@ -62,7 +64,7 @@ module Issues
     private
 
     attr_reader :issue, :project
-    attr_reader :skip_project_gate
+    attr_reader :skip_project_gate, :no_runner_retry_count
 
     def eligible?
       Automation::Strategies::AutoPick::DefaultCandidateSource
@@ -100,8 +102,21 @@ module Issues
       Rails.logger.info(log_context("enqueue_eligible.project_deferred"))
     end
 
-    def log_no_runner
-      Rails.logger.warn(log_context("enqueue_eligible.no_runner"))
+    def schedule_no_runner_retry
+      Issues::ReenqueueEligibleJob.schedule_no_runner_retry(issue.id, no_runner_retry_count: no_runner_retry_count)
+    end
+
+    def log_no_runner(retry_schedule)
+      Rails.logger.warn(
+        log_context(
+          "enqueue_eligible.no_runner",
+          no_runner_retry_count: no_runner_retry_count,
+          no_runner_retry_scheduled: retry_schedule.present?,
+          next_no_runner_retry_count: retry_schedule&.fetch(:retry_count, nil),
+          wait_seconds: retry_schedule&.fetch(:wait, nil)&.to_i,
+          retries_exhausted: retry_schedule.blank?
+        )
+      )
     end
 
     def log_context(message, extra = {})

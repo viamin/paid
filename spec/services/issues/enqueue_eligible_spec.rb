@@ -3,6 +3,20 @@
 require "rails_helper"
 
 RSpec.describe Issues::EnqueueEligible, :no_db do
+  include ActiveJob::TestHelper
+
+  around do |example|
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+    clear_performed_jobs
+    example.run
+  ensure
+    clear_enqueued_jobs
+    clear_performed_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
+  end
+
   def project_class
     @project_class ||= Struct.new(:id) do
       def auto_enhance_enabled? = false
@@ -136,11 +150,48 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(service).to receive(:resolve_runner).with("create_pr").and_return(nil)
     allow(Rails.logger).to receive(:warn)
 
-    result = service.call
+    freeze_time do
+      expect {
+        result = service.call
+        expect(result).to be_nil
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id, no_runner_retry_count: 1).at(30.seconds.from_now)
+    end
 
-    expect(result).to be_nil
     expect(Rails.logger).to have_received(:warn).with(
-      hash_including(message: "enqueue_eligible.no_runner", issue_id: issue.id, project_id: project.id)
+      hash_including(
+        message: "enqueue_eligible.no_runner",
+        issue_id: issue.id,
+        project_id: project.id,
+        no_runner_retry_count: 0,
+        no_runner_retry_scheduled: true,
+        next_no_runner_retry_count: 1,
+        wait_seconds: 30,
+        retries_exhausted: false
+      )
+    )
+  end
+
+  it "does not schedule another retry after the no-runner retry cap" do
+    capped_service = described_class.new(
+      issue,
+      project: project,
+      no_runner_retry_count: Issues::ReenqueueEligibleJob::MAX_NO_RUNNER_RETRIES
+    )
+    allow(capped_service).to receive(:resolve_runner).with("create_pr").and_return(nil)
+    allow(Rails.logger).to receive(:warn)
+
+    expect {
+      expect(capped_service.call).to be_nil
+    }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+    expect(Rails.logger).to have_received(:warn).with(
+      hash_including(
+        message: "enqueue_eligible.no_runner",
+        issue_id: issue.id,
+        no_runner_retry_count: Issues::ReenqueueEligibleJob::MAX_NO_RUNNER_RETRIES,
+        no_runner_retry_scheduled: false,
+        retries_exhausted: true
+      )
     )
   end
 
