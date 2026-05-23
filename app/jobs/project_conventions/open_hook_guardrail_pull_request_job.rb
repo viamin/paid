@@ -32,6 +32,7 @@ module ProjectConventions
       recommendation.reload
       return unless recommendation.pending?
 
+      recommendation.record_pull_request_url!(result.pull_request_url) if result.pull_request_url.present?
       recommendation.apply!(applied_by: applied_by)
       log_completion(project_id:, recommendation_id:, result:)
     rescue ProjectConventions::OpenHookGuardrailPullRequest::Error => e

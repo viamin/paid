@@ -38,6 +38,7 @@ RSpec.describe ProjectConventions::OpenHookGuardrailPullRequestJob do
     )
     expect(recommendation.reload).to be_applied
     expect(recommendation.applied_by).to eq(user)
+    expect(recommendation.pull_request_url).to eq(result.pull_request_url)
   end
 
   it "leaves the recommendation pending on failure" do

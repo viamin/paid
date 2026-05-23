@@ -11,12 +11,7 @@
   <%= turbo_stream.update "convention_settings_alert" do %>
     <% if @success_message.present? %>
       <div class="rounded-md bg-green-50 p-4" role="status">
-        <p class="text-sm font-medium text-green-800">
-          <%= @success_message %>
-          <% if @pull_request_url.present? %>
-            <%= link_to @pull_request_url, @pull_request_url, class: "underline" %>
-          <% end %>
-        </p>
+        <p class="text-sm font-medium text-green-800"><%= @success_message %></p>
       </div>
     <% end %>
   <% end %>

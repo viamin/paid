@@ -80,6 +80,14 @@ class ProjectConventionRecommendation < ApplicationRecord
     dismissed? && dismissed_by_id.nil? && dismissal_reason == AUTO_DISMISSAL_REASON
   end
 
+  def pull_request_url
+    evidence.is_a?(Hash) ? evidence["pull_request_url"] : nil
+  end
+
+  def record_pull_request_url!(url)
+    update!(evidence: evidence.merge("pull_request_url" => url))
+  end
+
   def open_pr_application_in_progress?
     return false unless open_pr?
 

@@ -262,6 +262,22 @@ RSpec.describe "Projects::ConventionSettings" do
       expect(response.body).to include("already in progress")
     end
 
+    it "shows the stored pull request link after the recommendation is applied" do
+      recommendation.update!(
+        action_type: "open_pr",
+        status: "applied",
+        evidence: recommendation.evidence.merge(
+          "strategy" => open_pr_strategy,
+          "pull_request_url" => "https://github.com/acme/widgets/pull/42"
+        )
+      )
+
+      get project_convention_settings_path(project)
+
+      expect(response.body).to include("View pull request")
+      expect(response.body).to include("https://github.com/acme/widgets/pull/42")
+    end
+
     it "rejects updates to already-resolved recommendations" do
       recommendation.apply!(applied_by: user)
 
