@@ -30,8 +30,11 @@ class AutoPickEligibilitySweepJob < ApplicationJob
     processed = 0
     enqueued = 0
 
-    eligible_projects.find_each do |project|
-      next unless Issues::AutoPickProjectGate.call(project)
+    scope = eligible_projects
+    owners_by_project = batch_resolve_owners(scope)
+
+    scope.find_each do |project|
+      next unless Issues::AutoPickProjectGate.call(project, owner: owners_by_project[project.id])
 
       runs = Issues::BulkEnqueueEligible.call(project: project, skip_project_gate: true)
       processed += 1
@@ -54,6 +57,20 @@ class AutoPickEligibilitySweepJob < ApplicationJob
   private
 
   def eligible_projects
-    Project.active.where(auto_pick_enabled: true).includes(:account, :created_by)
+    Project.active.where(auto_pick_enabled: true).includes(:account)
+  end
+
+  def batch_resolve_owners(scope)
+    rows = scope.select(:id, :account_id, :created_by_id).to_a
+    account_ids = rows.map(&:account_id).compact.uniq
+    fallback_by_account = Account.batch_fallback_owner_ids(account_ids)
+
+    owner_ids = rows.filter_map { |p| p.created_by_id || fallback_by_account[p.account_id] }.uniq
+    users_by_id = User.where(id: owner_ids).index_by(&:id)
+
+    rows.each_with_object({}) do |p, memo|
+      uid = p.created_by_id || fallback_by_account[p.account_id]
+      memo[p.id] = users_by_id[uid] if uid
+    end
   end
 end
