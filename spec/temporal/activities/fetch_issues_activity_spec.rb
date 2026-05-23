@@ -546,6 +546,92 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when the paid-needs-input label is removed" do
+      let(:project) do
+        create(:project,
+          label_mappings: { "build" => "paid-build" },
+          enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
+          auto_pick_enabled: true)
+      end
+
+      let!(:issue) do
+        create(:issue,
+          project: project,
+          github_issue_id: 9301,
+          github_number: 93,
+          paid_state: "needs_input",
+          labels: [ "paid-needs-input", "paid-build" ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: issue.github_issue_id,
+          number: issue.github_number,
+          title: issue.title,
+          body: issue.body,
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: issue.github_created_at,
+          updated_at: Time.current
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "transitions paid_state to new" do
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+
+      it "enqueues auto-pick recheck after transitioning to new" do
+        expect {
+          activity.execute(project_id: project.id)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+
+      it "does not transition when issue is closed" do
+        github_issue.state = "closed"
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+      end
+
+      it "does not transition when issue is a pull request" do
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/93")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+      end
+
+      it "does not transition when paid_state is not needs_input" do
+        issue.update!(paid_state: "failed")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "does not transition when the label is still present" do
+        github_issue.labels = [
+          OpenStruct.new(name: "paid-needs-input"),
+          OpenStruct.new(name: "paid-build")
+        ]
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+      end
+    end
+
     context "when rate limited" do
       before do
         allow(github_client).to receive(:issues).and_raise(
