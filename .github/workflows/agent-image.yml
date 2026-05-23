@@ -91,15 +91,44 @@ jobs:
             exit 0
           fi
 
-          lockfile_contract_changes=$(
-            git diff --unified=0 "${BASE_SHA}"..."${HEAD_SHA}" -- Gemfile.lock \
-              | grep -E '^[+-](BUNDLED WITH|  bundler \(|.*(agent-harness|ruby-maat))' || true
-          )
+          extract_lockfile_dependency_version() {
+            local sha="$1"
+            local dependency="$2"
+
+            git show "${sha}:Gemfile.lock" 2>/dev/null \
+              | sed -n "/^GEM$/,/^$/s/^  *${dependency} (\\(.*\\))/\\1/p" \
+              | head -n 1
+          }
+
+          extract_lockfile_bundler_version() {
+            local sha="$1"
+
+            git show "${sha}:Gemfile.lock" 2>/dev/null \
+              | awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}'
+          }
+
+          previous_agent_harness_version=$(extract_lockfile_dependency_version "${BASE_SHA}" "agent-harness")
+          current_agent_harness_version=$(extract_lockfile_dependency_version "${HEAD_SHA}" "agent-harness")
+          previous_ruby_maat_version=$(extract_lockfile_dependency_version "${BASE_SHA}" "ruby-maat")
+          current_ruby_maat_version=$(extract_lockfile_dependency_version "${HEAD_SHA}" "ruby-maat")
+          previous_bundler_version=$(extract_lockfile_bundler_version "${BASE_SHA}")
+          current_bundler_version=$(extract_lockfile_bundler_version "${HEAD_SHA}")
+
+          lockfile_contract_changes=""
+          if [ "${previous_agent_harness_version}" != "${current_agent_harness_version}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}agent-harness: ${previous_agent_harness_version:-missing} -> ${current_agent_harness_version:-missing}\n"
+          fi
+          if [ "${previous_ruby_maat_version}" != "${current_ruby_maat_version}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}ruby-maat: ${previous_ruby_maat_version:-missing} -> ${current_ruby_maat_version:-missing}\n"
+          fi
+          if [ "${previous_bundler_version}" != "${current_bundler_version}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}bundler: ${previous_bundler_version:-missing} -> ${current_bundler_version:-missing}\n"
+          fi
 
           if [ -n "$lockfile_contract_changes" ]; then
             echo "image_relevant=true" >> "$GITHUB_OUTPUT"
             echo "Gemfile.lock changed agent-image-managed dependencies:"
-            printf '%s\n' "$lockfile_contract_changes" | sed 's/^/  /'
+            printf '%b' "$lockfile_contract_changes" | sed 's/^/  /'
           else
             echo "image_relevant=false" >> "$GITHUB_OUTPUT"
             echo "Gemfile.lock changed, but not Bundler, agent-harness, or ruby-maat. Skipping agent image rebuild."
