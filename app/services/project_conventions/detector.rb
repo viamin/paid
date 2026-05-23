@@ -137,8 +137,22 @@ module ProjectConventions
       if directory_exists?(".husky")
         return build_detection(
           key: "hook_manager",
-          value: { "path" => ".husky", "required" => true, "type" => "husky" },
+          value: {
+            "husky_legacy" => repo_file?(".husky/_/husky.sh"),
+            "path" => ".husky",
+            "required" => true,
+            "type" => "husky"
+          },
           evidence: { "paths" => [ ".husky" ], "signals" => [ "repo_managed_hooks" ] }
+        )
+      end
+
+      configured_hooks_path = git_config_hooks_path
+      if managed_githooks_path?(configured_hooks_path)
+        return build_detection(
+          key: "hook_manager",
+          value: { "path" => configured_hooks_path, "required" => true, "type" => "githooks" },
+          evidence: { "paths" => [ ".git/config", configured_hooks_path ].uniq, "signals" => [ "core_hooks_path" ] }
         )
       end
 
@@ -342,6 +356,62 @@ module ProjectConventions
 
     def read_file(relative_path)
       repo_path.join(relative_path).read
+    end
+
+    def git_config_hooks_path
+      git_dir = resolved_git_dir
+      return unless git_dir
+
+      config_path = git_dir.join("config")
+      return unless config_path.file?
+
+      current_section = nil
+      config_path.each_line do |line|
+        stripped = line.strip
+        next if stripped.start_with?("#", ";") || stripped.empty?
+
+        if stripped.start_with?("[") && stripped.end_with?("]")
+          current_section = stripped.delete_prefix("[").delete_suffix("]").downcase
+          next
+        end
+
+        next unless current_section == "core"
+
+        key, value = stripped.split("=", 2).map { |part| part&.strip }
+        return value if key&.downcase == "hookspath" && value.present?
+      end
+
+      nil
+    end
+
+    def managed_githooks_path?(path)
+      return false if path.blank?
+
+      path == ".githooks" || path.start_with?(".githooks/")
+    end
+
+    def resolved_git_dir
+      dot_git = repo_path.join(".git")
+      return dot_git if dot_git.directory?
+
+      return unless dot_git.file?
+
+      target = dot_git.read.lines.first.to_s.split(":", 2).last.to_s.strip
+      return if target.blank?
+
+      path = Pathname(target)
+      git_dir = path.absolute? ? path : repo_path.join(path)
+      resolve_common_dir(git_dir)
+    end
+
+    def resolve_common_dir(git_dir)
+      commondir_file = git_dir.join("commondir")
+      return git_dir unless commondir_file.file?
+
+      common_path = commondir_file.read.strip
+      return git_dir if common_path.empty?
+
+      git_dir.join(common_path).cleanpath
     end
   end
 end

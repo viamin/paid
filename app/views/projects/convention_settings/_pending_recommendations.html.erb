@@ -44,7 +44,9 @@
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
                   <div class="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-                    <% if rec.apply_in_paid? %>
+                    <% if rec.open_pr_application_in_progress? %>
+                      <span class="text-xs text-gray-400">PR creation in progress</span>
+                    <% elsif rec.applyable_via_paid? %>
                       <%= button_to "Apply",
                             update_recommendation_project_convention_settings_path(project),
                             method: :patch,
@@ -55,19 +57,21 @@
                       <span class="text-xs text-gray-400">Manual action outside Paid</span>
                     <% end %>
 
-                    <%= form_with url: update_recommendation_project_convention_settings_path(project),
-                          method: :patch,
-                          data: { turbo_stream: true },
-                          class: "flex items-center justify-end gap-2" do |f| %>
-                      <%= f.hidden_field :id, value: rec.id %>
-                      <%= f.hidden_field :action_type, value: "dismiss" %>
-                      <label for="<%= dom_id(rec, :dismissal_reason) %>" class="sr-only">Dismissal reason</label>
-                      <%= f.text_field :dismissal_reason,
-                            id: dom_id(rec, :dismissal_reason),
-                            placeholder: "Dismissal reason",
-                            required: true,
-                            class: "w-40 rounded-md border-gray-300 px-2 py-1 text-xs text-gray-900 placeholder:text-gray-400" %>
-                      <%= f.submit "Dismiss", class: "inline-flex items-center rounded-md bg-gray-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-500" %>
+                    <% unless rec.open_pr_application_in_progress? %>
+                      <%= form_with url: update_recommendation_project_convention_settings_path(project),
+                            method: :patch,
+                            data: { turbo_stream: true },
+                            class: "flex items-center justify-end gap-2" do |f| %>
+                        <%= f.hidden_field :id, value: rec.id %>
+                        <%= f.hidden_field :action_type, value: "dismiss" %>
+                        <label for="<%= dom_id(rec, :dismissal_reason) %>" class="sr-only">Dismissal reason</label>
+                        <%= f.text_field :dismissal_reason,
+                              id: dom_id(rec, :dismissal_reason),
+                              placeholder: "Dismissal reason",
+                              required: true,
+                              class: "w-40 rounded-md border-gray-300 px-2 py-1 text-xs text-gray-900 placeholder:text-gray-400" %>
+                        <%= f.submit "Dismiss", class: "inline-flex items-center rounded-md bg-gray-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-500" %>
+                      <% end %>
                     <% end %>
                   </div>
                 </td>

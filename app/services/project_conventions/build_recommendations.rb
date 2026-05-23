@@ -21,9 +21,13 @@ module ProjectConventions
     attr_reader :project
 
     def build_recommendations(profile)
-      profile[:conventions].flat_map do |_key, entry|
+      recommendations = profile[:conventions].flat_map do |_key, entry|
         recommendations_for_entry(entry)
       end.compact
+
+      hook_guardrail = ProjectConventions::HookGuardrailStrategy.recommendation_for(profile:)
+      recommendations << hook_guardrail if hook_guardrail
+      recommendations
     end
 
     def recommendations_for_entry(entry)
@@ -34,7 +38,6 @@ module ProjectConventions
       confidence = entry[:confidence].to_f
 
       recs << commit_style_recommendation(key, evidence, detected_value, confidence) if key == "commit_style" && confidence >= 0.5
-      recs << hook_manager_recommendation(key, evidence, detected_value, confidence) if key == "hook_manager" && confidence >= 0.5
       recs << release_automation_recommendation(key, evidence, detected_value, confidence) if key == "release_automation" && confidence >= 0.5
       recs << dependency_format_recommendation(key, evidence, detected_value, confidence) if key == "issue_dependency_format" && confidence >= 0.5
       recs
@@ -52,23 +55,6 @@ module ProjectConventions
         action_type: "apply_in_paid",
         title: "Enable conventional commit enforcement",
         description: "Conventional commits #{signal_desc} (#{format("%.0f%%", confidence * 100)} confidence). Apply enforcement in Paid so agent commits follow the #{commit_type} style.",
-        evidence: evidence.merge("confidence" => confidence, "detected_value" => detected_value),
-        generated_at: Time.current
-      }
-    end
-
-    def hook_manager_recommendation(key, evidence, detected_value, confidence)
-      manager_type = detected_value.is_a?(Hash) ? detected_value["type"] : nil
-      return unless manager_type.present?
-
-      paths = Array(evidence["paths"])
-      signal_desc = paths.any? ? "detected from #{paths.join(', ')}" : "detected from repository analysis"
-
-      {
-        convention_key: key,
-        action_type: "open_pr",
-        title: "Install repo-managed hook configuration",
-        description: "Repository manages hooks with #{manager_type} #{signal_desc}. Consider installing a commit-msg validation hook to enforce conventions consistently.",
         evidence: evidence.merge("confidence" => confidence, "detected_value" => detected_value),
         generated_at: Time.current
       }

@@ -86,6 +86,7 @@ class ApplicationJob < ActiveJob::Base
       DependabotAutoMergeJob,
       EmbedChunksJob,
       EnqueueKnowledgeCollectionJob,
+      ProjectConventions::OpenHookGuardrailPullRequestJob,
       PoolReplenishmentJob,
       RunCollectorsJob,
       StyleGuideExtractionJob

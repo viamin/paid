@@ -85,16 +85,15 @@ module Projects
     end
 
     def apply_recommendation!
-      raise ArgumentError, "This recommendation cannot be applied automatically" unless @recommendation.apply_in_paid?
+      unless @recommendation.applyable_via_paid?
+        raise ArgumentError, "This recommendation cannot be applied automatically"
+      end
 
-      override = @project.project_convention_overrides.find_or_initialize_by(key: @recommendation.convention_key)
-      override.assign_attributes(
-        value: recommendation_override_value,
-        mode: "apply"
-      )
-      override.save!
-
-      @recommendation.apply!(applied_by: current_user)
+      if @recommendation.apply_in_paid?
+        apply_in_paid_recommendation!
+      elsif @recommendation.open_pr?
+        open_recommendation_pull_request!
+      end
     end
 
     def render_update_error(status:, message:)
@@ -109,6 +108,34 @@ module Projects
           render :index, status: status
         end
       end
+    end
+
+    def apply_in_paid_recommendation!
+      override = @project.project_convention_overrides.find_or_initialize_by(key: @recommendation.convention_key)
+      override.assign_attributes(
+        value: recommendation_override_value,
+        mode: "apply"
+      )
+      override.save!
+
+      @recommendation.apply!(applied_by: current_user)
+      @success_message = "Applied recommendation in Paid."
+    end
+
+    def open_recommendation_pull_request!
+      if @recommendation.open_pr_application_in_progress?
+        @success_message = "Repo-managed hook guardrail pull request creation is already in progress."
+        return
+      end
+
+      ProjectConventions::OpenHookGuardrailPullRequestJob.perform_later(
+        @project.id,
+        @recommendation.id,
+        current_user.id
+      )
+      @success_message = "Repo-managed hook guardrail pull request creation is in progress."
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      @success_message = "Repo-managed hook guardrail pull request creation is already in progress."
     end
 
     def override_mode_param
