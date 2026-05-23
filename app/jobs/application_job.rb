@@ -84,6 +84,7 @@ class ApplicationJob < ActiveJob::Base
     [
       AutoReleaseEvaluationJob,
       DependabotAutoMergeJob,
+      DependencyBackfillJob,
       EmbedChunksJob,
       EnqueueKnowledgeCollectionJob,
       ProjectConventions::OpenHookGuardrailPullRequestJob,
