@@ -131,6 +131,29 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
       end
     end
 
+    context "when another project has already ingested the same answers" do
+      let(:other_project) { create(:project) }
+      let(:other_issue) { create(:issue, project: other_project) }
+      let(:other_github_client) { instance_double(GithubClient) }
+
+      before do
+        enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)
+        answers = trusted_comment(body: answers_body, created_at: 2.minutes.ago)
+
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement, answers ])
+        allow(other_project.github_token).to receive(:client).and_return(other_github_client)
+        allow(other_github_client).to receive(:issue_comments).and_return([ enhancement, answers ])
+      end
+
+      it "ingests matching qa pairs for each project" do
+        described_class.call(project: other_project, issue: other_issue)
+        described_class.call(project: project, issue: issue)
+
+        expect(KnowledgeChunk.where(project: other_project, chunk_type: "qa_pair").count).to eq(2)
+        expect(KnowledgeChunk.where(project: project, chunk_type: "qa_pair").count).to eq(2)
+      end
+    end
+
     context "when a non-allowlisted user posts answers" do
       before do
         enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)

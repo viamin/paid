@@ -108,7 +108,7 @@ module ClarifyingQuestions
       content = "Q: #{qa_pair[:question]}\nA: #{qa_pair[:answer]}"
       content_hash = Digest::SHA256.hexdigest(content)
 
-      return if KnowledgeChunk.exists?(content_hash: content_hash)
+      return if KnowledgeChunk.for_project(project).exists?(chunk_type: ARTIFACT_TYPE, content_hash: content_hash)
 
       identifier = "qa_pair:#{issue.github_number}:#{content_hash[0..11]}"
       scope_path = "clarifying_questions/#{project.full_name}/issues/#{issue.github_number}"
