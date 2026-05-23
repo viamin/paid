@@ -27,9 +27,11 @@ class DependencyBackfillJob < ApplicationJob
 
     client = project.github_token.client
     backfilled_ids = []
+    issue_numbers = issue_numbers.take(MAX_ISSUES_PER_JOB)
+    existing_numbers = project.issues.where(github_number: issue_numbers).pluck(:github_number).to_set
 
-    issue_numbers.take(MAX_ISSUES_PER_JOB).each do |number|
-      next if project.issues.exists?(github_number: number)
+    issue_numbers.each do |number|
+      next if existing_numbers.include?(number)
 
       github_issue = client.issue(project.full_name, number)
       record = Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
@@ -47,6 +49,7 @@ class DependencyBackfillJob < ApplicationJob
         message: "dependency_backfill.issue_failed",
         project_id: project_id,
         github_number: number,
+        error_class: e.class.name,
         error: e.message
       )
     end
