@@ -32,6 +32,9 @@ TenantContext.with_system_access do
   # Seed default prompts
   load Rails.root.join("db/seeds/prompts.rb")
 
+  # Seed default global style guides
+  load Rails.root.join("db/seeds/style_guides.rb")
+
   # Seed default orchestration strategies
   OrchestrationStrategies::Seed.call
 end
