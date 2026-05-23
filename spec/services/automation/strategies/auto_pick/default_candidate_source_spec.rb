@@ -75,6 +75,16 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    it "includes completed issues when an auto-pick follow-up run completed without a PR" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "enhance_issue", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
     it "excludes completed issues that had a PR-producing run" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
@@ -97,7 +107,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    it "excludes completed issues whose completed run was not an auto-pick create_pr run" do
+    it "excludes completed issues whose completed run was not a recoverable auto-pick run" do
       manual_issue = create(:issue, project: project, paid_state: "completed", github_number: 50)
       analyze_issue = create(:issue, project: project, paid_state: "completed", github_number: 51)
 
