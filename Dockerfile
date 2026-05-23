@@ -55,8 +55,11 @@ RUN curl -sL https://github.com/nodenv/node-build/archive/refs/tags/${NODE_BUILD
     npm install -g yarn@$YARN_VERSION && \
     rm -rf /tmp/node-build-${NODE_BUILD_VERSION#v}
 
-# Install Bundler (pinned to match Gemfile.lock)
-RUN gem install --no-document bundler:4.0.11
+# Install the Bundler version pinned in Gemfile.lock.
+COPY Gemfile.lock ./Gemfile.lock
+RUN BUNDLER_VERSION="$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' Gemfile.lock)" && \
+    test -n "${BUNDLER_VERSION}" && \
+    gem install --no-document "bundler:${BUNDLER_VERSION}"
 
 # Install application gems
 COPY vendor/* ./vendor/

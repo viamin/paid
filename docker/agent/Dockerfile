@@ -97,8 +97,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Bundler (pinned to match Gemfile.lock)
-RUN gem install --no-document bundler:4.0.11
+# Install the Bundler version pinned in Gemfile.lock.
+ARG BUNDLER_VERSION=4.0.11
+RUN gem install --no-document "bundler:${BUNDLER_VERSION}"
 
 # Install agent-harness globally so lightweight utility scripts inside the
 # agent container can use the same transport layer as the Rails app.
