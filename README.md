@@ -374,7 +374,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. Phase 5 (Account Administration) is next. Paid now includes orchestration decision logging, learned strategy evolution, end-to-end bundle optimization, self-improving coordination policies, and orchestration scaling-law analysis on top of the completed Phase 1-3.5 platform capabilities. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
+Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. Phase 5 (Account Administration) is complete as of 2026-05-20, and Phase 6 (Enterprise Trust & Governance) is next. Paid now includes orchestration decision logging, learned strategy evolution, end-to-end bundle optimization, self-improving coordination policies, orchestration scaling-law analysis, and both operator-facing plus customer-facing account administration on top of the completed Phase 1-3.5 platform capabilities. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
 
 ## License
 
