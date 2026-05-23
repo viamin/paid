@@ -132,7 +132,7 @@ module ProjectConventions
       if existing.auto_dismissed?
         existing.reopen!(rec_attrs)
       else
-        existing.update!(rec_attrs.except(:generated_at))
+        existing.update!(rec_attrs)
       end
     end
   end

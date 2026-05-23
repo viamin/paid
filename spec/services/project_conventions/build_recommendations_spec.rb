@@ -104,6 +104,18 @@ RSpec.describe ProjectConventions::BuildRecommendations do
         rec = project.project_convention_recommendations.pending.first
         expect(rec.title).to include("conventional commit")
       end
+
+      it "refreshes generated_at when detector output is regenerated" do
+        recommendation = project.project_convention_recommendations.pending.first
+        original_generated_at = 2.days.ago.change(usec: 0)
+        recommendation.update!(generated_at: original_generated_at)
+
+        travel_to 1.hour.from_now.change(usec: 0) do
+          described_class.call(project: project)
+        end
+
+        expect(recommendation.reload.generated_at).to be > original_generated_at
+      end
     end
 
     context "when recommendation was previously dismissed" do
