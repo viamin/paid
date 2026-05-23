@@ -1,0 +1,96 @@
+<tr id="convention_<%= key %>">
+  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
+    <%= key.to_s.humanize %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+      <%= entry[:category].to_s.humanize %>
+    </span>
+  </td>
+  <td class="px-4 py-3 text-sm text-gray-500">
+    <% if entry[:detected_value].present? && entry[:detected_value] != {} %>
+      <details>
+        <summary class="cursor-pointer text-xs text-gray-600 hover:text-gray-800">
+          <%= truncate(JSON.generate(entry[:detected_value]), length: 60) %>
+        </summary>
+        <pre class="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs text-gray-600"><%= JSON.pretty_generate(entry[:detected_value]) %></pre>
+      </details>
+    <% else %>
+      <span class="text-gray-400">--</span>
+    <% end %>
+    <% evidence = entry[:evidence] %>
+    <% if evidence.present? && (Array(evidence["paths"]).any? || Array(evidence["signals"]).any?) %>
+      <p class="mt-1 text-xs text-gray-400">
+        via <%= Array(evidence["paths"]).join(", ") %>
+      </p>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+      <%= case entry[:source]
+          when 'detection' then 'bg-blue-100 text-blue-700'
+          when 'override' then 'bg-purple-100 text-purple-700'
+          when 'warning' then 'bg-amber-100 text-amber-700'
+          when 'default' then 'bg-gray-100 text-gray-600'
+          else 'bg-gray-100 text-gray-500'
+          end %>">
+      <%= entry[:source].to_s.humanize %>
+    </span>
+    <% if entry[:policy_mode].present? %>
+      <span class="ml-1 text-xs text-gray-400">(<%= entry[:policy_mode] %>)</span>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <% confidence = entry[:confidence].to_f %>
+    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+      <%= case
+          when confidence >= 0.8 then 'bg-green-100 text-green-700'
+          when confidence >= 0.5 then 'bg-yellow-100 text-yellow-700'
+          when confidence > 0 then 'bg-orange-100 text-orange-700'
+          else 'bg-gray-100 text-gray-500'
+          end %>">
+      <%= format("%.0f%%", confidence * 100) %>
+    </span>
+  </td>
+  <td class="px-4 py-3 text-sm text-gray-500">
+    <% if entry[:configured_value].present? %>
+      <details>
+        <summary class="cursor-pointer text-xs text-gray-600 hover:text-gray-800">
+          <%= truncate(JSON.generate(entry[:configured_value]), length: 40) %>
+        </summary>
+        <pre class="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs text-gray-600"><%= JSON.pretty_generate(entry[:configured_value]) %></pre>
+      </details>
+    <% else %>
+      <span class="text-gray-400">None</span>
+    <% end %>
+  </td>
+  <td class="px-4 py-3 text-sm">
+    <% if entry[:conflict].present? %>
+      <span class="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+        Conflict
+      </span>
+    <% elsif entry[:enabled] %>
+      <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+        Active
+      </span>
+    <% else %>
+      <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+        Inactive
+      </span>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-right text-sm">
+    <%= form_with url: update_override_project_convention_settings_path(project),
+          method: :post,
+          data: { turbo_stream: true },
+          class: "inline-flex items-center gap-2" do |f| %>
+      <%= f.hidden_field :key, value: key %>
+      <%= f.hidden_field :value, value: (entry[:detected_value].presence || {}).to_json %>
+      <%= f.select :mode, options_for_select([["Apply", "apply"], ["Warn", "warn"], ["Ignore", "ignore"]], selected: entry[:policy_mode]),
+            {},
+            class: "rounded-md border-gray-300 py-1 pl-2 pr-8 text-xs text-gray-900" %>
+      <%= f.submit "Set Override",
+            class: "inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500" %>
+    <% end %>
+  </td>
+</tr>

@@ -58,16 +58,17 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
     )
   end
 
-  it "creates a project-convention recommendation for detected hook managers" do
+  it "creates a first-class project convention recommendation for detected hook managers" do
     collector.collect
 
-    recommendation = project.knowledge_recommendations.find_by!(
-      recommendation_type: "project_convention",
-      collector_type: "project_conventions"
+    recommendation = project.project_convention_recommendations.find_by!(
+      convention_key: "hook_manager",
+      action_type: "open_pr"
     )
 
     expect(recommendation.description).to include("Repository manages hooks with lefthook")
-    expect(recommendation.evidence["convention_key"]).to eq("hook_manager")
+    expect(recommendation.evidence["detected_value"]).to include("type" => "lefthook")
+    expect(project.knowledge_recommendations).to be_empty
   end
 
   it "stores category metadata on emitted artifacts" do

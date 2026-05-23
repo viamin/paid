@@ -268,6 +268,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_edit" ])
     end
 
+    it "maps convention settings controller to the convention settings page" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/convention_settings_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_convention_settings" ])
+    end
+
     it "maps projects controller to include project_new target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects_controller.rb" ])
 

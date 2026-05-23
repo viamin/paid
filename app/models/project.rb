@@ -186,6 +186,7 @@ class Project < ApplicationRecord
   has_many :knowledge_recommendations, dependent: :destroy
   has_many :project_convention_detections, dependent: :destroy
   has_many :project_convention_overrides, dependent: :destroy
+  has_many :project_convention_recommendations, dependent: :destroy
   has_many :exception_incidents, dependent: :nullify
   has_many :configuration_bundles, dependent: :destroy
   has_many :coordination_policies, dependent: :destroy

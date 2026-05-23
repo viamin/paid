@@ -211,6 +211,11 @@ Rails.application.routes.draw do
     resources :knowledge_recommendations, only: [ :index, :update ],
       controller: "projects/knowledge_recommendations"
 
+    resources :convention_settings, only: [ :index ], controller: "projects/convention_settings" do
+      post :update_override, on: :collection
+      patch :update_recommendation, on: :collection
+    end
+
     # Project-scoped knowledge browsing and search
     namespace :knowledge do
       resources :browse, only: [ :index, :show ]
