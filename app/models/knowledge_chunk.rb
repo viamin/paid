@@ -2,7 +2,7 @@
 
 class KnowledgeChunk < ApplicationRecord
   STATUSES = %w[active stale deleted redacted].freeze
-  CHUNK_TYPES = %w[definition summary context evidence].freeze
+  CHUNK_TYPES = %w[definition summary context evidence qa_pair].freeze
 
   belongs_to :knowledge_artifact
   belongs_to :project

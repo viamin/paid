@@ -20,7 +20,10 @@ module ClarifyingQuestions
         return body_questions unless github_available?
 
         enhancement_comment = latest_enhancement_comment
-        return [] if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+        if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+          ingest_answers
+          return []
+        end
 
         return body_questions
       end
@@ -28,7 +31,10 @@ module ClarifyingQuestions
       return [] unless github_available?
 
       enhancement_comment = latest_enhancement_comment
-      return [] if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+      if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+        ingest_answers
+        return []
+      end
       return [] unless enhancement_comment
 
       Parse.call(comment_body: comment_body(enhancement_comment))
@@ -102,6 +108,17 @@ module ClarifyingQuestions
 
     def trusted_comment?(comment)
       project.trusted_github_user?(comment.user&.login)
+    end
+
+    def ingest_answers
+      IngestAnswers.call(project: project, issue: issue, issue_comments: issue_comments)
+    rescue ActiveRecord::ActiveRecordError => e
+      Rails.logger.warn(
+        message: "clarifying_questions.ingest_answers_failed",
+        error: e.message,
+        issue_id: issue.respond_to?(:id) ? issue.id : nil
+      )
+      nil
     end
   end
 end
