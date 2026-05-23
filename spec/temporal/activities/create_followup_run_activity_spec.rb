@@ -53,5 +53,23 @@ RSpec.describe Activities::CreateFollowupRunActivity do
         AgentRun.where(project: project, issue: issue, status: AgentRun::UNFINISHED_STATUSES).count
       ).to eq(1)
     end
+
+    it "returns a skipped result when the follow-up create_pr target issue is untrusted" do
+      issue.update!(github_creator_login: "dependabot[bot]")
+
+      result = activity.execute(agent_run_id: analysis_run.id, goal: "create_pr")
+
+      expect(result).to eq(
+        agent_run_id: analysis_run.id,
+        followup_agent_run_id: nil,
+        goal: "create_pr",
+        queued: false,
+        skipped: true,
+        reason: "untrusted_issue",
+        duplicate: false,
+        cross_goal: false
+      )
+      expect(AgentRun.where(project: project, issue: issue, goal: "create_pr")).to be_empty
+    end
   end
 end

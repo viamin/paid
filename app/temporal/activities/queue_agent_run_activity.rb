@@ -3,6 +3,7 @@
 module Activities
   class QueueAgentRunActivity < BaseActivity
     activity_name "QueueAgentRun"
+    GOALS_REQUIRING_TRUSTED_ISSUE = %w[create_pr].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -20,6 +21,17 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      if issue_requires_trust?(goal) && issue&.untrusted?
+        logger.info(
+          message: "queue_agent_run.untrusted_issue_skipped",
+          project_id: project.id,
+          issue_id: issue.id,
+          github_creator_login: issue.github_creator_login,
+          goal: goal
+        )
+        return { queued: false, skipped: true, reason: "untrusted_issue" }
+      end
+
       respect_requested = input.key?(:agent_type) || input.key?(:runner_id)
       provider_id, agent_type = resolve_runner_selection(
         project: project,
@@ -128,6 +140,10 @@ module Activities
         respect_requested: runner_id_provided || agent_type_provided,
         logger: logger
       )
+    end
+
+    def issue_requires_trust?(goal)
+      GOALS_REQUIRING_TRUSTED_ISSUE.include?(goal)
     end
 
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
