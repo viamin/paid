@@ -175,6 +175,66 @@ RSpec.describe Issue do
         expect(described_class.ready_for_work(project)).not_to include(issue)
       end
 
+      context "with an external dep that points at a sibling project in the same account" do
+        let(:sibling_project) { create(:project, account: project.account, owner: "viamin", name: "agent-harness") }
+        let(:issue) { create(:issue, project: project) }
+
+        it "includes the issue when the external dep's target is closed" do
+          create(:issue, project: sibling_project, github_number: 42, github_state: "closed")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "excludes the issue when the external dep's target is still open" do
+          create(:issue, project: sibling_project, github_number: 42, github_state: "open")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).not_to include(issue)
+        end
+
+        it "includes the issue when the external dep target is open but paid_state=recommend_close" do
+          create(:issue, :recommend_close, project: sibling_project, github_number: 42, github_state: "open")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "excludes the issue when the project is synced but the target issue has not been pulled yet" do
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 999)
+
+          expect(described_class.ready_for_work(project)).not_to include(issue)
+        end
+
+        it "matches case-insensitively across owner/repo casing" do
+          sibling_project.update!(owner: "ViaMin", name: "Agent-Harness")
+          create(:issue, project: sibling_project, github_number: 42, github_state: "closed")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).to include(issue)
+        end
+
+        it "stays blocked when the matching project is in a different account" do
+          other_account_project = create(:project, owner: "viamin", name: "agent-harness")
+          create(:issue, project: other_account_project, github_number: 42, github_state: "closed")
+          create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                    depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                    depends_on_number: 42)
+
+          expect(described_class.ready_for_work(project)).not_to include(issue)
+        end
+      end
+
       it "excludes issues whose dep points at an open PR" do
         pr = create(:issue, :pull_request, project: project, github_state: "open")
         issue = create(:issue, project: project)
@@ -1037,6 +1097,28 @@ RSpec.describe Issue do
 
       expect(issue.ready_to_work?).to be true
     end
+
+    it "returns true when an external dep resolves to a closed issue in a sibling project" do
+      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:issue, project: sibling, github_number: 42, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns false when an external dep resolves to an open issue in a sibling project" do
+      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:issue, project: sibling, github_number: 42, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be false
+    end
   end
 
   describe "#deployed?" do
@@ -1608,6 +1690,19 @@ RSpec.describe Issue do
       issue = create(:issue, project: project, github_state: "open")
       dep = create(:issue, project: project, github_state: "closed")
       create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :eligible when an external dep resolves to a closed sibling-project issue" do
+      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:issue, project: sibling, github_number: 42, github_state: "closed")
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+             depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+             depends_on_number: 42)
 
       result = described_class.lifecycle_statuses([ issue ])
 
