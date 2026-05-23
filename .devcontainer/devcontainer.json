@@ -48,7 +48,7 @@
   },
   // Ensure host paths that are bind-mounted as files (not directories) exist before
   // Docker creates them as directories. See: https://github.com/moby/moby/issues/26702
-  "initializeCommand": "mkdir -p ~/.config/opencode && touch ~/.config/opencode/auth.json",
+  "initializeCommand": "mkdir -p ~/.config/opencode && { [ -s ~/.config/opencode/auth.json ] || echo '{}' > ~/.config/opencode/auth.json; }",
   "mounts": [
     // Git configuration
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
