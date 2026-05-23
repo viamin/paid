@@ -41,6 +41,19 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
   end
 
   describe ".call" do
+    context "when issue comments are injected" do
+      it "uses the injected comments instead of fetching from GitHub" do
+        enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)
+        answers = trusted_comment(body: answers_body, created_at: 2.minutes.ago)
+        allow(github_client).to receive(:issue_comments)
+
+        described_class.call(project: project, issue: issue, issue_comments: [ enhancement, answers ])
+
+        expect(github_client).not_to have_received(:issue_comments)
+        expect(KnowledgeChunk.where(project: project, chunk_type: "qa_pair").count).to eq(2)
+      end
+    end
+
     context "when a trusted user posts answers" do
       before do
         enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)

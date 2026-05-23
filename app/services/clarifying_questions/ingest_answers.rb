@@ -5,13 +5,14 @@ module ClarifyingQuestions
     ARTIFACT_TYPE = "qa_pair"
     COLLECTOR_TYPE = "clarifying_question_answers"
 
-    def self.call(project:, issue:)
-      new(project: project, issue: issue).call
+    def self.call(project:, issue:, issue_comments: nil)
+      new(project: project, issue: issue, issue_comments: issue_comments).call
     end
 
-    def initialize(project:, issue:)
+    def initialize(project:, issue:, issue_comments: nil)
       @project = project
       @issue = issue
+      @injected_comments = issue_comments
     end
 
     def call
@@ -71,8 +72,10 @@ module ClarifyingQuestions
     end
 
     def issue_comments
-      @issue_comments ||= github_client.issue_comments(project.full_name, issue.github_number)
-        .select { |comment| trusted_comment?(comment) }
+      @issue_comments ||= begin
+        comments = @injected_comments || github_client.issue_comments(project.full_name, issue.github_number)
+        comments.select { |comment| trusted_comment?(comment) }
+      end
     end
 
     def trusted_comment?(comment)

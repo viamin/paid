@@ -111,8 +111,13 @@ module ClarifyingQuestions
     end
 
     def ingest_answers
-      IngestAnswers.call(project: project, issue: issue)
-    rescue StandardError
+      IngestAnswers.call(project: project, issue: issue, issue_comments: issue_comments)
+    rescue ActiveRecord::ActiveRecordError => e
+      Rails.logger.warn(
+        message: "clarifying_questions.ingest_answers_failed",
+        error: e.message,
+        issue_id: issue.respond_to?(:id) ? issue.id : nil
+      )
       nil
     end
   end

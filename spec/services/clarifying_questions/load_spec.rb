@@ -15,6 +15,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
   end
   let(:issue) do
     double(
+      id: 42,
       body: issue_body,
       github_number: 1964,
       github_updated_at: 2.minutes.ago
@@ -112,6 +113,17 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+
+      it "reuses the already-loaded issue comments during ingestion" do
+        described_class.call(project: project, issue: issue)
+
+        expect(ClarifyingQuestions::IngestAnswers).to have_received(:call).with(
+          project: project,
+          issue: issue,
+          issue_comments: kind_of(Array)
+        )
+        expect(github_client).to have_received(:issue_comments).once
       end
     end
 
@@ -234,6 +246,75 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
     context "when no clarifying questions are available" do
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when answer ingestion hits a database error" do
+      let(:logger) { instance_double(ActiveSupport::Logger, warn: nil) }
+
+      before do
+        enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(Issue.new))
+        allow(Rails).to receive(:logger).and_return(logger)
+      end
+
+      it "logs and still returns an empty array" do
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+
+        expect(logger).to have_received(:warn).with(
+          hash_including(
+            message: "clarifying_questions.ingest_answers_failed",
+            issue_id: 42
+          )
+        )
+      end
+    end
+
+    context "when answer ingestion raises a non-database error" do
+      before do
+        enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_raise(ArgumentError, "bug")
+      end
+
+      it "surfaces the error" do
+        expect { described_class.call(project: project, issue: issue) }
+          .to raise_error(ArgumentError, "bug")
       end
     end
 
