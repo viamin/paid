@@ -32,7 +32,6 @@ namespace :issues do
         next if dry_run
 
         issue.update!(paid_state: "new")
-        Issues::ReenqueueEligibleJob.perform_later(issue.id) if issue.project.auto_pick_enabled?
       end
 
       puts dry_run ? "Dry run only. Re-run with DRY_RUN=false to apply." : "Done."
