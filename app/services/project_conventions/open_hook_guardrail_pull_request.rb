@@ -111,6 +111,7 @@ module ProjectConventions
 
     def validator_script
       allowed = Array(strategy["allowed_types"])
+      validate_allowed_types!(allowed)
       escaped_allowed = allowed.map { |type| Regexp.escape(type) }.join("|")
 
       <<~SH
@@ -129,12 +130,20 @@ module ProjectConventions
         pattern='^(#{escaped_allowed})(\\([^)]+\\))?(!)?: .+'
 
         if ! printf '%s\n' "$first_line" | grep -Eq "$pattern"; then
-          echo "Commit message must follow conventional commits." >&2
-          echo "Allowed types: #{allowed.join(', ')}" >&2
-          echo "Example: #{allowed.first}: describe the change" >&2
+          echo 'Commit message must follow conventional commits.' >&2
+          echo 'Allowed types: #{allowed.join(", ")}' >&2
+          echo 'Example: #{allowed.first}: describe the change' >&2
           exit 1
         fi
       SH
+    end
+
+    def validate_allowed_types!(allowed)
+      allowed.each do |type|
+        next if type.match?(/\A[a-z]+\z/)
+
+        raise Error, "Invalid commit type in strategy: #{type.inspect}"
+      end
     end
 
     def lefthook_config(worktree_path)

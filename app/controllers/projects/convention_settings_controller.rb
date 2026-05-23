@@ -128,12 +128,12 @@ module Projects
         recommendation: @recommendation
       )
       @recommendation.apply!(applied_by: current_user)
-      @success_message =
-        if result.already_configured
-          "Repo-managed hook guardrail is already configured."
-        else
-          "Opened pull request: #{view_context.link_to(result.pull_request_url, result.pull_request_url, class: 'underline')}".html_safe
-        end
+      if result.already_configured
+        @success_message = "Repo-managed hook guardrail is already configured."
+      else
+        @success_message = "Opened pull request:"
+        @pull_request_url = result.pull_request_url
+      end
     rescue ProjectConventions::OpenHookGuardrailPullRequest::Error => e
       raise ArgumentError, e.message
     end
