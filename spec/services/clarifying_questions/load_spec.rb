@@ -107,6 +107,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         )
 
         allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call)
       end
 
       it "returns an empty array" do
@@ -132,6 +133,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         )
 
         allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call)
       end
 
       it "returns an empty array" do
