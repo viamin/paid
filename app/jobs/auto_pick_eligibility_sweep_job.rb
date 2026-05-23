@@ -57,7 +57,7 @@ class AutoPickEligibilitySweepJob < ApplicationJob
   private
 
   def eligible_projects
-    Project.active.where(auto_pick_enabled: true).includes(:account)
+    Project.active.where(auto_pick_enabled: true).includes(:account, :created_by)
   end
 
   def batch_resolve_owners(scope)

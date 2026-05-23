@@ -11,7 +11,7 @@ RSpec.describe AutoPickEligibilitySweepJob, :no_db do
 
     allow(Project).to receive(:active).and_return(active_relation)
     allow(active_relation).to receive(:where).with(auto_pick_enabled: true).and_return(where_relation)
-    allow(where_relation).to receive(:includes).with(:account).and_return(includes_relation)
+    allow(where_relation).to receive(:includes).with(:account, :created_by).and_return(includes_relation)
     allow(includes_relation).to receive(:select).with(:id, :account_id, :created_by_id).and_return(select_relation)
     allow(select_relation).to receive(:to_a).and_return(projects)
     allow(includes_relation).to receive(:find_each) do |&block|
