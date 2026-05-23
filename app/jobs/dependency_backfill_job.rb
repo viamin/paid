@@ -17,6 +17,8 @@ class DependencyBackfillJob < ApplicationJob
     key: -> { "dependency_backfill/#{arguments.first}" }
   )
 
+  retry_on GithubClient::RateLimitError, wait: :polynomially_longer, attempts: 3
+
   MAX_ISSUES_PER_JOB = 25
 
   def perform(project_id, issue_numbers)
@@ -32,6 +34,8 @@ class DependencyBackfillJob < ApplicationJob
       github_issue = client.issue(project.full_name, number)
       record = Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
       backfilled_ids << record.id
+    rescue GithubClient::RateLimitError
+      raise # let GoodJob retry after rate-limit resets
     rescue GithubClient::NotFoundError
       Rails.logger.warn(
         message: "dependency_backfill.issue_not_found",
