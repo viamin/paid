@@ -41,6 +41,12 @@ RSpec.describe Issues::ReenqueueEligibleJob do
     end
   end
 
+  describe ".no_runner_retry_delay" do
+    it "uses the base delay when retry_count is zero" do
+      expect(described_class.no_runner_retry_delay(0)).to eq(30.seconds)
+    end
+  end
+
   describe "GoodJob concurrency" do
     it "deduplicates re-enqueue work per issue" do
       issue = build(:issue)

@@ -27,7 +27,9 @@ module Issues
     end
 
     def self.no_runner_retry_delay(retry_count)
-      [ NO_RUNNER_RETRY_BASE_DELAY * (2**(retry_count - 1)), NO_RUNNER_RETRY_MAX_DELAY ].min
+      base_delay_multiplier = retry_count.positive? ? 2**(retry_count - 1) : 1
+
+      [ NO_RUNNER_RETRY_BASE_DELAY * base_delay_multiplier, NO_RUNNER_RETRY_MAX_DELAY ].min
     end
 
     def perform(issue_id, no_runner_retry_count: 0)
