@@ -86,8 +86,12 @@ RUN set -eu; \
 # Install overmind process manager (requires tmux, installed above)
 RUN gem install overmind
 
-# Install the required bundler version and fix permissions for vscode user
-RUN gem install bundler:2.7.2 \
+# Install the Bundler version pinned in Gemfile.lock and fix permissions for
+# the vscode user. COPYing only the lockfile keeps rebuild scope narrow.
+COPY Gemfile.lock /tmp/paid-devcontainer/Gemfile.lock
+RUN BUNDLER_VERSION="$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' /tmp/paid-devcontainer/Gemfile.lock)" \
+  && test -n "${BUNDLER_VERSION}" \
+  && gem install "bundler:${BUNDLER_VERSION}" \
   && chmod -R g+w /usr/local/rvm/gems/default
 
 # Ensure the docker group exists so the vscode user can access the Docker socket
