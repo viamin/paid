@@ -117,5 +117,80 @@ RSpec.describe Issues::UpsertFromGithub do
         described_class.call(project: project, github_issue: github_issue)
       }.not_to change(Notification, :count)
     end
+
+    describe "recommend_close label removal reset" do
+      let(:project) { create(:project, auto_pick_enabled: true) }
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 9000,
+          number: 7,
+          title: "Re-evaluate me",
+          body: "body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "P1") ],
+          pull_request: nil,
+          state_reason: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: Time.zone.parse("2026-05-18 00:00:00 UTC"),
+          updated_at: Time.zone.parse("2026-05-20 00:00:00 UTC")
+        )
+      end
+
+      it "resets paid_state to new and re-enqueues when the recommend_close label is removed" do
+        create(:issue, project: project, github_issue_id: 9000, github_number: 7,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(project.issues.find_by(github_issue_id: 9000).paid_state).to eq("new")
+      end
+
+      it "does not reset when the label is still present" do
+        create(:issue, project: project, github_issue_id: 9000, github_number: 7,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+        github_issue.labels = [ OpenStruct.new(name: "P1"), OpenStruct.new(name: "paid-recommend-close") ]
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(project.issues.find_by(github_issue_id: 9000).paid_state).to eq("recommend_close")
+      end
+
+      it "does not reset when paid_state is not recommend_close" do
+        create(:issue, project: project, github_issue_id: 9000, github_number: 7,
+          paid_state: "new", labels: [ "P1", "paid-recommend-close" ])
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+      end
+
+      it "uses the project-configured recommend_close label override" do
+        project.update!(label_mappings: { "recommend_close" => "needs-review" })
+        create(:issue, project: project, github_issue_id: 9000, github_number: 7,
+          paid_state: "recommend_close", labels: [ "P1", "needs-review" ])
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(project.issues.find_by(github_issue_id: 9000).paid_state).to eq("new")
+      end
+
+      it "clears state but does not enqueue when auto_pick is disabled" do
+        project.update!(auto_pick_enabled: false)
+        create(:issue, project: project, github_issue_id: 9000, github_number: 7,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(project.issues.find_by(github_issue_id: 9000).paid_state).to eq("new")
+      end
+    end
   end
 end

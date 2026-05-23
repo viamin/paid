@@ -147,13 +147,14 @@ module Activities
         return "needs_input"
       end
 
-      # Guard: if the agent produced output but shows no evidence of having
-      # actually run (zero iterations AND zero cost), the "output" is likely
-      # a provider-level error (e.g. credit exhaustion) or trivial CLI
-      # boilerplate rather than a real agent response. Confirm by checking
-      # the output for error patterns; if neither matches, classify as
-      # needs_input since the agent did not perform meaningful work.
-      if agent_run.iterations.to_i.zero? && agent_run.cost_cents.to_i.zero?
+      # Guard: if the agent produced output but did zero iterations, the
+      # "output" is likely a provider-level error, trivial CLI boilerplate,
+      # or an agent that read the prompt then gave up without doing real
+      # work. Cost-cents alone is not evidence of work — reading the
+      # prompt incurs a few cents. Recommend-close requires real iterations
+      # so users are not left with issues parked on transient agent failures.
+      # Confirm provider/infrastructure errors against output patterns first.
+      if agent_run.iterations.to_i.zero?
         return "provider_error" if provider_error_output?(diagnostic_output)
         return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
 

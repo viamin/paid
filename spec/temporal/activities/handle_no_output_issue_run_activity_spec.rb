@@ -379,15 +379,16 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(result[:outcome]).to eq("recommend_close")
       end
 
-      it "allows recommend_close when agent has cost_cents > 0" do
+      it "classifies as needs_input when iterations is zero even with cost > 0" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 50)
-        agent_run.log!("stdout", "This issue appears resolved already")
+        agent_run.log!("stdout", "OK.")
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
-        expect(result[:outcome]).to eq("recommend_close")
+        expect(result[:outcome]).to eq("needs_input")
+        expect(issue.reload.paid_state).to eq("needs_input")
       end
 
       it "detects quota exceeded errors" do
