@@ -69,10 +69,11 @@ module Automation
               project: project,
               status: "completed",
               trigger_type: "automatic",
-              goal: "create_pr",
               auto_pick: true,
               pull_request_number: nil
-            ).where.not(issue_id: nil).select(:issue_id)
+            ).where.not(issue_id: nil)
+              .where.not(goal: "analyze_issue")
+              .select(:issue_id)
 
             pr_produced_issue_ids = AgentRun.where(
               project: project, status: "completed", goal: "create_pr"
