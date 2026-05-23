@@ -92,7 +92,7 @@ Three plausible deployment shapes:
 
 The hybrid model lines up with how `paid-code-reviewer` already works: the App ID and private key are read from `ENV` first, then Rails credentials, with a `configured?` predicate. Self-hosters override; SaaS uses the default. We will mirror that pattern.
 
-Until full app-backed repository auth is enabled everywhere, agent-run git commit metadata should resolve from the same deployment-level `paid-agents` identity source. That lets PAT-backed projects keep working while commits already align with the configured bot identity; deployments that have not configured `paid_agent_*` metadata yet may fall back to the legacy `Paid Agent <agent@paid.dev>` identity temporarily.
+Until full app-backed repository auth is enabled everywhere, agent-run git commit metadata should resolve from the same deployment-level `paid-agents` identity source. That lets PAT-backed projects keep working while commits already align with the configured bot identity; deployments that have not configured `paid_agent_*` metadata yet may fall back to the legacy `Paid Agent <agent@paid-agents.com>` identity temporarily.
 
 ### PAT Coexistence
 

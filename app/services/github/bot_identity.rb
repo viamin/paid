@@ -4,7 +4,7 @@ module Github
   class BotIdentity
     DEFAULT_APP_SLUG = "paid-agents"
     DEFAULT_NAME = "Paid Agent"
-    DEFAULT_EMAIL = "agent@paid.dev"
+    DEFAULT_EMAIL = "agent@paid-agents.com"
 
     attr_reader :app_slug, :name, :email
 
