@@ -93,10 +93,46 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    it "excludes completed issues that had a PR-producing run" do
+    it "excludes completed issues when the produced PR has not been synced yet" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "excludes completed issues when the produced PR is still open" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "recovers completed issues when the produced PR was closed without merging" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "closed")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    it "blocks recovery when one PR is closed but another is still open" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 10, pull_request_url: "https://example.test/pr/10")
+      create(:issue, project: project, github_number: 10, is_pull_request: true, github_state: "closed")
+      create(:agent_run, :completed, project: project, issue: issue,
+        goal: "create_pr", pull_request_number: 11, pull_request_url: "https://example.test/pr/11")
+      create(:issue, project: project, github_number: 11, is_pull_request: true, github_state: "open")
 
       scope = described_class.eligible_scope(project)
 
