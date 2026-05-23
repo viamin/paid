@@ -127,13 +127,46 @@ RSpec.describe ProjectConventions::BuildRecommendations do
                confidence: 0.95)
       end
 
-      it "preserves the resolved row instead of recreating a pending recommendation" do
+      it "preserves a manual dismissal instead of recreating a pending recommendation" do
         expect {
           described_class.call(project: project)
         }.not_to change { project.project_convention_recommendations.count }
 
         expect(recommendation.reload).to be_dismissed
         expect(project.project_convention_recommendations.pending).to be_empty
+        expect(recommendation.description).to include(".commitlintrc.json")
+      end
+    end
+
+    context "when recommendation was auto-dismissed after a transient detector miss" do
+      let(:project_version) { create(:project_version, project: project) }
+      let!(:recommendation) do
+        create(:project_convention_recommendation,
+               project: project,
+               convention_key: "commit_style",
+               action_type: "apply_in_paid",
+               status: "dismissed",
+               dismissed_at: 5.minutes.ago,
+               dismissal_reason: ProjectConventionRecommendation::AUTO_DISMISSAL_REASON)
+      end
+
+      before do
+        create(:project_convention_detection,
+               project: project,
+               project_version: project_version,
+               key: "commit_style",
+               value: { "type" => "conventional_commits", "required" => true },
+               evidence: { "paths" => [ ".commitlintrc.json" ], "signals" => [ "commitlint" ] },
+               confidence: 0.95)
+      end
+
+      it "reopens the same recommendation as pending" do
+        expect {
+          described_class.call(project: project)
+        }.not_to change { project.project_convention_recommendations.count }
+
+        expect(recommendation.reload).to be_pending
+        expect(recommendation.dismissal_reason).to be_nil
         expect(recommendation.description).to include(".commitlintrc.json")
       end
     end
@@ -185,7 +218,30 @@ RSpec.describe ProjectConventions::BuildRecommendations do
         described_class.call(project: project)
         rec = project.project_convention_recommendations.first
         expect(rec.status).to eq("dismissed")
-        expect(rec.dismissal_reason).to include("no longer detected")
+        expect(rec.dismissal_reason).to eq(ProjectConventionRecommendation::AUTO_DISMISSAL_REASON)
+      end
+    end
+
+    context "when release automation is detected" do
+      let(:project_version) { create(:project_version, project: project) }
+
+      before do
+        create(:project_convention_detection,
+               project: project,
+               project_version: project_version,
+               key: "release_automation",
+               value: { "type" => "release_please" },
+               evidence: { "paths" => [ "release-please-config.json" ], "signals" => [ "release-please" ] },
+               confidence: 0.9)
+      end
+
+      it "creates a manual review recommendation instead of an auto-apply action" do
+        described_class.call(project: project)
+        rec = project.project_convention_recommendations.pending.first
+
+        expect(rec.action_type).to eq("manual_review")
+        expect(rec.title).to include("Review detected release automation")
+        expect(rec.description).to include("does not apply release automation behavior")
       end
     end
   end

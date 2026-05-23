@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 class ProjectConventionRecommendation < ApplicationRecord
-  ACTION_TYPES = %w[apply_in_paid open_pr apply_github_side].freeze
+  AUTO_DISMISSAL_REASON = "Convention no longer detected"
+  ACTION_TYPES = %w[apply_in_paid open_pr apply_github_side manual_review].freeze
   STATUSES = %w[pending applied dismissed].freeze
 
   belongs_to :project
@@ -36,6 +37,17 @@ class ProjectConventionRecommendation < ApplicationRecord
     )
   end
 
+  def reopen!(attributes = {})
+    update!(
+      {
+        status: "pending",
+        dismissed_by: nil,
+        dismissed_at: nil,
+        dismissal_reason: nil
+      }.merge(attributes)
+    )
+  end
+
   def pending?
     status == "pending"
   end
@@ -54,5 +66,9 @@ class ProjectConventionRecommendation < ApplicationRecord
 
   def apply_in_paid?
     action_type == "apply_in_paid"
+  end
+
+  def auto_dismissed?
+    dismissed? && dismissed_by_id.nil? && dismissal_reason == AUTO_DISMISSAL_REASON
   end
 end

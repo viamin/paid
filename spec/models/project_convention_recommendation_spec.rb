@@ -13,7 +13,7 @@ RSpec.describe ProjectConventionRecommendation do
     it { is_expected.to validate_presence_of(:convention_key) }
     it { is_expected.to validate_length_of(:convention_key).is_at_most(100) }
     it { is_expected.to validate_presence_of(:action_type) }
-    it { is_expected.to validate_inclusion_of(:action_type).in_array(%w[apply_in_paid open_pr apply_github_side]) }
+    it { is_expected.to validate_inclusion_of(:action_type).in_array(%w[apply_in_paid open_pr apply_github_side manual_review]) }
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(%w[pending applied dismissed]) }
     it { is_expected.to validate_presence_of(:title) }
@@ -94,6 +94,24 @@ RSpec.describe ProjectConventionRecommendation do
     end
   end
 
+  describe "#reopen!" do
+    let(:project) { create(:project) }
+    let(:rec) do
+      create(:project_convention_recommendation, project:, status: "dismissed",
+                                             dismissed_at: 1.hour.ago,
+                                             dismissal_reason: described_class::AUTO_DISMISSAL_REASON)
+    end
+
+    it "returns an auto-dismissed recommendation to pending" do
+      rec.reopen!(title: "Updated title")
+
+      expect(rec.reload).to be_pending
+      expect(rec.dismissed_at).to be_nil
+      expect(rec.dismissal_reason).to be_nil
+      expect(rec.title).to eq("Updated title")
+    end
+  end
+
   describe "#pending?, #dismissed?, #applied?, #resolved?" do
     let(:project) { create(:project) }
 
@@ -120,6 +138,23 @@ RSpec.describe ProjectConventionRecommendation do
       expect(rec).not_to be_dismissed
       expect(rec).to be_applied
       expect(rec).to be_resolved
+    end
+  end
+
+  describe "#auto_dismissed?" do
+    let(:project) { create(:project) }
+
+    it "returns true only for system dismissals caused by missing detections" do
+      rec = create(:project_convention_recommendation, project:, status: "dismissed",
+                                                     dismissal_reason: described_class::AUTO_DISMISSAL_REASON)
+      expect(rec).to be_auto_dismissed
+    end
+
+    it "returns false for manual dismissals" do
+      rec = create(:project_convention_recommendation, project:, status: "dismissed",
+                                                     dismissal_reason: "Not relevant",
+                                                     dismissed_by: create(:user, account: project.account))
+      expect(rec).not_to be_auto_dismissed
     end
   end
 end

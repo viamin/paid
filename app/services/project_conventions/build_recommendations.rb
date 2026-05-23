@@ -82,9 +82,9 @@ module ProjectConventions
 
       {
         convention_key: key,
-        action_type: "apply_in_paid",
-        title: "Align release automation with detected config",
-        description: "Release automation #{signal_desc}. Align Paid's auto-release settings to match the detected release workflow.",
+        action_type: "manual_review",
+        title: "Review detected release automation",
+        description: "Release automation #{signal_desc} (#{format("%.0f%%", confidence * 100)} confidence). Review the detected workflow manually; Paid does not apply release automation behavior from this recommendation yet.",
         evidence: evidence.merge("confidence" => confidence, "detected_value" => detected_value),
         generated_at: Time.current
       }
@@ -117,14 +117,22 @@ module ProjectConventions
         existing = existing_by_key_action.delete(lookup_key)
 
         if existing
-          existing.update!(rec_attrs.except(:generated_at))
+          sync_existing_recommendation(existing, rec_attrs)
         else
           project.project_convention_recommendations.create!(rec_attrs)
         end
       end
 
       existing_by_key_action.each_value.select(&:pending?).each do |stale|
-        stale.dismiss!(dismissed_by: nil, reason: "Convention no longer detected")
+        stale.dismiss!(dismissed_by: nil, reason: ProjectConventionRecommendation::AUTO_DISMISSAL_REASON)
+      end
+    end
+
+    def sync_existing_recommendation(existing, rec_attrs)
+      if existing.auto_dismissed?
+        existing.reopen!(rec_attrs)
+      else
+        existing.update!(rec_attrs.except(:generated_at))
       end
     end
   end

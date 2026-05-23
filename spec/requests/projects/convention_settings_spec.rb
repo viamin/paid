@@ -247,16 +247,23 @@ RSpec.describe "Projects::ConventionSettings" do
   end
 
   describe "GET /projects/:project_id/convention_settings for manual recommendations" do
+    let!(:recommendation) do
+      create(:project_convention_recommendation, project: project, action_type: "manual_review", title: "Review detected release automation")
+    end
+
     before do
       sign_in user
       user.add_role(:admin, account)
-      create(:project_convention_recommendation, project: project, action_type: "open_pr", title: "Install repo-managed hook configuration")
     end
 
     it "renders non-automated recommendations as dismiss-only" do
       get project_convention_settings_path(project)
 
-      expect(response.body).to include("Manual action outside Paid")
+      row = Nokogiri::HTML(response.body).at_css("tr##{dom_id(recommendation)}")
+      submit_labels = row.css("input[type='submit'], button").map { |node| node["value"].presence || node.text.strip }
+
+      expect(row.text).to include("Manual action outside Paid")
+      expect(submit_labels).to contain_exactly("Dismiss")
     end
   end
 end
