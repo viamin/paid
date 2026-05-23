@@ -98,9 +98,14 @@ class Issue < ApplicationRecord
       .where(issues: { project_id: project.id })
       .select(:issue_id)
 
+    # External deps (owner/repo#number) block conservatively when we have
+    # no visibility into the target's state. They unblock once a matching
+    # Issue is observable in any project of the same account — typically
+    # because both repos are synced into Paid. See
+    # IssueDependency.still_blocking_external_for_account for the rule.
     blocked_by_external = IssueDependency
+      .still_blocking_external_for_account(project.account_id)
       .joins(:issue)
-      .where.not(depends_on_owner: nil)
       .where(issues: { project_id: project.id })
       .select(:issue_id)
 
@@ -298,7 +303,11 @@ class Issue < ApplicationRecord
   end
 
   def blocking_external_dependencies
-    issue_dependencies.where.not(depends_on_owner: nil)
+    return IssueDependency.none unless project
+
+    issue_dependencies.merge(
+      IssueDependency.still_blocking_external_for_account(project.account_id)
+    )
   end
 
   def dependent_issues
@@ -351,13 +360,21 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
-    # Match IssueDependency#external? semantics: owner+repo+number present, no local issue link
-    blocked_by_external = IssueDependency
-      .where(issue_id: issue_ids, depends_on_issue_id: nil)
-      .where.not(depends_on_owner: [ nil, "" ])
-      .where.not(depends_on_repo: [ nil, "" ])
-      .where.not(depends_on_number: nil)
-      .pluck(:issue_id)
+    # External deps that still block follow the same rule as ready_for_work:
+    # the dep is satisfied when the target is closed (or parked at
+    # recommend_close) in a sibling project of the same account. Grouped
+    # by account_id because the issues collection may span tenants in
+    # principle (it currently does not in the ProjectsController caller,
+    # but the method does not enforce that).
+    blocked_by_external = issues
+      .group_by { |i| i.project.account_id }
+      .flat_map { |account_id, account_issues|
+        ids = account_issues.map(&:id)
+        IssueDependency
+          .still_blocking_external_for_account(account_id)
+          .where(issue_id: ids)
+          .pluck(:issue_id)
+      }
       .to_set
 
     # Match auto-pick's without_open_non_pr_subissues semantics: a parent is

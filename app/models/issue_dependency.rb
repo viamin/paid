@@ -39,6 +39,45 @@ class IssueDependency < ApplicationRecord
       .transform_values { |pairs| pairs.map(&:last) }
   end
 
+  # External deps whose target resolves to a tracked Issue in another
+  # project of the given account, joined with that target row. Returns one
+  # row per external dep, with `ext_project` and `ext_issue` available via
+  # SQL aliases for downstream filtering. Targets outside the account
+  # (project not synced into Paid) appear with NULL ext_project/ext_issue
+  # since the join is a LEFT JOIN — callers decide how to treat the
+  # unresolved case.
+  #
+  # Owner/repo are compared case-insensitively because
+  # IssueDependency#normalize_external_ref downcases the dep side on
+  # write, while Project.owner/name preserve their original casing.
+  EXTERNAL_RESOLUTION_JOIN_SQL = <<~SQL.squish.freeze
+    LEFT JOIN projects ext_project
+      ON ext_project.account_id = ? AND
+         LOWER(ext_project.owner) = issue_dependencies.depends_on_owner AND
+         LOWER(ext_project.name) = issue_dependencies.depends_on_repo
+    LEFT JOIN issues ext_issue
+      ON ext_issue.project_id = ext_project.id AND
+         ext_issue.github_number = issue_dependencies.depends_on_number
+  SQL
+
+  scope :external_resolved_for_account, ->(account_id) {
+    where.not(depends_on_owner: nil)
+      .joins(sanitize_sql_array([ EXTERNAL_RESOLUTION_JOIN_SQL, account_id ]))
+  }
+
+  # External deps that should still block their dependent: target project
+  # not synced into the account, target issue not yet synced, or target
+  # is observably open (and not parked at recommend_close — mirrors the
+  # local-dep convention that recommend_close is treated as effectively
+  # satisfied pending human confirmation).
+  scope :still_blocking_external_for_account, ->(account_id) {
+    external_resolved_for_account(account_id)
+      .where(
+        "ext_project.id IS NULL OR ext_issue.id IS NULL OR " \
+        "(ext_issue.github_state = 'open' AND ext_issue.paid_state IS DISTINCT FROM 'recommend_close')"
+      )
+  }
+
   # Builds an adjacency map scoped to an account's projects.
   # Preferred over global_adjacency to avoid loading cross-tenant data.
   def self.account_adjacency(account)
