@@ -198,6 +198,37 @@ RSpec.describe Provider do
       end
     end
 
+    describe "tier_models" do
+      let(:provider) { build(:provider, provider_key: "cursor") }
+
+      it "coerces provider_id values to integers" do
+        provider.tier_models = { low: { model_id: "haiku-x", provider_id: "17" } }
+
+        expect(provider.tier_models).to eq("low" => { "model_id" => "haiku-x", "provider_id" => 17 })
+      end
+
+      it "rejects unknown tier keys" do
+        provider.tier_models = { ultra: { model_id: "haiku-x", provider_id: 17 } }
+
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_models].join).to include("invalid tier")
+      end
+
+      it "rejects entries without a model_id" do
+        provider.tier_models = { low: { provider_id: 17 } }
+
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_models].join).to include("model_id")
+      end
+
+      it "rejects entries without an integer provider_id" do
+        provider.tier_models = { low: { model_id: "haiku-x", provider_id: "abc" } }
+
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_models].join).to include("provider_id")
+      end
+    end
+
     it "validates auth_type inclusion" do
       expect(provider).to allow_value("subscription").for(:auth_type)
       expect(provider).not_to allow_value("free_trial").for(:auth_type)
@@ -1195,6 +1226,31 @@ RSpec.describe Provider do
       duplicate = user.providers.new(provider_key: "claude", auth_type: "subscription")
 
       expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
+
+  describe "#supports_tier?" do
+    it "returns true when the tier has a configured entry" do
+      provider = build(:provider, tier_models: { "low" => { "model_id" => "haiku-x", "provider_id" => 17 } })
+
+      expect(provider.supports_tier?("low")).to be(true)
+      expect(provider.supports_tier?("high")).to be(false)
+    end
+  end
+
+  describe "logidze tier_models tracking" do
+    include ActiveSupport::Testing::TimeHelpers
+
+    it "captures tier_models updates in snapshots" do
+      provider = create(:provider, provider_key: "cursor")
+      change_time = Time.zone.parse("2026-05-23 12:00:00 UTC")
+
+      travel_to(change_time) do
+        provider.update!(tier_models: { "low" => { "model_id" => "haiku-x", "provider_id" => 17 } })
+      end
+
+      snapshot = provider.reload.at(time: change_time + 1.second)
+      expect(snapshot.tier_models).to eq("low" => { "model_id" => "haiku-x", "provider_id" => 17 })
     end
   end
 

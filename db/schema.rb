@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_23_041806) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_23_191027) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1359,11 +1359,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_23_041806) do
     t.datetime "created_at", null: false
     t.string "escalated_from_tier", limit: 10
     t.string "escalated_reason", limit: 255
-    t.bigint "llm_model_id", null: false
+    t.bigint "llm_model_id"
     t.text "reasoning"
     t.integer "selection_duration_ms"
     t.string "selector_type", limit: 50, null: false
-    t.string "tier", limit: 10
+    t.string "tier", limit: 10, null: false
     t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_model_selections_on_agent_run_id", unique: true
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
@@ -1911,6 +1911,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_23_041806) do
     t.string "provider_key", limit: 50
     t.string "runner_key", limit: 50, null: false
     t.jsonb "tier_model_ids", default: {}, null: false
+    t.jsonb "tier_models", default: {}, null: false, comment: "Per-tier model map shared by Runner and Provider records on this table. Shape: {\"low\":{\"model_id\":\"model-id\",\"provider_id\":123}} keyed by LlmModel tiers."
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false
