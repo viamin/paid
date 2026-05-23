@@ -1065,7 +1065,7 @@ Deliverables:
 
 **Goal**: The system learns and improves its own orchestration through data, applying the Bitter Lesson to agent coordination itself.
 
-**Status**: Complete as of 2026-05-14. Tracked by umbrella issue #1818.
+**Status**: Complete as of 2026-05-14. Tracked by umbrella issue #1782.
 
 This phase represents Paid's evolution from a well-engineered orchestration platform to a genuinely self-improving system. The core insight: if general methods that leverage computation beat hand-crafted approaches for LLMs, the same may be true for LLM orchestration.
 
