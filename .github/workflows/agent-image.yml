@@ -93,7 +93,7 @@ jobs:
 
           lockfile_contract_changes=$(
             git diff --unified=0 "${BASE_SHA}"..."${HEAD_SHA}" -- Gemfile.lock \
-              | grep -E '^[+-].*(agent-harness|ruby-maat)' || true
+              | grep -E '^[+-](BUNDLED WITH|  bundler \(|.*(agent-harness|ruby-maat))' || true
           )
 
           if [ -n "$lockfile_contract_changes" ]; then
@@ -102,7 +102,7 @@ jobs:
             printf '%s\n' "$lockfile_contract_changes" | sed 's/^/  /'
           else
             echo "image_relevant=false" >> "$GITHUB_OUTPUT"
-            echo "Gemfile.lock changed, but not agent-harness or ruby-maat. Skipping agent image rebuild."
+            echo "Gemfile.lock changed, but not Bundler, agent-harness, or ruby-maat. Skipping agent image rebuild."
           fi
 
       - name: Set up Docker Buildx
@@ -116,6 +116,17 @@ jobs:
           version=$(sed -n '/^GEM$/,/^$/s/^  *ruby-maat (\(.*\))/\1/p' Gemfile.lock | head -n 1)
           if [ -z "$version" ]; then
             echo "Failed to extract ruby-maat version from Gemfile.lock" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Bundler version from Gemfile.lock
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: bundler-version
+        run: |
+          version=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' Gemfile.lock)
+          if [ -z "$version" ]; then
+            echo "Failed to extract Bundler version from Gemfile.lock" >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -281,6 +292,7 @@ jobs:
           pull: true
           tags: paid-agent:latest
           build-args: |
+            BUNDLER_VERSION=${{ steps.bundler-version.outputs.version }}
             RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
             CLAUDE_INSTALL_COMMAND=${{ steps.claude-contract.outputs.install_command }}
             CLAUDE_POST_INSTALL_BINARY_PATH=${{ steps.claude-contract.outputs.post_install_binary_path }}

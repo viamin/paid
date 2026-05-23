@@ -15,10 +15,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
   it "starts bin/dev detached with restart-if-running when server startup is enabled" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
-      env = {
-        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
-        "WORKSPACE_ROOT" => File.join(dir, "workspace-root")
-      }
+      env = setup_script_env(dir)
 
       stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
 
@@ -31,10 +28,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
   it "skips bin/dev when --skip-server is provided" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
-      env = {
-        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
-        "WORKSPACE_ROOT" => File.join(dir, "workspace-root")
-      }
+      env = setup_script_env(dir)
 
       stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
 
@@ -44,12 +38,27 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  def prepare_script_fixture(dir)
+  it "installs the lockfile Bundler version before running bundle when missing" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, installed_bundler_versions: [])
+      env = setup_script_env(dir)
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Installing Bundler 4.0.11 to match Gemfile.lock")
+      expect(File.read(File.join(dir, "gem-install.log"))).to include("--no-document bundler:4.0.11")
+    end
+  end
+
+  def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.11" ])
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "lib", "paid"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
     FileUtils.mkdir_p(File.join(dir, "workspace-root"))
+    File.write(File.join(dir, "Gemfile.lock"), "BUNDLED WITH\n   4.0.11\n")
+    File.write(File.join(dir, "installed-bundlers.txt"), installed_bundler_versions.join("\n"))
 
     script_path = File.join(dir, "bin", "setup")
     FileUtils.cp(script_source, script_path)
@@ -101,7 +110,25 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "stubbin", "bundle"),
       <<~BASH
         #!/usr/bin/env bash
-        case "$1" in
+        command="$1"
+        version="$1"
+        if [[ "$command" == _*_ ]]; then
+          command="$2"
+        fi
+
+        if [[ "$version" == _*_ ]]; then
+          required_version="${version#_}"
+          required_version="${required_version%_}"
+          if ! grep -qx "$required_version" "#{dir}/installed-bundlers.txt"; then
+            echo "missing bundler version: $required_version" >&2
+            exit 1
+          fi
+        fi
+
+        case "$command" in
+          --version)
+            exit 0
+            ;;
           check)
             exit 0
             ;;
@@ -113,6 +140,22 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
             exit 1
             ;;
         esac
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "stubbin", "gem"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf '%s\\n' "$*" >> "#{dir}/gem-install.log"
+        if [[ "$1" == "install" && "$3" == bundler:* ]]; then
+          version="${3#bundler:}"
+          printf '%s\\n' "$version" >> "#{dir}/installed-bundlers.txt"
+          exit 0
+        fi
+
+        echo "unexpected gem command: $*" >&2
+        exit 1
       BASH
     )
 
@@ -147,5 +190,19 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
+  end
+
+  def setup_script_env(dir)
+    {
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "WORKSPACE_ROOT" => File.join(dir, "workspace-root"),
+      "BUNDLE_BIN_PATH" => nil,
+      "BUNDLE_GEMFILE" => nil,
+      "BUNDLER_SETUP" => nil,
+      "BUNDLER_VERSION" => nil,
+      "RUBYLIB" => nil,
+      "RUBYGEMS_GEMDEPS" => nil,
+      "RUBYOPT" => nil
+    }
   end
 end

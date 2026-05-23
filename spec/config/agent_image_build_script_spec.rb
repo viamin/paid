@@ -12,4 +12,9 @@ RSpec.describe AgentImageBuildScript, :no_db do
     expect(script_source).to include("scripts/extract-runner-install-contract.rb")
     expect(script_source).not_to include("scripts/extract-provider-install-contract.rb")
   end
+
+  it "extracts the Bundler version from Gemfile.lock for the agent build" do
+    expect(script_source).to include("BUNDLER_VERSION=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, \"\", $0); print $0}'")
+    expect(script_source).to include('--build-arg "BUNDLER_VERSION=${BUNDLER_VERSION}"')
+  end
 end

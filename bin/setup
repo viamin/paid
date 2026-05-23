@@ -4,9 +4,33 @@
 require "fileutils"
 
 APP_ROOT = File.expand_path("..", __dir__)
+BUNDLER_VERSION_PATTERN = /^BUNDLED WITH$\n\s+(.+)$/.freeze
 
 def system!(*args)
   system(*args, exception: true)
+end
+
+def lockfile_bundler_version
+  lockfile_path = File.join(APP_ROOT, "Gemfile.lock")
+  return unless File.exist?(lockfile_path)
+
+  File.read(lockfile_path)[BUNDLER_VERSION_PATTERN, 1]
+end
+
+def ensure_bundler_version!(bundler_version)
+  return if bundler_version.nil? || bundler_version.empty?
+  return if system("bundle", "_#{bundler_version}_", "--version", out: File::NULL, err: File::NULL)
+
+  puts "Installing Bundler #{bundler_version} to match Gemfile.lock"
+  system!("gem", "install", "--no-document", "bundler:#{bundler_version}")
+end
+
+def bundle_command(*args)
+  bundler_version = lockfile_bundler_version
+  ensure_bundler_version!(bundler_version)
+  return [ "bundle", *args ] if bundler_version.nil? || bundler_version.empty?
+
+  [ "bundle", "_#{bundler_version}_", *args ]
 end
 
 FileUtils.chdir APP_ROOT do
@@ -18,7 +42,7 @@ FileUtils.chdir APP_ROOT do
   system! "git config core.hooksPath .githooks"
 
   puts "\n== Installing dependencies =="
-  system("bundle check") || system!("bundle install")
+  system(*bundle_command("check")) || system!(*bundle_command("install"))
 
   # Install JavaScript dependencies (scripts disabled via .yarnrc for supply-chain security)
   system!("yarn install")
