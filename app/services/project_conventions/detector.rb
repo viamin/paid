@@ -388,13 +388,25 @@ module ProjectConventions
     def resolved_git_dir
       dot_git = repo_path.join(".git")
       return dot_git if dot_git.directory?
+
       return unless dot_git.file?
 
       target = dot_git.read.lines.first.to_s.split(":", 2).last.to_s.strip
       return if target.blank?
 
       path = Pathname(target)
-      path.absolute? ? path : repo_path.join(path)
+      git_dir = path.absolute? ? path : repo_path.join(path)
+      resolve_common_dir(git_dir)
+    end
+
+    def resolve_common_dir(git_dir)
+      commondir_file = git_dir.join("commondir")
+      return git_dir unless commondir_file.file?
+
+      common_path = commondir_file.read.strip
+      return git_dir if common_path.empty?
+
+      git_dir.join(common_path).cleanpath
     end
   end
 end
