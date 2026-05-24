@@ -73,6 +73,14 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(eligible.id)
     end
 
+    it "includes analyzed issues without requiring a follow-up backfill sweep" do
+      issue = create(:issue, project: project, paid_state: "analyzed")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
     it "includes completed issues with no PR-producing run (infrastructure failure recovery)" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,

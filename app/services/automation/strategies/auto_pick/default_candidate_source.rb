@@ -72,7 +72,7 @@ module Automation
           def eligible_scope(project)
             base = without_open_non_pr_subissues(base_scope(project))
 
-            scope = base.where(paid_state: %w[new planning failed])
+            scope = base.where(paid_state: %w[new planning failed analyzed])
 
             recoverable_completed_issue_ids = AgentRun.where(
               project: project,
