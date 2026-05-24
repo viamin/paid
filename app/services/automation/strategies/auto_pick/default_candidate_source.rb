@@ -48,6 +48,15 @@ module Automation
           "%meta%issue%"
         ].freeze
 
+        CLOSED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
+          SELECT 1 FROM issues closed_prs
+          WHERE closed_prs.project_id = agent_runs.project_id
+            AND closed_prs.github_number = agent_runs.pull_request_number
+            AND closed_prs.is_pull_request = TRUE
+            AND closed_prs.github_state = 'closed'
+            AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
+        SQL
+
         class << self
           def eligible_issue_ids(displayed_issues)
             return Set.new if displayed_issues.empty?
@@ -69,15 +78,19 @@ module Automation
               project: project,
               status: "completed",
               trigger_type: "automatic",
-              auto_pick: true,
-              pull_request_number: nil
+              auto_pick: true
             ).where.not(issue_id: nil)
               .where.not(goal: "analyze_issue")
+              .where(
+                "agent_runs.pull_request_number IS NULL OR EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})"
+              )
               .select(:issue_id)
 
             pr_produced_issue_ids = AgentRun.where(
               project: project, status: "completed", goal: "create_pr"
-            ).where.not(pull_request_number: nil).where.not(issue_id: nil).select(:issue_id)
+            ).where.not(pull_request_number: nil).where.not(issue_id: nil)
+              .where("NOT EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})")
+              .select(:issue_id)
 
             scope = scope.or(
               base.where(paid_state: "completed", id: recoverable_completed_issue_ids)
