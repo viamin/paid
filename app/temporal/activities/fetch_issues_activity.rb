@@ -755,7 +755,7 @@ module Activities
       count = stale_prs.count
       return 0 if count.zero?
 
-      merged_numbers, unmerged_numbers = partition_by_merge_status(
+      merged_numbers, unmerged_numbers, unknown_numbers = partition_by_merge_status(
         client, project.full_name, stale_prs.pluck(:github_number)
       )
 
@@ -773,19 +773,23 @@ module Activities
           .update_all(github_state: "closed", updated_at: Time.current)
       end
 
+      closed_numbers = merged_numbers.size + unmerged_numbers.size
+
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
         project_id: project.id,
-        count: count,
-        merged_count: merged_numbers.size
+        count: closed_numbers,
+        merged_count: merged_numbers.size,
+        unknown_count: unknown_numbers.size
       )
 
-      count
+      closed_numbers
     end
 
     def partition_by_merge_status(client, repo_full_name, pr_numbers)
       merged_numbers = []
       unmerged_numbers = []
+      unknown_numbers = []
 
       pr_numbers.each do |number|
         github_pr = client.pull_request(repo_full_name, number)
@@ -804,10 +808,10 @@ module Activities
           error_class: e.class.name,
           error: e.message
         )
-        unmerged_numbers << number
+        unknown_numbers << number
       end
 
-      [ merged_numbers, unmerged_numbers ]
+      [ merged_numbers, unmerged_numbers, unknown_numbers ]
     end
 
     # Mirrors reconcile_open_pull_requests for issues. Fetches all open issue

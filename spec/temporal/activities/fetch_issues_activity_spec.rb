@@ -1646,6 +1646,31 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(stale_pr.reload.pr_review_phase).to eq("merged")
       end
 
+      it "leaves stale pull requests open when GitHub merge-status lookup fails" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "ready")
+
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_raise(StandardError, "temporary outage")
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload.github_state).to eq("open")
+        expect(stale_pr.reload.pr_review_phase).to eq("ready")
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "github_sync.stale_pr_merge_check_failed",
+            repo: project.full_name,
+            pr_number: stale_pr.github_number,
+            error_class: "StandardError",
+            error: "temporary outage"
+          )
+        )
+      end
+
       it "backfills open pull requests missing from the local cache" do
         allow(github_client).to receive(:pull_requests).and_return([
           OpenStruct.new(number: 52)
