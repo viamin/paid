@@ -320,7 +320,7 @@ module Activities
             last_error = "infinite_loop"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(user_settings, runner_state_name, runner_states)
@@ -354,7 +354,7 @@ module Activities
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             timeout_error ||= e.message
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(user_settings, runner_state_name, runner_states)
@@ -390,7 +390,7 @@ module Activities
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(
@@ -433,7 +433,7 @@ module Activities
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             agent_run.record_runner_attempt(
@@ -455,7 +455,7 @@ module Activities
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(user_settings, runner_state_name, runner_states)
@@ -920,8 +920,8 @@ module Activities
     # records the attempt with a distinct error_type so the UI can show what
     # happened, but skips both record_runner_failure and the standard warn
     # log (which would imply a real runner problem).
-    def record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, error)
-      agent_run.record_runner_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+    def record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, error, resolved_run_info: {})
+      agent_run.record_runner_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup", **resolved_run_info)
       logger.info(
         message: "agent_execution.cancelled_by_cleanup",
         runner: runner,
