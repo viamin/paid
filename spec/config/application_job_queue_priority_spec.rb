@@ -22,6 +22,7 @@ RSpec.describe ApplicationJob, :no_db do
       ],
       maintenance: %w[
         AnalyzeIssueFollowupBackfillJob
+        AutoPickEligibilitySweepJob
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
         AgentRunResourceJanitorJob

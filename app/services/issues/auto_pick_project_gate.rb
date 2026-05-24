@@ -2,12 +2,13 @@
 
 module Issues
   class AutoPickProjectGate
-    def self.call(project)
-      new(project).call
+    def self.call(project, owner: nil)
+      new(project, owner: owner).call
     end
 
-    def initialize(project)
+    def initialize(project, owner: nil)
       @project = project
+      @preresolved_owner = owner
     end
 
     def call
@@ -22,10 +23,10 @@ module Issues
 
     private
 
-    attr_reader :project
+    attr_reader :project, :preresolved_owner
 
     def owner
-      @owner ||= project.effective_owner
+      @owner ||= preresolved_owner || project.effective_owner
     end
   end
 end

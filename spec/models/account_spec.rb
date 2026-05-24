@@ -163,6 +163,38 @@ RSpec.describe Account do
     end
   end
 
+  describe ".batch_fallback_owner_ids" do
+    it "prefers the first owner membership for each account" do
+      account = create(:account)
+      non_owner = create(:user, account: account)
+      non_owner.add_role(:member, account)
+      first_owner = create(:user, account: account)
+      first_owner.add_role(:owner, account)
+      second_owner = create(:user, account: account)
+      second_owner.add_role(:owner, account)
+
+      expect(described_class.batch_fallback_owner_ids([ account.id ])).to eq(account.id => first_owner.id)
+    end
+
+    it "falls back to the first account user when no owner membership exists" do
+      account = create(:account)
+      first_user = create(:user, account: account)
+      first_user.add_role(:member, account)
+      create(:user, account: account)
+
+      expect(described_class.batch_fallback_owner_ids([ account.id ])).to eq(account.id => first_user.id)
+    end
+
+    it "returns only accounts that resolve to an owner" do
+      account_with_owner = create(:account)
+      owner = create(:user, account: account_with_owner)
+      unresolved_account = create(:account)
+
+      expect(described_class.batch_fallback_owner_ids([ account_with_owner.id, unresolved_account.id ]))
+        .to eq(account_with_owner.id => owner.id)
+    end
+  end
+
   describe "dependent billing records" do
     it "destroys invoices, periods, and plans with the account" do
       account = create(:account)

@@ -143,6 +143,26 @@ class Account < ApplicationRecord
       users.order(:id).pick(:id)
   end
 
+  def self.batch_fallback_owner_ids(account_ids)
+    account_ids = account_ids.compact.uniq
+    return {} if account_ids.empty?
+
+    owner_ids = AccountMembership.where(account_id: account_ids, role: :owner)
+      .order(:account_id, :id)
+      .pluck(:account_id, :user_id)
+      .each_with_object({}) { |(aid, uid), memo| memo[aid] ||= uid }
+
+    missing = account_ids - owner_ids.keys
+    return owner_ids if missing.empty?
+
+    User.where(account_id: missing)
+      .order(:account_id, :id)
+      .pluck(:account_id, :id)
+      .each { |aid, uid| owner_ids[aid] ||= uid }
+
+    owner_ids
+  end
+
   def primary_owner_membership
     account_memberships.where(role: :owner).order(:id).first
   end
