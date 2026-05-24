@@ -33,6 +33,8 @@ class AccountActivityEvent < ApplicationRecord
       "Deactivated the account"
     when "tenant_configuration.updated"
       "Updated tenant configuration"
+    when "compliance.assurance_updated"
+      "Updated compliance and deployment assurance settings"
     else
       action.humanize
     end
@@ -40,7 +42,7 @@ class AccountActivityEvent < ApplicationRecord
 
   def detail_lines
     case action
-    when "account.updated", "tenant_configuration.updated"
+    when "account.updated", "tenant_configuration.updated", "compliance.assurance_updated"
       Array(metadata.to_h["changed_fields"]).map { |field| "#{field.humanize} changed" }
     when "ownership.transferred"
       [ "Previous owner: #{metadata_value('from_email')}" ]

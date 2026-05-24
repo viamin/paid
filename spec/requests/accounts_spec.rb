@@ -26,6 +26,7 @@ RSpec.describe "Accounts" do
       expect(response.body).to include("Account Administration")
       expect(response.body).to include("Team")
       expect(response.body).to include("Tenant Limits and Usage")
+      expect(response.body).to include("Compliance & Deployment Assurance")
       expect(response.body).to include("Billing")
       expect(response.body).to include("Activity Trail")
     end

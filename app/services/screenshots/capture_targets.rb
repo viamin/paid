@@ -76,6 +76,7 @@ module Screenshots
       provider_api_key_edit: Target.new(slug: "provider_api_key_edit", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}/edit" }, requires_auth: true),
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
+      account_compliance_dashboard: Target.new(slug: "account_compliance_dashboard", path_builder: "/account_compliance_dashboard", requires_auth: true),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
@@ -226,6 +227,7 @@ module Screenshots
     # Nested controller path => target keys
     NESTED_CONTROLLER_TARGETS = {
       "users/registrations_controller.rb" => [ :sign_up ],
+      "accounts/compliance_dashboards_controller.rb" => [ :account_compliance_dashboard ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
@@ -330,6 +332,7 @@ module Screenshots
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
+      when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
       when /\Aaccounts\// then [ :account ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)

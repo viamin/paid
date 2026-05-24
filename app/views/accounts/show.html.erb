@@ -209,6 +209,34 @@
         </dl>
       </section>
 
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Compliance & Deployment Assurance</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Track hardened deployment posture, export compliance evidence, and surface operational gaps for security review.</p>
+          </div>
+          <div class="flex flex-wrap gap-3">
+            <%= link_to "Open dashboard", account_compliance_dashboard_path, class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+            <%= link_to "Export evidence", export_account_compliance_dashboard_path(format: :json), class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
+          </div>
+        </div>
+
+        <div class="mt-6 grid gap-4 md:grid-cols-3">
+          <div class="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-950/20">
+            <p class="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Readiness score</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= @compliance_dashboard[:readiness_score] %>%</p>
+          </div>
+          <div class="rounded-2xl bg-amber-50 p-4 dark:bg-amber-950/20">
+            <p class="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">Warnings</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= @compliance_dashboard.dig(:counts, :warning) %></p>
+          </div>
+          <div class="rounded-2xl bg-rose-50 p-4 dark:bg-rose-950/20">
+            <p class="text-xs uppercase tracking-wide text-rose-700 dark:text-rose-300">Gaps</p>
+            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= @compliance_dashboard.dig(:counts, :gap) %></p>
+          </div>
+        </div>
+      </section>
+
       <% if @billing_visible %>
         <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div>

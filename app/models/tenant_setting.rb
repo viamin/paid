@@ -31,6 +31,34 @@ class TenantSetting < ApplicationRecord
     "default_goal" => "create_pr",
     "auto_continue" => true
   }.freeze
+  DEFAULT_DEPLOYMENT_ASSURANCE = {
+    "deployment_model" => "self_hosted",
+    "network_boundary" => "private_vpc",
+    "reference_architecture" => "single_tenant",
+    "operations_owner" => "",
+    "customer_managed_keys" => {
+      "enabled" => false,
+      "provider" => "",
+      "key_reference" => "",
+      "last_rotated_at" => "",
+      "rotation_interval_days" => 90
+    },
+    "secret_rotation" => {
+      "documented" => false,
+      "owner" => "",
+      "last_completed_at" => "",
+      "interval_days" => 90
+    },
+    "disaster_recovery" => {
+      "backup_cadence" => "daily",
+      "backup_last_verified_at" => "",
+      "restore_last_tested_at" => "",
+      "upgrade_last_validated_at" => "",
+      "air_gap_package_validated_at" => "",
+      "rpo_hours" => 24,
+      "rto_hours" => 8
+    }
+  }.freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,
@@ -165,6 +193,16 @@ class TenantSetting < ApplicationRecord
 
   def effective_chat_settings
     merge_defaults(DEFAULT_CHAT_SETTINGS, features.fetch("chat_settings", {}))
+  end
+
+  def deployment_assurance_configuration
+    merge_defaults(DEFAULT_DEPLOYMENT_ASSURANCE, features.fetch("deployment_assurance", {}))
+  end
+
+  def deployment_assurance_configuration=(value)
+    merged_features = normalize_hash(features)
+    merged_features["deployment_assurance"] = normalize_deployment_assurance(value)
+    self.features = merged_features
   end
 
   def chat_session_token_limit
@@ -356,6 +394,30 @@ class TenantSetting < ApplicationRecord
 
       WORKER_SETTING_INTEGER_KEYS.each do |key|
         normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+      end
+    end
+  end
+
+  def normalize_deployment_assurance(value)
+    merge_defaults(DEFAULT_DEPLOYMENT_ASSURANCE, normalize_hash(value)).tap do |normalized|
+      normalized["customer_managed_keys"]["enabled"] =
+        ActiveModel::Type::Boolean.new.cast(normalized.dig("customer_managed_keys", "enabled"))
+      normalized["secret_rotation"]["documented"] =
+        ActiveModel::Type::Boolean.new.cast(normalized.dig("secret_rotation", "documented"))
+
+      %w[rotation_interval_days].each do |key|
+        normalized["customer_managed_keys"][key] =
+          normalized.dig("customer_managed_keys", key).present? ? normalized.dig("customer_managed_keys", key).to_i : nil
+      end
+
+      %w[interval_days].each do |key|
+        normalized["secret_rotation"][key] =
+          normalized.dig("secret_rotation", key).present? ? normalized.dig("secret_rotation", key).to_i : nil
+      end
+
+      %w[rpo_hours rto_hours].each do |key|
+        normalized["disaster_recovery"][key] =
+          normalized.dig("disaster_recovery", key).present? ? normalized.dig("disaster_recovery", key).to_i : nil
       end
     end
   end

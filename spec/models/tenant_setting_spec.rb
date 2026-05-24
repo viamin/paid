@@ -205,6 +205,33 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "#deployment_assurance_configuration" do
+    it "returns merged deployment assurance defaults" do
+      setting = build(:tenant_setting)
+
+      expect(setting.deployment_assurance_configuration["deployment_model"]).to eq("self_hosted")
+      expect(setting.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(90)
+    end
+
+    it "persists deployment assurance data under features without losing other feature flags" do
+      setting = build(:tenant_setting, features: { "test_feature_flag" => true })
+
+      setting.deployment_assurance_configuration = {
+        "deployment_model" => "air_gapped",
+        "customer_managed_keys" => {
+          "enabled" => "1",
+          "provider" => "AWS KMS",
+          "rotation_interval_days" => "120"
+        }
+      }
+
+      expect(setting.features["test_feature_flag"]).to be(true)
+      expect(setting.features.dig("deployment_assurance", "deployment_model")).to eq("air_gapped")
+      expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "enabled")).to be(true)
+      expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "rotation_interval_days")).to eq(120)
+    end
+  end
+
   describe "worker_settings" do
     it "returns defaults when no worker_settings configured" do
       setting = build(:tenant_setting)
