@@ -48,7 +48,7 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
                         provider_id: nil, prompt_version_id: nil, custom_prompt_sha256: nil,
                         model_selection: nil, service_container_ids: [], mcp_servers: [])
     {
-      "schema_version" => 1,
+      "schema_version" => 2,
       "goal" => goal,
       "agent_type" => agent_type,
       "provider_id" => provider_id,
@@ -69,9 +69,29 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
     {
       provider_id: "openai",
       prompt_version_id: "prompt-v1",
-      model_selection: { "provider" => "openai", "model" => "gpt-5" },
+      model_selection: { "tier" => "mid", "selector_type" => "meta_agent" },
       service_container_ids: [ 1, 2 ],
       mcp_servers: [ { "name" => "filesystem", "transport" => "stdio" } ]
+    }
+  end
+
+  def anthropic_bundle_identity
+    {
+      provider_id: "anthropic",
+      prompt_version_id: "prompt-v2",
+      model_selection: { "tier" => "mid", "selector_type" => "meta_agent" },
+      service_container_ids: [ 9 ],
+      mcp_servers: [ { "name" => "github", "transport" => "http" } ]
+    }
+  end
+
+  def unseen_bundle_identity
+    {
+      provider_id: "unseen-provider",
+      prompt_version_id: "unseen-prompt",
+      model_selection: { "tier" => "high", "selector_type" => "meta_agent" },
+      service_container_ids: [ 42 ],
+      mcp_servers: [ { "name" => "new-server", "transport" => "http" } ]
     }
   end
 

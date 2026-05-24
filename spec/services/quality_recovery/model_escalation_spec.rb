@@ -5,8 +5,6 @@ require "rails_helper"
 RSpec.describe QualityRecovery::ModelEscalation do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
-  let!(:mid_model) { create(:llm_model, model_id: "mid-model", tier: "mid", capability_score: 7.0) }
-  let!(:high_model) { create(:llm_model, model_id: "high-model", tier: "high", capability_score: 9.5) }
 
   let(:threshold_obj) { Struct.new(:min_value).new(0.5) }
   let(:breach) { { average: 0.35, threshold: threshold_obj } }
@@ -14,7 +12,7 @@ RSpec.describe QualityRecovery::ModelEscalation do
   describe ".start" do
     context "when no escalation is active" do
       before do
-        create(:model_selection, agent_run: agent_run, tier: "mid", llm_model: mid_model)
+        create(:model_selection, agent_run: agent_run, tier: "mid")
       end
 
       it "starts escalation and records the action" do
@@ -64,7 +62,7 @@ RSpec.describe QualityRecovery::ModelEscalation do
 
     context "when already at the highest tier" do
       before do
-        create(:model_selection, agent_run: agent_run, tier: "high", llm_model: high_model)
+        create(:model_selection, agent_run: agent_run, tier: "high")
       end
 
       it "does not start escalation (no higher tier available)" do
@@ -159,7 +157,7 @@ RSpec.describe QualityRecovery::ModelEscalation do
 
         3.times do
           run = create(:agent_run, project: project, goal: agent_run.goal)
-          create(:model_selection, agent_run: run, selector_type: "quality_escalation", tier: "high", llm_model: high_model)
+          create(:model_selection, agent_run: run, selector_type: "quality_escalation", tier: "high")
           create(:quality_metric, agent_run: run, composite_score: 0.8)
         end
       end
@@ -188,7 +186,7 @@ RSpec.describe QualityRecovery::ModelEscalation do
         })
 
         run = create(:agent_run, project: project, goal: agent_run.goal)
-        create(:model_selection, agent_run: run, selector_type: "quality_escalation", tier: "high", llm_model: high_model)
+        create(:model_selection, agent_run: run, selector_type: "quality_escalation", tier: "high")
         create(:quality_metric, agent_run: run, composite_score: 0.8)
       end
 
@@ -217,7 +215,7 @@ RSpec.describe QualityRecovery::ModelEscalation do
 
         3.times do
           run = create(:agent_run, project: project, goal: agent_run.goal)
-          create(:model_selection, agent_run: run, selector_type: "quality_escalation", tier: "high", llm_model: high_model)
+          create(:model_selection, agent_run: run, selector_type: "quality_escalation", tier: "high")
           create(:quality_metric, agent_run: run, composite_score: 0.3)
         end
       end

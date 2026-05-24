@@ -6,7 +6,7 @@ module ConfigurationBundles
   module BundleFingerprinting
     include Canonicalization
 
-    BUNDLE_IDENTITY_SCHEMA_VERSION = 1
+    BUNDLE_IDENTITY_SCHEMA_VERSION = 2
     BUNDLE_FINGERPRINT_ALGORITHM = "sha256"
 
     private
@@ -35,14 +35,19 @@ module ConfigurationBundles
 
       canonicalize(
         {
-          llm_model_id: selection.llm_model.model_id,
-          llm_provider: selection.llm_model.provider,
-          selector_type: selection.selector_type,
           tier: selection.tier,
+          selector_type: selection.selector_type,
           escalated_from_tier: selection.escalated_from_tier,
           escalated_reason: selection.escalated_reason
         }.compact
       )
+    end
+
+    def ordered_runner_set
+      runner = agent_run.runner
+      return unless runner
+
+      [ runner.routing_key ]
     end
 
     def normalized_service_container_ids

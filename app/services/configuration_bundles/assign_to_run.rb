@@ -65,7 +65,6 @@ module ConfigurationBundles
       ConfigurationBundle.create!(
         account: account,
         prompt_version: agent_run.prompt_version,
-        llm_model: agent_run.model_selection&.llm_model,
         name: "Runtime Bundle #{fingerprint.first(12)}",
         version: next_runtime_bundle_version,
         status: "active",
@@ -100,13 +99,14 @@ module ConfigurationBundles
     def bundle_definition(selected_variants = nil)
       canonicalize(
         {
-          schema_version: 1,
+          schema_version: 2,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
           runner_id: agent_run.runner_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
+          ordered_runner_set: ordered_runner_set,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           marketplace_entries: normalized_marketplace_entries,
@@ -475,13 +475,14 @@ module ConfigurationBundles
     def expected_optimizer_definition_attributes
       normalize_optimizer_definition_attributes(
         {
-          schema_version: 1,
+          schema_version: 2,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
           provider_id: agent_run.provider_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
+          ordered_runner_set: ordered_runner_set,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           marketplace_entries: normalized_marketplace_entries

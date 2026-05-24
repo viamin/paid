@@ -338,8 +338,6 @@ RSpec.describe Activities::CreateAgentRunActivity do
     def expect_model_selection_bundle(bundle)
       expect(bundle.definition).to include(
         "model_selection" => hash_including(
-          "llm_model_id" => "gpt-5.4",
-          "llm_provider" => "openai",
           "selector_type" => "override",
           "tier" => "high"
         )

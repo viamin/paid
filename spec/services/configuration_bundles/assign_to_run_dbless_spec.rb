@@ -18,6 +18,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       :goal,
       :agent_type,
       :provider_id,
+      :runner_id,
       :prompt_version_id,
       :custom_prompt,
       :model_selection,
@@ -36,6 +37,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       goal: "create_pr",
       agent_type: "claude_code",
       provider_id: 12,
+      runner_id: 1,
       prompt_version_id: 34,
       custom_prompt: nil,
       model_selection: nil,
@@ -378,7 +380,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
 
   def selection_definition
     {
-      "schema_version" => 1,
+      "schema_version" => 2,
       "goal" => "create_pr",
       "agent_type" => "claude_code",
       "provider_id" => 12,
