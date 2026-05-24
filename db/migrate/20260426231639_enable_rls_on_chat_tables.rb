@@ -11,7 +11,7 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
     # are stored by OID and follow the renamed table automatically.
     connection = ActiveRecord::Base.connection
     runner_table = connection.table_exists?(:providers) ? "providers" : "runners"
-    runner_id_column = connection.column_exists?(:chat_sessions, :provider_id) ? "provider_id" : "runner_id"
+    runner_id_column = connection.column_exists?(:chat_sessions, :runner_id) ? "runner_id" : "provider_id"
 
     safety_assured do
       # chat_sessions: direct account_id
