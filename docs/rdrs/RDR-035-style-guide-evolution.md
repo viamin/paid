@@ -37,9 +37,11 @@ Four hard design questions must be resolved before implementation:
 
 **Style guide injection** happens at prompt-build time via `StyleGuides::InjectIntoPrompt`:
 
-- Called by `BuildForIssue`, `BuildForPr`, and `BuildSystemPrompt`
+- Called by `BuildForIssue` and `BuildForPr`
 - Resolves applicable guides via `StyleGuide.resolve_for(project)` (specificity inheritance: project > account > global)
 - Injects formatted guides into the prompt within a byte budget
+
+`ChatSessions::BuildSystemPrompt` also renders style guide content, but it currently builds that section inline rather than calling `StyleGuides::InjectIntoPrompt`.
 
 **PromptEvolution pipeline** (RDR-009, `PromptEvolutionWorkflow`):
 
@@ -180,7 +182,7 @@ CREATE UNIQUE INDEX idx_style_guide_ab_test_variants_one_control
 
 **Note on variant count limits:** PostgreSQL does not support subqueries in `CHECK` constraints, so the max-3-non-control-variants limit must be enforced at the application level. `StyleGuideAbTestVariant` should validate that the count of non-control variants for the parent test does not exceed 3 before insert (consistent with how the existing `AbTestVariant` model handles similar limits). A `BEFORE INSERT` trigger is an alternative if database-level enforcement is preferred.
 
-**Why parallel tables instead of extending `AbTest`?** The existing `AbTest` / `AbTestVariant` tables have non-null FKs to `prompt_id` and `prompt_version_id`. Making them polymorphic would require a migration that touches every existing A/B test record and risks breaking the prompt evolution pipeline. A parallel structure keeps each evolution domain isolated and independently testable.
+**Why parallel tables instead of extending `AbTest`?** The existing `AbTest` / `AbTestVariant` tables have non-null FKs to `prompt_id` and `control_version_id` / `prompt_version_id`. Making them polymorphic would require a migration that touches every existing A/B test record and risks breaking the prompt evolution pipeline. A parallel structure keeps each evolution domain isolated and independently testable.
 
 #### 3. Mutation Prompt
 
@@ -526,7 +528,8 @@ end
 6. **Integration** (Phase C):
    - [ ] Wire `RunAgentActivity` to call `maybe_assign_style_guide_variant`
    - [ ] Wire `QualityMetrics::Collect` to call `StyleGuideAbTests::RecordResult`
-   - [ ] Wire `StyleGuides::InjectIntoPrompt` throughout `BuildForIssue`, `BuildForPr`, `BuildSystemPrompt`
+   - [ ] Wire `StyleGuides::InjectIntoPrompt` throughout `BuildForIssue` and `BuildForPr`
+   - [ ] Wire equivalent variant-aware style guide rendering into `ChatSessions::BuildSystemPrompt`
 
 ### Dependencies
 
@@ -575,7 +578,8 @@ end
 
 ### Research Resources
 
-- `StyleGuides::InjectIntoPrompt` injection paths: `app/services/prompts/build_for_issue.rb:111`, `app/services/prompts/build_for_pr.rb:127`, `app/services/chat_sessions/build_system_prompt.rb:178`
+- `StyleGuides::InjectIntoPrompt` injection paths: `app/services/prompts/build_for_issue.rb:111`, `app/services/prompts/build_for_pr.rb:127`
+- Inline style guide rendering path: `app/services/chat_sessions/build_system_prompt.rb:178`
 - A/B test analysis: `AbTests::Analyze` (`app/services/ab_tests/analyze.rb`), `AbTests::Statistics.welch_t_test`
 - Prompt version model: `app/models/prompt_version.rb`
 - Style guide model: `app/models/style_guide.rb`
