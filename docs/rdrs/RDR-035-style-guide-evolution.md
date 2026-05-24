@@ -157,10 +157,10 @@ CREATE TABLE style_guide_ab_tests (
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
 
-  -- At most one running test per style guide
-  CONSTRAINT idx_style_guide_ab_tests_one_running
-    UNIQUE(style_guide_id) WHERE (status = 'running')
 );
+-- At most one running test per style guide (partial unique index; not valid as inline CONSTRAINT)
+CREATE UNIQUE INDEX idx_style_guide_ab_tests_one_running
+  ON style_guide_ab_tests(style_guide_id) WHERE (status = 'running');
 
 CREATE TABLE style_guide_ab_test_variants (
   id bigint PRIMARY KEY,
@@ -173,19 +173,14 @@ CREATE TABLE style_guide_ab_test_variants (
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
 
-  UNIQUE(style_guide_ab_test_id, style_guide_version_id),
-  -- At most one control per test
-  UNIQUE(style_guide_ab_test_id) WHERE (is_control = true),
-  -- At most 3 non-control variants
-  CONSTRAINT chk_max_experimental_variants
-    CHECK (is_control = true OR style_guide_ab_test_id IN (
-      SELECT style_guide_ab_test_id FROM style_guide_ab_test_variants
-      WHERE is_control = false
-      GROUP BY style_guide_ab_test_id
-      HAVING count(*) <= 3
-    ))
+  UNIQUE(style_guide_ab_test_id, style_guide_version_id)
 );
+-- At most one control per test (partial unique index; not valid as inline CONSTRAINT)
+CREATE UNIQUE INDEX idx_style_guide_ab_test_variants_one_control
+  ON style_guide_ab_test_variants(style_guide_ab_test_id) WHERE (is_control = true);
 ```
+
+**Note on variant count limits:** PostgreSQL does not support subqueries in `CHECK` constraints, so the max-3-non-control-variants limit must be enforced at the application level. `StyleGuideAbTestVariant` should validate that the count of non-control variants for the parent test does not exceed 3 before insert (consistent with how the existing `AbTestVariant` model handles similar limits). A `BEFORE INSERT` trigger is an alternative if database-level enforcement is preferred.
 
 **Why parallel tables instead of extending `AbTest`?** The existing `AbTest` / `AbTestVariant` tables have non-null FKs to `prompt_id` and `prompt_version_id`. Making them polymorphic would require a migration that touches every existing A/B test record and risks breaking the prompt evolution pipeline. A parallel structure keeps each evolution domain isolated and independently testable.
 
