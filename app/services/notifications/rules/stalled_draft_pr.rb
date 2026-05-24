@@ -6,7 +6,6 @@ module Notifications
       SOURCE = "stalled_draft_pr"
       NO_PROGRESS_ESCALATION_WINDOW = Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
       ERROR_THRESHOLD = 10
-      STALL_THRESHOLD = 6.hours
 
       private
 
