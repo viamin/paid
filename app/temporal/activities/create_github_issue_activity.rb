@@ -319,7 +319,6 @@ module Activities
     def append_blocked_by_text(body, agent_run, project:, resolved: nil)
       blocked_issues = agent_run.project.issues
         .where(id: agent_run.blocked_by_issue_ids, github_state: "open")
-        .order(:github_number)
       return body if blocked_issues.empty?
 
       resolved ||= ProjectConventions::IssueDependencies.convention_value(project)
