@@ -4,7 +4,7 @@
   <div class="mb-6 flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-gray-900">Runners</h1>
-      <p class="mt-1 text-sm text-gray-500">Configure runners available for agent runs and fallback routing.</p>
+      <p class="mt-1 text-sm text-gray-500">Configure runners available for agent runs, chat sessions, and fallback routing.</p>
     </div>
     <% if @addable_runner_options.any? %>
       <%= link_to "Add Runner", new_runner_path, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
@@ -25,6 +25,7 @@
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Agent Runs</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Chat</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Usage (7d)</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback Rate</th>
@@ -51,6 +52,7 @@
               <% end %>
             </td>
             <td class="px-4 py-3 text-sm text-gray-700"><%= runner.enabled_for_agent_runs? ? "Enabled" : "Disabled" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= runner.enabled_for_chat? ? "Enabled" : "Disabled" %></td>
             <td class="px-4 py-3 text-sm text-gray-700">
               <% if runner.api_key? && runner.rate_limit_fallback? %>
                 <%= runner.enabled_for_fallback? ? "Enabled (rate-limit only)" : "Disabled (rate-limit only)" %>

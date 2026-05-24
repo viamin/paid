@@ -38,6 +38,23 @@ RSpec.describe Runners::HarnessExecutionPlan do
       expect(plan.command).to eq(%w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping])
       expect(plan.env).to include("COPILOT_ALLOW_ALL" => "true")
     end
+
+    it "keeps the prompt positional when Claude tools are disabled" do
+      allow(AgentHarness).to receive(:provider_class).and_call_original
+      allow(AgentHarness).to receive(:build_config).and_call_original
+
+      plan = described_class.for_runner_key(
+        runner_key: "claude",
+        prompt: "Say hello",
+        options: { tools: :none }
+      )
+
+      disallowed_tools_flag = plan.command.find { |part| part.start_with?("--disallowedTools=") }
+
+      expect(disallowed_tools_flag).to start_with("--disallowedTools=Agent,Bash,")
+      expect(plan.command).not_to include("--disallowedTools")
+      expect(plan.command.last).to eq("Say hello")
+    end
   end
 
   describe ".call" do
