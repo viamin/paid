@@ -151,6 +151,32 @@ RSpec.describe StyleGuide do
       end
     end
 
+    describe "#compression_state" do
+      it "returns compressed when compressed content matches the current raw content" do
+        guide = build(:style_guide, :global, :compressed)
+
+        expect(guide.compression_state).to eq(:compressed)
+      end
+
+      it "returns stale when compression is missing within the grace period" do
+        guide = build(:style_guide, :global, compressed_content: nil, compression_metadata: {})
+        allow(guide).to receive(:updated_at).and_return(5.minutes.ago)
+
+        expect(guide.compression_state).to eq(:stale)
+      end
+
+      it "returns failed when compression is still missing after the grace period" do
+        guide = build(
+          :style_guide,
+          :global,
+          compressed_content: nil,
+          compression_metadata: { "raw_content_updated_at" => 20.minutes.ago.iso8601 }
+        )
+
+        expect(guide.compression_state).to eq(:failed)
+      end
+    end
+
     describe "#content_for_prompt" do
       it "returns compressed content when available" do
         guide = build(:style_guide, :global, :compressed)
@@ -188,7 +214,7 @@ RSpec.describe StyleGuide do
 
         guide.update!(raw_content: "Updated content")
         expect(guide.compressed_content).to be_nil
-        expect(guide.compression_metadata).to eq({})
+        expect(guide.compression_metadata).to include("raw_content_updated_at" => be_present)
       end
 
       it "does not clear compressed content when other attributes change" do

@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require "digest"
+
 class StyleGuide < ApplicationRecord
   has_logidze
   LANGUAGES = %w[ruby javascript typescript python go rust].freeze
+  COMPRESSION_FAILED_THRESHOLD = 15.minutes
 
   belongs_to :account, optional: true
   belongs_to :project, optional: true
@@ -51,6 +54,28 @@ class StyleGuide < ApplicationRecord
     compressed_content.present?
   end
 
+  def compression_current?
+    return false if compressed_content.blank?
+
+    raw_content_digest = compression_metadata["raw_content_sha256"]
+    raw_content_digest.blank? || raw_content_digest == current_raw_content_sha256
+  end
+
+  def compression_state(now: Time.current)
+    return :compressed if compression_current?
+    return :failed if compression_failed?(now: now)
+
+    :stale
+  end
+
+  def raw_content_written_at
+    parse_metadata_time(compression_metadata["raw_content_updated_at"]) || updated_at || created_at || Time.current
+  end
+
+  def last_compressed_at
+    parse_metadata_time(compression_metadata["compressed_at"])
+  end
+
   # Resolves applicable style guides for a given project, using inheritance:
   # project > account > global. Returns applicable style guides deduplicated
   # by name with most-specific-wins ordering.
@@ -95,6 +120,22 @@ class StyleGuide < ApplicationRecord
 
   private
 
+  def current_raw_content_sha256
+    Digest::SHA256.hexdigest(raw_content.to_s)
+  end
+
+  def compression_failed?(now:)
+    compressed_content.blank? && raw_content_written_at <= now - COMPRESSION_FAILED_THRESHOLD
+  end
+
+  def parse_metadata_time(value)
+    return if value.blank?
+
+    Time.zone.parse(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
   def truncate_to_byte_limit(text, max_bytes)
     truncated = +""
     text.each_char do |char|
@@ -113,7 +154,7 @@ class StyleGuide < ApplicationRecord
 
   def clear_compression
     self.compressed_content = nil
-    self.compression_metadata = {}
+    self.compression_metadata = { "raw_content_updated_at" => Time.current.iso8601 }
   end
 
   def set_account_from_project
