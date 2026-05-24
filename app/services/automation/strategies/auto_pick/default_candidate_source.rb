@@ -54,7 +54,7 @@ module Automation
             AND closed_prs.github_number = agent_runs.pull_request_number
             AND closed_prs.is_pull_request = TRUE
             AND closed_prs.github_state = 'closed'
-            AND (closed_prs.pr_review_phase IS NULL OR closed_prs.pr_review_phase != 'merged')
+            AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
         SQL
 
         class << self
