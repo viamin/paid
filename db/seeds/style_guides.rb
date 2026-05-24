@@ -12,10 +12,9 @@
 # failed compression runs). Until compression completes, the injection
 # layer falls back to truncated raw_content (8KB per guide).
 #
-# Content is intentionally language-agnostic — principles and prose,
-# no language-specific syntax in examples. Language-specific guides
-# (Ruby, Rails, etc.) belong in separate records with `language:` set,
-# once StyleGuide.resolve_for grows a language filter.
+# Content is intentionally language-agnostic unless a guide explicitly
+# sets `language:`. Language-specific guides (Ruby, Rails, etc.) are
+# seeded separately so only matching projects receive them.
 #
 # To add a new global default: append to GUIDES below. Re-running seeds
 # is idempotent.
@@ -285,6 +284,108 @@ module Seeds
 
           When the same expensive computation runs repeatedly with the same inputs, cache the result. **But only if you have an invalidation strategy.** An unbounded cache without invalidation is a memory leak with extra steps, and a cache without invalidation rules silently serves stale data the moment its inputs change.
         MD
+      },
+      {
+        name: "Ruby Conventions",
+        language: "ruby",
+        raw_content: <<~'MD'
+          Ruby-specific conventions for maintainable application code.
+
+          ### File Headers and Encoding
+
+          Add `# frozen_string_literal: true` at the top of Ruby files unless a file intentionally needs mutable string literals. When accepting external text input, normalize it to valid UTF-8 before storing, logging, or feeding it into downstream processing so invalid byte sequences fail at the boundary instead of deep in the app.
+
+          ### Naming
+
+          Use Ruby's conventional names:
+
+          - Methods and variables use `snake_case`.
+          - Classes and modules use `CamelCase`.
+          - Predicate methods end in `?`.
+
+          Do not add Java-style prefixes like `get_` or `set_`; in Ruby, readers and writers are expressed directly through method names and accessors. Prefer intention-revealing names over abbreviations.
+
+          ### Parameters and Method Shape
+
+          Avoid boolean flag parameters such as `notify: true` or `async: false`. A boolean argument usually means the method does two things; split it into separate methods or move the choice to the caller.
+
+          ### Dead Code and Future Work
+
+          Do not leave commented-out code in the codebase. Delete it and rely on git history if it is needed later.
+
+          TODO comments require an issue reference in the exact form `# TODO(#123): short description`. Untracked TODOs turn into permanent clutter because nobody owns them.
+        MD
+      },
+      {
+        name: "Service Objects (Servo)",
+        language: "ruby",
+        raw_content: <<~'MD'
+          Service objects hold business actions; keep them consistent and easy to find.
+
+          ### Naming and Namespacing
+
+          Name services with a verb-noun structure such as `AgentRuns::Create` or `Projects::Import`. Namespace by domain or capability, not by controller or workflow, so related operations stay together.
+
+          Prefer placing services under `app/services/<domain>/` with a module hierarchy matching the path. If a new action belongs to an existing domain, add it there instead of creating a parallel folder with duplicated concepts.
+
+          ### Servo Structure
+
+          Use `Servo::Base` for service objects. Define explicit inputs and outputs at the boundary so callers can see the contract without reading the implementation.
+
+          A service should:
+
+          - Accept a small, well-defined set of inputs.
+          - Return a clear result object or domain record.
+          - Encapsulate one business action.
+
+          Keep orchestration thin: validate structural preconditions, call the service, and handle the result. Push the business action itself into the service object.
+        MD
+      },
+      {
+        name: "Rails Patterns",
+        language: "ruby",
+        raw_content: <<~'MD'
+          Rails-specific patterns for the current application stack.
+
+          ### Controllers and Views
+
+          Keep controllers thin. They should coordinate request/response concerns and delegate business work to service objects. Prefer one main object instantiation per controller action.
+
+          The current view stack is ERB. Preserve existing ERB patterns unless a migration explicitly introduces a different component layer. Phlex is a future direction, not something to assume is already present.
+
+          ### Hotwire and Turbo
+
+          When working in interactive Rails UI flows, prefer existing Hotwire/Turbo patterns over adding custom JavaScript. Use Turbo Frames and Streams when they fit the current flow; do not introduce parallel interaction models without a clear reason.
+
+          ### Background Work
+
+          Use GoodJob for normal Rails background jobs. Reserve Temporal-oriented workflow logic for durable, multi-step orchestration concerns where workflow state and retries belong in the orchestrator rather than in ad hoc job chaining.
+        MD
+      },
+      {
+        name: "Database and Migrations",
+        language: "ruby",
+        raw_content: <<~'MD'
+          Database rules for Rails schema changes and persistence code.
+
+          ### IDs and Foreign Keys
+
+          Use UUIDs for external-facing identifiers and bigints for internal foreign keys unless the surrounding schema establishes a different pattern. Add foreign key constraints and indexes for foreign keys.
+
+          ### Migration Style
+
+          Generate migrations with Rails generators instead of creating files manually. Prefer Rails migration helpers for tables, columns, indexes, and foreign keys rather than raw SQL.
+
+          Raw SQL is the exception, not the default. Use it only when the database feature does not have an appropriate Rails helper. Row-level security and policy statements are the documented exception; keep that SQL minimal and isolated.
+
+          ### schema.rb and fx
+
+          The project uses `db/schema.rb`, not `structure.sql`. PostgreSQL functions and triggers should follow the `fx` workflow so schema dumping stays compatible with the Ruby schema format. Use `create_function`, `update_function`, `create_trigger`, and `update_trigger` instead of hand-written `CREATE FUNCTION` blocks.
+
+          ### Logidze
+
+          Add logidze only to tables where change history matters: settings, configuration, access control, financial records, and similar behavioral data. Do not add it to high-volume operational tables or append-only event streams where trigger overhead outweighs the audit value.
+        MD
       }
     ].freeze
 
@@ -294,6 +395,7 @@ module Seeds
           name: attrs[:name], account_id: nil, project_id: nil
         )
         guide.active = true if guide.new_record?
+        guide.language = attrs[:language]
         guide.raw_content = attrs[:raw_content]
 
         # Recompress on: create, raw_content change, or a previously missing /

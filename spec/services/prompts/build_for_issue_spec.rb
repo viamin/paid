@@ -498,6 +498,34 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("# Style Guide")
         expect(prompt).to include("Seeded Ruby Guide")
       end
+
+      it "includes both language-agnostic and Ruby-specific guides for Ruby projects" do
+        create(:style_guide, :global, name: "Global Guide", raw_content: "Applies everywhere.")
+        create(:style_guide, :global, name: "Ruby Language Guide", raw_content: "Ruby-only.", language: "ruby")
+        create(:style_guide, :global, name: "Python Guide", raw_content: "Python-only.", language: "python")
+
+        real_project.define_singleton_method(:detected_language) { "ruby" }
+
+        prompt = described_class.call(issue: real_issue, project: real_project)
+
+        expect(prompt).to include("Global Guide")
+        expect(prompt).to include("Ruby Language Guide")
+        expect(prompt).to include("Ruby-only.")
+        expect(prompt).not_to include("Python Guide")
+      end
+
+      it "excludes Ruby-specific guides for non-Ruby projects" do
+        create(:style_guide, :global, name: "Global Guide", raw_content: "Applies everywhere.")
+        create(:style_guide, :global, name: "Ruby Language Guide", raw_content: "Ruby-only.", language: "ruby")
+
+        real_project.define_singleton_method(:detected_language) { "python" }
+
+        prompt = described_class.call(issue: real_issue, project: real_project)
+
+        expect(prompt).to include("Global Guide")
+        expect(prompt).not_to include("Ruby Language Guide")
+        expect(prompt).not_to include("Ruby-only.")
+      end
     end
 
     context "when issue body is nil" do
