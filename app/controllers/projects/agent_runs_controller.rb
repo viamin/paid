@@ -3,11 +3,12 @@
 module Projects
   class AgentRunsController < ApplicationController
     include AgentRunCancellable
+    include AuditLogging
 
     NoRunnableRunnerError = Class.new(StandardError)
 
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate ]
+    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance ]
 
     def index
       authorize @project, :show?
@@ -31,6 +32,17 @@ module Projects
       @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
       @final_runner_record = @agent_run.final_runner_record
       @attempted_runners_by_routing_key = @agent_run.attempted_runners_by_routing_key
+    end
+
+    def provenance
+      authorize @agent_run, :show?
+
+      @provenance = RunProvenanceBuilder.new(@agent_run).build
+
+      respond_to do |format|
+        format.html
+        format.json { render json: @provenance }
+      end
     end
 
     def cancel
@@ -305,6 +317,8 @@ module Projects
         return
       end
 
+      audit_event("agent_run.resumed", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+
       ProcessRunQueueJob.perform_later
 
       redirect_to redirect_target,
@@ -340,6 +354,7 @@ module Projects
       end
 
       if terminated
+        audit_event("agent_run.terminated", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
         begin
           AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
         rescue StandardError => e
@@ -399,6 +414,9 @@ module Projects
         },
         result: { new_agent_run_id: new_run.id }
       )
+
+      audit_event("agent_run.retried",
+        metadata: { agent_run_id: @agent_run.id, new_agent_run_id: new_run.id, project_name: @project.name })
 
       ProcessRunQueueJob.perform_later
 
@@ -756,9 +774,10 @@ module Projects
       issue = attrs[:issue]
       priority_tier = attrs[:priority_tier]
 
+      agent_run = nil
       github_sync_args = nil
       ActiveRecord::Base.transaction do
-        create_agent_run(**attrs)
+        agent_run = create_agent_run(**attrs)
         github_sync_args = apply_priority_label(issue, priority_tier) if issue && priority_tier
       end
 
@@ -768,6 +787,8 @@ module Projects
       end
 
       ProcessRunQueueJob.perform_later
+
+      audit_event("agent_run.created", metadata: { agent_run_id: agent_run.id, project_name: @project.name, goal: goal })
 
       capacity_user = settings_owner || current_user
       notice = if AgentRun.has_run_capacity?(user: capacity_user) && AgentRun.queued.count <= 1

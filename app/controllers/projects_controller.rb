@@ -1,8 +1,16 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
+  include AuditLogging
+
   before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
+
+  private
+
+  def resolve_audit_subject
+    @project
+  end
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
   AUTO_PICK_PARTIALS = {
@@ -154,6 +162,7 @@ class ProjectsController < ApplicationController
     assign_selected_github_token(@project, update_params)
 
     if @project.update(update_params)
+      audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
       redirect_to @project, notice: "Project was successfully updated."
     else
       @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
@@ -276,7 +285,9 @@ class ProjectsController < ApplicationController
       return
     end
 
+    name = @project.name
     @project.destroy!
+    audit_event("project.deleted", metadata: { name: name })
     redirect_to projects_path, notice: "Project was successfully deleted."
   end
 
@@ -549,6 +560,7 @@ class ProjectsController < ApplicationController
     if @project.save
       TenantConfigurations::ApplyProjectDefaults.call(@project)
       ensure_labels_best_effort(@project)
+      audit_event("project.created", metadata: { name: @project.name, github_url: "https://github.com/#{@project.full_name}" })
       redirect_to @project, notice: "Project was successfully added."
     else
       render :new, status: :unprocessable_content
@@ -566,6 +578,7 @@ class ProjectsController < ApplicationController
     if @project.save
       TenantConfigurations::ApplyProjectDefaults.call(@project)
       ensure_labels_best_effort(@project)
+      audit_event("project.created", metadata: { name: @project.name, github_url: "https://github.com/#{@project.full_name}" })
       redirect_to @project, notice: "Project was successfully added."
     else
       render :new, status: :unprocessable_content
