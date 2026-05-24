@@ -21,15 +21,11 @@ module Automation
         :no_progress_stuck,
         :failure_streak_limit_reached,
         :review_goal_retry_limit_requires_escalation,
-        :escalation_dismissed,
         :owner_reviewer_login,
         :escalation_reason,
         :consecutive_unsuccessful_automatic_runs,
         :consecutive_operational_failures,
         :last_meaningful_progress_at,
-        :draft_review_count,
-        :review_goal_retry_count,
-        :pr_followup_count,
         :draft,
         :scan
       )
@@ -49,15 +45,11 @@ module Automation
               no_progress_stuck: value_for(lifecycle, :no_progress_stuck) == true,
               failure_streak_limit_reached: value_for(lifecycle, :failure_streak_limit_reached) == true,
               review_goal_retry_limit_requires_escalation: value_for(lifecycle, :review_goal_retry_limit_requires_escalation) == true,
-              escalation_dismissed: value_for(lifecycle, :escalation_dismissed) == true,
               owner_reviewer_login: value_for(lifecycle, :owner_reviewer_login),
               escalation_reason: value_for(lifecycle, :escalation_reason),
               consecutive_unsuccessful_automatic_runs: value_for(lifecycle, :consecutive_unsuccessful_automatic_runs).to_i,
               consecutive_operational_failures: value_for(lifecycle, :consecutive_operational_failures).to_i,
               last_meaningful_progress_at: value_for(lifecycle, :last_meaningful_progress_at),
-              draft_review_count: value_for(lifecycle, :draft_review_count).to_i,
-              review_goal_retry_count: value_for(lifecycle, :review_goal_retry_count).to_i,
-              pr_followup_count: value_for(lifecycle, :pr_followup_count).to_i,
               draft: value_for(lifecycle, :draft) == true,
               scan: value_for(metadata, :scan)
             )

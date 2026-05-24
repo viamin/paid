@@ -22,7 +22,6 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
       no_progress_stuck: false,
       failure_streak_limit_reached: true,
       review_goal_retry_limit_requires_escalation: false,
-      escalation_dismissed: false,
       owner_reviewer_login: "alice",
       escalation_reason: "Automatic PR failure streak reached",
       consecutive_unsuccessful_automatic_runs: 3,
@@ -193,27 +192,5 @@ RSpec.describe Automation::Strategies::AutoContinue, :no_db do
     result = strategy.evaluate(context)
 
     expect(decision_types(result)).to eq([ "queue_create_pr_run", "record_pr_followup" ])
-  end
-
-  it "dismisses escalation before evaluating operational failure breakers" do
-    context = Automation::Context.build(
-      record: pull_request,
-      project: project,
-      metadata: {
-        lifecycle: lifecycle.merge(
-          phase: "escalated",
-          operational_failure_breaker: true,
-          no_progress_stuck: true,
-          escalation_dismissed: true
-        )
-      }
-    )
-
-    allow(Coordination::EscalationService).to receive(:call)
-
-    result = strategy.evaluate(context)
-
-    expect(decision_types(result)).to eq([ "dismiss_escalation" ])
-    expect(Coordination::EscalationService).not_to have_received(:call)
   end
 end

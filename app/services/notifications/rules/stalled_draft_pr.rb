@@ -4,10 +4,8 @@ module Notifications
   module Rules
     class StalledDraftPr < Rule
       SOURCE = "stalled_draft_pr"
-      FAILURE_STATUSES = %w[timeout failed cancelled auth_expired rate_limited].freeze
-      FAILURE_THRESHOLD = 3
+      NO_PROGRESS_ESCALATION_WINDOW = Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
       ERROR_THRESHOLD = 10
-      STALL_THRESHOLD = 6.hours
 
       private
 
@@ -22,77 +20,63 @@ module Notifications
         return false unless issue.github_state == "open"
         return false unless issue.pr_review_phase.in?(%w[draft restarted])
         return false if issue.auto_continue_paused?
+        return false unless synced_with_latest_pr_state?(issue)
 
-        consecutive_failures(issue) >= FAILURE_THRESHOLD || stalled_duration(issue) >= STALL_THRESHOLD
+        progress_state_for(issue).stuck?(limit: issue.project.max_draft_review_rounds,
+          stale_after: NO_PROGRESS_ESCALATION_WINDOW)
       end
 
       def build(issue)
-        latest_run = latest_draft_followup_run(issue)
-        failures = consecutive_failures(issue)
+        progress_state = progress_state_for(issue)
+        failures = progress_state.consecutive_unsuccessful_automatic_runs
 
         {
           severity: failures >= ERROR_THRESHOLD ? :error : :warning,
-          title: "PR ##{issue.github_number} stuck in draft for #{human_duration(stall_since(issue))}",
-          description: description_for(issue, latest_run, failures),
+          title: "PR ##{issue.github_number} stuck in #{issue.pr_review_phase} for #{human_duration(stall_since(issue))}",
+          description: description_for(issue, progress_state, failures),
           nav_section: "projects",
           action_url: project_path(issue.project),
           metadata: {
             consecutive_failures: failures,
-            latest_run_id: latest_run&.id,
-            earliest_failure_at: earliest_failure_at(issue)&.iso8601
+            latest_unsuccessful_run_at: progress_state.latest_unsuccessful_run_at&.iso8601,
+            latest_unsuccessful_run_goal: progress_state.latest_unsuccessful_run_goal,
+            latest_unsuccessful_run_status: progress_state.latest_unsuccessful_run_status
           }.compact
         }
       end
 
-      def description_for(issue, latest_run, failures)
+      def description_for(issue, progress_state, failures)
         parts = []
-        parts << "#{failures} consecutive failed draft follow-ups" if failures.positive?
-        parts << "latest error: #{latest_run.error_message}" if latest_run&.error_message.present?
-        parts << "latest run: #{project_agent_run_path(issue.project, latest_run)}" if latest_run
+        parts << "#{failures} consecutive unsuccessful automatic PR runs" if failures.positive?
+        if progress_state.latest_unsuccessful_run_goal.present? && progress_state.latest_unsuccessful_run_status.present?
+          parts << "latest run: #{progress_state.latest_unsuccessful_run_goal} #{progress_state.latest_unsuccessful_run_status}"
+        end
         parts.join(". ")
       end
 
-      def stalled_duration(issue)
-        since = stall_since(issue)
-        return 0 unless since
-
-        Time.current - since
-      end
-
       def stall_since(issue)
-        last_progress_run(issue)&.completed_at || earliest_failure_at(issue) || issue.github_updated_at || issue.created_at
+        progress_state = progress_state_for(issue)
+        progress_state.last_meaningful_progress_at || progress_state.latest_unsuccessful_run_at || issue.github_updated_at || issue.created_at
       end
 
-      def earliest_failure_at(issue)
-        failure_streak(issue).last&.created_at
+      def resolve_candidates(scope)
+        Array(scope).select do |issue|
+          issue.github_state != "open" ||
+            !issue.pr_review_phase.in?(%w[draft restarted]) ||
+            synced_with_latest_pr_state?(issue)
+        end
       end
 
-      def consecutive_failures(issue)
-        failure_streak(issue).size
+      def synced_with_latest_pr_state?(issue)
+        return false if issue.last_pr_scan_at.blank?
+        return true if issue.github_updated_at.blank?
+
+        issue.last_pr_scan_at >= issue.github_updated_at
       end
 
-      def failure_streak(issue)
-        @failure_streaks ||= {}
-        @failure_streaks[issue.id] ||= draft_followup_runs(issue).take_while { |run| FAILURE_STATUSES.include?(run.status) }
-      end
-
-      def latest_draft_followup_run(issue)
-        draft_followup_runs(issue).first
-      end
-
-      def last_progress_run(issue)
-        draft_followup_runs(issue).find { |run| run.status.in?(%w[completed no_output]) }
-      end
-
-      def draft_followup_runs(issue)
-        @draft_followup_runs ||= {}
-        @draft_followup_runs[issue.id] ||= issue.project.agent_runs
-          .where(source_pull_request_number: issue.github_number, trigger_type: "automatic", goal: "create_pr")
-          .where(count_toward_draft_review_round: true)
-          .finished
-          .order(created_at: :desc)
-          .limit(ERROR_THRESHOLD)
-          .to_a
+      def progress_state_for(issue)
+        @progress_states ||= {}
+        @progress_states[issue.id] ||= issue.pr_progress_state
       end
     end
   end

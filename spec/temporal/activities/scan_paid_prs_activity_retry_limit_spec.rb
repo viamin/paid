@@ -918,7 +918,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:failure_streak_reason).with(project, issue, progress_state)
         .and_return("Automatic PR failure streak reached")
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
-      allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
 
       signals = activity.send(:build_lifecycle_signals, project, issue)
 
@@ -927,11 +926,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         no_progress_stuck: false,
         escalation_reason: nil,
         consecutive_unsuccessful_automatic_runs: 3,
-        review_goal_retry_count: 1
+        draft: false
       )
     end
 
-    it "prefers the live GitHub draft state when dismissal is evaluated from lifecycle signals" do
+    it "prefers the live GitHub draft state in lifecycle signals" do
       allow(activity).to receive(:pr_progress_state).with(project, issue).and_return(progress_state)
       allow(activity).to receive(:operational_failure_breaker?).with(project, issue, progress_state).and_return(false)
       allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(false)
@@ -940,16 +939,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         .with(project, issue, progress_state:)
         .and_return(false)
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
-      allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(true)
 
       activity.instance_variable_set(:@live_pr_states, { issue.id => { draft: true } })
 
       signals = activity.send(:build_lifecycle_signals, project, issue)
 
-      expect(signals).to include(
-        escalation_dismissed: true,
-        draft: true
-      )
+      expect(signals).to include(draft: true)
     end
   end
 

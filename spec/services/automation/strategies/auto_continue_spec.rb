@@ -84,7 +84,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
         operational_failure_breaker: false,
         no_progress_stuck: false,
         failure_streak_limit_reached: false,
-        escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
         consecutive_unsuccessful_automatic_runs: 0,
@@ -122,24 +121,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
           pr_number: 42,
           owner_reviewer_login: "alice",
           reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
-        )
-      end
-    end
-
-    context "when escalation is dismissed" do
-      it "returns a dismiss_escalation decision" do
-        result = evaluate(
-          lifecycle: base_lifecycle.merge(
-            phase: "escalated",
-            escalation_dismissed: true,
-            draft: false
-          )
-        )
-
-        decisions = result.to_h[:decisions]
-        expect(decisions.first).to include(
-          type: "dismiss_escalation",
-          issue_id: pull_request.id
         )
       end
     end
@@ -280,7 +261,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
         active_run_exists: false,
         operational_failure_breaker: false,
         failure_streak_limit_reached: false,
-        escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
         consecutive_unsuccessful_automatic_runs: 0,
@@ -338,7 +318,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
         operational_failure_breaker: false,
         no_progress_stuck: false,
         failure_streak_limit_reached: false,
-        escalation_dismissed: false,
         owner_reviewer_login: "alice",
         escalation_reason: nil,
         consecutive_unsuccessful_automatic_runs: 0,
@@ -360,18 +339,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
       )
 
       expect(decision_types(result)).to eq([ "noop" ])
-    end
-
-    it "dismisses escalation when the owner removes the label" do
-      result = evaluate(
-        lifecycle: base_lifecycle.merge(
-          phase: "escalated",
-          escalation_dismissed: true,
-          draft: false
-        )
-      )
-
-      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
     end
   end
 end

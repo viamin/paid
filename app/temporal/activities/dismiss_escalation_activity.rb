@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 module Activities
-  # Resets an escalated PR back into an automation-managed phase after the
-  # owner dismisses escalation by removing the paid-escalated label.
+  # Returns an escalated PR back into an automation-managed phase after the
+  # owner dismisses escalation by removing the paid-escalated label. This
+  # preserves the existing failure streak; only real progress clears stuck
+  # state.
   class DismissEscalationActivity < BaseActivity
     activity_name "DismissEscalation"
 

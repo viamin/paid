@@ -22,28 +22,22 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(issue.reload.pr_review_phase).to eq("ready")
       end
 
-      it "resets the review-goal retry breaker" do
-        freeze_time do
-          activity.execute(issue_id: issue.id)
-
-          expect(issue.reload.review_goal_retry_reset_at).to be_within(1.second).of(Time.current)
-        end
-      end
-
-      it "resets review_goal_retry_count to zero" do
+      it "preserves the review-goal retry count" do
         activity.execute(issue_id: issue.id)
 
-        expect(issue.reload.review_goal_retry_count).to eq(0)
+        expect(issue.reload.review_goal_retry_count).to eq(3)
       end
 
-      it "resets the operational failure breaker and follow-up counter" do
-        freeze_time do
-          activity.execute(issue_id: issue.id)
+      it "preserves the follow-up counter and reset markers" do
+        review_goal_retry_reset_at = issue.review_goal_retry_reset_at
+        operational_failure_reset_at = issue.operational_failure_reset_at
 
-          issue.reload
-          expect(issue.operational_failure_reset_at).to be_within(1.second).of(Time.current)
-          expect(issue.pr_followup_count).to eq(0)
-        end
+        activity.execute(issue_id: issue.id)
+
+        issue.reload
+        expect(issue.pr_followup_count).to eq(2)
+        expect(issue.review_goal_retry_reset_at).to eq(review_goal_retry_reset_at)
+        expect(issue.operational_failure_reset_at).to eq(operational_failure_reset_at)
       end
 
       it "cleans up stale escalation labels locally" do
@@ -57,7 +51,7 @@ RSpec.describe Activities::DismissEscalationActivity do
 
         expect(result[:dismissed]).to be true
         expect(result[:phase]).to eq("ready")
-        expect(result[:current_followup_count]).to eq(0)
+        expect(result[:current_followup_count]).to eq(2)
       end
 
       it "records a resume decision event" do
@@ -97,8 +91,8 @@ RSpec.describe Activities::DismissEscalationActivity do
         expect(result[:dismissed]).to be true
         expect(result[:phase]).to eq("restarted")
         expect(issue.pr_review_phase).to eq("restarted")
-        expect(issue.draft_review_count).to eq(0)
-        expect(issue.pr_followup_count).to eq(0)
+        expect(issue.draft_review_count).to eq(4)
+        expect(issue.pr_followup_count).to eq(2)
       end
     end
 
