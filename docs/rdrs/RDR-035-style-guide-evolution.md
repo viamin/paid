@@ -41,6 +41,8 @@ Four hard design questions must be resolved before implementation:
 - Resolves applicable guides via `StyleGuide.resolve_for(project)` (specificity inheritance: project > account > global)
 - Injects formatted guides into the prompt within a byte budget
 
+The main issue-run path has an important exception today: `CreateAgentRunActivity` can render and persist an issue `custom_prompt` up front, then apply `ProjectConventions::InjectIntoPrompt` directly. That bypasses `StyleGuides::InjectIntoPrompt`, so any design that relies on assignment or exposure tracking at style-guide injection time must explicitly cover that path.
+
 `ChatSessions::BuildSystemPrompt` also renders style guide content, but it currently builds that section inline rather than calling `StyleGuides::InjectIntoPrompt`.
 
 **PromptEvolution pipeline** (RDR-009, `PromptEvolutionWorkflow`):
@@ -73,8 +75,8 @@ Style guide evolution follows the same four-stage pipeline as prompt evolution, 
 │  StyleGuideEvolutionJob (cron, weekly)                                │
 │    └─► StyleGuideEvolutionWorkflow (Temporal)                         │
 │          ├─► Step 1: SampleRunsActivity                               │
-│          │     Sample agent runs where THIS guide was injected.       │
-│          │     Attribute quality via style_guide_ab_test_assignments. │
+│          │     Sample agent runs from style_guide_run_exposures.      │
+│          │     Join assignments only for experimental variant IDs.    │
 │          │                                                            │
 │          ├─► Step 2: GenerateMutationsActivity                        │
 │          │     LLM proposes improved raw_content variants             │
@@ -186,7 +188,35 @@ CREATE UNIQUE INDEX idx_style_guide_ab_test_variants_one_control
 
 **Why parallel tables instead of extending `AbTest`?** The existing `AbTest` / `AbTestVariant` tables have non-null FKs to `prompt_id` and `control_version_id` / `prompt_version_id`. Making them polymorphic would require a migration that touches every existing A/B test record and risks breaking the prompt evolution pipeline. A parallel structure keeps each evolution domain isolated and independently testable.
 
-#### 3. Mutation Prompt
+#### 3. StyleGuideRunExposure Table
+
+Sampling cannot infer historical guide usage from `account_id` / `project_id` scope rules alone. The effective guide set for a run can change after the fact because of shadowing, deactivation, edits, or changed resolution order. We therefore persist the exact resolved guide/version pairs that were injected into each `AgentRun`.
+
+```sql
+CREATE TABLE style_guide_run_exposures (
+  id bigint PRIMARY KEY,
+  agent_run_id bigint NOT NULL REFERENCES agent_runs ON DELETE CASCADE,
+  style_guide_id bigint NOT NULL REFERENCES style_guides ON DELETE CASCADE,
+  style_guide_version_id bigint NOT NULL REFERENCES style_guide_versions,
+  source_scope character varying(20) NOT NULL,  -- project | account | global
+  position integer NOT NULL,                    -- prompt ordering for debugging/replay
+  injected_via character varying(50) NOT NULL, -- build_for_issue | build_for_pr | create_agent_run_activity
+  style_guide_ab_test_assignment_id bigint REFERENCES style_guide_ab_test_assignments,
+  created_at timestamp NOT NULL,
+  updated_at timestamp NOT NULL,
+  UNIQUE(agent_run_id, style_guide_id)
+);
+CREATE INDEX idx_style_guide_run_exposures_on_style_guide_id_and_created_at
+  ON style_guide_run_exposures(style_guide_id, created_at);
+CREATE INDEX idx_style_guide_run_exposures_on_version_id
+  ON style_guide_run_exposures(style_guide_version_id);
+CREATE INDEX idx_style_guide_run_exposures_on_assignment_id
+  ON style_guide_run_exposures(style_guide_ab_test_assignment_id);
+```
+
+`style_guide_version_id` points at the immutable content snapshot that actually shipped on the run, including the control version. Experimental traffic still gets a `style_guide_ab_test_assignment`, but that assignment becomes supplemental experiment metadata rather than the only attribution record.
+
+#### 4. Mutation Prompt
 
 `StyleGuideEvolution::Mutate` follows the same pattern as `PromptEvolution::Mutate`:
 
@@ -259,17 +289,19 @@ end
 | Review gate | `review_status = "pending"` requires human approval before activation | Variant stays pending |
 | Minimum quality threshold | If avg_quality_score >= 0.85, skip evolution (guide is already performing well) | Skip cycle |
 
-#### 4. Sampling and Attribution
+#### 5. Sampling and Attribution
 
 This is the critical innovation over prompt evolution. The approach: **singular injection with assignment tracking**.
 
 **How it works:**
 
-1. When an `AgentRun` is being set up and `StyleGuides::InjectIntoPrompt` is called:
+1. When an `AgentRun` prompt is being assembled through any production run path:
+   - Resolve the applicable guides once through a shared helper that returns the exact injected set
+   - Persist one `StyleGuideRunExposure` row per injected guide/version on that run
    - Check whether the account has a single active `StyleGuideAbTest`
    - Verify that the test's `style_guide_id` is present in the resolved guide set for this project
    - If yes, for the experimental guide, inject the assigned variant content instead of the production (current) content
-   - Create a `StyleGuideAbTestAssignment` linking the `AgentRun` to the `StyleGuideAbTestVariant`
+   - Create a `StyleGuideAbTestAssignment` linking the `AgentRun` to the `StyleGuideAbTestVariant`, and attach that assignment to the corresponding `StyleGuideRunExposure`
    - All other guides inject their production content as normal
 
 2. When `QualityMetrics::Collect` records metrics for the agent run:
@@ -278,11 +310,11 @@ This is the critical innovation over prompt evolution. The approach: **singular 
    - Also record the quality score on the `StyleGuideVersion.avg_quality_score` for the evolution sampling stage
 
 3. The `StyleGuideEvolutionWorkflow` sample stage queries:
-   - `AgentRun` records from the last 14 days
-   - Filtered to runs where the target style guide was injected (accounts/projects that use this guide)
-   - Joined via `StyleGuideAbTestAssignment` to get quality scores attributed to each variant
+   - `StyleGuideRunExposure` records from the last 14 days for the target `style_guide_id`
+   - Joined to `AgentRun` / quality metrics for outcome data
+   - Joined to `StyleGuideAbTestAssignment` only when the sampled run was experimental, so the workflow can distinguish control traffic from named variants
 
-**Attribution table:**
+**Experimental assignment table:**
 
 ```sql
 CREATE TABLE style_guide_ab_test_assignments (
@@ -299,13 +331,15 @@ CREATE INDEX idx_style_guide_ab_test_assignments_on_agent_run_id
   ON style_guide_ab_test_assignments(agent_run_id);
 ```
 
-**Why singular injection?** If we tried to simultaneously evolve all 3-7 style guides injected per run, the combinatorial explosion would make statistical attribution impossible. By varying only one guide per evolution cycle, and by allowing only one running style-guide A/B test per account cohort, we get clean 1:1 attribution between variant and outcome for every `AgentRun`.
+**Why the extra exposure table?** Without it, sampling would guess historical guide usage from current account/project state. That breaks as soon as a project guide shadows an account guide, a guide is edited or deactivated after the run, or the resolver changes over time. `StyleGuideRunExposure` makes the sample stage read the exact runtime decision instead of a lossy reconstruction.
+
+**Why singular injection?** If we tried to simultaneously evolve all 3-7 style guides injected per run, the combinatorial explosion would make statistical attribution impossible. By varying only one guide per evolution cycle, and by allowing only one running style-guide A/B test per account cohort, we get clean 1:1 attribution between variant and outcome for every experimental `AgentRun` while still recording the full control exposure set.
 
 **Fallback: whole-bundle attribution.** For a future phase, when all individual guides have converged, the system could treat the entire resolved guide set as a single configuration bundle and run multi-factor experiments. This is out of scope for the initial implementation.
 
-#### 5. Control vs Variant Assignment
+#### 6. Control vs Variant Assignment
 
-At agent run setup time, inside `RunAgentActivity` (or the equivalent prompt-build path):
+At agent run setup time, inside the shared style-guide prompt builder used by `BuildForIssue`, `BuildForPr`, and the issue `custom_prompt` branch in `CreateAgentRunActivity`:
 
 ```ruby
 def maybe_assign_style_guide_variant(agent_run, resolved_guides)
@@ -329,25 +363,22 @@ def maybe_assign_style_guide_variant(agent_run, resolved_guides)
 end
 ```
 
-`StyleGuides::InjectIntoPrompt` is extended to accept an optional `overrides` hash. Overrides are passed through the same render/compression path as production guides so the experiment only varies guide content, not truncation or compression behavior:
+`StyleGuides::InjectIntoPrompt` is extended to accept an optional `overrides` hash and an optional `agent_run:` for exposure recording. Overrides are passed through the same render/compression path as production guides so the experiment only varies guide content, not truncation or compression behavior:
 
 ```ruby
 module StyleGuides
   class InjectIntoPrompt
-    def self.call(prompt:, project:, overrides: {})
-      guides = StyleGuide.resolve_for(project)
-      guides.each do |guide|
-        source = overrides.fetch(guide.name, {
-          raw_content: guide.raw_content,
-          compressed_content: guide.compressed_content
-        })
+    def self.call(prompt:, project:, agent_run: nil, overrides: {})
+      resolved_guides = StyleGuides::BuildInjectedGuideSet.call(project: project, overrides: overrides)
+      resolved_guides.each do |resolved_guide|
         content = StyleGuides::RenderContentForPrompt.call(
-          raw_content: source[:raw_content],
-          compressed_content: source[:compressed_content],
+          raw_content: resolved_guide.raw_content,
+          compressed_content: resolved_guide.compressed_content,
           project: project
         )
         # inject content into prompt
       end
+      StyleGuides::RecordRunExposures.call(agent_run: agent_run, resolved_guides: resolved_guides) if agent_run
     end
   end
 end
@@ -465,6 +496,20 @@ class StyleGuideVersion < ApplicationRecord
 end
 ```
 
+```ruby
+# app/models/style_guide_run_exposure.rb
+class StyleGuideRunExposure < ApplicationRecord
+  belongs_to :agent_run
+  belongs_to :style_guide
+  belongs_to :style_guide_version
+  belongs_to :style_guide_ab_test_assignment, optional: true
+
+  enum :source_scope, {project: "project", account: "account", global: "global"}, validate: true
+
+  validates :position, numericality: {greater_than_or_equal_to: 0}
+end
+```
+
 ## Alternatives Considered
 
 ### Alternative 1: Repurpose logidze history as variants
@@ -493,7 +538,7 @@ end
 
 ### Negative
 
-- Four new database tables (`style_guide_versions`, `style_guide_ab_tests`, `style_guide_ab_test_variants`, `style_guide_ab_test_assignments`) — schema grows
+- Five new database tables (`style_guide_versions`, `style_guide_ab_tests`, `style_guide_ab_test_variants`, `style_guide_ab_test_assignments`, `style_guide_run_exposures`) — schema grows
 - ~30% of the prompt evolution code is conceptually duplicated (new service objects, new Temporal workflow, new cron job)
 - Each style guide needs 30+ agent runs using it before an A/B test can statistically complete — may take weeks for low-traffic accounts
 - Mutation quality depends entirely on LLM capability with style guide content (untested domain for current models)
@@ -506,6 +551,7 @@ end
 | Singular injection slows A/B test completion | Min sample threshold is configurable per account; low-traffic accounts can lower `min_samples_per_variant` |
 | Evolution degrades guide quality | Control group ensures no regression. If all variants are worse than control, the test completes with "no winner" and the control stays active |
 | LLM cost for weekly mutations | Mutation is cheap (one short LLM call per guide per week). Guides with `avg_quality_score >= 0.85` skip mutation entirely. |
+| Sampling misattributes runs after guide edits or shadowing changes | Persist `style_guide_run_exposures` at runtime and sample from those immutable exposure records |
 
 ## Implementation Plan
 
@@ -524,14 +570,16 @@ end
    - [ ] Create `style_guide_ab_tests` table
    - [ ] Create `style_guide_ab_test_variants` table
    - [ ] Create `style_guide_ab_test_assignments` table
+   - [ ] Create `style_guide_run_exposures` table
 
 2. **Models** (Phase A):
    - [ ] `StyleGuideVersion` model with associations, immutability validations, scopes
    - [ ] `StyleGuideAbTest` model with lifecycle (`draft → running → completed → cancelled`), associations
    - [ ] `StyleGuideAbTestVariant` model with sample tracking
    - [ ] `StyleGuideAbTestAssignment` model
+   - [ ] `StyleGuideRunExposure` model
    - [ ] `StyleGuide` model: add `belongs_to :current_version`, `has_many :versions`, `has_many :style_guide_ab_tests`
-   - [ ] `AgentRun` model: add `has_many :style_guide_ab_test_assignments`
+   - [ ] `AgentRun` model: add `has_many :style_guide_ab_test_assignments`, `has_many :style_guide_run_exposures`
 
 3. **Services** (Phase B):
    - [ ] `StyleGuideEvolution::Mutate` — LLM-driven mutation generation (parallel to `PromptEvolution::Mutate`)
@@ -541,8 +589,10 @@ end
    - [ ] `StyleGuideAbTests::RecordResult` — record quality score against variant
    - [ ] `StyleGuideAbTests::Analyze` — Welch's t-test comparing variants against control
    - [ ] `StyleGuideAbTests::PromoteWinner` — promote winning variant to `current_version` and mirror its raw content onto the `style_guides` row
+   - [ ] `StyleGuides::RecordRunExposures` — persist resolved guide/version IDs for each `AgentRun`
+   - [ ] `StyleGuides::BuildInjectedGuideSet` — shared resolver/renderer used by both normal injection and experiment overrides
    - [ ] `StyleGuides::RenderContentForPrompt` — shared compression/truncation helper used by both production guides and experiment overrides
-   - [ ] `StyleGuides::InjectIntoPrompt` — add `overrides` parameter for experimental guides and route both paths through the shared renderer
+   - [ ] `StyleGuides::InjectIntoPrompt` — add `overrides` and `agent_run` parameters, route all agent-run paths through the shared renderer, and record exposures
 
 4. **Temporal** (Phase B):
    - [ ] `StyleGuideEvolutionWorkflow` — orchestrate the four-stage pipeline
@@ -552,9 +602,10 @@ end
    - [ ] `StyleGuideEvolutionJob` — weekly cron discovering eligible account/project guides
 
 6. **Integration** (Phase C):
-   - [ ] Wire `RunAgentActivity` to call `maybe_assign_style_guide_variant`
+   - [ ] Wire `RunAgentActivity` prompt assembly to pass `agent_run` into the style-guide assignment/exposure path
    - [ ] Wire `QualityMetrics::Collect` to call `StyleGuideAbTests::RecordResult`
    - [ ] Wire `StyleGuides::InjectIntoPrompt` throughout `BuildForIssue` and `BuildForPr`
+   - [ ] Refactor the issue `custom_prompt` branch in `CreateAgentRunActivity` to use the same style-guide resolver/exposure recorder before `ProjectConventions::InjectIntoPrompt`
    - [ ] Wire equivalent variant-aware style guide rendering into `ChatSessions::BuildSystemPrompt`
 
 ### Dependencies
@@ -567,7 +618,7 @@ end
 ### Testing Approach
 
 - **Unit tests**: `StyleGuideEvolution::Mutate` (mutation parsing, guardrail enforcement), `StyleGuideAbTests::Assign` (variant selection, idempotency), `StyleGuideAbTests::Analyze` (statistical correctness)
-- **Integration tests**: `StyleGuideEvolutionWorkflow` end-to-end (sample → mutate → persist → test), `StyleGuides::InjectIntoPrompt` with overrides
+- **Integration tests**: `StyleGuideEvolutionWorkflow` end-to-end (sample → mutate → persist → test), `StyleGuides::InjectIntoPrompt` with overrides and exposure recording, `CreateAgentRunActivity` issue prompt path recording the same exposures as `BuildForIssue`
 - **Contract tests**: `StyleGuideVersion` immutability, `StyleGuideAbTest` state machine transitions
 - **Existing tests must pass**: Prompt evolution pipeline unchanged, style guide injection unchanged for non-experimental guides
 
@@ -575,7 +626,7 @@ end
 
 1. **Mutation guardrail — section preservation**: Mutate a guide with sections `## Naming` and `## Error Handling`. Assert mutation preserves both headers.
 2. **Mutation guardrail — security retention**: Mutate a guide containing "Never commit secrets to source control." Assert the phrase or equivalent appears in every mutation.
-3. **Attribution accuracy**: Create an A/B test with control + 2 variants. Run 100 simulated agent runs. Assert quality scores are attributed to correct variants.
+3. **Attribution accuracy**: Create an A/B test with control + 2 variants. Run 100 simulated agent runs. Assert `style_guide_run_exposures` records the exact guide/version shipped on each run and that quality scores are attributed to the correct variants.
 4. **Winner promotion**: Create a test where variant significantly outperforms control. Assert `StyleGuideAbTests::PromoteWinner` updates `style_guide.current_version`.
 5. **Global guide immunity**: Assert `StyleGuideEvolutionJob` does not discover global guides.
 6. **Account-level exclusivity**: Attempt to start a second running style-guide A/B test for the same account. Assert validation rejects it while allowing a concurrent test in a different account.
@@ -584,7 +635,7 @@ end
 
 - Mutation LLM call: ~5-10 seconds per guide per week
 - Style guide injection with variant override: < 1ms overhead (hash lookup)
-- Assignment at run setup: idempotent upsert, negligible overhead
+- Assignment and exposure recording at run setup: one idempotent upsert plus one row per injected guide, negligible overhead at current guide counts
 - Quality score recording: atomic increment on `style_guide_ab_test_variants`, batched with existing `AbTests::RecordResult`
 
 ### Security
@@ -605,6 +656,7 @@ end
 ### Research Resources
 
 - `StyleGuides::InjectIntoPrompt` injection paths: `app/services/prompts/build_for_issue.rb:111`, `app/services/prompts/build_for_pr.rb:127`
+- Issue `custom_prompt` bypass path that must be folded into the same resolver: `app/temporal/activities/create_agent_run_activity.rb:45`
 - Inline style guide rendering path: `app/services/chat_sessions/build_system_prompt.rb:178`
 - A/B test analysis: `AbTests::Analyze` (`app/services/ab_tests/analyze.rb`), `AbTests::Statistics.welch_t_test`
 - Prompt version model: `app/models/prompt_version.rb`
@@ -615,6 +667,7 @@ end
 
 - The `StyleGuideVersion` table does **not** store `compressed_content`. Compression is a rendering optimization applied at injection time, not a versioned artifact. Only immutable `raw_content` snapshots are versioned.
 - The canonical production read path remains the `style_guides` row. `StyleGuide#content_for_prompt` continues to read `style_guides.raw_content` / `style_guides.compressed_content`, and `StyleGuides::RenderContentForPrompt` becomes the shared helper behind both normal injection and experiment overrides.
+- `StyleGuideRunExposure` is the canonical sampling source for evolution. The workflow should never reconstruct historical guide usage from current scope filters alone.
 - Winner promotion is therefore a mirror step, not a pointer flip only: promoting `current_version` must also copy that version's `raw_content` onto `style_guides.raw_content`, clear `style_guides.compressed_content`, and enqueue `StyleGuideCompressionJob`. Production prompts immediately pick up the new raw content via the existing fallback path, then pick up refreshed compressed content when compression completes.
 - The `StyleGuide.current_version` pointer records which immutable snapshot is live; it is not a second runtime content source. Manual edits to `style_guide.raw_content` (via the UI) likewise create a new `StyleGuideVersion`, update the row-level canonical content, and repoint `current_version`.
 - Logidze continues to track all changes for audit purposes alongside the version store. Version records capture the semantic content evolution; logidze captures the full operational history.
