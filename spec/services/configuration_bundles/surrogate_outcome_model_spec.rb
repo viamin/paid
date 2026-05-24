@@ -95,26 +95,6 @@ RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
     }
   end
 
-  def anthropic_bundle_identity
-    {
-      provider_id: "anthropic",
-      prompt_version_id: "prompt-v2",
-      model_selection: { "provider" => "anthropic", "model" => "claude-sonnet" },
-      service_container_ids: [ 9 ],
-      mcp_servers: [ { "name" => "github", "transport" => "http" } ]
-    }
-  end
-
-  def unseen_bundle_identity
-    {
-      provider_id: "unseen-provider",
-      prompt_version_id: "unseen-prompt",
-      model_selection: { "provider" => "unseen-provider", "model" => "new-model" },
-      service_container_ids: [ 42 ],
-      mcp_servers: [ { "name" => "new-server", "transport" => "http" } ]
-    }
-  end
-
   def goal_scoped_baseline_rows
     [
       build_row(
