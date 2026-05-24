@@ -691,7 +691,7 @@ module Activities
 
       backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
       dependency_changed = open_pr_numbers.any? && resolve_external_dependencies(project, open_pr_numbers)
-      closed_count = close_stale_pull_requests(project, open_pr_numbers)
+      closed_count = close_stale_pull_requests(project, open_pr_numbers, client: client)
 
       {
         changed: backfilled_count.positive? || dependency_changed || closed_count.positive?,
@@ -746,7 +746,7 @@ module Activities
       missing_numbers.size
     end
 
-    def close_stale_pull_requests(project, open_pr_numbers)
+    def close_stale_pull_requests(project, open_pr_numbers, client:)
       stale_prs = project.issues
         .pull_requests_only
         .where(github_state: "open", source: Issue::GITHUB_SOURCE)
@@ -755,15 +755,59 @@ module Activities
       count = stale_prs.count
       return 0 if count.zero?
 
-      stale_prs.update_all(github_state: "closed", updated_at: Time.current)
+      merged_numbers, unmerged_numbers = partition_by_merge_status(
+        client, project.full_name, stale_prs.pluck(:github_number)
+      )
+
+      if merged_numbers.any?
+        project.issues
+          .pull_requests_only
+          .where(project_id: project.id, github_number: merged_numbers)
+          .update_all(github_state: "closed", pr_review_phase: "merged", updated_at: Time.current)
+      end
+
+      if unmerged_numbers.any?
+        project.issues
+          .pull_requests_only
+          .where(project_id: project.id, github_number: unmerged_numbers)
+          .update_all(github_state: "closed", updated_at: Time.current)
+      end
 
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
         project_id: project.id,
-        count: count
+        count: count,
+        merged_count: merged_numbers.size
       )
 
       count
+    end
+
+    def partition_by_merge_status(client, repo_full_name, pr_numbers)
+      merged_numbers = []
+      unmerged_numbers = []
+
+      pr_numbers.each do |number|
+        github_pr = client.pull_request(repo_full_name, number)
+        if github_pr.merged_at.present? || github_pr.merged == true
+          merged_numbers << number
+        else
+          unmerged_numbers << number
+        end
+      rescue GithubClient::RateLimitError
+        raise
+      rescue => e
+        logger.warn(
+          message: "github_sync.stale_pr_merge_check_failed",
+          repo: repo_full_name,
+          pr_number: number,
+          error_class: e.class.name,
+          error: e.message
+        )
+        unmerged_numbers << number
+      end
+
+      [ merged_numbers, unmerged_numbers ]
     end
 
     # Mirrors reconcile_open_pull_requests for issues. Fetches all open issue

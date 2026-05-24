@@ -11,8 +11,13 @@ RSpec.describe Activities::FetchIssuesActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(issue_comments: [], recent_issue_comments: [], "rate_limit_remaining!": 100)
-    allow(github_client).to receive(:pull_requests).and_return([])
+    allow(github_client).to receive_messages(
+      issue_comments: [],
+      recent_issue_comments: [],
+      "rate_limit_remaining!": 100,
+      pull_requests: [],
+      pull_request: OpenStruct.new(merged_at: nil, merged: false)
+    )
     allow(github_client).to receive(:add_comment)
   end
 
@@ -1612,11 +1617,33 @@ RSpec.describe Activities::FetchIssuesActivity do
         allow(github_client).to receive(:pull_requests).and_return([
           OpenStruct.new(number: open_pr.github_number)
         ])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: nil, merged: false))
 
         activity.execute(project_id: project.id)
 
         expect(stale_pr.reload.github_state).to eq("closed")
+        expect(stale_pr.reload.pr_review_phase).to eq("ready")
         expect(open_pr.reload.github_state).to eq("open")
+      end
+
+      it "stamps pr_review_phase as merged when stale-closing a merged PR" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "ready")
+
+        allow(github_client).to receive_messages(
+          pull_requests: [],
+          pull_request: OpenStruct.new(merged_at: nil, merged: false)
+        )
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true))
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload.github_state).to eq("closed")
+        expect(stale_pr.reload.pr_review_phase).to eq("merged")
       end
 
       it "backfills open pull requests missing from the local cache" do
