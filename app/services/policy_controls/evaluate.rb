@@ -325,7 +325,8 @@ module PolicyControls
     end
 
     def tier_index(tier)
-      LlmModel::TIERS.index(tier.to_s) || -1
+      idx = LlmModel::TIERS.index(tier.to_s)
+      idx.nil? ? -1 : idx
     end
 
     def normalize_hash(value)

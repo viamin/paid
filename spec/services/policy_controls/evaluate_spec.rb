@@ -91,6 +91,17 @@ RSpec.describe PolicyControls::Evaluate do
       expect(result.reason).to eq("Policy approval required: Owner approval required")
       expect(result.approval["matched_rules"]).to eq([ "risk_gate" ])
     end
+
+    it "does not block the lowest allowed tier when the maximum tier is low" do
+      result = evaluate(
+        model: create(:llm_model, :openai, model_id: "gpt-5.4-nano", tier: "low"),
+        rules: { "controls" => { "max_model_tier" => "low" } },
+        simulation: true
+      )
+
+      expect(result.violations).to be_empty
+      expect(result.allowed).to be(true)
+    end
   end
 
   def evaluate(**overrides)
