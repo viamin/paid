@@ -392,7 +392,7 @@ The production path and the experimental path therefore share the same byte-budg
 
 Each style guide can have many historical A/B tests, but the scheduler may run only one style-guide A/B test per account at a time. Different accounts can still run style-guide experiments concurrently because their `AgentRun` cohorts are disjoint.
 
-#### 6. Scope Eligibility
+#### 7. Scope Eligibility
 
 | Scope | Eligible for evolution? | Rationale |
 |---|---|---|
