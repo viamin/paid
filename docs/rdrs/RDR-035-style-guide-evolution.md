@@ -123,7 +123,7 @@ CREATE TABLE style_guide_versions (
   avg_quality_score numeric(4,2),              -- rolling average from attributed runs
   retired_at timestamp,                        -- soft-delete
   created_at timestamp NOT NULL,
-  updated_at timestamp NOT NULL,
+  updated_at timestamp NOT NULL
 
   UNIQUE(style_guide_id, version)
 );
@@ -155,8 +155,7 @@ CREATE TABLE style_guide_ab_tests (
   started_at timestamp,
   completed_at timestamp,
   created_at timestamp NOT NULL,
-  updated_at timestamp NOT NULL,
-
+  updated_at timestamp NOT NULL
 );
 -- At most one running test per style guide (partial unique index; not valid as inline CONSTRAINT)
 CREATE UNIQUE INDEX idx_style_guide_ab_tests_one_running
@@ -172,7 +171,6 @@ CREATE TABLE style_guide_ab_test_variants (
   avg_quality_score numeric,
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
-
   UNIQUE(style_guide_ab_test_id, style_guide_version_id)
 );
 -- At most one control per test (partial unique index; not valid as inline CONSTRAINT)
@@ -290,7 +288,6 @@ CREATE TABLE style_guide_ab_test_assignments (
   quality_score numeric,                       -- recorded when run completes
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
-
   UNIQUE(style_guide_ab_test_id, agent_run_id) -- one assignment per run per test
 );
 CREATE INDEX idx_style_guide_ab_test_assignments_on_agent_run_id
