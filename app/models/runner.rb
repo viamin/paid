@@ -99,6 +99,7 @@ class Runner < ApplicationRecord
 
   scope :kept_only, -> { kept }
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
+  scope :for_chat, -> { where(enabled_for_chat: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
   scope :ordered, -> { order(:runner_key, :auth_type, :name, :id) }
   scope :subscription, -> { where(auth_type: "subscription") }
@@ -507,6 +508,13 @@ class Runner < ApplicationRecord
 
     executable_keys = RunnerSupport.container_executable_runner_keys
     owner.runners.kept_only.for_agent_runs.where(runner_key: executable_keys).ordered.first
+  end
+
+  def self.first_chat_enabled_for_owner(owner)
+    return unless owner
+
+    executable_keys = RunnerSupport.container_executable_runner_keys
+    owner.runners.kept_only.for_chat.where(runner_key: executable_keys).ordered.first
   end
 
   def self.display_name_for(runner_key)

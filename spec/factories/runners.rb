@@ -6,6 +6,7 @@ FactoryBot.define do
     runner_key { "cursor" }
     auth_type { "subscription" }
     enabled_for_agent_runs { true }
+    enabled_for_chat { true }
     enabled_for_fallback { true }
     fallback_role { "standard" }
     config { {} }

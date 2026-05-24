@@ -355,6 +355,11 @@
     </div>
 
     <div class="flex items-center">
+      <%= form.check_box :enabled_for_chat, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+      <%= form.label :enabled_for_chat, "Enable for chat sessions", class: "ml-3 block text-sm font-medium text-gray-900" %>
+    </div>
+
+    <div class="flex items-center">
       <%= form.check_box :enabled_for_fallback, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
       <%= form.label :enabled_for_fallback, "Allow as fallback runner", class: "ml-3 block text-sm font-medium text-gray-900" %>
     </div>
