@@ -409,12 +409,16 @@ module StyleGuideEvolution
     private
 
     def request_mutations
-      agent_harness = AgentHarness.new(model: DEFAULT_MODEL)
-      agent_harness.send_message(
-        system: meta_prompt_system,
-        messages: [{ role: "user", content: build_meta_prompt }],
-        options: { timeout: TIMEOUT, tools: :none }
+      response = AgentHarness.send_message(
+        build_meta_prompt,
+        provider: :claude,
+        model: DEFAULT_MODEL,
+        timeout: TIMEOUT,
+        tools: :none,
+        **Llm::TextMode.options
       )
+
+      response.output if response.success?
     end
 
     def apply_guardrails(mutations)
