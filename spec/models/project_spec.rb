@@ -1779,6 +1779,26 @@ RSpec.describe Project do
           locals: hash_including(agent_run: agent_run)
         ).once
       end
+
+      it "swallows missing marketplace attachment table errors during the detail broadcast" do
+        agent_run = build_stubbed(:agent_run, project: project)
+        undefined_table = PG::UndefinedTable.new('ERROR: relation "agent_run_marketplace_entries" does not exist')
+        error = ActiveRecord::StatementInvalid.new(
+          'PG::UndefinedTable: ERROR: relation "agent_run_marketplace_entries" does not exist'
+        )
+        allow(error).to receive(:cause).and_return(undefined_table)
+        allow(project).to receive(:broadcast_replace_to).and_raise(error)
+
+        expect { project.broadcast_agent_run_detail_update(agent_run) }.not_to raise_error
+      end
+
+      it "re-raises unrelated statement errors from the detail broadcast" do
+        agent_run = build_stubbed(:agent_run, project: project)
+        error = ActiveRecord::StatementInvalid.new("boom")
+        allow(project).to receive(:broadcast_replace_to).and_raise(error)
+
+        expect { project.broadcast_agent_run_detail_update(agent_run) }.to raise_error(error)
+      end
     end
   end
 

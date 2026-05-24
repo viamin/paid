@@ -121,12 +121,12 @@ RSpec.describe Knowledge::ProviderExecutor do
       end
     end
 
-    context "with ProviderState updates" do
-      it "records success on ProviderState" do
+    context "with runner state updates" do
+      it "records success on RunnerState" do
         executor = described_class.new(user_setting: user_setting, operation: :chat)
         executor.execute { |_provider| "ok" }
 
-        state = user.provider_states.find_by(provider_name: "claude")
+        state = user.runner_states.find_by(runner_name: "claude")
         expect(state).to be_present
         expect(state.circuit_state).to eq("closed")
         expect(state.failure_count).to eq(0)
@@ -140,12 +140,12 @@ RSpec.describe Knowledge::ProviderExecutor do
           "ok"
         end
 
-        state = user.provider_states.find_by(provider_name: "claude")
+        state = user.runner_states.find_by(runner_name: "claude")
         expect(state).to be_present
         expect(state.rate_limited?).to be true
       end
 
-      it "records failure on ProviderState for generic errors" do
+      it "records failure on RunnerState for generic errors" do
         executor = described_class.new(user_setting: user_setting, operation: :chat)
 
         executor.execute do |provider|
@@ -153,7 +153,7 @@ RSpec.describe Knowledge::ProviderExecutor do
           "ok"
         end
 
-        state = user.provider_states.find_by(provider_name: "claude")
+        state = user.runner_states.find_by(runner_name: "claude")
         expect(state).to be_present
         expect(state.failure_count).to eq(1)
       end

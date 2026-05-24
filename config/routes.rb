@@ -88,12 +88,6 @@ Rails.application.routes.draw do
     patch :settings, on: :collection
     post :test_agent, on: :member
   end
-  resources :providers, except: :show, controller: "providers" do
-    patch :settings, on: :collection
-    post :test_agent, on: :member
-    post :toggle_agent_runs, on: :member
-    post :toggle_fallback, on: :member
-  end
 
   # Service container management
   resources :service_containers

@@ -2,17 +2,11 @@
 
 class ChatSession < ApplicationRecord
   include TenantScoped
-  include LegacyAttributeBridge
-
-  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
-    "provider_id" => "runner_id"
-  }.freeze
   STATUSES = %w[active idle closed archived].freeze
   MODES = %w[api workspace].freeze
   IDLE_TIMEOUT_DURATION = 30.minutes
 
   before_validation :set_external_id, on: :create
-  before_validation :sync_legacy_provider_id
   before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
   after_update_commit :broadcast_sidebar_refresh
@@ -35,22 +29,17 @@ class ChatSession < ApplicationRecord
   validate :project_must_belong_to_same_account
 
   def provider_id
-    self[:runner_id]
+    runner_id
   end
 
   def provider_id=(value)
-    self[:runner_id] = value
-    self[:provider_id] = value
+    self.runner_id = value
   end
 
   def provider=(value)
     return self.runner = value if value.is_a?(Runner) || value.nil?
 
     super
-  end
-
-  def update_columns(attributes)
-    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   scope :active, -> { where(status: "active") }
@@ -113,18 +102,6 @@ class ChatSession < ApplicationRecord
   end
 
   private
-
-  def sync_legacy_provider_id
-    if will_save_change_to_runner_id?
-      self[:provider_id] = runner_id
-    elsif will_save_change_to_attribute?("provider_id")
-      self[:runner_id] = self[:provider_id]
-    elsif runner_id.nil? && self[:provider_id].present?
-      self[:runner_id] = self[:provider_id]
-    elsif self[:provider_id].nil? && runner_id.present?
-      self[:provider_id] = runner_id
-    end
-  end
 
   def set_external_id
     self.external_id ||= SecureRandom.uuid

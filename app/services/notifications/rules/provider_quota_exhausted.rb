@@ -28,8 +28,8 @@ module Notifications
           severity: duration >= ERROR_THRESHOLD ? :error : :warning,
           title: "#{provider.display_name} quota exhausted for #{human_duration(state.updated_at)}",
           description: description_for(provider, state),
-          nav_section: "providers",
-          action_url: edit_provider_path(provider),
+          nav_section: "runners",
+          action_url: edit_runner_path(provider),
           metadata: {
             blocked_run_count: blocked_run_count_for(provider),
             reset_at: state.rate_limited_until&.iso8601
@@ -41,7 +41,7 @@ module Notifications
         parts = []
         parts << "#{blocked_run_count_for(provider)} unfinished runs blocked"
         parts << "resets at #{state.rate_limited_until.iso8601}" if state.rate_limited_until
-        parts << "open provider settings at #{edit_provider_path(provider)}"
+        parts << "open runner settings at #{edit_runner_path(provider)}"
         parts.join(". ")
       end
 
@@ -51,7 +51,7 @@ module Notifications
 
       def quota_state_for(provider)
         @quota_states ||= {}
-        @quota_states[provider.id] ||= provider.user.provider_states.find { |ps| ps.provider_name == provider.state_key }
+        @quota_states[provider.id] ||= provider.user.runner_states.find { |state| state.runner_name == provider.state_key }
       end
 
       def blocked_run_count_for(provider)
@@ -69,7 +69,7 @@ module Notifications
           .joins(:project)
           .where(projects: { created_by_id: user_ids })
           .where(status: AgentRun::UNFINISHED_STATUSES)
-          .pluck(:final_provider, :agent_type, "projects.created_by_id")
+          .pluck(:final_runner, :agent_type, "projects.created_by_id")
 
         providers.each do |provider|
           @blocked_run_counts[provider.id] = rows.count do |final, agent, uid|
