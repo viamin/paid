@@ -38,7 +38,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
       operational_failure_breaker: false,
       no_progress_stuck: false,
       failure_streak_limit_reached: false,
-      escalation_dismissed: false,
       owner_reviewer_login: "alice",
       escalation_reason: nil,
       consecutive_unsuccessful_automatic_runs: 0,
@@ -61,31 +60,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
       )
 
       expect(decision_types(result)).to eq([ "noop" ])
-    end
-
-    it "dismisses escalation when the owner removes the label" do
-      result = evaluate(
-        lifecycle: base_lifecycle(
-          phase: "escalated",
-          escalation_dismissed: true,
-          draft: false
-        )
-      )
-
-      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
-    end
-
-    it "escalation_dismissed trumps phase-specific gates" do
-      result = evaluate(
-        lifecycle: base_lifecycle(
-          phase: "escalated",
-          escalation_dismissed: true,
-          failure_streak_limit_reached: true,
-          draft: false
-        )
-      )
-
-      expect(result.to_h[:decisions].first).to include(type: "dismiss_escalation")
     end
   end
 
@@ -214,23 +188,6 @@ RSpec.describe Automation::Strategies::AutoContinue do
       )
 
       expect(result.to_h[:decisions].first[:type]).to eq("escalate")
-    end
-  end
-
-  describe "dismiss_escalation" do
-    it "includes the issue_id and draft flag in the payload" do
-      result = evaluate(
-        lifecycle: base_lifecycle(
-          phase: "escalated",
-          escalation_dismissed: true,
-          draft: false
-        )
-      )
-
-      decision = result.to_h[:decisions].first
-      expect(decision[:type]).to eq("dismiss_escalation")
-      expect(decision[:issue_id]).to eq(pull_request.id)
-      expect(decision[:draft]).to be(false)
     end
   end
 

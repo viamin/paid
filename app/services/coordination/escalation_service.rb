@@ -144,8 +144,6 @@ module Coordination
     end
 
     def auto_resolve_trigger?(policy)
-      return true if signals["escalation_dismissed"] == true
-
       trigger_types.any? { |type| policy["auto_resolve_trigger_types"].include?(type) }
     end
 

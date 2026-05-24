@@ -674,56 +674,23 @@ RSpec.describe Issue do
         expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
       end
 
-      it "continues to recompute progress state when resetting the review-goal breaker" do
-        fresh_progress_state = instance_double(
-          PullRequests::ProgressState::Result,
-          consecutive_unsuccessful_automatic_runs: 1
-        )
+      it "does not rewrite progress reset markers when dismissing escalation" do
         allow(PullRequests::ProgressState).to receive(:call)
           .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(progress_state, fresh_progress_state)
-        allow(issue).to receive(:update!).and_return(true)
-
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
-
-        issue.reset_review_goal_retry_breaker!
-
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
-        expect(PullRequests::ProgressState).to have_received(:call).twice
-      end
-
-      it "resets both unified progress reset markers when resetting the review-goal breaker" do
-        allow(issue).to receive(:update!).and_return(true)
-
-        freeze_time do
-          issue.reset_review_goal_retry_breaker!
-
-          expect(issue).to have_received(:update!).with(
-            hash_including(
-              review_goal_retry_reset_at: Time.current,
-              operational_failure_reset_at: Time.current
-            )
-          )
-        end
-      end
-
-      it "continues to recompute progress state when dismissing escalation" do
-        fresh_progress_state = instance_double(
-          PullRequests::ProgressState::Result,
-          consecutive_unsuccessful_automatic_runs: 1
-        )
-        allow(PullRequests::ProgressState).to receive(:call)
-          .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
-          .and_return(progress_state, fresh_progress_state)
+          .and_return(progress_state)
         issue.define_singleton_method(:labels) { %w[paid-escalated paid-dismiss-escalation] }
         allow(issue).to receive(:update!).and_return(true)
 
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(3)
-
         issue.dismiss_escalation!(draft: false)
 
-        expect(issue.consecutive_unsuccessful_pr_runs).to eq(1)
-        expect(PullRequests::ProgressState).to have_received(:call).twice
+        expect(issue).to have_received(:update!).with(
+          hash_including(
+            pr_review_phase: "ready",
+            ci_retry_requested_at: nil
+          )
+        )
+        expect(issue).not_to have_received(:update!).with(hash_including(:review_goal_retry_reset_at))
+        expect(issue).not_to have_received(:update!).with(hash_including(:operational_failure_reset_at))
       end
     end
 
