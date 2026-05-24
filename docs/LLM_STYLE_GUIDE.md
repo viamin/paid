@@ -1,7 +1,6 @@
 # Paid LLM Style Cheat Sheet
 
 > Concise rules for AI coding assistants working on Paid. Use this as the quick reference for generation. For rationale and examples, see `STYLE_GUIDE.md`.
-
 > **Note:** Some of the guidance in this document is also seeded as global `StyleGuide` records in [`db/seeds/style_guides.rb`](../db/seeds/style_guides.rb). The DB-backed guides are what reach agent prompts via `StyleGuides::InjectIntoPrompt`; this document is a human reference. Edits intended to reach agents must update the seed file or be made through the StyleGuide admin UI (`/admin/resources/style_guides`). The two surfaces may drift over time — that is acceptable as long as contributors know both exist.
 
 ## 1. Core Architecture
