@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe "Accounts::ComplianceDashboards" do
   let(:account) { create(:account, name: "Acme") }
   let(:owner) { create(:user, :owner, account: account) }
+  let(:member) { create(:user, :member, account: account) }
   let(:deployment_assurance_params) do
     {
       deployment_assurance: {
@@ -51,6 +52,17 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       expect(response.body).to include("Control gaps")
       expect(response.body).to include("Reference architectures")
     end
+
+    it "hides the evidence export link from members" do
+      sign_out owner
+      sign_in member
+
+      get account_compliance_dashboard_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("Export evidence pack")
+      expect(response.body).not_to include("Save compliance settings")
+    end
   end
 
   describe "PATCH /account_compliance_dashboard" do
@@ -79,6 +91,15 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       body = JSON.parse(response.body)
       expect(body.fetch("account").fetch("name")).to eq("Acme")
       expect(body).to include("control_summary", "controls", "configuration_snapshot", "audit_export")
+    end
+
+    it "forbids members from exporting the evidence pack" do
+      sign_out owner
+      sign_in member
+
+      get export_account_compliance_dashboard_path(format: :json)
+
+      expect(response).to redirect_to(root_path)
     end
   end
 end

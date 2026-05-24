@@ -1,5 +1,6 @@
 <% content_for :title, "Compliance Dashboard" %>
 
+<% can_manage_compliance = policy(current_account).update? %>
 <% deployment_assurance = @compliance_dashboard[:deployment_assurance] %>
 <% customer_managed_keys = deployment_assurance["customer_managed_keys"] %>
 <% secret_rotation = deployment_assurance["secret_rotation"] %>
@@ -17,7 +18,9 @@
 
     <div class="flex flex-wrap gap-3">
       <%= link_to "Back to account", account_path, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
-      <%= link_to "Export evidence pack", export_account_compliance_dashboard_path(format: :json), class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+      <% if can_manage_compliance %>
+        <%= link_to "Export evidence pack", export_account_compliance_dashboard_path(format: :json), class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+      <% end %>
     </div>
   </div>
 
@@ -92,6 +95,12 @@
           <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Deployment assurance settings</h2>
           <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">These values feed the dashboard and exported evidence pack.</p>
         </div>
+
+        <% unless can_manage_compliance %>
+          <div class="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+            Account admins and owners can update deployment assurance settings and export the evidence pack.
+          </div>
+        <% end %>
 
         <%= form_with url: account_compliance_dashboard_path, method: :patch, class: "mt-6 space-y-8" do %>
           <section class="grid gap-4 md:grid-cols-2">
@@ -213,9 +222,11 @@
             </div>
           </section>
 
-          <div class="flex justify-end">
-            <%= submit_tag "Save compliance settings", class: "rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200" %>
-          </div>
+          <% if can_manage_compliance %>
+            <div class="flex justify-end">
+              <%= submit_tag "Save compliance settings", class: "rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200" %>
+            </div>
+          <% end %>
         <% end %>
       </section>
     </div>

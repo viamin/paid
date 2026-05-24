@@ -208,7 +208,9 @@ module Accounts
         keys = deployment_assurance["customer_managed_keys"]
         enabled = keys["enabled"] == true
         status =
-          if enabled && keys["provider"].present? && keys["key_reference"].present?
+          if !enabled
+            :not_applicable
+          elsif keys["provider"].present? && keys["key_reference"].present?
             if fresh_within?(keys["last_rotated_at"], days: keys["rotation_interval_days"].presence || 90)
               :compliant
             else

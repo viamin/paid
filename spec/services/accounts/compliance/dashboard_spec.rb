@@ -42,9 +42,21 @@ RSpec.describe Accounts::Compliance::Dashboard do
       controls = result[:controls].index_by { |control| control[:id] }
 
       expect(result[:readiness_score]).to be < 100
-      expect(controls[:customer_managed_keys][:status]).to eq(:gap)
+      expect(controls[:customer_managed_keys][:status]).to eq(:not_applicable)
       expect(controls[:secret_rotation][:status]).to eq(:gap)
       expect(controls[:air_gap_validation][:status]).to eq(:not_applicable)
+    end
+
+    it "treats enabled customer-managed keys without supporting evidence as a gap" do
+      tenant_setting.deployment_assurance_configuration = {
+        "customer_managed_keys" => { "enabled" => true }
+      }
+      tenant_setting.save!
+
+      result = described_class.call(account: account, tenant_setting: tenant_setting, billing_visible: false)
+      controls = result[:controls].index_by { |control| control[:id] }
+
+      expect(controls[:customer_managed_keys][:status]).to eq(:gap)
     end
 
     it "marks controls compliant when recent evidence is present" do

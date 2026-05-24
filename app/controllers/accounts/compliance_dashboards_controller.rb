@@ -35,7 +35,7 @@ module Accounts
     end
 
     def export
-      authorize current_account, :show?
+      authorize current_account, :update?
 
       pack = Accounts::Compliance::EvidencePack.call(
         account: current_account,
