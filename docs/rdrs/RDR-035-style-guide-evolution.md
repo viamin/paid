@@ -145,6 +145,7 @@ Lightweight, style-guide-specific A/B test infrastructure (parallel to `AbTest` 
 ```sql
 CREATE TABLE style_guide_ab_tests (
   id bigint PRIMARY KEY,
+  account_id bigint NOT NULL REFERENCES accounts,
   style_guide_id bigint NOT NULL REFERENCES style_guides ON DELETE CASCADE,
   control_version_id bigint NOT NULL REFERENCES style_guide_versions,
   winner_variant_id bigint REFERENCES style_guide_ab_test_variants,
@@ -159,9 +160,10 @@ CREATE TABLE style_guide_ab_tests (
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL
 );
--- At most one running test per style guide (partial unique index; not valid as inline CONSTRAINT)
-CREATE UNIQUE INDEX idx_style_guide_ab_tests_one_running
-  ON style_guide_ab_tests(style_guide_id) WHERE (status = 'running');
+-- At most one running style-guide experiment per account cohort.
+-- This keeps each AgentRun attributable to exactly one experimental guide.
+CREATE UNIQUE INDEX idx_style_guide_ab_tests_one_running_per_account
+  ON style_guide_ab_tests(account_id) WHERE (status = 'running');
 
 CREATE TABLE style_guide_ab_test_variants (
   id bigint PRIMARY KEY,
@@ -264,7 +266,8 @@ This is the critical innovation over prompt evolution. The approach: **singular 
 **How it works:**
 
 1. When an `AgentRun` is being set up and `StyleGuides::InjectIntoPrompt` is called:
-   - Check if there is an active `StyleGuideAbTest` for any of the resolved style guides
+   - Check whether the account has a single active `StyleGuideAbTest`
+   - Verify that the test's `style_guide_id` is present in the resolved guide set for this project
    - If yes, for the experimental guide, inject the assigned variant content instead of the production (current) content
    - Create a `StyleGuideAbTestAssignment` linking the `AgentRun` to the `StyleGuideAbTestVariant`
    - All other guides inject their production content as normal
@@ -296,7 +299,7 @@ CREATE INDEX idx_style_guide_ab_test_assignments_on_agent_run_id
   ON style_guide_ab_test_assignments(agent_run_id);
 ```
 
-**Why singular injection?** If we tried to simultaneously evolve all 3-7 style guides injected per run, the combinatorial explosion would make statistical attribution impossible. By varying only one guide per evolution cycle (the one with its own A/B test running), we get clean 1:1 attribution between variant and outcome.
+**Why singular injection?** If we tried to simultaneously evolve all 3-7 style guides injected per run, the combinatorial explosion would make statistical attribution impossible. By varying only one guide per evolution cycle, and by allowing only one running style-guide A/B test per account cohort, we get clean 1:1 attribution between variant and outcome for every `AgentRun`.
 
 **Fallback: whole-bundle attribution.** For a future phase, when all individual guides have converged, the system could treat the entire resolved guide set as a single configuration bundle and run multi-factor experiments. This is out of scope for the initial implementation.
 
@@ -306,23 +309,27 @@ At agent run setup time, inside `RunAgentActivity` (or the equivalent prompt-bui
 
 ```ruby
 def maybe_assign_style_guide_variant(agent_run, resolved_guides)
-  resolved_guides.each do |guide|
-    ab_test = guide.active_style_guide_ab_test
-    next unless ab_test
+  ab_test = StyleGuideAbTest.running.find_by(account_id: agent_run.account_id)
+  return {} unless ab_test
 
-    assignment = StyleGuideAbTests::Assign.call(
-      style_guide_ab_test: ab_test,
-      agent_run: agent_run
-    )
+  guide = resolved_guides.find { |resolved_guide| resolved_guide.id == ab_test.style_guide_id }
+  return {} unless guide
 
-    # Override this guide's content with the variant version
-    variant_version = assignment.variant.style_guide_version
-    guide.instance_variable_set(:@override_content, variant_version.raw_content)
-  end
+  assignment = StyleGuideAbTests::Assign.call(
+    style_guide_ab_test: ab_test,
+    agent_run: agent_run
+  )
+
+  {
+    guide.name => {
+      raw_content: assignment.variant.style_guide_version.raw_content,
+      compressed_content: nil
+    }
+  }
 end
 ```
 
-`StyleGuides::InjectIntoPrompt` is extended to accept an optional `overrides` hash:
+`StyleGuides::InjectIntoPrompt` is extended to accept an optional `overrides` hash. Overrides are passed through the same render/compression path as production guides so the experiment only varies guide content, not truncation or compression behavior:
 
 ```ruby
 module StyleGuides
@@ -330,7 +337,15 @@ module StyleGuides
     def self.call(prompt:, project:, overrides: {})
       guides = StyleGuide.resolve_for(project)
       guides.each do |guide|
-        content = overrides[guide.name] || guide.content_for_prompt
+        source = overrides.fetch(guide.name, {
+          raw_content: guide.raw_content,
+          compressed_content: guide.compressed_content
+        })
+        content = StyleGuides::RenderContentForPrompt.call(
+          raw_content: source[:raw_content],
+          compressed_content: source[:compressed_content],
+          project: project
+        )
         # inject content into prompt
       end
     end
@@ -338,7 +353,13 @@ module StyleGuides
 end
 ```
 
-Each style guide can have at most one running A/B test (enforced by the unique partial index on `style_guide_ab_tests`). Multiple guides CAN each have their own test running concurrently — they vary independently.
+The production path and the experimental path therefore share the same byte-budget semantics:
+
+- If a promoted guide already has `compressed_content`, both control and variant use the compressed form.
+- If compression is missing or stale, both paths fall back to the same project-budgeted raw-content truncation logic.
+- Large variants cannot bypass the existing prompt budget merely because they came from `StyleGuideVersion`.
+
+Each style guide can have many historical A/B tests, but the scheduler may run only one style-guide A/B test per account at a time. Different accounts can still run style-guide experiments concurrently because their `AgentRun` cohorts are disjoint.
 
 #### 6. Scope Eligibility
 
@@ -515,8 +536,9 @@ end
    - [ ] `StyleGuideAbTests::Assign` — assign variant to agent run at injection time
    - [ ] `StyleGuideAbTests::RecordResult` — record quality score against variant
    - [ ] `StyleGuideAbTests::Analyze` — Welch's t-test comparing variants against control
-   - [ ] `StyleGuideAbTests::PromoteWinner` — promote winning variant to `current_version`
-   - [ ] `StyleGuides::InjectIntoPrompt` — add `overrides` parameter for experimental guides
+   - [ ] `StyleGuideAbTests::PromoteWinner` — promote winning variant to `current_version` and mirror its raw content onto the `style_guides` row
+   - [ ] `StyleGuides::RenderContentForPrompt` — shared compression/truncation helper used by both production guides and experiment overrides
+   - [ ] `StyleGuides::InjectIntoPrompt` — add `overrides` parameter for experimental guides and route both paths through the shared renderer
 
 4. **Temporal** (Phase B):
    - [ ] `StyleGuideEvolutionWorkflow` — orchestrate the four-stage pipeline
@@ -552,7 +574,7 @@ end
 3. **Attribution accuracy**: Create an A/B test with control + 2 variants. Run 100 simulated agent runs. Assert quality scores are attributed to correct variants.
 4. **Winner promotion**: Create a test where variant significantly outperforms control. Assert `StyleGuideAbTests::PromoteWinner` updates `style_guide.current_version`.
 5. **Global guide immunity**: Assert `StyleGuideEvolutionJob` does not discover global guides.
-6. **Multiple concurrent tests**: Run A/B tests for 2 different style guides simultaneously. Assert each agent run receives correct variant for each guide.
+6. **Account-level exclusivity**: Attempt to start a second running style-guide A/B test for the same account. Assert validation rejects it while allowing a concurrent test in a different account.
 
 ### Performance
 
@@ -587,7 +609,8 @@ end
 
 ## Notes
 
-- The `StyleGuideVersion` table does **not** store `compressed_content`. Compression is a rendering optimization applied at injection time, not a versioned artifact. Only `raw_content` (the source of truth) is versioned.
-- The existing `StyleGuideCompressionJob` continues to compress `current_version.raw_content` after a new version is promoted.
-- The `StyleGuide.current_version` is set only when a version is approved (or auto-promoted if review is disabled). Manual edits to `style_guide.raw_content` (via the UI) also create a new version automatically via `before_save :create_version_if_content_changed`.
+- The `StyleGuideVersion` table does **not** store `compressed_content`. Compression is a rendering optimization applied at injection time, not a versioned artifact. Only immutable `raw_content` snapshots are versioned.
+- The canonical production read path remains the `style_guides` row. `StyleGuide#content_for_prompt` continues to read `style_guides.raw_content` / `style_guides.compressed_content`, and `StyleGuides::RenderContentForPrompt` becomes the shared helper behind both normal injection and experiment overrides.
+- Winner promotion is therefore a mirror step, not a pointer flip only: promoting `current_version` must also copy that version's `raw_content` onto `style_guides.raw_content`, clear `style_guides.compressed_content`, and enqueue `StyleGuideCompressionJob`. Production prompts immediately pick up the new raw content via the existing fallback path, then pick up refreshed compressed content when compression completes.
+- The `StyleGuide.current_version` pointer records which immutable snapshot is live; it is not a second runtime content source. Manual edits to `style_guide.raw_content` (via the UI) likewise create a new `StyleGuideVersion`, update the row-level canonical content, and repoint `current_version`.
 - Logidze continues to track all changes for audit purposes alongside the version store. Version records capture the semantic content evolution; logidze captures the full operational history.
