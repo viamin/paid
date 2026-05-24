@@ -10,7 +10,7 @@ RSpec.describe RenameProvidersToRunnersMigrationFile, :no_db do
     Rails.root.join("db/migrate/20260511171813_rename_providers_to_runners.rb").read
   end
 
-  it "backfills legacy provider columns from runner columns before phase-1 rollback drops the bridge columns",
+  it "preserves the forward-rename backfill for the phase-2 table migration",
     :aggregate_failures do
     expect(migration_source).to include('UPDATE providers SET provider_key = runner_key')
     expect(migration_source).to include('UPDATE provider_states SET provider_name = runner_name')

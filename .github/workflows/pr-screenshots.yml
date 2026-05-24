@@ -218,14 +218,30 @@ jobs:
         id: capture_screenshots
         run: bin/rails screenshots:capture
 
+      - name: Detect captured screenshots
+        if: always()
+        id: detect_screenshots
+        run: |
+          shopt -s nullglob
+          screenshots=(tmp/screenshots/*.png)
+
+          if [ "${#screenshots[@]}" -gt 0 ]; then
+            echo "has_screenshots=true" >> "$GITHUB_OUTPUT"
+            printf 'Captured screenshots:\n'
+            printf '  %s\n' "${screenshots[@]}"
+          else
+            echo "has_screenshots=false" >> "$GITHUB_OUTPUT"
+            echo "No screenshots were captured."
+          fi
+
       - name: Upload screenshots to artifacts
         id: upload_screenshots
-        if: always()
+        if: always() && steps.detect_screenshots.outputs.has_screenshots == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pr-screenshots
           path: tmp/screenshots/*.png
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
 
   # Clean up uploaded screenshots when a PR is closed or merged.

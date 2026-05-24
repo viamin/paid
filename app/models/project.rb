@@ -581,6 +581,10 @@ class Project < ApplicationRecord
         attempted_runners_by_routing_key: attempted_runners
       }
     )
+  rescue ActiveRecord::StatementInvalid => error
+    # During db:migrate, AgentRun callbacks can still render the detail partial
+    # before marketplace attachment tables exist. Ignore only that transient case.
+    raise unless missing_agent_run_marketplace_entries_table?(error)
   end
 
   def self.suppress_broadcasts
@@ -876,6 +880,12 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def missing_agent_run_marketplace_entries_table?(error)
+    return false unless error.message.include?("agent_run_marketplace_entries")
+
+    defined?(PG::UndefinedTable) && error.cause.is_a?(PG::UndefinedTable)
+  end
 
   def normalize_screenshot_settings(settings)
     settings = settings.to_unsafe_h if settings.respond_to?(:to_unsafe_h)

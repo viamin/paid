@@ -290,6 +290,24 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       EnableTenantRowLevelSecurity.new.down
+
+      EnableTenantRowLevelSecurity.new.up
+      EnableRlsOnNotificationRuleStates.new.up
+      EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
+      EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
+      EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
+      EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
+      EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
+      CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
+      restore_exception_incidents_logidze!
+      CreateFailureClassifications.new.up unless failure_classifications_table_exists?
+      CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
+      AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
+      ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
+      TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.up if orchestration_decisions_have_strategy_version_reference?
+      EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
+      EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
+      FixStrategiesRlsInfiniteRecursion.new.up
     end
   end
 

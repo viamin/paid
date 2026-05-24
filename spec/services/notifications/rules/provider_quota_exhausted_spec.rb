@@ -12,7 +12,7 @@ RSpec.describe Notifications::Rules::ProviderQuotaExhausted do
   end
 
   it "publishes after 15 minutes of continuous rate limiting" do
-    create(:provider_state, user: user, provider_name: provider.state_key,
+    create(:runner_state, user: user, runner_name: provider.state_key,
       rate_limited_until: 30.minutes.from_now, updated_at: 16.minutes.ago)
 
     expect {
@@ -24,7 +24,7 @@ RSpec.describe Notifications::Rules::ProviderQuotaExhausted do
   end
 
   it "does not publish inside the tolerance window" do
-    create(:provider_state, user: user, provider_name: provider.state_key,
+    create(:runner_state, user: user, runner_name: provider.state_key,
       rate_limited_until: 30.minutes.from_now, updated_at: 10.minutes.ago)
 
     expect {
@@ -33,7 +33,7 @@ RSpec.describe Notifications::Rules::ProviderQuotaExhausted do
   end
 
   it "resolves when the provider clears" do
-    state = create(:provider_state, user: user, provider_name: provider.state_key,
+    state = create(:runner_state, user: user, runner_name: provider.state_key,
       rate_limited_until: 30.minutes.from_now, updated_at: 16.minutes.ago)
     create(:notification, account: user.account, source: "provider_quota_exhausted", subject: provider)
     state.update!(rate_limited_until: 1.minute.ago)
@@ -44,7 +44,7 @@ RSpec.describe Notifications::Rules::ProviderQuotaExhausted do
   end
 
   it "deduplicates by provider" do
-    create(:provider_state, user: user, provider_name: provider.state_key,
+    create(:runner_state, user: user, runner_name: provider.state_key,
       rate_limited_until: 30.minutes.from_now, updated_at: 16.minutes.ago)
 
     2.times { described_class.call(scope: provider) }

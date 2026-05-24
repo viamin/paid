@@ -2,12 +2,6 @@
 
 class TenantSetting < ApplicationRecord
   include AutoPickSkipLabels
-  include LegacyAttributeBridge
-
-  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
-    "provider_preferences" => "runner_preferences",
-    "allowed_provider_keys" => "allowed_runner_keys"
-  }.freeze
   has_logidze
   PG_INT_MAX = 2_147_483_647
   BUDGET_TYPES = CostBudget::BUDGET_TYPES
@@ -61,7 +55,6 @@ class TenantSetting < ApplicationRecord
   belongs_to :account
 
   before_validation :normalize_configuration_namespaces
-  before_validation :sync_legacy_provider_bridge_columns
 
   validates :max_concurrent_runs,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
@@ -84,15 +77,16 @@ class TenantSetting < ApplicationRecord
     allow_nil: true,
     if: -> { self_repo_full_name.present? }
 
-  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
-    define_method(legacy_name) do
-      self[runner_name]
-    end
+  def provider_preferences = runner_preferences
 
-    define_method("#{legacy_name}=") do |value|
-      self[runner_name] = value
-      self[legacy_name] = value
-    end
+  def provider_preferences=(value)
+    self.runner_preferences = value
+  end
+
+  def allowed_provider_keys = allowed_runner_keys
+
+  def allowed_provider_keys=(value)
+    self.allowed_runner_keys = value
   end
 
   def configuration
@@ -107,10 +101,6 @@ class TenantSetting < ApplicationRecord
       "self_repo_full_name" => self_repo_full_name,
       "features" => features
     }
-  end
-
-  def update_columns(attributes)
-    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   def effective_runner_preferences
@@ -234,23 +224,6 @@ class TenantSetting < ApplicationRecord
   private_class_method :read_worker_setting_from_db
 
   private
-
-  def sync_legacy_provider_bridge_columns
-    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
-      runner_value = self[runner_name]
-      legacy_value = self[legacy_name]
-
-      if will_save_change_to_attribute?(runner_name)
-        self[legacy_name] = runner_value
-      elsif will_save_change_to_attribute?(legacy_name)
-        self[runner_name] = legacy_value
-      elsif runner_value.nil? && !legacy_value.nil?
-        self[runner_name] = legacy_value
-      elsif legacy_value.nil? && !runner_value.nil?
-        self[legacy_name] = runner_value
-      end
-    end
-  end
 
   def normalize_configuration_namespaces
     self.runner_preferences = normalize_hash(runner_preferences)

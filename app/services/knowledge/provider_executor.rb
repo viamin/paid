@@ -26,8 +26,8 @@ module Knowledge
     def runner_state_for(runner)
       @runner_states ||= {}
       @runner_states[runner] ||= @user_setting.user
-        .provider_states
-        .find_or_create_by!(provider_name: runner) do |state|
+        .runner_states
+        .find_or_create_by!(runner_name: runner) do |state|
           state.circuit_state = "closed"
           state.failure_count = 0
         end

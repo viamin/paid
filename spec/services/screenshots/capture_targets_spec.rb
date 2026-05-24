@@ -81,6 +81,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "dashboard" ])
     end
 
+    it "maps the legacy providers controller to runner screenshot targets during the rename tail" do
+      targets = described_class.call(changed_files: [ "app/controllers/providers_controller.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("providers", "providers_new", "providers_edit")
+    end
+
     it "maps account administration controllers to the account page target" do
       targets = described_class.call(changed_files: [ "app/controllers/accounts_controller.rb" ])
 
@@ -248,11 +254,11 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "projects" ])
     end
 
-    it "maps provider index partials to the providers index target" do
-      targets = described_class.call(changed_files: [ "app/views/providers/_settings.html.erb" ])
+    it "maps runner index partials to the runners screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/runners/_settings.html.erb" ])
       expect(targets.map(&:slug)).to eq([ "providers" ])
 
-      targets = described_class.call(changed_files: [ "app/views/providers/_usage_stats.html.erb" ])
+      targets = described_class.call(changed_files: [ "app/views/runners/_usage_stats.html.erb" ])
       expect(targets.map(&:slug)).to eq([ "providers" ])
     end
 

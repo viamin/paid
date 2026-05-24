@@ -34,11 +34,12 @@ RSpec.describe RunnerState do
     end
   end
 
-  describe "provider bridge columns" do
-    it "keeps runner_name synchronized when legacy provider columns are updated directly" do
+  describe "legacy provider alias" do
+    it "maps provider_name to runner_name" do
       state = create(:runner_state, runner_name: "claude")
 
-      state.update_columns(provider_name: "cursor")
+      state.provider_name = "cursor"
+      state.save!
 
       expect(state.reload.runner_name).to eq("cursor")
     end

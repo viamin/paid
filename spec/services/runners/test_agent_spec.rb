@@ -109,11 +109,10 @@ RSpec.describe Runners::TestAgent do
         )
       end
 
-      it "creates the ephemeral agent run with both provider_id and runner_id populated" do
+      it "creates the ephemeral agent run with the runner_id populated" do
         expect(AgentRun).to receive(:insert_all!).with(
           [
             hash_including(
-              provider_id: provider.id,
               runner_id: provider.id
             )
           ],

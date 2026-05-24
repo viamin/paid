@@ -8,7 +8,7 @@ RSpec.describe UserSetting do
     it { is_expected.to have_many(:runner_states).through(:user) }
   end
 
-  describe "provider bridge columns" do
+  describe "legacy provider aliases" do
     let(:user) { create(:user) }
     let(:goal_runner_identifier) { user.runners.kept_only.for_agent_runs.ordered.first.routing_key }
 
@@ -28,16 +28,16 @@ RSpec.describe UserSetting do
       )
     end
 
-    it "keeps legacy provider-named settings synchronized with runner-named settings" do
-      expect(runner_backed_setting.read_attribute(:default_agent_provider)).to eq("cursor")
-      expect(runner_backed_setting.read_attribute(:default_agent_providers_by_goal)).to eq({ "review" => goal_runner_identifier })
-      expect(runner_backed_setting.read_attribute(:fallback_providers)).to eq([ "claude", "cursor" ])
-      expect(runner_backed_setting.read_attribute(:provider_selection_mode)).to eq("round_robin")
-      expect(runner_backed_setting.read_attribute(:provider_round_robin_state)).to eq({ "review" => 1 })
-      expect(runner_backed_setting.read_attribute(:kb_chat_provider)).to eq("cursor")
-      expect(runner_backed_setting.read_attribute(:kb_chat_fallback_providers)).to eq([ "claude" ])
-      expect(runner_backed_setting.read_attribute(:kb_embedding_provider)).to eq("openrouter")
-      expect(runner_backed_setting.read_attribute(:kb_embedding_fallback_providers)).to eq([ "openai" ])
+    it "exposes runner-named settings through legacy provider aliases" do
+      expect(runner_backed_setting.default_agent_provider).to eq("claude")
+      expect(runner_backed_setting.default_agent_providers_by_goal).to eq({ "review" => goal_runner_identifier })
+      expect(runner_backed_setting.fallback_providers).to eq([ "claude" ])
+      expect(runner_backed_setting.provider_selection_mode).to eq("round_robin")
+      expect(runner_backed_setting.provider_round_robin_state).to eq({ "review" => 1 })
+      expect(runner_backed_setting.kb_chat_provider).to eq("cursor")
+      expect(runner_backed_setting.kb_chat_fallback_providers).to eq([ "claude" ])
+      expect(runner_backed_setting.kb_embedding_provider).to eq("openrouter")
+      expect(runner_backed_setting.kb_embedding_fallback_providers).to eq([ "openai" ])
     end
 
     it "updates runner-named settings when legacy provider setters are used" do
@@ -61,21 +61,6 @@ RSpec.describe UserSetting do
       expect(setting.kb_chat_runner).to eq("cursor")
       expect(setting.kb_chat_fallback_runners).to eq([ "claude" ])
       expect(setting.kb_embedding_runner).to eq("openrouter")
-      expect(setting.kb_embedding_fallback_runners).to eq([ "openai" ])
-    end
-
-    it "keeps runner-named settings synchronized when legacy provider columns are updated directly" do
-      setting = create(:user_setting)
-
-      setting.update_columns(
-        default_agent_provider: "cursor",
-        kb_chat_provider: "codex",
-        kb_embedding_fallback_providers: [ "openai" ]
-      )
-
-      setting.reload
-      expect(setting.default_agent_runner).to eq("cursor")
-      expect(setting.kb_chat_runner).to eq("codex")
       expect(setting.kb_embedding_fallback_runners).to eq([ "openai" ])
     end
   end

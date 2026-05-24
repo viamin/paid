@@ -18,11 +18,11 @@ RSpec.describe AgentRun do
     it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
   end
 
-  describe "provider bridge columns" do
+  describe "legacy provider aliases" do
     let(:owner) { create(:user) }
     let(:runner) { create(:runner, user: owner, runner_key: "cursor") }
 
-    it "keeps legacy provider columns synchronized when runner-named attributes change" do
+    it "exposes runner-named attributes through legacy provider aliases" do
       agent_run = create(
         :agent_run,
         project: create(:project, account: owner.account, created_by: owner),
@@ -32,10 +32,10 @@ RSpec.describe AgentRun do
         final_runner: runner.routing_key
       )
 
-      expect(agent_run.read_attribute(:provider_id)).to eq(runner.id)
-      expect(agent_run.read_attribute(:provider_switches)).to eq(2)
-      expect(agent_run.read_attribute(:providers_attempted)).to eq([ { "runner" => runner.routing_key } ])
-      expect(agent_run.read_attribute(:final_provider)).to eq(runner.routing_key)
+      expect(agent_run.provider_id).to eq(runner.id)
+      expect(agent_run.provider_switches).to eq(2)
+      expect(agent_run.providers_attempted).to eq([ { "runner" => runner.routing_key } ])
+      expect(agent_run.final_provider).to eq(runner.routing_key)
     end
 
     it "keeps runner-named attributes synchronized when legacy provider setters are used" do
