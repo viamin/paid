@@ -64,7 +64,11 @@ class StyleGuidesController < ApplicationController
   def compress
     authorize @style_guide, :compress?
 
-    StyleGuideCompressionJob.perform_later(@style_guide.id)
+    StyleGuides::EnqueueCompression.call(
+      style_guide: @style_guide,
+      initiated_by: current_user,
+      source: "style_guides_controller"
+    )
     redirect_to @style_guide, notice: "Style guide compression has been queued and will complete shortly."
   end
 

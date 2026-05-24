@@ -102,11 +102,14 @@ module StyleGuides
     def build_metadata(compressed)
       raw_bytes = style_guide.raw_content.bytesize
       compressed_bytes = compressed.bytesize
+      raw_content_written_at = style_guide.raw_content_written_at
 
       meta = {
         "compressed_at" => Time.current.iso8601,
         "model" => DEFAULT_MODEL,
         "raw_length" => raw_bytes,
+        "raw_content_sha256" => Digest::SHA256.hexdigest(style_guide.raw_content),
+        "raw_content_updated_at" => raw_content_written_at.iso8601,
         "compressed_length" => compressed_bytes,
         "compression_ratio" => (compressed_bytes.to_f / raw_bytes).round(2)
       }
