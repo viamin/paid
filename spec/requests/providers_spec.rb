@@ -636,6 +636,18 @@ RSpec.describe "Providers" do
       expect(provider.reload.tier_model_ids).to eq("low" => "haiku-x", "mid" => "sonnet-x", "high" => "opus-x")
     end
 
+    it "shows a non-blocking default fallback warning when no explicit tier is configured" do
+      provider = user.providers.create!(provider_key: "cursor")
+      create(:llm_model, model_id: "haiku-x", provider: "anthropic", tier: "low")
+      create(:llm_model, model_id: "sonnet-x", provider: "anthropic", tier: "mid")
+      create(:llm_model, model_id: "opus-x", provider: "anthropic", tier: "high")
+
+      get edit_provider_path(provider)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("falls through to the default mapping")
+    end
+
     it "persists complexity_thresholds on update" do
       provider = user.providers.create!(provider_key: "cursor")
 

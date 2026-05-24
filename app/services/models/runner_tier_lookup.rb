@@ -7,7 +7,13 @@ module Models
     def runner_tier_model(tier)
       return nil unless tier
 
-      model_id = agent_run.runner&.tier_model_ids&.dig(tier)
+      resolved = Runners::ResolveTierModel.call(
+        runner: agent_run.runner,
+        tier: tier,
+        provider: agent_run.provider
+      )
+      model_id = resolved.model_id if resolved.success?
+      model_id ||= agent_run.runner&.tier_model_ids&.dig(tier)
       return nil if model_id.blank?
 
       LlmModel.active.find_by(model_id: model_id)
