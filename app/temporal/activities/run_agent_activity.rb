@@ -718,6 +718,10 @@ module Activities
         end
 
       return if configured_model_id.blank? || configured_model_id == selected_model_id
+      # TODO(RDR-034): replace with tier-based runtime resolution in Phase 2.
+      # Tactical Phase 0 keeps direct-outbound runners on their configured
+      # runtime even when the meta-agent selected a different primary model.
+      return if runner_entry&.respond_to?(:requires_direct_outbound?) && runner_entry.requires_direct_outbound?
 
       runner_label = runner_entry&.display_name || runner_entry&.runner_key || "runner"
       raise RunnerExecutionError,

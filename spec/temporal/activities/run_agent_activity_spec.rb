@@ -752,17 +752,16 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
-    it "raises when a fixed-runtime provider disagrees with the selected model" do
+    it "keeps the configured runtime when a direct-outbound runner disagrees with the selected model" do
       opencode_context = build_opencode_context(user)
       llm_model = create(:llm_model, model_id: "different-model", provider: "openrouter")
       create(:model_selection, agent_run: agent_run, llm_model: llm_model)
 
-      expect {
-        activity.send(:build_command, opencode_context, "ping", agent_run: agent_run)
-      }.to raise_error(
-        Activities::RunAgentActivity::RunnerExecutionError,
-        /Selected model different-model does not match configured runtime model moonshotai\/kimi-k2-0905/
-      )
+      command = activity.send(:build_command, opencode_context, "ping", agent_run: agent_run)
+      preparation = activity.send(:command_preparation_for, opencode_context, "ping")
+
+      expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ])
+      expect(preparation.file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
     end
   end
 
@@ -781,6 +780,15 @@ RSpec.describe Activities::RunAgentActivity do
       runtime = activity.send(:selected_runner_runtime, codex_provider, nil, run)
 
       expect(runtime).to be_nil
+    end
+
+    it "keeps the configured runtime for direct-outbound runners with a different selected model" do
+      opencode_context = build_opencode_context(user)
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "different-model", provider: "openrouter"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
     end
   end
 
@@ -1319,6 +1327,33 @@ RSpec.describe Activities::RunAgentActivity do
     expect(result[:success]).to be true
     expect(result[:final_runner]).to eq(opencode_runner.routing_key)
     expect(agent_run.reload.final_runner).to eq(opencode_runner.routing_key)
+  end
+
+  def expect_opencode_runtime_execute_calls(execute_calls)
+    expect(execute_calls.length).to eq(3)
+    expect(execute_calls.second.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
+    expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
+    expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+    expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+    expect(execute_calls.second.second[:preparation].file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
+    expect(execute_calls.third.second[:preparation].file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
+  end
+
+  def expect_resolved_model_attempts(agent_run, opencode_runner)
+    expect(agent_run.runners_attempted).to contain_exactly(
+      hash_including(
+        "runner" => "claude_code",
+        "success" => false,
+        "error_type" => "preflight_timeout",
+        "resolved_model_id" => "claude-sonnet-4-6"
+      ),
+      hash_including(
+        "runner" => opencode_runner.routing_key,
+        "success" => true,
+        "resolved_model_id" => "moonshotai/kimi-k2-0905",
+        "resolved_provider_id" => opencode_runner.id
+      )
+    )
   end
 
   def expect_timeout_fallback_recovery(agent_run)
@@ -2785,42 +2820,27 @@ expect(container_service).to receive(:execute).with(
           has_changes_since?: false
         )
 
-        call_count = 0
-        allow(activity).to receive(:run_agent_with_runner) do
-          call_count += 1
-          if call_count == 1
-            raise described_class::PreflightTimeoutError,
-              "Preflight check failed: Runner smoke preflight timed out after 30s"
-          else
-            { pre_agent_sha: "pre_agent_sha_abc123", output_present: true }
-          end
-        end
-
         allow(activity).to receive(:run_runner_preflight!).and_call_original
         allow(activity).to receive(:run_harness_preflight!)
       end
 
       it "falls back to the direct-outbound runner and records resolved model info" do
+        call_count = 0
+        execute_calls = []
+        allow(container_service).to receive(:execute) do |command, **opts|
+          call_count += 1
+          execute_calls << [ command, opts ]
+
+          call_count == 1 ? raise(Containers::Provision::TimeoutError, "execution timed out") : exec_success
+        end
+
         result = activity.execute(agent_run_id: agent_run.id)
 
         agent_run.reload
         expect(result).to include(success: true)
         expect(result[:final_runner]).to eq(opencode_runner.routing_key)
-
-        expect(agent_run.runners_attempted).to contain_exactly(
-          hash_including(
-            "runner" => "claude_code",
-            "success" => false,
-            "error_type" => "preflight_timeout",
-            "resolved_model_id" => "claude-sonnet-4-6"
-          ),
-          hash_including(
-            "runner" => opencode_runner.routing_key,
-            "success" => true,
-            "resolved_model_id" => "moonshotai/kimi-k2-0905",
-            "resolved_provider_id" => opencode_runner.id
-          )
-        )
+        expect_opencode_runtime_execute_calls(execute_calls)
+        expect_resolved_model_attempts(agent_run, opencode_runner)
         expect(agent_run.runner_switches).to eq(1)
       end
     end
