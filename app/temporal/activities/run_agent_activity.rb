@@ -140,6 +140,17 @@ module Activities
 
         user_settings = resolve_user_settings(agent_run)
         runners = build_runner_order(agent_run, user_settings)
+        requested_tier = requested_tier_for(agent_run)
+        if requested_tier.present? && runners.empty?
+          error_message = "No runner supports tier #{requested_tier}"
+          agent_run.fail!(error: error_message) unless agent_run.finished?
+
+          raise Temporalio::Error::ApplicationError.new(
+            error_message,
+            type: "NoTierCapableRunner",
+            non_retryable: true
+          )
+        end
         runner_states = load_runner_state_cache(user_settings.user, runners)
 
         pre_agent_sha = nil
@@ -180,7 +191,20 @@ module Activities
           runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
           attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
-          resolved_run_info = resolved_model_info_for(runner_candidate, agent_run, user_settings.user)
+          resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
+          if resolved_model&.failure?
+            logger.warn(
+              message: "agent_execution.tier_model_resolution_failed",
+              agent_run_id: agent_run.id,
+              runner: attempt_label,
+              tier: requested_tier,
+              error: resolved_model.error
+            )
+            index += 1
+            next
+          end
+
+          resolved_run_info = resolved_model_info_for(resolved_model)
           heartbeat("runner_attempt", runner, index)
 
           # Skip unavailable runners, tracking rate-limited skips separately
@@ -666,30 +690,26 @@ module Activities
       )
     end
 
-    # Resolves the AgentHarness::ProviderRuntime to use for a given runner
-    # candidate. When the runner entry already declares a fixed runtime
-    # (e.g. opencode/aider with a configured model), validates that any
-    # selected LlmModel matches it. Otherwise constructs a runtime from the
-    # selected model, validating that its provider is compatible with the
-    # runner's expected LLM provider family.
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
       configured_runtime = runner_entry&.agent_harness_runner_runtime
-      selected_model = agent_run&.model_selection&.llm_model
-      selected_model_id = selected_model&.model_id
-
-      if configured_runtime&.model.present? && selected_model_id.present?
-        validate_selected_model_matches_runtime!(runner_entry, selected_model_id, configured_runtime)
-        return configured_runtime
-      end
-
-      return configured_runtime if configured_runtime
-      return nil if selected_model_id.blank?
       return nil if codex_subscription_auth_runtime?(runner_entry)
 
-      validate_selected_model_runner_compatibility!(runner_candidate, runner_entry, selected_model)
+      resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
+      model_id = resolved_model&.model_id
+      return configured_runtime if configured_runtime && model_id.blank?
+      return nil if model_id.blank?
 
-      AgentHarness::ProviderRuntime.new(model: selected_model_id)
+      return AgentHarness::ProviderRuntime.new(model: model_id) unless configured_runtime
+
+      AgentHarness::ProviderRuntime.new(
+        model: model_id,
+        api_provider: configured_runtime.api_provider,
+        base_url: configured_runtime.base_url,
+        env: configured_runtime.env,
+        unset_env: configured_runtime.unset_env,
+        metadata: configured_runtime.metadata
+      )
     end
 
     def codex_subscription_auth_runtime?(runner_entry)
@@ -709,77 +729,55 @@ module Activities
       ]
     end
 
-    def validate_selected_model_matches_runtime!(runner_entry, selected_model_id, configured_runtime)
-      configured_model_id =
-        if runner_entry&.respond_to?(:direct_outbound_model_id) && runner_entry.direct_outbound_model_id.present?
-          runner_entry.direct_outbound_model_id
-        else
-          configured_runtime.model
-        end
+    def runner_supports_tier?(runner_candidate, tier, user)
+      return true if tier.blank?
 
-      return if configured_model_id.blank? || configured_model_id == selected_model_id
-      # TODO(RDR-034): replace with tier-based runtime resolution in Phase 2.
-      # Tactical Phase 0 keeps direct-outbound runners on their configured
-      # runtime even when the meta-agent selected a different primary model.
-      return if runner_entry&.respond_to?(:requires_direct_outbound?) && runner_entry.requires_direct_outbound?
-
-      runner_label = runner_entry&.display_name || runner_entry&.runner_key || "runner"
-      raise RunnerExecutionError,
-        "Selected model #{selected_model_id} does not match configured runtime model #{configured_model_id} for #{runner_label}"
-    end
-
-    def validate_selected_model_runner_compatibility!(runner_candidate, runner_entry, selected_model)
-      return unless selected_model
-
-      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
-      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
-      return if compatible_provider.blank? || selected_model.provider == compatible_provider
-
-      runner_label = runner_entry&.display_name || runner_key
-      raise RunnerExecutionError,
-        "Selected model #{selected_model.model_id} (#{selected_model.provider}) is not compatible with #{runner_label} (expects #{compatible_provider})"
-    end
-
-    # Returns true when a runner candidate is structurally compatible with the
-    # selected LlmModel. Checks only the provider family; direct-outbound
-    # runners (kilocode, opencode, pi) are always compatible because they
-    # use their own configured model and are not in the provider-family map.
-    #
-    # TODO(RDR-034): replace with tier-based filter in Phase 2 — the
-    #   provider-family check will be replaced by runner_supports_tier?
-    #   once tier_models columns and ResolveTierModel are in place.
-    def runner_compatible_with_model?(runner_candidate, selected_model, user)
       runner_entry = runner_entry_for(runner_candidate, user)
       runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      return true if runner_entry&.supports_tier?(tier)
 
-      # Provider family check — e.g. "claude" expects "anthropic".
-      # Direct-outbound runners (kilocode, opencode, pi, aider) are not in
-      # the RUNNER_KEY_TO_MODEL_PROVIDER map, so this check is a no-op for
-      # them — they are always compatible because they bring their own model.
-      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
-      if compatible_provider.present? && selected_model.provider != compatible_provider
-        return false
-      end
+      resolution_runner = runner_entry || Runner.new(runner_key: runner_key)
+      return true if user&.provider_for(resolution_runner)&.supports_tier?(tier)
+      return true if Runners::DefaultTierModelIds.call(runner_key: runner_key)[tier].present?
 
-      true
+      false
     end
 
-    # Returns the model and provider that a runner candidate will actually
-    # use at execution time. For direct-outbound runners (kilocode, opencode,
-    # pi, aider) this is the runner's configured model; for subscription
-    # runners it falls back to the selected model from the agent run.
-    #
-    # Used to populate resolved_model_id / resolved_provider_id on
-    # runners_attempted entries so analytics can see what actually ran.
-    def resolved_model_info_for(runner_candidate, agent_run, user)
-      runner_entry = runner_entry_for(runner_candidate, user)
-      model_id = runner_entry&.direct_outbound_model_id || agent_run&.model_selection&.llm_model&.model_id
-      provider_id = runner_entry&.id
-
+    def resolved_model_info_for(resolved_model)
       result = {}
-      result[:resolved_model_id] = model_id if model_id.present?
-      result[:resolved_provider_id] = provider_id if provider_id.present?
+      result[:resolved_model_id] = resolved_model.model_id if resolved_model&.model_id.present?
+      result[:resolved_provider_id] = resolved_model.provider_id if resolved_model&.provider_id.present?
+      result[:resolution_source] = resolved_model.source if resolved_model&.source.present?
       result
+    end
+
+    def requested_tier_for(agent_run)
+      return if agent_run.nil?
+
+      agent_run.model_selection&.tier.presence || agent_run.model_selection&.llm_model&.tier
+    end
+
+    def resolve_tier_model_for(runner_candidate, agent_run, user)
+      tier = requested_tier_for(agent_run)
+      return nil if tier.blank?
+
+      @resolved_tier_model_cache ||= {}
+      cache_key = [ user&.id, resolution_runner_cache_key(runner_candidate), tier ]
+      return @resolved_tier_model_cache[cache_key] if @resolved_tier_model_cache.key?(cache_key)
+
+      runner_entry = runner_entry_for(runner_candidate, user)
+      resolution_runner = runner_entry || Runner.new(runner_key: RunnerSupport.runner_key_for_agent_type(runner_candidate))
+      @resolved_tier_model_cache[cache_key] = Runners::ResolveTierModel.call(
+        runner: resolution_runner,
+        tier: tier,
+        user: user
+      )
+    end
+
+    def resolution_runner_cache_key(runner_candidate)
+      return [ runner_candidate.class.name, runner_candidate.id || runner_candidate.runner_key ] if runner_candidate.is_a?(Runner)
+
+      runner_candidate.to_s
     end
 
     def paused_result(agent_run_id)
@@ -857,13 +855,9 @@ module Activities
         runners = default_runner_candidates(agent_run, user_settings)
       end
 
-      # Pre-filter runners that are structurally incompatible with the
-      # selected model. This avoids wasting attempts on runners that would
-      # always fail validation in selected_runner_runtime.
-      selected_model = agent_run.model_selection&.llm_model
-      if selected_model
-        compatible = runners.select { |r| runner_compatible_with_model?(r, selected_model, user_settings.user) }
-        runners = compatible if compatible.any?
+      tier = requested_tier_for(agent_run)
+      if tier.present?
+        runners = runners.select { |runner_candidate| runner_supports_tier?(runner_candidate, tier, user_settings.user) }
       end
 
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
