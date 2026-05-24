@@ -180,6 +180,7 @@ module Activities
           runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
           attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
+          resolved_run_info = resolved_model_info_for(runner_candidate, agent_run, user_settings.user)
           heartbeat("runner_attempt", runner, index)
 
           # Skip unavailable runners, tracking rate-limited skips separately
@@ -196,7 +197,8 @@ module Activities
               attempt_label,
               success: false,
               error_type: error_type,
-              error_message: error_message
+              error_message: error_message,
+              **resolved_run_info
             )
             index += 1
             next
@@ -219,7 +221,8 @@ module Activities
             # Success - heartbeat and record final runner
             heartbeat("runner_completed", runner)
             record_runner_success(user_settings, runner_state_name, runner_states)
-            agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration)
+            agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration,
+              **resolved_run_info)
             # Persist the routing key so multiple entries sharing the same
             # runner_key (e.g. several OpenCode API-key entries with
             # different models) remain distinguishable in UI and retry logic.
@@ -288,7 +291,8 @@ module Activities
               success: false,
               error_type: "rate_limited",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.info(message: "agent_execution.rate_limited", runner: runner, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
@@ -325,7 +329,8 @@ module Activities
               success: false,
               error_type: "infinite_loop",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message, duration_seconds: attempt_duration)
 
@@ -359,7 +364,8 @@ module Activities
               error_type: "timeout",
               error_message: e.message,
               duration_seconds: attempt_duration,
-              diagnostics: e.diagnostics
+              diagnostics: e.diagnostics,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.runner_timeout", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
@@ -398,7 +404,8 @@ module Activities
               success: false,
               error_type: "preflight_timeout",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(
               message: "agent_execution.preflight_timeout",
@@ -417,7 +424,8 @@ module Activities
               success: false,
               error_type: "auth_expired",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.auth_expired", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
@@ -433,7 +441,8 @@ module Activities
               success: false,
               error_type: "error",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(
               message: "agent_execution.runner_infra_failure",
@@ -455,7 +464,8 @@ module Activities
               success: false,
               error_type: "error",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.runner_failed", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
 
@@ -727,25 +737,45 @@ module Activities
     end
 
     # Returns true when a runner candidate is structurally compatible with the
-    # selected LlmModel. Checks provider family and fixed runtime model.
+    # selected LlmModel. Checks only the provider family; direct-outbound
+    # runners (kilocode, opencode, pi) are always compatible because they
+    # use their own configured model and are not in the provider-family map.
+    #
+    # TODO(RDR-034): replace with tier-based filter in Phase 2 — the
+    #   provider-family check will be replaced by runner_supports_tier?
+    #   once tier_models columns and ResolveTierModel are in place.
     def runner_compatible_with_model?(runner_candidate, selected_model, user)
       runner_entry = runner_entry_for(runner_candidate, user)
       runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
 
-      # 1. Provider family check — e.g. "claude" expects "anthropic"
+      # Provider family check — e.g. "claude" expects "anthropic".
+      # Direct-outbound runners (kilocode, opencode, pi, aider) are not in
+      # the RUNNER_KEY_TO_MODEL_PROVIDER map, so this check is a no-op for
+      # them — they are always compatible because they bring their own model.
       compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
       if compatible_provider.present? && selected_model.provider != compatible_provider
         return false
       end
 
-      # 2. Fixed runtime model check — direct-outbound runners have a
-      #    configured model that must match the selected model exactly.
-      fixed_model_id = runner_entry&.direct_outbound_model_id
-      if fixed_model_id.present? && fixed_model_id != selected_model.model_id
-        return false
-      end
-
       true
+    end
+
+    # Returns the model and provider that a runner candidate will actually
+    # use at execution time. For direct-outbound runners (kilocode, opencode,
+    # pi, aider) this is the runner's configured model; for subscription
+    # runners it falls back to the selected model from the agent run.
+    #
+    # Used to populate resolved_model_id / resolved_provider_id on
+    # runners_attempted entries so analytics can see what actually ran.
+    def resolved_model_info_for(runner_candidate, agent_run, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      model_id = runner_entry&.direct_outbound_model_id || agent_run&.model_selection&.llm_model&.model_id
+      provider_id = runner_entry&.id
+
+      result = {}
+      result[:resolved_model_id] = model_id if model_id.present?
+      result[:resolved_provider_id] = provider_id if provider_id.present?
+      result
     end
 
     def paused_result(agent_run_id)

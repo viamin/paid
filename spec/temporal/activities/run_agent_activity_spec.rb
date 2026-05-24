@@ -1213,29 +1213,33 @@ RSpec.describe Activities::RunAgentActivity do
         expect(runners).not_to include(codex_runner.routing_key)
       end
 
-      it "excludes direct-outbound runners whose fixed model differs from the selection" do
-        llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+      it "includes direct-outbound runners even when their fixed model differs from the selection" do
+        # TODO(RDR-034): replace with tier-based filter in Phase 2.
+        # Phase 0 loosens the model-compatibility filter so direct-outbound
+        # fallback runners (kilocode, opencode, pi) are never excluded by
+        # model mismatch — they bring their own configured model.
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
         create(:model_selection, agent_run: agent_run, llm_model: llm_model)
 
         api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
-        matching_runner = create_opencode_runner_entry(
+        mismatched_runner = create_opencode_runner_entry(
           user: user, api_key: api_key,
           name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
         )
-        other_api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-other")
-        mismatched_runner = create_opencode_runner_entry(
-          user: user, api_key: other_api_key,
-          name: "Deepseek", model: "deepseek-v4-pro"
-        )
+        codex_runner = create(:runner, user: user, runner_key: "codex")
         user.settings.update!(
           fallback_enabled: true,
-          fallback_runners: [ matching_runner.routing_key, mismatched_runner.routing_key ]
+          fallback_runners: [ mismatched_runner.routing_key, codex_runner.routing_key ]
         )
 
         runners = activity.send(:build_runner_order, agent_run, user.settings)
 
-        expect(runners).to include(matching_runner.routing_key)
-        expect(runners).not_to include(mismatched_runner.routing_key)
+        # Direct-outbound runner with a different model from the selection
+        # should NOT be filtered out (Phase 0 tactical fix).
+        expect(runners).to include(mismatched_runner.routing_key)
+        # Codex should still be filtered out because of provider-family
+        # mismatch (codex expects openai, selected model is anthropic).
+        expect(runners).not_to include(codex_runner.routing_key)
       end
 
       it "preserves all runners when no model is selected" do
@@ -2750,6 +2754,72 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "claude_code", "success" => false, "error_type" => "timeout"),
           hash_including("runner" => "cursor", "success" => true)
+        )
+        expect(agent_run.runner_switches).to eq(1)
+      end
+    end
+
+    context "when primary preflight times out and direct-outbound fallback succeeds with a different model" do
+      let(:opencode_runner) do
+        api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+        create_opencode_runner_entry(
+          user: user, api_key: api_key,
+          name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
+        )
+      end
+
+      before do
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
+
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ opencode_runner.routing_key ]
+        )
+
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+
+        call_count = 0
+        allow(activity).to receive(:run_agent_with_runner) do
+          call_count += 1
+          if call_count == 1
+            raise described_class::PreflightTimeoutError,
+              "Preflight check failed: Runner smoke preflight timed out after 30s"
+          else
+            { pre_agent_sha: "pre_agent_sha_abc123", output_present: true }
+          end
+        end
+
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(activity).to receive(:run_harness_preflight!)
+      end
+
+      it "falls back to the direct-outbound runner and records resolved model info" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true)
+        expect(result[:final_runner]).to eq(opencode_runner.routing_key)
+
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including(
+            "runner" => "claude_code",
+            "success" => false,
+            "error_type" => "preflight_timeout",
+            "resolved_model_id" => "claude-sonnet-4-6"
+          ),
+          hash_including(
+            "runner" => opencode_runner.routing_key,
+            "success" => true,
+            "resolved_model_id" => "moonshotai/kimi-k2-0905",
+            "resolved_provider_id" => opencode_runner.id
+          )
         )
         expect(agent_run.runner_switches).to eq(1)
       end
