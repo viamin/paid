@@ -197,8 +197,9 @@ Sampling cannot infer historical guide usage from `account_id` / `project_id` sc
 CREATE TABLE style_guide_run_exposures (
   id bigint PRIMARY KEY,
   agent_run_id bigint NOT NULL REFERENCES agent_runs ON DELETE CASCADE,
-  style_guide_id bigint NOT NULL REFERENCES style_guides ON DELETE CASCADE,
+  style_guide_id bigint REFERENCES style_guides ON DELETE SET NULL,
   style_guide_version_id bigint NOT NULL REFERENCES style_guide_versions,
+  guide_name character varying NOT NULL,         -- denormalized identity preserved across guide deletion
   source_scope character varying(20) NOT NULL,  -- project | account | global
   position integer NOT NULL,                    -- prompt ordering for debugging/replay
   injected_via character varying(50) NOT NULL, -- BuildForIssue | BuildForPr | CreateAgentRunActivity
@@ -359,14 +360,13 @@ def maybe_assign_style_guide_variant(agent_run, resolved_guides)
 
   {
     guide.name => {
-      raw_content: assignment.variant.style_guide_version.raw_content,
-      compressed_content: nil
+      raw_content: assignment.variant.style_guide_version.raw_content
     }
   }
 end
 ```
 
-`StyleGuides::InjectIntoPrompt` is extended to accept an optional `overrides` hash and an optional `agent_run:` for exposure recording. The override for the tested guide comes from the chosen assignment arm, including the control arm when the run is enrolled in a test. Overrides are passed through the same render/compression path as production guides so the experiment only varies guide content, not truncation or compression behavior:
+`StyleGuides::InjectIntoPrompt` is extended to accept an optional `overrides` hash and an optional `agent_run:` for exposure recording. The override for the tested guide comes from the chosen assignment arm, including the control arm when the run is enrolled in a test. Overrides specify only `raw_content` (variant and control arms go through the same rendering path), and `StyleGuides::BuildInjectedGuideSet` runs `StyleGuides::Compress` on the override content when the production `style_guides` row has `compressed_content`, so both arms use the same byte-budget pipeline:
 
 ```ruby
 module StyleGuides
@@ -389,8 +389,8 @@ end
 
 The production path and the experimental path therefore share the same byte-budget semantics:
 
-- If a promoted guide already has `compressed_content`, every assigned arm uses the compressed form for that guide.
-- If compression is missing or stale, both paths fall back to the same project-budgeted raw-content truncation logic.
+- `BuildInjectedGuideSet` detects override content on the tested guide and runs `StyleGuides::Compress` on it when the production `style_guides` row has `compressed_content`, so every arm (control and variant) receives content from the same source.
+- If compression is unavailable or fails for an arm, both paths fall back to the same project-budgeted raw-content truncation logic via `RenderContentForPrompt`.
 - Large variants cannot bypass the existing prompt budget merely because they came from `StyleGuideVersion`.
 
 Each style guide can have many historical A/B tests, but the scheduler may run only one style-guide A/B test per account at a time. Different accounts can still run style-guide experiments concurrently because their `AgentRun` cohorts are disjoint.
@@ -533,7 +533,7 @@ end
 # app/models/style_guide_run_exposure.rb
 class StyleGuideRunExposure < ApplicationRecord
   belongs_to :agent_run
-  belongs_to :style_guide
+  belongs_to :style_guide, optional: true
   belongs_to :style_guide_version
   belongs_to :style_guide_ab_test_assignment, optional: true
 
@@ -544,6 +544,7 @@ class StyleGuideRunExposure < ApplicationRecord
     create_agent_run_activity: "CreateAgentRunActivity"
   }, validate: true
 
+  validates :guide_name, presence: true
   validates :position, numericality: {greater_than_or_equal_to: 0}
 end
 ```
@@ -707,7 +708,7 @@ end
 
 - The `StyleGuideVersion` table does **not** store `compressed_content`. Compression is a rendering optimization applied at injection time, not a versioned artifact. Only immutable `raw_content` snapshots are versioned.
 - The canonical production read path remains the `style_guides` row. `StyleGuide#content_for_prompt` continues to read `style_guides.raw_content` / `style_guides.compressed_content`, and `StyleGuides::RenderContentForPrompt` becomes the shared helper behind both normal injection and experiment overrides.
-- `StyleGuideRunExposure` is the canonical sampling source for evolution. The workflow should never reconstruct historical guide usage from current scope filters alone.
+- `StyleGuideRunExposure` is the canonical sampling source for evolution. The workflow should never reconstruct historical guide usage from current scope filters alone. The `style_guide_id` FK uses `ON DELETE SET NULL` (not `CASCADE`) and `guide_name` is denormalized onto the row so that exposure records survive guide deletion intact for historical analysis and audit.
 - Winner promotion is therefore a mirror step, not a pointer flip only: promoting `current_version` must also copy that version's `raw_content` onto `style_guides.raw_content`, clear `style_guides.compressed_content`, and enqueue `StyleGuideCompressionJob`. Production prompts immediately pick up the new raw content via the existing fallback path, then pick up refreshed compressed content when compression completes.
 - The `StyleGuide.current_version` pointer records which immutable snapshot is live; it is not a second runtime content source. Manual edits to `style_guide.raw_content` (via the UI) likewise create a new `StyleGuideVersion`, update the row-level canonical content, and repoint `current_version`.
 - Logidze continues to track all changes for audit purposes alongside the version store. Version records capture the semantic content evolution; logidze captures the full operational history.
