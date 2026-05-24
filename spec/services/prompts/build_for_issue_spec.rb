@@ -473,6 +473,33 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when a global style guide exists" do
+      let(:real_project) { create(:project, allowed_github_usernames: [ "viamin" ]) }
+      let(:real_issue) do
+        create(:issue,
+          project: real_project,
+          title: "Fix login redirect",
+          github_number: 42,
+          body: "Users are redirected to the wrong page after login.",
+          github_creator_login: "viamin")
+      end
+
+      before do
+        create(:style_guide,
+          :global,
+          name: "Seeded Ruby Guide",
+          raw_content: "Prefer small methods.",
+          compressed_content: nil)
+      end
+
+      it "appends the style guide section using raw_content" do
+        prompt = described_class.call(issue: real_issue, project: real_project)
+
+        expect(prompt).to include("# Style Guide")
+        expect(prompt).to include("Seeded Ruby Guide")
+      end
+    end
+
     context "when issue body is nil" do
       let(:issue) do
         OpenStruct.new(
