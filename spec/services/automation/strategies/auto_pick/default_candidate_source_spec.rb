@@ -125,6 +125,17 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    it "does not recover completed issues when the produced PR was merged" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+      create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "blocks recovery when one PR is closed but another is still open" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
