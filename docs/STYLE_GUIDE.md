@@ -4,6 +4,8 @@ This style guide establishes coding standards, architectural patterns, and best 
 
 The guide emphasizes detailed reasoning for each decision. Understanding *why* a pattern exists is as important as knowing the pattern itself—it enables developers to make good judgment calls in novel situations.
 
+> **Note:** Some of the guidance in this document is also seeded as global `StyleGuide` records in [`db/seeds/style_guides.rb`](../db/seeds/style_guides.rb). The DB-backed guides are what reach agent prompts via `StyleGuides::InjectIntoPrompt`; this document is a human reference. Edits intended to reach agents must update the seed file or be made through the StyleGuide admin UI (`/admin/resources/style_guides`). The two surfaces may drift over time — that is acceptable as long as contributors know both exist.
+
 ---
 
 ## Core Architectural Principles
