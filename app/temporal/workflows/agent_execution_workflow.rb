@@ -113,6 +113,10 @@ module Workflows
       )
       max_execution_seconds = agent_run_result[:max_execution_seconds]
 
+      if agent_run_result[:paused]
+        return { success: false, paused: true, agent_run_id: agent_run_id }
+      end
+
       agent_step_succeeded = false
       workflow_error = nil
 
