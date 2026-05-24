@@ -14,8 +14,8 @@ class Avo::Resources::TenantSetting < Avo::BaseResource
     field :max_tokens_per_run, as: :number
     field :max_monthly_cost_cents, as: :number
     field :self_repo_full_name, as: :text
-    field :allowed_provider_keys, as: :tags
-    field :provider_preferences, as: :code, language: "javascript", pretty_generated: true
+    field :allowed_runner_keys, as: :tags
+    field :runner_preferences, as: :code, language: "javascript", pretty_generated: true
     field :default_budgets, as: :code, language: "javascript", pretty_generated: true
     field :guardrails, as: :code, language: "javascript", pretty_generated: true
     field :quality_thresholds, as: :code, language: "javascript", pretty_generated: true

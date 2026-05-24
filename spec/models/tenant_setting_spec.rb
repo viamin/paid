@@ -7,16 +7,16 @@ RSpec.describe TenantSetting do
     it { is_expected.to belong_to(:account) }
   end
 
-  describe "provider bridge columns" do
-    it "keeps legacy provider-named settings synchronized with runner-named settings" do
+  describe "legacy provider aliases" do
+    it "exposes runner-named settings through legacy provider aliases" do
       setting = create(
         :tenant_setting,
         runner_preferences: { "model_preferences" => { "claude" => "sonnet" } },
         allowed_runner_keys: %w[claude cursor]
       )
 
-      expect(setting.read_attribute(:provider_preferences)).to eq({ "model_preferences" => { "claude" => "sonnet" } })
-      expect(setting.read_attribute(:allowed_provider_keys)).to eq(%w[claude cursor])
+      expect(setting.provider_preferences).to eq({ "model_preferences" => { "claude" => "sonnet" } })
+      expect(setting.allowed_provider_keys).to eq(%w[claude cursor])
     end
 
     it "updates runner-named settings when legacy provider setters are used" do
@@ -26,19 +26,6 @@ RSpec.describe TenantSetting do
       setting.allowed_provider_keys = %w[claude cursor]
 
       expect(setting.runner_preferences).to eq({ "api_key_ids" => { "anthropic" => "1" } })
-      expect(setting.allowed_runner_keys).to eq(%w[claude cursor])
-    end
-
-    it "keeps runner-named settings synchronized when legacy provider columns are updated directly" do
-      setting = create(:tenant_setting)
-
-      setting.update_columns(
-        provider_preferences: { "api_key_ids" => { "openai" => "5" } },
-        allowed_provider_keys: %w[claude cursor]
-      )
-
-      setting.reload
-      expect(setting.runner_preferences).to eq({ "api_key_ids" => { "openai" => "5" } })
       expect(setting.allowed_runner_keys).to eq(%w[claude cursor])
     end
   end

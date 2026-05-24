@@ -567,6 +567,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_run_detail_update(agent_run)
+    return unless ActiveRecord::Base.connection.data_source_exists?(:agent_run_marketplace_entries)
+
     final_runner_record = agent_run.final_runner_record
     attempted_runners = agent_run.attempted_runners_by_routing_key
 

@@ -9,7 +9,9 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
     # to replay in either world. Production was unaffected at original
     # apply time (table was still `providers`); the policy expressions
     # are stored by OID and follow the renamed table automatically.
-    runner_table = ActiveRecord::Base.connection.table_exists?(:providers) ? "providers" : "runners"
+    connection = ActiveRecord::Base.connection
+    runner_table = connection.table_exists?(:providers) ? "providers" : "runners"
+    runner_id_column = connection.column_exists?(:chat_sessions, :provider_id) ? "provider_id" : "runner_id"
 
     safety_assured do
       # chat_sessions: direct account_id
@@ -30,10 +32,10 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
                 )
               )
               AND (
-                chat_sessions.provider_id IS NULL
+                chat_sessions.#{runner_id_column} IS NULL
                 OR EXISTS (
                   SELECT 1 FROM #{runner_table}
-                  WHERE #{runner_table}.id = chat_sessions.provider_id
+                  WHERE #{runner_table}.id = chat_sessions.#{runner_id_column}
                     AND #{runner_table}.user_id IN (
                       SELECT users.id FROM users
                       WHERE users.account_id = paid_current_account_id()
@@ -62,10 +64,10 @@ class EnableRlsOnChatTables < ActiveRecord::Migration[8.1]
                 )
               )
               AND (
-                chat_sessions.provider_id IS NULL
+                chat_sessions.#{runner_id_column} IS NULL
                 OR EXISTS (
                   SELECT 1 FROM #{runner_table}
-                  WHERE #{runner_table}.id = chat_sessions.provider_id
+                  WHERE #{runner_table}.id = chat_sessions.#{runner_id_column}
                     AND #{runner_table}.user_id IN (
                       SELECT users.id FROM users
                       WHERE users.account_id = paid_current_account_id()

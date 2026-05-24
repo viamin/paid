@@ -435,7 +435,6 @@ module Providers
           [ {
             project_id: test_project.id,
             initiating_user_id: effective_provider.user_id,
-            provider_id: effective_provider.id,
             runner_id: effective_provider.id,
             agent_type: Provider.agent_type_for(effective_provider.provider_key),
             status: "queued",
@@ -484,7 +483,7 @@ module Providers
 
     def clear_provider_state_if_healthy!
       provider_state_names.each do |provider_name|
-        effective_provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
+        effective_provider.user.runner_states.find_by(runner_name: provider_name)&.record_success!
       end
     end
 
@@ -492,11 +491,11 @@ module Providers
       reset_at = rate_limit_reset_at(message)
 
       provider_state_names.each do |provider_name|
-        effective_provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+        effective_provider.user.runner_states.find_or_create_by!(runner_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     rescue ActiveRecord::RecordNotUnique
       provider_state_names.each do |provider_name|
-        effective_provider.user.provider_states.find_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+        effective_provider.user.runner_states.find_by!(runner_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     end
 

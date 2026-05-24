@@ -248,11 +248,11 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "projects" ])
     end
 
-    it "maps provider index partials to the providers index target" do
-      targets = described_class.call(changed_files: [ "app/views/providers/_settings.html.erb" ])
+    it "maps runner index partials to the runners screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/runners/_settings.html.erb" ])
       expect(targets.map(&:slug)).to eq([ "providers" ])
 
-      targets = described_class.call(changed_files: [ "app/views/providers/_usage_stats.html.erb" ])
+      targets = described_class.call(changed_files: [ "app/views/runners/_usage_stats.html.erb" ])
       expect(targets.map(&:slug)).to eq([ "providers" ])
     end
 
