@@ -243,7 +243,10 @@ module StyleGuideEvolution
 
     def mutate
       response = request_mutations
-      parse_mutations(response)
+      filtered = apply_guardrails(parse_mutations(response))
+      raise InsufficientMutationsError, "Fewer than #{MIN_MUTATION_COUNT} mutations passed guardrails" if filtered.size < MIN_MUTATION_COUNT
+
+      filtered
     end
 
     private
@@ -437,6 +440,8 @@ module StyleGuideEvolution
     def mutate
       response = request_mutations
       filtered = apply_guardrails(parse_mutations(response))
+      raise InsufficientMutationsError, "Fewer than #{MIN_MUTATION_COUNT} mutations passed guardrails" if filtered.size < MIN_MUTATION_COUNT
+
       filtered
     end
 
@@ -502,6 +507,8 @@ end
 ```ruby
 # app/models/style_guide_ab_test_variant.rb
 class StyleGuideAbTestVariant < ApplicationRecord
+  MAX_NON_CONTROL_VARIANTS = 3
+
   belongs_to :style_guide_ab_test
   belongs_to :style_guide_version
 
@@ -522,8 +529,9 @@ class StyleGuideAbTestVariant < ApplicationRecord
   def style_guide_ab_test_variant_count_within_limit
     return if style_guide_ab_test.nil? || is_control?
 
-    if style_guide_ab_test.style_guide_ab_test_variants.where(is_control: false).count >= 3
-      errors.add(:base, "Style guide A/B test cannot have more than 3 non-control variants")
+    max_allowed = MAX_NON_CONTROL_VARIANTS + 1 # +1 for control
+    if style_guide_ab_test.style_guide_ab_test_variants.count >= max_allowed
+      errors.add(:base, "Style guide A/B test cannot have more than #{MAX_NON_CONTROL_VARIANTS} non-control variants")
     end
   end
 end
