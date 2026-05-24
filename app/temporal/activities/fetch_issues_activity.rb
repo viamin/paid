@@ -62,7 +62,12 @@ module Activities
           stale_pr_count = stale_pr_result[:closed_count]
           sync_changed ||= stale_pr_result[:changed]
 
-          stale_issue_result = reconcile_open_issues(project, client)
+          stale_issue_result = reconcile_open_issues(
+            project,
+            client,
+            eager_queue_enabled: eager_queue_enabled,
+            eligible_issues: eligible_issues
+          )
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed ||= stale_issue_result[:changed]
         end
@@ -765,7 +770,7 @@ module Activities
     # numbers from GitHub and closes locally-open issues not in that set.
     # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API
     # cost, since issue counts can be much larger than PR counts.
-    def reconcile_open_issues(project, client)
+    def reconcile_open_issues(project, client, eager_queue_enabled: false, eligible_issues: nil)
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
@@ -780,7 +785,13 @@ module Activities
         return { changed: false, closed_count: 0 }
       end
 
-      backfilled_count = backfill_open_issues(project, client, open_numbers)
+      backfilled_count = backfill_open_issues(
+        project,
+        client,
+        open_numbers,
+        eager_queue_enabled: eager_queue_enabled,
+        eligible_issues: eligible_issues
+      )
 
       stale = project.issues
         .where(github_state: "open", is_pull_request: false, source: Issue::GITHUB_SOURCE)
@@ -803,7 +814,7 @@ module Activities
       }
     end
 
-    def backfill_open_issues(project, client, open_issue_numbers)
+    def backfill_open_issues(project, client, open_issue_numbers, eager_queue_enabled: false, eligible_issues: nil)
       return 0 if open_issue_numbers.empty?
 
       existing_open_numbers = project.issues
@@ -815,7 +826,12 @@ module Activities
 
       missing_numbers.each do |number|
         github_issue = client.issue(project.full_name, number)
-        sync_issue(project, github_issue)
+        sync_issue(
+          project,
+          github_issue,
+          eager_queue_enabled: eager_queue_enabled,
+          eligible_issues: eligible_issues
+        )
       end
 
       missing_numbers.size
