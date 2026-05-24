@@ -135,10 +135,10 @@ RSpec.describe Models::Select do
     end
 
     context "with project preferred models" do
-      let!(:preferred_model) { create(:llm_model, model_id: "gpt-4o", capability_score: 8.5) }
+      let!(:preferred_model) { create(:llm_model, model_id: "gpt-4o", capability_score: 8.5, tier: "mid") }
 
       before do
-        create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0)
+        create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0, tier: "high")
         project.update!(model_preferences: { "preferred_model_ids" => [ "gpt-4o" ] })
       end
 
@@ -158,8 +158,8 @@ RSpec.describe Models::Select do
     end
 
     context "with multiple preferred models respects ordering" do
-      let!(:higher_capability) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0) }
-      let!(:first_choice) { create(:llm_model, model_id: "gpt-4o", capability_score: 7.0) }
+      let!(:higher_capability) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0, tier: "high") }
+      let!(:first_choice) { create(:llm_model, model_id: "gpt-4o", capability_score: 7.0, tier: "mid") }
 
       before do
         project.update!(model_preferences: { "preferred_model_ids" => [ "gpt-4o", "claude-sonnet-4-6" ] })

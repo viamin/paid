@@ -1234,7 +1234,7 @@ RSpec.describe Runner do
 
     it "captures tier_models updates in snapshots" do
       runner = create(:runner, runner_key: "cursor")
-      change_time = Time.zone.parse("2026-05-23 12:00:00 UTC")
+      change_time = 1.minute.from_now
 
       travel_to(change_time) do
         runner.update!(tier_models: { "low" => { "model_id" => "haiku-x", "provider_id" => 17 } })

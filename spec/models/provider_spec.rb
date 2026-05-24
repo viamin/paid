@@ -1243,7 +1243,7 @@ RSpec.describe Provider do
 
     it "captures tier_models updates in snapshots" do
       provider = create(:provider, provider_key: "cursor")
-      change_time = Time.zone.parse("2026-05-23 12:00:00 UTC")
+      change_time = 1.minute.from_now
 
       travel_to(change_time) do
         provider.update!(tier_models: { "low" => { "model_id" => "haiku-x", "provider_id" => 17 } })
