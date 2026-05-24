@@ -752,17 +752,16 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
-    it "raises when a fixed-runtime provider disagrees with the selected model" do
+    it "keeps the configured runtime when a direct-outbound runner disagrees with the selected model" do
       opencode_context = build_opencode_context(user)
       llm_model = create(:llm_model, model_id: "different-model", provider: "openrouter")
       create(:model_selection, agent_run: agent_run, llm_model: llm_model)
 
-      expect {
-        activity.send(:build_command, opencode_context, "ping", agent_run: agent_run)
-      }.to raise_error(
-        Activities::RunAgentActivity::RunnerExecutionError,
-        /Selected model different-model does not match configured runtime model moonshotai\/kimi-k2-0905/
-      )
+      command = activity.send(:build_command, opencode_context, "ping", agent_run: agent_run)
+      preparation = activity.send(:command_preparation_for, opencode_context, "ping")
+
+      expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ])
+      expect(preparation.file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
     end
   end
 
@@ -781,6 +780,15 @@ RSpec.describe Activities::RunAgentActivity do
       runtime = activity.send(:selected_runner_runtime, codex_provider, nil, run)
 
       expect(runtime).to be_nil
+    end
+
+    it "keeps the configured runtime for direct-outbound runners with a different selected model" do
+      opencode_context = build_opencode_context(user)
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "different-model", provider: "openrouter"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
     end
   end
 
@@ -1213,29 +1221,33 @@ RSpec.describe Activities::RunAgentActivity do
         expect(runners).not_to include(codex_runner.routing_key)
       end
 
-      it "excludes direct-outbound runners whose fixed model differs from the selection" do
-        llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+      it "includes direct-outbound runners even when their fixed model differs from the selection" do
+        # TODO(RDR-034): replace with tier-based filter in Phase 2.
+        # Phase 0 loosens the model-compatibility filter so direct-outbound
+        # fallback runners (kilocode, opencode, pi) are never excluded by
+        # model mismatch — they bring their own configured model.
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
         create(:model_selection, agent_run: agent_run, llm_model: llm_model)
 
         api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
-        matching_runner = create_opencode_runner_entry(
+        mismatched_runner = create_opencode_runner_entry(
           user: user, api_key: api_key,
           name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
         )
-        other_api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-other")
-        mismatched_runner = create_opencode_runner_entry(
-          user: user, api_key: other_api_key,
-          name: "Deepseek", model: "deepseek-v4-pro"
-        )
+        codex_runner = create(:runner, user: user, runner_key: "codex")
         user.settings.update!(
           fallback_enabled: true,
-          fallback_runners: [ matching_runner.routing_key, mismatched_runner.routing_key ]
+          fallback_runners: [ mismatched_runner.routing_key, codex_runner.routing_key ]
         )
 
         runners = activity.send(:build_runner_order, agent_run, user.settings)
 
-        expect(runners).to include(matching_runner.routing_key)
-        expect(runners).not_to include(mismatched_runner.routing_key)
+        # Direct-outbound runner with a different model from the selection
+        # should NOT be filtered out (Phase 0 tactical fix).
+        expect(runners).to include(mismatched_runner.routing_key)
+        # Codex should still be filtered out because of provider-family
+        # mismatch (codex expects openai, selected model is anthropic).
+        expect(runners).not_to include(codex_runner.routing_key)
       end
 
       it "preserves all runners when no model is selected" do
@@ -1315,6 +1327,33 @@ RSpec.describe Activities::RunAgentActivity do
     expect(result[:success]).to be true
     expect(result[:final_runner]).to eq(opencode_runner.routing_key)
     expect(agent_run.reload.final_runner).to eq(opencode_runner.routing_key)
+  end
+
+  def expect_opencode_runtime_execute_calls(execute_calls)
+    expect(execute_calls.length).to eq(3)
+    expect(execute_calls.second.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
+    expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
+    expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+    expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+    expect(execute_calls.second.second[:preparation].file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
+    expect(execute_calls.third.second[:preparation].file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
+  end
+
+  def expect_resolved_model_attempts(agent_run, opencode_runner)
+    expect(agent_run.runners_attempted).to contain_exactly(
+      hash_including(
+        "runner" => "claude_code",
+        "success" => false,
+        "error_type" => "preflight_timeout",
+        "resolved_model_id" => "claude-sonnet-4-6"
+      ),
+      hash_including(
+        "runner" => opencode_runner.routing_key,
+        "success" => true,
+        "resolved_model_id" => "moonshotai/kimi-k2-0905",
+        "resolved_provider_id" => opencode_runner.id
+      )
+    )
   end
 
   def expect_timeout_fallback_recovery(agent_run)
@@ -2751,6 +2790,57 @@ expect(container_service).to receive(:execute).with(
           hash_including("runner" => "claude_code", "success" => false, "error_type" => "timeout"),
           hash_including("runner" => "cursor", "success" => true)
         )
+        expect(agent_run.runner_switches).to eq(1)
+      end
+    end
+
+    context "when primary preflight times out and direct-outbound fallback succeeds with a different model" do
+      let(:opencode_runner) do
+        api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+        create_opencode_runner_entry(
+          user: user, api_key: api_key,
+          name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
+        )
+      end
+
+      before do
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
+
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ opencode_runner.routing_key ]
+        )
+
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(activity).to receive(:run_harness_preflight!)
+      end
+
+      it "falls back to the direct-outbound runner and records resolved model info" do
+        call_count = 0
+        execute_calls = []
+        allow(container_service).to receive(:execute) do |command, **opts|
+          call_count += 1
+          execute_calls << [ command, opts ]
+
+          call_count == 1 ? raise(Containers::Provision::TimeoutError, "execution timed out") : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true)
+        expect(result[:final_runner]).to eq(opencode_runner.routing_key)
+        expect_opencode_runtime_execute_calls(execute_calls)
+        expect_resolved_model_attempts(agent_run, opencode_runner)
         expect(agent_run.runner_switches).to eq(1)
       end
     end
