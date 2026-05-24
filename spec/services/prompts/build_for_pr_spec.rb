@@ -188,6 +188,27 @@ RSpec.describe Prompts::BuildForPr do
     it "omits issue requirements section when no issue" do
       expect(prompt).not_to include("Issue Requirements")
     end
+
+    it "appends global style guides using raw_content" do
+      pr_issue = create(:issue, :pull_request, project: project, github_number: 42)
+
+      create(:style_guide,
+        :global,
+        name: "Seeded Ruby Guide",
+        raw_content: "Prefer small methods.",
+        compressed_content: nil)
+
+      rendered_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        issue: pr_issue
+      )
+
+      expect(rendered_prompt).to include("# Style Guide")
+      expect(rendered_prompt).to include("Seeded Ruby Guide")
+    end
   end
 
   describe "#includes_review_threads?" do
