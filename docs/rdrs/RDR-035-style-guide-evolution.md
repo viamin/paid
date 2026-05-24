@@ -125,7 +125,7 @@ CREATE TABLE style_guide_versions (
   reviewed_at timestamp,
   reviewed_by_user_id bigint REFERENCES users,
   usage_count integer DEFAULT 0 NOT NULL,      -- times this version was injected
-  avg_quality_score numeric(4,2),              -- rolling average from attributed runs
+  avg_quality_score numeric(5,4),              -- rolling average from attributed runs
   retired_at timestamp,                        -- soft-delete
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL
@@ -174,8 +174,8 @@ CREATE TABLE style_guide_ab_test_variants (
   style_guide_version_id bigint NOT NULL REFERENCES style_guide_versions,
   is_control boolean NOT NULL DEFAULT false,
   sample_count integer NOT NULL DEFAULT 0,
-  total_quality_score numeric NOT NULL DEFAULT 0.0,
-  avg_quality_score numeric,
+  total_quality_score numeric(10,4) NOT NULL DEFAULT 0.0,
+  avg_quality_score numeric(5,4),
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
   UNIQUE(style_guide_ab_test_id, style_guide_version_id)
@@ -185,7 +185,7 @@ CREATE UNIQUE INDEX idx_style_guide_ab_test_variants_one_control
   ON style_guide_ab_test_variants(style_guide_ab_test_id) WHERE (is_control = true);
 ```
 
-**Note on variant count limits:** PostgreSQL does not support subqueries in `CHECK` constraints, so the max-3-non-control-variants limit must be enforced at the application level. `StyleGuideAbTestVariant` should validate that the count of non-control variants for the parent test does not exceed 3 before insert (consistent with how the existing `AbTestVariant` model handles similar limits). A `BEFORE INSERT` trigger is an alternative if database-level enforcement is preferred.
+**Note on variant count limits:** The initial implementation should mirror the existing prompt A/B path and enforce the max-3-non-control-variants limit explicitly in `StyleGuideAbTestVariant` with `validate :style_guide_ab_test_variant_count_within_limit, on: :create`. This keeps the style-guide pipeline aligned with `AbTestVariant` rather than inventing a stricter database-only rule in one evolution system first.
 
 **Why parallel tables instead of extending `AbTest`?** The existing `AbTest` / `AbTestVariant` tables have non-null FKs to `prompt_id` and `control_version_id` / `prompt_version_id`. Making them polymorphic would require a migration that touches every existing A/B test record and risks breaking the prompt evolution pipeline. A parallel structure keeps each evolution domain isolated and independently testable.
 
@@ -201,7 +201,7 @@ CREATE TABLE style_guide_run_exposures (
   style_guide_version_id bigint NOT NULL REFERENCES style_guide_versions,
   source_scope character varying(20) NOT NULL,  -- project | account | global
   position integer NOT NULL,                    -- prompt ordering for debugging/replay
-  injected_via character varying(50) NOT NULL, -- build_for_issue | build_for_pr | create_agent_run_activity
+  injected_via character varying(50) NOT NULL, -- BuildForIssue | BuildForPr | CreateAgentRunActivity
   style_guide_ab_test_assignment_id bigint REFERENCES style_guide_ab_test_assignments,
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
@@ -325,7 +325,7 @@ CREATE TABLE style_guide_ab_test_assignments (
   style_guide_ab_test_id bigint NOT NULL REFERENCES style_guide_ab_tests ON DELETE CASCADE,
   style_guide_ab_test_variant_id bigint NOT NULL REFERENCES style_guide_ab_test_variants,
   agent_run_id bigint NOT NULL REFERENCES agent_runs,
-  quality_score numeric,                       -- recorded when run completes
+  quality_score numeric(5,4),                 -- recorded when run completes
   created_at timestamp NOT NULL,
   updated_at timestamp NOT NULL,
   UNIQUE(style_guide_ab_test_id, agent_run_id) -- one control-or-variant assignment per run per test
@@ -500,6 +500,36 @@ end
 ```
 
 ```ruby
+# app/models/style_guide_ab_test_variant.rb
+class StyleGuideAbTestVariant < ApplicationRecord
+  belongs_to :style_guide_ab_test
+  belongs_to :style_guide_version
+
+  validates :sample_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :style_guide_version_belongs_to_same_guide
+  validate :style_guide_ab_test_variant_count_within_limit, on: :create
+
+  private
+
+  def style_guide_version_belongs_to_same_guide
+    return if style_guide_version.nil? || style_guide_ab_test.nil?
+
+    if style_guide_version.style_guide_id != style_guide_ab_test.style_guide_id
+      errors.add(:style_guide_version, "must belong to the same style guide as the A/B test")
+    end
+  end
+
+  def style_guide_ab_test_variant_count_within_limit
+    return if style_guide_ab_test.nil? || is_control?
+
+    if style_guide_ab_test.style_guide_ab_test_variants.where(is_control: false).count >= 3
+      errors.add(:base, "Style guide A/B test cannot have more than 3 non-control variants")
+    end
+  end
+end
+```
+
+```ruby
 # app/models/style_guide_run_exposure.rb
 class StyleGuideRunExposure < ApplicationRecord
   belongs_to :agent_run
@@ -508,6 +538,11 @@ class StyleGuideRunExposure < ApplicationRecord
   belongs_to :style_guide_ab_test_assignment, optional: true
 
   enum :source_scope, {project: "project", account: "account", global: "global"}, validate: true
+  enum :injected_via, {
+    build_for_issue: "BuildForIssue",
+    build_for_pr: "BuildForPr",
+    create_agent_run_activity: "CreateAgentRunActivity"
+  }, validate: true
 
   validates :position, numericality: {greater_than_or_equal_to: 0}
 end
@@ -578,7 +613,7 @@ end
 2. **Models** (Phase A):
    - [ ] `StyleGuideVersion` model with associations, immutability validations, scopes
    - [ ] `StyleGuideAbTest` model with lifecycle (`draft → running → completed → cancelled`), associations
-   - [ ] `StyleGuideAbTestVariant` model with sample tracking
+   - [ ] `StyleGuideAbTestVariant` model with sample tracking and `style_guide_ab_test_variant_count_within_limit` create validation
    - [ ] `StyleGuideAbTestAssignment` model
    - [ ] `StyleGuideRunExposure` model
    - [ ] `StyleGuide` model: add `belongs_to :current_version`, `has_many :versions`, `has_many :style_guide_ab_tests`
@@ -624,7 +659,7 @@ end
 
 - **Unit tests**: `StyleGuideEvolution::Mutate` (mutation parsing, guardrail enforcement), `StyleGuideAbTests::Assign` (variant selection, idempotency), `StyleGuideAbTests::Analyze` (statistical correctness)
 - **Integration tests**: `StyleGuideEvolutionWorkflow` end-to-end (sample → mutate → persist → test), `StyleGuides::InjectIntoPrompt` with control/variant assignment overrides and exposure recording, `CreateAgentRunActivity` issue prompt path recording the same exposures as `BuildForIssue`
-- **Contract tests**: `StyleGuideVersion` immutability, `StyleGuideAbTest` state machine transitions
+- **Contract tests**: `StyleGuideVersion` immutability, `StyleGuideAbTest` state machine transitions, `StyleGuideAbTestVariant` non-control variant count limit
 - **Existing tests must pass**: Prompt evolution pipeline unchanged, style guide injection unchanged for non-experimental guides
 
 ### Test Scenarios
