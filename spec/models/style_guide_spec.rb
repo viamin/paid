@@ -283,5 +283,52 @@ RSpec.describe StyleGuide do
       expect(names.count("Ruby Guide")).to eq(1)
       expect(result.find { |g| g.name == "Ruby Guide" }).to eq(account_guide)
     end
+
+    it "includes language-agnostic guides for every project" do
+      global = create(:style_guide, :global, language: nil)
+      project.define_singleton_method(:detected_language) { "python" }
+
+      result = described_class.resolve_for(project)
+
+      expect(result).to include(global)
+    end
+
+    it "includes guides matching the detected project language" do
+      ruby_guide = create(:style_guide, :global, language: "ruby")
+      project.define_singleton_method(:detected_language) { "ruby" }
+
+      result = described_class.resolve_for(project)
+
+      expect(result).to include(ruby_guide)
+    end
+
+    it "excludes guides that do not match the detected project language" do
+      create(:style_guide, :global, language: "ruby")
+      project.define_singleton_method(:detected_language) { "python" }
+
+      result = described_class.resolve_for(project)
+
+      expect(result).to be_empty
+    end
+
+    it "falls through to a less-specific matching guide when a more-specific guide mismatches language" do
+      global = create(:style_guide, :global, name: "Team Guide", language: nil)
+      create(:style_guide, account: account, project: nil, name: "Team Guide", language: "ruby")
+      project.define_singleton_method(:detected_language) { "python" }
+
+      result = described_class.resolve_for(project)
+
+      expect(result).to eq([ global ])
+    end
+
+    it "keeps the most specific applicable guide when multiple languages match" do
+      create(:style_guide, :global, name: "Team Guide", language: nil)
+      account_guide = create(:style_guide, account: account, project: nil, name: "Team Guide", language: "ruby")
+      project.define_singleton_method(:detected_language) { "ruby" }
+
+      result = described_class.resolve_for(project)
+
+      expect(result).to eq([ account_guide ])
+    end
   end
 end
