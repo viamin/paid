@@ -173,6 +173,26 @@ class User < ApplicationRecord
     OperatorConsole::Access.allowed?(self)
   end
 
+  def provider_for(runner)
+    return runner if runner.is_a?(Provider)
+    return unless runner.is_a?(Runner)
+
+    scope = providers.kept_only.where(provider_key: runner.runner_key)
+    scope = scope.where(auth_type: runner.auth_type) if runner.auth_type.present?
+    if runner.api_key?
+      scope = scope.where(
+        provider_api_key_id: runner.provider_api_key_id,
+        integration_credential_id: runner.integration_credential_id
+      )
+    end
+
+    if runner.auth_type.blank?
+      scope.where(auth_type: "subscription").ordered.first || scope.ordered.first
+    else
+      scope.ordered.first
+    end
+  end
+
   def revoke_account_access!(account)
     with_lock do
       membership = account_memberships.find_by(account: account)

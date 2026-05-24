@@ -556,8 +556,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command.last).to eq("ping")
     end
 
-    it "passes the run-selected model to agent-harness for Claude commands" do
-      llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
+    it "passes the tier-resolved model to agent-harness for Claude commands" do
+      llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid")
       create(:model_selection, agent_run: agent_run, llm_model: llm_model)
       context = described_class::CommandContext.new(
         runner_candidate: "claude",
@@ -577,8 +577,9 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command.first).to eq("sh")
     end
 
-    it "raises when the selected model provider is incompatible with the run provider" do
-      llm_model = create(:llm_model, model_id: "gpt-5.4", provider: "openai")
+    it "uses the runner's tier resolution even when the selected model is from another provider" do
+      create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", capability_score: 9.0)
+      llm_model = create(:llm_model, model_id: "gpt-5.4", provider: "openai", tier: "mid")
       create(:model_selection, agent_run: agent_run, llm_model: llm_model)
       context = described_class::CommandContext.new(
         runner_candidate: "claude",
@@ -586,12 +587,16 @@ RSpec.describe Activities::RunAgentActivity do
         user: nil
       )
 
-      expect {
-        activity.send(:build_command, context, "ping", agent_run: agent_run)
-      }.to raise_error(
-        Activities::RunAgentActivity::RunnerExecutionError,
-        /Selected model gpt-5\.4 \(openai\) is not compatible with claude \(expects anthropic\)/
-      )
+      expect(Runners::HarnessExecutionPlan).to receive(:for_runner_key).with(
+        runner_key: "claude",
+        prompt: "ping",
+        options: hash_including(dangerous_mode: true),
+        provider_runtime: have_attributes(model: "claude-sonnet-4-6")
+      ).and_call_original
+
+      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
+
+      expect(command.first).to eq("sh")
     end
 
     it "builds an API-key wrapper for anthropic-backed fallback entries" do
@@ -788,7 +793,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
-      expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
+      expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
     end
   end
 
@@ -1194,20 +1199,18 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runners).to eq([ "codex" ])
     end
 
-    context "with model-based pre-filtering" do
-      it "excludes runners whose provider is incompatible with the selected model" do
-        llm_model = create(:llm_model, model_id: "glm-5.1", provider: "zai_coding")
-        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+    context "with tier-based pre-filtering" do
+      it "keeps only runners that support the selected tier" do
+        llm_model = create(:llm_model, model_id: "glm-5.1", provider: "zai_coding", tier: "mid")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "mid")
 
         api_key = create(:runner_api_key, user: user, api_service_type: "zai_coding")
-        kilocode_runner = create(
-          :runner,
+        kilocode_runner = create_kilocode_runner_entry(
           user: user,
-          auth_type: "api_key",
-          provider_api_key: api_key,
-          runner_key: "kilocode",
+          api_key: api_key,
           name: "Kilocode GLM 5.1",
-          config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+          model: "glm-5.1",
+          api_provider: "zai_coding"
         )
         codex_runner = create(:runner, user: user, runner_key: "codex")
         user.settings.update!(
@@ -1221,13 +1224,9 @@ RSpec.describe Activities::RunAgentActivity do
         expect(runners).not_to include(codex_runner.routing_key)
       end
 
-      it "includes direct-outbound runners even when their fixed model differs from the selection" do
-        # TODO(RDR-034): replace with tier-based filter in Phase 2.
-        # Phase 0 loosens the model-compatibility filter so direct-outbound
-        # fallback runners (kilocode, opencode, pi) are never excluded by
-        # model mismatch — they bring their own configured model.
-        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
-        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+      it "includes direct-outbound runners that support the requested tier with their native model" do
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "mid")
 
         api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
         mismatched_runner = create_opencode_runner_entry(
@@ -1242,11 +1241,7 @@ RSpec.describe Activities::RunAgentActivity do
 
         runners = activity.send(:build_runner_order, agent_run, user.settings)
 
-        # Direct-outbound runner with a different model from the selection
-        # should NOT be filtered out (Phase 0 tactical fix).
         expect(runners).to include(mismatched_runner.routing_key)
-        # Codex should still be filtered out because of provider-family
-        # mismatch (codex expects openai, selected model is anthropic).
         expect(runners).not_to include(codex_runner.routing_key)
       end
 
@@ -1263,16 +1258,15 @@ RSpec.describe Activities::RunAgentActivity do
         expect(runners).to include(codex_runner.routing_key)
       end
 
-      it "keeps all runners when filtering would eliminate every candidate" do
-        # All runners are incompatible, so the filter is not applied
-        llm_model = create(:llm_model, model_id: "exotic-model-99", provider: "exotic_provider")
-        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+      it "returns no runners when none support the selected tier" do
+        llm_model = create(:llm_model, model_id: "exotic-model-99", provider: "exotic_provider", tier: "high")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "high")
 
         user.settings.update!(fallback_enabled: false)
 
         runners = activity.send(:build_runner_order, agent_run, user.settings)
 
-        expect(runners).not_to be_empty
+        expect(runners).to eq([])
       end
     end
   end
@@ -1345,13 +1339,15 @@ RSpec.describe Activities::RunAgentActivity do
         "runner" => "claude_code",
         "success" => false,
         "error_type" => "preflight_timeout",
-        "resolved_model_id" => "claude-sonnet-4-6"
+        "resolved_model_id" => "claude-sonnet-4-6",
+        "resolution_source" => "default"
       ),
       hash_including(
         "runner" => opencode_runner.routing_key,
         "success" => true,
         "resolved_model_id" => "moonshotai/kimi-k2-0905",
-        "resolved_provider_id" => opencode_runner.id
+        "resolved_provider_id" => opencode_runner.id,
+        "resolution_source" => "runner"
       )
     )
   end
@@ -1442,10 +1438,43 @@ RSpec.describe Activities::RunAgentActivity do
       name: name || "",
       enabled_for_agent_runs: true,
       config: { "opencode" => { "api_provider" => api_provider, "model" => model } }
-    )
+    ).tap do |runner|
+      runner.update!(tier_models: LlmModel::TIERS.to_h do |tier|
+        [ tier, { "model_id" => model, "provider_id" => runner.id } ]
+      end)
+    end
   end
 
   alias_method :create_opencode_provider_entry, :create_opencode_runner_entry
+
+  def create_kilocode_runner_entry(user:, api_key:, name:, model:, api_provider:)
+    create(
+      :runner,
+      user: user,
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      runner_key: "kilocode",
+      name: name,
+      config: { "kilocode" => { "api_provider" => api_provider, "model" => model } },
+      tier_models: {
+        "mid" => { "model_id" => model, "provider_id" => 17 }
+      }
+    )
+  end
+
+  def create_low_only_opencode_runner(user:, name:)
+    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    create_opencode_runner_entry(
+      user: user,
+      api_key: api_key,
+      name: name,
+      model: "moonshotai/kimi-k2-0905"
+    ).tap do |runner|
+      runner.update!(tier_models: {
+        "low" => { "model_id" => "moonshotai/kimi-k2-0905", "provider_id" => runner.id }
+      })
+    end
+  end
 
   def configure_single_compatible_opencode_runner(agent_run:, user:)
     llm_model = create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
@@ -2794,7 +2823,7 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
-    context "when primary preflight times out and direct-outbound fallback succeeds with a different model" do
+    context "when primary preflight times out at mid and a direct-outbound fallback succeeds with its native mid model" do
       let(:opencode_runner) do
         api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
         create_opencode_runner_entry(
@@ -2804,8 +2833,8 @@ expect(container_service).to receive(:execute).with(
       end
 
       before do
-        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic")
-        create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "mid")
 
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
 
@@ -2824,7 +2853,7 @@ expect(container_service).to receive(:execute).with(
         allow(activity).to receive(:run_harness_preflight!)
       end
 
-      it "falls back to the direct-outbound runner and records resolved model info" do
+      it "falls back to the direct-outbound runner and records per-attempt resolved ids" do
         call_count = 0
         execute_calls = []
         allow(container_service).to receive(:execute) do |command, **opts|
@@ -2842,6 +2871,33 @@ expect(container_service).to receive(:execute).with(
         expect_opencode_runtime_execute_calls(execute_calls)
         expect_resolved_model_attempts(agent_run, opencode_runner)
         expect(agent_run.runner_switches).to eq(1)
+      end
+    end
+
+    context "when no configured runner supports the requested tier" do
+      before do
+        llm_model = create(:llm_model, model_id: "claude-opus-4-1", provider: "anthropic", tier: "high")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "high")
+
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[opencode])
+      end
+
+      it "fast-fails with NoTierCapableRunner before any attempt executes" do
+        primary_runner = create_low_only_opencode_runner(user: user, name: "Primary Kimi")
+        fallback_runner = create_low_only_opencode_runner(user: user, name: "Fallback Kimi")
+        agent_run.update!(runner: primary_runner)
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_runner.routing_key ])
+
+        expect(container_service).not_to receive(:execute)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /No runner supports tier high/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).to eq("No runner supports tier high")
+        expect(agent_run.runners_attempted).to eq([])
       end
     end
 
