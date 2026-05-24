@@ -527,6 +527,65 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "pauses the run when execution policy approval is required" do
+      create_execution_policy(
+        "controls" => { "runner_allowlist" => [ "claude" ] },
+        "risk_rules" => [
+          { "name" => "bugfix", "conditions" => { "issue_labels_any" => [ "bug" ] }, "score" => 80 }
+        ],
+        "approval_rules" => [
+          {
+            "name" => "owner_review",
+            "conditions" => { "risk_score_gte" => 80 },
+            "workflow" => { "required" => true, "reason" => "Owner approval required", "approvers" => [ "repo_owner" ] }
+          }
+        ]
+      )
+      issue.update!(labels: [ "bug" ])
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(result[:paused]).to be(true)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.error_message).to eq("Policy approval required: Owner approval required")
+      expect(agent_run.guardrail_context.dig("policy_controls", "approval", "required")).to be(true)
+    end
+
+    it "redacts the custom prompt before persistence when prompt redaction is enabled" do
+      create_execution_policy(
+        "controls" => {
+          "prompt_redaction" => {
+            "enabled" => true,
+            "classify" => true,
+            "block_fully_redacted" => false
+          }
+        }
+      )
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        custom_prompt: "api_key=abcdefghijklmnopqrstuvwx123456"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.custom_prompt).to include("[REDACTED:")
+      expect(agent_run.guardrail_context.dig("policy_controls", "classification")).not_to be_empty
+      expect(agent_run.status).to eq("queued")
+    end
+
+    def create_execution_policy(rules)
+      create(:coordination_policy,
+        :active,
+        account: project.account,
+        project: project,
+        policy_type: "execution",
+        policy_key: "agent_execution").tap do |policy|
+        policy.current_version.update!(rules: rules)
+      end
+    end
+
     it "records a failed phase when later side effects raise" do
       allow(Issue).to receive(:find).with(issue.id).and_return(issue)
       allow(issue).to receive(:update!).and_raise(StandardError, "issue update failed")

@@ -106,6 +106,12 @@ RSpec.describe CoordinationPolicy do
       expect(coordination_policy).not_to be_valid
       expect(coordination_policy.errors[:metadata]).to include("must be a JSON object")
     end
+
+    it "accepts execution policies for runtime governance controls" do
+      coordination_policy.policy_type = "execution"
+
+      expect(coordination_policy).to be_valid
+    end
   end
 
   describe "#create_version!" do

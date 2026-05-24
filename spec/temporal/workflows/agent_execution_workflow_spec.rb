@@ -1302,6 +1302,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(called_activities).not_to include(Activities::MarkAgentRunFailedActivity)
     end
 
+    it "short-circuits when create-agent-run pauses before execution starts" do
+      called_activities = []
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities << activity_class
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, paused: true }
+        else
+          raise "unexpected activity #{activity_class.name}"
+        end
+      end
+
+      result = workflow.execute(input)
+
+      expect(result).to include(success: false, paused: true, agent_run_id: 42)
+      expect(called_activities).to eq([ Activities::CreateAgentRunActivity ])
+    end
+
     it "falls back to cleanup when RetainContainerActivity fails" do
       called_activities = []
       stub_post_agent_failure(called_activities, retain_error: StandardError.new("DB write failed"))

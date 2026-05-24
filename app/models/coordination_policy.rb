@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CoordinationPolicy < ApplicationRecord
-  POLICY_TYPES = %w[decomposition recovery escalation lifecycle_state].freeze
+  POLICY_TYPES = %w[decomposition recovery escalation lifecycle_state execution].freeze
   STATUSES = %w[draft active archived].freeze
 
   belongs_to :account
