@@ -58,6 +58,7 @@ RSpec.describe "Worker pool load behavior" do
       DiagnoseErrorJob => "default",
       HumanFeedbackCollectionJob => "default",
       GithubTokenValidationJob => "default",
+      AutoPickEligibilitySweepJob => "maintenance",
       AutoPickQueueBackfillJob => "maintenance",
       DockerOrphanCleanupJob => "maintenance",
       StaleRunDetectorJob => "maintenance",
@@ -135,6 +136,7 @@ RSpec.describe "Worker pool load behavior" do
   describe "GoodJob concurrency controls" do
     # Jobs with global singleton concurrency (only one instance system-wide)
     [
+      AutoPickEligibilitySweepJob,
       AutoPickQueueBackfillJob,
       DockerOrphanCleanupJob,
       RecoverMissingPullRequestLabelsJob,

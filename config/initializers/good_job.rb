@@ -117,6 +117,11 @@ Rails.application.configure do
       class: "AutoPickQueueBackfillJob",
       description: "Backfill eager auto-pick queue seeding for already-enabled projects"
     },
+    auto_pick_eligibility_sweep: {
+      cron: "*/15 * * * *",
+      class: "AutoPickEligibilitySweepJob",
+      description: "Periodic re-evaluation of all open issues for auto-pick eligibility"
+    },
     analyze_issue_followup_backfill: {
       cron: "15 * * * *",
       class: "AnalyzeIssueFollowupBackfillJob",
