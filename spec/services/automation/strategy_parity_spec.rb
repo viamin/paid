@@ -257,7 +257,7 @@ RSpec.describe Automation::Strategy do
         no_progress_stuck: false,
         failure_streak_limit_reached: false,
         review_goal_retry_limit_requires_escalation: false,
-        escalation_dismissed: false, owner_reviewer_login: "alice",
+        owner_reviewer_login: "alice",
         escalation_reason: nil, consecutive_unsuccessful_automatic_runs: 0,
         consecutive_operational_failures: 0, last_meaningful_progress_at: nil,
         draft: false }

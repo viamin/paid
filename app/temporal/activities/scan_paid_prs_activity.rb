@@ -193,14 +193,6 @@ module Activities
         triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason] } ]
       } if escalate
 
-      dismiss = decisions.find { |decision| decision.type == "dismiss_escalation" }
-      return {
-        pr_number: issue.github_number,
-        phase: lifecycle&.dig(:phase),
-        draft: lifecycle&.dig(:draft),
-        triggers: [ { type: "dismiss_escalation" } ]
-      } if dismiss
-
       return result if result.is_a?(Hash)
 
       mark_ready = decisions.find { |decision| decision.type == "mark_ready" }
@@ -247,15 +239,11 @@ module Activities
         no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
-        escalation_dismissed: escalation_dismissed?(issue),
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
         consecutive_unsuccessful_automatic_runs: progress_state.consecutive_unsuccessful_automatic_runs,
         consecutive_operational_failures: progress_state.consecutive_operational_failures,
         last_meaningful_progress_at: progress_state.last_meaningful_progress_at,
-        draft_review_count: issue.draft_review_count,
-        review_goal_retry_count: issue.review_goal_retry_count,
-        pr_followup_count: issue.pr_followup_count,
         draft: live_pr_draft_state(issue) { issue.pr_review_phase.in?(%w[draft restarted]) }
       }
     end
@@ -384,9 +372,9 @@ module Activities
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
-        return nil if escalation_dismissed?(issue)
-
-        if maybe_restart_draft(project, issue, pr_data)
+        if escalation_dismissed?(issue)
+          dismiss_escalation_trigger(issue, draft: pr_data.draft == true)
+        elsif maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
