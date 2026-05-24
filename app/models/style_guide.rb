@@ -58,6 +58,7 @@ class StyleGuide < ApplicationRecord
   # @param project [Project] The project context
   # @return [ActiveRecord::Relation] Style guides ordered by specificity
   def self.resolve_for(project)
+    detected_language = Prompts::LanguageCommands.detected_language(project)
     specificity_order = Arel.sql(
       "CASE WHEN project_id IS NOT NULL THEN 0 WHEN account_id IS NOT NULL THEN 1 ELSE 2 END"
     )
@@ -69,6 +70,7 @@ class StyleGuide < ApplicationRecord
         project_id: project.id,
         account_id: project.account_id
       )
+      .where(language: [ nil, detected_language ])
       .select("DISTINCT ON (name) id")
       .order(Arel.sql("name"), specificity_order)
 
