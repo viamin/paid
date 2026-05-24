@@ -168,7 +168,7 @@ class RunnersController < ApplicationController
 
   def runner_params
     raw_params = params[resource_param_key] || params.fetch(:runner)
-    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer, :weight ]
+    permitted = [ :enabled_for_agent_runs, :enabled_for_chat, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer, :weight ]
     if action_name == "create"
       permitted.push(:runner_key, :provider_key, :auth_type, :provider_api_key_id)
     end
@@ -345,6 +345,9 @@ class RunnersController < ApplicationController
       if @runner.enabled_for_agent_runs
         @runner.errors.add(:enabled_for_agent_runs, "must be disabled for an unsupported #{resource_noun}")
       end
+      if @runner.enabled_for_chat
+        @runner.errors.add(:enabled_for_chat, "must be disabled for an unsupported #{resource_noun}")
+      end
       if @runner.enabled_for_fallback
         @runner.errors.add(:enabled_for_fallback, "must be disabled for an unsupported #{resource_noun}")
       end
@@ -354,10 +357,14 @@ class RunnersController < ApplicationController
     return if resource_addable_key?(@runner.runner_key)
 
     setting_agent_runs = @runner.enabled_for_agent_runs && (@runner.new_record? || @runner.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
+    setting_chat = @runner.enabled_for_chat && (@runner.new_record? || @runner.will_save_change_to_attribute?("enabled_for_chat", to: true))
     setting_fallback = @runner.enabled_for_fallback && (@runner.new_record? || @runner.will_save_change_to_attribute?("enabled_for_fallback", to: true))
 
     if setting_agent_runs
       @runner.errors.add(:enabled_for_agent_runs, "cannot be enabled for a #{resource_noun} whose CLI is not installed in the agent container")
+    end
+    if setting_chat
+      @runner.errors.add(:enabled_for_chat, "cannot be enabled for a #{resource_noun} whose CLI is not installed in the agent container")
     end
     if setting_fallback
       @runner.errors.add(:enabled_for_fallback, "cannot be enabled for a #{resource_noun} whose CLI is not installed in the agent container")

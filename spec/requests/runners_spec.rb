@@ -54,6 +54,13 @@ RSpec.describe "Runners" do
         expect(response.body).to include("The active automated runner is excluded automatically for each run")
       end
 
+      it "shows the chat eligibility column" do
+        get runners_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Chat")
+      end
+
       it "renders collapsed auth instructions for every supported runner" do
         get runners_path
 
@@ -400,10 +407,10 @@ RSpec.describe "Runners" do
       allow(RunnerSupport).to receive(:addable_runner_key?).and_call_original
       allow(RunnerSupport).to receive(:addable_runner_key?).with("cursor").and_return(true)
 
-      post runners_path, params: { runner: { runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+      post runners_path, params: { runner: { runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_chat: false, enabled_for_fallback: true } }
 
       expect(response).to redirect_to(runners_path)
-      expect(user.runners.find_by(runner_key: "cursor")).to be_present
+      expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
     end
 
     it "handles an empty run-runner list during settings reconciliation" do
@@ -595,10 +602,11 @@ RSpec.describe "Runners" do
     it "updates runner flags" do
       runner = user.runners.create!(runner_key: "cursor")
 
-      patch runner_path(runner), params: { runner: { enabled_for_agent_runs: false } }
+      patch runner_path(runner), params: { runner: { enabled_for_agent_runs: false, enabled_for_chat: false } }
 
       expect(response).to redirect_to(runners_path)
       expect(runner.reload.enabled_for_agent_runs).to be(false)
+      expect(runner.reload.enabled_for_chat).to be(false)
     end
 
     it "persists the agent_co_author_trailer on update" do
@@ -666,6 +674,18 @@ RSpec.describe "Runners" do
       allow(RunnerSupport).to receive(:supported_runner_key?).with("cursor").and_return(false)
 
       patch runner_path(runner), params: { runner: { enabled_for_fallback: true } }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("must be disabled for an unsupported runner")
+    end
+
+    it "rejects enabling chat on a runner that has become unsupported" do
+      runner = user.runners.create!(runner_key: "cursor", enabled_for_chat: false)
+
+      allow(RunnerSupport).to receive(:supported_runner_key?).and_call_original
+      allow(RunnerSupport).to receive(:supported_runner_key?).with("cursor").and_return(false)
+
+      patch runner_path(runner), params: { runner: { enabled_for_chat: true } }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("must be disabled for an unsupported runner")

@@ -89,6 +89,7 @@ module ChatSessions
           unless runner.user&.account_id == account.id
             raise ArgumentError, "runner must belong to the same account"
           end
+          raise ArgumentError, "runner must be enabled for chat" unless runner.enabled_for_chat?
         end
       else
         default_runner_for_user
@@ -105,7 +106,7 @@ module ChatSessions
     end
 
     def default_runner_for_user
-      Runner.first_enabled_for_owner(user)
+      Runner.first_chat_enabled_for_owner(user)
     end
   end
 end

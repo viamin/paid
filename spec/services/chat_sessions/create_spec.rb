@@ -61,6 +61,17 @@ RSpec.describe ChatSessions::Create do
       expect(session.model).to eq("gpt-4o")
     end
 
+    it "defaults to the first chat-eligible runner" do
+      non_chat_runner = user.runners.find_by!(runner_key: "claude")
+      non_chat_runner.update!(enabled_for_chat: false)
+      chat_runner = create(:runner, user: user, runner_key: "cursor", enabled_for_chat: true)
+
+      session = described_class.call(account: account, user: user)
+
+      expect(session.runner).to eq(chat_runner)
+      expect(session.runner).not_to eq(non_chat_runner)
+    end
+
     it "accepts provider_id as a legacy alias for runner_id" do
       runner = create(:runner, user: user)
       session = described_class.call(
@@ -80,6 +91,14 @@ RSpec.describe ChatSessions::Create do
       expect {
         described_class.call(account: account, user: user, runner_id: runner.id)
       }.to raise_error(ArgumentError, /same account/)
+    end
+
+    it "raises when the selected runner is not enabled for chat" do
+      runner = create(:runner, user: user, enabled_for_chat: false)
+
+      expect {
+        described_class.call(account: account, user: user, runner_id: runner.id)
+      }.to raise_error(ArgumentError, /enabled for chat/)
     end
 
     it "creates a workspace mode session" do
