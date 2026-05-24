@@ -252,6 +252,37 @@ RSpec.describe Runner do
       end
     end
 
+    describe "tier_models" do
+      let(:runner) { build(:runner, runner_key: "cursor") }
+
+      it "coerces provider_id values to integers" do
+        runner.tier_models = { low: { model_id: "haiku-x", provider_id: "17" } }
+
+        expect(runner.tier_models).to eq("low" => { "model_id" => "haiku-x", "provider_id" => 17 })
+      end
+
+      it "rejects unknown tier keys" do
+        runner.tier_models = { ultra: { model_id: "haiku-x", provider_id: 17 } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:tier_models].join).to include("invalid tier")
+      end
+
+      it "rejects entries without a model_id" do
+        runner.tier_models = { low: { provider_id: 17 } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:tier_models].join).to include("model_id")
+      end
+
+      it "rejects entries without an integer provider_id" do
+        runner.tier_models = { low: { model_id: "haiku-x", provider_id: "abc" } }
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:tier_models].join).to include("provider_id")
+      end
+    end
+
     it "validates auth_type inclusion" do
       expect(runner).to allow_value("subscription").for(:auth_type)
       expect(runner).not_to allow_value("free_trial").for(:auth_type)
@@ -1186,6 +1217,31 @@ RSpec.describe Runner do
       duplicate = user.runners.new(runner_key: "claude", auth_type: "subscription")
 
       expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
+
+  describe "#supports_tier?" do
+    it "returns true when the tier has a configured entry" do
+      runner = build(:runner, tier_models: { "low" => { "model_id" => "haiku-x", "provider_id" => 17 } })
+
+      expect(runner.supports_tier?("low")).to be(true)
+      expect(runner.supports_tier?("high")).to be(false)
+    end
+  end
+
+  describe "logidze tier_models tracking" do
+    include ActiveSupport::Testing::TimeHelpers
+
+    it "captures tier_models updates in snapshots" do
+      runner = create(:runner, runner_key: "cursor")
+      change_time = 1.minute.from_now
+
+      travel_to(change_time) do
+        runner.update!(tier_models: { "low" => { "model_id" => "haiku-x", "provider_id" => 17 } })
+      end
+
+      snapshot = runner.reload.at(time: change_time + 1.second)
+      expect(snapshot.tier_models).to eq("low" => { "model_id" => "haiku-x", "provider_id" => 17 })
     end
   end
 

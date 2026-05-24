@@ -18,6 +18,7 @@ class Runner < ApplicationRecord
   LEGACY_ROUTING_KEY_PREFIX = "provider:".freeze
   DEFAULT_WEIGHT = 1
   MAX_WEIGHT = 1000
+  TIER_MODEL_VALUE_KEYS = %w[model_id provider_id].freeze
   # Default cutoffs for mapping a complexity score (1-10) to an LlmModel tier.
   # complexity <= low_max => "low", <= mid_max => "mid", else "high".
   DEFAULT_COMPLEXITY_THRESHOLDS = { "low_max" => 3, "mid_max" => 7 }.freeze
@@ -144,6 +145,7 @@ class Runner < ApplicationRecord
   validate :aider_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
   validate :tier_model_ids_must_be_valid
+  validate :tier_models_must_be_valid
   validate :complexity_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
 
@@ -224,6 +226,18 @@ class Runner < ApplicationRecord
 
   def state_key
     subscription? ? runner_key.to_s : routing_key
+  end
+
+  def tier_models
+    normalize_tier_models(self[:tier_models])
+  end
+
+  def tier_models=(value)
+    self[:tier_models] = normalize_tier_models(value)
+  end
+
+  def supports_tier?(tier)
+    tier_models[tier.to_s].present?
   end
 
   def legacy_routing_key
@@ -951,6 +965,44 @@ class Runner < ApplicationRecord
     end
   end
 
+  def tier_models_must_be_valid
+    raw_tier_models = self[:tier_models]
+    return if raw_tier_models.blank?
+
+    unless raw_tier_models.is_a?(Hash)
+      errors.add(:tier_models, "must be a hash of tier => { model_id, provider_id }")
+      return
+    end
+
+    invalid_tiers = tier_models.keys - LlmModel::TIERS
+    if invalid_tiers.any?
+      errors.add(:tier_models, "contains invalid tier(s): #{invalid_tiers.join(', ')}")
+      return
+    end
+
+    tier_models.each do |tier, entry|
+      unless entry.is_a?(Hash)
+        errors.add(:tier_models, "tier #{tier} must map to a hash with model_id and provider_id")
+        next
+      end
+
+      invalid_keys = entry.keys - TIER_MODEL_VALUE_KEYS
+      if invalid_keys.any?
+        errors.add(:tier_models, "tier #{tier} contains unknown key(s): #{invalid_keys.join(', ')}")
+      end
+
+      model_id = entry["model_id"]
+      if !model_id.is_a?(String) || model_id.blank?
+        errors.add(:tier_models, "tier #{tier} must include a non-blank model_id")
+      end
+
+      provider_id = entry["provider_id"]
+      next if provider_id.is_a?(Integer)
+
+      errors.add(:tier_models, "tier #{tier} must include an integer provider_id")
+    end
+  end
+
   def complexity_thresholds_must_be_valid
     return if complexity_thresholds.blank?
 
@@ -987,6 +1039,31 @@ class Runner < ApplicationRecord
     return if effective_low_max < effective_mid_max
 
     errors.add(:complexity_thresholds, "low_max must be less than mid_max")
+  end
+
+  def normalize_tier_models(value)
+    return {} if value.blank?
+    return value unless value.is_a?(Hash)
+
+    value.each_with_object({}) do |(tier, entry), normalized|
+      next if entry.blank?
+
+      normalized[tier.to_s] = normalize_tier_model_entry(entry)
+    end
+  end
+
+  def normalize_tier_model_entry(entry)
+    return entry unless entry.is_a?(Hash)
+
+    model_id = entry["model_id"] || entry[:model_id]
+    provider_id = entry["provider_id"] || entry[:provider_id]
+
+    {}.tap do |normalized|
+      normalized["model_id"] = model_id.to_s if model_id.present?
+
+      coerced_provider_id = Integer(provider_id, exception: false)
+      normalized["provider_id"] = coerced_provider_id unless coerced_provider_id.nil?
+    end
   end
 
   def kilocode_api_key_config_must_be_valid
