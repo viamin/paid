@@ -459,6 +459,15 @@ RSpec.describe Issue do
       }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
     end
 
+    it "re-enqueues analyzed issues so failed follow-up creation can recover" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+
+      expect {
+        issue.update!(paid_state: "analyzed")
+      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id)
+    end
+
     it "does not re-enqueue pull requests" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, :pull_request, project: project, paid_state: "in_progress", github_state: "open")

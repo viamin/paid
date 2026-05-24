@@ -36,7 +36,7 @@ module Issues
       issue = Issue.includes(:project).find_by(id: issue_id)
       return unless issue
       return if issue.is_pull_request?
-      return unless issue.paid_state.in?(%w[new planning failed completed])
+      return unless issue.paid_state.in?(%w[new planning failed completed analyzed])
       return unless AutoPickProjectGate.call(issue.project)
 
       EnqueueEligible.call(

@@ -569,7 +569,7 @@ class Issue < ApplicationRecord
     return false unless saved_change_to_paid_state?
     return false unless project&.auto_pick_enabled?
 
-    paid_state.in?(%w[new planning failed completed])
+    paid_state.in?(%w[new planning failed completed analyzed])
   end
 
   def enqueue_self_if_became_auto_pick_eligible
