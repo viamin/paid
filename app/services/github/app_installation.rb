@@ -46,7 +46,7 @@ module Github
         request.headers["Accept"] = "application/vnd.github+json"
         request.headers["Authorization"] = "Bearer #{jwt}"
         request.headers["Content-Type"] = "application/json"
-        request.body = "{}"
+        request.body = { repositories: [ repo_full_name.split("/").last ] }.to_json
       end
 
       parse_response(response)

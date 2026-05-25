@@ -30,6 +30,12 @@ module Api
       project.github_token&.touch_last_used!
 
       render plain: credential_response(token), content_type: "text/plain"
+    rescue Github::AppInstallation::ConfigurationError => e
+      Rails.logger.error(message: "git_credentials.app_installation_token_failed", error: e.message)
+      render json: { error: e.message }, status: :service_unavailable
+    rescue Github::AppInstallation::Error => e
+      Rails.logger.error(message: "git_credentials.app_installation_token_failed", error: e.message)
+      render json: { error: e.message }, status: :bad_gateway
     end
 
     private

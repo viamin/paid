@@ -63,6 +63,12 @@ module Api
 
       render body: response.body, status: response.status,
              content_type: response.headers["content-type"] || "application/json"
+    rescue Github::AppInstallation::ConfigurationError => e
+      log_error("github_proxy.app_installation_token_failed", e.message)
+      render json: { error: e.message }, status: :service_unavailable
+    rescue Github::AppInstallation::Error => e
+      log_error("github_proxy.app_installation_token_failed", e.message)
+      render json: { error: e.message }, status: :bad_gateway
     rescue Github::ReviewBotInstallationToken::ConfigurationError => e
       log_error("github_proxy.review_bot_token_failed", e.message)
       render json: { error: e.message }, status: :service_unavailable
