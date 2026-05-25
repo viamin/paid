@@ -376,6 +376,7 @@ RSpec.describe "ChatSessions" do
       before { sign_in user }
 
       it "closes the session and returns 204" do
+        create(:chat_message, chat_session: chat_session)
         delete chat_session_path(chat_session, format: :json)
         expect(response).to have_http_status(:no_content)
         expect(chat_session.reload.status).to eq("closed")
