@@ -8,6 +8,61 @@ RSpec.describe "Projects::PreCommitRequirements" do
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token) }
 
+  describe "GET /projects/:project_id/pre_commit_requirements" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get project_pre_commit_requirements_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as admin" do
+      before do
+        user.add_role(:admin, account)
+        sign_in user
+      end
+
+      it "renders the index page" do
+        get project_pre_commit_requirements_path(project)
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "renders opensource usage command when project is open source" do
+        project.update!(open_source: true)
+
+        get project_pre_commit_requirements_path(project)
+        expect(response.body).to include("--usage opensource")
+      end
+
+      it "renders commercial usage command when project is not open source" do
+        get project_pre_commit_requirements_path(project)
+
+        expect(response.body).to include("--usage commercial")
+      end
+
+      it "renders commercial license banner when project is not open source" do
+        create(:pre_commit_requirement, :mutation_test, account: account, project: project, name: "mutant")
+
+        get project_pre_commit_requirements_path(project)
+        expect(response.body).to include("mutant requires a paid license")
+      end
+    end
+
+    context "when authenticated as member" do
+      let(:member) { create(:user, :member, account: account) }
+
+      before do
+        create(:user, account: account) # absorb owner role
+        sign_in member
+      end
+
+      it "renders the index page" do
+        get project_pre_commit_requirements_path(project)
+        expect(response).to have_http_status(:ok)
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/pre_commit_requirements" do
     let(:valid_params) do
       {
@@ -40,6 +95,23 @@ RSpec.describe "Projects::PreCommitRequirements" do
         req = project.pre_commit_requirements.last
         expect(req.name).to eq("lint")
         expect(req.account).to eq(account)
+      end
+
+      it "creates a mutation_test requirement with warn default" do
+        params = {
+          pre_commit_requirement: {
+            name: "mutant", command: "bundle exec mutant run", check_type: "mutation_test",
+            failure_behavior: "warn", position: 1
+          }
+        }
+
+        expect {
+          post project_pre_commit_requirements_path(project), params: params
+        }.to change(PreCommitRequirement, :count).by(1)
+
+        req = project.pre_commit_requirements.last
+        expect(req.check_type).to eq("mutation_test")
+        expect(response).to redirect_to(project_pre_commit_requirements_path(project))
       end
     end
 

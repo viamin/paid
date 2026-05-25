@@ -1,0 +1,51 @@
+<%= form_with model: [ project, pre_commit_requirement ], url: project_pre_commit_requirements_path(project), class: "mt-4 space-y-4" do |f| %>
+  <div>
+    <%= f.label :name, class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-1">
+      <%= f.text_field :name, required: true, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+  </div>
+
+  <div>
+    <%= f.label :check_type, class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-1">
+      <%= f.select :check_type, PreCommitRequirement::CHECK_TYPES.map { |t| [ t.humanize, t ] }, {},
+        class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+  </div>
+
+  <div>
+    <%= f.label :command, class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-1">
+      <%= f.text_field :command, required: true,
+        class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">
+      For mutation_test: <code class="bg-gray-100 px-1 rounded"><%= PreCommitRequirement.mutation_test_default_command(project) %></code>
+    </p>
+  </div>
+
+  <div>
+    <%= f.label :failure_behavior, class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-1">
+      <%= f.select :failure_behavior, PreCommitRequirement::FAILURE_BEHAVIORS.map { |b| [ b.humanize, b ] }, {},
+        class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+  </div>
+
+  <div>
+    <%= f.label :position, class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-1">
+      <%= f.number_field :position, value: f.object.position || 0, min: 0,
+        class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-x-3">
+    <%= f.check_box :enabled, checked: f.object.new_record? ? true : f.object.enabled?,
+      class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+    <%= f.label :enabled, class: "text-sm font-medium leading-6 text-gray-900" %>
+  </div>
+
+  <%= f.submit "Add Requirement", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+<% end %>
