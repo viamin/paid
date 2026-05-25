@@ -211,7 +211,7 @@ module Accounts
           if !enabled
             :not_applicable
           elsif keys["provider"].present? && keys["key_reference"].present?
-            if fresh_within?(keys["last_rotated_at"], days: keys["rotation_interval_days"].presence || 90)
+            if fresh_within?(keys["last_rotated_at"], days: deployment_interval(keys["rotation_interval_days"], default: 90))
               :compliant
             else
               :warning
@@ -236,7 +236,7 @@ module Accounts
       def secret_rotation_control
         rotation = deployment_assurance["secret_rotation"]
         documented = rotation["documented"] == true
-        interval_days = rotation["interval_days"].presence || 90
+        interval_days = deployment_interval(rotation["interval_days"], default: 90)
 
         status =
           if documented && rotation["owner"].present? && fresh_within?(rotation["last_completed_at"], days: interval_days)
@@ -367,6 +367,10 @@ module Accounts
 
       def display_date(value)
         parse_date(value)&.iso8601 || "Not recorded"
+      end
+
+      def deployment_interval(value, default:)
+        Integer(value, exception: false) || default
       end
     end
   end

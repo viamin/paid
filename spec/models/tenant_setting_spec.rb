@@ -230,6 +230,25 @@ RSpec.describe TenantSetting do
       expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "enabled")).to be(true)
       expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "rotation_interval_days")).to eq(120)
     end
+
+    it "rejects invalid integer input instead of coercing it to zero" do
+      setting = build(:tenant_setting)
+
+      setting.deployment_assurance_configuration = {
+        "customer_managed_keys" => { "rotation_interval_days" => "oops" },
+        "secret_rotation" => { "interval_days" => "still-nope" },
+        "disaster_recovery" => { "rpo_hours" => "bad", "rto_hours" => "worse" }
+      }
+
+      expect(setting).not_to be_valid
+      expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "rotation_interval_days")).to eq("oops")
+      expect(setting.errors[:features]).to include(
+        "deployment_assurance.customer_managed_keys.rotation_interval_days must be an integer between 1 and 2147483647",
+        "deployment_assurance.secret_rotation.interval_days must be an integer between 1 and 2147483647",
+        "deployment_assurance.disaster_recovery.rpo_hours must be an integer between 1 and 2147483647",
+        "deployment_assurance.disaster_recovery.rto_hours must be an integer between 1 and 2147483647"
+      )
+    end
   end
 
   describe "worker_settings" do
@@ -270,6 +289,14 @@ RSpec.describe TenantSetting do
       setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => "25" })
       setting.valid?
       expect(setting.worker_settings["temporal_workflow_slots"]).to eq(25)
+    end
+
+    it "keeps invalid integer input invalid instead of coercing it to zero" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => "oops" })
+
+      expect(setting).not_to be_valid
+      expect(setting.worker_settings["temporal_workflow_slots"]).to eq("oops")
+      expect(setting.errors[:worker_settings]).to include("temporal_workflow_slots must be an integer between 1 and 100")
     end
 
     it "provides accessor for individual settings" do

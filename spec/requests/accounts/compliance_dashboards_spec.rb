@@ -79,6 +79,19 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       expect(assurance.dig("secret_rotation", "interval_days")).to eq(60)
       expect(account.account_activity_events.recent.first.action).to eq("compliance.assurance_updated")
     end
+
+    it "rejects invalid numeric deployment assurance settings" do
+      expect do
+        patch account_compliance_dashboard_path, params: deployment_assurance_params.deep_merge(
+          deployment_assurance: {
+            customer_managed_keys: { rotation_interval_days: "oops" }
+          }
+        )
+      end.not_to change(AccountActivityEvent, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(account.tenant_setting!.reload.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(90)
+    end
   end
 
   describe "GET /account_compliance_dashboard/export" do

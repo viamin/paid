@@ -100,6 +100,7 @@ class TenantSetting < ApplicationRecord
   validate :validate_default_budgets
   validate :validate_agent_settings
   validate :validate_worker_settings
+  validate :validate_deployment_assurance
   validates :self_repo_full_name,
     format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
     allow_nil: true,
@@ -332,6 +333,30 @@ class TenantSetting < ApplicationRecord
     end
   end
 
+  def validate_deployment_assurance
+    return unless features.is_a?(Hash)
+
+    assurance = features.fetch("deployment_assurance", nil)
+    return unless assurance.is_a?(Hash)
+
+    validate_deployment_assurance_integer(
+      assurance.dig("customer_managed_keys", "rotation_interval_days"),
+      path: "customer_managed_keys.rotation_interval_days"
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("secret_rotation", "interval_days"),
+      path: "secret_rotation.interval_days"
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("disaster_recovery", "rpo_hours"),
+      path: "disaster_recovery.rpo_hours"
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("disaster_recovery", "rto_hours"),
+      path: "disaster_recovery.rto_hours"
+    )
+  end
+
   def normalize_budget_hash(value)
     normalized_value = normalize_hash(value)
     return normalized_value unless normalized_value.is_a?(Hash)
@@ -342,7 +367,7 @@ class TenantSetting < ApplicationRecord
       result[budget_type.to_s] = normalize_hash(settings).tap do |normalized|
         normalized["enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["enabled"])
         %w[limit_cents alert_threshold_percent grace_buffer_percent].each do |key|
-          normalized[key] = normalized[key].present? ? normalized[key].to_i : nil
+          normalized[key] = normalize_integer_value(normalized[key])
         end
       end
     end
@@ -360,7 +385,7 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       keys.each do |key|
-        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
     end
   end
@@ -374,7 +399,7 @@ class TenantSetting < ApplicationRecord
         normalized[key] = normalized[key].present? ? normalized[key].to_f : nil if normalized.key?(key)
       end
       %w[min_recent_runs lookback_window_hours].each do |key|
-        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
     end
   end
@@ -393,7 +418,7 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       WORKER_SETTING_INTEGER_KEYS.each do |key|
-        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
     end
   end
@@ -407,19 +432,31 @@ class TenantSetting < ApplicationRecord
 
       %w[rotation_interval_days].each do |key|
         normalized["customer_managed_keys"][key] =
-          normalized.dig("customer_managed_keys", key).present? ? normalized.dig("customer_managed_keys", key).to_i : nil
+          normalize_integer_value(normalized.dig("customer_managed_keys", key))
       end
 
       %w[interval_days].each do |key|
         normalized["secret_rotation"][key] =
-          normalized.dig("secret_rotation", key).present? ? normalized.dig("secret_rotation", key).to_i : nil
+          normalize_integer_value(normalized.dig("secret_rotation", key))
       end
 
       %w[rpo_hours rto_hours].each do |key|
         normalized["disaster_recovery"][key] =
-          normalized.dig("disaster_recovery", key).present? ? normalized.dig("disaster_recovery", key).to_i : nil
+          normalize_integer_value(normalized.dig("disaster_recovery", key))
       end
     end
+  end
+
+  def validate_deployment_assurance_integer(value, path:)
+    return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
+
+    errors.add(:features, "deployment_assurance.#{path} must be an integer between 1 and #{PG_INT_MAX}")
+  end
+
+  def normalize_integer_value(value)
+    return nil unless value.present?
+
+    Integer(value, exception: false) || value
   end
 
   def apply_guardrail_columns
