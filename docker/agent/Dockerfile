@@ -98,8 +98,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Bundler version pinned in Gemfile.lock.
-ARG BUNDLER_VERSION=4.0.11
-RUN gem install --no-document "bundler:${BUNDLER_VERSION}"
+# BUNDLER_VERSION is extracted from Gemfile.lock's `BUNDLED WITH` at build time
+# by scripts/build-agent-image.sh and .github/workflows/agent-image.yml so the
+# agent image stays in lockstep with the app, devcontainer, and CI environments.
+ARG BUNDLER_VERSION
+RUN if [ -z "${BUNDLER_VERSION}" ]; then \
+        echo "ERROR: BUNDLER_VERSION build-arg is required (sourced from Gemfile.lock BUNDLED WITH)" >&2; \
+        exit 1; \
+    fi \
+    && gem install --no-document "bundler:${BUNDLER_VERSION}"
 
 # Install agent-harness globally so lightweight utility scripts inside the
 # agent container can use the same transport layer as the Rails app.
