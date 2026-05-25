@@ -206,8 +206,11 @@ jobs:
           fi
 
           if [ -z "${checksums_bundler}" ]; then
-            echo "::error::Could not read bundler version from Gemfile.lock CHECKSUMS section"
-            exit 1
+            # No CHECKSUMS bundler entry means there is no drift surface to check
+            # (the drift bug requires `bundle install` to rewrite that line). Pass
+            # quietly so a future bundler/format change does not block every PR.
+            echo "::notice::Gemfile.lock has no CHECKSUMS bundler entry; skipping consistency check."
+            exit 0
           fi
 
           if [ "${bundled_with}" != "${checksums_bundler}" ]; then

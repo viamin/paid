@@ -103,7 +103,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # agent image stays in lockstep with the app, devcontainer, and CI environments.
 ARG BUNDLER_VERSION
 RUN if [ -z "${BUNDLER_VERSION}" ]; then \
-        echo "ERROR: BUNDLER_VERSION build-arg is required (sourced from Gemfile.lock BUNDLED WITH)" >&2; \
+        echo "ERROR: BUNDLER_VERSION build-arg is required." >&2; \
+        echo "Use scripts/build-agent-image.sh, which extracts it from Gemfile.lock's BUNDLED WITH." >&2; \
         exit 1; \
     fi \
     && gem install --no-document "bundler:${BUNDLER_VERSION}"
