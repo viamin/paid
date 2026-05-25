@@ -62,7 +62,7 @@ module Runners
     def success_from(entry:, source:)
       Result.new(
         model_id: entry.fetch("model_id"),
-        provider_id: entry.fetch("provider_id"),
+        provider_id: entry["provider_id"],
         source: source,
         error: nil
       )
