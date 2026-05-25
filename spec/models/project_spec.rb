@@ -877,6 +877,12 @@ RSpec.describe Project do
     end
 
     describe "exactly_one_github_credential validation" do
+      it "allows unsaved projects without a credential" do
+        project = build(:project, github_token: nil, github_installation: nil)
+
+        expect(project).to be_valid
+      end
+
       it "rejects project with both github_token and github_installation" do
         token = create(:github_token)
         install = create(:github_installation, account: token.account)
@@ -896,6 +902,14 @@ RSpec.describe Project do
         install = create(:github_installation)
         project = build(:project, github_token: nil, github_installation: install, account: install.account)
         expect(project).to be_valid
+      end
+
+      it "rejects persisted projects without a credential" do
+        project = create(:project)
+        project.github_token = nil
+
+        expect(project).not_to be_valid
+        expect(project.errors[:base]).to include("must have a GitHub App installation or a PAT")
       end
     end
 
