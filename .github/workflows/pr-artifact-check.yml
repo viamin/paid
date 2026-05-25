@@ -191,3 +191,36 @@ jobs:
           fi
 
           echo "No artifact violations detected. PR is clean."
+
+      - name: Check Gemfile.lock bundler version consistency
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          bundled_with=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' Gemfile.lock)
+          checksums_bundler=$(grep -E "^  bundler \([0-9]" Gemfile.lock | sed -E 's/.*bundler \(([^)]+)\).*/\1/' | head -n 1)
+
+          if [ -z "${bundled_with}" ]; then
+            echo "::error::Could not read BUNDLED WITH from Gemfile.lock"
+            exit 1
+          fi
+
+          if [ -z "${checksums_bundler}" ]; then
+            # No CHECKSUMS bundler entry means there is no drift surface to check
+            # (the drift bug requires `bundle install` to rewrite that line). Pass
+            # quietly so a future bundler/format change does not block every PR.
+            echo "::notice::Gemfile.lock has no CHECKSUMS bundler entry; skipping consistency check."
+            exit 0
+          fi
+
+          if [ "${bundled_with}" != "${checksums_bundler}" ]; then
+            echo "::error::Gemfile.lock bundler version mismatch: BUNDLED WITH=${bundled_with}, CHECKSUMS=${checksums_bundler}"
+            echo ""
+            echo "This usually means 'bundle install' was run with a different bundler"
+            echo "than the one declared in BUNDLED WITH (often by Dependabot's host bundler)."
+            echo "Re-run 'bundle install' with bundler ${bundled_with} and recommit Gemfile.lock,"
+            echo "or run 'bundle update --bundler' to intentionally bump BUNDLED WITH to ${checksums_bundler}."
+            exit 1
+          fi
+
+          echo "Gemfile.lock bundler versions match: ${bundled_with}"
