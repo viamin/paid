@@ -3,57 +3,68 @@
 class QualityMetric < ApplicationRecord
   METRIC_TYPES = %w[automated human].freeze
   FEEDBACK_SOURCES = %w[system pr_merge pr_reaction pr_review issue_reaction review_reaction enhance_issue_feedback webhook comment].freeze
+  MUTATION_KILL_RATE_WEIGHT = 0.10
 
   # Weights for composite quality score (PR creation goal).
   # Based on RDR-009 with adjustments: added pr_created, review_comment_count,
   # and agent_rerun_count signals; rebalanced weights accordingly.
+  #
+  # mutation_kill_rate contributes 10% when present. Existing dimensions are
+  # scaled to 90% total so runs without mutant data keep prior behavior.
   SCORE_WEIGHTS = {
-    "pr_created" => 0.25,
-    "ci_passed" => 0.15,
-    "pr_merged" => 0.25,
-    "iterations" => 0.10,
-    "lint_clean" => 0.05,
-    "tests_pass" => 0.05,
-    "review_comment_count" => 0.05,
-    "agent_rerun_count" => 0.10
+    "pr_created" => 0.225,
+    "ci_passed" => 0.135,
+    "pr_merged" => 0.225,
+    "iterations" => 0.09,
+    "lint_clean" => 0.045,
+    "tests_pass" => 0.045,
+    "review_comment_count" => 0.045,
+    "agent_rerun_count" => 0.09,
+    "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
   }.freeze
 
   FOCUS_WEIGHTS = {
     "ci_fix" => {
-      "ci_passed" => 0.50,
-      "lint_clean" => 0.20,
-      "tests_pass" => 0.20,
-      "iterations" => 0.10
+      "ci_passed" => 0.45,
+      "lint_clean" => 0.18,
+      "tests_pass" => 0.18,
+      "iterations" => 0.09,
+      "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     },
     "review_feedback" => {
-      "focus_resolved" => 0.60,
-      "iterations" => 0.20,
-      "lint_clean" => 0.10,
-      "tests_pass" => 0.10
+      "focus_resolved" => 0.54,
+      "iterations" => 0.18,
+      "lint_clean" => 0.09,
+      "tests_pass" => 0.09,
+      "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     },
     "merge_conflict" => {
-      "focus_resolved" => 0.70,
-      "ci_passed" => 0.15,
-      "iterations" => 0.15
+      "focus_resolved" => 0.63,
+      "ci_passed" => 0.135,
+      "iterations" => 0.135,
+      "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     },
     "conversation" => {
-      "focus_resolved" => 0.60,
-      "iterations" => 0.20,
-      "lint_clean" => 0.10,
-      "tests_pass" => 0.10
+      "focus_resolved" => 0.54,
+      "iterations" => 0.18,
+      "lint_clean" => 0.09,
+      "tests_pass" => 0.09,
+      "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     },
     "label_action" => {
-      "focus_resolved" => 0.60,
-      "iterations" => 0.20,
-      "lint_clean" => 0.10,
-      "tests_pass" => 0.10
+      "focus_resolved" => 0.54,
+      "iterations" => 0.18,
+      "lint_clean" => 0.09,
+      "tests_pass" => 0.09,
+      "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     },
     "issue_implementation" => {
-      "focus_resolved" => 0.50,
-      "ci_passed" => 0.15,
-      "iterations" => 0.15,
-      "lint_clean" => 0.10,
-      "tests_pass" => 0.10
+      "focus_resolved" => 0.45,
+      "ci_passed" => 0.135,
+      "iterations" => 0.135,
+      "lint_clean" => 0.09,
+      "tests_pass" => 0.09,
+      "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
     }
   }.freeze
 
@@ -85,6 +96,9 @@ class QualityMetric < ApplicationRecord
   validates :metric_type, presence: true, inclusion: { in: METRIC_TYPES }
   validates :feedback_source, inclusion: { in: FEEDBACK_SOURCES }, allow_nil: true
   validates :composite_score,
+    numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 },
+    allow_nil: true
+  validates :mutation_kill_rate,
     numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 },
     allow_nil: true
   validates :metric_type, uniqueness: { scope: :agent_run_id }
@@ -132,6 +146,7 @@ class QualityMetric < ApplicationRecord
     scores_hash.each do |key, value|
       weight = weights[key]
       next unless weight
+      next if value.nil?
 
       total_weight += weight
       weighted_sum += weight * value.to_f
@@ -156,7 +171,9 @@ class QualityMetric < ApplicationRecord
     goal = agent_run&.goal || "create_pr"
     focus = agent_run&.focus || "general"
     weights = self.class.weights_for(goal:, focus:)
-    self.class.weighted_average(scores, weights: weights)
+    score_inputs = scores.to_h
+    score_inputs["mutation_kill_rate"] = mutation_kill_rate unless mutation_kill_rate.nil?
+    self.class.weighted_average(score_inputs, weights: weights)
   end
 
   # Calculates and persists the composite score.

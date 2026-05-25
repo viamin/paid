@@ -11,16 +11,16 @@ RSpec.describe QualityMetrics::DashboardStats do
       focus_resolved = result.find { |metric| metric[:key] == "focus_resolved" }
 
       expect(ci_passed[:weights_by_focus]).to eq(
-        "ci_fix" => 0.50,
-        "merge_conflict" => 0.15,
-        "issue_implementation" => 0.15
+        "ci_fix" => 0.45,
+        "merge_conflict" => 0.135,
+        "issue_implementation" => 0.135
       )
       expect(focus_resolved[:weights_by_focus]).to eq(
-        "review_feedback" => 0.60,
-        "merge_conflict" => 0.70,
-        "conversation" => 0.60,
-        "label_action" => 0.60,
-        "issue_implementation" => 0.50
+        "review_feedback" => 0.54,
+        "merge_conflict" => 0.63,
+        "conversation" => 0.54,
+        "label_action" => 0.54,
+        "issue_implementation" => 0.45
       )
     end
   end
@@ -171,7 +171,7 @@ RSpec.describe QualityMetrics::DashboardStats do
       expect(result[:metrics_reference].size).to be > 0
     end
 
-    it "includes goal and focus weight metadata for create_pr metrics" do
+    it "includes goal and focus weight metadata for core create_pr metrics" do
       result = described_class.call(project: project)
 
       pr_created = result[:metrics_reference].find { |m| m[:key] == "pr_created" }
@@ -179,20 +179,32 @@ RSpec.describe QualityMetrics::DashboardStats do
       focus_resolved = result[:metrics_reference].find { |m| m[:key] == "focus_resolved" }
 
       expect(pr_created[:name]).to eq("PR Created")
-      expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.25)
+      expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.225)
       expect(pr_created[:weights_by_focus]).to eq({})
       expect(pr_created[:goal_types]).to include("create_pr")
       expect(ci_passed[:weights_by_focus]).to eq(
-        "ci_fix" => 0.50,
-        "merge_conflict" => 0.15,
-        "issue_implementation" => 0.15
+        "ci_fix" => 0.45,
+        "merge_conflict" => 0.135,
+        "issue_implementation" => 0.135
       )
       expect(focus_resolved[:weights_by_focus]).to eq(
-        "review_feedback" => 0.60,
-        "merge_conflict" => 0.70,
-        "conversation" => 0.60,
-        "label_action" => 0.60,
-        "issue_implementation" => 0.50
+        "review_feedback" => 0.54,
+        "merge_conflict" => 0.63,
+        "conversation" => 0.54,
+        "label_action" => 0.54,
+        "issue_implementation" => 0.45
+      )
+    end
+
+    it "includes mutation kill-rate metadata for create_pr metrics" do
+      result = described_class.call(project: project)
+      mutation_kill_rate = result[:metrics_reference].find { |m| m[:key] == "mutation_kill_rate" }
+
+      expect(mutation_kill_rate[:weights_by_goal]).to eq("create_pr" => 0.10)
+      expect(mutation_kill_rate[:weights_by_focus]).to include(
+        "ci_fix" => 0.10,
+        "review_feedback" => 0.10,
+        "merge_conflict" => 0.10
       )
     end
 

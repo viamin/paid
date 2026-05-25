@@ -147,6 +147,20 @@ RSpec.describe PromptEvolution::SampleRuns do
       expect(run_ids).not_to include(other_run.id)
     end
 
+    it "surfaces mutation_kill_rate in sampled score details when present" do
+      run = insert_completed_run(project: project, prompt_version: prompt_version, completed_at: 1.day.ago)
+      insert_quality_metric(
+        run: run,
+        composite_score: 0.91,
+        scores: { "mutation_kill_rate" => 0.95, "pr_created" => 1.0 }
+      )
+
+      result = described_class.call(sample_size: 10, days: 7, prompt_id: prompt.id, project_id: project.id)
+
+      sample = result.samples.find { |entry| entry[:agent_run].id == run.id }
+      expect(sample[:scores]).to include("mutation_kill_rate" => 0.95)
+    end
+
     it "samples only low-quality runs when failure_only is enabled" do
       failing_run = create_completed_run(composite_score: 0.2)
       healthy_run = create_completed_run(composite_score: 0.9)
