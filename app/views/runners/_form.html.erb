@@ -298,7 +298,7 @@
     </div>
   </div>
 
-  <% if runner.tier_model_picker_visible_on_runner? %>
+  <% if runner.tier_model_picker_visible_on_runner? || runner.tier_model_picker_visible_on_provider? %>
       <div class="rounded-lg border border-gray-200 p-4"
            data-runner-form-target="tierSettings"
            data-tier-runner-key="<%= runner.runner_key %>">
