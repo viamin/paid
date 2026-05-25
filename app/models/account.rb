@@ -15,6 +15,7 @@ class Account < ApplicationRecord
   has_many :provider_api_keys, through: :users
   has_many :projects, dependent: :destroy
   has_many :github_tokens, dependent: :destroy
+  has_many :github_installations, dependent: :destroy
   has_many :integration_credentials, dependent: :destroy
   has_many :linear_tokens, dependent: :destroy
   has_many :prompts, -> { where(project_id: nil) }, dependent: :destroy

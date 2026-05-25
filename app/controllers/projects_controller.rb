@@ -13,7 +13,7 @@ class ProjectsController < ApplicationController
   }.freeze
 
   def index
-    base_scope = policy_scope(Project).includes(:github_token)
+    base_scope = policy_scope(Project).includes(:github_token, :github_installation)
     @q = base_scope.ransack(params[:q])
     @q.sorts = "last_agent_run_at desc" if @q.sorts.empty?
     @projects = apply_nulls_last_ordering(@q.result)
@@ -105,20 +105,22 @@ class ProjectsController < ApplicationController
   def new
     @project = current_account.projects.build
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_installations = policy_scope(GithubInstallation).active
     authorize @project
   end
 
   def create
     @project = current_account.projects.build(project_params)
-    assign_selected_github_token(@project)
+    assign_selected_github_credential(@project)
     @project.created_by = current_user
     @project.allowed_github_usernames = [ @project.owner ] if @project.allowed_github_usernames.blank?
     authorize @project
 
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_installations = policy_scope(GithubInstallation).active
 
-    if @project.github_token.blank?
-      @project.errors.add(:github_token_id, "must be selected")
+    unless @project.github_credential_present?
+      @project.errors.add(:base, "must select either a GitHub token or GitHub App installation")
       return render :new, status: :unprocessable_content
     end
 
@@ -132,6 +134,7 @@ class ProjectsController < ApplicationController
   def edit
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_installations = policy_scope(GithubInstallation).active
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
     @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
     @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
@@ -141,6 +144,7 @@ class ProjectsController < ApplicationController
   def update
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_installations = policy_scope(GithubInstallation).active
 
     update_params = project_params
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
@@ -151,7 +155,7 @@ class ProjectsController < ApplicationController
       return handle_screenshot_action(update_params[:screenshot_settings] || @project.effective_screenshot_settings)
     end
 
-    assign_selected_github_token(@project, update_params)
+    assign_selected_github_credential(@project, update_params)
 
     if @project.update(update_params)
       redirect_to @project, notice: "Project was successfully updated."
@@ -316,20 +320,27 @@ class ProjectsController < ApplicationController
     CollectorRun.failed.where(project_version_id: latest_version_id)
   end
 
-  def assign_selected_github_token(project, params_hash = project_params)
+  def assign_selected_github_credential(project, params_hash = project_params)
     github_token_id = params_hash[:github_token_id].presence
-    return unless github_token_id
+    github_installation_id = params_hash[:github_installation_id].presence
 
-    project.github_token = current_account.github_tokens.find_by(id: github_token_id)
-    project.errors.add(:github_token, "must belong to the same account") if project.github_token.blank?
+    if github_installation_id
+      project.github_installation = current_account.github_installations.find_by(id: github_installation_id)
+      project.errors.add(:github_installation, "must belong to the same account") if project.github_installation.blank?
+      project.github_token = nil
+    elsif github_token_id
+      project.github_token = current_account.github_tokens.find_by(id: github_token_id)
+      project.errors.add(:github_token, "must belong to the same account") if project.github_token.blank?
+      project.github_installation = nil
+    end
   end
 
   def set_project
-    @project = policy_scope(Project).includes(:github_token, :created_by).find(params[:id])
+    @project = policy_scope(Project).includes(:github_token, :github_installation, :created_by).find(params[:id])
   end
 
   def project_params
-    params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
+    params.require(:project).permit(:github_token_id, :github_installation_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :max_execution_seconds, :github_id, :default_branch,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :auto_fix_merge_conflicts, :auto_scan_security,
@@ -556,7 +567,7 @@ class ProjectsController < ApplicationController
   end
 
   def fetch_github_metadata
-    client = @project.github_token.client
+    client = @project.client
     repo_data = client.repository("#{@project.owner}/#{@project.repo}")
 
     @project.github_id = repo_data.id

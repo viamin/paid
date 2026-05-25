@@ -144,7 +144,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
 
   def backfill_synced_pr(agent_run)
     project = agent_run.project
-    github_issue = project.github_token.client.issue(project.full_name, agent_run.pull_request_number)
+    github_issue = project.client.issue(project.full_name, agent_run.pull_request_number)
     Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
   rescue GithubClient::Error => e
     Rails.logger.warn(
@@ -168,7 +168,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   def recover_label(agent_run, synced_pr, labels)
     project = agent_run.project
 
-    project.github_token.client.add_labels_to_issue(
+    project.client.add_labels_to_issue(
       project.full_name,
       agent_run.pull_request_number,
       labels

@@ -44,11 +44,11 @@ module ClarifyingQuestions
     attr_reader :project, :issue
 
     def github_available?
-      project.github_token.present?
+      project.github_credential_present?
     end
 
     def github_client
-      @github_client ||= project.github_token.client
+      @github_client ||= project.client
     end
 
     def find_enhancement_comment

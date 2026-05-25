@@ -97,7 +97,7 @@ module Activities
       end
 
       project = agent_run.project
-      client = project.github_token.client
+      client = project.client
       agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
       diagnostic_output = classification_text_for(agent_run)
       outcome = classify_outcome(agent_run, output_present, diagnostic_output)

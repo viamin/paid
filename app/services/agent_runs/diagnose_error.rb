@@ -81,7 +81,7 @@ module AgentRuns
     end
 
     def create_github_issue(diagnosis)
-      client = @project.github_token.client
+      client = @project.client
       title = issue_title
       body = issue_body(diagnosis)
 

@@ -39,7 +39,7 @@ module Github
     private
 
     def cache_service
-      @cache_service ||= Github::CacheService.new(client: project.github_token.client)
+      @cache_service ||= Github::CacheService.new(client: project.client)
     end
 
     def warm(resource, repo)

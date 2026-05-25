@@ -82,7 +82,7 @@ module Activities
     end
 
     def fetch_changed_files(project, pr_number)
-      client = project.github_token.client
+      client = project.client
       client.pull_request_files(project.full_name, pr_number)
     rescue GithubClient::Error => e
       logger.warn(

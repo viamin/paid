@@ -45,7 +45,7 @@ module Projects
     end
 
     def call
-      client = project.github_token.client
+      client = project.client
       repo = project.full_name
 
       remote_labels = fetch_remote_labels(client, repo)
