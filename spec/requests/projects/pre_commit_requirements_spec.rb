@@ -97,6 +97,14 @@ RSpec.describe "Projects::PreCommitRequirements" do
         expect(req.account).to eq(account)
       end
 
+      it "re-renders the form with errors on invalid params" do
+        post project_pre_commit_requirements_path(project),
+          params: { pre_commit_requirement: { name: "", command: "", check_type: "shell_command" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("error")
+      end
+
       it "creates a mutation_test requirement with warn default" do
         params = {
           pre_commit_requirement: {

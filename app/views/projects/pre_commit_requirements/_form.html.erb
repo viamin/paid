@@ -1,3 +1,13 @@
+<% if pre_commit_requirement.errors.any? %>
+  <div class="rounded-md bg-red-50 p-4 mb-4">
+    <h3 class="text-sm font-medium text-red-800"><%= pluralize(pre_commit_requirement.errors.count, "error") %> prevented this requirement from being saved:</h3>
+    <ul class="mt-2 list-disc pl-5 text-sm text-red-700">
+      <% pre_commit_requirement.errors.full_messages.each do |msg| %>
+        <li><%= msg %></li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
 <%= form_with model: [ project, pre_commit_requirement ], url: project_pre_commit_requirements_path(project), class: "mt-4 space-y-4" do |f| %>
   <div>
     <%= f.label :name, class: "block text-sm font-medium leading-6 text-gray-900" %>
