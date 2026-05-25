@@ -20,16 +20,12 @@ module ChatSessions
     def call
       validate!
 
-      if chat_session.messages.where(role: "user").none?
-        cleanup_workspace if chat_session.mode == "workspace"
-        chat_session.destroy!
-        return chat_session
-      end
+      return destroy_empty_session unless user_messages?
 
       ActiveRecord::Base.transaction do
         compute_totals
-        transition_to_closed
-        cleanup_workspace if chat_session.mode == "workspace"
+        cleanup_workspace_resources if workspace_session?
+        transition_to_closed(workspace_cleanup_attributes)
       end
 
       chat_session
@@ -41,6 +37,20 @@ module ChatSessions
       return if %w[active idle].include?(chat_session.status)
 
       raise ArgumentError, "chat session must be active or idle to close (current: #{chat_session.status})"
+    end
+
+    def destroy_empty_session
+      cleanup_workspace_resources if workspace_session?
+      chat_session.destroy!
+      chat_session
+    end
+
+    def user_messages?
+      chat_session.messages.where(role: "user").exists?
+    end
+
+    def workspace_session?
+      chat_session.mode == "workspace"
     end
 
     def compute_totals
@@ -62,16 +72,25 @@ module ChatSessions
       )
     end
 
-    def transition_to_closed
-      chat_session.update!(status: "closed")
+    def transition_to_closed(attributes = {})
+      chat_session.update!({ status: "closed" }.merge(attributes))
     end
 
-    def cleanup_workspace
-      cleanup_container if chat_session.container_id.present?
-      cleanup_volume if chat_session.workspace_volume.present?
+    def workspace_cleanup_attributes
+      return {} unless workspace_session?
+
+      {
+        container_id: nil,
+        workspace_volume: nil
+      }
     end
 
-    def cleanup_container
+    def cleanup_workspace_resources
+      cleanup_container_resource if chat_session.container_id.present?
+      cleanup_volume_resource if chat_session.workspace_volume.present?
+    end
+
+    def cleanup_container_resource
       # Placeholder for container cleanup via Containers::Provision or Docker API.
       # In production, this destroys the persistent workspace container.
       Rails.logger.info(
@@ -79,10 +98,9 @@ module ChatSessions
         chat_session_id: chat_session.id,
         container_id: chat_session.container_id
       )
-      chat_session.update!(container_id: nil)
     end
 
-    def cleanup_volume
+    def cleanup_volume_resource
       # Placeholder for volume cleanup.
       # In production, this removes the persistent workspace volume.
       Rails.logger.info(
@@ -90,7 +108,6 @@ module ChatSessions
         chat_session_id: chat_session.id,
         workspace_volume: chat_session.workspace_volume
       )
-      chat_session.update!(workspace_volume: nil)
     end
   end
 end
