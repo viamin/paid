@@ -23,11 +23,9 @@ class AccountAuditLogsController < ApplicationController
     events = current_account.account_activity_events
       .includes(:actor)
       .recent
-
-    events = events.by_action(params[:action]) if params[:action].present?
-    events = events.where("created_at >= ?", params[:from].to_time) if params[:from].present?
-    events = events.where("created_at <= ?", params[:to].to_time) if params[:to].present?
-    events = events.limit(10_000)
+      .ransack(params[:q])
+      .result
+      .limit(10_000)
 
     respond_to do |format|
       format.json do
