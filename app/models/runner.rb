@@ -1029,6 +1029,22 @@ class Runner < ApplicationRecord
         errors.add(:tier_models, "tier #{tier} must include a non-blank model_id")
       end
 
+      next unless model_id.is_a?(String) && model_id.present?
+
+      model = LlmModel.find_by(model_id: model_id)
+      if model.nil?
+        errors.add(:tier_models, "tier #{tier} references unknown model #{model_id}")
+      else
+        expected = tier_model_picker_provider
+        if expected.present? && model.provider != expected
+          errors.add(:tier_models, "tier #{tier} model #{model_id} does not belong to provider #{expected}")
+        end
+
+        if model.tier.present? && model.tier != tier.to_s
+          errors.add(:tier_models, "tier #{tier} model #{model_id} has tier #{model.tier}, expected #{tier}")
+        end
+      end
+
       provider_id = entry["provider_id"]
       next if provider_id.nil? && new_record?
       next if provider_id.is_a?(Integer)
@@ -1106,8 +1122,10 @@ class Runner < ApplicationRecord
     {}.tap do |normalized|
       normalized["model_id"] = model_id.to_s if model_id.present?
 
-      coerced_provider_id = Integer(provider_id, exception: false)
-      normalized["provider_id"] = coerced_provider_id unless coerced_provider_id.nil?
+      if provider_id.present?
+        coerced = Integer(provider_id, exception: false)
+        normalized["provider_id"] = coerced.nil? ? provider_id : coerced
+      end
     end
   end
 

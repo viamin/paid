@@ -1242,6 +1242,7 @@ RSpec.describe Provider do
     include ActiveSupport::Testing::TimeHelpers
 
     it "captures tier_models updates in snapshots" do
+      create(:llm_model, model_id: "haiku-x", provider: "anthropic", tier: "low")
       provider = create(:provider, provider_key: "cursor")
       change_time = 1.minute.from_now
 
