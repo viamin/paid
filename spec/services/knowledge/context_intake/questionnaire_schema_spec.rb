@@ -3,15 +3,19 @@
 require "rails_helper"
 
 RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
-  describe ".sections" do
-    it "returns a frozen array of sections" do
-      expect(described_class.sections).to be_frozen
-      expect(described_class.sections).to all(include(:key, :title, :questions))
+  describe ".ordered_questions" do
+    it "bootstraps the default catalog into persisted question records" do
+      expect { described_class.ordered_questions }.to change(ContextIntakeQuestion, :count).from(0)
+      expect(described_class.ordered_questions).to all(include(:key, :text, :required, :round))
     end
 
-    it "has unique section keys" do
-      keys = described_class.sections.map { |s| s[:key] }
-      expect(keys).to eq(keys.uniq)
+    it "prefers project-specific questions when keys overlap with the shared catalog" do
+      described_class.ordered_questions
+      project = create(:project)
+      create(:context_intake_question, project: project, key: "product_description", question_text: "Project version")
+
+      question = described_class.find_question("product_description", project: project)
+      expect(question.dig(:question, :text)).to eq("Project version")
     end
   end
 
@@ -19,7 +23,7 @@ RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
     it "returns questions for a valid section" do
       questions = described_class.questions_for_section("product_purpose")
       expect(questions).not_to be_empty
-      expect(questions).to all(include(:key, :text, :required))
+      expect(questions).to all(include(:key, :text, :required, :round))
     end
 
     it "returns empty array for unknown section" do
@@ -51,5 +55,47 @@ RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
       expect(required).to all(include(required: true))
       expect(required.size).to be > 0
     end
+  end
+
+  describe ".eligible_questions" do
+    it "filters follow-up questions using answer-based conditions" do
+      project = create(:project)
+      response = create_matching_response(project)
+      create_conditional_follow_up(project)
+
+      eligible = described_class.eligible_questions(project: project, round: 2, responses: [ response ])
+      expect(eligible.map { |question| question[:key] }).to include("enterprise_constraints")
+    end
+  end
+
+  def create_matching_response(project)
+    create(
+      :context_intake_response,
+      context_intake_session: create(:context_intake_session, project: project),
+      question_key: "product_description",
+      answer_text: "We support enterprise billing",
+      section: "product_purpose"
+    )
+  end
+
+  def create_conditional_follow_up(project)
+    create(
+      :context_intake_question,
+      project: project,
+      key: "enterprise_constraints",
+      question_text: "What enterprise approval workflows matter here?",
+      section_key: "operational_constraints",
+      section_title: "Operational & Business Constraints",
+      category: "operational_constraints",
+      round: 2,
+      section_order: 6,
+      display_order: 0,
+      is_follow_up: true,
+      parent_question_key: "product_description",
+      conditions: {
+        "depends_on_question_key" => "product_description",
+        "answer_includes_any" => [ "enterprise" ]
+      }
+    )
   end
 end

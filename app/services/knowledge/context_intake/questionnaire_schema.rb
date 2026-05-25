@@ -2,11 +2,11 @@
 
 module Knowledge
   module ContextIntake
-    # Defines the predefined business-context questionnaire structure.
-    # Each section contains a set of questions with keys, display text,
-    # and whether they are required for session completion.
+    # Loads the business-context question catalog from persisted records.
+    # Falls back to bootstrapping a default catalog so the wizard remains
+    # operational during rollout and in environments without seeded data.
     module QuestionnaireSchema
-      SECTIONS = [
+      DEFAULT_SECTIONS = [
         {
           key: "product_purpose",
           title: "Product Purpose",
@@ -74,37 +74,220 @@ module Knowledge
         }
       ].freeze
 
-      def self.sections
-        SECTIONS
-      end
-
-      def self.section_keys
-        SECTIONS.map { |s| s[:key] }
-      end
-
-      def self.questions_for_section(section_key)
-        section = SECTIONS.find { |s| s[:key] == section_key }
-        section&.dig(:questions) || []
-      end
-
-      def self.find_question(question_key)
-        SECTIONS.each do |section|
-          question = section[:questions].find { |q| q[:key] == question_key }
-          return { section: section, question: question } if question
+      class << self
+        def sections(project: nil)
+          ordered_questions(project: project)
+            .group_by { |question| [ question[:section_key], question[:section_title] ] }
+            .map do |(section_key, section_title), questions|
+              {
+                key: section_key,
+                title: section_title,
+                questions: questions.map { |question| question.except(:section_key, :section_title, :section_order) }
+              }
+            end
         end
-        nil
-      end
 
-      def self.total_questions
-        SECTIONS.sum { |s| s[:questions].size }
-      end
+        def section_keys(project: nil)
+          sections(project: project).map { |section| section[:key] }
+        end
 
-      def self.required_questions
-        SECTIONS.flat_map { |s| s[:questions].select { |q| q[:required] } }
-      end
+        def questions_for_section(section_key, project: nil)
+          sections(project: project).find { |section| section[:key] == section_key }&.fetch(:questions, []) || []
+        end
 
-      def self.section_index(section_key)
-        SECTIONS.index { |s| s[:key] == section_key } || 0
+        def ordered_questions(project: nil)
+          catalog_questions(project: project).map(&:dup)
+        end
+
+        def find_question(question_key, project: nil)
+          question = ordered_questions(project: project).find { |entry| entry[:key] == question_key }
+          return if question.nil?
+
+          {
+            section: { key: question[:section_key], title: question[:section_title] },
+            question: question.except(:section_key, :section_title, :section_order)
+          }
+        end
+
+        def total_questions(project: nil)
+          ordered_questions(project: project).size
+        end
+
+        def required_questions(project: nil)
+          ordered_questions(project: project).select { |question| question[:required] }
+        end
+
+        def section_index(section_key, project: nil)
+          section_keys(project: project).index(section_key) || 0
+        end
+
+        def eligible_questions(project:, round:, responses:)
+          ordered_questions(project: project).select do |question|
+            question[:round] == round && conditions_match?(question[:conditions], responses)
+          end
+        end
+
+        def question_for_response(response)
+          metadata = question_metadata_for_response(response)
+          metadata.merge(
+            key: response.question_key,
+            text: response.question_text,
+            section_key: response.section,
+            section_title: metadata[:section_title].presence || response.section.to_s.titleize
+          )
+        end
+
+        def required_question_for_response?(response)
+          question_metadata_for_response(response)[:required] == true
+        end
+
+        def question_round_for_response(response)
+          question_metadata_for_response(response)[:round] || 1
+        end
+
+        def ordered_responses(responses)
+          Array(responses).sort_by do |response|
+            metadata = question_metadata_for_response(response)
+            [
+              metadata[:round] || 1,
+              metadata[:section_order] || 0,
+              metadata[:display_order] || response.sequence || 0,
+              response.created_at || Time.at(0),
+              response.respond_to?(:id) ? response.id.to_i : 0
+            ]
+          end
+        end
+
+        def question_snapshot(question)
+          question.slice(
+            :required,
+            :category,
+            :round,
+            :section_order,
+            :display_order,
+            :section_title,
+            :is_follow_up,
+            :parent_question_key,
+            :conditions,
+            :validation_rules,
+            :provenance,
+            :status,
+            :metadata
+          )
+        end
+
+        private
+
+        def catalog_questions(project:)
+          ensure_default_catalog!
+
+          selected = ContextIntakeQuestion.visible_for(project)
+                                          .group_by(&:key)
+                                          .values
+                                          .map { |questions| questions.max_by { |question| question.project_id.present? ? 1 : 0 } }
+                                          .sort_by { |question| [ question.round, question.section_order, question.display_order, question.created_at, question.id ] }
+
+          questions = selected.map(&:to_question_hash)
+          questions.presence || default_questions
+        rescue ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished
+          default_questions
+        end
+
+        def default_questions
+          DEFAULT_SECTIONS.each_with_index.flat_map do |section, section_index|
+            section[:questions].each_with_index.map do |question, question_index|
+              {
+                key: question[:key],
+                text: question[:text],
+                required: question[:required],
+                section_key: section[:key],
+                section_title: section[:title],
+                category: section[:key],
+                round: 1,
+                section_order: section_index,
+                display_order: question_index,
+                is_follow_up: false,
+                parent_question_key: nil,
+                conditions: {},
+                validation_rules: {},
+                provenance: "human",
+                status: "approved",
+                metadata: {}
+              }
+            end
+          end
+        end
+
+        def ensure_default_catalog!
+          return if ContextIntakeQuestion.global_catalog.exists?
+
+          default_questions.each do |question|
+            ContextIntakeQuestion.find_or_create_by!(project_id: nil, key: question[:key]) do |record|
+              record.question_text = question[:text]
+              record.section_key = question[:section_key]
+              record.section_title = question[:section_title]
+              record.category = question[:category]
+              record.round = question[:round]
+              record.section_order = question[:section_order]
+              record.display_order = question[:display_order]
+              record.required = question[:required]
+              record.is_follow_up = question[:is_follow_up]
+              record.parent_question_key = question[:parent_question_key]
+              record.status = question[:status]
+              record.provenance = question[:provenance]
+              record.active = true
+              record.conditions = question[:conditions]
+              record.validation_rules = question[:validation_rules]
+              record.metadata = question[:metadata]
+            end
+          end
+        end
+
+        def question_metadata_for_response(response)
+          metadata = response.answer_data.to_h.fetch("question", {}).deep_symbolize_keys
+          return metadata if metadata.present?
+
+          fallback = find_question(response.question_key, project: response.context_intake_session.project)
+          {
+            required: fallback&.dig(:question, :required) == true,
+            category: response.section,
+            round: fallback&.dig(:question, :round) || 1,
+            section_order: section_index(response.section, project: response.context_intake_session.project),
+            display_order: fallback&.dig(:question, :display_order) || response.sequence || 0,
+            section_title: fallback&.dig(:section, :title) || response.section.to_s.titleize,
+            is_follow_up: response.is_follow_up,
+            parent_question_key: response.parent_response&.question_key,
+            conditions: {},
+            validation_rules: {},
+            provenance: response.provenance,
+            status: "approved",
+            metadata: {}
+          }
+        end
+
+        def conditions_match?(conditions, responses)
+          condition_hash = conditions.to_h.deep_symbolize_keys
+          return true if condition_hash.empty?
+
+          target_key = condition_hash[:depends_on_question_key]
+          target_response = Array(responses).find { |response| response.question_key == target_key }
+          return false if target_key.present? && target_response.nil?
+
+          answer_text = target_response&.answer_text.to_s
+          return false if condition_hash[:requires_answer] != false && target_key.present? && answer_text.blank?
+
+          if condition_hash[:minimum_answer_length].present?
+            return false if answer_text.length < condition_hash[:minimum_answer_length].to_i
+          end
+
+          includes_any = Array(condition_hash[:answer_includes_any]).map(&:to_s).reject(&:blank?)
+          if includes_any.any?
+            normalized_answer = answer_text.downcase
+            return false unless includes_any.any? { |term| normalized_answer.include?(term.downcase) }
+          end
+
+          true
+        end
       end
     end
   end

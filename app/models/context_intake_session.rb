@@ -48,11 +48,8 @@ class ContextIntakeSession < ApplicationRecord
   end
 
   def progress
-    total = context_intake_responses.where(is_follow_up: false).count
-    answered = context_intake_responses.where(is_follow_up: false)
-                                       .where.not(answer_text: [ nil, "" ])
-                                       .or(context_intake_responses.where(is_follow_up: false, skipped: true))
-                                       .count
+    total = context_intake_responses.count
+    answered = context_intake_responses.answered.count
     return { total: 0, answered: 0, percentage: 0 } if total.zero?
 
     { total: total, answered: answered, percentage: (answered * 100.0 / total).round }

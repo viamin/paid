@@ -11,10 +11,8 @@ module Knowledge
       end
 
       def ordered_questions
-        @ordered_questions ||= QuestionnaireSchema.sections.flat_map do |section|
-          section[:questions].map do |question|
-            question.merge(section_key: section[:key], section_title: section[:title])
-          end
+        @ordered_questions ||= QuestionnaireSchema.ordered_responses(responses.values).map do |response|
+          QuestionnaireSchema.question_for_response(response)
         end
       end
 
@@ -64,10 +62,8 @@ module Knowledge
       end
 
       def first_unanswered_required_question_key
-        required_keys = QuestionnaireSchema.required_questions.map { |question| question[:key] }
-
         ordered_questions.find do |question|
-          required_keys.include?(question[:key]) && !responses[question[:key]]&.answered?
+          question[:required] && !responses[question[:key]]&.answered?
         end&.fetch(:key, active_question_key)
       end
 

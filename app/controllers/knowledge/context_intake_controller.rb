@@ -109,6 +109,16 @@ module Knowledge
     end
 
     def complete_session!
+      follow_up_result = ContextIntake::GenerateFollowUpQuestions.call(
+        session: @session,
+        project: @project,
+        current_question_key: params[:question_key]
+      )
+      if follow_up_result.next_question_key.present?
+        load_wizard_state(active_question_key: follow_up_result.next_question_key)
+        return render_wizard_response
+      end
+
       ContextIntake::CompleteSession.call(session: @session)
       redirect_to project_context_intake_path(@project),
         status: :see_other,
@@ -174,7 +184,8 @@ module Knowledge
     end
 
     def current_question_required?
-      ContextIntake::QuestionnaireSchema.find_question(params[:question_key])&.dig(:question, :required)
+      response = @responses&.[](params[:question_key]) || @session.context_intake_responses.find_by(question_key: params[:question_key])
+      response.present? && ContextIntake::QuestionnaireSchema.required_question_for_response?(response)
     end
 
     def previous_navigation?
@@ -201,7 +212,9 @@ module Knowledge
     end
 
     def wizard_state
-      @wizard_state ||= ContextIntake::WizardState.new(responses: @responses)
+      @wizard_state ||= ContextIntake::WizardState.new(
+        responses: @responses || @session.context_intake_responses.index_by(&:question_key)
+      )
     end
 
     def normalized_answer_text

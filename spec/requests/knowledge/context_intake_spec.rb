@@ -64,7 +64,28 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).not_to include(second_question.fetch(:text))
     end
 
+    it "renders the next round when follow-up questions are generated instead of completing immediately" do
+      session.context_intake_responses.find_by!(question_key: first_question.fetch(:key))
+             .update!(answer_text: "Enterprise workflow answer")
+      create_follow_up_question!(first_question.fetch(:key))
+      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+
+      patch project_context_intake_path(project),
+        params: {
+          question_key: last_question.fetch(:key),
+          answer_text: "Final answer",
+          navigation_action: "finish"
+        },
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Which enterprise approvals or governance steps block releases?")
+      expect(response.body).to include("Question 18 of 18")
+    end
+
     it "redirects turbo-frame finish submissions to the full page with a success notice" do
+      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+
       patch project_context_intake_path(project),
         params: {
           question_key: last_question.fetch(:key),
@@ -85,6 +106,8 @@ RSpec.describe "Knowledge::ContextIntake" do
     end
 
     it "redirects turbo-frame skip-finish submissions to the full page with a success notice" do
+      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+
       patch project_context_intake_path(project),
         params: {
           question_key: last_question.fetch(:key),
@@ -103,5 +126,26 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).to include("Business context saved and synthesized into project knowledge.")
       expect(response.body).to include("Business context captured")
     end
+  end
+
+  def create_follow_up_question!(parent_question_key)
+    create(
+      :context_intake_question,
+      project: project,
+      key: "enterprise_approvals",
+      question_text: "Which enterprise approvals or governance steps block releases?",
+      section_key: "operational_constraints",
+      section_title: "Operational & Business Constraints",
+      category: "operational_constraints",
+      round: 2,
+      section_order: 6,
+      display_order: 0,
+      is_follow_up: true,
+      parent_question_key: parent_question_key,
+      conditions: {
+        "depends_on_question_key" => parent_question_key,
+        "answer_includes_any" => [ "enterprise" ]
+      }
+    )
   end
 end
