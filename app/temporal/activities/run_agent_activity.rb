@@ -38,7 +38,6 @@ module Activities
       /quota exceeded/i,
       /free tier limit reached/i,
       /free model usage limit reached/i,
-      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -67,7 +66,6 @@ module Activities
       /quota exceeded/i,
       /free tier limit reached/i,
       /free model usage limit reached/i,
-      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
@@ -1127,7 +1125,7 @@ module Activities
         # Rate-limit classification takes precedence over generic quota
         # failures because some providers use quota-shaped wording for
         # retryable usage caps (for example, GLM free-model limits).
-        if successful_exit_rate_limit_error?(sanitized_output)
+        if successful_exit_rate_limit_error?(sanitized_output, runner_key: runner)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
@@ -1161,7 +1159,7 @@ module Activities
       end
 
       # Check if this is a rate limit error
-      if rate_limit_error?(rate_limit_output)
+      if rate_limit_error?(rate_limit_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, rate_limit_output)
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
@@ -1173,7 +1171,7 @@ module Activities
       # begins (e.g. during start!/callbacks); recent_timeout_output
       # short-circuits on blank.
       timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
-      if timeout_rate_limit_error?(timeout_output)
+      if timeout_rate_limit_error?(timeout_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, timeout_output)
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
@@ -1269,7 +1267,7 @@ module Activities
       if result.success?
         # Keep the same precedence as the main execution path so preflight
         # retryable limits do not degrade into generic provider failures.
-        if successful_exit_rate_limit_error?(sanitized_output)
+        if successful_exit_rate_limit_error?(sanitized_output, runner_key: runner)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
           raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
@@ -1294,7 +1292,7 @@ module Activities
         return
       end
 
-      if rate_limit_error?(sanitized_output)
+      if rate_limit_error?(sanitized_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, sanitized_output)
         log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
@@ -1370,16 +1368,18 @@ module Activities
     end
 
     # Checks if the output indicates a rate limit error.
-    def rate_limit_error?(output)
+    def rate_limit_error?(output, runner_key:)
       return false if output.blank?
 
-      RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+      RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) } ||
+        provider_quota_reset_signal?(runner_key, output)
     end
 
-    def timeout_rate_limit_error?(output)
+    def timeout_rate_limit_error?(output, runner_key:)
       return false if output.blank?
 
-      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) } ||
+        provider_quota_reset_signal?(runner_key, output)
     end
 
     def auth_expired_error?(runner, output)
@@ -1416,24 +1416,35 @@ module Activities
     # instead of the broader execution-failure matcher so substantial agent
     # output that merely discusses rate limits is not reclassified as a
     # provider failure.
-    def successful_exit_rate_limit_error?(output)
-      standalone_rate_limit_signal(output).present?
+    def successful_exit_rate_limit_error?(output, runner_key:)
+      standalone_rate_limit_signal(output, runner_key: runner_key).present?
     end
 
-    def standalone_rate_limit_signal(output)
+    def standalone_rate_limit_signal(output, runner_key:)
       return nil if output.blank?
 
       normalized_output = normalize_output_text(output)
       if normalized_output.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
-          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| normalized_output.match?(pattern) }
+          timeout_rate_limit_error?(normalized_output, runner_key: runner_key)
         return normalized_output
       end
 
       normalized_output.each_line.map(&:strip).find do |line|
         line.present? &&
           line.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
-          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| line.match?(pattern) }
+          timeout_rate_limit_error?(line, runner_key: runner_key)
       end
+    end
+
+    def provider_quota_reset_signal?(runner_key, output)
+      provider_quota_error?(output) && parsed_rate_limit_reset_at(runner_key, output).present?
+    end
+
+    def provider_quota_error?(output)
+      return false if output.blank?
+
+      RunnerSupport.aggregated_error_classification_patterns(:quota)
+        .any? { |pattern| output.match?(pattern) }
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000
@@ -1550,6 +1561,14 @@ module Activities
 
     def rate_limit_reset_at(runner_key, output)
       RunnerSupport.rate_limit_reset_at(harness_provider_for(runner_key), output)
+    end
+
+    def parsed_rate_limit_reset_at(runner_key, output)
+      provider = harness_provider_for(runner_key)
+      provider.parse_rate_limit_reset(output.to_s) ||
+        provider.parse_rate_limit_reset(RunnerSupport.normalized_rate_limit_reset_text(output))
+    rescue AgentHarness::ConfigurationError, KeyError
+      nil
     end
 
     def harness_provider_for(runner_key)
