@@ -32,7 +32,6 @@ module Activities
       /too many requests/i,
       /\b429\b/,
       /free model usage limit reached/i,
-      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /requires more credits,? or fewer max_tokens/i,
       /can only afford \d+/i,
       %r{visit .*/credits .*add more credits}i,

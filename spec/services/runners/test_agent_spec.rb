@@ -1170,12 +1170,12 @@ RSpec.describe Runners::TestAgent do
           message: "OK.",
           output: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
           latency_ms: 10,
-          error_category: nil,
+          error_category: :quota,
           check: :smoke_test
         )
       end
 
-      it "surfaces the rate limit message instead of the OK line" do
+      it "uses the upstream quota classification and surfaces the reset message instead of the OK line" do
         result = described_class.call(runner: provider)
 
         expect(result).not_to be_success
