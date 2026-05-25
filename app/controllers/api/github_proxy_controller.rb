@@ -46,15 +46,16 @@ module Api
         return
       end
 
-      github_token = project.github_token
-      unless github_token&.active?
-        render json: { error: "GitHub token not available" }, status: :service_unavailable
+      github_token = project.github_credential
+      unless github_token
+        render json: { error: "GitHub credential not available" }, status: :service_unavailable
         return
       end
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
       response = proxy_to_github(path, github_authorization_token(path), forwarded_body)
-      github_token.touch_last_used! unless use_review_bot_token?(path)
+      github_token = project.github_credential
+      project.github_token&.touch_last_used! unless use_review_bot_token?(path)
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
@@ -111,11 +112,11 @@ module Api
 
     def github_authorization_token(path)
       project = authenticated_project
-      return project.github_token.token unless use_review_bot_token?(path)
-
-      Github::ReviewBotInstallationToken.new(
+      return Github::ReviewBotInstallationToken.new(
         repo_full_name: project.full_name
-      ).fetch
+      ).fetch if use_review_bot_token?(path)
+
+      project.github_credential
     end
 
     def use_review_bot_token?(path)

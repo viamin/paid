@@ -5,7 +5,8 @@ require "rails_helper"
 RSpec.describe Project do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
-    it { is_expected.to belong_to(:github_token) }
+    it { is_expected.to belong_to(:github_token).optional }
+    it { is_expected.to belong_to(:github_installation).optional }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
     it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
@@ -816,6 +817,83 @@ RSpec.describe Project do
         })
         expect(project.enabled_review_bot_logins).not_to include("copilot")
         expect(project.enabled_review_bot_logins).to include("chatgpt-codex-connector")
+      end
+
+      it "includes author-bot logins when project uses GitHub App installation" do
+        project = build(:project, :with_github_installation, review_settings: { "enabled" => false })
+        expect(project.enabled_review_bot_logins).to include("paid-agents", "paid-agents[bot]")
+      end
+    end
+
+    describe "#github_credential" do
+      it "returns PAT token for PAT-backed project" do
+        github_token = build(:github_token, token: "ghp_test123")
+        project = build(:project, github_token: github_token)
+        expect(project.github_credential).to eq("ghp_test123")
+      end
+
+      it "returns nil for PAT-backed project with nil token" do
+        project = build(:project, github_token: nil, github_installation: nil)
+        expect(project.github_credential).to be_nil
+      end
+
+      it "returns installation token for app-backed project when App is configured" do
+        key = OpenSSL::PKey::RSA.new(2048).to_pem
+        ENV["PAID_AGENT_APP_ID"] = "123"
+        ENV["PAID_AGENT_APP_PRIVATE_KEY"] = key
+
+        stub_request(:post, %r{/app/installations/\d+/access_tokens})
+          .to_return(status: 201, body: { token: "ghs_app_token" }.to_json)
+
+        install = build(:github_installation, github_installation_id: 42)
+        project = build(:project, :with_github_installation, github_installation: install)
+        expect(project.github_credential).to eq("ghs_app_token")
+      end
+    end
+
+    describe "#github_author_login" do
+      it "returns the bot login for app-backed projects" do
+        project = build(:project, :with_github_installation)
+        expect(project.github_author_login).to eq("paid-agents[bot]")
+      end
+
+      it "returns nil for PAT-backed project" do
+        github_token = build(:github_token)
+        project = build(:project, github_token: github_token)
+        expect(project.github_author_login).to be_nil
+      end
+    end
+
+    describe "#author_bot_logins" do
+      it "returns empty set for PAT-backed projects" do
+        project = build(:project)
+        expect(project.author_bot_logins).to eq(Set.new)
+      end
+
+      it "returns app bot logins for app-backed projects" do
+        project = build(:project, :with_github_installation)
+        expect(project.author_bot_logins).to include("paid-agents", "paid-agents[bot]")
+      end
+    end
+
+    describe "exactly_one_github_credential validation" do
+      it "rejects project with both github_token and github_installation" do
+        token = create(:github_token)
+        install = create(:github_installation, account: token.account)
+        project = build(:project, github_token: token, github_installation: install,
+                       account: token.account)
+        expect(project).not_to be_valid
+        expect(project.errors[:base]).to include(/must have either a GitHub App installation or a PAT/)
+      end
+
+      it "accepts project with only github_token" do
+        project = build(:project, github_token: build(:github_token), github_installation: nil)
+        expect(project).to be_valid
+      end
+
+      it "accepts project with only github_installation" do
+        project = build(:project, :with_github_installation)
+        expect(project).to be_valid
       end
     end
 
