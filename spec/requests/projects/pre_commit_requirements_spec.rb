@@ -180,6 +180,15 @@ RSpec.describe "Projects::PreCommitRequirements" do
         expect(response).to redirect_to(project_pre_commit_requirements_path(project))
         expect(requirement.reload.name).to eq("updated-lint")
       end
+
+      it "re-renders the persisted requirement form with the update route on invalid params" do
+        patch project_pre_commit_requirement_path(project, requirement),
+          params: { pre_commit_requirement: { name: "", command: "" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include(%(action="#{project_pre_commit_requirement_path(project, requirement)}"))
+        expect(response.body).not_to include(%(action="#{project_pre_commit_requirements_path(project)}"))
+      end
     end
 
     context "when authenticated as member" do

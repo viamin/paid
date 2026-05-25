@@ -8,7 +8,7 @@
     </ul>
   </div>
 <% end %>
-<%= form_with model: [ project, pre_commit_requirement ], url: project_pre_commit_requirements_path(project), class: "mt-4 space-y-4" do |f| %>
+<%= form_with model: [ project, pre_commit_requirement ], class: "mt-4 space-y-4" do |f| %>
   <div>
     <%= f.label :name, class: "block text-sm font-medium leading-6 text-gray-900" %>
     <div class="mt-1">
@@ -57,5 +57,6 @@
     <%= f.label :enabled, class: "text-sm font-medium leading-6 text-gray-900" %>
   </div>
 
-  <%= f.submit "Add Requirement", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+  <%= f.submit(pre_commit_requirement.persisted? ? "Update Requirement" : "Add Requirement",
+    class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer") %>
 <% end %>
