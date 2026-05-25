@@ -17,7 +17,8 @@ RSpec.describe Github::CacheWarmer do
   end
 
   before do
-    allow(project.github_token).to receive_messages(active?: true, client: github_client)
+    allow(project).to receive(:github_credential).and_return("ghp_test123")
+    allow(project).to receive(:client).and_return(github_client)
     allow(github_client).to receive_messages(
       repository: OpenStruct.new(id: 1),
       labels: [],
@@ -106,7 +107,7 @@ RSpec.describe Github::CacheWarmer do
 
     context "when token is inactive" do
       before do
-        allow(project.github_token).to receive(:active?).and_return(false)
+        allow(project).to receive(:github_credential).and_return(nil)
       end
 
       it "does nothing" do

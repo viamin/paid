@@ -7,12 +7,17 @@ RSpec.describe HumanFeedbackCollectionJob do
   describe "#perform" do
     let(:github_client) { instance_double(GithubClient) }
 
+    def stub_project_client(project, github_client)
+      allow(project).to receive(:github_credential_present?).and_return(true)
+      allow(project).to receive(:client).and_return(github_client)
+    end
+
     context "with create_pr goal" do
       it "collects reactions, reviews, and comment count for completed PR" do
         agent_run = create(:agent_run, :completed)
         # Create automated metric so review comment count can be stored
         create(:quality_metric, :automated, agent_run: agent_run)
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive_messages(
@@ -38,7 +43,7 @@ RSpec.describe HumanFeedbackCollectionJob do
         agent_run = create(:agent_run, :completed)
         metric = create(:quality_metric, :automated, agent_run: agent_run,
           scores: { "pr_created" => 1.0, "iterations" => 0.8 })
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive_messages(
@@ -58,7 +63,7 @@ RSpec.describe HumanFeedbackCollectionJob do
       it "re-enqueues with incremented attempt when automated metric is missing" do
         agent_run = create(:agent_run, :completed)
         # No automated metric created
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive_messages(
@@ -74,7 +79,7 @@ RSpec.describe HumanFeedbackCollectionJob do
 
       it "stops re-enqueuing after max attempts" do
         agent_run = create(:agent_run, :completed)
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive_messages(
@@ -106,7 +111,7 @@ RSpec.describe HumanFeedbackCollectionJob do
           project: agent_run.project, output_type: "pr_description",
           source_type: "PullRequest", source_id: agent_run.pull_request_number,
           metadata: { "original_text" => "Original description", "recorded_at" => 1.hour.ago.iso8601 })
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
         allow(github_client).to receive_messages(
           pull_request_reactions: [ { user_login: "alice", content: "+1", created_at: 1.hour.ago } ],
@@ -129,7 +134,7 @@ RSpec.describe HumanFeedbackCollectionJob do
       it "collects issue reactions for completed issue creation" do
         agent_run = create(:agent_run, :with_created_issue, status: "completed",
           started_at: 10.minutes.ago, completed_at: Time.current, duration_seconds: 600)
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive(:issue_reactions).and_return([
@@ -156,7 +161,7 @@ RSpec.describe HumanFeedbackCollectionJob do
           project: agent_run.project, output_type: "issue_title",
           source_type: "Issue", source_id: agent_run.created_issue_number,
           metadata: { "original_text" => "Original title", "recorded_at" => 1.hour.ago.iso8601 })
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
         allow(github_client).to receive_messages(
           issue_reactions: [ { user_login: "alice", content: "+1", created_at: 1.hour.ago } ],
@@ -177,7 +182,7 @@ RSpec.describe HumanFeedbackCollectionJob do
     context "with review goal" do
       it "collects review reactions for completed code review" do
         agent_run = create(:agent_run, :with_review)
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive(:review_comment_reactions_batch)
@@ -215,7 +220,7 @@ RSpec.describe HumanFeedbackCollectionJob do
       end
 
       it "collects reactions and author replies for completed issue enhancement" do
-        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        stub_project_client(agent_run.project, github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
         allow(github_client).to receive_messages(
           issue_comments: [ enhancement_comment, author_reply ],
@@ -242,7 +247,7 @@ RSpec.describe HumanFeedbackCollectionJob do
     it "stamps last_polled_at in human metric metadata after collection" do
       agent_run = create(:agent_run, :completed)
       create(:quality_metric, :automated, agent_run: agent_run)
-      allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+      stub_project_client(agent_run.project, github_client)
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       allow(github_client).to receive_messages(
@@ -265,7 +270,7 @@ RSpec.describe HumanFeedbackCollectionJob do
     it "creates a human metric with last_polled_at when no reactions or reviews are collected" do
       agent_run = create(:agent_run, :completed)
       create(:quality_metric, :automated, agent_run: agent_run)
-      allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+      stub_project_client(agent_run.project, github_client)
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       allow(github_client).to receive_messages(
@@ -286,7 +291,7 @@ RSpec.describe HumanFeedbackCollectionJob do
 
     it "handles GitHub API errors for reviews gracefully" do
       agent_run = create(:agent_run, :completed)
-      allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+      stub_project_client(agent_run.project, github_client)
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       allow(github_client).to receive(:pull_request_reactions).and_return([])

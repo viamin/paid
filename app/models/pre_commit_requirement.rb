@@ -2,7 +2,8 @@
 
 class PreCommitRequirement < ApplicationRecord
   has_logidze
-  CHECK_TYPES = %w[shell_command test_suite coverage security_scan].freeze
+  CHECK_TYPES = %w[shell_command test_suite coverage security_scan mutation_test].freeze
+  MUTATION_TEST_DEFAULT_COMMAND = "bundle exec mutant run --usage %<usage_value>s --since HEAD~1 --use rspec --jobs 1".freeze
   FAILURE_BEHAVIORS = %w[block warn auto_fix].freeze
 
   belongs_to :account
@@ -44,6 +45,11 @@ class PreCommitRequirement < ApplicationRecord
 
   def user_level?
     user_id.present? && project_id.nil?
+  end
+
+  def self.mutation_test_default_command(project)
+    usage = project.open_source? ? "opensource" : "commercial"
+    format(MUTATION_TEST_DEFAULT_COMMAND, usage_value: usage)
   end
 
   def auto_fix?

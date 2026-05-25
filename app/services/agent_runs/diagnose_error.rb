@@ -61,8 +61,8 @@ module AgentRuns
         raise ArgumentError, "Agent run has no error message to diagnose"
       end
 
-      unless @project.github_token&.client
-        raise ArgumentError, "Project has no configured GitHub token"
+      unless @project.github_credential_present?
+        raise ArgumentError, "Project has no configured GitHub credential"
       end
     end
 

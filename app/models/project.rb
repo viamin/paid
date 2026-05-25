@@ -830,11 +830,15 @@ class Project < ApplicationRecord
   # is active.
   def github_credential
     if github_installation_id.present? || github_installation.present?
+      return unless credential_active?(github_installation)
+
       Github::AppInstallation.token_for(
         installation_id: github_installation.github_installation_id,
         repo_full_name: full_name
       )
     else
+      return unless credential_active?(github_token)
+
       github_token&.token
     end
   end
@@ -1083,6 +1087,13 @@ class Project < ApplicationRecord
     return if github_token.active?
 
     errors.add(:github_token, "must be active (not revoked or expired)")
+  end
+
+  def credential_active?(credential)
+    return false if credential.nil?
+    return credential.active? if credential.respond_to?(:active?)
+
+    true
   end
 
   def owner_reviewer_login_is_trusted

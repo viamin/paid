@@ -74,6 +74,11 @@ Rails.application.routes.draw do
   resource :account_ownership_transfer, only: [ :create ]
   resource :account_lifecycle, only: [ :update ]
 
+  # Account audit log
+  resources :account_audit_logs, only: [ :index ] do
+    get :export, on: :collection
+  end
+
   # Account tenant configuration
   resource :tenant_configuration, only: [ :edit, :update ]
 
@@ -183,6 +188,7 @@ Rails.application.routes.draw do
       post :diagnose_error, on: :member
       post :resume, on: :member
       post :terminate, on: :member
+      get :provenance, on: :member
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection

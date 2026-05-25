@@ -23,7 +23,7 @@ module Api
 
       token = project.github_credential
       unless token
-        render json: { error: "Project GitHub credential is missing or inactive" }, status: :forbidden
+        render json: { error: github_credential_unavailable_message(project) }, status: :forbidden
         return
       end
 
@@ -47,6 +47,14 @@ module Api
         username=x-access-token
         password=#{token}
       CREDENTIALS
+    end
+
+    def github_credential_unavailable_message(project)
+      if project.github_installation_id.present? || project.github_installation.present?
+        "Project GitHub App installation is missing or inactive"
+      else
+        "Project GitHub token is missing or inactive"
+      end
     end
   end
 end

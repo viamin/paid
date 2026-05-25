@@ -7,7 +7,6 @@ RSpec.describe QualityMetrics::CollectEnhanceIssueFeedback do
   describe ".call" do
     let(:agent_run) { create(:agent_run, :enhance_issue_goal, :completed, pull_request_number: nil) }
     let(:github_client) { instance_double(GithubClient) }
-    let(:github_token) { agent_run.project.github_token }
     let(:enhancement_comment) do
       OpenStruct.new(
         id: 123,
@@ -33,7 +32,8 @@ RSpec.describe QualityMetrics::CollectEnhanceIssueFeedback do
     end
 
     before do
-      allow(github_token).to receive(:client).and_return(github_client)
+      allow(agent_run.project).to receive(:github_credential_present?).and_return(true)
+      allow(agent_run.project).to receive(:client).and_return(github_client)
     end
 
     it "records reaction score and issue author reply for the enhancement comment" do

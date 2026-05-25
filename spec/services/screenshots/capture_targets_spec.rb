@@ -93,6 +93,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "account" ])
     end
 
+    it "maps the account audit log controller to the audit log target" do
+      targets = described_class.call(changed_files: [ "app/controllers/account_audit_logs_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
+    end
+
     it "maps marketplace entry controllers to representative marketplace routes" do
       targets = described_class.call(changed_files: [ "app/controllers/marketplace_entries_controller.rb" ])
 
@@ -142,7 +148,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
     it "maps projects/agent_runs_controller to include the new action target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/agent_runs_controller.rb" ])
 
-      expect(targets.map(&:slug)).to contain_exactly("project_agent_runs", "project_agent_run_new", "project_agent_run_show")
+      expect(targets.map(&:slug)).to contain_exactly(
+        "project_agent_runs",
+        "project_agent_run_new",
+        "project_agent_run_show",
+        "project_agent_run_provenance"
+      )
     end
 
     it "maps the project run form and run detail partials to the relevant project agent run pages" do
@@ -150,6 +161,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
         .to eq([ "project_agent_run_new" ])
       expect(described_class.call(changed_files: [ "app/views/agent_runs/_detail.html.erb" ]).map(&:slug))
         .to eq([ "project_agent_run_show" ])
+    end
+
+    it "maps the new project run provenance view to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/agent_runs/provenance.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_agent_run_provenance" ])
     end
 
     it "maps public assets to shared UI targets" do
@@ -240,6 +257,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/views/accounts/show.html.erb" ])
 
       expect(targets.map(&:slug)).to eq([ "account" ])
+    end
+
+    it "maps the account audit log view to the audit log target" do
+      targets = described_class.call(changed_files: [ "app/views/account_audit_logs/index.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
     end
 
     it "maps the clarifying-questions wizard view to its screenshot target" do

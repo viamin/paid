@@ -23,7 +23,7 @@ module Github
     end
 
     def call
-      return unless project.github_token&.active?
+      return unless project.github_credential
 
       repo = project.full_name
       warmed = []

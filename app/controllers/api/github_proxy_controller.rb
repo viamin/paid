@@ -48,7 +48,7 @@ module Api
 
       github_token = project.github_credential
       unless github_token
-        render json: { error: "GitHub credential not available" }, status: :service_unavailable
+        render json: { error: github_credential_unavailable_message(project) }, status: :service_unavailable
         return
       end
 
@@ -122,6 +122,14 @@ module Api
       ).fetch if use_review_bot_token?(path)
 
       project.github_credential
+    end
+
+    def github_credential_unavailable_message(project)
+      if project.github_installation_id.present? || project.github_installation.present?
+        "GitHub App installation not available"
+      else
+        "GitHub token not available"
+      end
     end
 
     def use_review_bot_token?(path)

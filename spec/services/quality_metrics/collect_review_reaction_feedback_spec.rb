@@ -6,10 +6,10 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
   describe ".call" do
     let(:agent_run) { create(:agent_run, :with_review) }
     let(:github_client) { instance_double(GithubClient) }
-    let(:github_token) { agent_run.project.github_token }
 
     before do
-      allow(github_token).to receive(:client).and_return(github_client)
+      allow(agent_run.project).to receive(:github_credential_present?).and_return(true)
+      allow(agent_run.project).to receive(:client).and_return(github_client)
     end
 
     it "creates human quality metric from batched reactions on review comments" do

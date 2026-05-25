@@ -832,6 +832,12 @@ RSpec.describe Project do
         expect(project.github_credential).to eq("ghp_test123")
       end
 
+      it "returns nil for PAT-backed project with revoked token" do
+        github_token = build(:github_token, token: "ghp_test123", revoked_at: Time.current)
+        project = build(:project, github_token: github_token)
+        expect(project.github_credential).to be_nil
+      end
+
       it "returns nil for PAT-backed project with nil token" do
         project = build(:project, github_token: nil, github_installation: nil)
         expect(project.github_credential).to be_nil
@@ -848,6 +854,12 @@ RSpec.describe Project do
         install = build(:github_installation, github_installation_id: 42)
         project = build(:project, :with_github_installation, github_installation: install)
         expect(project.github_credential).to eq("ghs_app_token")
+      end
+
+      it "returns nil for app-backed project with inactive installation" do
+        install = build(:github_installation, github_installation_id: 42, revoked_at: Time.current)
+        project = build(:project, :with_github_installation, github_installation: install)
+        expect(project.github_credential).to be_nil
       end
     end
 
