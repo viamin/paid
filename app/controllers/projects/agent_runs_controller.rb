@@ -772,6 +772,7 @@ module Projects
       end
 
       issue = attrs[:issue]
+      goal = attrs[:goal]
       priority_tier = attrs[:priority_tier]
 
       agent_run = nil

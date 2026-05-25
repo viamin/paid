@@ -6,12 +6,6 @@ class ProjectsController < ApplicationController
   before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
 
-  private
-
-  def resolve_audit_subject
-    @project
-  end
-
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
   AUTO_PICK_PARTIALS = {
     "index" => "projects/auto_pick_toggle_index"
@@ -292,6 +286,10 @@ class ProjectsController < ApplicationController
   end
 
   private
+
+  def resolve_audit_subject
+    @project
+  end
 
   def toggle_automation(feature, partials)
     authorize @project, :update?
