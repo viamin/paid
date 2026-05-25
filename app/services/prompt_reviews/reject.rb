@@ -37,10 +37,31 @@ module PromptReviews
         )
       end
       fail_recovery_action!
+      record_audit_event
       prompt_version
     end
 
     private
+
+    def record_audit_event
+      Audit::RecordEvent.call(
+        action: "prompt_version.rejected",
+        actor: reviewer,
+        subject: prompt_version,
+        metadata: {
+          prompt_slug: prompt_version.prompt.slug,
+          version: prompt_version.version,
+          notes: notes
+        }
+      )
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "prompt_reviews.audit_failed",
+        action: "rejected",
+        error_class: e.class.name,
+        error_message: e.message
+      )
+    end
 
     def validate!
       raise ArgumentError, "reviewer is required" unless reviewer

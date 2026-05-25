@@ -1130,6 +1130,34 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "GET /projects/:project_id/agent_runs/:id/provenance" do
+    before { sign_in user }
+
+    it "renders the provenance page" do
+      agent_run = create(:agent_run, project: project, agent_type: "claude_code")
+
+      get provenance_project_agent_run_path(project, agent_run)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Run Provenance")
+      expect(response.body).to include("Agent Run ##{agent_run.id}")
+    end
+
+    it "renders provenance as JSON" do
+      agent_run = create(:agent_run, project: project, agent_type: "claude_code")
+
+      get provenance_project_agent_run_path(project, agent_run, format: :json)
+
+      expect(response).to have_http_status(:ok)
+      payload = JSON.parse(response.body)
+      expect(payload.fetch("run")).to include(
+        "id" => agent_run.id,
+        "agent_type" => "claude_code"
+      )
+      expect(payload).to include("prompt", "model", "tools", "code_changes", "timeline", "costs", "runner_attempts")
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

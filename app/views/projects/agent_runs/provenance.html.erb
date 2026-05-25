@@ -1,0 +1,143 @@
+<% content_for :title, "Run Provenance ##{@agent_run.id}" %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex items-center justify-between">
+    <div>
+      <p class="text-sm font-medium uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">Run Provenance</p>
+      <h1 class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">Agent Run #<%= @agent_run.id %></h1>
+    </div>
+    <div>
+      <%= link_to "View Run", project_agent_run_path(@project, @agent_run), class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
+      <%= link_to "JSON", provenance_project_agent_run_path(@project, @agent_run, format: :json), class: "ml-2 rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
+    </div>
+  </div>
+
+  <% prov = @provenance %>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-2">
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Run Summary</h2>
+      <dl class="mt-4 grid gap-2 text-sm">
+        <% prov[:run].except(:id).each do |key, value| %>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200"><%= key.to_s.humanize %></dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= value.inspect %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Prompt</h2>
+      <dl class="mt-4 grid gap-2 text-sm">
+        <% prov[:prompt].each do |key, value| %>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200"><%= key.to_s.humanize %></dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= value.inspect %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Model Selection</h2>
+      <dl class="mt-4 grid gap-2 text-sm">
+        <% prov[:model].each do |key, value| %>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200"><%= key.to_s.humanize %></dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= value.inspect %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Tools (MCP Servers)</h2>
+      <p class="mt-1 text-sm text-gray-600 dark:text-gray-300"><%= pluralize(prov[:tools][:servers_count], "server") %> in snapshot</p>
+      <ul class="mt-3 space-y-2">
+        <% prov[:tools][:servers].each do |server| %>
+          <li class="rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700">
+            <p class="font-medium text-gray-900 dark:text-white"><%= server[:name] %></p>
+            <p class="text-gray-500 dark:text-gray-400"><%= server[:command] %></p>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Code Changes</h2>
+      <dl class="mt-4 grid gap-2 text-sm">
+        <% prov[:code_changes].except(:decision_records).each do |key, value| %>
+          <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+            <dt class="font-medium text-gray-700 dark:text-gray-200"><%= key.to_s.humanize %></dt>
+            <dd class="text-gray-600 dark:text-gray-300"><%= value.inspect %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </section>
+
+    <% if prov[:approvals] %>
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Approvals</h2>
+        <dl class="mt-4 grid gap-2 text-sm">
+          <% prov[:approvals].each do |key, value| %>
+            <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+              <dt class="font-medium text-gray-700 dark:text-gray-200"><%= key.to_s.humanize %></dt>
+              <dd class="text-gray-600 dark:text-gray-300"><%= value.inspect %></dd>
+            </div>
+          <% end %>
+        </dl>
+      </section>
+    <% end %>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Timeline</h2>
+      <div class="mt-4 space-y-2">
+        <% prov[:timeline].each do |phase| %>
+          <div class="flex items-center justify-between rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700">
+            <div>
+              <span class="font-medium text-gray-900 dark:text-white"><%= phase[:phase_key] %></span>
+              <span class="ml-2 text-gray-500 dark:text-gray-400">(<%= phase[:phase_group] %>)</span>
+            </div>
+            <div class="text-right">
+              <span class="rounded-full px-2 py-0.5 text-xs font-semibold <%= phase[:status] == 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' %>"><%= phase[:status] %></span>
+              <span class="ml-2 text-gray-500 dark:text-gray-400"><%= phase[:duration_seconds] %>s</span>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Costs</h2>
+      <dl class="mt-4 grid gap-2 text-sm">
+        <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+          <dt class="font-medium text-gray-700 dark:text-gray-200">Input Tokens</dt>
+          <dd class="text-gray-600 dark:text-gray-300"><%= number_with_delimiter(prov[:costs][:tokens_input]) %></dd>
+        </div>
+        <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+          <dt class="font-medium text-gray-700 dark:text-gray-200">Output Tokens</dt>
+          <dd class="text-gray-600 dark:text-gray-300"><%= number_with_delimiter(prov[:costs][:tokens_output]) %></dd>
+        </div>
+        <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+          <dt class="font-medium text-gray-700 dark:text-gray-200">Total Cost</dt>
+          <dd class="text-gray-600 dark:text-gray-300"><%= number_to_currency(prov[:costs][:cost_cents] / 100.0) %></dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Runner Attempts</h2>
+      <dl class="mt-4 grid gap-2 text-sm">
+        <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+          <dt class="font-medium text-gray-700 dark:text-gray-200">Final Runner</dt>
+          <dd class="text-gray-600 dark:text-gray-300"><%= prov[:runner_attempts][:final_runner] %></dd>
+        </div>
+        <div class="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+          <dt class="font-medium text-gray-700 dark:text-gray-200">Switches</dt>
+          <dd class="text-gray-600 dark:text-gray-300"><%= prov[:runner_attempts][:runner_switches] %></dd>
+        </div>
+      </dl>
+    </section>
+  </div>
+</div>

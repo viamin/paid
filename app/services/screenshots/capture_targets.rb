@@ -31,6 +31,7 @@ module Screenshots
       onboarding
       user_settings
       account
+      account_audit_logs
       quality_dashboard
       chat_sessions
       ab_tests
@@ -76,6 +77,7 @@ module Screenshots
       provider_api_key_edit: Target.new(slug: "provider_api_key_edit", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}/edit" }, requires_auth: true),
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
+      account_audit_logs: Target.new(slug: "account_audit_logs", path_builder: "/account_audit_logs", requires_auth: true),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
@@ -137,6 +139,11 @@ module Screenshots
       project_agent_runs: Target.new(slug: "project_agent_runs", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs" }, requires_auth: true),
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
       project_agent_run_show: Target.new(slug: "project_agent_run_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}" }, requires_auth: true),
+      project_agent_run_provenance: Target.new(
+        slug: "project_agent_run_provenance",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}/provenance" },
+        requires_auth: true
+      ),
       project_quality_dashboard: Target.new(slug: "project_quality_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/quality_dashboard" }, requires_auth: true),
       project_convention_settings: Target.new(slug: "project_convention_settings", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/convention_settings" }, requires_auth: true),
       project_bundle_performance_dashboard: Target.new(slug: "project_bundle_performance_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/bundle_performance_dashboard" }, requires_auth: true),
@@ -204,6 +211,7 @@ module Screenshots
       "onboarding_controller.rb" => [ :onboarding ],
       "user_settings_controller.rb" => [ :user_settings ],
       "accounts_controller.rb" => [ :account ],
+      "account_audit_logs_controller.rb" => [ :account_audit_logs ],
       "account_memberships_controller.rb" => [ :account ],
       "account_ownership_transfers_controller.rb" => [ :account ],
       "account_lifecycles_controller.rb" => [ :account ],
@@ -226,7 +234,7 @@ module Screenshots
     # Nested controller path => target keys
     NESTED_CONTROLLER_TARGETS = {
       "users/registrations_controller.rb" => [ :sign_up ],
-      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show],
+      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
       "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
@@ -331,6 +339,7 @@ module Screenshots
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
       when /\Aaccounts\// then [ :account ]
+      when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
@@ -353,6 +362,7 @@ module Screenshots
       when /\Aknowledge\/context_intake\// then [ :project_context_intake ]
       when /\Aknowledge\/search\// then knowledge_search_targets(relative_path.delete_prefix("knowledge/search/"))
       when /\Aquality_dashboards\// then [ :quality_dashboard ]
+      when "projects/agent_runs/provenance.html.erb" then [ :project_agent_run_provenance ]
       when /\Aprojects\/agent_runs\// then rest_resource_targets(relative_path, "projects/agent_runs", index: :project_agent_runs, new: :project_agent_run_new, show: :project_agent_run_show, edit: :project_agent_run_show)
       when /\Aprojects\/bundle_performance_dashboards\// then [ :project_bundle_performance_dashboard ]
       when /\Aprojects\/cost_dashboards\// then [ :project_cost_dashboard ]

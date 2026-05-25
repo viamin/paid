@@ -26,6 +26,7 @@ RSpec.describe ApplicationJob, :no_db do
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
         AgentRunResourceJanitorJob
+        AuditEventRetentionJob
         DependencyBackfillJob
         DockerOrphanCleanupJob
         GithubTokenHealthCheckJob
