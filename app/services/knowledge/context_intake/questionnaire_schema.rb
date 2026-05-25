@@ -222,7 +222,7 @@ module Knowledge
           return if ContextIntakeQuestion.global_catalog.exists?
 
           default_questions.each do |question|
-            ContextIntakeQuestion.find_or_create_by!(project_id: nil, key: question[:key]) do |record|
+            ContextIntakeQuestion.create_or_find_by!(project_id: nil, key: question[:key]) do |record|
               record.question_text = question[:text]
               record.section_key = question[:section_key]
               record.section_title = question[:section_title]

@@ -46,6 +46,10 @@ class CreateContextIntakeQuestions < ActiveRecord::Migration[8.1]
     add_index :context_intake_questions, [ :project_id, :key ],
       unique: true,
       name: "idx_context_intake_questions_project_key"
+    add_index :context_intake_questions, :key,
+      unique: true,
+      where: "project_id IS NULL",
+      name: "idx_context_intake_questions_global_key_unique"
     add_index :context_intake_questions,
       [ :project_id, :active, :status ],
       name: "idx_context_intake_questions_visibility"

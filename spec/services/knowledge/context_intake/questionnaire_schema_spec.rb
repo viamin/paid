@@ -9,6 +9,12 @@ RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
       expect(described_class.ordered_questions).to all(include(:key, :text, :required, :round))
     end
 
+    it "does not duplicate the shared catalog on repeated bootstraps" do
+      described_class.ordered_questions
+
+      expect { described_class.ordered_questions }.not_to change(ContextIntakeQuestion, :count)
+    end
+
     it "prefers project-specific questions when keys overlap with the shared catalog" do
       described_class.ordered_questions
       project = create(:project)
