@@ -42,6 +42,23 @@ class AccountActivityEvent < ApplicationRecord
   scope :by_category, ->(category) { where(action: actions_for_category(category)) }
   scope :searchable, ->(q) { where("metadata::text ILIKE ?", "%#{q}%") }
 
+  def self.ransackable_attributes(_auth_object = nil)
+    %w[
+      action
+      actor_id
+      created_at
+      id
+      metadata
+      subject_id
+      subject_type
+      updated_at
+    ]
+  end
+
+  def self.ransackable_associations(_auth_object = nil)
+    %w[actor]
+  end
+
   def self.actions_for_category(category)
     ACTION_CATEGORIES.select { |_, cat| cat == category.to_s }.keys
   end

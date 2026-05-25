@@ -8,7 +8,7 @@ class AccountAuditLogsController < ApplicationController
   def index
     authorize current_account, :show?
 
-    @q = current_account.account_activity_events
+    @q = scoped_events
       .includes(:actor)
       .recent
       .ransack(params[:q])
@@ -20,7 +20,7 @@ class AccountAuditLogsController < ApplicationController
   def export
     authorize current_account, :show?
 
-    events = current_account.account_activity_events
+    events = scoped_events
       .includes(:actor)
       .recent
       .ransack(params[:q])
@@ -67,5 +67,9 @@ class AccountAuditLogsController < ApplicationController
                  e.metadata.to_json, e.created_at.iso8601 ]
       end
     end
+  end
+
+  def scoped_events
+    policy_scope(AccountActivityEvent).where(account: current_account)
   end
 end

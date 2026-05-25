@@ -14,6 +14,27 @@ RSpec.describe AccountActivityEvent do
     end
   end
 
+  describe ".ransackable_attributes" do
+    it "allowlists the audit log filter fields" do
+      expect(described_class.ransackable_attributes).to contain_exactly(
+        "action",
+        "actor_id",
+        "created_at",
+        "id",
+        "metadata",
+        "subject_id",
+        "subject_type",
+        "updated_at"
+      )
+    end
+  end
+
+  describe ".ransackable_associations" do
+    it "allowlists actor lookups for audit log filtering" do
+      expect(described_class.ransackable_associations).to eq([ "actor" ])
+    end
+  end
+
   describe "#category" do
     it "returns the category for a known action" do
       event = described_class.new(action: "project.created")
