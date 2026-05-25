@@ -887,12 +887,14 @@ RSpec.describe Project do
       end
 
       it "accepts project with only github_token" do
-        project = build(:project, github_token: build(:github_token), github_installation: nil)
+        token = create(:github_token)
+        project = build(:project, github_token: token, github_installation: nil, account: token.account)
         expect(project).to be_valid
       end
 
       it "accepts project with only github_installation" do
-        project = build(:project, :with_github_installation)
+        install = create(:github_installation)
+        project = build(:project, github_token: nil, github_installation: install, account: install.account)
         expect(project).to be_valid
       end
     end

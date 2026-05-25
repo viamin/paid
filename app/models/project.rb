@@ -1052,11 +1052,8 @@ class Project < ApplicationRecord
     has_token = github_token_id.present?
     has_installation = github_installation_id.present?
 
-    return if has_token ^ has_installation
-
-    return if github_token_id.nil? && github_installation_id.nil?
-
-    errors.add(:base, "must have either a GitHub App installation or a PAT, not both")
+    errors.add(:base, "must have either a GitHub App installation or a PAT, not both") if has_token && has_installation
+    errors.add(:base, "must have a GitHub App installation or a PAT") unless has_token || has_installation
   end
 
   def created_by_belongs_to_same_account

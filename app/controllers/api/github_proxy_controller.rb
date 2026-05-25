@@ -54,7 +54,6 @@ module Api
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
       response = proxy_to_github(path, github_authorization_token(path), forwarded_body)
-      github_token = project.github_credential
       project.github_token&.touch_last_used! unless use_review_bot_token?(path)
 
       if response.status >= 200 && response.status < 300
