@@ -20,6 +20,12 @@ module ChatSessions
     def call
       validate!
 
+      if chat_session.messages.where(role: "user").none?
+        cleanup_workspace if chat_session.mode == "workspace"
+        chat_session.destroy!
+        return chat_session
+      end
+
       ActiveRecord::Base.transaction do
         compute_totals
         transition_to_closed
