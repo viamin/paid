@@ -96,6 +96,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-022](RDR-022-auto-merge-pr-strategy.md) | Auto-Merge PR Merge Strategy | Final | Medium |
 | [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Implemented | High |
 | [RDR-031](RDR-031-focused-agent-runs.md) | Focused Agent Runs — Single-Problem-Per-Run | Implemented | P1 |
+| [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Draft | P1 |
 
 ### Runner Intelligence
 
