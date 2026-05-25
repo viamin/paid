@@ -1,0 +1,30 @@
+<div class="rounded-md border border-gray-200 p-4">
+  <div class="flex items-start justify-between">
+    <div>
+      <h3 class="text-sm font-medium text-gray-900"><%= requirement.name %></h3>
+      <p class="mt-1 text-xs text-gray-500">Type: <%= requirement.check_type %></p>
+      <% if requirement.check_type == "mutation_test" && !project.open_source? %>
+        <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+          <p class="text-sm text-amber-800">
+            This project is marked commercial &mdash; mutant requires a paid license at $30/dev/month or $250/dev/year.
+            Provide <code class="bg-amber-100 px-1 rounded">MUTANT_LICENSE_KEY</code> as a project env var.
+          </p>
+        </div>
+      <% end %>
+    </div>
+    <div class="flex items-center gap-x-2">
+      <% if requirement.enabled? %>
+        <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Enabled</span>
+      <% else %>
+        <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">Disabled</span>
+      <% end %>
+      <span class="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700"><%= requirement.failure_behavior %></span>
+      <%= button_to "Delete", project_pre_commit_requirement_path(project, requirement), method: :delete,
+        class: "text-red-600 hover:text-red-900 text-sm font-medium",
+        data: { turbo_confirm: "Remove this requirement?" } %>
+    </div>
+  </div>
+  <div class="mt-2">
+    <code class="block rounded bg-gray-50 px-3 py-2 text-sm text-gray-700"><%= requirement.command %></code>
+  </div>
+</div>

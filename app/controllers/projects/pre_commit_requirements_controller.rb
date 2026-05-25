@@ -8,12 +8,19 @@ module Projects
     def index
       authorize @project, :show?
       @pre_commit_requirements = @project.pre_commit_requirements.ordered
-      render json: @pre_commit_requirements
+
+      respond_to do |format|
+        format.html
+        format.json { render json: @pre_commit_requirements }
+      end
     end
 
     def show
       authorize @pre_commit_requirement
-      render json: @pre_commit_requirement
+
+      respond_to do |format|
+        format.json { render json: @pre_commit_requirement }
+      end
     end
 
     def create
@@ -25,7 +32,9 @@ module Projects
         redirect_to project_pre_commit_requirements_path(@project),
           notice: "Pre-commit requirement created."
       else
-        render json: { errors: @pre_commit_requirement.errors }, status: :unprocessable_content
+        @pre_commit_requirements = @project.pre_commit_requirements.ordered
+        @new_requirement = @pre_commit_requirement
+        render :index, status: :unprocessable_content
       end
     end
 
@@ -36,7 +45,9 @@ module Projects
         redirect_to project_pre_commit_requirements_path(@project),
           notice: "Pre-commit requirement updated."
       else
-        render json: { errors: @pre_commit_requirement.errors }, status: :unprocessable_content
+        @pre_commit_requirements = @project.pre_commit_requirements.ordered
+        @new_requirement = @pre_commit_requirement
+        render :index, status: :unprocessable_content
       end
     end
 

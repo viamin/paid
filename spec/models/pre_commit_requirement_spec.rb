@@ -9,6 +9,24 @@ RSpec.describe PreCommitRequirement do
     it { is_expected.to belong_to(:user).optional }
   end
 
+  describe ".mutation_test_default_command" do
+    let(:account) { create(:account) }
+
+    it "returns opensource usage for open source projects" do
+      project = create(:project, account: account, open_source: true)
+
+      expect(described_class.mutation_test_default_command(project))
+        .to eq("bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1")
+    end
+
+    it "returns commercial usage for non-open source projects" do
+      project = create(:project, account: account, open_source: false)
+
+      expect(described_class.mutation_test_default_command(project))
+        .to eq("bundle exec mutant run --usage commercial --since HEAD~1 --use rspec --jobs 1")
+    end
+  end
+
   describe "validations" do
     subject { build(:pre_commit_requirement) }
 
@@ -299,6 +317,15 @@ RSpec.describe PreCommitRequirement do
       result = described_class.resolve(project: project, user: other_user)
 
       expect(result.map(&:id)).to eq([ account_req.id ])
+    end
+
+    it "merges mutation_test requirements across scopes" do
+      create(:pre_commit_requirement, :mutation_test, account: account, name: "mutant")
+      account_req = create(:pre_commit_requirement, account: account, name: "lint")
+
+      result = described_class.resolve(project: project)
+
+      expect(result.map(&:name)).to match_array(%w[lint mutant])
     end
   end
 

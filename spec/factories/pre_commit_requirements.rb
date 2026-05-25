@@ -49,5 +49,10 @@ FactoryBot.define do
       check_type { "security_scan" }
       command { "bin/brakeman" }
     end
+
+    trait :mutation_test do
+      check_type { "mutation_test" }
+      command { "bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1" }
+    end
   end
 end

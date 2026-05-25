@@ -1,0 +1,39 @@
+<% content_for(:title) { "Pre-Commit Requirements - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to edit_project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Project Settings
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <h1 class="text-xl font-semibold text-gray-900">Pre-Commit Requirements</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Configure checks that run before every commit.
+      </p>
+
+      <div class="mt-6 space-y-6">
+        <%= render partial: "projects/pre_commit_requirements/requirement",
+          collection: @pre_commit_requirements,
+          as: :requirement,
+          locals: { project: @project } %>
+
+        <% if @pre_commit_requirements.empty? %>
+          <p class="text-sm text-gray-500">No pre-commit requirements configured.</p>
+        <% end %>
+      </div>
+
+      <div class="mt-8 border-t border-gray-200 pt-6">
+        <h2 class="text-lg font-medium text-gray-900">Add Requirement</h2>
+        <%= render "projects/pre_commit_requirements/form",
+          pre_commit_requirement: @new_requirement || PreCommitRequirement.new,
+          project: @project %>
+      </div>
+    </div>
+  </div>
+</div>
