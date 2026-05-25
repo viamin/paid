@@ -5,20 +5,23 @@ require "rails_helper"
 module Models
   module RunnerTierLookupSpec
     class AgentRunLike
-      attr_reader :runner
+      attr_reader :runner, :provider
 
-      def initialize(runner:)
+      def initialize(runner:, provider: nil)
         @runner = runner
+        @provider = provider
       end
     end
 
     class RunnerLike
-      attr_reader :tier_model_ids, :runner_key, :direct_outbound_llm_model_provider
+      attr_reader :tier_models, :tier_model_ids, :runner_key, :direct_outbound_llm_model_provider, :id
 
-      def initialize(tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil)
+      def initialize(tier_models: nil, tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil, id: 1)
+        @tier_models = tier_models
         @tier_model_ids = tier_model_ids
         @runner_key = runner_key
         @direct_outbound_llm_model_provider = direct_outbound_llm_model_provider
+        @id = id
       end
     end
 
@@ -67,14 +70,17 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
 
   describe "#lookup" do
     it "returns nil when no tier is requested" do
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: nil))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: nil, provider: nil))
 
       expect(dummy.lookup(nil)).to be_nil
     end
 
     it "returns nil when the runner has no model configured for the tier" do
-      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike, tier_model_ids: { "low" => "" })
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
+      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike,
+        tier_models: nil, tier_model_ids: { "low" => "" }, runner_key: nil)
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: runner, provider: nil))
 
       expect(dummy.lookup("low")).to be_nil
     end
@@ -82,8 +88,10 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
     it "looks up the active model for the configured tier" do
       model = instance_double(Models::RunnerTierLookupSpec::ModelLike)
       active_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
-      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike, tier_model_ids: { "high" => "gpt-5.4" })
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
+      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike,
+        tier_models: nil, tier_model_ids: { "high" => "gpt-5.4" }, id: 42)
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: runner, provider: nil))
       fake_model_class = Class.new do
         def self.active
         end

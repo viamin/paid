@@ -26,8 +26,18 @@ module Runners
       runner_entry = @runner&.tier_models&.dig(@tier)
       return success_from(entry: runner_entry, source: "runner") if runner_entry.present?
 
+      legacy = @runner&.tier_model_ids&.dig(@tier)
+      if legacy.present?
+        return Result.new(model_id: legacy, provider_id: @runner.id, source: "runner", error: nil)
+      end
+
       provider_entry = @provider&.tier_models&.dig(@tier)
       return success_from(entry: provider_entry, source: "provider") if provider_entry.present?
+
+      provider_legacy = @provider&.tier_model_ids&.dig(@tier)
+      if provider_legacy.present?
+        return Result.new(model_id: provider_legacy, provider_id: @provider.id, source: "provider", error: nil)
+      end
 
       default_model_id = Runners::DefaultTierModelIds.call(runner_key: @runner&.runner_key)[@tier]
       if default_model_id.blank?

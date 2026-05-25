@@ -635,6 +635,7 @@ RSpec.describe "Runners" do
 
     it "blocks saving an unresolved primary runner" do
       runner = create_openrouter_opencode_runner(user: user)
+      runner.update_column(:tier_model_ids, {})
       user.settings.update!(default_agent_runner: runner.routing_key)
       ensure_kimi_mid_model!
 
