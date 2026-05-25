@@ -179,7 +179,7 @@ module Knowledge
         private
 
         def catalog_questions(project:)
-          ensure_default_catalog!
+          ensure_default_catalog! unless @default_catalog_ensured
 
           selected = ContextIntakeQuestion.visible_for(project)
                                           .group_by(&:key)
@@ -219,7 +219,10 @@ module Knowledge
         end
 
         def ensure_default_catalog!
-          return if ContextIntakeQuestion.global_catalog.exists?
+          if ContextIntakeQuestion.global_catalog.exists?
+            @default_catalog_ensured = true
+            return
+          end
 
           default_questions.each do |question|
             ContextIntakeQuestion.create_or_find_by!(project_id: nil, key: question[:key]) do |record|
@@ -241,6 +244,7 @@ module Knowledge
               record.metadata = question[:metadata]
             end
           end
+          @default_catalog_ensured = true
         end
 
         def question_metadata_for_response(response)

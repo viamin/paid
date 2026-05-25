@@ -126,6 +126,22 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).to include("Business context saved and synthesized into project knowledge.")
       expect(response.body).to include("Business context captured")
     end
+
+    it "renders a validation error instead of raising when finish navigation references a missing question" do
+      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+
+      patch project_context_intake_path(project),
+        params: {
+          question_key: "missing_question",
+          answer_text: "Final answer",
+          navigation_action: "finish"
+        },
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include("Couldn&#39;t find ContextIntakeResponse")
+      expect(response.body).to include(last_question.fetch(:text))
+    end
   end
 
   def create_follow_up_question!(parent_question_key)

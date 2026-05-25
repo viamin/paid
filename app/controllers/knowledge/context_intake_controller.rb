@@ -38,7 +38,7 @@ module Knowledge
         load_wizard_state(active_question_key: navigation_question_key)
         render_wizard_response
       end
-    rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
       @wizard_error = e.message
       target_question_key = error_question_key
       load_wizard_state(
