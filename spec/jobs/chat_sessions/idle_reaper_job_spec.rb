@@ -12,6 +12,7 @@ RSpec.describe ChatSessions::IdleReaperJob do
         account: account,
         created_by: user,
         idle_timeout_at: 1.minute.ago)
+      create(:chat_message, chat_session: session)
 
       described_class.new.perform
 
@@ -35,6 +36,7 @@ RSpec.describe ChatSessions::IdleReaperJob do
         account: account,
         created_by: user,
         idle_timeout_at: 1.minute.ago)
+      create(:chat_message, chat_session: session)
       create(:token_usage, :chat, chat_session: session, input_tokens: 50, output_tokens: 25, cost_cents: 0)
 
       described_class.new.perform
@@ -52,6 +54,8 @@ RSpec.describe ChatSessions::IdleReaperJob do
         account: account,
         created_by: user,
         idle_timeout_at: 1.minute.ago)
+      create(:chat_message, chat_session: session1)
+      create(:chat_message, chat_session: session2)
 
       allow(ChatSessions::Close).to receive(:call)
         .with(chat_session: anything)
