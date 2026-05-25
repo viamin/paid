@@ -385,6 +385,7 @@ RSpec.describe ConfigurationBundles::AssignToRun, :no_db do
       "agent_type" => "claude_code",
       "provider_id" => 12,
       "prompt_version_id" => 34,
+      "ordered_runner_set" => [ RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) ],
       "service_container_ids" => [],
       "mcp_servers" => [],
       "experiments" => {}

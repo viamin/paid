@@ -69,7 +69,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     restore_service_container_account_reference unless service_containers_have_account_reference?
-    if tenant_policy_count.zero?
+    if restore_schema_after_spec?
       rls_migration.up
       notification_rls_migration.up
       knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
@@ -130,6 +130,14 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   end
 
   private
+
+  def restore_schema_after_spec?
+    tenant_policy_count.zero? ||
+      !exception_incidents_table_exists? ||
+      !failure_classifications_table_exists? ||
+      !marketplace_tables_exist? ||
+      !orchestration_decisions_table_exists?
+  end
 
   def create_shared_service_container
     first_project = create(:project)

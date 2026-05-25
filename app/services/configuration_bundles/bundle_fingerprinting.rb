@@ -44,10 +44,18 @@ module ConfigurationBundles
     end
 
     def ordered_runner_set
-      runner = agent_run.runner
-      return unless runner
+      runner_key =
+        if agent_run.respond_to?(:runner) && agent_run.runner&.runner_key.present?
+          agent_run.runner.runner_key
+        elsif agent_run.respond_to?(:effective_runner) && agent_run.effective_runner.present?
+          agent_run.effective_runner
+        else
+          RunnerSupport.runner_key_for_agent_type(agent_run.agent_type)
+        end
 
-      [ runner.routing_key ]
+      return if runner_key.blank?
+
+      [ runner_key ]
     end
 
     def normalized_service_container_ids
