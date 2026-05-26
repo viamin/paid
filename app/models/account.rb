@@ -116,6 +116,10 @@ class Account < ApplicationRecord
     trial? && trial_ends_at.present? && trial_ends_at < Time.current
   end
 
+  def paid_plan?
+    plan.in?(%w[professional enterprise])
+  end
+
   def current_onboarding_step
     onboarding_steps.ordered.where.not(status: %w[completed skipped]).first
   end
