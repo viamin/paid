@@ -17,6 +17,20 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Wait for bundle install to complete before calling bundle exec.
+# In devcontainer postCreateCommand, entries run in parallel, so bin/setup
+# (which runs bundle install) may not have finished yet.
+max_wait=300
+waited=0
+while ! bundle check > /dev/null 2>&1; do
+  if [ "$waited" -ge "$max_wait" ]; then
+    echo "ERROR: Timed out waiting for bundle install (${max_wait}s)" >&2
+    exit 1
+  fi
+  sleep 5
+  waited=$((waited + 5))
+done
+
 PROVIDER="${1:-}"
 if [ -z "$PROVIDER" ]; then
   echo "Usage: $0 <provider>" >&2

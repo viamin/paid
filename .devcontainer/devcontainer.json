@@ -97,14 +97,17 @@
     // Each tool is installed via scripts/install-from-contract.sh which delegates
     // to scripts/extract-provider-install-contract.rb. This means versions and
     // install commands stay in sync with the agent image without separate pins.
-    // Aider and cursor-agent are installed via the contract-driven script; the
-    // other four are npm-based and also get --ignore-scripts enforced.
+    // The script handles npm, uv_tool, and artifact-based install sources
+    // transparently. All npm-based installs get --ignore-scripts enforced.
     "codex": "bash scripts/install-from-contract.sh codex",
     "gemini-cli": "bash scripts/install-from-contract.sh gemini",
     "github-copilot-cli": "bash scripts/install-from-contract.sh copilot",
     "kilocode": "bash scripts/install-from-contract.sh kilocode",
     "cursor-agent": "bash scripts/install-from-contract.sh cursor",
     "aider": "bash scripts/install-from-contract.sh aider",
+    // opencode is intentionally NOT converted to contract-driven install yet.
+    // Tracked in #2297 — keeping the hardcoded npm entry until that lands.
+    "opencode": "npm i -g --ignore-scripts opencode-ai@latest",
     // Dev tools
     "markdownlint": "npm install -g --ignore-scripts markdownlint-cli",
     "git-curate": "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH gem install git_curate",
