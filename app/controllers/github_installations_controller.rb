@@ -53,7 +53,7 @@ class GithubInstallationsController < ApplicationController
   # POST /github_installations/:id/migrate
   # Migrate projects from PAT to GitHub App
   def migrate_from_token
-    authorize @github_installation, :show?
+    authorize @github_installation, :update?
 
     github_token = current_account.github_tokens.find_by(id: params[:github_token_id])
     unless github_token

@@ -109,18 +109,14 @@ module Github
       return BulkResult.new(total: 0, successful: 0, failed: 0, results: []) if projects_to_migrate.empty?
 
       results = projects_to_migrate.map do |project|
-        begin
-          service = self.class.new(
-            project: project,
-            github_token: github_token,
-            github_installation: github_installation,
-            actor: actor,
-            **options
-          )
-          service.migrate
-        rescue MigrationError => e
-          Result.new(success: false, project: project, error: e.message)
-        end
+        service = self.class.new(
+          project: project,
+          github_token: github_token,
+          github_installation: github_installation,
+          actor: actor,
+          **options
+        )
+        service.migrate
       end
 
       BulkResult.new(

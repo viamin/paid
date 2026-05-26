@@ -111,5 +111,18 @@ RSpec.describe "GithubInstallations" do
 
       expect(response).to redirect_to(migrate_project_github_installation_path(installation))
     end
+
+    it "rejects account members without admin access" do
+      member = create(:user, :member, account: account)
+      installation = create(:github_installation, account: account)
+
+      sign_out user
+      sign_in member
+
+      post migrate_project_github_installation_path(installation), params: { github_token_id: -1 }
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
   end
 end
