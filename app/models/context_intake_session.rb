@@ -76,6 +76,14 @@ class ContextIntakeSession < ApplicationRecord
   end
 
   def blocking_follow_up_generation_active?
-    follow_up_generation_blocking? && (follow_up_generation_pending? || follow_up_generation_failed?)
+    follow_up_generation_blocking? && follow_up_generation_pending?
+  end
+
+  def blocking_follow_up_generation_failed?
+    follow_up_generation_blocking? && follow_up_generation_failed?
+  end
+
+  def clear_follow_up_generation!
+    update!(metadata: metadata.to_h.except("follow_up_generation"))
   end
 end

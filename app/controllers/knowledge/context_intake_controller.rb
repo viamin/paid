@@ -13,6 +13,7 @@ module Knowledge
       authorize @project, :show?
       @session ||= latest_session
       return unless @session&.in_progress?
+      clear_failed_blocking_generation! if @session.blocking_follow_up_generation_failed?
       return render_pending_response if blocking_follow_up_generation_active? && turbo_frame_request?
       return if blocking_follow_up_generation_active?
 
@@ -185,6 +186,10 @@ module Knowledge
 
     def blocking_follow_up_generation_active?
       @session.blocking_follow_up_generation_active?
+    end
+
+    def clear_failed_blocking_generation!
+      @session.clear_follow_up_generation!
     end
 
     def attempted_rounds

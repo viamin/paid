@@ -22,7 +22,7 @@ module Knowledge
             question_key: question[:key],
             question_text: question[:text],
             section: question[:section_key],
-            sequence: question[:display_order] || 0,
+            sequence: round_scoped_sequence(question),
             is_follow_up: question[:is_follow_up] == true,
             parent_response: parent_response_for(question[:parent_question_key]),
             skipped: false,
@@ -33,6 +33,14 @@ module Knowledge
       end
 
       private
+
+      # Encode round into sequence so follow-up questions in the same section
+      # always sort after earlier-round questions when using the `ordered` scope.
+      def round_scoped_sequence(question)
+        round = (question[:round] || 1).to_i
+        display_order = (question[:display_order] || 0).to_i
+        ((round - 1) * 1000) + display_order
+      end
 
       def parent_response_for(parent_question_key)
         return if parent_question_key.blank?
