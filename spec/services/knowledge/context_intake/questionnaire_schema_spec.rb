@@ -3,10 +3,6 @@
 require "rails_helper"
 
 RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
-  before do
-    described_class.remove_instance_variable(:@default_catalog_ensured) if described_class.instance_variable_defined?(:@default_catalog_ensured)
-  end
-
   describe ".ordered_questions" do
     it "bootstraps the default catalog into persisted question records" do
       expect { described_class.ordered_questions }.to change(ContextIntakeQuestion, :count).from(0)
@@ -19,15 +15,11 @@ RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
       expect { described_class.ordered_questions }.not_to change(ContextIntakeQuestion, :count)
     end
 
-    it "skips the repeated global catalog existence check after bootstrap" do
-      relation = ContextIntakeQuestion.global_catalog
-      allow(ContextIntakeQuestion).to receive(:global_catalog).and_return(relation)
-      allow(relation).to receive(:exists?).and_call_original
-
+    it "recreates the shared catalog after it is deleted" do
       described_class.ordered_questions
-      described_class.ordered_questions
+      ContextIntakeQuestion.global_catalog.delete_all
 
-      expect(relation).to have_received(:exists?).once
+      expect { described_class.ordered_questions }.to change(ContextIntakeQuestion, :count).from(0)
     end
 
     it "prefers project-specific questions when keys overlap with the shared catalog" do

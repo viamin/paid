@@ -58,4 +58,12 @@ class ContextIntakeSession < ApplicationRecord
   def responses_by_section
     context_intake_responses.order(:section, :sequence).group_by(&:section)
   end
+
+  def follow_up_generation_state
+    metadata.to_h.fetch("follow_up_generation", {})
+  end
+
+  def follow_up_generation_pending?
+    follow_up_generation_state["status"] == "pending"
+  end
 end

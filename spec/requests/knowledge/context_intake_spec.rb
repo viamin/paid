@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Knowledge::ContextIntake" do
+  include ActiveJob::TestHelper
+
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
   let(:project) { create(:project, account: account, created_by: user) }
@@ -68,7 +70,7 @@ RSpec.describe "Knowledge::ContextIntake" do
       session.context_intake_responses.find_by!(question_key: first_question.fetch(:key))
              .update!(answer_text: "Enterprise workflow answer")
       create_follow_up_question!(first_question.fetch(:key))
-      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+      FeatureFlags.disable!(:context_intake_agent_questions)
 
       patch project_context_intake_path(project),
         params: {
@@ -145,32 +147,44 @@ RSpec.describe "Knowledge::ContextIntake" do
 
     it "invokes AI question generation when the feature flag is enabled" do
       FeatureFlags.enable!(:context_intake_agent_questions, project:)
-      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
 
-      patch project_context_intake_path(project),
-        params: {
-          question_key: last_question.fetch(:key),
-          answer_text: "Final answer",
-          navigation_action: "finish"
-        },
-        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+      expect {
+        patch project_context_intake_path(project),
+          params: {
+            question_key: last_question.fetch(:key),
+            answer_text: "Final answer",
+            navigation_action: "finish"
+          },
+          headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+      }.to have_enqueued_job(Knowledge::ContextIntake::GenerateFollowUpQuestionsJob)
 
-      expect(Knowledge::ContextIntake::GenerateQuestions).to have_received(:call)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Generating follow-up questions")
     end
 
     it "does not invoke AI question generation when the feature flag is disabled" do
       FeatureFlags.disable!(:context_intake_agent_questions)
-      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
 
-      patch project_context_intake_path(project),
-        params: {
-          question_key: last_question.fetch(:key),
-          answer_text: "Final answer",
-          navigation_action: "finish"
-        },
+      expect {
+        patch project_context_intake_path(project),
+          params: {
+            question_key: last_question.fetch(:key),
+            answer_text: "Final answer",
+            navigation_action: "finish"
+          },
+          headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+      }.not_to have_enqueued_job(Knowledge::ContextIntake::GenerateFollowUpQuestionsJob)
+    end
+
+    it "renders the pending frame while AI follow-up generation is in progress" do
+      FeatureFlags.enable!(:context_intake_agent_questions, project:)
+      session.update!(metadata: { "follow_up_generation" => { "status" => "pending", "round" => 2, "blocking" => true } })
+
+      get project_context_intake_path(project),
         headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
 
-      expect(Knowledge::ContextIntake::GenerateQuestions).not_to have_received(:call)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Generating follow-up questions")
     end
   end
 

@@ -100,7 +100,7 @@ module Knowledge
         end
 
         def find_question(question_key, project: nil)
-          question = ordered_questions(project: project).find { |entry| entry[:key] == question_key }
+          question = question_catalog_index(project: project)[question_key]
           return if question.nil?
 
           {
@@ -137,12 +137,12 @@ module Knowledge
           )
         end
 
-        def required_question_for_response?(response)
-          question_metadata_for_response(response)[:required] == true
+        def required_question_for_response?(response, catalog_index: nil)
+          question_metadata_for_response(response, catalog_index: catalog_index)[:required] == true
         end
 
-        def question_round_for_response(response)
-          question_metadata_for_response(response)[:round] || 1
+        def question_round_for_response(response, catalog_index: nil)
+          question_metadata_for_response(response, catalog_index: catalog_index)[:round] || 1
         end
 
         def ordered_responses(responses)
@@ -179,7 +179,7 @@ module Knowledge
         private
 
         def catalog_questions(project:)
-          ensure_default_catalog! unless @default_catalog_ensured
+          ensure_default_catalog!
 
           selected = ContextIntakeQuestion.visible_for(project)
                                           .group_by(&:key)
@@ -219,10 +219,7 @@ module Knowledge
         end
 
         def ensure_default_catalog!
-          if ContextIntakeQuestion.global_catalog.exists?
-            @default_catalog_ensured = true
-            return
-          end
+          return if ContextIntakeQuestion.global_catalog.exists?
 
           default_questions.each do |question|
             ContextIntakeQuestion.create_or_find_by!(project_id: nil, key: question[:key]) do |record|
@@ -244,21 +241,25 @@ module Knowledge
               record.metadata = question[:metadata]
             end
           end
-          @default_catalog_ensured = true
         end
 
-        def question_metadata_for_response(response)
+        def question_catalog_index(project:)
+          catalog_questions(project: project).index_by { |question| question[:key] }
+        end
+
+        def question_metadata_for_response(response, catalog_index: nil)
           metadata = response.answer_data.to_h.fetch("question", {}).deep_symbolize_keys
           return metadata if metadata.present?
 
-          fallback = find_question(response.question_key, project: response.context_intake_session.project)
+          project = response.context_intake_session.project
+          fallback_question = (catalog_index || question_catalog_index(project: project))[response.question_key]
           {
-            required: fallback&.dig(:question, :required) == true,
+            required: fallback_question&.fetch(:required, nil) == true,
             category: response.section,
-            round: fallback&.dig(:question, :round) || 1,
-            section_order: section_index(response.section, project: response.context_intake_session.project),
-            display_order: fallback&.dig(:question, :display_order) || response.sequence || 0,
-            section_title: fallback&.dig(:section, :title) || response.section.to_s.titleize,
+            round: fallback_question&.fetch(:round, nil) || 1,
+            section_order: fallback_question&.fetch(:section_order, nil) || section_index(response.section, project: project),
+            display_order: fallback_question&.fetch(:display_order, nil) || response.sequence || 0,
+            section_title: fallback_question&.fetch(:section_title, nil) || response.section.to_s.titleize,
             is_follow_up: response.is_follow_up,
             parent_question_key: response.parent_response&.question_key,
             conditions: {},

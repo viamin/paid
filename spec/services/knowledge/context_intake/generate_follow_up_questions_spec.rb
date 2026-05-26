@@ -9,7 +9,6 @@ RSpec.describe Knowledge::ContextIntake::GenerateFollowUpQuestions do
 
   before do
     session.context_intake_responses.find_by!(question_key: "product_description").update!(answer_text: "Enterprise SaaS for finance teams.")
-    allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
   end
 
   it "appends authored follow-up questions for the next round when conditions match" do
@@ -24,38 +23,7 @@ RSpec.describe Knowledge::ContextIntake::GenerateFollowUpQuestions do
     response = session.context_intake_responses.find_by!(question_key: "enterprise_approvals")
     expect(response.parent_response.question_key).to eq("product_description")
     expect(result.next_question_key).to eq("enterprise_approvals")
-    expect(session.reload.metadata["follow_up_generation_attempted_rounds"]).to eq([ 1 ])
-  end
-
-  it "does not call GenerateQuestions when generate_with_agent is false" do
-    create_follow_up_question!
-
-    described_class.call(
-      session: session,
-      project: project,
-      current_question_key: "naming_conventions",
-      generate_with_agent: false
-    )
-
-    expect(Knowledge::ContextIntake::GenerateQuestions).not_to have_received(:call)
-  end
-
-  it "calls GenerateQuestions when generate_with_agent is true" do
-    create_follow_up_question!
-
-    described_class.call(
-      session: session,
-      project: project,
-      current_question_key: "naming_conventions",
-      generate_with_agent: true
-    )
-
-    expect(Knowledge::ContextIntake::GenerateQuestions).to have_received(:call).with(
-      project: project,
-      session: session,
-      round: 2,
-      auto_approve: true
-    )
+    expect(session.reload.metadata["follow_up_generation_attempted_rounds"]).to be_nil
   end
 
   def create_follow_up_question!
