@@ -1194,7 +1194,7 @@ module Containers
     # operators (||, &&, ;, |, $, `, etc.) can appear.
     # Commands are expected from LANGUAGE_*_COMMANDS constants, but this
     # provides defense-in-depth against injection if the source changes.
-    SAFE_WORD_PATTERN = /\A[a-zA-Z0-9_\-\/\.]+\z/
+    SAFE_WORD_PATTERN = /\A[a-zA-Z0-9_\-\/\.~]+\z/
 
     def validate_hook_command!(command)
       words = command.split

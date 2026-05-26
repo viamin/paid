@@ -5,6 +5,15 @@ require "rails_helper"
 RSpec.describe Containers::QualityHooks do
   subject(:host) { host_class.new }
 
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
   let(:host_class) do
     Class.new do
       include Containers::QualityHooks
@@ -36,10 +45,24 @@ RSpec.describe Containers::QualityHooks do
     it "logs the missing license warning only once per project" do
       original_mutant_license_key = ENV["MUTANT_LICENSE_KEY"]
       ENV["MUTANT_LICENSE_KEY"] = nil
-      Rails.cache.clear
       allow(Rails.logger).to receive(:warn)
 
       2.times { host.resolve_mutation_command(project, user, "ruby") }
+
+      expect(Rails.logger).to have_received(:warn).once.with(
+        hash_including(message: "quality_hooks.mutant_license_missing", project_id: project.id)
+      )
+    ensure
+      ENV["MUTANT_LICENSE_KEY"] = original_mutant_license_key
+    end
+
+    it "uses the cache to suppress duplicate warnings across host instances" do
+      original_mutant_license_key = ENV["MUTANT_LICENSE_KEY"]
+      ENV["MUTANT_LICENSE_KEY"] = nil
+      allow(Rails.logger).to receive(:warn)
+
+      host.resolve_mutation_command(project, user, "ruby")
+      host_class.new.resolve_mutation_command(project, user, "ruby")
 
       expect(Rails.logger).to have_received(:warn).once.with(
         hash_including(message: "quality_hooks.mutant_license_missing", project_id: project.id)

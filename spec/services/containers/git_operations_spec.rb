@@ -1800,6 +1800,24 @@ RSpec.describe Containers::GitOperations do
           .not_to raise_error
       end
 
+      it "accepts mutation commands with git refs that include tildes" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect do
+          git_ops.install_git_hooks(
+            lint_command: "bundle exec rubocop",
+            test_command: "bundle exec rspec",
+            mutation_command: "bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1"
+          )
+        end.not_to raise_error
+      end
+
       it "rejects commands with semicolons" do
         expect { git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec") }
           .not_to raise_error # rescued by install_git_hooks

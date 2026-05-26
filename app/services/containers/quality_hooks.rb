@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
-require "set"
-
 module Containers
   module QualityHooks
     extend ActiveSupport::Concern
 
     DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
+    MUTANT_LICENSE_WARNING_TTL = 24.hours
 
     def install_quality_hooks(git_ops, agent_run)
       language = detect_language(agent_run.project)
@@ -58,12 +57,7 @@ module Containers
     def warn_once_when_mutant_license_missing(project, command)
       return unless command.to_s.include?("--usage commercial")
       return if forwarded_mutant_license_key_present?
-
-      warned_projects = self.class.instance_variable_get(:@mutant_license_warned_projects)
-      warned_projects ||= self.class.instance_variable_set(:@mutant_license_warned_projects, Set.new)
-      return if warned_projects.include?(project.id)
-
-      warned_projects << project.id
+      return unless Rails.cache.write(mutant_license_warning_cache_key(project.id), true, expires_in: MUTANT_LICENSE_WARNING_TTL, unless_exist: true)
 
       Rails.logger.warn(
         message: "quality_hooks.mutant_license_missing",
@@ -74,6 +68,10 @@ module Containers
 
     def forwarded_mutant_license_key_present?
       ENV["MUTANT_LICENSE_KEY"].present?
+    end
+
+    def mutant_license_warning_cache_key(project_id)
+      "quality_hooks/mutant_license_missing/#{project_id}"
     end
   end
 end
