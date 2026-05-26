@@ -30,7 +30,7 @@ module Automation
         #   +client:+ keyword) to avoid loading a real project.
         # @param client [::GithubClient, nil] Optional pre-built client for
         #   tests. When omitted, the client is lazily derived from
-        #   +project.github_token.client+.
+        #   +project.client+.
         def initialize(project, client: nil)
           @project = project
           @client = client

@@ -188,6 +188,27 @@ RSpec.describe Prompts::BuildForPr do
     it "omits issue requirements section when no issue" do
       expect(prompt).not_to include("Issue Requirements")
     end
+
+    it "appends global style guides using raw_content" do
+      pr_issue = create(:issue, :pull_request, project: project, github_number: 42)
+
+      create(:style_guide,
+        :global,
+        name: "Seeded Ruby Guide",
+        raw_content: "Prefer small methods.",
+        compressed_content: nil)
+
+      rendered_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        issue: pr_issue
+      )
+
+      expect(rendered_prompt).to include("# Style Guide")
+      expect(rendered_prompt).to include("Seeded Ruby Guide")
+    end
   end
 
   describe "#includes_review_threads?" do
@@ -1236,6 +1257,15 @@ RSpec.describe Prompts::BuildForPr do
       escalation_body = "#{Activities::MarkEscalatedActivity::COMMENT_MARKER}\n**Escalation Note**"
       dropped = comment(login: "trusteduser", body: escalation_body)
       expect(described_class.select_trusted_comments([ dropped ], project: project)).to be_empty
+    end
+
+    it "passes the raw comment body into the Paid-generated comment detector" do
+      kept = comment(login: "trusteduser", body: "plain body")
+      allow(described_class).to receive(:paid_generated_pr_comment?).and_return(false)
+
+      described_class.select_trusted_comments([ kept ], project: project)
+
+      expect(described_class).to have_received(:paid_generated_pr_comment?).with("plain body")
     end
 
     it "preserves input order for the kept comments" do

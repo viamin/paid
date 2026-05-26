@@ -3,7 +3,7 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20260416050235_move_co_author_trailer_from_projects_to_providers")
 
-# Guards against regressions in the projects → providers trailer migration.
+# Guards against regressions in the projects → runners trailer migration.
 # The migration is destructive in structure (it removes the projects column),
 # so these specs verify that existing configured trailers are preserved onto
 # the project owner's default subscription runner before column removal.
@@ -20,11 +20,9 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
   # and truncate tables manually after each example.
   self.use_transactional_tests = false
 
-  # The migration body literally references the pre-rename `:providers` table.
-  # After phase 2 (#2115) renamed it to `:runners`, re-running the migration in
-  # this spec fails with PG::UndefinedTable. The data migration itself is
-  # already applied in production; rewriting this regression spec against the
-  # renamed table is tracked in #2083.
+  # The original migration body still references the pre-rename `:providers`
+  # table, so this regression spec remains pending until the migration coverage
+  # is rewritten around the renamed `:runners` schema.
   before { skip "pending rewrite against renamed :runners table (#2083)" }
 
   let(:migration) { described_class.new }
@@ -50,9 +48,9 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
   # transactional rollback.
   after do
     connection = ActiveRecord::Base.connection
-    if connection.data_source_exists?(:providers) &&
-        !connection.column_exists?(:providers, :agent_co_author_trailer)
-      connection.add_column(:providers, :agent_co_author_trailer, :text)
+    if connection.data_source_exists?(:runners) &&
+        !connection.column_exists?(:runners, :agent_co_author_trailer)
+      connection.add_column(:runners, :agent_co_author_trailer, :text)
     end
     if connection.column_exists?(:projects, :agent_co_author_trailer)
       connection.remove_column(:projects, :agent_co_author_trailer)
@@ -80,7 +78,7 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     expect(ActiveRecord::Base.connection.column_exists?(:projects, :agent_co_author_trailer)).to be false
   end
 
-  it "leaves providers untouched when no project has a configured trailer" do
+  it "leaves runners untouched when no project has a configured trailer" do
     project = create(:project)
     owner = project.effective_owner
     runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")
@@ -133,7 +131,7 @@ RSpec.describe MoveCoAuthorTrailerFromProjectsToProviders, :aggregate_failures d
     expect(runner.reload.agent_co_author_trailer).to be_nil
   end
 
-  it "prefers the claude subscription runner when the owner has multiple providers" do
+  it "prefers the claude subscription runner when the owner has multiple runners" do
     project = create(:project)
     owner = project.effective_owner
     claude_runner = owner.runners.find_by!(runner_key: "claude", auth_type: "subscription")

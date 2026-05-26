@@ -52,6 +52,10 @@ Rails.application.routes.draw do
     post :retry_validation, on: :member
   end
 
+  resources :github_installations, only: [] do
+    get :repositories, on: :member
+  end
+
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
@@ -69,6 +73,11 @@ Rails.application.routes.draw do
   resources :account_memberships, only: [ :create, :update, :destroy ]
   resource :account_ownership_transfer, only: [ :create ]
   resource :account_lifecycle, only: [ :update ]
+
+  # Account audit log
+  resources :account_audit_logs, only: [ :index ] do
+    get :export, on: :collection
+  end
 
   # Account tenant configuration
   resource :tenant_configuration, only: [ :edit, :update ]
@@ -88,18 +97,13 @@ Rails.application.routes.draw do
     patch :settings, on: :collection
     post :test_agent, on: :member
   end
-  resources :providers, except: :show, controller: "providers" do
-    patch :settings, on: :collection
-    post :test_agent, on: :member
-    post :toggle_agent_runs, on: :member
-    post :toggle_fallback, on: :member
-  end
 
   # Service container management
   resources :service_containers
   # MCP server definitions management
   resources :mcp_server_definitions
   resources :marketplace_entries
+  resource :marketplace_entry_pdf_import, only: [ :new, :create ], controller: "marketplace_entry_pdf_imports"
 
   # All agent runs across projects
   resources :agent_runs, only: [ :index ] do
@@ -185,6 +189,7 @@ Rails.application.routes.draw do
       post :diagnose_error, on: :member
       post :resume, on: :member
       post :terminate, on: :member
+      get :provenance, on: :member
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
@@ -206,6 +211,7 @@ Rails.application.routes.draw do
       controller: "knowledge/context_intake" do
       post :complete
     end
+    resource :pdf_knowledge_import, only: [ :new, :create ], controller: "projects/pdf_knowledge_imports"
     post :ensure_labels, on: :member
 
     resources :knowledge_recommendations, only: [ :index, :update ],

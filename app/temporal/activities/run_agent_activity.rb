@@ -38,7 +38,6 @@ module Activities
       /quota exceeded/i,
       /free tier limit reached/i,
       /free model usage limit reached/i,
-      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i, # intentionally loose — only used for exit-code failures, not timeout reclassification
@@ -67,7 +66,6 @@ module Activities
       /quota exceeded/i,
       /free tier limit reached/i,
       /free model usage limit reached/i,
-      /(?:weekly(?:\/monthly)?|monthly) (?:usage )?limit (?:reached|exceeded|hit|exhausted)/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have) +hit +your +limit/i,
       /exhausted(?: +your)? +capacity/i,
@@ -140,6 +138,17 @@ module Activities
 
         user_settings = resolve_user_settings(agent_run)
         runners = build_runner_order(agent_run, user_settings)
+        requested_tier = requested_tier_for(agent_run)
+        if requested_tier.present? && runners.empty?
+          error_message = "No runner supports tier #{requested_tier}"
+          agent_run.fail!(error: error_message) unless agent_run.finished?
+
+          raise Temporalio::Error::ApplicationError.new(
+            error_message,
+            type: "NoTierCapableRunner",
+            non_retryable: true
+          )
+        end
         runner_states = load_runner_state_cache(user_settings.user, runners)
 
         pre_agent_sha = nil
@@ -180,6 +189,20 @@ module Activities
           runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
           attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
+          resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
+          if resolved_model&.failure?
+            logger.warn(
+              message: "agent_execution.tier_model_resolution_failed",
+              agent_run_id: agent_run.id,
+              runner: attempt_label,
+              tier: requested_tier,
+              error: resolved_model.error
+            )
+            index += 1
+            next
+          end
+
+          resolved_run_info = resolved_model_info_for(resolved_model)
           heartbeat("runner_attempt", runner, index)
 
           # Skip unavailable runners, tracking rate-limited skips separately
@@ -196,7 +219,8 @@ module Activities
               attempt_label,
               success: false,
               error_type: error_type,
-              error_message: error_message
+              error_message: error_message,
+              **resolved_run_info
             )
             index += 1
             next
@@ -219,7 +243,8 @@ module Activities
             # Success - heartbeat and record final runner
             heartbeat("runner_completed", runner)
             record_runner_success(user_settings, runner_state_name, runner_states)
-            agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration)
+            agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration,
+              **resolved_run_info)
             # Persist the routing key so multiple entries sharing the same
             # runner_key (e.g. several OpenCode API-key entries with
             # different models) remain distinguishable in UI and retry logic.
@@ -288,7 +313,8 @@ module Activities
               success: false,
               error_type: "rate_limited",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.info(message: "agent_execution.rate_limited", runner: runner, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
@@ -316,7 +342,7 @@ module Activities
             last_error = "infinite_loop"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(user_settings, runner_state_name, runner_states)
@@ -325,7 +351,8 @@ module Activities
               success: false,
               error_type: "infinite_loop",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message, duration_seconds: attempt_duration)
 
@@ -349,7 +376,7 @@ module Activities
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             timeout_error ||= e.message
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(user_settings, runner_state_name, runner_states)
@@ -359,7 +386,8 @@ module Activities
               error_type: "timeout",
               error_message: e.message,
               duration_seconds: attempt_duration,
-              diagnostics: e.diagnostics
+              diagnostics: e.diagnostics,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.runner_timeout", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             if container_unavailable_for_fallback?(agent_run)
@@ -384,7 +412,7 @@ module Activities
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(
@@ -398,7 +426,8 @@ module Activities
               success: false,
               error_type: "preflight_timeout",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(
               message: "agent_execution.preflight_timeout",
@@ -417,7 +446,8 @@ module Activities
               success: false,
               error_type: "auth_expired",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.auth_expired", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
             break
@@ -425,7 +455,7 @@ module Activities
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             agent_run.record_runner_attempt(
@@ -433,7 +463,8 @@ module Activities
               success: false,
               error_type: "error",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(
               message: "agent_execution.runner_infra_failure",
@@ -446,7 +477,7 @@ module Activities
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             if cancelled_by_cleanup?(agent_run)
-              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
             record_runner_failure(user_settings, runner_state_name, runner_states)
@@ -455,7 +486,8 @@ module Activities
               success: false,
               error_type: "error",
               error_message: e.message,
-              duration_seconds: attempt_duration
+              duration_seconds: attempt_duration,
+              **resolved_run_info
             )
             logger.warn(message: "agent_execution.runner_failed", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
 
@@ -656,30 +688,26 @@ module Activities
       )
     end
 
-    # Resolves the AgentHarness::ProviderRuntime to use for a given runner
-    # candidate. When the runner entry already declares a fixed runtime
-    # (e.g. opencode/aider with a configured model), validates that any
-    # selected LlmModel matches it. Otherwise constructs a runtime from the
-    # selected model, validating that its provider is compatible with the
-    # runner's expected LLM provider family.
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
       configured_runtime = runner_entry&.agent_harness_runner_runtime
-      selected_model = agent_run&.model_selection&.llm_model
-      selected_model_id = selected_model&.model_id
-
-      if configured_runtime&.model.present? && selected_model_id.present?
-        validate_selected_model_matches_runtime!(runner_entry, selected_model_id, configured_runtime)
-        return configured_runtime
-      end
-
-      return configured_runtime if configured_runtime
-      return nil if selected_model_id.blank?
       return nil if codex_subscription_auth_runtime?(runner_entry)
 
-      validate_selected_model_runner_compatibility!(runner_candidate, runner_entry, selected_model)
+      resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
+      model_id = resolved_model&.model_id
+      return configured_runtime if configured_runtime && model_id.blank?
+      return nil if model_id.blank?
 
-      AgentHarness::ProviderRuntime.new(model: selected_model_id)
+      return AgentHarness::ProviderRuntime.new(model: model_id) unless configured_runtime
+
+      AgentHarness::ProviderRuntime.new(
+        model: model_id,
+        api_provider: configured_runtime.api_provider,
+        base_url: configured_runtime.base_url,
+        env: configured_runtime.env,
+        unset_env: configured_runtime.unset_env,
+        metadata: configured_runtime.metadata
+      )
     end
 
     def codex_subscription_auth_runtime?(runner_entry)
@@ -699,53 +727,55 @@ module Activities
       ]
     end
 
-    def validate_selected_model_matches_runtime!(runner_entry, selected_model_id, configured_runtime)
-      configured_model_id =
-        if runner_entry&.respond_to?(:direct_outbound_model_id) && runner_entry.direct_outbound_model_id.present?
-          runner_entry.direct_outbound_model_id
-        else
-          configured_runtime.model
-        end
+    def runner_supports_tier?(runner_candidate, tier, user)
+      return true if tier.blank?
 
-      return if configured_model_id.blank? || configured_model_id == selected_model_id
-
-      runner_label = runner_entry&.display_name || runner_entry&.runner_key || "runner"
-      raise RunnerExecutionError,
-        "Selected model #{selected_model_id} does not match configured runtime model #{configured_model_id} for #{runner_label}"
-    end
-
-    def validate_selected_model_runner_compatibility!(runner_candidate, runner_entry, selected_model)
-      return unless selected_model
-
-      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
-      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
-      return if compatible_provider.blank? || selected_model.provider == compatible_provider
-
-      runner_label = runner_entry&.display_name || runner_key
-      raise RunnerExecutionError,
-        "Selected model #{selected_model.model_id} (#{selected_model.provider}) is not compatible with #{runner_label} (expects #{compatible_provider})"
-    end
-
-    # Returns true when a runner candidate is structurally compatible with the
-    # selected LlmModel. Checks provider family and fixed runtime model.
-    def runner_compatible_with_model?(runner_candidate, selected_model, user)
       runner_entry = runner_entry_for(runner_candidate, user)
       runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      return true if runner_entry&.supports_tier?(tier)
 
-      # 1. Provider family check — e.g. "claude" expects "anthropic"
-      compatible_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
-      if compatible_provider.present? && selected_model.provider != compatible_provider
-        return false
-      end
+      resolution_runner = runner_entry || Runner.new(runner_key: runner_key)
+      return true if user&.provider_for(resolution_runner)&.supports_tier?(tier)
+      return true if Runners::DefaultTierModelIds.call(runner_key: runner_key)[tier].present?
 
-      # 2. Fixed runtime model check — direct-outbound runners have a
-      #    configured model that must match the selected model exactly.
-      fixed_model_id = runner_entry&.direct_outbound_model_id
-      if fixed_model_id.present? && fixed_model_id != selected_model.model_id
-        return false
-      end
+      false
+    end
 
-      true
+    def resolved_model_info_for(resolved_model)
+      result = {}
+      result[:resolved_model_id] = resolved_model.model_id if resolved_model&.model_id.present?
+      result[:resolved_provider_id] = resolved_model.provider_id if resolved_model&.provider_id.present?
+      result[:resolution_source] = resolved_model.source if resolved_model&.source.present?
+      result
+    end
+
+    def requested_tier_for(agent_run)
+      return if agent_run.nil?
+
+      agent_run.model_selection&.tier.presence || agent_run.model_selection&.llm_model&.tier
+    end
+
+    def resolve_tier_model_for(runner_candidate, agent_run, user)
+      tier = requested_tier_for(agent_run)
+      return nil if tier.blank?
+
+      @resolved_tier_model_cache ||= {}
+      cache_key = [ user&.id, resolution_runner_cache_key(runner_candidate), tier ]
+      return @resolved_tier_model_cache[cache_key] if @resolved_tier_model_cache.key?(cache_key)
+
+      runner_entry = runner_entry_for(runner_candidate, user)
+      resolution_runner = runner_entry || Runner.new(runner_key: RunnerSupport.runner_key_for_agent_type(runner_candidate))
+      @resolved_tier_model_cache[cache_key] = Runners::ResolveTierModel.call(
+        runner: resolution_runner,
+        tier: tier,
+        user: user
+      )
+    end
+
+    def resolution_runner_cache_key(runner_candidate)
+      return [ runner_candidate.class.name, runner_candidate.id || runner_candidate.runner_key ] if runner_candidate.is_a?(Runner)
+
+      runner_candidate.to_s
     end
 
     def paused_result(agent_run_id)
@@ -823,13 +853,9 @@ module Activities
         runners = default_runner_candidates(agent_run, user_settings)
       end
 
-      # Pre-filter runners that are structurally incompatible with the
-      # selected model. This avoids wasting attempts on runners that would
-      # always fail validation in selected_runner_runtime.
-      selected_model = agent_run.model_selection&.llm_model
-      if selected_model
-        compatible = runners.select { |r| runner_compatible_with_model?(r, selected_model, user_settings.user) }
-        runners = compatible if compatible.any?
+      tier = requested_tier_for(agent_run)
+      if tier.present?
+        runners = runners.select { |runner_candidate| runner_supports_tier?(runner_candidate, tier, user_settings.user) }
       end
 
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
@@ -890,8 +916,8 @@ module Activities
     # records the attempt with a distinct error_type so the UI can show what
     # happened, but skips both record_runner_failure and the standard warn
     # log (which would imply a real runner problem).
-    def record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, error)
-      agent_run.record_runner_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+    def record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, error, resolved_run_info: {})
+      agent_run.record_runner_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup", **resolved_run_info)
       logger.info(
         message: "agent_execution.cancelled_by_cleanup",
         runner: runner,
@@ -1099,7 +1125,7 @@ module Activities
         # Rate-limit classification takes precedence over generic quota
         # failures because some providers use quota-shaped wording for
         # retryable usage caps (for example, GLM free-model limits).
-        if successful_exit_rate_limit_error?(sanitized_output)
+        if successful_exit_rate_limit_error?(sanitized_output, runner_key: runner)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
         end
@@ -1133,7 +1159,7 @@ module Activities
       end
 
       # Check if this is a rate limit error
-      if rate_limit_error?(rate_limit_output)
+      if rate_limit_error?(rate_limit_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, rate_limit_output)
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
@@ -1145,7 +1171,7 @@ module Activities
       # begins (e.g. during start!/callbacks); recent_timeout_output
       # short-circuits on blank.
       timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
-      if timeout_rate_limit_error?(timeout_output)
+      if timeout_rate_limit_error?(timeout_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, timeout_output)
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
@@ -1241,7 +1267,7 @@ module Activities
       if result.success?
         # Keep the same precedence as the main execution path so preflight
         # retryable limits do not degrade into generic provider failures.
-        if successful_exit_rate_limit_error?(sanitized_output)
+        if successful_exit_rate_limit_error?(sanitized_output, runner_key: runner)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
           raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
@@ -1266,7 +1292,7 @@ module Activities
         return
       end
 
-      if rate_limit_error?(sanitized_output)
+      if rate_limit_error?(sanitized_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, sanitized_output)
         log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
@@ -1342,16 +1368,18 @@ module Activities
     end
 
     # Checks if the output indicates a rate limit error.
-    def rate_limit_error?(output)
+    def rate_limit_error?(output, runner_key:)
       return false if output.blank?
 
-      RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+      RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) } ||
+        provider_quota_reset_signal?(runner_key, output)
     end
 
-    def timeout_rate_limit_error?(output)
+    def timeout_rate_limit_error?(output, runner_key:)
       return false if output.blank?
 
-      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) } ||
+        provider_quota_reset_signal?(runner_key, output)
     end
 
     def auth_expired_error?(runner, output)
@@ -1388,24 +1416,35 @@ module Activities
     # instead of the broader execution-failure matcher so substantial agent
     # output that merely discusses rate limits is not reclassified as a
     # provider failure.
-    def successful_exit_rate_limit_error?(output)
-      standalone_rate_limit_signal(output).present?
+    def successful_exit_rate_limit_error?(output, runner_key:)
+      standalone_rate_limit_signal(output, runner_key: runner_key).present?
     end
 
-    def standalone_rate_limit_signal(output)
+    def standalone_rate_limit_signal(output, runner_key:)
       return nil if output.blank?
 
       normalized_output = normalize_output_text(output)
       if normalized_output.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
-          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| normalized_output.match?(pattern) }
+          timeout_rate_limit_error?(normalized_output, runner_key: runner_key)
         return normalized_output
       end
 
       normalized_output.each_line.map(&:strip).find do |line|
         line.present? &&
           line.length <= SUCCESS_RATE_LIMIT_MAX_OUTPUT_LENGTH &&
-          TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| line.match?(pattern) }
+          timeout_rate_limit_error?(line, runner_key: runner_key)
       end
+    end
+
+    def provider_quota_reset_signal?(runner_key, output)
+      provider_quota_error?(output) && parsed_rate_limit_reset_at(runner_key, output).present?
+    end
+
+    def provider_quota_error?(output)
+      return false if output.blank?
+
+      RunnerSupport.aggregated_error_classification_patterns(:quota)
+        .any? { |pattern| output.match?(pattern) }
     end
 
     MODEL_NOT_FOUND_MAX_OUTPUT_LENGTH = 1000
@@ -1522,6 +1561,14 @@ module Activities
 
     def rate_limit_reset_at(runner_key, output)
       RunnerSupport.rate_limit_reset_at(harness_provider_for(runner_key), output)
+    end
+
+    def parsed_rate_limit_reset_at(runner_key, output)
+      provider = harness_provider_for(runner_key)
+      provider.parse_rate_limit_reset(output.to_s) ||
+        provider.parse_rate_limit_reset(RunnerSupport.normalized_rate_limit_reset_text(output))
+    rescue AgentHarness::ConfigurationError, KeyError
+      nil
     end
 
     def harness_provider_for(runner_key)

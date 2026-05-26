@@ -254,29 +254,12 @@ class Issue < ApplicationRecord
     pr_review_phase == "merged"
   end
 
-  def reset_review_goal_retry_breaker!
-    reset_at = Time.current
-
-    update!(
-      pr_review_phase: "ready",
-      review_goal_retry_count: 0,
-      review_goal_retry_reset_at: reset_at,
-      operational_failure_reset_at: reset_at
-    )
-  end
-
   def dismiss_escalation!(draft:)
-    reset_at = Time.current
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
-      pr_followup_count: 0,
-      review_goal_retry_count: 0,
-      review_goal_retry_reset_at: reset_at,
-      operational_failure_reset_at: reset_at,
       ci_retry_requested_at: nil
     }
-    attrs[:draft_review_count] = 0 if draft
 
     update!(attrs)
   end
@@ -586,7 +569,7 @@ class Issue < ApplicationRecord
     return false unless saved_change_to_paid_state?
     return false unless project&.auto_pick_enabled?
 
-    paid_state.in?(%w[new planning failed completed])
+    paid_state.in?(%w[new planning failed completed analyzed])
   end
 
   def enqueue_self_if_became_auto_pick_eligible

@@ -88,9 +88,13 @@
       </summary>
       <dl class="divide-y divide-gray-200">
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">GitHub Token</dt>
+          <dt class="text-sm font-medium text-gray-500">GitHub Credential</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-            <%= link_to @project.github_token.name, github_token_path(@project.github_token), class: "text-indigo-600 hover:text-indigo-900" %>
+            <% if @project.github_installation.present? %>
+              <span class="text-indigo-600">GitHub App Installation #<%= @project.github_installation.github_installation_id %></span>
+            <% elsif @project.github_token.present? %>
+              <%= link_to @project.github_token.name, github_token_path(@project.github_token), class: "text-indigo-600 hover:text-indigo-900" %>
+            <% end %>
           </dd>
         </div>
 

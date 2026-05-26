@@ -2,8 +2,7 @@
 
 class UserSetting < ApplicationRecord
   include AutoPickSkipLabels
-  include LegacyAttributeBridge
-
+  has_logidze
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "default_agent_provider" => "default_agent_runner",
     "default_agent_providers_by_goal" => "default_agent_runners_by_goal",
@@ -15,7 +14,6 @@ class UserSetting < ApplicationRecord
     "kb_embedding_provider" => "kb_embedding_runner",
     "kb_embedding_fallback_providers" => "kb_embedding_fallback_runners"
   }.freeze
-  has_logidze
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647
   # Reasonable upper bound for container memory (64 GB in bytes)
@@ -33,20 +31,75 @@ class UserSetting < ApplicationRecord
 
   belongs_to :user
   has_many :runner_states, through: :user
-  before_validation :sync_legacy_provider_bridge_columns
+
+  def update_columns(attributes)
+    normalized = attributes.to_h.stringify_keys
+
+    LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
+      next unless normalized.key?(legacy_name)
+      next if normalized.key?(runner_name)
+
+      normalized[runner_name] = normalized.delete(legacy_name)
+    end
+
+    super(normalized)
+  end
 
   # Theme
   validates :theme_preference, inclusion: { in: THEME_PREFERENCES }
 
-  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
-    define_method(legacy_name) do
-      self[runner_name]
-    end
+  def default_agent_provider = runner_key_for_identifier(default_agent_runner)
 
-    define_method("#{legacy_name}=") do |value|
-      self[runner_name] = value
-      self[legacy_name] = value
-    end
+  def default_agent_provider=(value)
+    self.default_agent_runner = value
+  end
+
+  def default_agent_providers_by_goal = default_agent_runners_by_goal
+
+  def default_agent_providers_by_goal=(value)
+    self.default_agent_runners_by_goal = value
+  end
+
+  def fallback_providers = map_identifiers_to_runner_keys(fallback_runners)
+
+  def fallback_providers=(value)
+    self.fallback_runners = value
+  end
+
+  def provider_selection_mode = runner_selection_mode
+
+  def provider_selection_mode=(value)
+    self.runner_selection_mode = value
+  end
+
+  def provider_round_robin_state = runner_round_robin_state
+
+  def provider_round_robin_state=(value)
+    self.runner_round_robin_state = value
+  end
+
+  def kb_chat_provider = runner_key_for_identifier(kb_chat_runner)
+
+  def kb_chat_provider=(value)
+    self.kb_chat_runner = value
+  end
+
+  def kb_chat_fallback_providers = map_identifiers_to_runner_keys(kb_chat_fallback_runners)
+
+  def kb_chat_fallback_providers=(value)
+    self.kb_chat_fallback_runners = value
+  end
+
+  def kb_embedding_provider = runner_key_for_identifier(kb_embedding_runner)
+
+  def kb_embedding_provider=(value)
+    self.kb_embedding_runner = value
+  end
+
+  def kb_embedding_fallback_providers = map_identifiers_to_runner_keys(kb_embedding_fallback_runners)
+
+  def kb_embedding_fallback_providers=(value)
+    self.kb_embedding_fallback_runners = value
   end
 
   # Polling & Timing
@@ -155,10 +208,6 @@ class UserSetting < ApplicationRecord
     parsed.select { |runner| runner.is_a?(String) }
   rescue JSON::ParserError
     []
-  end
-
-  def update_columns(attributes)
-    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
   end
 
   def self.parse_runner_array_param(value)

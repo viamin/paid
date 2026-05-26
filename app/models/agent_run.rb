@@ -1,15 +1,6 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  include LegacyAttributeBridge
-
-  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
-    "provider_id" => "runner_id",
-    "provider_switches" => "runner_switches",
-    "providers_attempted" => "runners_attempted",
-    "final_provider" => "final_runner"
-  }.freeze
-
   attribute :focus, :string, default: "general"
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
@@ -170,7 +161,6 @@ class AgentRun < ApplicationRecord
 
   attr_readonly :mcp_server_snapshot
 
-  before_validation :sync_legacy_provider_bridge_columns
   before_validation :set_initiating_user_from_current_user, on: :create
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
@@ -232,15 +222,36 @@ class AgentRun < ApplicationRecord
   validate :has_prompt_source, on: :create
   validate :draft_review_round_tracking_is_consistent
 
-  LEGACY_PROVIDER_ATTRIBUTE_BRIDGES.each do |legacy_name, runner_name|
-    define_method(legacy_name) do
-      self[runner_name]
-    end
+  def provider_id
+    runner_id
+  end
 
-    define_method("#{legacy_name}=") do |value|
-      self[runner_name] = value
-      self[legacy_name] = value
-    end
+  def provider_id=(value)
+    self.runner_id = value
+  end
+
+  def provider_switches
+    runner_switches
+  end
+
+  def provider_switches=(value)
+    self.runner_switches = value
+  end
+
+  def providers_attempted
+    runners_attempted
+  end
+
+  def providers_attempted=(value)
+    self.runners_attempted = value
+  end
+
+  def final_provider
+    final_runner
+  end
+
+  def final_provider=(value)
+    self.final_runner = value
   end
 
   def provider=(value)
@@ -269,7 +280,7 @@ class AgentRun < ApplicationRecord
   scope :finished, -> { where(status: FINISHED_STATUSES) }
 
   def update_columns(attributes)
-    super(self.class.synchronize_bridge_attributes(attributes, LEGACY_PROVIDER_ATTRIBUTE_BRIDGES))
+    super(attributes)
   end
 
   def settings_user
@@ -1824,7 +1835,9 @@ class AgentRun < ApplicationRecord
   # @param runner [String] The runner name
   # @param success [Boolean] Whether the attempt succeeded
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
-  def record_runner_attempt(runner, success:, error_type: nil, error_message: nil, duration_seconds: nil, diagnostics: nil)
+  def record_runner_attempt(runner, success:, error_type: nil, error_message: nil, duration_seconds: nil,
+                            diagnostics: nil, resolved_model_id: nil, resolved_provider_id: nil,
+                            resolution_source: nil)
     attempt = {
       "runner" => runner,
       "success" => success,
@@ -1835,6 +1848,9 @@ class AgentRun < ApplicationRecord
     attempt["error_message"] = sanitized_error_message if sanitized_error_message.present?
     attempt["duration_seconds"] = duration_seconds if duration_seconds.present?
     attempt["diagnostics"] = sanitize_runner_attempt_diagnostics(diagnostics) if diagnostics.present?
+    attempt["resolved_model_id"] = resolved_model_id if resolved_model_id.present?
+    attempt["resolved_provider_id"] = resolved_provider_id if resolved_provider_id.present?
+    attempt["resolution_source"] = resolution_source if resolution_source.present?
 
     self.runners_attempted = (runners_attempted || []) + [ attempt ]
     save!
@@ -2417,9 +2433,9 @@ class AgentRun < ApplicationRecord
       "status" => status,
       "error_message" => error_message,
       "guardrail_violation_type" => guardrail_violation_type,
-      "final_provider" => final_provider,
-      "providers_attempted" => providers_attempted,
-      "provider_switches" => provider_switches,
+      "final_runner" => final_runner,
+      "runners_attempted" => runners_attempted,
+      "runner_switches" => runner_switches,
       "parent_workflow_id" => parent_workflow_id
     }
   end

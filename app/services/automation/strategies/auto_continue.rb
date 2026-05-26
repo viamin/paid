@@ -79,12 +79,6 @@ module Automation
       private
 
       def check_lifecycle_gates(context:, signals:)
-        # Escalation dismissal must win before any breaker can re-escalate
-        # the PR in the same cycle after the owner removes the label.
-        if signals.escalation_dismissed
-          return dismiss_escalation_result(signals)
-        end
-
         # Operational failure breaker — provider/infrastructure bursts only
         # escalate once the PR has also gone stale without meaningful
         # progress for too long.
@@ -151,16 +145,6 @@ module Automation
           )
         ])
       end
-
-      def dismiss_escalation_result(signals)
-        Result.new(decisions: [
-          Decision.dismiss_escalation(
-            issue_id: signals.issue_id,
-            draft: signals.draft
-          )
-        ])
-      end
-
       def delegate_to_auto_review(context)
         auto_review_strategy(context).evaluate(context)
       end

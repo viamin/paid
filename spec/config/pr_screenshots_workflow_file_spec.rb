@@ -57,6 +57,28 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
+  it "uploads screenshot artifacts only when the capture job produced png files" do
+    detect_step = capture_step("Detect captured screenshots")
+    upload_step = capture_step("Upload screenshots to artifacts")
+
+    expect(detect_step).to include(
+      "id" => "detect_screenshots",
+      "if" => "always()"
+    )
+    expect(detect_step.fetch("run")).to include('screenshots=(tmp/screenshots/*.png)')
+    expect(detect_step.fetch("run")).to include('echo "has_screenshots=true" >> "$GITHUB_OUTPUT"')
+    expect(detect_step.fetch("run")).to include('echo "has_screenshots=false" >> "$GITHUB_OUTPUT"')
+
+    expect(upload_step).to include(
+      "id" => "upload_screenshots",
+      "if" => "always() && steps.detect_screenshots.outputs.has_screenshots == 'true'"
+    )
+    expect(upload_step.fetch("with")).to include(
+      "path" => "tmp/screenshots/*.png",
+      "if-no-files-found" => "ignore"
+    )
+  end
+
   it "normalizes a missing test key from RAILS_MASTER_KEY before capture boots Rails" do
     normalize_step = workflow.fetch("jobs").fetch("capture").fetch("steps").find do |step|
       step["name"] == "Normalize test master key"

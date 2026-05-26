@@ -109,11 +109,10 @@ RSpec.describe Runners::TestAgent do
         )
       end
 
-      it "creates the ephemeral agent run with both provider_id and runner_id populated" do
+      it "creates the ephemeral agent run with the runner_id populated" do
         expect(AgentRun).to receive(:insert_all!).with(
           [
             hash_including(
-              provider_id: provider.id,
               runner_id: provider.id
             )
           ],
@@ -1171,12 +1170,12 @@ RSpec.describe Runners::TestAgent do
           message: "OK.",
           output: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-05-18 11:22:32",
           latency_ms: 10,
-          error_category: nil,
+          error_category: :quota,
           check: :smoke_test
         )
       end
 
-      it "surfaces the rate limit message instead of the OK line" do
+      it "uses the upstream quota classification and surfaces the reset message instead of the OK line" do
         result = described_class.call(runner: provider)
 
         expect(result).not_to be_success

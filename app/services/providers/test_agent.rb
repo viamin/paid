@@ -288,14 +288,17 @@ module Providers
       message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
       harness_error_type = map_harness_error_category(result[:error_category])
-      display_message = message || output || "Provider health check returned no message"
+      preferred_failure_message = preferred_failure_display_message(message, output)
+      display_message = preferred_failure_message ||
+        message || output || "Provider health check returned no message"
       classification_message = [ message, output ].compact.uniq.join("\n")
+      failure_message = preferred_failure_message || classification_message.presence || display_message
 
       if smoke_test_failure_output?(classification_message)
-        translated_message = translate_and_extract_error(classification_message.presence || display_message)
+        translated_message = translate_and_extract_error(failure_message)
         error_type = resolve_error_type(
           harness_error_type: harness_error_type,
-          message: translated_message.presence || classification_message.presence || display_message
+          message: translated_message.presence || failure_message
         )
 
         Result.new(
@@ -303,14 +306,14 @@ module Providers
           error_type: error_type,
           message: translated_message.presence || display_message
         )
-      elsif harness_error_type.present? && !smoke_test_output_success?(output) && !smoke_test_output_success?(message)
-        translated_message = translate_and_extract_error(classification_message.presence || display_message)
+      elsif harness_error_type.present? && (!smoke_test_output_success?(output) || !smoke_test_output_success?(message))
+        translated_message = translate_and_extract_error(failure_message)
 
         Result.new(
           success: false,
           error_type: resolve_error_type(
             harness_error_type: harness_error_type,
-            message: translated_message.presence || classification_message.presence || display_message
+            message: translated_message.presence || failure_message
           ),
           message: translated_message.presence || display_message
         )
@@ -319,10 +322,10 @@ module Providers
       elsif status == "ok"
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
-        translated_message = translate_and_extract_error(classification_message.presence || display_message)
+        translated_message = translate_and_extract_error(failure_message)
         error_type = resolve_error_type(
           harness_error_type: harness_error_type,
-          message: translated_message.presence || classification_message.presence || display_message
+          message: translated_message.presence || failure_message
         )
 
         Result.new(
@@ -335,6 +338,13 @@ module Providers
 
     def smoke_test_output_success?(text)
       text.to_s.strip.match?(/\AOK[.!]?\z/i)
+    end
+
+    def preferred_failure_display_message(message, output)
+      return output if smoke_test_output_success?(message) && !smoke_test_output_success?(output) && output.present?
+      return message if smoke_test_output_success?(output) && !smoke_test_output_success?(message) && message.present?
+
+      nil
     end
 
     def smoke_test_failure_output?(text)
@@ -435,7 +445,6 @@ module Providers
           [ {
             project_id: test_project.id,
             initiating_user_id: effective_provider.user_id,
-            provider_id: effective_provider.id,
             runner_id: effective_provider.id,
             agent_type: Provider.agent_type_for(effective_provider.provider_key),
             status: "queued",
@@ -484,7 +493,7 @@ module Providers
 
     def clear_provider_state_if_healthy!
       provider_state_names.each do |provider_name|
-        effective_provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
+        effective_provider.user.runner_states.find_by(runner_name: provider_name)&.record_success!
       end
     end
 
@@ -492,11 +501,11 @@ module Providers
       reset_at = rate_limit_reset_at(message)
 
       provider_state_names.each do |provider_name|
-        effective_provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+        effective_provider.user.runner_states.find_or_create_by!(runner_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     rescue ActiveRecord::RecordNotUnique
       provider_state_names.each do |provider_name|
-        effective_provider.user.provider_states.find_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+        effective_provider.user.runner_states.find_by!(runner_name: provider_name).mark_rate_limited!(reset_at: reset_at)
       end
     end
 

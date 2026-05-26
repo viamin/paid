@@ -28,7 +28,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.0.0.beta.34"
+gem "avo", "4.0.0.beta.37"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -128,6 +128,7 @@ group :test do
   gem "capybara"
   gem "cuprite"
   gem "fixture_kit"
+  gem "mutant-rspec", require: false
   gem "rspec-github", "~> 3.0", require: false
   gem "test-prof"
   gem "webmock"
@@ -148,6 +149,9 @@ gem "good_job", "~> 4.18"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.5"
+
+# PDF text extraction for knowledge imports
+gem "pdf-reader"
 
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"

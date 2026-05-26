@@ -88,6 +88,21 @@ RSpec.describe Issues::ReenqueueEligibleJob do
       )
     end
 
+    it "rechecks analyzed issues" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "analyzed", github_state: "open")
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      described_class.perform_now(issue.id)
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(
+        issue,
+        project: project,
+        skip_project_gate: true,
+        no_runner_retry_count: 0
+      )
+    end
+
     it "does nothing for missing issues" do
       allow(Issues::EnqueueEligible).to receive(:call)
 
