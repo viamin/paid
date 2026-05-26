@@ -218,7 +218,7 @@ RSpec.describe ApplicationPolicy do
   describe ApplicationPolicy::Scope do
     it "raises when no user is present" do
       expect {
-        ApplicationPolicy::Scope.new(nil, User).resolve
+        described_class.new(nil, User).resolve
       }.to raise_error(Pundit::NotAuthorizedError, "must be logged in")
     end
 
@@ -227,7 +227,7 @@ RSpec.describe ApplicationPolicy do
       user = create(:user, account: account)
       in_account = user
       out_of_account = create(:user, account: create(:account))
-      scope = ApplicationPolicy::Scope.new(user, User)
+      scope = described_class.new(user, User)
 
       expect(scope.resolve).to contain_exactly(in_account)
       expect(scope.resolve).not_to include(out_of_account)
@@ -236,9 +236,12 @@ RSpec.describe ApplicationPolicy do
     it "raises NotImplementedError for models without account association" do
       account = create(:account)
       user = create(:user, account: account)
-      scope = ApplicationPolicy::Scope.new(user, Account)
+      scope = described_class.new(user, Account)
 
-      expect { scope.resolve }.to raise_error(NotImplementedError)
+      expect { scope.resolve }.to raise_error(
+        NotImplementedError,
+        "ApplicationPolicy::Scope must implement #resolve for models without account association"
+      )
     end
   end
 end

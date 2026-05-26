@@ -140,7 +140,7 @@ module Prompts
       all_comments.reverse_each do |c|
         next unless project.trusted_github_user?(c.user&.login)
         trusted << c
-        break if trusted.size == max_comments
+        break if trusted.size >= max_comments
       end
       trusted.reverse
     rescue GithubClient::Error
