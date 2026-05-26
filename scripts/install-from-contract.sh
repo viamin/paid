@@ -1,5 +1,4 @@
 #!/bin/bash
-# frozen_string_literal: true
 
 # Install a provider tool from its agent-harness contract.
 #
@@ -25,7 +24,7 @@ if [ -z "$PROVIDER" ]; then
   exit 1
 fi
 
-CONTRACT=$("${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" "$PROVIDER" 2>&1) || {
+CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-provider-install-contract.rb" "$PROVIDER") || {
   echo "ERROR: Failed to fetch contract for provider: $PROVIDER" >&2
   exit 1
 }
