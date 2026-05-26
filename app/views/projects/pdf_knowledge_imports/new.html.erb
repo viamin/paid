@@ -1,0 +1,37 @@
+<% content_for(:title) { "Import PDF Knowledge - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to @project, class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Project
+    <% end %>
+  </div>
+
+  <h1 class="text-2xl font-semibold text-gray-900">Import PDF to Project Knowledge</h1>
+  <p class="mt-1 text-sm text-gray-500">Upload reference material and Paid will extract text, create knowledge chunks, and enqueue embeddings for retrieval.</p>
+
+  <div class="mt-6 rounded-lg bg-white p-6 shadow">
+    <% if flash.now[:alert].present? %>
+      <div class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"><%= flash.now[:alert] %></div>
+    <% end %>
+
+    <%= form_with url: project_pdf_knowledge_import_path(@project), scope: :pdf_import, class: "space-y-6" do |form| %>
+      <div>
+        <%= form.label :pdf_file, "PDF File", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.file_field :pdf_file, accept: "application/pdf,.pdf", class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+        Imports are available on professional and enterprise plans. Uploaded PDFs are parsed into searchable chunks and summary snippets for agent prompt context.
+      </div>
+
+      <div class="flex items-center justify-end gap-4 border-t border-gray-200 pt-4">
+        <%= link_to "Cancel", @project, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+        <%= form.submit "Import PDF", class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      </div>
+    <% end %>
+  </div>
+</div>

@@ -47,6 +47,33 @@ RSpec.describe Knowledge::ContextBundle::Build do
       end
     end
 
+    context "with imported document artifacts" do
+      before do
+        artifact = create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          artifact_type: "reference_document",
+          identifier: "Modern CSS",
+          content: "Imported CSS guidance",
+          metadata: { "title" => "Modern CSS" },
+          status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: artifact,
+          project: project,
+          chunk_type: "summary",
+          content: "Page 1: Prefer grid for two-dimensional layouts.")
+      end
+
+      it "includes imported document summaries" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).to include(:documents)
+        expect(result[:content]).to include("Imported Documents")
+        expect(result[:content]).to include("Modern CSS")
+        expect(result[:content]).to include("Prefer grid for two-dimensional layouts")
+      end
+    end
+
     context "with symbol artifacts" do
       before do
         create(:knowledge_artifact,
