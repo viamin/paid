@@ -291,24 +291,19 @@ module ConfigurationBundles
     def bundle_definition(variant_by_experiment_id)
       canonicalize(
         {
-          schema_version: 1,
+          schema_version: 2,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
-          runner_id: agent_run_runner_id,
+          provider_id: agent_run.provider_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
+          ordered_runner_set: ordered_runner_set,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           experiments: experiment_definitions(variant_by_experiment_id)
         }.compact
       )
-    end
-
-    def agent_run_runner_id
-      return agent_run.runner_id if agent_run.respond_to?(:runner_id)
-
-      agent_run.provider_id if agent_run.respond_to?(:provider_id)
     end
 
     def experiment_definitions(variant_by_experiment_id)
