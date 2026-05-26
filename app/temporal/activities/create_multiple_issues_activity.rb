@@ -32,7 +32,7 @@ module Activities
       parent_issue_number = input[:parent_issue_number]
 
       project = agent_run.project
-      client = project.github_token.client
+      client = project.client
 
       creation_order = topological_sort!(tasks)
       index_to_github_number = {}

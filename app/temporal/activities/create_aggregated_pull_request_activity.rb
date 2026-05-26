@@ -31,7 +31,7 @@ module Activities
 
       parent_issue = Issue.find_by(id: parent_issue_id, project_id: project.id) if parent_issue_id
 
-      client = project.github_token.client
+      client = project.client
       pr = create_pull_request_idempotently(
         client, project, feature_branch, parent_issue, results, merged_branches, failed_merges
       )

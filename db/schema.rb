@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_25_062838) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_25_103914) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -865,6 +865,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_062838) do
     t.index ["endpoint"], name: "index_github_health_states_on_endpoint", unique: true
   end
 
+  create_table "github_installations", comment: "Per-account GitHub App installation records for paid-agents[bot]", force: :cascade do |t|
+    t.jsonb "accessible_repositories", default: [], null: false, comment: "Cached list of accessible repos from install metadata"
+    t.bigint "account_id", null: false
+    t.string "account_login", comment: "GitHub org or user login that installed the App"
+    t.datetime "created_at", null: false
+    t.bigint "github_installation_id", null: false, comment: "GitHub installation ID from App install event"
+    t.string "repository_selection", comment: "all or selected"
+    t.datetime "revoked_at", comment: "When the installation was uninstalled/deleted"
+    t.datetime "suspended_at", comment: "When the installation was suspended by GitHub"
+    t.string "target_type", comment: "Organization or User"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "github_installation_id"], name: "idx_github_installations_on_account_installation", unique: true
+    t.index ["account_id"], name: "index_github_installations_on_account_id"
+    t.index ["github_installation_id"], name: "index_github_installations_on_github_installation_id"
+  end
+
   create_table "github_tokens", force: :cascade do |t|
     t.jsonb "accessible_repositories", default: [], null: false
     t.bigint "account_id", null: false
@@ -1649,7 +1665,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_062838) do
     t.jsonb "fitness_settings", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
-    t.bigint "github_token_id", null: false
+    t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
+    t.bigint "github_token_id"
     t.boolean "inherit_priority_labels", default: true, null: false
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
@@ -1699,10 +1716,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_062838) do
     t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
     t.index ["account_id"], name: "index_projects_on_account_id"
     t.index ["created_by_id"], name: "index_projects_on_created_by_id"
+    t.index ["github_installation_id"], name: "index_projects_on_github_installation_id"
     t.index ["github_token_id"], name: "index_projects_on_github_token_id"
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
     t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
     t.index ["scheduler_paused_at"], name: "index_projects_on_scheduler_paused_at", where: "(scheduler_paused_at IS NOT NULL)"
+    t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
   end
 
   create_table "prompt_versions", force: :cascade do |t|
@@ -2418,6 +2437,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_062838) do
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
+  add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
@@ -2480,6 +2500,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_062838) do
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
   add_foreign_key "projects", "accounts"
+  add_foreign_key "projects", "github_installations", validate: false
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify

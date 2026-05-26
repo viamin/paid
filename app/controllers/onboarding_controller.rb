@@ -94,7 +94,7 @@ class OnboardingController < ApplicationController
   end
 
   def fetch_and_save_project(project)
-    client = project.github_token.client
+    client = project.client
     repo_data = client.repository("#{project.owner}/#{project.repo}")
 
     project.github_id = repo_data.id

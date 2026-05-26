@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "temporalio/client"
 
 RSpec.describe Scaling::QueueMonitor do
   describe ".call" do

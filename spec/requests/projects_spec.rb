@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "temporalio/client"
 require "ostruct"
 
 RSpec.describe "Projects" do
@@ -309,7 +310,7 @@ RSpec.describe "Projects" do
         github_token # create the token
         get new_project_path
         expect(response.body).to include("Repository")
-        expect(response.body).to include("Select a token first...")
+        expect(response.body).to include("Select a token or installation first...")
       end
 
       it "renders the repository select as disabled initially" do
@@ -325,6 +326,15 @@ RSpec.describe "Projects" do
         get new_project_path
         expect(response.body).to include("Active Token")
         expect(response.body).not_to include("Revoked Token")
+      end
+
+      it "wires the installation selector to the repository loader" do
+        create(:github_installation, account: account)
+
+        get new_project_path
+
+        expect(response.body).to include('data-repository-selector-target="installationSelect"')
+        expect(response.body).to include("change-&gt;repository-selector#installationChanged")
       end
     end
   end
@@ -419,7 +429,7 @@ RSpec.describe "Projects" do
             }
           }
           expect(response).to have_http_status(:unprocessable_content)
-          expect(response.body).to include("must be selected")
+          expect(response.body).to include("must select either a GitHub token or GitHub App installation")
         end
       end
 

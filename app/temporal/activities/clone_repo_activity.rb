@@ -43,7 +43,7 @@ module Activities
 
     def fetch_pr_branch(agent_run)
       project = agent_run.project
-      client = project.github_token.client
+      client = project.client
       pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
 
       unless pr.state == "open"

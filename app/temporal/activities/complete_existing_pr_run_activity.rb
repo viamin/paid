@@ -35,7 +35,7 @@ module Activities
 
       track_phase(agent_run_id: agent_run_id, phase_key: "complete_existing_pr_run", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
-        client = project.github_token.client
+        client = project.client
 
         pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
 
