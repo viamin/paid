@@ -93,14 +93,18 @@
     // The `|| echo` suffix keeps it non-fatal so a Claude install failure does not
     // block the rest of the devcontainer setup.
     "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server && (eval \"$(bundle exec ruby scripts/extract-provider-install-contract.rb claude | sed -n 's/^INSTALL_COMMAND=//p')\" || echo 'WARNING: Claude CLI installation failed (non-fatal)')",
-    // LLM CLI Tools - Installation
-    "cursor-agent": "curl -fsSL https://cursor.com/install | bash",
-    "codex": "npm install -g --ignore-scripts @openai/codex",
-    "gemini-cli": "npm install -g --ignore-scripts @google/gemini-cli",
-    "github-copilot-cli": "npm install -g --ignore-scripts @github/copilot",
-    "opencode": "npm i -g --ignore-scripts opencode-ai@latest",
-    "kilocode": "npm i -g --ignore-scripts @kilocode/cli",
-    "aider": "curl -fsSL https://aider.chat/install.sh | bash",
+    // LLM CLI Tools - Installation via agent-harness contracts
+    // Each tool is installed via scripts/install-from-contract.sh which delegates
+    // to scripts/extract-provider-install-contract.rb. This means versions and
+    // install commands stay in sync with the agent image without separate pins.
+    // Aider and cursor-agent are installed via the contract-driven script; the
+    // other four are npm-based and also get --ignore-scripts enforced.
+    "codex": "bash scripts/install-from-contract.sh codex",
+    "gemini-cli": "bash scripts/install-from-contract.sh gemini",
+    "github-copilot-cli": "bash scripts/install-from-contract.sh copilot",
+    "kilocode": "bash scripts/install-from-contract.sh kilocode",
+    "cursor-agent": "bash scripts/install-from-contract.sh cursor",
+    "aider": "bash scripts/install-from-contract.sh aider",
     // Dev tools
     "markdownlint": "npm install -g --ignore-scripts markdownlint-cli",
     "git-curate": "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH gem install git_curate",
