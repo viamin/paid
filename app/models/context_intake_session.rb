@@ -67,7 +67,15 @@ class ContextIntakeSession < ApplicationRecord
     follow_up_generation_state["status"] == "pending"
   end
 
+  def follow_up_generation_failed?
+    follow_up_generation_state["status"] == "failed"
+  end
+
   def follow_up_generation_blocking?
     follow_up_generation_state["blocking"] == true
+  end
+
+  def blocking_follow_up_generation_active?
+    follow_up_generation_blocking? && (follow_up_generation_pending? || follow_up_generation_failed?)
   end
 end

@@ -205,6 +205,27 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).to include("Generating follow-up questions")
     end
 
+    it "keeps blocking follow-up generation failures on the recovery screen" do
+      FeatureFlags.enable!(:context_intake_agent_questions, project:)
+      session.update!(
+        metadata: {
+          "follow_up_generation" => {
+            "status" => "failed",
+            "round" => 2,
+            "blocking" => true,
+            "error_class" => "StandardError",
+            "error" => "generation failed"
+          }
+        }
+      )
+
+      get project_context_intake_path(project)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Follow-up question generation failed. Reload the page to retry.")
+      expect(response.body).not_to include(first_question.fetch(:text))
+    end
+
     it "keeps the full-page wizard reachable during non-blocking follow-up generation" do
       create_follow_up_question!(first_question.fetch(:key))
       session.context_intake_responses.find_by!(question_key: last_question.fetch(:key))

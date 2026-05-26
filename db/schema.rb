@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_25_171500) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -605,6 +605,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_171500) do
     t.string "status", limit: 50, default: "approved", null: false, comment: "Review state for this question definition."
     t.datetime "updated_at", null: false
     t.jsonb "validation_rules", default: {}, null: false, comment: "Extensible validation metadata for future answer schemas."
+    t.index ["key"], name: "idx_context_intake_questions_global_key_unique", unique: true, where: "(project_id IS NULL)"
     t.index ["project_id", "active", "status"], name: "idx_context_intake_questions_visibility"
     t.index ["project_id", "key"], name: "idx_context_intake_questions_project_key", unique: true
     t.index ["project_id", "parent_question_key"], name: "idx_context_intake_questions_parent"
