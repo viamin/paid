@@ -54,6 +54,9 @@ Rails.application.routes.draw do
 
   resources :github_installations, only: [] do
     get :repositories, on: :member
+    get :migrate, on: :member, as: :migrate_project
+    post :migrate, on: :member
+    post :check_access, on: :member
   end
 
   # Linear tokens management
