@@ -52,10 +52,10 @@ Rails.application.routes.draw do
     post :retry_validation, on: :member
   end
 
-  resources :github_installations, only: [] do
+  resources :github_installations, only: [ :index, :show ] do
     get :repositories, on: :member
-    get :migrate, on: :member, as: :migrate_project
-    post :migrate, on: :member
+    get :migrate, on: :member, as: :migrate_project, action: :migrate_projects
+    post :migrate, on: :member, action: :migrate_from_token
     post :check_access, on: :member
   end
 

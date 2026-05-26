@@ -84,16 +84,16 @@ module Github
       validate_preconditions!
       verify_installation_access!
 
-      update_result = perform_migration
-
+      perform_migration
       log_migration_event("project.migrated", project: project)
 
       Result.new(
         success: true,
         project: project,
-        previous_token_id: previous_token_id,
-        warnings: build_warnings
-      )
+        previous_token_id: previous_token_id
+      ).tap do |result|
+        result.warnings = build_warnings
+      end
     rescue MigrationError => e
       Result.new(success: false, project: project, error: e.message)
     end
@@ -131,8 +131,8 @@ module Github
 
       BulkResult.new(
         total: results.size,
-        successful: results.count(&:success),
-        failed: results.count { |r| !r.success },
+        successful: results.count(&:success?),
+        failed: results.count { |r| !r.success? },
         results: results
       )
     end
@@ -143,16 +143,13 @@ module Github
       raise MigrationError, "github_token is required" unless github_token
 
       accessible_repo_ids = accessible_installation_repos.pluck("id").to_set
-      repo_names = github_token.accessible_repositories.map { |r| r["full_name"] }
+      repo_by_name = github_token.accessible_repositories.index_by { |repo| repo["full_name"] }
 
-      repo_names.each_with_object({}) do |full_name, result|
-        repo = github_token.accessible_repositories.find { |r| r["full_name"] == full_name }
-        if repo && accessible_repo_ids.include?(repo["id"])
+      repo_by_name.each_with_object({}) do |(full_name, repo), result|
+        if accessible_repo_ids.include?(repo["id"])
           result[full_name] = :accessible
-        elsif repo && !accessible_repo_ids.include?(repo["id"])
-          result[full_name] = :requires_admin_action
         else
-          result[full_name] = :not_found
+          result[full_name] = :requires_admin_action
         end
       end
     end
@@ -179,7 +176,7 @@ module Github
 
       accessible_repo_ids = accessible_installation_repos.pluck("id").to_set
       target_repo_ids = if project
-        [project.github_id]
+        [ project.github_id ]
       else
         github_token.projects.pluck(:github_id)
       end
@@ -260,6 +257,7 @@ module Github
     # Value object representing a single migration result
     class Result
       attr_accessor :warnings
+      attr_reader :project, :error, :previous_token_id
 
       def initialize(success:, project:, error: nil, previous_token_id: nil)
         @success = success
@@ -272,15 +270,11 @@ module Github
       def success?
         @success
       end
-
-      delegate :project, to: :@project
-
-      attr_reader :error, :previous_token_id
     end
 
     # Value object representing bulk migration results
     class BulkResult
-      attr_reader :results
+      attr_reader :results, :total, :successful, :failed
 
       def initialize(total:, successful:, failed:, results:)
         @total = total

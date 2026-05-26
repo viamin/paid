@@ -3,7 +3,7 @@
 class GithubInstallationsController < ApplicationController
   include AuditLogging
 
-  before_action :set_github_installation, only: :repositories
+  before_action :set_github_installation, only: [ :repositories, :show, :check_access ]
   before_action :set_github_installation_for_migration, only: :migrate_projects
   before_action :set_github_installation_for_token_migration, only: :migrate_from_token
 
