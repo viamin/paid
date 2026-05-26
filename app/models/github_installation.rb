@@ -24,4 +24,14 @@ class GithubInstallation < ApplicationRecord
   def revoked?
     revoked_at.present?
   end
+
+  def covers_repository?(repo_full_name)
+    owner, repo = repo_full_name.to_s.split("/", 2)
+    return false if owner.blank? || repo.blank? || !active?
+    return true if repository_selection == "all" && account_login.casecmp?(owner)
+
+    Array(accessible_repositories).any? do |repository|
+      repository.fetch("full_name", "").casecmp?(repo_full_name)
+    end
+  end
 end

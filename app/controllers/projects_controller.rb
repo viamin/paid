@@ -137,6 +137,8 @@ class ProjectsController < ApplicationController
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
     @github_installations = policy_scope(GithubInstallation).active
+    @github_auth_source = selected_github_auth_source
+    @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
     @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
     @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
@@ -149,6 +151,8 @@ class ProjectsController < ApplicationController
     @github_installations = policy_scope(GithubInstallation).active
 
     update_params = project_params
+    @github_auth_source = selected_github_auth_source(update_params)
+    @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
     update_params = update_params.merge(auto_pick_skip_labels: parse_auto_pick_skip_labels) if auto_pick_skip_labels_param_submitted?
     update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
@@ -158,11 +162,13 @@ class ProjectsController < ApplicationController
     end
 
     assign_selected_github_credential(@project, update_params)
+    update_params = update_params.except(:github_auth_source, :github_token_id, :github_installation_id)
 
     if @project.update(update_params)
       audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
       redirect_to @project, notice: "Project was successfully updated."
     else
+      ensure_github_app_installation_error
       @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
       @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
       @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
@@ -330,10 +336,21 @@ class ProjectsController < ApplicationController
   end
 
   def assign_selected_github_credential(project, params_hash = project_params)
+    github_auth_source = params_hash[:github_auth_source].presence
     github_token_id = params_hash[:github_token_id].presence
     github_installation_id = params_hash[:github_installation_id].presence
 
-    if github_installation_id
+    if github_auth_source == "app"
+      project.github_installation = project.paid_agents_installation(installations: @github_installations)
+      project.github_token = nil
+      return if project.github_installation.present?
+
+      project.errors.add(:github_installation, "must be installed for #{project.full_name}")
+    elsif github_auth_source == "pat"
+      project.github_installation = nil
+      project.github_token = current_account.github_tokens.find_by(id: github_token_id)
+      project.errors.add(:github_token, "must belong to the same account") if github_token_id.present? && project.github_token.blank?
+    elsif github_installation_id
       project.github_installation = current_account.github_installations.find_by(id: github_installation_id)
       project.errors.add(:github_installation, "must belong to the same account") if project.github_installation.blank?
       project.github_token = nil
@@ -349,7 +366,7 @@ class ProjectsController < ApplicationController
   end
 
   def project_params
-    params.require(:project).permit(:github_token_id, :github_installation_id, :owner, :repo, :name, :active,
+    params.require(:project).permit(:github_auth_source, :github_token_id, :github_installation_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :max_execution_seconds, :github_id, :default_branch,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :auto_fix_merge_conflicts, :auto_scan_security,
@@ -365,6 +382,18 @@ class ProjectsController < ApplicationController
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)
+  end
+
+  def selected_github_auth_source(params_hash = nil)
+    source = params_hash&.[](:github_auth_source).presence || params.dig(:project, :github_auth_source).presence || @project.github_auth_source
+    Project::GITHUB_AUTH_SOURCES.include?(source) ? source : @project.github_auth_source
+  end
+
+  def ensure_github_app_installation_error
+    return unless @github_auth_source == "app"
+    return if @paid_agents_installation.present?
+
+    @project.errors.add(:github_installation, "must be installed for #{@project.full_name}")
   end
 
   TERMINATION_KEYS = %i[max_review_rounds max_review_goal_retries stop_when_no_comments quality_threshold timeout_minutes].freeze
