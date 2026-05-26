@@ -128,6 +128,7 @@ group :test do
   gem "capybara"
   gem "cuprite"
   gem "fixture_kit"
+  gem "mutant-rspec", require: false
   gem "rspec-github", "~> 3.0", require: false
   gem "test-prof"
   gem "webmock"
