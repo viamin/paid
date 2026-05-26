@@ -96,6 +96,8 @@ module Github
       end
     rescue MigrationError => e
       Result.new(success: false, project: project, error: e.message)
+    rescue ActiveRecord::RecordInvalid => e
+      Result.new(success: false, project: project, error: "Validation failed: #{e.record.errors.full_messages.join(', ')}")
     end
 
     # Migrate all projects from the source token
@@ -239,7 +241,7 @@ module Github
       Accounts::RecordActivity.call(
         account: github_installation.account,
         actor: actor,
-        action: "github_app.migration.completed",
+        action: "github_app.project.migrated",
         subject: project,
         metadata: {
           project_name: project.name,
