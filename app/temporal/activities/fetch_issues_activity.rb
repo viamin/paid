@@ -26,7 +26,7 @@ module Activities
       project = Project.find_by(id: project_id)
       return { issues: [], project_id: project_id, project_missing: true } unless project
 
-      client = project.github_token.client
+      client = project.client
       incremental = project.last_issue_sync_at.present?
       eager_queue_enabled = incremental && Issues::AutoPickProjectGate.call(project)
       sync_started_at = Time.current
@@ -382,7 +382,7 @@ module Activities
     end
 
     def post_enhance_issue_limit_comment(project, issue, max_rounds)
-      project.github_token.client.add_comment(
+      project.client.add_comment(
         project.full_name,
         issue.github_number,
         <<~COMMENT
@@ -458,7 +458,7 @@ module Activities
         )
       end
 
-      client = project.github_token.client
+      client = project.client
       deadline = monotonic_now + parse_budget_seconds
 
       # Compute adjacency once before the loop for cycle detection. Within this

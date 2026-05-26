@@ -8,7 +8,7 @@ RSpec.describe StyleGuides::CollectCodeSamples do
   let(:github_client) { instance_double(GithubClient) }
 
   before do
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    allow(project).to receive(:client).and_return(github_client)
   end
 
   describe ".call" do

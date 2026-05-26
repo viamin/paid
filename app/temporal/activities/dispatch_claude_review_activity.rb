@@ -17,7 +17,7 @@ module Activities
 
       issue = project.issues.find_by!(github_number: pr_number, is_pull_request: true)
 
-      project.github_token.client.dispatch_repository_event(
+      project.client.dispatch_repository_event(
         project.full_name,
         event_type: EVENT_TYPE,
         client_payload: { pr_number: pr_number }

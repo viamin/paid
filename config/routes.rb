@@ -52,6 +52,10 @@ Rails.application.routes.draw do
     post :retry_validation, on: :member
   end
 
+  resources :github_installations, only: [] do
+    get :repositories, on: :member
+  end
+
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 

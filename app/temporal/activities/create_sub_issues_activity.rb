@@ -33,7 +33,7 @@ module Activities
       sub_tasks = validate_sub_tasks!(input[:sub_tasks])
       creation_mode = validate_creation_mode!(input[:creation_mode])
 
-      client = project.github_token.client
+      client = project.client
       created_issues = []
       creation_order = topological_sort!(sub_tasks)
       index_to_github_number = {}

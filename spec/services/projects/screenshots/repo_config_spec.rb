@@ -5,11 +5,10 @@ require "rails_helper"
 RSpec.describe Projects::Screenshots::RepoConfig do
   describe ".call" do
     let(:github_client) { instance_double(GithubClient) }
-    let(:github_token) { instance_double(GithubToken, client: github_client) }
     let(:project) do
       instance_double(
         Project,
-        github_token: github_token,
+        client: github_client,
         full_name: "acme/widgets"
       )
     end

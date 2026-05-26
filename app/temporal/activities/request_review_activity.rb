@@ -75,7 +75,7 @@ module Activities
       reviewers = resolve_reviewers(input, project)
       return { requested: [] } if reviewers.empty?
 
-      client = project.github_token.client
+      client = project.client
 
       already_pending = fetch_pending_reviewers(client, project, pr_number)
       needed = reviewers.reject { |r| already_pending.include?(r) }

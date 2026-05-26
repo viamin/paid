@@ -65,7 +65,7 @@ module Automation
       cache_key = [ project.id, record.github_number, label ]
       return @trusted_user_added_label_cache[cache_key] if @trusted_user_added_label_cache.key?(cache_key)
 
-      events = project.github_token.client.issue_events(project.full_name, record.github_number)
+      events = project.client.issue_events(project.full_name, record.github_number)
       relevant = events.select do |event|
         (event.event == "labeled" || event.event == "unlabeled") &&
           event_label_name(event) == label

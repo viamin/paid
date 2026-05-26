@@ -28,7 +28,7 @@ class AutoReleaseEvaluationJob < ApplicationJob
     project = Project.find_by(id: project_id)
     return unless project&.auto_release_enabled?
 
-    client = project.github_token.client
+    client = project.client
 
     release_pr = find_release_pr(client, project, pr_number)
     return unless release_pr

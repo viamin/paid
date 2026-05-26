@@ -14,7 +14,7 @@ module Activities
         return { agent_run_id: agent_run_id } unless issue
 
         project = agent_run.project
-        client = project.github_token.client
+        client = project.client
 
         issue.update!(paid_state: "completed")
 

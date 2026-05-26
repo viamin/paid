@@ -283,7 +283,7 @@ module Activities
     end
 
     def github_client(project)
-      project.github_token.client
+      project.client
     end
 
     def log_failed_response(agent_run, provider, response)

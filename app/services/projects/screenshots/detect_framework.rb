@@ -63,7 +63,7 @@ module Projects
       end
 
       def fetch_file(path)
-        project.github_token.client.file_content(project.full_name, path: path)
+        project.client.file_content(project.full_name, path: path)
       rescue GithubClient::NotFoundError
         nil
       end

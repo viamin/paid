@@ -15,7 +15,7 @@ module Activities
       thread_ids = Array(input[:thread_ids]).compact
       agent_run = AgentRun.find(agent_run_id)
       project = agent_run.project
-      client = project.github_token.client
+      client = project.client
 
       threads = client.review_threads(project.full_name, agent_run.source_pull_request_number)
       unresolved = threads.reject { |t| t[:is_resolved] }

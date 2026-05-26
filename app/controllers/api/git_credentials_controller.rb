@@ -21,16 +21,21 @@ module Api
         return
       end
 
-      github_token = project.github_token
-
-      unless github_token&.active?
-        render json: { error: "Project GitHub token is missing or inactive" }, status: :forbidden
+      token = project.github_credential
+      unless token
+        render json: { error: github_credential_unavailable_message(project) }, status: :forbidden
         return
       end
 
-      github_token.touch_last_used!
+      project.github_token&.touch_last_used!
 
-      render plain: credential_response(github_token.token), content_type: "text/plain"
+      render plain: credential_response(token), content_type: "text/plain"
+    rescue Github::AppInstallation::ConfigurationError => e
+      Rails.logger.error(message: "git_credentials.app_installation_token_failed", error: e.message)
+      render json: { error: e.message }, status: :service_unavailable
+    rescue Github::AppInstallation::Error => e
+      Rails.logger.error(message: "git_credentials.app_installation_token_failed", error: e.message)
+      render json: { error: e.message }, status: :bad_gateway
     end
 
     private
@@ -42,6 +47,14 @@ module Api
         username=x-access-token
         password=#{token}
       CREDENTIALS
+    end
+
+    def github_credential_unavailable_message(project)
+      if project.github_installation_id.present? || project.github_installation.present?
+        "Project GitHub App installation is missing or inactive"
+      else
+        "Project GitHub token is missing or inactive"
+      end
     end
   end
 end

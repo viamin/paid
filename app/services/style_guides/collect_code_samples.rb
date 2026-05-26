@@ -69,7 +69,7 @@ module StyleGuides
     private
 
     def fetch_tree
-      client = project.github_token.client
+      client = project.client
       ref = project.default_branch || "main"
       tree = client.tree(project.full_name, ref, recursive: true)
 
@@ -138,7 +138,7 @@ module StyleGuides
     end
 
     def fetch_samples(grouped)
-      client = project.github_token.client
+      client = project.client
       repo = project.full_name
       total_bytes = 0
       samples = {}

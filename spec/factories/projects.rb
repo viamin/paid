@@ -39,5 +39,10 @@ FactoryBot.define do
     trait :without_creator do
       created_by { nil }
     end
+
+    trait :with_github_installation do
+      github_token { nil }
+      github_installation { association :github_installation, account: account }
+    end
   end
 end

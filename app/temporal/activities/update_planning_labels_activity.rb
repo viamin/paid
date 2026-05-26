@@ -14,7 +14,7 @@ module Activities
 
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
-      client = project.github_token.client
+      client = project.client
 
       update_labels(client, project, issue, task_count)
       update_paid_state(issue, task_count)

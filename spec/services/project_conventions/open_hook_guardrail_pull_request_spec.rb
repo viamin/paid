@@ -20,7 +20,7 @@ RSpec.describe ProjectConventions::OpenHookGuardrailPullRequest do
 
   before do
     allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    allow(project).to receive(:client).and_return(github_client)
     allow(github_client).to receive(:create_pull_request).and_return(pull_request)
   end
 

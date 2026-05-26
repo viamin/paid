@@ -342,7 +342,7 @@ class WorktreeService
     # create origin/* refs. Ensure it exists so fetch_latest and current_commit_sha work.
     ensure_fetch_refspec
 
-    project.github_token.touch_last_used!
+    project.github_token&.touch_last_used!
   rescue Error
     raise
   rescue => e
@@ -355,7 +355,7 @@ class WorktreeService
     ensure_fetch_refspec
     run_git("fetch", "--all", "--prune", chdir: project_repo_path)
 
-    project.github_token.touch_last_used!
+    project.github_token&.touch_last_used!
   end
 
   # Bare repos cloned before the refspec fix lack remote.origin.fetch,
@@ -381,7 +381,7 @@ class WorktreeService
   end
 
   def authenticated_clone_url
-    "https://x-access-token:#{project.github_token.token}@github.com/#{project.full_name}.git"
+    "https://x-access-token:#{project.github_credential}@github.com/#{project.full_name}.git"
   end
 
   def run_git(*args, chdir: nil, raise_on_error: true)

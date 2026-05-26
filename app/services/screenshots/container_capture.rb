@@ -185,7 +185,7 @@ module Screenshots
     end
 
     def fetch_changed_files
-      project.github_token.client.pull_request_files(project.full_name, agent_run.pull_request_number)
+      project.client.pull_request_files(project.full_name, agent_run.pull_request_number)
     rescue GithubClient::Error => e
       log_skip("fetch_files_failed", e.message)
       []
@@ -362,7 +362,7 @@ module Screenshots
       )
 
       Screenshots::PrComment.call(
-        github_client: project.github_token.client,
+        github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
         commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
@@ -535,7 +535,7 @@ module Screenshots
 
     def refresh_pr_comment(status)
       Screenshots::PrComment.call(
-        github_client: project.github_token.client,
+        github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
         commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,

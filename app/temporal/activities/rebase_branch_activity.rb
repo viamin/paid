@@ -48,7 +48,7 @@ module Activities
     private
 
     def fetch_base_branch(agent_run, project)
-      client = project.github_token.client
+      client = project.client
       pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
       pr.base.ref
     end

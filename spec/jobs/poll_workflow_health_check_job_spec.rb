@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "temporalio/client"
 
 RSpec.describe PollWorkflowHealthCheckJob do
   let(:temporal_client) { instance_double(Temporalio::Client) }

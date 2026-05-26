@@ -69,7 +69,7 @@ module Projects
       end
 
       def fetch_content
-        project.github_token.client.file_content(project.full_name, path: path)
+        project.client.file_content(project.full_name, path: path)
       end
     end
   end

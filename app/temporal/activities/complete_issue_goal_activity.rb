@@ -53,7 +53,7 @@ module Activities
       label_name = project.priority_label_for(agent_run.priority_tier)
       return if label_name.blank?
 
-      client = project.github_token.client
+      client = project.client
       client.add_labels_to_issue(project.full_name, agent_run.created_issue_number, [ label_name ])
 
       agent_run.log!("system", "Applied priority label: #{label_name}")

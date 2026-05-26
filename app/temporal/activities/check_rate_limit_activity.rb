@@ -18,7 +18,7 @@ module Activities
       project = Project.find_by(id: project_id)
       return { rate_limit_remaining: 0, rate_limit_low: true, project_missing: true } unless project
 
-      client = project.github_token.client
+      client = project.client
       remaining = client.rate_limit_remaining
 
       low = remaining < threshold

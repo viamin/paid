@@ -41,7 +41,7 @@ module Activities
     def remove_labels(project, issue, labels)
       return if labels.empty?
 
-      client = project.github_token.client
+      client = project.client
       labels.each do |label|
         client.remove_label_from_issue(project.full_name, issue.github_number, label)
       rescue GithubClient::Error => e

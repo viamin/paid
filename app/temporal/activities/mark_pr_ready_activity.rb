@@ -15,7 +15,7 @@ module Activities
       pr_number = input[:pr_number]
       issue = Issue.find(input[:issue_id])
 
-      client = project.github_token.client
+      client = project.client
       pr_data = client.pull_request(project.full_name, pr_number)
 
       if pr_data.draft

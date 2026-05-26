@@ -15,7 +15,7 @@ module Activities
         project = agent_run.project
         issue = agent_run.issue
 
-        client = project.github_token.client
+        client = project.client
 
         # Pre-run guard: verify the branch exists on GitHub and check for
         # an existing open PR. This eliminates orphan branches (#1125) by

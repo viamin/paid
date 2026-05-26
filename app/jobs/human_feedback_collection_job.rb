@@ -51,7 +51,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
   end
 
   def collect_pr_review_feedback(agent_run)
-    github_client = agent_run.project.github_token&.client
+    github_client = github_client_for(agent_run.project)
     return unless github_client
 
     repo = agent_run.project.full_name
@@ -71,7 +71,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
   end
 
   def fetch_pull_request(agent_run)
-    github_client = agent_run.project.github_token&.client
+    github_client = github_client_for(agent_run.project)
     return nil unless github_client
 
     github_client.pull_request(agent_run.project.full_name, agent_run.pull_request_number)
@@ -87,7 +87,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
   def collect_review_comment_count(agent_run, pr_data: nil, attempt: 0)
     pr = pr_data
     unless pr
-      github_client = agent_run.project.github_token&.client
+      github_client = github_client_for(agent_run.project)
       return unless github_client
 
       repo = agent_run.project.full_name
@@ -193,7 +193,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
     )
     return unless metric
 
-    github_client = project.github_token&.client
+    github_client = github_client_for(project)
     return unless github_client
 
     repo = project.full_name
@@ -232,7 +232,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
     )
     return unless metric
 
-    github_client = project.github_token&.client
+    github_client = github_client_for(project)
     return unless github_client
 
     repo = project.full_name
@@ -259,5 +259,11 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   def check_quality_pause(agent_run)
     QualityPause::Check.call(agent_run: agent_run)
+  end
+
+  def github_client_for(project)
+    return unless project.github_credential_present?
+
+    project.client
   end
 end

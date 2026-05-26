@@ -29,7 +29,7 @@ module QualityMetrics
 
     def call
       return nil unless agent_run.pull_request_number
-      return nil unless agent_run.project.github_token&.client
+      return nil unless agent_run.project.github_credential_present?
 
       reactions = fetch_reactions
       return nil if reactions.empty?
@@ -43,7 +43,7 @@ module QualityMetrics
     private
 
     def fetch_reactions
-      github_client = agent_run.project.github_token.client
+      github_client = agent_run.project.client
       repo = agent_run.project.full_name
 
       github_client.pull_request_reactions(repo, agent_run.pull_request_number)

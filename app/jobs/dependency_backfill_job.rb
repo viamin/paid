@@ -25,7 +25,7 @@ class DependencyBackfillJob < ApplicationJob
     project = Project.find_by(id: project_id)
     return unless project
 
-    client = project.github_token.client
+    client = project.client
     backfilled_ids = []
     issue_numbers = issue_numbers.take(MAX_ISSUES_PER_JOB)
     existing_numbers = project.issues.where(github_number: issue_numbers).pluck(:github_number).to_set

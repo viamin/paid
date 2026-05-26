@@ -17,7 +17,7 @@
         Connect a GitHub repository to start using AI agents for development.
       </p>
 
-      <% if @github_tokens.empty? %>
+      <% if @github_tokens.empty? && @github_installations.empty? %>
         <div class="mt-6 rounded-md bg-yellow-50 p-4">
           <div class="flex">
             <div class="flex-shrink-0">
@@ -28,7 +28,7 @@
             <div class="ml-3">
               <h3 class="text-sm font-medium text-yellow-800">No GitHub Tokens Available</h3>
               <div class="mt-2 text-sm text-yellow-700">
-                <p>You need to add a GitHub token before you can add a project.</p>
+                <p>You need to add a GitHub token or GitHub App installation before you can add a project.</p>
               </div>
               <div class="mt-4">
                 <%= link_to new_github_token_path, class: "text-sm font-medium text-yellow-800 underline hover:text-yellow-700" do %>
@@ -56,7 +56,10 @@
         </div>
 
         <%= form_with model: @project, url: projects_path, class: "mt-6",
-            data: { controller: "repository-selector" } do |form| %>
+            data: {
+              controller: "repository-selector",
+              repository_selector_selected_repository_value: [ @project.owner, @project.repo ].compact.join("/")
+            } do |form| %>
           <% if @project.errors.any? %>
             <div class="mb-6 rounded-md bg-red-50 p-4">
               <div class="flex">
@@ -81,7 +84,19 @@
             </div>
           <% end %>
 
-          <div class="space-y-6">
+           <div class="space-y-6">
+            <div>
+              <%= form.label :github_installation_id, "GitHub App Installation", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.select :github_installation_id,
+                    options_from_collection_for_select(@github_installations, :id, :github_installation_id, @project.github_installation_id),
+                    { prompt: "Select an installation..." },
+                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+                    data: { repository_selector_target: "installationSelect", action: "change->repository-selector#installationChanged" } %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Or select a GitHub token below instead.</p>
+            </div>
+
             <div>
               <%= form.label :github_token_id, "GitHub Token", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2">
@@ -91,7 +106,7 @@
                     class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
                     data: { repository_selector_target: "tokenSelect", action: "change->repository-selector#tokenChanged" } %>
               </div>
-              <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository.</p>
+              <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository. Use either a token or an installation, not both.</p>
             </div>
 
             <div>
@@ -102,7 +117,7 @@
                         data-repository-selector-target="repoSelect"
                         data-action="change->repository-selector#repoSelected"
                         disabled>
-                  <option value="">Select a token first...</option>
+                  <option value="">Select a token or installation first...</option>
                 </select>
                 <div data-repository-selector-target="loading" class="hidden absolute right-2 top-2">
                   <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

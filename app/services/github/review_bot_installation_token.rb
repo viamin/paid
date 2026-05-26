@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
-require "base64"
 require "faraday"
-require "openssl"
 
 module Github
   class ReviewBotInstallationToken
@@ -28,25 +26,8 @@ module Github
       app_id.present? && private_key.present? && private_key_parseable?
     end
 
-    # Verifies the configured value actually parses as an RSA key. Catches the
-    # common misconfiguration where the credential is set to a non-PEM value
-    # (e.g. an OpenSSH private key) — in which case the credential passes a
-    # presence check but every JWT mint fails at runtime with a 503 from the
-    # proxy. Memoized per key string so a rotated credential is re-validated
-    # without a process restart.
     def self.private_key_parseable?
-      key = private_key.to_s
-      return false if key.empty?
-      return @private_key_parseable if defined?(@private_key_parse_cache_key) &&
-                                      @private_key_parse_cache_key == key
-
-      @private_key_parse_cache_key = key
-      @private_key_parseable = begin
-        OpenSSL::PKey::RSA.new(key.gsub('\n', "\n"))
-        true
-      rescue OpenSSL::PKey::RSAError
-        false
-      end
+      Github::AppJwt.private_key_parseable?(private_key)
     end
 
     def self.bot_logins
@@ -109,34 +90,7 @@ module Github
     end
 
     def app_jwt
-      now = Time.current.to_i
-      payload = {
-        iat: now - 60,
-        exp: now + (9 * 60),
-        iss: self.class.app_id
-      }
-
-      segments = [
-        jwt_segment(alg: "RS256", typ: "JWT"),
-        jwt_segment(payload)
-      ]
-
-      signature = rsa_private_key.sign(OpenSSL::Digest::SHA256.new, segments.join("."))
-      "#{segments.join(".")}.#{Base64.urlsafe_encode64(signature, padding: false)}"
-    end
-
-    def jwt_segment(payload)
-      Base64.urlsafe_encode64(payload.to_json, padding: false)
-    end
-
-    def rsa_private_key
-      @rsa_private_key ||= OpenSSL::PKey::RSA.new(normalized_private_key)
-    rescue OpenSSL::PKey::RSAError => e
-      raise ConfigurationError, "Paid review bot private key is invalid: #{e.message}"
-    end
-
-    def normalized_private_key
-      self.class.private_key.to_s.gsub('\n', "\n")
+      Github::AppJwt.sign(app_id: self.class.app_id, private_key: self.class.private_key)
     end
 
     def connection

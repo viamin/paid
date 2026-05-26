@@ -31,7 +31,7 @@ class DependabotAutoMergeJob < ApplicationJob
     project = Project.find_by(id: project_id)
     return unless project&.auto_merge_dependabot?
 
-    client = project.github_token.client
+    client = project.client
 
     if pr_number
       evaluate_single_pr(client, project, pr_number)
