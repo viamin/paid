@@ -598,6 +598,20 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "forwards MUTANT_LICENSE_KEY to the agent container when present" do
+        original_mutant_license_key = ENV["MUTANT_LICENSE_KEY"]
+        ENV["MUTANT_LICENSE_KEY"] = "mutant-license-secret"
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).to include("MUTANT_LICENSE_KEY=mutant-license-secret")
+          mock_container
+        end
+
+        service.provision
+      ensure
+        ENV["MUTANT_LICENSE_KEY"] = original_mutant_license_key
+      end
+
       it "configures Google proxy environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]

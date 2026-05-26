@@ -177,12 +177,13 @@ module Activities
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
+      quality_warnings = quality_warning_section(agent_run)
 
       template = resolve_pr_template(agent_run)
       body = if template
-        render_pr_template(template, issue, agent_run, description)
+        render_pr_template(template, issue, agent_run, description, quality_warnings)
       else
-        build_default_pr_body(issue, description, summary: summary)
+        build_default_pr_body(issue, description, summary: summary, quality_warnings: quality_warnings)
       end
 
       {
@@ -191,13 +192,18 @@ module Activities
       }
     end
 
-    def build_default_pr_body(issue, description, summary: nil)
+    def build_default_pr_body(issue, description, summary: nil, quality_warnings: nil)
       parts = []
 
       if description.present?
         parts << description
       else
         parts << fallback_body(issue, summary: summary)
+      end
+
+      if quality_warnings.present?
+        parts << ""
+        parts << quality_warnings
       end
 
       parts << ""
@@ -226,16 +232,45 @@ module Activities
       nil
     end
 
-    def render_pr_template(template, issue, agent_run, description)
+    def render_pr_template(template, issue, agent_run, description, quality_warnings)
       variables = {
         "description" => description.presence || "",
         "agent_summary" => agent_run.agent_summary.presence || "",
         "branch_name" => agent_run.branch_name.to_s,
         "issue_number" => issue&.github_number.to_s,
         "issue_title" => issue&.title.to_s,
-        "issue_url" => issue ? "##{issue.github_number}" : ""
+        "issue_url" => issue ? "##{issue.github_number}" : "",
+        "quality_warnings" => quality_warnings.to_s
       }
       template.render(variables)
+    end
+
+    def quality_warning_section(agent_run)
+      warnings = agent_run.agent_run_logs.system.filter_map do |log|
+        metadata = log.metadata || {}
+        next unless metadata["event"] == "pre_commit_check"
+        next unless metadata["passed"] == false
+        next unless metadata["failure_behavior"] == "warn"
+
+        output = quality_warning_output(metadata)
+        next if output.blank?
+
+        "- #{output}".strip
+      end.uniq
+      return if warnings.empty?
+
+      [
+        "## Quality Warnings",
+        "",
+        *warnings
+      ].join("\n")
+    end
+
+    def quality_warning_output(metadata)
+      feedback_errors = Array(metadata.dig("quality_feedback", "errors"))
+      return feedback_errors.map { |error| error["message"] || error[:message] }.compact.join("; ") if feedback_errors.any?
+
+      metadata["output_preview"].to_s
     end
 
     def fallback_body(issue, summary: nil)

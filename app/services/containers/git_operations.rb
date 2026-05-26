@@ -351,9 +351,10 @@ module Containers
     #
     # @param lint_command [String] command to run for linting
     # @param test_command [String] command to run for tests
+    # @param mutation_command [String] command to run for mutation testing
     # @return [void]
-    def install_git_hooks(lint_command:, test_command:)
-      install_hook("pre-commit", pre_commit_script(lint_command, test_command))
+    def install_git_hooks(lint_command:, test_command:, mutation_command: "true")
+      install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command))
     rescue Error => e
       # Expected failures: hook write/chmod failed, unsafe command, etc.
       Rails.logger.warn(
@@ -1203,9 +1204,10 @@ module Containers
       raise Error, "Hook command contains unsafe characters: #{command.inspect}"
     end
 
-    def pre_commit_script(lint_command, test_command)
+    def pre_commit_script(lint_command, test_command, mutation_command)
       validate_hook_command!(lint_command)
       validate_hook_command!(test_command)
+      validate_hook_command!(mutation_command)
 
       <<~SHELL
         #!/bin/sh
@@ -1228,6 +1230,19 @@ module Containers
           #{test_command} || exit 1
         else
           echo "Warning: test tool not available, skipping test check"
+        fi
+
+        if [ "#{mutation_command}" = "true" ]; then
+          true
+        elif ! grep -Eq "^[[:space:]]*gem[[:space:]]+['\\\"]mutant-(rspec|minitest)['\\\"]" Gemfile 2>/dev/null; then
+          true
+        elif echo "#{mutation_command}" | grep -q -- "--usage commercial" && [ -z "${MUTANT_LICENSE_KEY:-}" ]; then
+          true
+        elif command -v #{mutation_command.split.first} >/dev/null 2>&1; then
+          echo "Running #{mutation_command}..."
+          #{mutation_command} || exit 1
+        else
+          echo "Warning: mutation tool not available, skipping mutation check"
         fi
       SHELL
     end
