@@ -74,7 +74,11 @@
                         <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(runner.rate_limited_until, format: :relative) %></p>
                       <% end %>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900"><%= runner.failure_count %></td>
+                    <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
+                      <span title="<%= runner.failure_count %> failures out of <%= runner.attempt_count %> attempts" aria-label="<%= runner.failure_count %> failures out of <%= runner.attempt_count %> attempts">
+                        <%= runner.failure_count %>/<%= runner.attempt_count %>
+                      </span>
+                    </td>
                   </tr>
                 <% end %>
               </tbody>

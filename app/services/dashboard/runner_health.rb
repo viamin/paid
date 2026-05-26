@@ -3,6 +3,7 @@
 module Dashboard
   class RunnerHealth
     CACHE_TTL = 20.seconds
+    ATTEMPT_WINDOW = 7.days
 
     RunnerStatus = Struct.new(
       :runner,
@@ -13,6 +14,7 @@ module Dashboard
       :status_label,
       :available,
       :failure_count,
+      :attempt_count,
       :rate_limited_until,
       keyword_init: true
     )
@@ -49,9 +51,14 @@ module Dashboard
 
     def runner_rows
       state_by_runner = runner_states.index_by(&:runner_name)
+      attempts_by_runner = recent_attempt_counts_by_runner
 
       configured_runners.map do |runner|
-        build_runner_status(runner, state_by_runner[runner.state_key])
+        build_runner_status(
+          runner,
+          state_by_runner[runner.state_key],
+          attempt_count: attempts_by_runner.fetch(runner.state_key, 0)
+        )
       end.sort_by { |runner| [ status_priority(runner.status), runner.runner.downcase, runner.owner_email.downcase ] }
     end
 
@@ -71,7 +78,7 @@ module Dashboard
         .includes(:user)
     end
 
-    def build_runner_status(runner, state)
+    def build_runner_status(runner, state, attempt_count:)
       state&.check_circuit_recovery!(timeout: circuit_breaker_timeout_for(runner))
 
       status =
@@ -94,8 +101,25 @@ module Dashboard
         status_label: status.to_s.humanize,
         available: status == :available,
         failure_count: state&.failure_count || 0,
+        attempt_count: [ attempt_count, state&.failure_count || 0 ].max,
         rate_limited_until: state&.rate_limited_until
       )
+    end
+
+    def recent_attempt_counts_by_runner
+      configured_state_keys = configured_runners.map(&:state_key)
+      return {} if configured_state_keys.empty?
+
+      account_runs
+        .where(created_at: ATTEMPT_WINDOW.ago..)
+        .joins("CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt")
+        .where("COALESCE(attempt->>'runner', attempt->>'provider') IN (?)", configured_state_keys)
+        .group(Arel.sql("COALESCE(attempt->>'runner', attempt->>'provider')"))
+        .count
+    end
+
+    def account_runs
+      AgentRun.joins(:project).where(projects: { account_id: account.id })
     end
 
     def circuit_breaker_timeout_for(runner)
