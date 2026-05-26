@@ -1259,6 +1259,15 @@ RSpec.describe Prompts::BuildForPr do
       expect(described_class.select_trusted_comments([ dropped ], project: project)).to be_empty
     end
 
+    it "passes the raw comment body into the Paid-generated comment detector" do
+      kept = comment(login: "trusteduser", body: "plain body")
+      allow(described_class).to receive(:paid_generated_pr_comment?).and_return(false)
+
+      described_class.select_trusted_comments([ kept ], project: project)
+
+      expect(described_class).to have_received(:paid_generated_pr_comment?).with("plain body")
+    end
+
     it "preserves input order for the kept comments" do
       a = comment(login: "trusteduser", body: "first")
       b = comment(login: "randomdrive-by")

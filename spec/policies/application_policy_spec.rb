@@ -84,6 +84,24 @@ RSpec.describe ApplicationPolicy do
       end
     end
 
+    describe "#new?" do
+      it "matches create? permissions" do
+        account = create(:account)
+        create(:user, account: account)
+        member = create(:user, :member, account: account)
+
+        expect(described_class.new(member, account)).to be_new
+      end
+
+      it "does not permit users who cannot create" do
+        account = create(:account)
+        create(:user, account: account)
+        viewer = create(:user, :viewer, account: account)
+
+        expect(described_class.new(viewer, account)).not_to be_new
+      end
+    end
+
     describe "#update?" do
       it "permits owner" do
         account = create(:account)
@@ -167,15 +185,52 @@ RSpec.describe ApplicationPolicy do
         expect(described_class.new(other_user, account)).not_to be_destroy
       end
     end
+
+    describe "#edit?" do
+      it "matches update? permissions" do
+        account = create(:account)
+        create(:user, account: account)
+        admin = create(:user, :admin, account: account)
+
+        expect(described_class.new(admin, account)).to be_edit
+      end
+
+      it "does not permit users who cannot update" do
+        account = create(:account)
+        create(:user, account: account)
+        viewer = create(:user, :viewer, account: account)
+
+        expect(described_class.new(viewer, account)).not_to be_edit
+      end
+    end
+  end
+
+  describe "records with an account association" do
+    it "authorizes against the record account" do
+      account = create(:account)
+      user = create(:user, account: account)
+      record = create(:project, account: account)
+
+      expect(described_class.new(user, record)).to be_show
+    end
   end
 
   describe ApplicationPolicy::Scope do
+    it "raises when no user is present" do
+      expect {
+        described_class.new(nil, User).resolve
+      }.to raise_error(Pundit::NotAuthorizedError, "must be logged in")
+    end
+
     it "scopes records to the user's account" do
       account = create(:account)
       user = create(:user, account: account)
+      in_account = user
+      out_of_account = create(:user, account: create(:account))
       scope = described_class.new(user, User)
 
-      expect(scope.resolve.to_sql).to include("account_id")
+      expect(scope.resolve).to contain_exactly(in_account)
+      expect(scope.resolve).not_to include(out_of_account)
     end
 
     it "raises NotImplementedError for models without account association" do
@@ -183,7 +238,10 @@ RSpec.describe ApplicationPolicy do
       user = create(:user, account: account)
       scope = described_class.new(user, Account)
 
-      expect { scope.resolve }.to raise_error(NotImplementedError)
+      expect { scope.resolve }.to raise_error(
+        NotImplementedError,
+        "ApplicationPolicy::Scope must implement #resolve for models without account association"
+      )
     end
   end
 end

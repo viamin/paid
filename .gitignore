@@ -60,6 +60,9 @@ package-lock.json
 # Ignore code coverage reports
 /coverage/
 
+# Ignore local mutant output
+/.mutant/
+
 # RSpec example status persistence (for --only-failures)
 spec/.examples.txt
 
@@ -203,5 +206,4 @@ __pycache__/
 
  # Dev Container feature lockfile (machine-generated, not reproducible across machines)
 .devcontainer/devcontainer-lock.json
-
 

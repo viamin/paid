@@ -22,7 +22,7 @@ module OperatorConsole
     end
 
     def new?
-      create?
+      false
     end
 
     def update?
