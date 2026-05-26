@@ -106,7 +106,6 @@ module Github
       projects_to_migrate = github_token.projects.to_a
       return BulkResult.new(total: 0, successful: 0, failed: 0, results: []) if projects_to_migrate.empty?
 
-      accessible_repo_ids = accessible_installation_repos.pluck("id")
       results = projects_to_migrate.map do |project|
         begin
           service = self.class.new(
@@ -116,14 +115,7 @@ module Github
             actor: actor,
             **options
           )
-          result = service.migrate
-
-          unless accessible_repo_ids.include?(project.github_id)
-            result.warnings ||= []
-            result.warnings << "Repository not in installation's accessible repos - manual admin may be required"
-          end
-
-          result
+          service.migrate
         rescue MigrationError => e
           Result.new(success: false, project: project, error: e.message)
         end
@@ -142,7 +134,7 @@ module Github
     def check_all_repositories
       raise MigrationError, "github_token is required" unless github_token
 
-      accessible_repo_ids = accessible_installation_repos.pluck("id").to_set
+      accessible_repo_ids = accessible_installation_repo_ids
       repo_by_name = github_token.accessible_repositories.index_by { |repo| repo["full_name"] }
 
       repo_by_name.each_with_object({}) do |(full_name, repo), result|
@@ -174,7 +166,7 @@ module Github
     def verify_installation_access!
       return unless github_token
 
-      accessible_repo_ids = accessible_installation_repos.pluck("id").to_set
+      accessible_repo_ids = accessible_installation_repo_ids
       target_repo_ids = if project
         [ project.github_id ]
       else
@@ -192,6 +184,10 @@ module Github
 
     def accessible_installation_repos
       github_installation.accessible_repositories || []
+    end
+
+    def accessible_installation_repo_ids
+      @accessible_installation_repo_ids ||= accessible_installation_repos.map { |repo| repo["id"] }.to_set
     end
 
     def perform_migration

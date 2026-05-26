@@ -54,7 +54,8 @@ RSpec.describe Github::MigrationService do
 
       failed_result = result.results.find { |entry| entry.project == inaccessible_project }
       expect(failed_result).not_to be_success
-      expect(failed_result.warnings).to include(/manual admin may be required/)
+      expect(failed_result.error).to include("Installation does not have access to repository")
+      expect(failed_result.warnings).to be_empty
     end
   end
 
