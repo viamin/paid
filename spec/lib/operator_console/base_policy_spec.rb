@@ -19,9 +19,12 @@ RSpec.describe OperatorConsole::BasePolicy, :no_db do
 
     expect(policy.index?).to be(true)
     expect(policy.show?).to be(true)
+    expect(policy.search?).to be(true)
     expect(policy.update?).to be(true)
+    expect(policy.edit?).to be(true)
     expect(policy.act_on?).to be(true)
     expect(policy.create?).to be(false)
+    expect(policy.new?).to be(false)
     expect(policy.destroy?).to be(false)
   end
 
@@ -30,8 +33,11 @@ RSpec.describe OperatorConsole::BasePolicy, :no_db do
 
     expect(policy.index?).to be(false)
     expect(policy.show?).to be(false)
+    expect(policy.search?).to be(false)
     expect(policy.update?).to be(false)
+    expect(policy.edit?).to be(false)
     expect(policy.act_on?).to be(false)
+    expect(policy.new?).to be(false)
   end
 
   it "resolves full scope only for operators" do
