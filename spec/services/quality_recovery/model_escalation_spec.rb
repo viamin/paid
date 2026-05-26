@@ -12,6 +12,7 @@ RSpec.describe QualityRecovery::ModelEscalation do
   describe ".start" do
     context "when no escalation is active" do
       before do
+        create(:llm_model, tier: "high", active: true)
         create(:model_selection, agent_run: agent_run, tier: "mid")
       end
 

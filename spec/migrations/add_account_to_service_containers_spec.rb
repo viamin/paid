@@ -46,17 +46,17 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
       add_strategy_version_to_orchestration_decisions_migration.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
       strategy_rls_migration.down if strategies_have_rls?
       strategy_experiments_rls_migration.down if strategy_experiment_tables_have_rls?
-      orchestration_decisions_migration.down if orchestration_decisions_table_exists?
+      disable_orchestration_decisions_rls if orchestration_decisions_have_rls?
       disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
-      exception_incidents_migration.down if exception_incidents_table_exists?
+      disable_exception_incidents_rls if exception_incidents_have_rls?
       issue_merge_subscriptions_rls_migration.down if issue_merge_subscriptions_have_rls?
       knowledge_recommendations_rls_migration.down if knowledge_recommendations_has_rls?
       chat_rls_migration.down if chat_tables_have_rls?
       llm_output_metrics_rls_migration.down if llm_output_metrics_has_rls?
       knowledge_rls_migration.down if knowledge_usage_stats_has_rls?
-      notification_rls_migration.down
-      failure_classifications_migration.down if failure_classifications_table_exists?
-      marketplace_migration.down if marketplace_tables_exist?
+      notification_rls_migration.down if notification_rule_states_have_rls?
+      disable_failure_classifications_rls if failure_classifications_have_rls?
+      disable_marketplace_rls if marketplace_tables_have_rls?
       rls_migration.down
     end
     restore_service_container_account_reference unless service_containers_have_account_reference?
@@ -69,26 +69,7 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     truncate_migration_test_data
 
     restore_service_container_account_reference unless service_containers_have_account_reference?
-    if restore_schema_after_spec?
-      rls_migration.up
-      notification_rls_migration.up
-      knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
-      llm_output_metrics_rls_migration.up unless llm_output_metrics_has_rls?
-      chat_rls_migration.up unless chat_tables_have_rls?
-      knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
-      issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
-      exception_incidents_migration.up unless exception_incidents_table_exists?
-      restore_exception_incidents_logidze!
-      failure_classifications_migration.up unless failure_classifications_table_exists?
-      marketplace_migration.up unless marketplace_tables_exist?
-      orchestration_decisions_migration.up unless orchestration_decisions_table_exists?
-      add_strategy_version_to_orchestration_decisions_migration.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
-      ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
-      tighten_orchestration_decisions_strategy_version_tenant_check_migration.up if orchestration_decisions_have_strategy_version_reference?
-      strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
-      strategy_rls_migration.up unless strategies_have_rls?
-      FixStrategiesRlsInfiniteRecursion.new.up
-    end
+    restore_tenant_schema!
     OrchestrationDecision.reset_column_information
     ServiceContainer.reset_column_information
   end
@@ -130,14 +111,6 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
   end
 
   private
-
-  def restore_schema_after_spec?
-    tenant_policy_count.zero? ||
-      !exception_incidents_table_exists? ||
-      !failure_classifications_table_exists? ||
-      !marketplace_tables_exist? ||
-      !orchestration_decisions_table_exists?
-  end
 
   def create_shared_service_container
     first_project = create(:project)
@@ -265,6 +238,12 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ).to_i.positive?
   end
 
+  def notification_rule_states_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'notification_rule_states' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
   def chat_tables_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'chat_sessions' AND policyname = 'tenant_isolation'"
@@ -319,6 +298,12 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
   def failure_classifications_table_exists?
     ActiveRecord::Base.connection.table_exists?(:failure_classifications)
+  end
+
+  def failure_classifications_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'failure_classifications' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
   end
 
   def decomposition_decisions_have_rls?
@@ -410,10 +395,141 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
     ].any? { |table_name| ActiveRecord::Base.connection.table_exists?(table_name) }
   end
 
+  def marketplace_tables_have_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i.positive?
+      SELECT COUNT(*)
+      FROM pg_policies
+      WHERE policyname = 'tenant_isolation'
+        AND tablename IN (
+          'agent_run_marketplace_entries',
+          'marketplace_entry_rules',
+          'marketplace_entry_versions',
+          'marketplace_entries'
+        )
+    SQL
+  end
+
   def tenant_policy_count
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE policyname = 'tenant_isolation'"
     ).to_i
+  end
+
+  def disable_exception_incidents_rls
+    disable_rls_for_table(:exception_incidents)
+  end
+
+  def disable_failure_classifications_rls
+    disable_rls_for_table(:failure_classifications)
+  end
+
+  def disable_orchestration_decisions_rls
+    disable_rls_for_table(:orchestration_decisions)
+  end
+
+  def disable_marketplace_rls
+    %i[
+      agent_run_marketplace_entries
+      marketplace_entry_rules
+      marketplace_entry_versions
+      marketplace_entries
+    ].each { |table_name| disable_rls_for_table(table_name) }
+  end
+
+  def disable_rls_for_table(table_name)
+    connection = ActiveRecord::Base.connection
+    return unless connection.table_exists?(table_name)
+
+    connection.execute("DROP POLICY IF EXISTS tenant_isolation ON #{table_name}")
+    connection.execute("ALTER TABLE #{table_name} NO FORCE ROW LEVEL SECURITY")
+    connection.execute("ALTER TABLE #{table_name} DISABLE ROW LEVEL SECURITY")
+  end
+
+  def restore_tenant_schema!
+    rls_migration.up unless tenant_policy_count.positive?
+    notification_rls_migration.up unless notification_rule_states_have_rls?
+    knowledge_rls_migration.up unless knowledge_usage_stats_has_rls?
+    llm_output_metrics_rls_migration.up unless llm_output_metrics_has_rls?
+    chat_rls_migration.up unless chat_tables_have_rls?
+    knowledge_recommendations_rls_migration.up unless knowledge_recommendations_has_rls?
+    issue_merge_subscriptions_rls_migration.up unless issue_merge_subscriptions_have_rls?
+    enable_exception_incidents_rls unless exception_incidents_have_rls?
+    restore_exception_incidents_logidze!
+    enable_failure_classifications_rls unless failure_classifications_have_rls?
+    enable_marketplace_rls unless marketplace_tables_have_rls?
+    enable_orchestration_decisions_rls unless orchestration_decisions_have_rls?
+    add_strategy_version_to_orchestration_decisions_migration.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
+    ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
+    tighten_orchestration_decisions_strategy_version_tenant_check_migration.up if orchestration_decisions_have_strategy_version_reference?
+    strategy_experiments_rls_migration.up unless strategy_experiment_tables_have_rls?
+    strategy_rls_migration.up unless strategies_have_rls?
+    FixStrategiesRlsInfiniteRecursion.new.up
+  end
+
+  def enable_exception_incidents_rls
+    return unless exception_incidents_table_exists?
+
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      ALTER TABLE exception_incidents ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE exception_incidents FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON exception_incidents
+        USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
+        WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
+    SQL
+  end
+
+  def enable_failure_classifications_rls
+    return unless failure_classifications_table_exists?
+
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      ALTER TABLE failure_classifications ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE failure_classifications FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON failure_classifications
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = failure_classifications.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = failure_classifications.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        );
+    SQL
+  end
+
+  def enable_marketplace_rls
+    return unless marketplace_tables_exist?
+
+    marketplace_migration.send(:enable_row_level_security)
+  end
+
+  def enable_orchestration_decisions_rls
+    return unless orchestration_decisions_table_exists?
+
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      ALTER TABLE orchestration_decisions ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE orchestration_decisions FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON orchestration_decisions
+        USING (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = orchestration_decisions.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR EXISTS (
+            SELECT 1 FROM projects
+            WHERE projects.id = orchestration_decisions.project_id
+              AND projects.account_id = paid_current_account_id()
+          )
+        );
+    SQL
   end
 
   def service_containers_have_account_reference?

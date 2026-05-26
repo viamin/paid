@@ -50,7 +50,7 @@ module QualityRecovery
     def start
       return result(started: false, pause: true, reason: "quality_recovery_exhausted") if exhausted?
       return result(started: false, defer_pause: true, reason: "already_active") if self.class.active?(project)
-      return result(started: false, pause: true, reason: "no_higher_tier") unless to_tier
+      return result(started: false, pause: true, reason: "no_higher_tier") unless higher_tier_available?
 
       project.update!(model_preferences: preferences_with(escalation_state))
       record_action
@@ -106,6 +106,10 @@ module QualityRecovery
         index = LlmModel::TIERS.index(from_tier)
         LlmModel::TIERS[index + 1] if index
       end
+    end
+
+    def higher_tier_available?
+      to_tier.present? && LlmModel.active.by_tier(to_tier).exists?
     end
 
     def recent_selection
