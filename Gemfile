@@ -149,6 +149,9 @@ gem "good_job", "~> 4.18"
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.5"
 
+# PDF text extraction for knowledge imports
+gem "pdf-reader"
+
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"
 
