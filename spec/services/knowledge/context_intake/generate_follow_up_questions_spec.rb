@@ -27,6 +27,37 @@ RSpec.describe Knowledge::ContextIntake::GenerateFollowUpQuestions do
     expect(session.reload.metadata["follow_up_generation_attempted_rounds"]).to eq([ 1 ])
   end
 
+  it "does not call GenerateQuestions when generate_with_agent is false" do
+    create_follow_up_question!
+
+    described_class.call(
+      session: session,
+      project: project,
+      current_question_key: "naming_conventions",
+      generate_with_agent: false
+    )
+
+    expect(Knowledge::ContextIntake::GenerateQuestions).not_to have_received(:call)
+  end
+
+  it "calls GenerateQuestions when generate_with_agent is true" do
+    create_follow_up_question!
+
+    described_class.call(
+      session: session,
+      project: project,
+      current_question_key: "naming_conventions",
+      generate_with_agent: true
+    )
+
+    expect(Knowledge::ContextIntake::GenerateQuestions).to have_received(:call).with(
+      project: project,
+      session: session,
+      round: 2,
+      auto_approve: true
+    )
+  end
+
   def create_follow_up_question!
     create(
       :context_intake_question,

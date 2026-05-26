@@ -142,6 +142,36 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).to include("Couldn&#39;t find ContextIntakeResponse")
       expect(response.body).to include(last_question.fetch(:text))
     end
+
+    it "invokes AI question generation when the feature flag is enabled" do
+      FeatureFlags.enable!(:context_intake_agent_questions, project:)
+      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+
+      patch project_context_intake_path(project),
+        params: {
+          question_key: last_question.fetch(:key),
+          answer_text: "Final answer",
+          navigation_action: "finish"
+        },
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(Knowledge::ContextIntake::GenerateQuestions).to have_received(:call)
+    end
+
+    it "does not invoke AI question generation when the feature flag is disabled" do
+      FeatureFlags.disable!(:context_intake_agent_questions)
+      allow(Knowledge::ContextIntake::GenerateQuestions).to receive(:call).and_return([])
+
+      patch project_context_intake_path(project),
+        params: {
+          question_key: last_question.fetch(:key),
+          answer_text: "Final answer",
+          navigation_action: "finish"
+        },
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(Knowledge::ContextIntake::GenerateQuestions).not_to have_received(:call)
+    end
   end
 
   def create_follow_up_question!(parent_question_key)

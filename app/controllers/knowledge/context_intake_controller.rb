@@ -112,7 +112,8 @@ module Knowledge
       follow_up_result = ContextIntake::GenerateFollowUpQuestions.call(
         session: @session,
         project: @project,
-        current_question_key: params[:question_key]
+        current_question_key: params[:question_key],
+        generate_with_agent: feature_enabled?(:context_intake_agent_questions, project: @project)
       )
       if follow_up_result.next_question_key.present?
         load_wizard_state(active_question_key: follow_up_result.next_question_key)
