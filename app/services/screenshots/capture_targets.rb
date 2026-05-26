@@ -205,6 +205,7 @@ module Screenshots
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
+      "github_installations_controller.rb" => [ :project_new ],
       "github_tokens_controller.rb" => %i[github_tokens github_token_new github_token_show],
       "linear_tokens_controller.rb" => %i[linear_tokens linear_token_new linear_token_show],
       "notifications_controller.rb" => [ :notifications ],

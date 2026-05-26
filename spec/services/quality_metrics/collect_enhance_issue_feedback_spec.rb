@@ -32,8 +32,10 @@ RSpec.describe QualityMetrics::CollectEnhanceIssueFeedback do
     end
 
     before do
-      allow(agent_run.project).to receive(:github_credential_present?).and_return(true)
-      allow(agent_run.project).to receive(:client).and_return(github_client)
+      allow(agent_run.project).to receive_messages(
+        github_credential_present?: true,
+        client: github_client
+      )
     end
 
     it "records reaction score and issue author reply for the enhancement comment" do

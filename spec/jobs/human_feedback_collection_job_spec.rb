@@ -8,8 +8,10 @@ RSpec.describe HumanFeedbackCollectionJob do
     let(:github_client) { instance_double(GithubClient) }
 
     def stub_project_client(project, github_client)
-      allow(project).to receive(:github_credential_present?).and_return(true)
-      allow(project).to receive(:client).and_return(github_client)
+      allow(project).to receive_messages(
+        github_credential_present?: true,
+        client: github_client
+      )
     end
 
     context "with create_pr goal" do

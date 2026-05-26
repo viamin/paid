@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "temporalio/client"
 require "ostruct"
 
 RSpec.describe "Projects" do

@@ -17,8 +17,10 @@ RSpec.describe Github::CacheWarmer do
   end
 
   before do
-    allow(project).to receive(:github_credential).and_return("ghp_test123")
-    allow(project).to receive(:client).and_return(github_client)
+    allow(project).to receive_messages(
+      github_credential: "ghp_test123",
+      client: github_client
+    )
     allow(github_client).to receive_messages(
       repository: OpenStruct.new(id: 1),
       labels: [],
