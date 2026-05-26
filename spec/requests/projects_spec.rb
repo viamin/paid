@@ -1504,6 +1504,17 @@ RSpec.describe "Projects" do
         expect(project.github_token).to be_nil
       end
 
+      it "ignores stale PAT params when switching a project from PAT auth to app auth" do
+        installation = create(:github_installation, account: account, accessible_repositories: [ { "full_name" => "octocat/hello", "id" => 123 } ])
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        patch project_path(project), params: { project: { github_auth_source: "app", github_token_id: github_token.id } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.github_installation).to eq(installation)
+        expect(project.github_token).to be_nil
+      end
+
       it "re-renders the form when switching to app auth before installation exists" do
         project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
 
@@ -1520,6 +1531,18 @@ RSpec.describe "Projects" do
         new_token = create(:github_token, account: account, name: "Fallback Token")
 
         patch project_path(project), params: { project: { github_auth_source: "pat", github_token_id: new_token.id } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.github_token).to eq(new_token)
+        expect(project.github_installation).to be_nil
+      end
+
+      it "ignores stale app params when switching a project from app auth back to PAT auth" do
+        installation = create(:github_installation, account: account)
+        project = create(:project, :with_github_installation, account: account, github_installation: installation)
+        new_token = create(:github_token, account: account, name: "Fallback Token")
+
+        patch project_path(project), params: { project: { github_auth_source: "pat", github_token_id: new_token.id, github_installation_id: installation.id } }
 
         expect(response).to redirect_to(project_path(project))
         expect(project.reload.github_token).to eq(new_token)

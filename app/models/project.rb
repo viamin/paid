@@ -870,10 +870,6 @@ class Project < ApplicationRecord
     Array(installations).find { |installation| installation.covers_repository?(full_name) }
   end
 
-  def paid_agents_installation_available?(installations: active_github_installations)
-    paid_agents_installation(installations:).present?
-  end
-
   # Returns the GitHub login that will appear as the PR author for
   # commits/PRs created with this project's credentials.
   # For app-backed projects, returns the bot login (e.g. "paid-agents[bot]").

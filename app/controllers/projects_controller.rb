@@ -162,7 +162,7 @@ class ProjectsController < ApplicationController
     end
 
     assign_selected_github_credential(@project, update_params)
-    update_params = update_params.except(:github_auth_source)
+    update_params = update_params.except(:github_auth_source, :github_token_id, :github_installation_id)
 
     if @project.update(update_params)
       audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
