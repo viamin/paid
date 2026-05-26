@@ -17,6 +17,7 @@ class Project < ApplicationRecord
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
+  GITHUB_AUTH_SOURCES = %w[app pat].freeze
   SCREENSHOT_DRIVERS = {
     "playwright" => "Best for modern browser flows and JavaScript-heavy apps.",
     "cuprite" => "Best for Rails and other server-rendered apps using Capybara."
@@ -861,6 +862,18 @@ class Project < ApplicationRecord
     github_token.present? || github_installation.present?
   end
 
+  def github_auth_source
+    github_installation.present? ? "app" : "pat"
+  end
+
+  def paid_agents_installation(installations: active_github_installations)
+    Array(installations).find { |installation| installation.covers_repository?(full_name) }
+  end
+
+  def paid_agents_installation_available?(installations: active_github_installations)
+    paid_agents_installation(installations:).present?
+  end
+
   # Returns the GitHub login that will appear as the PR author for
   # commits/PRs created with this project's credentials.
   # For app-backed projects, returns the bot login (e.g. "paid-agents[bot]").
@@ -942,6 +955,10 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def active_github_installations
+    account.github_installations.active
+  end
 
   def missing_agent_run_marketplace_entries_table?(error)
     causes = []

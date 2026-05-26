@@ -28,6 +28,10 @@ module Github
       [ slug, bot_login ].freeze
     end
 
+    def self.install_url
+      "https://github.com/apps/#{slug}/installations/new"
+    end
+
     def self.credentials_dig(key)
       Rails.application.credentials.dig(key).presence
     end

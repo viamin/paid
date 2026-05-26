@@ -54,4 +54,30 @@ RSpec.describe GithubInstallation do
       expect(install.active?).to be(false)
     end
   end
+
+  describe "#covers_repository?" do
+    it "returns true when the repository is explicitly accessible" do
+      installation = build(:github_installation, accessible_repositories: [ { "full_name" => "acme/widgets" } ])
+
+      expect(installation.covers_repository?("acme/widgets")).to be(true)
+    end
+
+    it "returns true for all-repo installations on the matching owner" do
+      installation = build(:github_installation, :all_repos, account_login: "acme")
+
+      expect(installation.covers_repository?("acme/widgets")).to be(true)
+    end
+
+    it "returns false when the installation is inactive" do
+      installation = build(:github_installation, :revoked, accessible_repositories: [ { "full_name" => "acme/widgets" } ])
+
+      expect(installation.covers_repository?("acme/widgets")).to be(false)
+    end
+
+    it "returns false when the repository is not covered" do
+      installation = build(:github_installation, accessible_repositories: [ { "full_name" => "acme/other" } ])
+
+      expect(installation.covers_repository?("acme/widgets")).to be(false)
+    end
+  end
 end

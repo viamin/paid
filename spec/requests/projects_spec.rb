@@ -1144,6 +1144,42 @@ RSpec.describe "Projects" do
         expect(response.body).to include("cannot be changed")
       end
 
+      it "defaults the auth source selector to PAT for token-backed projects" do
+        project = create(:project, account: account, github_token: github_token)
+
+        get edit_project_path(project)
+
+        expect(response.body).to include('value="pat" checked="checked"')
+        expect(response.body).to include("Add GitHub Token")
+      end
+
+      it "defaults the auth source selector to the Paid Agents App for app-backed projects" do
+        project = create(:project, :with_github_installation, account: account)
+
+        get edit_project_path(project)
+
+        expect(response.body).to include('value="app" checked="checked"')
+      end
+
+      it "shows install instructions when the Paid Agents App does not cover the repository" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Install the Paid Agents App for this repository")
+        expect(response.body).to include(Github::AppRegistry.install_url)
+      end
+
+      it "hides install instructions when an installation covers the repository" do
+        create(:github_installation, account: account, accessible_repositories: [ { "full_name" => "octocat/hello", "id" => 123 } ])
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Paid Agents App detected")
+        expect(response.body).not_to include("Install the Paid Agents App for this repository")
+      end
+
       it "shows quality pause details and resume action when paused" do
         project = create(:project, account: account, github_token: github_token,
           quality_paused_at: 1.hour.ago,
@@ -1451,6 +1487,39 @@ RSpec.describe "Projects" do
         new_token = create(:github_token, account: account, name: "New Token")
         patch project_path(project), params: { project: { github_token_id: new_token.id } }
         expect(project.reload.github_token).to eq(new_token)
+      end
+
+      it "switches a project from PAT auth to app auth when an installation covers the repository" do
+        installation = create(:github_installation, account: account, accessible_repositories: [ { "full_name" => "octocat/hello", "id" => 123 } ])
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        patch project_path(project), params: { project: { github_auth_source: "app" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.github_installation).to eq(installation)
+        expect(project.github_token).to be_nil
+      end
+
+      it "re-renders the form when switching to app auth before installation exists" do
+        project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
+
+        patch project_path(project), params: { project: { github_auth_source: "app" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("must be installed for octocat/hello")
+        expect(response.body).to include("Install the Paid Agents App for this repository")
+        expect(project.reload.github_token).to eq(github_token)
+      end
+
+      it "switches a project from app auth back to PAT auth" do
+        project = create(:project, :with_github_installation, account: account)
+        new_token = create(:github_token, account: account, name: "Fallback Token")
+
+        patch project_path(project), params: { project: { github_auth_source: "pat", github_token_id: new_token.id } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.github_token).to eq(new_token)
+        expect(project.github_installation).to be_nil
       end
 
       it "does not allow updating to a revoked token" do

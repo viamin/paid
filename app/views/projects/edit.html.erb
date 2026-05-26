@@ -144,27 +144,103 @@
             </div>
           </div>
 
-          <div>
-            <%= form.label :github_installation_id, "GitHub App Installation", class: "block text-sm font-medium leading-6 text-gray-900" %>
-            <div class="mt-2">
-              <%= form.select :github_installation_id,
-                  options_from_collection_for_select(@github_installations, :id, :github_installation_id, @project.github_installation_id),
-                  { include_blank: true },
-                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
-            </div>
-            <p class="mt-1 text-xs text-gray-500">Select a GitHub App installation for repo auth, or use a token below.</p>
-          </div>
+          <fieldset class="rounded-lg border border-gray-200 p-4">
+            <legend class="px-1 text-sm font-semibold text-gray-900">GitHub Authentication</legend>
+            <p class="mt-1 text-sm text-gray-600">
+              Choose how Paid authenticates to <strong><%= @project.full_name %></strong>.
+            </p>
 
-          <div>
-            <%= form.label :github_token_id, "GitHub Token", class: "block text-sm font-medium leading-6 text-gray-900" %>
-            <div class="mt-2">
-              <%= form.select :github_token_id,
-                  options_from_collection_for_select(@github_tokens, :id, :name, @project.github_token_id),
-                  { include_blank: true },
-                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            <div class="mt-4 space-y-3">
+              <label class="block cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-300">
+                <div class="flex items-start gap-3">
+                  <%= form.radio_button :github_auth_source, "app",
+                    checked: @github_auth_source == "app",
+                    class: "mt-1 h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                    data: { action: "change->project-settings-form#githubAuthSourceChanged", project_settings_form_target: "githubAuthSource" } %>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-gray-900">Paid Agents App</span>
+                      <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">Default</span>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-600">
+                      Use the <code><%= Github::AppRegistry.bot_login %></code> GitHub App identity for repository access and PR authorship.
+                    </p>
+                  </div>
+                </div>
+              </label>
+
+              <label class="block cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-300">
+                <div class="flex items-start gap-3">
+                  <%= form.radio_button :github_auth_source, "pat",
+                    checked: @github_auth_source == "pat",
+                    class: "mt-1 h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                    data: { action: "change->project-settings-form#githubAuthSourceChanged", project_settings_form_target: "githubAuthSource" } %>
+                  <div>
+                    <span class="text-sm font-medium text-gray-900">Personal Access Token</span>
+                    <p class="mt-1 text-sm text-gray-600">
+                      Keep using a GitHub token for repositories that are not yet using the Paid Agents App.
+                    </p>
+                  </div>
+                </div>
+              </label>
             </div>
-            <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository. Use either a token or an installation, not both.</p>
-          </div>
+
+            <div class="mt-4" data-project-settings-form-target="appPanel">
+              <% if @paid_agents_installation.present? %>
+                <div class="rounded-md border border-green-200 bg-green-50 p-4">
+                  <div class="flex items-start gap-3">
+                    <svg class="mt-0.5 h-5 w-5 flex-none text-green-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fill-rule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-8 8.07a1 1 0 0 1-1.42.006L3.3 10.79a1 1 0 1 1 1.4-1.428l2.28 2.235 7.3-7.365a1 1 0 0 1 1.424-.006Z" clip-rule="evenodd" />
+                    </svg>
+                    <div>
+                      <h3 class="text-sm font-medium text-green-900">Paid Agents App detected</h3>
+                      <p class="mt-1 text-sm text-green-800">
+                        Installation <strong>#<%= @paid_agents_installation.github_installation_id %></strong> covers this repository through <strong><%= @paid_agents_installation.account_login %></strong>.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              <% else %>
+                <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
+                  <div class="flex items-start gap-3">
+                    <svg class="mt-0.5 h-5 w-5 flex-none text-amber-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.72-1.36 3.485 0l6.518 11.592c.75 1.334-.213 2.992-1.742 2.992H3.48c-1.53 0-2.492-1.658-1.742-2.992L8.257 3.1ZM11 13a1 1 0 1 0-2 0 1 1 0 0 0 2 0Zm-1-7a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Z" clip-rule="evenodd" />
+                    </svg>
+                    <div>
+                      <h3 class="text-sm font-medium text-amber-900">Install the Paid Agents App for this repository</h3>
+                      <p class="mt-1 text-sm text-amber-800">
+                        Paid could not find an active <code><%= Github::AppRegistry.bot_login %></code> installation that covers <strong><%= @project.full_name %></strong>.
+                        Install the app on <strong><%= @project.owner %></strong> and grant it access to this repository, then reload this page.
+                      </p>
+                      <div class="mt-3">
+                        <%= link_to "Install Paid Agents App", Github::AppRegistry.install_url,
+                          class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+                          target: "_blank", rel: "noopener noreferrer" %>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+
+            <div class="mt-4 hidden" data-project-settings-form-target="patPanel">
+              <div>
+                <%= form.label :github_token_id, "GitHub Token", class: "block text-sm font-medium leading-6 text-gray-900" %>
+                <div class="mt-2">
+                  <%= form.select :github_token_id,
+                      options_from_collection_for_select(@github_tokens, :id, :name, @project.github_token_id),
+                      { include_blank: true },
+                      class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository.</p>
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-3 text-sm">
+                <%= link_to "Add GitHub Token", new_github_token_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "Manage Tokens", github_tokens_path, class: "font-medium text-gray-700 hover:text-gray-900" %>
+              </div>
+            </div>
+          </fieldset>
 
           <div>
             <%= form.label :name, "Display Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
