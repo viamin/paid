@@ -13,8 +13,8 @@ module Knowledge
       authorize @project, :show?
       @session ||= latest_session
       return unless @session&.in_progress?
-      return render_pending_response if @session.follow_up_generation_pending? && turbo_frame_request?
-      return if @session.follow_up_generation_pending?
+      return render_pending_response if blocking_follow_up_generation_pending? && turbo_frame_request?
+      return if blocking_follow_up_generation_pending?
 
       load_wizard_state(active_question_key: params[:question])
       render_wizard_response if turbo_frame_request?
@@ -179,6 +179,10 @@ module Knowledge
         progress: @progress,
         wizard_error: @wizard_error
       }
+    end
+
+    def blocking_follow_up_generation_pending?
+      @session.follow_up_generation_pending? && @session.follow_up_generation_blocking?
     end
 
     def attempted_rounds
