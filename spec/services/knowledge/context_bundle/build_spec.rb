@@ -72,6 +72,12 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to include("Modern CSS")
         expect(result[:content]).to include("Prefer grid for two-dimensional layouts")
       end
+
+      it "preloads active ordered chunks for document artifacts" do
+        artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "reference_document")
+
+        expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
+      end
     end
 
     context "with symbol artifacts" do
@@ -219,13 +225,18 @@ RSpec.describe Knowledge::ContextBundle::Build do
 
     context "with schema artifacts" do
       before do
-        create(:knowledge_artifact,
+        artifact = create(:knowledge_artifact,
           project: project,
           collector_run: collector_run,
           artifact_type: "schema",
           identifier: "users",
           content: "users (id bigint, email text)",
           status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: artifact,
+          project: project,
+          chunk_type: "context",
+          content: "Users belong to accounts.")
       end
 
       it "includes a schema section" do
@@ -234,12 +245,19 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:sections]).to include(:schema)
         expect(result[:content]).to include("Data Model")
         expect(result[:content]).to include("users (id bigint, email text)")
+        expect(result[:content]).to include("Users belong to accounts.")
       end
 
       it "includes schema in artifact_type_counts" do
         result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id)
 
         expect(result[:artifact_type_counts]).to include("schema" => 1)
+      end
+
+      it "preloads active ordered chunks for schema artifacts" do
+        artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "schema")
+
+        expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
       end
     end
 
@@ -356,6 +374,12 @@ RSpec.describe Knowledge::ContextBundle::Build do
           [ "route", agent_run.goal, "bundle", 1, 0 ]
         ])
         expect(KnowledgeUsageStat.where(agent_run: agent_run).pluck(:token_count)).to all(be_positive)
+      end
+
+      it "preloads active ordered chunks for business context artifacts" do
+        artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "business_context")
+
+        expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
       end
 
       it "upserts usage records idempotently" do

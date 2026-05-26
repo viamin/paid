@@ -317,13 +317,13 @@ module Knowledge
 
         if type == "business_context"
           scope
-            .includes(:knowledge_chunks)
+            .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(20)
             .to_a
         elsif type == "reference_document"
           scope
-            .includes(:knowledge_chunks)
+            .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(10)
             .to_a
@@ -342,7 +342,7 @@ module Knowledge
             .to_a
         elsif type == "schema"
           scope
-            .includes(:knowledge_chunks)
+            .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(20)
             .to_a
