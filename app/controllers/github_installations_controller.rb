@@ -39,7 +39,7 @@ class GithubInstallationsController < ApplicationController
   def migrate_projects
     authorize @github_installation, :show?
 
-    @github_tokens = current_account.github_tokens.active.includes(:created_by).order(created_at: :desc)
+    @github_tokens = current_account.github_tokens.active.includes(:created_by, :projects).order(created_at: :desc)
     @projects = current_account.projects.where(github_token_id: @github_tokens.pluck(:id)).includes(:github_token).order(:name)
     @installation_repos = normalized_repositories
 
