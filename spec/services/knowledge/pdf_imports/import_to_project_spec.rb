@@ -12,7 +12,8 @@ RSpec.describe Knowledge::PdfImports::ImportToProject do
     instance_double(
       ActionDispatch::Http::UploadedFile,
       original_filename: "modern_css.pdf",
-      content_type: "application/pdf"
+      content_type: "application/pdf",
+      size: 1.megabyte
     )
   end
   let(:document) do
@@ -62,5 +63,13 @@ RSpec.describe Knowledge::PdfImports::ImportToProject do
     expect {
       described_class.call(project: project, file: file, actor: actor)
     }.to raise_error(Knowledge::PdfImports::ImportError, /available on professional and enterprise plans/)
+  end
+
+  it "rejects oversized PDFs" do
+    allow(file).to receive(:size).and_return(51.megabytes)
+
+    expect {
+      described_class.call(project: project, file: file, actor: actor)
+    }.to raise_error(Knowledge::PdfImports::ImportError, "PDF must be smaller than 50 MB.")
   end
 end

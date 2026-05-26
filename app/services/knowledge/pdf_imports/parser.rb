@@ -34,7 +34,11 @@ module Knowledge
           source_name: source_name
         )
       rescue PDF::Reader::MalformedPDFError, PDF::Reader::EncryptedPDFError,
-        PDF::Reader::UnsupportedFeatureError, ArgumentError => e
+        PDF::Reader::UnsupportedFeatureError => e
+        raise ImportError, "Could not read PDF: #{e.message}"
+      rescue ArgumentError => e
+        raise unless pdf_reader_error?(e)
+
         raise ImportError, "Could not read PDF: #{e.message}"
       ensure
         io&.rewind if io.respond_to?(:rewind)
@@ -67,6 +71,10 @@ module Knowledge
           .gsub(/[ \t]+/, " ")
           .gsub(/\n{3,}/, "\n\n")
           .strip
+      end
+
+      def pdf_reader_error?(error)
+        error.backtrace_locations&.first&.path&.include?("/pdf/reader")
       end
     end
   end

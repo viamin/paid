@@ -3,6 +3,7 @@
 module MarketplaceEntries
   class ImportFromPdf
     class ImportError < StandardError; end
+    MAX_PDF_SIZE = 50.megabytes
 
     def initialize(account:, actor:, params:)
       @account = account
@@ -17,6 +18,7 @@ module MarketplaceEntries
     def call
       validate_plan!
       validate_file!
+      validate_size!
 
       document = Knowledge::PdfImports::Parser.call(file: params[:pdf_file])
       chunks = Knowledge::PdfImports::Chunker.call(document: document)
@@ -67,6 +69,14 @@ module MarketplaceEntries
       return if file.content_type.to_s == "application/pdf"
 
       raise ImportError, "Only PDF uploads are supported."
+    end
+
+    def validate_size!
+      file = params[:pdf_file]
+      return unless file.respond_to?(:size)
+      return if file.size <= MAX_PDF_SIZE
+
+      raise ImportError, "PDF must be smaller than 50 MB."
     end
 
     def usage_guidance(document)

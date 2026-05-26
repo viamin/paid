@@ -9,7 +9,8 @@ RSpec.describe MarketplaceEntries::ImportFromPdf do
     instance_double(
       ActionDispatch::Http::UploadedFile,
       original_filename: "modern_css.pdf",
-      content_type: "application/pdf"
+      content_type: "application/pdf",
+      size: 1.megabyte
     )
   end
   let(:document) do
@@ -51,5 +52,17 @@ RSpec.describe MarketplaceEntries::ImportFromPdf do
     expect(entry.current_version.canonical_artifact.fetch("attachment_strategy")).to eq("prompt_append")
     expect(entry.current_version.canonical_artifact.fetch("content")).to include("Reference material: Modern CSS")
     expect(entry.current_version.canonical_artifact.fetch("content")).to include("Prefer grid and gap")
+  end
+
+  it "rejects oversized PDFs" do
+    allow(file).to receive(:size).and_return(51.megabytes)
+
+    expect {
+      described_class.call(
+        account: account,
+        actor: actor,
+        params: { pdf_file: file }
+      )
+    }.to raise_error(described_class::ImportError, "PDF must be smaller than 50 MB.")
   end
 end

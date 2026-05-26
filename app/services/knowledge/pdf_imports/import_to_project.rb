@@ -5,6 +5,7 @@ module Knowledge
     class ImportToProject
       ARTIFACT_TYPE = "reference_document"
       COLLECTOR_TYPE = "pdf_import"
+      MAX_PDF_SIZE = 50.megabytes
 
       def initialize(project:, file:, actor:)
         @project = project
@@ -19,6 +20,7 @@ module Knowledge
       def call
         validate_plan!
         validate_file!
+        validate_size!
 
         document = Parser.call(file: file)
         chunks = Chunker.call(document: document)
@@ -76,6 +78,13 @@ module Knowledge
         return if file.content_type.to_s == "application/pdf"
 
         raise ImportError, "Only PDF uploads are supported."
+      end
+
+      def validate_size!
+        return unless file.respond_to?(:size)
+        return if file.size <= MAX_PDF_SIZE
+
+        raise ImportError, "PDF must be smaller than 50 MB."
       end
 
       def project_version
