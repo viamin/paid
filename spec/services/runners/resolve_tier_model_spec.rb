@@ -52,6 +52,7 @@ RSpec.describe Runners::ResolveTierModel do
       end
 
       it "prefers the runner tier mapping" do
+        create(:llm_model, model_id: "runner-mid", provider: "openai", tier: "mid")
         runner.update!(tier_models: {
           "mid" => { "model_id" => "runner-mid", "provider_id" => 17 }
         })
@@ -67,6 +68,7 @@ RSpec.describe Runners::ResolveTierModel do
       end
 
       it "falls back to the matching provider tier mapping" do
+        create(:llm_model, model_id: "provider-mid", provider: "openai", tier: "mid")
         provider_runner = Runner.new(runner_key: runner_key)
         create(
           :provider,
