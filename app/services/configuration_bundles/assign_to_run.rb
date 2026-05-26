@@ -27,6 +27,8 @@ module ConfigurationBundles
     end
 
     def call
+      return preserve_existing_bundle if preserve_existing_bundle?
+
       selection = optimizer_selection
       definition, fingerprint = selected_bundle_payload(selection)
       log_selection_fingerprint_mismatch(selection:, fingerprint:) if selection
@@ -65,7 +67,6 @@ module ConfigurationBundles
       ConfigurationBundle.create!(
         account: account,
         prompt_version: agent_run.prompt_version,
-        llm_model: agent_run.model_selection&.llm_model,
         name: "Runtime Bundle #{fingerprint.first(12)}",
         version: next_runtime_bundle_version,
         status: "active",
@@ -93,6 +94,15 @@ module ConfigurationBundles
       bundle&.definition == definition
     end
 
+    def preserve_existing_bundle?
+      current_bundle = agent_run.try(:configuration_bundle)
+      current_bundle.present? && existing_bundle_matches_run?(current_bundle)
+    end
+
+    def preserve_existing_bundle
+      agent_run.try(:configuration_bundle)
+    end
+
     def raise_fingerprint_mismatch!
       raise FingerprintMismatchError, "Configuration bundle fingerprint collision for account #{account.id}"
     end
@@ -100,19 +110,27 @@ module ConfigurationBundles
     def bundle_definition(selected_variants = nil)
       canonicalize(
         {
-          schema_version: 1,
+          schema_version: 2,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
           runner_id: agent_run.runner_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
+          ordered_runner_set: ordered_runner_set,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           marketplace_entries: normalized_marketplace_entries,
           experiments: experiment_definitions(selected_variants)
         }.compact
       )
+    end
+
+    def existing_bundle_matches_run?(bundle)
+      definition = bundle.definition
+      return false unless definition.is_a?(Hash)
+
+      normalized_existing_bundle_attributes(definition) == expected_existing_bundle_attributes_for(definition)
     end
 
     def normalized_marketplace_entries
@@ -475,13 +493,14 @@ module ConfigurationBundles
     def expected_optimizer_definition_attributes
       normalize_optimizer_definition_attributes(
         {
-          schema_version: 1,
+          schema_version: 2,
           goal: agent_run.goal,
           agent_type: agent_run.agent_type,
           provider_id: agent_run.provider_id,
           prompt_version_id: agent_run.prompt_version_id,
           custom_prompt_sha256: custom_prompt_sha256,
           model_selection: model_selection_definition,
+          ordered_runner_set: ordered_runner_set,
           service_container_ids: normalized_service_container_ids,
           mcp_servers: normalized_mcp_servers,
           marketplace_entries: normalized_marketplace_entries
@@ -489,8 +508,45 @@ module ConfigurationBundles
       )
     end
 
+    def expected_existing_bundle_attributes_for(definition)
+      normalize_existing_bundle_attributes(
+        if definition["schema_version"].to_i >= 2
+          {
+            schema_version: 2,
+            goal: agent_run.goal,
+            agent_type: agent_run.agent_type,
+            runner_id: agent_run.runner_id,
+            prompt_version_id: agent_run.prompt_version_id,
+            custom_prompt_sha256: custom_prompt_sha256,
+            model_selection: model_selection_definition,
+            ordered_runner_set: ordered_runner_set,
+            service_container_ids: normalized_service_container_ids,
+            mcp_servers: normalized_mcp_servers,
+            marketplace_entries: normalized_marketplace_entries
+          }
+        else
+          {
+            schema_version: 1,
+            goal: agent_run.goal,
+            agent_type: agent_run.agent_type,
+            runner_id: agent_run.runner_id,
+            prompt_version_id: agent_run.prompt_version_id,
+            custom_prompt_sha256: custom_prompt_sha256,
+            model_selection: legacy_model_selection_definition,
+            service_container_ids: normalized_service_container_ids,
+            mcp_servers: normalized_mcp_servers,
+            marketplace_entries: normalized_marketplace_entries
+          }
+        end.compact
+      )
+    end
+
     def normalized_optimizer_definition_attributes(definition)
       normalize_optimizer_definition_attributes(definition.except("experiments"))
+    end
+
+    def normalized_existing_bundle_attributes(definition)
+      normalize_existing_bundle_attributes(definition.except("experiments"))
     end
 
     def normalize_optimizer_definition_attributes(definition)
@@ -500,6 +556,27 @@ module ConfigurationBundles
           attributes.delete(key) if attributes[key].blank?
         end
       end
+    end
+
+    def normalize_existing_bundle_attributes(definition)
+      normalize_optimizer_definition_attributes(definition)
+    end
+
+    def legacy_model_selection_definition
+      selection = agent_run.model_selection
+      llm_model = selection&.llm_model
+      return unless selection && llm_model
+
+      canonicalize(
+        {
+          llm_model_id: llm_model.model_id,
+          llm_provider: llm_model.provider,
+          tier: selection.tier,
+          selector_type: selection.selector_type,
+          escalated_from_tier: selection.escalated_from_tier,
+          escalated_reason: selection.escalated_reason
+        }.compact
+      )
     end
 
     def optimizer_selection

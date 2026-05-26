@@ -17,8 +17,6 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     {
       "escalated_from_tier" => "mid",
       "escalated_reason" => "quality_recovery_project",
-      "llm_model_id" => "gpt-5.4",
-      "llm_provider" => "openai",
       "selector_type" => "quality_escalation",
       "tier" => "high"
     }
@@ -84,7 +82,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
     expect(ConfigurationBundle.count).to eq(1)
   end
 
-  it "creates different bundles for different selected models under the same provider" do
+  it "creates different bundles for different tiers" do
     first_run = create(:agent_run, project: project, issue: create(:issue, project: project))
     second_run = create(:agent_run,
       project: project,
@@ -95,8 +93,8 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       prompt_version: first_run.prompt_version,
       custom_prompt: first_run.custom_prompt)
 
-    create(:model_selection, agent_run: first_run, llm_model: create(:llm_model, provider: "openai", model_id: "gpt-5.4-mini"))
-    create(:model_selection, agent_run: second_run, llm_model: create(:llm_model, provider: "openai", model_id: "gpt-5.4"))
+    create(:model_selection, agent_run: first_run, tier: "low")
+    create(:model_selection, agent_run: second_run, tier: "mid")
 
     first_bundle = described_class.call(agent_run: first_run)
     second_bundle = described_class.call(agent_run: second_run)
@@ -442,13 +440,14 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
   def optimizer_definition_for_variant(variant:, value:, agent_run: self.agent_run)
     {
-      "schema_version" => 1,
+      "schema_version" => 2,
       "goal" => agent_run.goal,
       "agent_type" => agent_run.agent_type,
       "provider_id" => agent_run.provider_id,
       "prompt_version_id" => agent_run.prompt_version_id,
       "service_container_ids" => [],
       "mcp_servers" => [ filesystem_mcp_snapshot ],
+      "ordered_runner_set" => [ agent_run.effective_runner ],
       "experiments" => {
         "knowledge.token_budget" => {
           "configuration_experiment_id" => experiment.id,
@@ -471,13 +470,14 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
   def optimizer_definition_without_experiments
     {
-      "schema_version" => 1,
+      "schema_version" => 2,
       "goal" => agent_run.goal,
       "agent_type" => agent_run.agent_type,
       "provider_id" => agent_run.provider_id,
       "prompt_version_id" => agent_run.prompt_version_id,
       "service_container_ids" => [],
       "mcp_servers" => [ filesystem_mcp_snapshot ],
+      "ordered_runner_set" => [ agent_run.effective_runner ],
       "experiments" => {}
     }
   end
@@ -505,7 +505,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
 
   def expect_bundle_definition(bundle)
     expect(bundle.definition).to include(
-      "schema_version" => 1,
+      "schema_version" => 2,
       "goal" => agent_run.goal,
       "agent_type" => agent_run.agent_type
     )
@@ -524,7 +524,7 @@ RSpec.describe ConfigurationBundles::AssignToRun do
       "identity" => hash_including(
         "fingerprint" => bundle.fingerprint,
         "fingerprint_algorithm" => "sha256",
-        "schema_version" => 1
+        "schema_version" => 2
       )
     )
   end

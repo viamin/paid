@@ -586,7 +586,7 @@ class Project < ApplicationRecord
         attempted_runners_by_routing_key: attempted_runners
       }
     )
-  rescue ActiveRecord::StatementInvalid => error
+  rescue ActiveRecord::StatementInvalid, ActionView::Template::Error => error
     # During db:migrate, AgentRun callbacks can still render the detail partial
     # before marketplace attachment tables exist. Ignore only that transient case.
     raise unless missing_agent_run_marketplace_entries_table?(error)
@@ -944,9 +944,19 @@ class Project < ApplicationRecord
   private
 
   def missing_agent_run_marketplace_entries_table?(error)
-    return false unless error.message.include?("agent_run_marketplace_entries")
+    causes = []
+    current_error = error
 
-    defined?(PG::UndefinedTable) && error.cause.is_a?(PG::UndefinedTable)
+    while current_error
+      causes << current_error
+      current_error = current_error.cause
+    end
+
+    causes.any? do |cause|
+      cause.message.include?("agent_run_marketplace_entries") &&
+        defined?(PG::UndefinedTable) &&
+        cause.is_a?(PG::UndefinedTable)
+    end
   end
 
   def normalize_screenshot_settings(settings)
