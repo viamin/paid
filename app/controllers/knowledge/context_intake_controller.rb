@@ -124,7 +124,9 @@ module Knowledge
       blocking_generation = follow_up_result.next_question_key.blank?
       round_already_attempted = attempted_rounds.include?(current_round)
 
-      if agent_generation_enabled && !round_already_attempted
+      enqueued_follow_up_generation = agent_generation_enabled && !round_already_attempted
+
+      if enqueued_follow_up_generation
         mark_follow_up_generation_pending!(current_round:, blocking: blocking_generation)
         ContextIntake::GenerateFollowUpQuestionsJob.perform_later(
           session_id: @session.id,
@@ -141,7 +143,7 @@ module Knowledge
         return render_wizard_response
       end
 
-      return render_pending_response if agent_generation_enabled
+      return render_pending_response if enqueued_follow_up_generation
 
       ContextIntake::CompleteSession.call(session: @session)
       redirect_to project_context_intake_path(@project),

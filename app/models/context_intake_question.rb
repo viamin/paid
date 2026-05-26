@@ -5,6 +5,9 @@ class ContextIntakeQuestion < ApplicationRecord
 
   belongs_to :project, optional: true
 
+  after_commit :reset_default_catalog_cache_if_needed, on: [ :create, :update ]
+  after_destroy_commit :reset_default_catalog_cache_if_needed
+
   validates :key, presence: true, length: { maximum: 200 }, uniqueness: { scope: :project_id }
   validates :question_text, presence: true
   validates :section_key, presence: true, length: { maximum: 100 }
@@ -54,5 +57,19 @@ class ContextIntakeQuestion < ApplicationRecord
       status: status,
       metadata: metadata.deep_dup
     }
+  end
+
+  private
+
+  def reset_default_catalog_cache_if_needed
+    return unless global_catalog_change?
+
+    Knowledge::ContextIntake::QuestionnaireSchema.reset_default_catalog_cache!
+  end
+
+  def global_catalog_change?
+    return project_id.nil? if destroyed?
+
+    project_id.nil? || project_id_before_last_save.nil?
   end
 end

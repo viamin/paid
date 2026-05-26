@@ -176,6 +176,14 @@ module Knowledge
           )
         end
 
+        def question_catalog_index(project:)
+          catalog_questions(project: project).index_by { |question| question[:key] }
+        end
+
+        def reset_default_catalog_cache!
+          @default_catalog_seeded = false
+        end
+
         private
 
         def catalog_questions(project:)
@@ -219,6 +227,7 @@ module Knowledge
         end
 
         def ensure_default_catalog!
+          return if @default_catalog_seeded && !cache_bypass_required?
           return if ContextIntakeQuestion.global_catalog.exists?
 
           default_questions.each do |question|
@@ -241,10 +250,14 @@ module Knowledge
               record.metadata = question[:metadata]
             end
           end
+
+          @default_catalog_seeded = true unless cache_bypass_required?
         end
 
-        def question_catalog_index(project:)
-          catalog_questions(project: project).index_by { |question| question[:key] }
+        def cache_bypass_required?
+          ActiveRecord::Base.connection.transaction_open?
+        rescue ActiveRecord::ConnectionNotEstablished
+          false
         end
 
         def question_metadata_for_response(response, catalog_index: nil)

@@ -162,6 +162,24 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).to include("Generating follow-up questions")
     end
 
+    it "completes immediately when AI generation was already attempted for the round" do
+      FeatureFlags.enable!(:context_intake_agent_questions, project:)
+      session.update!(metadata: { "follow_up_generation_attempted_rounds" => [ 1 ] })
+
+      expect {
+        patch project_context_intake_path(project),
+          params: {
+            question_key: last_question.fetch(:key),
+            answer_text: "Final answer",
+            navigation_action: "finish"
+          },
+          headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+      }.not_to have_enqueued_job(Knowledge::ContextIntake::GenerateFollowUpQuestionsJob)
+
+      expect(response).to have_http_status(:see_other)
+      expect(response).to redirect_to(project_context_intake_path(project))
+    end
+
     it "does not invoke AI question generation when the feature flag is disabled" do
       FeatureFlags.disable!(:context_intake_agent_questions)
 

@@ -27,7 +27,7 @@ module Knowledge
       private
 
       def validate_required_questions!
-        catalog_index = Knowledge::ContextIntake::QuestionnaireSchema.send(:question_catalog_index, project: session.project)
+        catalog_index = Knowledge::ContextIntake::QuestionnaireSchema.question_catalog_index(project: session.project)
         unanswered = session.context_intake_responses.select do |response|
           QuestionnaireSchema.required_question_for_response?(response, catalog_index: catalog_index) && response.answer_text.blank?
         end
