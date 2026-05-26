@@ -48,6 +48,7 @@ module PreCommitRequirements
 
     def evaluate_requirement(requirement)
       result = run_check(requirement)
+      result = attach_quality_feedback(requirement, result)
 
       if !result[:passed] && requirement.auto_fix? && requirement.fix_command.present?
         result = attempt_auto_fix(requirement)
@@ -61,6 +62,7 @@ module PreCommitRequirements
         check_type: requirement.check_type,
         passed: result[:passed],
         output: result[:output],
+        quality_feedback: result[:quality_feedback],
         blocking: requirement.blocking?,
         failure_behavior: requirement.failure_behavior,
         auto_fixed: result[:auto_fixed] || false
@@ -139,6 +141,33 @@ module PreCommitRequirements
 
     include OutputSanitizer
 
+    def detected_language(project)
+      language = project.detected_language if project.respond_to?(:detected_language)
+      language.presence || "ruby"
+    end
+
+    def attach_quality_feedback(requirement, result)
+      return result unless requirement.check_type == "mutation_test"
+      return result if agent_run.worktree_path.blank?
+
+      feedback = QualityFeedbackService.new(
+        worktree_path: agent_run.worktree_path,
+        language: detected_language(agent_run.project)
+      ).mutation_result
+      return result if feedback.errors.empty?
+
+      messages = feedback.errors.map do |error|
+        location = [ error[:file].presence, error[:line] ].compact.join(":")
+        "#{location} #{error[:message]}".strip
+      end
+
+      result.merge(
+        passed: false,
+        output: messages.join("\n").truncate(10_000),
+        quality_feedback: feedback
+      )
+    end
+
     def log_result(requirement, result)
       status = result[:passed] ? "passed" : "failed"
       agent_run.log!(
@@ -149,7 +178,9 @@ module PreCommitRequirements
           requirement_id: requirement.id,
           check_type: requirement.check_type,
           passed: result[:passed],
+          failure_behavior: requirement.failure_behavior,
           auto_fixed: result[:auto_fixed] || false,
+          quality_feedback: result[:quality_feedback]&.to_h,
           output_preview: result[:output].to_s.truncate(500)
         }
       )

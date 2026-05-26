@@ -50,7 +50,8 @@ RSpec.describe Activities::CloneRepoActivity do
     it "installs lint-only git hooks for Ruby projects when no database container is running" do
       expect(git_ops).to receive(:install_git_hooks).with(
         lint_command: "bundle exec rubocop",
-        test_command: "true"
+        test_command: "true",
+        mutation_command: "true"
       )
 
       activity.execute(agent_run_id: agent_run.id)
@@ -71,9 +72,12 @@ RSpec.describe Activities::CloneRepoActivity do
       end
 
       it "installs git hooks with both lint and test commands" do
+        create(:pre_commit_requirement, :mutation_test, account: project.account, project: project, name: "mutant")
+
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "bundle exec rubocop",
-          test_command: "bundle exec rspec"
+          test_command: "bundle exec rspec",
+          mutation_command: "bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1"
         )
 
         activity.execute(agent_run_id: agent_run.id)
@@ -88,7 +92,8 @@ RSpec.describe Activities::CloneRepoActivity do
       it "keeps the test hook for non-DB-dependent languages" do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "npm run lint",
-          test_command: "npm test"
+          test_command: "npm test",
+          mutation_command: "true"
         )
 
         activity.execute(agent_run_id: agent_run.id)
@@ -143,7 +148,8 @@ RSpec.describe Activities::CloneRepoActivity do
       it "installs lint-only git hooks for Ruby projects when no database container is running" do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "bundle exec rubocop",
-          test_command: "true"
+          test_command: "true",
+          mutation_command: "true"
         )
 
         activity.execute(agent_run_id: agent_run.id)
@@ -164,9 +170,12 @@ RSpec.describe Activities::CloneRepoActivity do
         end
 
         it "installs git hooks with both lint and test commands" do
+          create(:pre_commit_requirement, :mutation_test, account: project.account, project: project, name: "mutant")
+
           expect(git_ops).to receive(:install_git_hooks).with(
             lint_command: "bundle exec rubocop",
-            test_command: "bundle exec rspec"
+            test_command: "bundle exec rspec",
+            mutation_command: "bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1"
           )
 
           activity.execute(agent_run_id: agent_run.id)
