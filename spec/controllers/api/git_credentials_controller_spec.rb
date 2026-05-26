@@ -4,10 +4,10 @@ require "rails_helper"
 
 RSpec.describe Api::GitCredentialsController, type: :controller do
   before do
-    controller.class.skip_before_action :validate_container_request, raise: false
-    controller.class.skip_before_action :set_authenticated_run, raise: false
-    controller.class.skip_before_action :verify_proxy_token, raise: false
-    controller.class.skip_around_action :with_container_tenant_context, raise: false
+    allow(controller).to receive(:validate_container_request)
+    allow(controller).to receive(:set_authenticated_run)
+    allow(controller).to receive(:verify_proxy_token)
+    allow(controller).to receive(:with_container_tenant_context).and_yield
   end
 
   describe "GET show" do

@@ -86,10 +86,12 @@ module Activities
       return { prs_to_trigger: [], automation_results: [] } unless project.auto_scan_prs
       return { prs_to_trigger: [], automation_results: [] } if project.account.tenant_setting&.auto_continue? == false
 
-      token = project.github_credential
-      return { prs_to_trigger: [], automation_results: [], credential_missing: true } unless token
-
-      client = GithubClient.new(token: token)
+      client = if project.respond_to?(:client)
+        project.client
+      else
+        project.github_token&.client
+      end
+      return { prs_to_trigger: [], automation_results: [], credential_missing: true } unless client
       paid_prs = find_paid_prs(project)
       scanned_prs = paid_prs.reject { |issue| merged_issue?(issue) }
 

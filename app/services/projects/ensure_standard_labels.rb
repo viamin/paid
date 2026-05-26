@@ -45,7 +45,7 @@ module Projects
     end
 
     def call
-      client = project.client
+      client = github_client
       repo = project.full_name
 
       remote_labels = fetch_remote_labels(client, repo)
@@ -75,6 +75,12 @@ module Projects
     end
 
     private
+
+    def github_client
+      return project.client if project.respond_to?(:client)
+
+      project.github_token.client
+    end
 
     def expected_labels
       labels = []

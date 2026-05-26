@@ -889,6 +889,28 @@ RSpec.describe Project do
       end
     end
 
+    describe "#client" do
+      it "reuses the PAT-backed token client" do
+        github_client = instance_double(GithubClient)
+        github_token = instance_double(GithubToken, client: github_client)
+        project = build(:project, github_installation: nil)
+
+        allow(project).to receive(:github_token).and_return(github_token)
+
+        expect(project.client).to be(github_client)
+      end
+
+      it "builds a GithubClient from the app-backed installation credential" do
+        project = build(:project, :with_github_installation)
+        github_client = instance_double(GithubClient)
+
+        allow(project).to receive(:github_credential).and_return("ghs_app_token")
+        allow(GithubClient).to receive(:new).with(token: "ghs_app_token").and_return(github_client)
+
+        expect(project.client).to be(github_client)
+      end
+    end
+
     describe "exactly_one_github_credential validation" do
       it "allows unsaved projects without a credential" do
         project = build(:project, github_token: nil, github_installation: nil)

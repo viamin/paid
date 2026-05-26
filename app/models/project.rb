@@ -846,14 +846,19 @@ class Project < ApplicationRecord
   # Returns a GithubClient authenticated via the project's GitHub credential
   # (installation token for app-backed projects, PAT for token-backed projects).
   def client
-    @client ||= GithubClient.new(token: github_credential)
+    @client ||= if github_installation_id.present? || github_installation.present?
+      credential = github_credential
+      credential.present? ? GithubClient.new(token: credential) : nil
+    else
+      github_token&.client
+    end
   end
 
   # Returns true when the project has a configured GitHub credential (PAT or
   # App installation).  Callers that guard on +project.github_token.present?+
   # should use this instead so app-backed projects are not skipped.
   def github_credential_present?
-    github_token_id.present? || github_installation_id.present?
+    github_token.present? || github_installation.present?
   end
 
   # Returns the GitHub login that will appear as the PR author for
