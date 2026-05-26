@@ -44,4 +44,18 @@ RSpec.describe SpecHelperCoverage, :no_db do
     expect(status.success?).to be(true), stderr
     expect(stdout.lines.first.to_s.strip).to eq("true")
   end
+
+  it "disables coverage when explicitly turned off" do
+    stdout, stderr, status = Open3.capture3(
+      {
+        "ALLOW_DBLESS_SPECS" => "false",
+        "COVERAGE" => "false"
+      },
+      "bundle", "exec", "ruby", "-e", probe_script,
+      chdir: Rails.root.to_s
+    )
+
+    expect(status.success?).to be(true), stderr
+    expect(stdout.lines.first.to_s.strip).to eq("false")
+  end
 end

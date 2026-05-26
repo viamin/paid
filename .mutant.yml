@@ -2,6 +2,7 @@ integration: rspec
 requires:
   - ./config/environment
 environment_variables:
+  COVERAGE: "false"
   RAILS_ENV: test
 jobs: 4
 fail_fast: true

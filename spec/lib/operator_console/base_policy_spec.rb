@@ -52,6 +52,12 @@ RSpec.describe OperatorConsole::BasePolicy, :no_db do
     }.to raise_error(Pundit::NotAuthorizedError, "must be operator")
   end
 
+  it "raises when no user is present while resolving scope" do
+    expect {
+      described_class::Scope.new(nil, scope).resolve
+    }.to raise_error(Pundit::NotAuthorizedError, "must be operator")
+  end
+
   describe "specialized operator-console policies" do
     it "permits tenant setting creation only for operators" do
       expect(OperatorConsole::TenantSettingPolicy.new(operator, TenantSetting).create?).to be(true)
