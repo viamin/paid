@@ -146,8 +146,13 @@ module Knowledge
         end
 
         def ordered_responses(responses)
-          Array(responses).sort_by do |response|
-            metadata = question_metadata_for_response(response)
+          responses_array = Array(responses)
+          catalog_index = if (project = project_for_response(responses_array.first))
+            question_catalog_index(project: project)
+          end
+
+          responses_array.sort_by do |response|
+            metadata = question_metadata_for_response(response, catalog_index: catalog_index)
             [
               metadata[:round] || 1,
               metadata[:section_order] || 0,
@@ -264,7 +269,7 @@ module Knowledge
           metadata = response.answer_data.to_h.fetch("question", {}).deep_symbolize_keys
           return metadata if metadata.present?
 
-          project = response.context_intake_session.project
+          project = project_for_response(response)
           fallback_question = (catalog_index || question_catalog_index(project: project))[response.question_key]
           {
             required: fallback_question&.fetch(:required, nil) == true,
@@ -281,6 +286,10 @@ module Knowledge
             status: "approved",
             metadata: {}
           }
+        end
+
+        def project_for_response(response)
+          response&.respond_to?(:context_intake_session) ? response.context_intake_session&.project : nil
         end
 
         def conditions_match?(conditions, responses)

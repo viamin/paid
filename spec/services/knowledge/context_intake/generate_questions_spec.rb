@@ -6,6 +6,7 @@ RSpec.describe Knowledge::ContextIntake::GenerateQuestions do
   let(:project) { create(:project) }
   let(:user) { create(:user, account: project.account) }
   let(:session) { Knowledge::ContextIntake::StartSession.call(project: project, user: user) }
+  let(:service) { described_class.new(project: project, session: session, round: 2) }
 
   before do
     allow(AgentHarness).to receive(:send_message).and_return(
@@ -45,5 +46,52 @@ RSpec.describe Knowledge::ContextIntake::GenerateQuestions do
     result = described_class.call(project: project, session: session, round: 2, auto_approve: true)
 
     expect(result.fetch(0).status).to eq("approved")
+  end
+
+  it "ignores malformed LLM question payloads before normalization" do
+    allow(AgentHarness).to receive(:send_message).and_return(
+      instance_double(
+        AgentHarness::Response,
+        success?: true,
+        output: {
+          questions: [
+            "not a hash",
+            { text: 123 },
+            { text: "Valid follow-up", section_key: "follow_up" }
+          ]
+        }.to_json
+      )
+    )
+
+    result = described_class.call(project: project, session: session, round: 2)
+
+    expect(result.map(&:question_text)).to eq([ "Valid follow-up" ])
+  end
+
+  it "retries question creation when a concurrent insert wins the first key" do
+    attrs = service.send(:normalize_payload, {
+      "key" => "enterprise_controls",
+      "text" => "What enterprise controls matter most?",
+      "section_key" => "operational_constraints"
+    })
+    question = build(:context_intake_question, project: project, key: "enterprise_controls_2")
+    attempts = 0
+
+    allow(project.context_intake_questions).to receive(:create!) do |created_attrs|
+      attempts += 1
+
+      if attempts == 1
+        expect(created_attrs[:key]).to eq("enterprise_controls")
+        raise ActiveRecord::RecordNotUnique.new
+      end
+
+      expect(created_attrs[:key]).to eq("enterprise_controls_2")
+      question
+    end
+
+    result = service.send(:create_question, attrs, reserved_keys: Set.new)
+
+    expect(result).to eq(question)
+    expect(attempts).to eq(2)
   end
 end

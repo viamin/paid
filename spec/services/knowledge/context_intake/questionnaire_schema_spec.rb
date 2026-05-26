@@ -81,6 +81,27 @@ RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
     end
   end
 
+  describe ".ordered_responses" do
+    it "reuses a single catalog index when responses lack snapshotted metadata" do
+      project = create(:project)
+      session = create(:context_intake_session, project: project)
+      first_response = create(:context_intake_response,
+        context_intake_session: session,
+        question_key: "product_description",
+        section: "product_purpose")
+      second_response = create(:context_intake_response,
+        context_intake_session: session,
+        question_key: "business_model",
+        section: "product_purpose")
+
+      allow(described_class).to receive(:question_catalog_index).and_call_original
+
+      described_class.ordered_responses([ second_response, first_response ])
+
+      expect(described_class).to have_received(:question_catalog_index).once
+    end
+  end
+
   def create_matching_response(project)
     create(
       :context_intake_response,

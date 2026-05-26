@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module Knowledge
   module ContextIntake
     class GenerateQuestions
@@ -9,6 +11,7 @@ module Knowledge
       DEFAULT_PROVIDER = :claude
       TIMEOUT = 60
       MAX_GENERATED_QUESTIONS = 3
+      MAX_KEY_ATTEMPTS = 10
 
       attr_reader :project, :session, :round, :auto_approve
 
@@ -134,34 +137,39 @@ module Knowledge
         end
 
         parsed = JSON.parse(cleaned)
-        Array(parsed["questions"]).first(MAX_GENERATED_QUESTIONS)
+        Array(parsed["questions"])
+          .select { |payload| payload.is_a?(Hash) && payload["text"].is_a?(String) }
+          .first(MAX_GENERATED_QUESTIONS)
       end
 
       def create_questions(question_payloads)
+        reserved_keys = existing_question_keys
+
         question_payloads.filter_map do |payload|
           attrs = normalize_payload(payload)
           next if attrs.nil?
 
-          project.context_intake_questions.create!(attrs)
+          create_question(attrs, reserved_keys: reserved_keys)
         end
       end
 
       def normalize_payload(payload)
         return unless payload.is_a?(Hash)
 
-        text = payload["text"].to_s.strip
+        text = payload["text"].strip
         return if text.blank?
 
-        parent_question_key = payload["parent_question_key"].presence
+        payload_key = normalized_string(payload["key"])
+        parent_question_key = normalized_string(payload["parent_question_key"])
         parent_response = parent_question_key && session.context_intake_responses.find_by(question_key: parent_question_key)
         parent_question = parent_response && QuestionnaireSchema.question_for_response(parent_response)
 
-        section_key = payload["section_key"].presence || parent_question&.fetch(:section_key, nil) || "follow_up"
-        section_title = payload["section_title"].presence || parent_question&.fetch(:section_title, nil) || section_key.titleize
-        category = payload["category"].presence || section_key
+        section_key = normalized_string(payload["section_key"]) || parent_question&.fetch(:section_key, nil) || "follow_up"
+        section_title = normalized_string(payload["section_title"]) || parent_question&.fetch(:section_title, nil) || section_key.titleize
+        category = normalized_string(payload["category"]) || section_key
 
         {
-          key: unique_key_for(payload["key"].presence || text.parameterize(separator: "_").truncate(60, omission: "")),
+          key_base: payload_key || text.parameterize(separator: "_").truncate(60, omission: ""),
           question_text: text,
           section_key: section_key,
           section_title: section_title,
@@ -181,23 +189,47 @@ module Knowledge
         }
       end
 
-      def unique_key_for(base_key)
+      def create_question(attrs, reserved_keys:)
+        key_base = attrs.delete(:key_base)
+        attempts = 0
+
+        begin
+          project.context_intake_questions.create!(
+            attrs.merge(key: unique_key_for(key_base, reserved_keys: reserved_keys))
+          )
+        rescue ActiveRecord::RecordNotUnique
+          attempts += 1
+          retry if attempts < MAX_KEY_ATTEMPTS
+
+          raise
+        end
+      end
+
+      def unique_key_for(base_key, reserved_keys:)
         normalized_base = base_key.presence || "generated_question"
         candidate = normalized_base
         suffix = 1
 
-        while question_key_taken?(candidate)
+        while reserved_keys.include?(candidate)
           suffix += 1
           candidate = "#{normalized_base}_#{suffix}"
+          raise "Could not generate unique key after #{MAX_KEY_ATTEMPTS} attempts" if suffix > MAX_KEY_ATTEMPTS
         end
 
+        reserved_keys << candidate
         candidate
       end
 
-      def question_key_taken?(candidate)
-        session.context_intake_responses.exists?(question_key: candidate) ||
-          project.context_intake_questions.exists?(key: candidate) ||
-          ContextIntakeQuestion.global_catalog.exists?(key: candidate)
+      def existing_question_keys
+        Set.new(
+          session.context_intake_responses.distinct.pluck(:question_key) +
+          ContextIntakeQuestion.where(project_id: [ nil, project.id ]).distinct.pluck(:key)
+        )
+      end
+
+      def normalized_string(value)
+        stripped = value.is_a?(String) ? value.strip : nil
+        stripped.presence
       end
 
       def next_display_order(section_key)
