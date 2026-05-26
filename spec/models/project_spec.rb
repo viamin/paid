@@ -864,6 +864,38 @@ RSpec.describe Project do
       end
     end
 
+    describe "#github_auth_source" do
+      it "returns pat for token-backed projects" do
+        project = build(:project)
+
+        expect(project.github_auth_source).to eq("pat")
+      end
+
+      it "returns app for app-backed projects" do
+        project = build(:project, :with_github_installation)
+
+        expect(project.github_auth_source).to eq("app")
+      end
+    end
+
+    describe "#paid_agents_installation" do
+      it "returns the installation that covers the repository" do
+        account = create(:account)
+        installation = create(:github_installation, account: account, accessible_repositories: [ { "full_name" => "acme/widgets" } ])
+        project = build(:project, account: account, github_token: create(:github_token, account: account), owner: "acme", repo: "widgets")
+
+        expect(project.paid_agents_installation(installations: [ installation ])).to eq(installation)
+      end
+
+      it "returns nil when no installation covers the repository" do
+        account = create(:account)
+        installation = create(:github_installation, account: account, accessible_repositories: [ { "full_name" => "acme/other" } ])
+        project = build(:project, account: account, github_token: create(:github_token, account: account), owner: "acme", repo: "widgets")
+
+        expect(project.paid_agents_installation(installations: [ installation ])).to be_nil
+      end
+    end
+
     describe "#github_author_login" do
       it "returns the bot login for app-backed projects" do
         project = build(:project, :with_github_installation)
