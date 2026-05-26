@@ -341,7 +341,7 @@ class ProjectsController < ApplicationController
     github_installation_id = params_hash[:github_installation_id].presence
 
     if github_auth_source == "app"
-      project.github_installation = project.paid_agents_installation(installations: current_account.github_installations.active)
+      project.github_installation = project.paid_agents_installation(installations: @github_installations)
       project.github_token = nil
       return if project.github_installation.present?
 

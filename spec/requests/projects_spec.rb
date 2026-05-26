@@ -1150,6 +1150,8 @@ RSpec.describe "Projects" do
         get edit_project_path(project)
 
         expect(response.body).to include('value="pat" checked="checked"')
+        expect(response.body).to include('class="mt-4 hidden" data-project-settings-form-target="appPanel"')
+        expect(response.body).to include('class="mt-4" data-project-settings-form-target="patPanel"')
         expect(response.body).to include("Add GitHub Token")
       end
 
@@ -1159,6 +1161,8 @@ RSpec.describe "Projects" do
         get edit_project_path(project)
 
         expect(response.body).to include('value="app" checked="checked"')
+        expect(response.body).to include('class="mt-4" data-project-settings-form-target="appPanel"')
+        expect(response.body).to include('class="mt-4 hidden" data-project-settings-form-target="patPanel"')
       end
 
       it "shows install instructions when the Paid Agents App does not cover the repository" do

@@ -185,7 +185,7 @@
               </label>
             </div>
 
-            <div class="mt-4" data-project-settings-form-target="appPanel">
+            <div class="<%= [ "mt-4", ("hidden" unless @github_auth_source == "app") ].compact.join(" ") %>" data-project-settings-form-target="appPanel">
               <% if @paid_agents_installation.present? %>
                 <div class="rounded-md border border-green-200 bg-green-50 p-4">
                   <div class="flex items-start gap-3">
@@ -223,7 +223,7 @@
               <% end %>
             </div>
 
-            <div class="mt-4 hidden" data-project-settings-form-target="patPanel">
+            <div class="<%= [ "mt-4", ("hidden" unless @github_auth_source == "pat") ].compact.join(" ") %>" data-project-settings-form-target="patPanel">
               <div>
                 <%= form.label :github_token_id, "GitHub Token", class: "block text-sm font-medium leading-6 text-gray-900" %>
                 <div class="mt-2">
