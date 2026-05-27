@@ -573,6 +573,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_run_detail_update(agent_run)
+    return unless agent_run_marketplace_entries_table_exists?
+
     final_runner_record = agent_run.final_runner_record
     attempted_runners = agent_run.attempted_runners_by_routing_key
 
@@ -951,6 +953,12 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def agent_run_marketplace_entries_table_exists?
+    ActiveRecord::Base.connection.data_source_exists?("agent_run_marketplace_entries")
+  rescue ActiveRecord::StatementInvalid
+    false
+  end
 
   def active_github_installations
     account.github_installations.active

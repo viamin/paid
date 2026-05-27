@@ -2,6 +2,10 @@
 
 FactoryBot.define do
   factory :project do
+    transient do
+      open_source { false }
+    end
+
     account
     github_token { association :github_token, account: account }
     created_by { association :user, account: account }
@@ -38,6 +42,10 @@ FactoryBot.define do
 
     trait :without_creator do
       created_by { nil }
+    end
+
+    after(:build) do |project, evaluator|
+      project.define_singleton_method(:open_source?) { evaluator.open_source }
     end
 
     trait :with_github_installation do

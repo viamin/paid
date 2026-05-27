@@ -55,6 +55,7 @@ module QualityMetrics
       "tests_pass" => { name: "Tests Pass", description: "Whether tests pass on the agent's output.", signal_type: "automated", collected_for: %w[create_pr] },
       "review_comment_count" => { name: "Review Comment Count", description: "Fewer review comments = higher quality output. Degrades by 0.1 per comment.", signal_type: "human", collected_for: %w[create_pr] },
       "agent_rerun_count" => { name: "Agent Rerun Count", description: "Fewer reruns per issue = higher quality agent run. Degrades by 0.15 per extra rerun.", signal_type: "automated", collected_for: %w[create_pr] },
+      "mutation_kill_rate" => { name: "Mutation Kill Rate", description: "Ratio of killed to total mutant-generated mutations when mutation testing ran for the agent output.", signal_type: "automated", collected_for: %w[create_pr] },
       "issue_created" => { name: "Issue Created", description: "Whether the agent successfully created an issue.", signal_type: "automated", collected_for: %w[create_issue] },
       "reaction_score" => { name: "Reaction Score", description: "Ratio of positive to total emoji reactions. Positive: +1, heart, hooray, rocket. Negative: -1, confused.", signal_type: "human", collected_for: %w[create_pr create_issue review enhance_issue] },
       "review_posted" => { name: "Review Posted", description: "Whether the agent successfully posted a code review.", signal_type: "automated", collected_for: %w[review] },
