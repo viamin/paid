@@ -1707,6 +1707,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.boolean "open_source", default: false, null: false, comment: "Whether the project is open source (affects mutation test --usage flag)."
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.integer "plan_review_timeout_hours", default: 24, null: false, comment: "Maximum hours to wait for plan review approval before auto-approving."
