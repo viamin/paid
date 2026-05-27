@@ -59,6 +59,10 @@ class TenantSetting < ApplicationRecord
       "rto_hours" => 8
     }
   }.freeze
+  DEPLOYMENT_ASSURANCE_MODELS = %w[self_hosted private_vpc air_gapped].freeze
+  DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES = %w[private_vpc public_ingress offline].freeze
+  DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES = %w[single_tenant private_services offline_promotion].freeze
+  DEPLOYMENT_ASSURANCE_BACKUP_CADENCES = %w[hourly daily weekly].freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,
@@ -347,6 +351,26 @@ class TenantSetting < ApplicationRecord
     assurance = features.fetch("deployment_assurance", nil)
     return unless assurance.is_a?(Hash)
 
+    validate_deployment_assurance_option(
+      assurance["deployment_model"],
+      path: "deployment_model",
+      allowed_values: DEPLOYMENT_ASSURANCE_MODELS
+    )
+    validate_deployment_assurance_option(
+      assurance["network_boundary"],
+      path: "network_boundary",
+      allowed_values: DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES
+    )
+    validate_deployment_assurance_option(
+      assurance["reference_architecture"],
+      path: "reference_architecture",
+      allowed_values: DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES
+    )
+    validate_deployment_assurance_option(
+      assurance.dig("disaster_recovery", "backup_cadence"),
+      path: "disaster_recovery.backup_cadence",
+      allowed_values: DEPLOYMENT_ASSURANCE_BACKUP_CADENCES
+    )
     validate_deployment_assurance_integer(
       assurance.dig("customer_managed_keys", "rotation_interval_days"),
       path: "customer_managed_keys.rotation_interval_days"
@@ -459,6 +483,12 @@ class TenantSetting < ApplicationRecord
     return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
 
     errors.add(:features, "deployment_assurance.#{path} must be an integer between 1 and #{PG_INT_MAX}")
+  end
+
+  def validate_deployment_assurance_option(value, path:, allowed_values:)
+    return if allowed_values.include?(value)
+
+    errors.add(:features, "deployment_assurance.#{path} must be one of: #{allowed_values.join(', ')}")
   end
 
   def validate_quality_threshold_integer(value, key:)

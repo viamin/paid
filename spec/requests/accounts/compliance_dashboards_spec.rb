@@ -92,6 +92,27 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(account.tenant_setting!.reload.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(90)
     end
+
+    it "rejects unsupported deployment assurance option values" do
+      patch account_compliance_dashboard_path, params: deployment_assurance_params.deep_merge(
+        deployment_assurance: {
+          deployment_model: "public_cloud",
+          network_boundary: "open_internet",
+          reference_architecture: "shared_tenant",
+          disaster_recovery: {
+            backup_cadence: "monthly"
+          }
+        }
+      )
+
+      expect(response).to have_http_status(:unprocessable_content)
+
+      assurance = account.tenant_setting!.reload.deployment_assurance_configuration
+      expect(assurance["deployment_model"]).to eq("self_hosted")
+      expect(assurance["network_boundary"]).to eq("private_vpc")
+      expect(assurance["reference_architecture"]).to eq("single_tenant")
+      expect(assurance.dig("disaster_recovery", "backup_cadence")).to eq("daily")
+    end
   end
 
   describe "GET /account_compliance_dashboard/export" do

@@ -249,6 +249,25 @@ RSpec.describe TenantSetting do
         "deployment_assurance.disaster_recovery.rto_hours must be an integer between 1 and 2147483647"
       )
     end
+
+    it "rejects unsupported deployment assurance option values" do
+      setting = build(:tenant_setting)
+
+      setting.deployment_assurance_configuration = {
+        "deployment_model" => "public_cloud",
+        "network_boundary" => "open_internet",
+        "reference_architecture" => "shared_tenant",
+        "disaster_recovery" => { "backup_cadence" => "monthly" }
+      }
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:features]).to include(
+        "deployment_assurance.deployment_model must be one of: self_hosted, private_vpc, air_gapped",
+        "deployment_assurance.network_boundary must be one of: private_vpc, public_ingress, offline",
+        "deployment_assurance.reference_architecture must be one of: single_tenant, private_services, offline_promotion",
+        "deployment_assurance.disaster_recovery.backup_cadence must be one of: hourly, daily, weekly"
+      )
+    end
   end
 
   describe "quality_thresholds" do
