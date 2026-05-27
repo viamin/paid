@@ -21,7 +21,7 @@ module Knowledge
       # Section builders in priority order.
       # Conventions section is not yet implemented — will be added when
       # a conventions collector lands in the knowledge pipeline.
-      SECTION_ORDER = %i[business_context routes symbols schema hotspots decisions stats].freeze
+      SECTION_ORDER = %i[business_context documents routes symbols schema hotspots decisions stats].freeze
 
       attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
 
@@ -133,6 +133,33 @@ module Knowledge
         artifact_section(name: :routes, heading: "Relevant Routes", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      def build_documents_section
+        artifacts = active_artifacts("reference_document")
+        return nil if artifacts.empty?
+
+        total_chunks = 0
+        lines = artifacts.map do |artifact|
+          title = artifact.metadata&.dig("title") || artifact.identifier
+          summary_chunks = artifact.active_ordered_chunks.select { |chunk| chunk.chunk_type == "summary" }
+          total_chunks += summary_chunks.size
+
+          if summary_chunks.any?
+            bullet_lines = summary_chunks.first(4).map { |chunk| "- #{chunk.content}" }
+            "#### #{title}\n#{bullet_lines.join("\n")}"
+          else
+            "#### #{title}\n- #{artifact.content.to_s.tr("\n", " ").truncate(300)}"
+          end
+        end
+
+        artifact_section(
+          name: :documents,
+          heading: "Imported Documents",
+          content: lines.join("\n\n"),
+          artifacts: artifacts,
+          chunk_count: total_chunks
+        )
+      end
+
       def build_symbols_section
         artifacts = active_artifacts("symbol")
         return nil if artifacts.empty?
@@ -234,6 +261,7 @@ module Knowledge
       def section_artifact_type(section_name)
         {
           business_context: "business_context",
+          documents: "reference_document",
           routes: "route",
           symbols: "symbol",
           hotspots: "churn_hotspot",
@@ -289,9 +317,15 @@ module Knowledge
 
         if type == "business_context"
           scope
-            .includes(:knowledge_chunks)
+            .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(20)
+            .to_a
+        elsif type == "reference_document"
+          scope
+            .includes(:active_ordered_chunks)
+            .order(:identifier)
+            .limit(10)
             .to_a
         elsif type == "churn_hotspot"
           # Order by hotspot rank (lower = hotter), with nulls last, then by
@@ -308,7 +342,7 @@ module Knowledge
             .to_a
         elsif type == "schema"
           scope
-            .includes(:knowledge_chunks)
+            .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(20)
             .to_a

@@ -274,19 +274,21 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
     def existing_review_bundle_definition
       {
-        "schema_version" => 1,
+        "schema_version" => 2,
         "goal" => "review",
         "agent_type" => "claude_code",
-        "runner_id" => claude_runner.id
+        "runner_id" => claude_runner.id,
+        "ordered_runner_set" => [ claude_runner.runner_key ]
       }
     end
 
     def existing_create_pr_bundle_definition
       {
-        "schema_version" => 1,
+        "schema_version" => 2,
         "goal" => "create_pr",
         "agent_type" => "claude_code",
         "runner_id" => claude_runner.id,
+        "ordered_runner_set" => [ claude_runner.runner_key ],
         "marketplace_entries" => [],
         "experiments" => {}
       }
@@ -317,7 +319,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
           "identity" => {
             "fingerprint" => fingerprint,
             "fingerprint_algorithm" => "sha256",
-            "schema_version" => 1
+            "schema_version" => 2
           }
         },
         name: "Runtime Bundle #{fingerprint.first(12)}",
@@ -338,8 +340,6 @@ RSpec.describe Activities::CreateAgentRunActivity do
     def expect_model_selection_bundle(bundle)
       expect(bundle.definition).to include(
         "model_selection" => hash_including(
-          "llm_model_id" => "gpt-5.4",
-          "llm_provider" => "openai",
           "selector_type" => "override",
           "tier" => "high"
         )

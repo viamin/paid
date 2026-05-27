@@ -1,51 +1,22 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["tokenSelect", "repoSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
+  static targets = ["tokenSelect", "installationSelect", "repoSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
+  static values = { selectedRepository: String }
 
   connect() {
     this.updateRepoDisabledState()
+    this.loadRepositoriesFromSelection()
   }
 
   async tokenChanged() {
-    const tokenId = this.tokenSelectTarget.value
-    this.clearRepoSelect()
+    this.clearOtherCredential("token")
+    await this.loadRepositoriesFromSelection()
+  }
 
-    if (!tokenId) {
-      this.updateRepoDisabledState()
-      return
-    }
-
-    this.showLoading()
-
-    try {
-      const response = await fetch(`/github_tokens/${tokenId}/repositories`, {
-        headers: {
-          "Accept": "application/json",
-          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content
-        }
-      })
-
-      if (!response.ok) {
-        console.error("Failed to load repositories:", { status: response.status, statusText: response.statusText })
-
-        if (response.status === 401 || response.status === 403) {
-          this.showError("Unable to load repositories: token is invalid or lacks permissions.")
-        } else {
-          this.showError(`Failed to load repositories (HTTP ${response.status}). Please try again.`)
-        }
-        return
-      }
-
-      const repos = await response.json()
-      this.populateRepoSelect(repos)
-    } catch (error) {
-      console.error("Unexpected error loading repositories:", error)
-      this.showError("Failed to load repositories. Please check your connection and try again.")
-    } finally {
-      this.hideLoading()
-      this.updateRepoDisabledState()
-    }
+  async installationChanged() {
+    this.clearOtherCredential("installation")
+    await this.loadRepositoriesFromSelection()
   }
 
   repoSelected() {
@@ -63,6 +34,57 @@ export default class extends Controller {
   }
 
   // Private
+
+  async loadRepositoriesFromSelection() {
+    const selection = this.selectedCredential()
+    this.clearRepoSelect()
+    this.updateRepoDisabledState()
+
+    if (!selection) return
+
+    this.showLoading()
+
+    try {
+      const response = await fetch(selection.path, {
+        headers: {
+          "Accept": "application/json",
+          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content
+        }
+      })
+
+      if (!response.ok) {
+        console.error("Failed to load repositories:", { status: response.status, statusText: response.statusText })
+
+        if (response.status === 401 || response.status === 403) {
+          this.showError(`Unable to load repositories: ${selection.type} is invalid or lacks permissions.`)
+        } else {
+          this.showError(`Failed to load repositories (HTTP ${response.status}). Please try again.`)
+        }
+        return
+      }
+
+      const repos = await response.json()
+      this.populateRepoSelect(repos)
+    } catch (error) {
+      console.error("Unexpected error loading repositories:", error)
+      this.showError("Failed to load repositories. Please check your connection and try again.")
+    } finally {
+      this.hideLoading()
+      this.updateRepoDisabledState()
+    }
+  }
+
+  selectedCredential() {
+    if (this.hasInstallationSelectTarget && this.installationSelectTarget.value !== "") {
+      return { type: "installation", path: `/github_installations/${this.installationSelectTarget.value}/repositories` }
+    }
+
+    if (this.hasTokenSelectTarget && this.tokenSelectTarget.value !== "") {
+      return { type: "token", path: `/github_tokens/${this.tokenSelectTarget.value}/repositories` }
+    }
+
+    return null
+  }
 
   populateRepoSelect(repos) {
     this.clearRepoSelect()
@@ -84,11 +106,16 @@ export default class extends Controller {
         option.dataset.defaultBranch = repo.default_branch
         this.repoSelectTarget.appendChild(option)
       })
+
+    if (this.hasSelectedRepositoryValue && this.selectedRepositoryValue) {
+      this.repoSelectTarget.value = this.selectedRepositoryValue
+      this.repoSelected()
+    }
   }
 
   clearRepoSelect() {
-    const hasToken = this.tokenSelectTarget.value !== ""
-    const placeholder = hasToken ? "Select a repository..." : "Select a token first..."
+    const selection = this.selectedCredential()
+    const placeholder = selection ? "Select a repository..." : "Select a token or installation first..."
     this.repoSelectTarget.innerHTML = `<option value="">${placeholder}</option>`
     this.clearHiddenFields()
   }
@@ -118,9 +145,19 @@ export default class extends Controller {
   }
 
   updateRepoDisabledState() {
-    const hasToken = this.tokenSelectTarget.value !== ""
+    const hasCredential = this.selectedCredential() !== null
     if (this.hasRepoSelectTarget) {
-      this.repoSelectTarget.disabled = !hasToken
+      this.repoSelectTarget.disabled = !hasCredential
+    }
+  }
+
+  clearOtherCredential(type) {
+    if (type === "token" && this.hasInstallationSelectTarget) {
+      this.installationSelectTarget.value = ""
+    }
+
+    if (type === "installation" && this.hasTokenSelectTarget) {
+      this.tokenSelectTarget.value = ""
     }
   }
 }

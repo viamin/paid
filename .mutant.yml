@@ -1,0 +1,41 @@
+integration: rspec
+requires:
+  - ./config/environment
+environment_variables:
+  COVERAGE: "false"
+  RAILS_ENV: test
+jobs: 4
+fail_fast: true
+coverage_criteria:
+  timeout: false
+  process_abort: false
+  test_result: true
+matcher:
+  subjects:
+    - Prompts::BuildForIssue.fetch_trusted_comments
+    - Prompts::BuildForPr.select_trusted_comments
+    - TenantContext.apply!
+    - TenantContext.apply_system_access!
+    - TenantContext.clear!
+    - TenantContext.bypass_enabled?
+    - TenantContext.restore!
+    - TenantContext.with
+    - TenantContext.with_system_access
+    - ApplicationPolicy#index?
+    - ApplicationPolicy#show?
+    - ApplicationPolicy#create?
+    - ApplicationPolicy#new?
+    - ApplicationPolicy#update?
+    - ApplicationPolicy#edit?
+    - ApplicationPolicy#destroy?
+    - ApplicationPolicy::Scope#resolve
+    - OperatorConsole::BasePolicy#index?
+    - OperatorConsole::BasePolicy#show?
+    - OperatorConsole::BasePolicy#create?
+    - OperatorConsole::BasePolicy#new?
+    - OperatorConsole::BasePolicy#update?
+    - OperatorConsole::BasePolicy#edit?
+    - OperatorConsole::BasePolicy#destroy?
+    - OperatorConsole::BasePolicy#search?
+    - OperatorConsole::BasePolicy#act_on?
+    - OperatorConsole::BasePolicy::Scope#resolve

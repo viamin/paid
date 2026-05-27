@@ -6,7 +6,12 @@
       <h1 class="text-2xl font-semibold text-gray-900">Marketplace Entries</h1>
       <p class="mt-1 text-sm text-gray-500">Shared team skills, prompts, plugins, MCP servers, provider presets, and run enhancements.</p>
     </div>
-    <%= link_to "New Entry", new_marketplace_entry_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    <div class="flex items-center gap-3">
+      <% if current_account.paid_plan? %>
+        <%= link_to "Import PDF", new_marketplace_entry_pdf_import_path, class: "inline-flex items-center rounded-md border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50" %>
+      <% end %>
+      <%= link_to "New Entry", new_marketplace_entry_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
   </div>
 
   <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">

@@ -80,7 +80,7 @@ module Activities
     def fetch_issue_comments(run)
       issue_key = [ run.project_id, run.issue_id ]
       @issue_comments_cache[issue_key] ||= begin
-        client = run.project.github_token.client
+        client = run.project.client
         client.issue_comments(run.project.full_name, run.issue.github_number)
       end
     end

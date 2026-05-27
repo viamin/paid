@@ -601,7 +601,7 @@ module Projects
     def sync_priority_label_to_github(issue, label_name, stale_labels)
       return unless issue.github_number
 
-      client = @project.github_token.client
+      client = @project.client
       stale_labels.each do |old_label|
         client.remove_label_from_issue(@project.full_name, issue.github_number, old_label)
       rescue GithubClient::Error => e

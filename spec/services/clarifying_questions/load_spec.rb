@@ -6,10 +6,10 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
   let(:trusted_login) { "viamin" }
   let(:issue_body) { "Original issue body" }
   let(:github_client) { instance_double(GithubClient) }
-  let(:github_token) { double(client: github_client) }
   let(:project) do
     double(
-      github_token: github_token,
+      client: github_client,
+      github_credential_present?: true,
       full_name: "paid/app"
     )
   end
@@ -321,7 +321,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
     context "when GitHub access is not configured" do
       let(:project) do
         double(
-          github_token: nil
+          github_credential_present?: false
         )
       end
       let(:issue_body) do

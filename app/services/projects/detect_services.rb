@@ -173,7 +173,11 @@ module Projects
     end
 
     def fetch_file(path)
-      client = project.github_token.client
+      client = if project.respond_to?(:client)
+        project.client
+      else
+        project.github_token.client
+      end
       response = client.contents("#{project.owner}/#{project.repo}", path: path)
       decode_content(response)
     rescue GithubClient::NotFoundError

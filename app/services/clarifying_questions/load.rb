@@ -49,7 +49,7 @@ module ClarifyingQuestions
     attr_reader :project, :issue
 
     def github_available?
-      project.github_token.present?
+      project.github_credential_present?
     end
 
     def latest_enhancement_comment
@@ -102,7 +102,7 @@ module ClarifyingQuestions
     end
 
     def issue_comments
-      @issue_comments ||= project.github_token.client.issue_comments(project.full_name, issue.github_number)
+      @issue_comments ||= project.client.issue_comments(project.full_name, issue.github_number)
         .select { |comment| trusted_comment?(comment) }
     end
 

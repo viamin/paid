@@ -52,6 +52,10 @@ Rails.application.routes.draw do
     post :retry_validation, on: :member
   end
 
+  resources :github_installations, only: [] do
+    get :repositories, on: :member
+  end
+
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
@@ -99,6 +103,7 @@ Rails.application.routes.draw do
   # MCP server definitions management
   resources :mcp_server_definitions
   resources :marketplace_entries
+  resource :marketplace_entry_pdf_import, only: [ :new, :create ], controller: "marketplace_entry_pdf_imports"
 
   # All agent runs across projects
   resources :agent_runs, only: [ :index ] do
@@ -206,6 +211,7 @@ Rails.application.routes.draw do
       controller: "knowledge/context_intake" do
       post :complete
     end
+    resource :pdf_knowledge_import, only: [ :new, :create ], controller: "projects/pdf_knowledge_imports"
     post :ensure_labels, on: :member
 
     resources :knowledge_recommendations, only: [ :index, :update ],

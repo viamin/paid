@@ -26,6 +26,9 @@
       <% if policy(project).update? %>
         <%= link_to "Business Context", project_context_intake_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
         <%= link_to "Recommendations", project_knowledge_recommendations_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+        <% if project.account.paid_plan? %>
+          <%= link_to "Import PDF", new_project_pdf_knowledge_import_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+        <% end %>
       <% end %>
       <%= link_to "Browse", project_knowledge_browse_index_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <%= link_to "Search", project_knowledge_search_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>

@@ -47,5 +47,10 @@ FactoryBot.define do
     after(:build) do |project, evaluator|
       project.define_singleton_method(:open_source?) { evaluator.open_source }
     end
+
+    trait :with_github_installation do
+      github_token { nil }
+      github_installation { association :github_installation, account: account }
+    end
   end
 end
