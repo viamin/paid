@@ -13,46 +13,7 @@
 #   eval "$(bundle exec ruby scripts/extract-runner-install-contract.rb claude)"
 
 require "agent_harness"
-
-POSTINSTALL_SIGNAL_KEYS = %i[
-  allow_postinstall
-  postinstall
-  postinstall_command
-  postinstall_required
-  requires_postinstall
-  trusted_postinstall
-].freeze
-
-def postinstall_sensitive_contract?(contract)
-  POSTINSTALL_SIGNAL_KEYS.any? { |key| contract[key] }
-end
-
-def npm_package_name(contract)
-  contract[:package_name] || contract[:package] || contract.dig(:source, :package)
-end
-
-def opencode_fallback_install_command(contract)
-  command = Array(contract[:install_command]).dup
-  return command unless npm_package_name(contract) == "opencode-ai"
-
-  # agent-harness 0.18.2 still models OpenCode as a plain npm install even
-  # though the package needs a trusted postinstall step to extract its native
-  # binary. Keep the hardening default for dependencies, then run the single
-  # allowlisted postinstall explicitly until the upstream contract is released.
-  command + [ "&&", "node", "$(npm root -g)/opencode-ai/postinstall.mjs" ]
-end
-
-def normalized_install_command(contract)
-  command = Array(contract[:install_command]).dup
-  return command if command.empty?
-  return command if postinstall_sensitive_contract?(contract)
-
-  fallback_command = opencode_fallback_install_command(contract)
-  return fallback_command if fallback_command != command
-  return command if command.include?("--ignore-scripts")
-
-  command << "--ignore-scripts"
-end
+require_relative "lib/install_contract_helpers"
 
 runner = ARGV[0]
 unless runner
@@ -145,7 +106,7 @@ if source == :uv_tool
   puts "SUPPORTED_VERSION=#{contract[:version]}"
 elsif is_npm
   package = contract[:package] || (source.is_a?(Hash) && source[:package])
-  install_command = normalized_install_command(contract)
+  install_command = InstallContractHelpers.normalized_install_command(contract)
   puts "SOURCE=npm"
   puts "PACKAGE=#{package}"
   puts "INSTALL_COMMAND=#{install_command.join(" ")}"

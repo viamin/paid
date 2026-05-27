@@ -7,6 +7,8 @@ class InstallContractScripts
 end
 
 RSpec.describe InstallContractScripts, :no_db do
+  subject(:install_wrapper_source) { Rails.root.join("scripts/install-from-contract.sh").read }
+
   def run_script(script_path, provider)
     Open3.capture3({ "BUNDLE_PATH" => ENV["BUNDLE_PATH"].to_s }, "bundle", "exec", "ruby", script_path, provider, chdir: Rails.root.to_s)
   end
@@ -35,5 +37,10 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(status.success?).to be(true), -> { stderr }
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
+  end
+
+  it "verifies npm install commands stay scriptless before eval" do
+    expect(install_wrapper_source).to include('case "$INSTALL_COMMAND" in')
+    expect(install_wrapper_source).to include("must include --ignore-scripts")
   end
 end

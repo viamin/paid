@@ -81,6 +81,13 @@ else
       echo "ERROR: No INSTALL_COMMAND in contract for provider: $PROVIDER" >&2
       exit 1
     fi
+    case "$INSTALL_COMMAND" in
+      *--ignore-scripts*) ;;
+      *)
+        echo "ERROR: INSTALL_COMMAND for npm provider $PROVIDER must include --ignore-scripts" >&2
+        exit 1
+        ;;
+    esac
     echo "Installing $PROVIDER via npm contract"
     eval "$INSTALL_COMMAND"
     ;;

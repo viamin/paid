@@ -8,6 +8,9 @@ end
 class AgentImageWorkflow < Pathname
 end
 
+class AgentDockerfile < Pathname
+end
+
 RSpec.describe AgentImageBuildScript, :no_db do
   describe "build script" do
     subject(:script_source) { Rails.root.join("scripts/build-agent-image.sh").read }
@@ -44,6 +47,15 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include('install_command=$(echo "$contract" | sed -n \'s/^INSTALL_COMMAND=//p\')')
       expect(workflow_source).to include("OPENCODE_INSTALL_COMMAND=${{ steps.opencode-contract.outputs.install_command }}")
       expect(workflow_source).not_to include("OPENCODE_PACKAGE=${{ steps.opencode-contract.outputs.package }}")
+    end
+  end
+
+  describe AgentDockerfile do
+    subject(:dockerfile_source) { Rails.root.join("docker/agent/Dockerfile").read }
+
+    it "enforces ignore-scripts on the opencode install contract" do
+      expect(dockerfile_source).to include('case "${OPENCODE_INSTALL_COMMAND}" in')
+      expect(dockerfile_source).to include("OPENCODE_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety")
     end
   end
 end
