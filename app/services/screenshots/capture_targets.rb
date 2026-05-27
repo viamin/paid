@@ -31,6 +31,7 @@ module Screenshots
       onboarding
       user_settings
       account
+      account_roi_dashboard
       account_audit_logs
       quality_dashboard
       chat_sessions
@@ -84,6 +85,7 @@ module Screenshots
       provider_api_key_edit: Target.new(slug: "provider_api_key_edit", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}/edit" }, requires_auth: true),
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
+      account_roi_dashboard: Target.new(slug: "account_roi_dashboard", path_builder: "/account_roi_dashboard", requires_auth: true),
       account_compliance_dashboard: Target.new(slug: "account_compliance_dashboard", path_builder: "/account_compliance_dashboard", requires_auth: true),
       account_audit_logs: Target.new(slug: "account_audit_logs", path_builder: "/account_audit_logs", requires_auth: true),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
@@ -154,6 +156,7 @@ module Screenshots
         requires_auth: true
       ),
       project_quality_dashboard: Target.new(slug: "project_quality_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/quality_dashboard" }, requires_auth: true),
+      project_roi_dashboard: Target.new(slug: "project_roi_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/roi_dashboard" }, requires_auth: true),
       project_convention_settings: Target.new(slug: "project_convention_settings", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/convention_settings" }, requires_auth: true),
       project_bundle_performance_dashboard: Target.new(slug: "project_bundle_performance_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/bundle_performance_dashboard" }, requires_auth: true),
       project_cost_snapshot: Target.new(slug: "project_cost_snapshot", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/cost_snapshot" }, requires_auth: true),
@@ -250,11 +253,14 @@ module Screenshots
     NESTED_CONTROLLER_TARGETS = {
       "users/registrations_controller.rb" => [ :sign_up ],
       "accounts/compliance_dashboards_controller.rb" => [ :account_compliance_dashboard ],
+      "accounts/roi_dashboards_controller.rb" => [ :account_roi_dashboard ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
       "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
       "projects/quality_dashboards_controller.rb" => [ :project_quality_dashboard ],
+      "projects/roi_dashboards_controller.rb" => [ :project_roi_dashboard ],
+      "projects/roi_benchmarks_controller.rb" => [ :project_roi_dashboard ],
       "knowledge/search_controller.rb" => %i[knowledge_search project_knowledge_search],
       "knowledge/browse_controller.rb" => %i[project_knowledge_browse project_knowledge_browse_show],
       "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
@@ -358,6 +364,7 @@ module Screenshots
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
       when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
+      when /\Aaccounts\/roi_dashboards\// then [ :account_roi_dashboard ]
       when /\Aaccounts\// then [ :account ]
       when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
@@ -391,6 +398,7 @@ module Screenshots
       when /\Aprojects\/cost_snapshots\// then [ :project_cost_snapshot ]
       when /\Aworkflow_statuses\// then [ :workflow_status ]
       when /\Aprojects\/quality_dashboards\// then [ :project_quality_dashboard ]
+      when /\Aprojects\/roi_dashboards\// then [ :project_roi_dashboard ]
       when /\Aprojects\/convention_settings\// then [ :project_convention_settings ]
       when /\Aprojects\/knowledge_recommendations\// then [ :project_knowledge_recommendations ]
       when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
