@@ -47,7 +47,7 @@
                   <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Owner</th>
                   <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth</th>
                   <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
-                  <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Failures</th>
+                  <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Failures / Attempts</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200">
@@ -74,7 +74,11 @@
                         <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(provider.rate_limited_until, format: :relative) %></p>
                       <% end %>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900"><%= provider.failure_count %></td>
+                    <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
+                      <span title="<%= provider.failure_count %> failures out of <%= provider.attempt_count %> attempts" aria-label="<%= provider.failure_count %> failures out of <%= provider.attempt_count %> attempts">
+                        <%= provider.failure_count %>/<%= provider.attempt_count %>
+                      </span>
+                    </td>
                   </tr>
                 <% end %>
               </tbody>

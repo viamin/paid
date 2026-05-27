@@ -3,6 +3,29 @@
 require "rails_helper"
 
 RSpec.describe "Dashboard" do
+  def create_runner_health_attempts(project:, attempts:)
+    create(:agent_run, :failed, project: project, runners_attempted: attempts)
+  end
+
+  def create_runner_health_project(account:, user:)
+    create(
+      :project,
+      account: account,
+      created_by: user,
+      github_token: create(:github_token, account: account, created_by: user)
+    )
+  end
+
+  def expect_runner_health_ratio(response_body, runner:)
+    expect(response_body).to include("Runner Health")
+    expect(response_body).to include(runner.display_name)
+    expect(response_body).to include("Rate limited")
+    expect(response_body).to include("Configured")
+    expect(response_body).to include("Failures / Attempts")
+    expect(response_body).to include("2/2")
+    expect(response_body).to include(%(aria-label="2 failures out of 2 attempts"))
+  end
+
   describe "GET /dashboard" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -14,7 +37,14 @@ RSpec.describe "Dashboard" do
     context "when authenticated" do
       let(:account) { create(:account, name: "Test Company") }
       let(:user) { create(:user, account: account, name: "John Doe") }
-      let(:project) { create(:project, account: account, created_by: user) }
+      let(:project) do
+        create(
+          :project,
+          account: account,
+          created_by: user,
+          github_token: create(:github_token, account: account, created_by: user)
+        )
+      end
 
       before { sign_in user }
 
@@ -634,16 +664,21 @@ RSpec.describe "Dashboard" do
 
     it "returns runner health partial within a turbo frame" do
       runner = user.runners.find_by!(runner_key: Runner.default_runner_key, auth_type: "subscription")
-      create(:runner_state, :rate_limited, user: user, runner_name: runner.state_key)
+      create(:runner_state, :rate_limited, user: user, runner_name: runner.state_key, failure_count: 2)
+      runner_attempt_project = create_runner_health_project(account: account, user: user)
+      create_runner_health_attempts(
+        project: runner_attempt_project,
+        attempts: [
+          { "runner" => runner.state_key, "success" => false },
+          { "runner" => runner.state_key, "success" => false }
+        ]
+      )
 
       get dashboard_runner_health_path
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-runner-health")
-      expect(response.body).to include("Runner Health")
-      expect(response.body).to include(runner.display_name)
-      expect(response.body).to include("Rate limited")
-      expect(response.body).to include("Configured")
+      expect_runner_health_ratio(response.body, runner: runner)
     end
 
     it "uses plural grammar for multiple recovering runners" do
