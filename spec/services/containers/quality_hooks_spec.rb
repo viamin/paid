@@ -85,7 +85,22 @@ RSpec.describe Containers::QualityHooks do
 
       expect(
         host.resolve_scheduled_mutation_command(project, user, "ruby")
-      ).to eq("bundle exec mutant run --usage commercial --use rspec --jobs 1 Foo*")
+      ).to eq("bundle exec mutant run --usage commercial --use rspec --jobs 1 Foo\\*")
+    end
+
+    it "preserves shell escaping for quoted arguments" do
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: 'bundle exec mutant run --since HEAD~1 --include-subject "app/models/user profile.rb"'
+      )
+
+      expect(
+        host.resolve_scheduled_mutation_command(project, user, "ruby")
+      ).to eq('bundle exec mutant run --include-subject app/models/user\ profile.rb --jobs 1')
     end
   end
 end

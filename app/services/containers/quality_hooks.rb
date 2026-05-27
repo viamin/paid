@@ -123,7 +123,7 @@ module Containers
       end
 
       normalized.concat([ "--jobs", "1" ]) unless jobs_overridden
-      normalized.join(" ")
+      Shellwords.join(normalized)
     end
   end
 end

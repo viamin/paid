@@ -19,6 +19,7 @@ module MutationSweeps
       return unless command
 
       agent_run = create_agent_run!
+      metric_recorded = false
 
       worktree_service.with_temporary_worktree(project.default_branch) do |worktree_path|
         agent_run.update_columns(worktree_path: worktree_path)
@@ -28,10 +29,12 @@ module MutationSweeps
         end
 
         metric = record_metric!(agent_run:, worktree_path:)
+        metric_recorded = true
         finalize_agent_run!(agent_run, status: "completed")
         metric
       end
     rescue StandardError => e
+      record_failed_metric!(agent_run:, error: e) if agent_run && !metric_recorded
       finalize_agent_run!(agent_run, status: "failed", error_message: e.message) if agent_run
       raise
     end
@@ -90,6 +93,20 @@ module MutationSweeps
       QualityMetrics::EvaluateGate.call(quality_metric: metric)
       QualityAlerts::CheckGate.call(project: project) if project.quality_gates_enabled?
       metric
+    end
+
+    def record_failed_metric!(agent_run:, error:)
+      QualityMetric.find_or_create_by!(agent_run:, metric_type: "automated") do |metric|
+        metric.feedback_source = "system"
+        metric.source = QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE
+        metric.metadata = {
+          "command" => command,
+          "sweep_date" => sweep_date.iso8601,
+          "failed" => true,
+          "error_class" => error.class.name,
+          "error_message" => error.message
+        }
+      end
     end
 
     def finalize_agent_run!(agent_run, status:, error_message: nil)

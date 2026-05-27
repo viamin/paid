@@ -28,5 +28,29 @@ RSpec.describe MutationSweeps::Run do
       expect(metric.scores).to include("mutation_kill_rate" => 0.95)
       expect(QualityMetrics::EvaluateGate).to have_received(:call).with(quality_metric: metric)
     end
+
+    it "records a failed scheduled sweep marker when execution raises" do
+      allow(container_service).to receive(:execute).and_raise(StandardError, "mutant exploded")
+
+      expect {
+        described_class.call(project: project, sweep_date: Date.new(2026, 5, 27))
+      }.to raise_error(StandardError, "mutant exploded")
+
+      metric = QualityMetric.last
+      agent_run = AgentRun.last
+
+      expect(metric.agent_run).to eq(agent_run)
+      expect(metric.source).to eq("scheduled_mutation_sweep")
+      expect(metric.mutation_kill_rate).to be_nil
+      expect(metric.metadata).to include(
+        "failed" => true,
+        "error_class" => "StandardError",
+        "error_message" => "mutant exploded",
+        "sweep_date" => "2026-05-27"
+      )
+      expect(agent_run.reload.status).to eq("failed")
+      expect(QualityMetrics::EvaluateGate).not_to have_received(:call)
+      expect(QualityAlerts::CheckGate).not_to have_received(:call)
+    end
   end
 end

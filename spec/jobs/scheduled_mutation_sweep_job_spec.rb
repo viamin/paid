@@ -47,6 +47,26 @@ RSpec.describe ScheduledMutationSweepJob do
       expect(MutationSweeps::Run).not_to have_received(:call)
     end
 
+    it "treats failed sweep markers as already attempted for the date" do
+      failed_project = create(:project, account: account)
+      next_project = create(:project, account: account)
+      create(:pre_commit_requirement, :mutation_test, project: failed_project, account: account, name: "mutant-failed")
+      create(:pre_commit_requirement, :mutation_test, project: next_project, account: account, name: "mutant-next")
+
+      failed_run = create(:agent_run, :failed, project: failed_project)
+      create(:quality_metric,
+        agent_run: failed_run,
+        source: QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE,
+        mutation_kill_rate: nil,
+        scores: {},
+        created_at: Time.utc(2026, 5, 27, 6))
+
+      job.perform(sweep_date: "2026-05-27")
+
+      expect(MutationSweeps::Run).to have_received(:call).with(project: next_project, sweep_date: Date.new(2026, 5, 27)).once
+      expect(MutationSweeps::Run).not_to have_received(:call).with(hash_including(project: failed_project))
+    end
+
     it "queues a follow-up job when another eligible project remains" do
       first_project = create(:project, account: account)
       second_project = create(:project, account: account)
@@ -55,7 +75,20 @@ RSpec.describe ScheduledMutationSweepJob do
 
       job.perform(sweep_date: "2026-05-27")
 
-      expect(described_class).to have_received(:perform_later).with(sweep_date: "2026-05-27")
+      expect(described_class).to have_received(:perform_later).with(sweep_date: "2026-05-27", attempted_project_ids: [ first_project.id ])
+    end
+
+    it "excludes a failed project from the next job even before a marker exists" do
+      failing_project = create(:project, account: account)
+      remaining_project = create(:project, account: account)
+      create(:pre_commit_requirement, :mutation_test, project: failing_project, account: account, name: "mutant-fail")
+      create(:pre_commit_requirement, :mutation_test, project: remaining_project, account: account, name: "mutant-next")
+
+      allow(MutationSweeps::Run).to receive(:call).with(project: failing_project, sweep_date: Date.new(2026, 5, 27)).and_raise(StandardError, "boom")
+
+      job.perform(sweep_date: "2026-05-27")
+
+      expect(described_class).to have_received(:perform_later).with(sweep_date: "2026-05-27", attempted_project_ids: [ failing_project.id ])
     end
   end
 end
