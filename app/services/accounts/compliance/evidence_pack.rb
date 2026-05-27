@@ -37,7 +37,7 @@ module Accounts
             tenant_configuration: tenant_setting.configuration,
             deployment_assurance: tenant_setting.deployment_assurance_configuration
           },
-          audit_export: account.account_activity_events.recent.limit(100).map do |event|
+          audit_export: account.account_activity_events.recent.includes(:actor).limit(100).map do |event|
             {
               occurred_at: event.created_at.iso8601,
               actor: event.actor_label,
