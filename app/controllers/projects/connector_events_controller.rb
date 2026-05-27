@@ -18,7 +18,6 @@ module Projects
 
     def create
       authorize @project, :update?
-      Interop::AdoptionModeGuard.enforce!(project: @project, action: :receive_connector_events)
 
       event = Interop::Connectors::IngestEvent.call(
         project: @project,

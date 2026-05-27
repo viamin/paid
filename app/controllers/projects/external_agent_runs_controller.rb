@@ -6,7 +6,6 @@ module Projects
 
     def create
       authorize @project, :update?
-      Interop::AdoptionModeGuard.enforce!(project: @project, action: :ingest_external_runs)
 
       agent_run = AgentRuns::IngestExternal.call(
         project: @project,

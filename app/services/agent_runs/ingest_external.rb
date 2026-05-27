@@ -40,6 +40,10 @@ module AgentRuns
         raise ArgumentError, "#{external_source_key} is not enabled for external execution ingestion on this project"
       end
 
+      if attributes[:issue_id].present? && issue.nil?
+        raise ArgumentError, "issue not found"
+      end
+
       return unless issue && issue.project_id != project.id
 
       raise ArgumentError, "issue must belong to the same project"
@@ -88,7 +92,7 @@ module AgentRuns
       @issue = if attributes[:issue].is_a?(Issue)
         attributes[:issue]
       elsif attributes[:issue_id].present?
-        project.issues.find(attributes[:issue_id])
+        project.issues.find_by(id: attributes[:issue_id])
       end
     end
   end

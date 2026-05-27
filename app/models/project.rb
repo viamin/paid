@@ -105,13 +105,15 @@ class Project < ApplicationRecord
     "lookback_window_hours" => 24,
     "metric_thresholds" => {}
   }.freeze
-  DEFAULT_INTEROP_SETTINGS = {
-    "adoption_mode" => "observe_only",
-    "tool_integrations" => Interop::Catalog.tool_integration_keys.index_with(false),
-    "connectors" => Interop::Catalog.connector_keys.index_with(false),
-    "external_execution_sources" => Interop::Catalog.external_execution_source_keys.index_with(false),
-    "imports" => Interop::Catalog.import_keys.index_with { [] }
-  }.freeze
+  def self.default_interop_settings
+    @default_interop_settings ||= {
+      "adoption_mode" => "observe_only",
+      "tool_integrations" => Interop::Catalog.tool_integration_keys.index_with(false),
+      "connectors" => Interop::Catalog.connector_keys.index_with(false),
+      "external_execution_sources" => Interop::Catalog.external_execution_source_keys.index_with(false),
+      "imports" => Interop::Catalog.import_keys.index_with { [] }
+    }.freeze
+  end
 
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
@@ -478,7 +480,7 @@ class Project < ApplicationRecord
     return @effective_interop_settings if defined?(@effective_interop_settings) && @effective_interop_settings
 
     stored = interop_settings.is_a?(Hash) ? interop_settings.deep_stringify_keys : {}
-    @effective_interop_settings = DEFAULT_INTEROP_SETTINGS.deep_merge(stored)
+    @effective_interop_settings = self.class.default_interop_settings.deep_merge(stored)
   end
 
   def adoption_mode
@@ -714,6 +716,11 @@ class Project < ApplicationRecord
 
   def quality_gates_enabled?
     effective_quality_gate_settings["enabled"] == true
+  end
+
+  def interop_settings=(value)
+    @effective_interop_settings = nil
+    super
   end
 
   def screenshot_settings=(value)
