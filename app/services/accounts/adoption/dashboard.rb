@@ -179,11 +179,11 @@ module Accounts
       end
 
       def active_teams_count
-        recent_projects.distinct.count(:owner)
+        @active_teams_count ||= recent_projects.distinct.count(:owner)
       end
 
       def active_projects_count
-        recent_projects.count
+        @active_projects_count ||= recent_projects.count
       end
 
       def feature_signals
@@ -207,17 +207,25 @@ module Accounts
       end
 
       def automation_acceptance_rate
-        total = automatic_finished_runs.count
-        return nil if total.zero?
+        @automation_acceptance_rate ||= begin
+          total = automatic_finished_runs.count
+          return nil if total.zero?
 
-        ((automatic_finished_runs.where(status: "completed").count / total.to_f) * 100).round
+          ((automatic_finished_runs.where(status: "completed").count / total.to_f) * 100).round
+        end
       end
 
       def manual_override_rate
-        total = recent_runs.count
-        return nil if total.zero?
+        @manual_override_rate ||= begin
+          total = recent_runs_count
+          return nil if total.zero?
 
-        ((recent_runs.where(trigger_type: "manual").count / total.to_f) * 100).round
+          ((recent_runs.where(trigger_type: "manual").count / total.to_f) * 100).round
+        end
+      end
+
+      def recent_runs_count
+        @recent_runs_count ||= recent_runs.count
       end
 
       def metrics
@@ -232,7 +240,7 @@ module Accounts
           },
           automation_acceptance_rate: automation_acceptance_rate,
           manual_override_rate: manual_override_rate,
-          recent_runs: recent_runs.count
+          recent_runs: recent_runs_count
         }
       end
 
@@ -358,7 +366,7 @@ module Accounts
       end
 
       def override_recommendation
-        return unless manual_override_rate.to_i >= 40 && recent_runs.count >= 5
+        return unless manual_override_rate.to_i >= 40 && recent_runs_count >= 5
 
         recommendation(
           severity: :watch,

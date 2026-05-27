@@ -61,6 +61,23 @@ RSpec.describe Accounts::Adoption::Dashboard do
       expect(association_queries.size).to be <= 4
     end
 
+    it "memoizes repeated aggregate queries used across rollout metrics and recommendations" do
+      account, tenant_setting = build_override_heavy_account
+      dashboard = described_class.new(account:, tenant_setting:)
+
+      dashboard.send(:active_teams_count)
+      dashboard.send(:active_projects_count)
+      dashboard.send(:automation_acceptance_rate)
+      dashboard.send(:manual_override_rate)
+      dashboard.send(:recent_runs_count)
+
+      expect(count_queries { dashboard.send(:active_teams_count) }).to eq(0)
+      expect(count_queries { dashboard.send(:active_projects_count) }).to eq(0)
+      expect(count_queries { dashboard.send(:automation_acceptance_rate) }).to eq(0)
+      expect(count_queries { dashboard.send(:manual_override_rate) }).to eq(0)
+      expect(count_queries { dashboard.send(:recent_runs_count) }).to eq(0)
+    end
+
     def build_operationalized_account
       account = create(:account)
       tenant_setting = create(:tenant_setting, account: account)
@@ -74,6 +91,20 @@ RSpec.describe Accounts::Adoption::Dashboard do
       create(:agent_run, :completed, project: pilot_project, trigger_type: "automatic", created_at: 3.days.ago)
       create(:agent_run, :failed, project: expansion_project, trigger_type: "automatic", created_at: 2.days.ago)
       create(:agent_run, :completed, project: expansion_project, trigger_type: "manual", created_at: 1.day.ago)
+      [ account, tenant_setting ]
+    end
+
+    def build_override_heavy_account
+      account = create(:account)
+      tenant_setting = create(:tenant_setting, account: account)
+      project = create(:project, account: account, owner: "platform-team", created_by: create(:user, account: account))
+
+      create(:agent_run, :completed, project:, trigger_type: "automatic", created_at: 5.days.ago)
+      create(:agent_run, :failed, project:, trigger_type: "automatic", created_at: 4.days.ago)
+      create(:agent_run, :completed, project:, trigger_type: "manual", created_at: 3.days.ago)
+      create(:agent_run, :completed, project:, trigger_type: "manual", created_at: 2.days.ago)
+      create(:agent_run, :failed, project:, trigger_type: "manual", created_at: 1.day.ago)
+
       [ account, tenant_setting ]
     end
   end
