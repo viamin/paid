@@ -111,8 +111,13 @@ module Dashboard
       return {} if configured_state_keys.empty?
 
       account_runs
-        .where(created_at: ATTEMPT_WINDOW.ago..)
         .joins("CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt")
+        .where(<<~SQL, ATTEMPT_WINDOW.ago)
+          COALESCE(
+            NULLIF(attempt->>'attempted_at', '')::timestamptz,
+            agent_runs.created_at
+          ) >= ?
+        SQL
         .where("COALESCE(attempt->>'runner', attempt->>'provider') IN (?)", configured_state_keys)
         .group(Arel.sql("COALESCE(attempt->>'runner', attempt->>'provider')"))
         .count

@@ -98,5 +98,25 @@ RSpec.describe Dashboard::RunnerHealth do
       expect(stats[:runners].first.failure_count).to eq(3)
       expect(stats[:runners].first.attempt_count).to eq(3)
     end
+
+    it "counts recent attempts from older runs using the attempt timestamp" do
+      create(
+        :agent_run,
+        :failed,
+        project: project,
+        created_at: 10.days.ago,
+        runners_attempted: [
+          {
+            "runner" => default_runner.state_key,
+            "success" => false,
+            "attempted_at" => 1.day.ago.iso8601
+          }
+        ]
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:runners].first.attempt_count).to eq(1)
+    end
   end
 end
