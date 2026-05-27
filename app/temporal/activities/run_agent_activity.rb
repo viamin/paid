@@ -528,12 +528,11 @@ module Activities
         # When the only compatible runner(s) were all rate-limited or
         # circuit-open, surface the real cause instead of the generic
         # "all runners exhausted" message.
-        if runners.size <= 1 && (all_skipped_rate_limited || last_error == "rate_limited")
-          selected_model = agent_run.model_selection&.llm_model
-          if selected_model && runners.size == 1
+        if runners.one? && (all_skipped_rate_limited || last_error == "rate_limited")
+          tier = requested_tier_for(agent_run)
+          if tier.present?
             label = runner_attempt_label(runners.first, agent_run, user_settings.user)
-            reason = "rate limited"
-            error_message = "No compatible runner available: #{label} is the only runner compatible with #{selected_model.model_id} and it is currently #{reason}"
+            error_message = "No tier-capable runner available: #{label} is the only runner available for tier #{tier} and it is currently rate limited"
             error_type = "NoCompatibleRunnerAvailable"
           end
         end
