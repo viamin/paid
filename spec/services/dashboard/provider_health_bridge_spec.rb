@@ -15,6 +15,7 @@ RSpec.describe Dashboard::ProviderHealth, :no_db do
       status_label: "Available",
       available: true,
       failure_count: 0,
+      attempt_count: 4,
       rate_limited_until: nil
     )
   end
@@ -35,6 +36,7 @@ RSpec.describe Dashboard::ProviderHealth, :no_db do
     expect(payload[:providers].first.provider).to eq("Claude")
     expect(payload[:providers].first.owner_email).to eq("owner@example.com")
     expect(payload[:providers].first.status).to eq(:available)
+    expect(payload[:providers].first.attempt_count).to eq(4)
     expect(payload[:runners].first.runner).to eq("Claude")
   end
 end
