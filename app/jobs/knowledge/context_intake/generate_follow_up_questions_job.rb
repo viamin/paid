@@ -33,7 +33,7 @@ module Knowledge
       rescue ActiveRecord::RecordNotFound
         nil
       rescue StandardError => e
-        mark_generation_failed!(session, e) if defined?(session) && session.present?
+        mark_generation_failed!(session, e) if session.present?
         raise
       end
 
@@ -55,6 +55,8 @@ module Knowledge
             )
           )
         )
+      rescue StandardError
+        nil
       end
 
       def broadcast_wizard!(session, project, created_responses)

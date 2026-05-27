@@ -30,6 +30,16 @@ RSpec.describe Knowledge::ContextIntake::QuestionnaireSchema do
       question = described_class.find_question("product_description", project: project)
       expect(question.dig(:question, :text)).to eq("Project version")
     end
+
+    it "invalidates cached project catalogs after project-specific question writes" do
+      project = create(:project)
+
+      described_class.find_question("product_description", project: project)
+      create(:context_intake_question, project: project, key: "product_description", question_text: "Updated project version")
+
+      question = described_class.find_question("product_description", project: project)
+      expect(question.dig(:question, :text)).to eq("Updated project version")
+    end
   end
 
   describe ".questions_for_section" do

@@ -187,13 +187,23 @@ module Knowledge
 
         def reset_default_catalog_cache!
           @default_catalog_seeded = false
+          @catalog_cache = {}
         end
 
         private
 
         def catalog_questions(project:)
           ensure_default_catalog!
+          return load_catalog_questions(project: project) if cache_bypass_required?
 
+          @catalog_cache ||= {}
+          cache_key = project_cache_key(project)
+          @catalog_cache[cache_key] ||= load_catalog_questions(project: project)
+        rescue ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished
+          default_questions
+        end
+
+        def load_catalog_questions(project:)
           selected = ContextIntakeQuestion.visible_for(project)
                                           .group_by(&:key)
                                           .values
@@ -202,8 +212,12 @@ module Knowledge
 
           questions = selected.map(&:to_question_hash)
           questions.presence || default_questions
-        rescue ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished
-          default_questions
+        end
+
+        def project_cache_key(project)
+          return :global if project.nil?
+
+          [ project.id, project.created_at&.utc&.to_f ]
         end
 
         def default_questions

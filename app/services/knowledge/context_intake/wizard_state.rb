@@ -11,7 +11,8 @@ module Knowledge
       end
 
       def ordered_questions
-        @ordered_questions ||= responses.values.sort_by(&:sequence).map { |response| QuestionnaireSchema.question_for_response(response) }
+        @ordered_questions ||= QuestionnaireSchema.ordered_responses(responses.values)
+                                                  .map { |response| QuestionnaireSchema.question_for_response(response) }
       end
 
       def current_question_index

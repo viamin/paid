@@ -114,42 +114,25 @@ module Knowledge
     end
 
     def complete_session!
-      current_response = @session.context_intake_responses.find_by!(question_key: params[:question_key])
-      current_round = ContextIntake::QuestionnaireSchema.question_round_for_response(current_response)
-      follow_up_result = ContextIntake::GenerateFollowUpQuestions.call(
+      result = ContextIntake::FinishRound.call(
         session: @session,
         project: @project,
-        current_question_key: params[:question_key]
+        current_question_key: params[:question_key],
+        agent_generation_enabled: feature_enabled?(:context_intake_agent_questions, project: @project)
       )
-      agent_generation_enabled = feature_enabled?(:context_intake_agent_questions, project: @project)
-      blocking_generation = follow_up_result.next_question_key.blank?
-      round_already_attempted = attempted_rounds.include?(current_round)
 
-      enqueued_follow_up_generation = agent_generation_enabled && !round_already_attempted
-
-      if enqueued_follow_up_generation
-        mark_follow_up_generation_pending!(current_round:, blocking: blocking_generation)
-        ContextIntake::GenerateFollowUpQuestionsJob.perform_later(
-          session_id: @session.id,
-          project_id: @project.id,
-          current_round: current_round,
-          blocking: blocking_generation
-        )
-      else
-        mark_round_attempted!(current_round)
-      end
-
-      if follow_up_result.next_question_key.present?
-        load_wizard_state(active_question_key: follow_up_result.next_question_key)
+      if result.next_question_key.present?
+        load_wizard_state(active_question_key: result.next_question_key)
         return render_wizard_response
       end
 
-      return render_pending_response if enqueued_follow_up_generation
+      return render_pending_response if result.pending_generation?
 
-      ContextIntake::CompleteSession.call(session: @session)
-      redirect_to project_context_intake_path(@project),
-        status: :see_other,
-        notice: "Business context saved and synthesized into project knowledge."
+      if result.completed?
+        redirect_to project_context_intake_path(@project),
+          status: :see_other,
+          notice: "Business context saved and synthesized into project knowledge."
+      end
     end
 
     def render_wizard_response(status: :ok)
@@ -190,31 +173,6 @@ module Knowledge
 
     def clear_failed_blocking_generation!
       @session.clear_follow_up_generation!
-    end
-
-    def attempted_rounds
-      Array(@session.metadata.to_h["follow_up_generation_attempted_rounds"]).map(&:to_i)
-    end
-
-    def mark_round_attempted!(round)
-      @session.update!(
-        metadata: @session.metadata.to_h.merge(
-          "follow_up_generation_attempted_rounds" => (attempted_rounds + [ round ]).uniq.sort
-        )
-      )
-    end
-
-    def mark_follow_up_generation_pending!(current_round:, blocking:)
-      @session.update!(
-        metadata: @session.metadata.to_h.merge(
-          "follow_up_generation_attempted_rounds" => (attempted_rounds + [ current_round ]).uniq.sort,
-          "follow_up_generation" => {
-            "status" => "pending",
-            "round" => current_round + 1,
-            "blocking" => blocking
-          }
-        )
-      )
     end
 
     def navigation_action
