@@ -95,6 +95,8 @@ module Screenshots
             record.labels = [ project.enhance_issue_needs_input_label_name ]
           end
 
+          ensure_anthropic_tier_models!
+
           provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
@@ -300,6 +302,30 @@ module Screenshots
         end
 
         private
+
+        def ensure_anthropic_tier_models!
+          {
+            "low" => { model_id: "screenshot-claude-low", capability_score: 4.0 },
+            "mid" => { model_id: "screenshot-claude-mid", capability_score: 7.0 },
+            "high" => { model_id: "screenshot-claude-high", capability_score: 9.0 }
+          }.each do |tier, attrs|
+            LlmModel.find_or_create_by!(model_id: attrs.fetch(:model_id)) do |record|
+              record.display_name = "Screenshot Claude #{tier.titleize}"
+              record.provider = "anthropic"
+              record.category = "coding"
+              record.tier = tier
+              record.capability_score = attrs.fetch(:capability_score)
+              record.active = true
+              record.input_cost_per_million = 1.0
+              record.output_cost_per_million = 2.0
+              record.context_window = 200_000
+              record.max_output_tokens = 8_000
+              record.supports_tools = true
+              record.supports_vision = false
+              record.supports_json_output = true
+            end
+          end
+        end
 
         def reset_agent_run!(agent_run)
           agent_run.agent_run_logs.destroy_all

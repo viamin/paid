@@ -111,6 +111,7 @@ class Runner < ApplicationRecord
   before_validation :sync_provider_key_bridge
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
+  after_create_commit :backfill_missing_tier_model_provider_ids
   before_discard :prevent_destroying_last_agent_run_runner
   before_discard :prevent_destroying_default_runner
   before_discard :clear_provider_api_key_reference
@@ -148,6 +149,7 @@ class Runner < ApplicationRecord
   validate :tier_models_must_be_valid
   validate :complexity_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
+  validate :primary_runner_tiers_must_resolve
 
   before_destroy :prevent_destroying_last_agent_run_runner
   before_destroy :prevent_destroying_default_runner
@@ -238,6 +240,37 @@ class Runner < ApplicationRecord
 
   def supports_tier?(tier)
     tier_models[tier.to_s].present?
+  end
+
+  def tier_model_picker_visible_on_runner?
+    runner_key == "opencode" && opencode_api_provider == "openrouter"
+  end
+
+  def tier_model_picker_visible_on_provider?
+    Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER.key?(runner_key.to_s)
+  end
+
+  def tier_model_options_for(tier)
+    provider = tier_model_picker_provider
+    return LlmModel.none if provider.blank?
+
+    LlmModel.active.by_provider(provider).by_tier(tier).order(:display_name)
+  end
+
+  def tier_model_picker_provider
+    if tier_model_picker_visible_on_runner?
+      direct_outbound_llm_model_provider
+    elsif tier_model_picker_visible_on_provider?
+      Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
+    end
+  end
+
+  def tier_model_model_id_for(tier)
+    tier_models.dig(tier.to_s, "model_id") || tier_model_ids&.dig(tier.to_s)
+  end
+
+  def tier_model_resolution_for(tier, provider: nil)
+    Runners::ResolveTierModel.call(runner: self, tier: tier, provider: provider)
   end
 
   def legacy_routing_key
@@ -996,11 +1029,39 @@ class Runner < ApplicationRecord
         errors.add(:tier_models, "tier #{tier} must include a non-blank model_id")
       end
 
+      next unless model_id.is_a?(String) && model_id.present?
+
+      model = LlmModel.find_by(model_id: model_id)
+      if model.nil?
+        errors.add(:tier_models, "tier #{tier} references unknown model #{model_id}")
+      else
+        expected = tier_model_picker_provider
+        if expected.present? && model.provider != expected
+          errors.add(:tier_models, "tier #{tier} model #{model_id} does not belong to provider #{expected}")
+        end
+
+        if model.tier.present? && model.tier != tier.to_s
+          errors.add(:tier_models, "tier #{tier} model #{model_id} has tier #{model.tier}, expected #{tier}")
+        end
+      end
+
       provider_id = entry["provider_id"]
+      next if provider_id.nil? && new_record?
       next if provider_id.is_a?(Integer)
 
       errors.add(:tier_models, "tier #{tier} must include an integer provider_id")
     end
+  end
+
+  def primary_runner_tiers_must_resolve
+    return unless enabled_for_agent_runs?
+    return unless user&.user_setting
+    return unless selected_as_primary_runner?
+
+    unresolved_tiers = LlmModel::TIERS.select { |tier| tier_model_resolution_for(tier).failure? }
+    return if unresolved_tiers.empty?
+
+    errors.add(:tier_models, "must resolve all tiers for a primary runner (missing: #{unresolved_tiers.join(', ')})")
   end
 
   def complexity_thresholds_must_be_valid
@@ -1061,9 +1122,34 @@ class Runner < ApplicationRecord
     {}.tap do |normalized|
       normalized["model_id"] = model_id.to_s if model_id.present?
 
-      coerced_provider_id = Integer(provider_id, exception: false)
-      normalized["provider_id"] = coerced_provider_id unless coerced_provider_id.nil?
+      if provider_id.present?
+        coerced = Integer(provider_id, exception: false)
+        normalized["provider_id"] = coerced.nil? ? provider_id : coerced
+      end
     end
+  end
+
+  def selected_as_primary_runner?
+    identifier = persisted? ? routing_key : runner_key.to_s
+    setting = user.user_setting
+    return false unless setting
+
+    setting.default_runner_identifier == identifier ||
+      setting.default_agent_runners_by_goal.values.include?(identifier)
+  end
+
+  def backfill_missing_tier_model_provider_ids
+    return if tier_models.blank?
+    return unless tier_models.values.any? { |entry| entry.is_a?(Hash) && entry["provider_id"].nil? }
+
+    update_column(
+      :tier_models,
+      tier_models.transform_values do |entry|
+        next entry unless entry.is_a?(Hash)
+
+        entry.merge("provider_id" => entry["provider_id"] || id)
+      end
+    )
   end
 
   def kilocode_api_key_config_must_be_valid
