@@ -197,7 +197,7 @@ module Knowledge
           selected = ContextIntakeQuestion.visible_for(project)
                                           .group_by(&:key)
                                           .values
-                                          .map { |questions| questions.max_by { |question| question.project_id.present? ? 1 : 0 } }
+                                          .map { |questions| questions.max_by { |question| [ question.project_id.present? ? 1 : 0, question.id ] } }
                                           .sort_by { |question| [ question.round, question.section_order, question.display_order, question.created_at, question.id ] }
 
           questions = selected.map(&:to_question_hash)

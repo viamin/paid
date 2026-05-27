@@ -192,13 +192,13 @@ module Knowledge
       def create_question(attrs, reserved_keys:)
         key_base = attrs.delete(:key_base)
         attempts = 0
+        current_key = unique_key_for(key_base, reserved_keys: reserved_keys)
 
         begin
-          project.context_intake_questions.create!(
-            attrs.merge(key: unique_key_for(key_base, reserved_keys: reserved_keys))
-          )
+          project.context_intake_questions.create!(attrs.merge(key: current_key))
         rescue ActiveRecord::RecordNotUnique
           attempts += 1
+          current_key = unique_key_for(key_base, reserved_keys: reserved_keys) # Regenerate: the original key is known to be held
           retry if attempts < MAX_KEY_ATTEMPTS
 
           raise
