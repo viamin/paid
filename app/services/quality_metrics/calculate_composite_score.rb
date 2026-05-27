@@ -7,6 +7,10 @@ module QualityMetrics
   # @example
   #   score = QualityMetrics::CalculateCompositeScore.call(agent_run: agent_run)
   class CalculateCompositeScore
+    # Mirrors QualityMetric::MUTATION_KILL_RATE_WEIGHT, which reserves 10% of
+    # create_pr composite scoring for mutation efficacy when that data exists.
+    MUTATION_DIMENSION = "mutation_kill_rate"
+
     attr_reader :agent_run
 
     def initialize(agent_run:)
@@ -25,7 +29,9 @@ module QualityMetrics
       return nil if metrics.empty?
 
       merged_scores = metrics.each_with_object({}) do |metric, combined|
-        metric.scores.each { |key, value| combined[key] = value.to_f }
+        metric.scores.each { |key, value| combined[key] = value.to_f unless value.nil? }
+        mutation_score = metric.mutation_kill_rate if metric.respond_to?(:mutation_kill_rate)
+        combined[MUTATION_DIMENSION] = mutation_score.to_f unless mutation_score.nil?
       end
 
       weights = QualityMetric.weights_for(goal: agent_run.goal, focus: agent_run.focus)

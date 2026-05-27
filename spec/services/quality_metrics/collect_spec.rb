@@ -68,6 +68,24 @@ RSpec.describe QualityMetrics::Collect do
       expect(metric.composite_score).to be_present
     end
 
+    it "records mutation_kill_rate in the column and automated scores when present" do
+      allow(QualityMetrics::CollectMutationScore).to receive(:call).with(agent_run: agent_run).and_return(0.95)
+
+      metric = described_class.call(agent_run: agent_run)
+
+      expect(metric.mutation_kill_rate.to_f).to eq(0.95)
+      expect(metric.scores["mutation_kill_rate"]).to eq(0.95)
+    end
+
+    it "leaves mutation_kill_rate nil when mutant did not run" do
+      allow(QualityMetrics::CollectMutationScore).to receive(:call).with(agent_run: agent_run).and_return(nil)
+
+      metric = described_class.call(agent_run: agent_run)
+
+      expect(metric.mutation_kill_rate).to be_nil
+      expect(metric.scores).not_to include("mutation_kill_rate")
+    end
+
     it "does not create duplicate metrics" do
       described_class.call(agent_run: agent_run)
 
