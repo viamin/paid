@@ -23,12 +23,18 @@ RSpec.describe "Accounts" do
       get account_path
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Account Administration")
-      expect(response.body).to include("Team")
-      expect(response.body).to include("Tenant Limits and Usage")
-      expect(response.body).to include("Compliance & Deployment Assurance")
-      expect(response.body).to include("Billing")
-      expect(response.body).to include("Activity Trail")
+      expect(response.body).to include(
+        "Account Administration",
+        "Team",
+        "Tenant Limits and Usage",
+        "Compliance &amp; Deployment Assurance",
+        "Adoption &amp; Operational Readiness",
+        "Admin playbooks",
+        "Role-based training &amp; onboarding",
+        "Reference operating models",
+        "Billing",
+        "Activity Trail"
+      )
     end
 
     it "allows a viewer to read the page" do
