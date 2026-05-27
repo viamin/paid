@@ -3314,8 +3314,8 @@ expect(container_service).to receive(:execute).with(
       it "refreshes the co-author trailer file for each runner attempt so fallback commits get the new trailer" do
         claude = user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
         cursor = user.runners.find_by!(runner_key: "cursor")
-        claude.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
-        cursor.update!(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
+        claude.update_columns(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        cursor.update_columns(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
 
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
