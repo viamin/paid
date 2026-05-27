@@ -10,7 +10,7 @@
 # Usage:
 #   scripts/install-from-contract.sh <provider>
 #
-# Supported providers: codex, gemini, copilot, kilocode, cursor, aider
+# Supported providers: codex, gemini, copilot, kilocode, cursor, aider, opencode
 
 set -e
 
@@ -34,7 +34,7 @@ done
 PROVIDER="${1:-}"
 if [ -z "$PROVIDER" ]; then
   echo "Usage: $0 <provider>" >&2
-  echo "Supported providers: codex, gemini, copilot, kilocode, cursor, aider" >&2
+  echo "Supported providers: codex, gemini, copilot, kilocode, cursor, aider, opencode" >&2
   exit 1
 fi
 
