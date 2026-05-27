@@ -159,6 +159,23 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.default_goal).to eq("create_pr")
     end
 
+    it "rejects malformed quality-threshold integers" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          quality_thresholds: {
+            enabled: "1",
+            composite_score_threshold: "0.75",
+            min_recent_runs: "oops",
+            lookback_window_hours: "24hours"
+          }
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      setting = account.tenant_setting.reload
+      expect(setting.quality_thresholds).to eq({})
+    end
+
     it "rejects invalid rollout percentages" do
       patch tenant_configuration_path, params: rollout_params(percentage_of_actors: "101")
 

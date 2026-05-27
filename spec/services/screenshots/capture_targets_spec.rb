@@ -353,6 +353,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "sign_up" ])
     end
 
+    it "maps nested account compliance controllers to the compliance dashboard page" do
+      targets = described_class.call(changed_files: [ "app/controllers/accounts/compliance_dashboards_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account_compliance_dashboard" ])
+    end
+
     it "covers every current non-api controller that detect_ui_changes can surface" do
       controller_paths = Dir[Rails.root.join("app/controllers/**/*_controller.rb")]
         .map { |path| path.delete_prefix("#{Rails.root}/") }

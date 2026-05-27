@@ -205,6 +205,89 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "#deployment_assurance_configuration" do
+    it "returns merged deployment assurance defaults" do
+      setting = build(:tenant_setting)
+
+      expect(setting.deployment_assurance_configuration["deployment_model"]).to eq("self_hosted")
+      expect(setting.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(90)
+    end
+
+    it "persists deployment assurance data under features without losing other feature flags" do
+      setting = build(:tenant_setting, features: { "test_feature_flag" => true })
+
+      setting.deployment_assurance_configuration = {
+        "deployment_model" => "air_gapped",
+        "customer_managed_keys" => {
+          "enabled" => "1",
+          "provider" => "AWS KMS",
+          "rotation_interval_days" => "120"
+        }
+      }
+
+      expect(setting.features["test_feature_flag"]).to be(true)
+      expect(setting.features.dig("deployment_assurance", "deployment_model")).to eq("air_gapped")
+      expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "enabled")).to be(true)
+      expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "rotation_interval_days")).to eq(120)
+    end
+
+    it "rejects invalid integer input instead of coercing it to zero" do
+      setting = build(:tenant_setting)
+
+      setting.deployment_assurance_configuration = {
+        "customer_managed_keys" => { "rotation_interval_days" => "oops" },
+        "secret_rotation" => { "interval_days" => "still-nope" },
+        "disaster_recovery" => { "rpo_hours" => "bad", "rto_hours" => "worse" }
+      }
+
+      expect(setting).not_to be_valid
+      expect(setting.features.dig("deployment_assurance", "customer_managed_keys", "rotation_interval_days")).to eq("oops")
+      expect(setting.errors[:features]).to include(
+        "deployment_assurance.customer_managed_keys.rotation_interval_days must be an integer between 1 and 2147483647",
+        "deployment_assurance.secret_rotation.interval_days must be an integer between 1 and 2147483647",
+        "deployment_assurance.disaster_recovery.rpo_hours must be an integer between 1 and 2147483647",
+        "deployment_assurance.disaster_recovery.rto_hours must be an integer between 1 and 2147483647"
+      )
+    end
+
+    it "rejects unsupported deployment assurance option values" do
+      setting = build(:tenant_setting)
+
+      setting.deployment_assurance_configuration = {
+        "deployment_model" => "public_cloud",
+        "network_boundary" => "open_internet",
+        "reference_architecture" => "shared_tenant",
+        "disaster_recovery" => { "backup_cadence" => "monthly" }
+      }
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:features]).to include(
+        "deployment_assurance.deployment_model must be one of: self_hosted, private_vpc, air_gapped",
+        "deployment_assurance.network_boundary must be one of: private_vpc, public_ingress, offline",
+        "deployment_assurance.reference_architecture must be one of: single_tenant, private_services, offline_promotion",
+        "deployment_assurance.disaster_recovery.backup_cadence must be one of: hourly, daily, weekly"
+      )
+    end
+  end
+
+  describe "quality_thresholds" do
+    it "rejects invalid integer input instead of persisting malformed strings" do
+      setting = build(:tenant_setting, quality_thresholds: {
+        "enabled" => "1",
+        "min_recent_runs" => "oops",
+        "lookback_window_hours" => "still-nope"
+      })
+
+      expect(setting).not_to be_valid
+      expect(setting.quality_thresholds["min_recent_runs"]).to eq("oops")
+      expect(setting.quality_thresholds["lookback_window_hours"]).to eq("still-nope")
+      expect(setting.errors[:quality_thresholds]).to include(
+        "min_recent_runs must be an integer between 1 and 2147483647",
+        "lookback_window_hours must be an integer between 1 and 2147483647"
+      )
+    end
+  end
+
   describe "worker_settings" do
     it "returns defaults when no worker_settings configured" do
       setting = build(:tenant_setting)
@@ -243,6 +326,14 @@ RSpec.describe TenantSetting do
       setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => "25" })
       setting.valid?
       expect(setting.worker_settings["temporal_workflow_slots"]).to eq(25)
+    end
+
+    it "keeps invalid integer input invalid instead of coercing it to zero" do
+      setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => "oops" })
+
+      expect(setting).not_to be_valid
+      expect(setting.worker_settings["temporal_workflow_slots"]).to eq("oops")
+      expect(setting.errors[:worker_settings]).to include("temporal_workflow_slots must be an integer between 1 and 100")
     end
 
     it "provides accessor for individual settings" do

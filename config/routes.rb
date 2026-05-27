@@ -73,6 +73,9 @@ Rails.application.routes.draw do
 
   # Customer-facing account administration
   resource :account, only: [ :show, :update ]
+  resource :account_compliance_dashboard, only: [ :show, :update ], controller: "accounts/compliance_dashboards" do
+    get :export
+  end
   resources :account_memberships, only: [ :create, :update, :destroy ]
   resource :account_ownership_transfer, only: [ :create ]
   resource :account_lifecycle, only: [ :update ]
