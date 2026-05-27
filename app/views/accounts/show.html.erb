@@ -326,9 +326,12 @@
       <% end %>
 
       <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-        <div>
-          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Activity Trail</h2>
-          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Recent account-administration changes with actor and time.</p>
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Activity Trail</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Recent account-administration changes with actor and time.</p>
+          </div>
+          <%= link_to "Full audit log", account_audit_logs_path, class: "text-sm font-semibold text-amber-700 hover:text-amber-600 dark:text-amber-300 dark:hover:text-amber-200" %>
         </div>
 
         <div class="mt-6 space-y-4">

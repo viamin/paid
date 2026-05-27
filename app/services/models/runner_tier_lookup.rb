@@ -7,7 +7,12 @@ module Models
     def runner_tier_model(tier)
       return nil unless tier
 
-      model_id = agent_run.runner&.tier_model_ids&.dig(tier)
+      resolved = Runners::ResolveTierModel.call(
+        runner: agent_run.runner,
+        tier: tier,
+        provider: agent_run.provider
+      )
+      model_id = resolved.model_id if resolved.success?
       return nil if model_id.blank?
 
       LlmModel.active.find_by(model_id: model_id)
@@ -22,10 +27,14 @@ module Models
 
     def compatible_model_provider
       runner = agent_run.runner
-      return nil unless runner
+      return runner.direct_outbound_llm_model_provider.presence ||
+        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] if runner
 
-      runner.direct_outbound_llm_model_provider.presence ||
-        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
+      provider = agent_run.provider
+      return nil unless provider
+
+      provider.tier_model_picker_provider.presence ||
+        Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider.provider_key.to_s]
     end
 
     def excluded_model?(model, excluded)

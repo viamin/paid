@@ -31,6 +31,7 @@ module Screenshots
       onboarding
       user_settings
       account
+      account_audit_logs
       quality_dashboard
       chat_sessions
       ab_tests
@@ -64,6 +65,13 @@ module Screenshots
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
       integration_credential_show: Target.new(slug: "integration_credential_show", path_builder: ->(seed_data) { "/integration_credentials/#{seed_data.fetch(:integration_credential).id}" }, requires_auth: true),
+      github_installations: Target.new(slug: "github_installations", path_builder: "/github_installations", requires_auth: true),
+      github_installation_show: Target.new(slug: "github_installation_show", path_builder: ->(seed_data) { "/github_installations/#{seed_data.fetch(:github_installation).id}" }, requires_auth: true),
+      github_installation_migrate_projects: Target.new(
+        slug: "github_installation_migrate_projects",
+        path_builder: ->(seed_data) { "/github_installations/#{seed_data.fetch(:github_installation).id}/migrate" },
+        requires_auth: true
+      ),
       github_tokens: Target.new(slug: "github_tokens", path_builder: "/github_tokens", requires_auth: true),
       github_token_new: Target.new(slug: "github_token_new", path_builder: "/github_tokens/new", requires_auth: true),
       github_token_show: Target.new(slug: "github_token_show", path_builder: ->(seed_data) { "/github_tokens/#{seed_data.fetch(:github_token).id}" }, requires_auth: true),
@@ -77,6 +85,7 @@ module Screenshots
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
       account_compliance_dashboard: Target.new(slug: "account_compliance_dashboard", path_builder: "/account_compliance_dashboard", requires_auth: true),
+      account_audit_logs: Target.new(slug: "account_audit_logs", path_builder: "/account_audit_logs", requires_auth: true),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
@@ -85,6 +94,7 @@ module Screenshots
       marketplace_entry_new: Target.new(slug: "marketplace_entry_new", path_builder: "/marketplace_entries/new", requires_auth: true),
       marketplace_entry_show: Target.new(slug: "marketplace_entry_show", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}" }, requires_auth: true),
       marketplace_entry_edit: Target.new(slug: "marketplace_entry_edit", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}/edit" }, requires_auth: true),
+      marketplace_entry_pdf_import_new: Target.new(slug: "marketplace_entry_pdf_import_new", path_builder: "/marketplace_entry_pdf_import/new", requires_auth: true),
       service_containers: Target.new(slug: "service_containers", path_builder: "/service_containers", requires_auth: true),
       service_container_new: Target.new(slug: "service_container_new", path_builder: "/service_containers/new", requires_auth: true),
       service_container_show: Target.new(slug: "service_container_show", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}" }, requires_auth: true),
@@ -138,12 +148,18 @@ module Screenshots
       project_agent_runs: Target.new(slug: "project_agent_runs", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs" }, requires_auth: true),
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
       project_agent_run_show: Target.new(slug: "project_agent_run_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}" }, requires_auth: true),
+      project_agent_run_provenance: Target.new(
+        slug: "project_agent_run_provenance",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}/provenance" },
+        requires_auth: true
+      ),
       project_quality_dashboard: Target.new(slug: "project_quality_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/quality_dashboard" }, requires_auth: true),
       project_convention_settings: Target.new(slug: "project_convention_settings", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/convention_settings" }, requires_auth: true),
       project_bundle_performance_dashboard: Target.new(slug: "project_bundle_performance_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/bundle_performance_dashboard" }, requires_auth: true),
       project_cost_snapshot: Target.new(slug: "project_cost_snapshot", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/cost_snapshot" }, requires_auth: true),
       project_cost_dashboard: Target.new(slug: "project_cost_dashboard", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/cost_dashboard" }, requires_auth: true),
       project_context_intake: Target.new(slug: "project_context_intake", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/context_intake" }, requires_auth: true),
+      project_pdf_knowledge_import_new: Target.new(slug: "project_pdf_knowledge_import_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/pdf_knowledge_import/new" }, requires_auth: true),
       project_knowledge_search: Target.new(slug: "project_knowledge_search", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/search" }, requires_auth: true),
       project_knowledge_browse: Target.new(slug: "project_knowledge_browse", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse" }, requires_auth: true),
       project_knowledge_browse_show: Target.new(slug: "project_knowledge_browse_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse/route" }, requires_auth: true),
@@ -199,12 +215,18 @@ module Screenshots
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
+      "github_installations_controller.rb" => %i[
+        github_installations
+        github_installation_show
+        github_installation_migrate_projects
+      ],
       "github_tokens_controller.rb" => %i[github_tokens github_token_new github_token_show],
       "linear_tokens_controller.rb" => %i[linear_tokens linear_token_new linear_token_show],
       "notifications_controller.rb" => [ :notifications ],
       "onboarding_controller.rb" => [ :onboarding ],
       "user_settings_controller.rb" => [ :user_settings ],
       "accounts_controller.rb" => [ :account ],
+      "account_audit_logs_controller.rb" => [ :account_audit_logs ],
       "account_memberships_controller.rb" => [ :account ],
       "account_ownership_transfers_controller.rb" => [ :account ],
       "account_lifecycles_controller.rb" => [ :account ],
@@ -228,7 +250,7 @@ module Screenshots
     NESTED_CONTROLLER_TARGETS = {
       "users/registrations_controller.rb" => [ :sign_up ],
       "accounts/compliance_dashboards_controller.rb" => [ :account_compliance_dashboard ],
-      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show],
+      "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
       "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
@@ -247,7 +269,9 @@ module Screenshots
       "projects/mcp_servers_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ],
       "projects/screenshot_configs_controller.rb" => [ :project_edit ],
-      "projects/convention_settings_controller.rb" => [ :project_convention_settings ]
+      "projects/convention_settings_controller.rb" => [ :project_convention_settings ],
+      "projects/pdf_knowledge_imports_controller.rb" => [ :project_pdf_knowledge_import_new ],
+      "marketplace_entry_pdf_imports_controller.rb" => [ :marketplace_entry_pdf_import_new ]
     }.freeze
 
     def targets_for(path)
@@ -329,17 +353,20 @@ module Screenshots
       when /\Aonboarding\// then [ :onboarding ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
+      when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
       when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
       when /\Aaccounts\// then [ :account ]
+      when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
+      when /\Amarketplace_entry_pdf_imports\// then [ :marketplace_entry_pdf_import_new ]
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
       when "agent_runs/_detail.html.erb", "agent_runs/_detail_actions.html.erb" then [ :project_agent_run_show ]
       when /\Aagent_runs\// then [ :agent_runs ]
@@ -354,8 +381,10 @@ module Screenshots
       when /\Aknowledge\/artifacts\// then [ :project_knowledge_artifact_show ]
       when /\Aknowledge\/browse\// then knowledge_browse_targets(relative_path.delete_prefix("knowledge/browse/"))
       when /\Aknowledge\/context_intake\// then [ :project_context_intake ]
+      when /\Aprojects\/pdf_knowledge_imports\// then [ :project_pdf_knowledge_import_new ]
       when /\Aknowledge\/search\// then knowledge_search_targets(relative_path.delete_prefix("knowledge/search/"))
       when /\Aquality_dashboards\// then [ :quality_dashboard ]
+      when "projects/agent_runs/provenance.html.erb" then [ :project_agent_run_provenance ]
       when /\Aprojects\/agent_runs\// then rest_resource_targets(relative_path, "projects/agent_runs", index: :project_agent_runs, new: :project_agent_run_new, show: :project_agent_run_show, edit: :project_agent_run_show)
       when /\Aprojects\/bundle_performance_dashboards\// then [ :project_bundle_performance_dashboard ]
       when /\Aprojects\/cost_dashboards\// then [ :project_cost_dashboard ]
@@ -419,6 +448,16 @@ module Screenshots
       when "new.html.erb" then [ :integrations_new ]
       else
         [ :integrations ]
+      end
+    end
+
+    def github_installation_targets(leaf)
+      case leaf
+      when "index.html.erb" then [ :github_installations ]
+      when "show.html.erb" then [ :github_installation_show ]
+      when "migrate_projects.html.erb" then [ :github_installation_migrate_projects ]
+      else
+        [ :github_installation_show ]
       end
     end
 

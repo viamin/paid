@@ -91,7 +91,7 @@ module Activities
     end
 
     def fetch_code_scanning_alerts(project)
-      client = project.github_token.client
+      client = project.client
       client.code_scanning_alerts(project.full_name)
     rescue GithubClient::NotFoundError => e
       logger.warn(

@@ -45,7 +45,9 @@ module QualityMetrics
     private
 
     def github_client
-      agent_run.project.github_token&.client
+      return unless agent_run.project.github_credential_present?
+
+      agent_run.project.client
     end
 
     # Fetches reactions on review comments using a single batched GraphQL

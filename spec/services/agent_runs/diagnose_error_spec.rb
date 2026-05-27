@@ -23,7 +23,10 @@ RSpec.describe AgentRuns::DiagnoseError do
   end
 
   before do
-    allow(github_token).to receive(:client).and_return(github_client)
+    allow(project).to receive_messages(
+      github_credential_present?: true,
+      client: github_client
+    )
     allow(AgentHarness).to receive(:send_message).and_return(llm_response)
     allow(github_client).to receive(:create_issue).and_return(gh_issue)
     # Default: preserve CLI transport so existing exact-match expectations
@@ -110,6 +113,18 @@ RSpec.describe AgentRuns::DiagnoseError do
         expect {
           described_class.call(agent_run: agent_run)
         }.to raise_error(ArgumentError, /no error message/)
+      end
+    end
+
+    context "when the project has no configured GitHub credential" do
+      before do
+        allow(project).to receive(:github_credential_present?).and_return(false)
+      end
+
+      it "raises an ArgumentError" do
+        expect {
+          described_class.call(agent_run: agent_run)
+        }.to raise_error(ArgumentError, /no configured GitHub credential/)
       end
     end
 

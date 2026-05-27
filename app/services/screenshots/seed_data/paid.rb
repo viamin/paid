@@ -34,12 +34,40 @@ module Screenshots
             record.validation_status = "validated"
           end
 
+          github_installation = GithubInstallation.find_or_create_by!(account: account, github_installation_id: 9_999_998) do |record|
+            record.account_login = "paid"
+            record.target_type = "Organization"
+            record.repository_selection = "selected"
+            record.accessible_repositories = [
+              {
+                "id" => 9_999_999,
+                "full_name" => "paid/screenshots",
+                "name" => "screenshots",
+                "owner" => "paid",
+                "default_branch" => "main",
+                "private" => true
+              }
+            ]
+          end
+
           project = Project.find_or_create_by!(account: account, github_id: 9_999_999) do |record|
             record.github_token = github_token
             record.created_by = user
             record.name = "Screenshot Project"
             record.owner = "paid"
             record.repo = "screenshots"
+            record.default_branch = "main"
+            record.poll_interval_seconds = 60
+            record.label_mappings = {}
+            record.allowed_github_usernames = [ user.email ]
+          end
+
+          installation_project = Project.find_or_create_by!(account: account, github_id: 9_999_998) do |record|
+            record.github_installation = github_installation
+            record.created_by = user
+            record.name = "Screenshot Installation Project"
+            record.owner = "paid"
+            record.repo = "installation-screenshots"
             record.default_branch = "main"
             record.poll_interval_seconds = 60
             record.label_mappings = {}
@@ -66,6 +94,8 @@ module Screenshots
             record.paid_state = "needs_input"
             record.labels = [ project.enhance_issue_needs_input_label_name ]
           end
+
+          ensure_anthropic_tier_models!
 
           provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
@@ -251,6 +281,7 @@ module Screenshots
             "project" => { "id" => project.id, "name" => project.name, "slug" => project.repo },
             "clarifying_issue" => { "id" => clarifying_issue.id, "github_number" => clarifying_issue.github_number },
             "runner" => { "id" => provider.id, "name" => provider.display_name },
+            "github_installation" => { "id" => github_installation.id, "account_login" => github_installation.account_login },
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
@@ -265,11 +296,36 @@ module Screenshots
             "ab_test" => { "id" => ab_test.id },
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
-            "knowledge_artifact" => { "id" => knowledge_artifact.id }
+            "knowledge_artifact" => { "id" => knowledge_artifact.id },
+            "installation_project" => { "id" => installation_project.id, "name" => installation_project.name }
           }
         end
 
         private
+
+        def ensure_anthropic_tier_models!
+          {
+            "low" => { model_id: "screenshot-claude-low", capability_score: 4.0 },
+            "mid" => { model_id: "screenshot-claude-mid", capability_score: 7.0 },
+            "high" => { model_id: "screenshot-claude-high", capability_score: 9.0 }
+          }.each do |tier, attrs|
+            LlmModel.find_or_create_by!(model_id: attrs.fetch(:model_id)) do |record|
+              record.display_name = "Screenshot Claude #{tier.titleize}"
+              record.provider = "anthropic"
+              record.category = "coding"
+              record.tier = tier
+              record.capability_score = attrs.fetch(:capability_score)
+              record.active = true
+              record.input_cost_per_million = 1.0
+              record.output_cost_per_million = 2.0
+              record.context_window = 200_000
+              record.max_output_tokens = 8_000
+              record.supports_tools = true
+              record.supports_vision = false
+              record.supports_json_output = true
+            end
+          end
+        end
 
         def reset_agent_run!(agent_run)
           agent_run.agent_run_logs.destroy_all

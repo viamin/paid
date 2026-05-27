@@ -784,7 +784,7 @@ module Screenshots
       def read(path)
         return unless file?(path)
 
-        project.github_token.client.file_content(project.full_name, path:, ref:)&.force_encoding("UTF-8")&.scrub("")
+        project.client.file_content(project.full_name, path:, ref:)&.force_encoding("UTF-8")&.scrub("")
       rescue GithubClient::NotFoundError
         nil
       end
@@ -809,7 +809,7 @@ module Screenshots
       end
 
       def tree
-        @tree ||= project.github_token.client.tree(project.full_name, ref, recursive: true)
+        @tree ||= project.client.tree(project.full_name, ref, recursive: true)
       end
     end
   end

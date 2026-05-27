@@ -301,9 +301,8 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
   describe "GitHub repository reads" do
     it "uses the project's configured default branch for both tree and file reads" do
       client = instance_double(GithubClient)
-      github_token = double(client:)
       project = double(
-        github_token:,
+        client:,
         full_name: "acme/widgets",
         default_branch: "develop"
       )

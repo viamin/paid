@@ -142,6 +142,11 @@ Rails.application.configure do
       class: "KnowledgeAuditRetentionJob",
       description: "Delete knowledge audit events older than 90 days"
     },
+    audit_event_retention: {
+      cron: "0 4 * * *",
+      class: "AuditEventRetentionJob",
+      description: "Delete account audit events older than 365 days"
+    },
     screenshot_cleanup: {
       cron: "30 3 * * *",
       class: "ScreenshotCleanupJob",

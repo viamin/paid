@@ -7,7 +7,6 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:client) { instance_double(GithubClient) }
-  let(:github_token) { instance_double(GithubToken, client: client) }
   let(:pr_response) { OpenStruct.new(html_url: "https://github.com/test/repo/pull/42", number: 42) }
   let(:issue_response) do
     OpenStruct.new(
@@ -26,7 +25,7 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
 
   before do
     allow(Project).to receive(:find).with(project.id).and_return(project)
-    allow(project).to receive(:github_token).and_return(github_token)
+    allow(project).to receive(:client).and_return(client)
     allow(client).to receive_messages(create_pull_request: pr_response, issue: issue_response)
     allow(client).to receive(:add_labels_to_issue)
   end

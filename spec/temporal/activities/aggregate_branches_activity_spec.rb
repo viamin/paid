@@ -7,12 +7,11 @@ RSpec.describe Activities::AggregateBranchesActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:client) { instance_double(GithubClient) }
-  let(:github_token) { instance_double(GithubToken, client: client) }
   let(:base_ref) { OpenStruct.new(object: OpenStruct.new(sha: "abc123")) }
 
   before do
     allow(Project).to receive(:find).with(project.id).and_return(project)
-    allow(project).to receive(:github_token).and_return(github_token)
+    allow(project).to receive(:client).and_return(client)
     allow(client).to receive(:ref).and_return(base_ref)
     allow(client).to receive(:create_ref)
   end

@@ -24,7 +24,7 @@ module Activities
       results = input.fetch(:results, [])
       feature_branch = input[:feature_branch_name]
 
-      client = project.github_token.client
+      client = project.client
       repo = project.full_name
       default_branch = project.default_branch
 

@@ -32,7 +32,7 @@ module ProjectConventions
         end
 
         branch_name = push_branch!(worktree_path)
-        pull_request = project.github_token.client.create_pull_request(
+        pull_request = project.client.create_pull_request(
           project.full_name,
           base: project.default_branch,
           head: branch_name,

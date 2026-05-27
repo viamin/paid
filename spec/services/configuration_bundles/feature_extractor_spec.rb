@@ -6,7 +6,7 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
   describe ".call" do
     it "extracts categorical features from a bundle definition" do
       definition = {
-        "schema_version" => 1,
+        "schema_version" => 2,
         "goal" => "create_pr",
         "agent_type" => "claude_code",
         "provider_id" => "openai",
@@ -24,7 +24,7 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
     end
 
     it "detects the presence of a model selection" do
-      with_model = { "model_selection" => { "llm_model_id" => "gpt-4" } }
+      with_model = { "model_selection" => { "tier" => "mid" } }
       without_model = { "model_selection" => nil }
 
       expect(described_class.call(with_model).has_model_selection).to be(true)
@@ -33,7 +33,7 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
 
     it "preserves canonicalized model selection and exact sidecar definitions" do
       definition = {
-        "model_selection" => { "provider" => "openai", "model" => "gpt-5" },
+        "model_selection" => { "tier" => "mid", "selector_type" => "meta_agent" },
         "service_container_ids" => [ 3, 1, 2 ],
         "mcp_servers" => [
           { "config" => { "path" => "/tmp/z", "mode" => "read" }, "name" => "zeta" },
@@ -43,7 +43,7 @@ RSpec.describe ConfigurationBundles::FeatureExtractor, :no_db do
 
       features = described_class.call(definition)
 
-      expect(features.model_selection).to eq({ "model" => "gpt-5", "provider" => "openai" })
+      expect(features.model_selection).to eq({ "selector_type" => "meta_agent", "tier" => "mid" })
       expect(features.service_container_ids).to eq([ 1, 2, 3 ])
       expect(features.mcp_servers).to eq([
         { "config" => { "mode" => "read", "path" => "/tmp/z" }, "name" => "zeta" },

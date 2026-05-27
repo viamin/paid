@@ -1429,6 +1429,18 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def create_opencode_runner_entry(user:, api_key:, name:, model:, api_provider: "openrouter")
+    # Pre-seed the LlmModel without a tier so the runner's auto-seed callback
+    # (ensure_direct_outbound_llm_model!) returns this record instead of one
+    # tagged with a "mid" tier hint. With tier blank, tier_models_must_be_valid
+    # skips the strict tier-match check that would otherwise reject the
+    # all-tiers-same-model fixture below for a direct-outbound runner.
+    LlmModel.find_or_create_by!(model_id: model) do |m|
+      m.display_name = model
+      m.provider = api_provider
+      m.category = "coding"
+      m.active = true
+    end
+
     create(
       :runner,
       user: user,
@@ -3302,8 +3314,8 @@ expect(container_service).to receive(:execute).with(
       it "refreshes the co-author trailer file for each runner attempt so fallback commits get the new trailer" do
         claude = user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
         cursor = user.runners.find_by!(runner_key: "cursor")
-        claude.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
-        cursor.update!(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
+        claude.update_columns(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        cursor.update_columns(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
 
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|

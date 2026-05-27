@@ -54,10 +54,13 @@ module QualityMetrics
 
     def record_quality_metric
       scores = build_scores
+      mutation_kill_rate = QualityMetrics::CollectMutationScore.call(agent_run: agent_run)
+      scores["mutation_kill_rate"] = mutation_kill_rate unless mutation_kill_rate.nil?
       weights = QualityMetric.weights_for(goal: agent_run.goal, focus: agent_run.focus)
       automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
+        mutation_kill_rate: mutation_kill_rate,
         scores: scores,
         metadata: (automated_metric.metadata || {}).merge(score_metadata),
         composite_score: QualityMetric.weighted_average(scores, weights: weights)

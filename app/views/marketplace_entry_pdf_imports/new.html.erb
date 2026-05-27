@@ -1,0 +1,69 @@
+<% content_for(:title) { "Import Marketplace PDF - Paid" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <h1 class="text-2xl font-semibold text-gray-900">Import PDF to Team Marketplace</h1>
+  <p class="mt-1 text-sm text-gray-500">Turn a PDF into a reusable skill, agent, or enhancement with prompt-ready summaries generated from the extracted content.</p>
+
+  <div class="mt-6 rounded-lg bg-white p-6 shadow">
+    <%= form_with model: @marketplace_entry, url: marketplace_entry_pdf_import_path, class: "space-y-6" do |form| %>
+      <% if @marketplace_entry.errors.any? %>
+        <div class="rounded-md bg-red-50 p-4 text-sm text-red-700">
+          <p class="font-semibold"><%= pluralize(@marketplace_entry.errors.count, "error") %> prevented the import:</p>
+          <ul class="mt-2 list-disc pl-5">
+            <% @marketplace_entry.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+
+      <div class="grid gap-6 md:grid-cols-2">
+        <div>
+          <%= form.label :name, class: "block text-sm font-medium text-gray-700" %>
+          <%= form.text_field :name, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" %>
+        </div>
+
+        <div>
+          <%= form.label :entry_type, "Type", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.select :entry_type, MarketplaceEntry::ENTRY_TYPES.map { |type| [ type.humanize, type ] }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" %>
+        </div>
+      </div>
+
+      <div>
+        <%= form.label :pdf_file, "PDF File", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.file_field :pdf_file, accept: "application/pdf,.pdf", class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+      </div>
+
+      <div>
+        <%= form.label :description, class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_area :description, rows: 3, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" %>
+      </div>
+
+      <div>
+        <%= form.label :usage_guidance, class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_area :usage_guidance, rows: 4, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" %>
+      </div>
+
+      <div class="grid gap-6 md:grid-cols-2">
+        <div>
+          <%= form.label :tags_csv, "Tags", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.text_field :tags_csv, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm", placeholder: "css, docs, frontend" %>
+        </div>
+
+        <div>
+          <%= form.label :status, class: "block text-sm font-medium text-gray-700" %>
+          <%= form.select :status, MarketplaceEntry::STATUSES.map { |status| [ status.humanize, status ] }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" %>
+        </div>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+        The importer creates a prompt-append marketplace artifact from the PDF summaries so teammates can attach it directly to agent runs.
+      </div>
+
+      <div class="flex items-center justify-end gap-4 border-t border-gray-200 pt-4">
+        <%= link_to "Cancel", marketplace_entries_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+        <%= form.submit "Create From PDF", class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      </div>
+    <% end %>
+  </div>
+</div>

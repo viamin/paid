@@ -58,7 +58,7 @@ module Activities
       track_phase(agent_run_id: agent_run_id, phase_key: "create_github_issue", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
 
-        client = project.github_token.client
+        client = project.client
         summary = agent_run.agent_summary_with_stderr_fallback
         validate_issue_creation_attempt!(agent_run)
         title, llm_generated_title = extract_title(summary, agent_run.custom_prompt)
