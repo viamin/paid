@@ -46,15 +46,21 @@ module Accounts
     attr_reader :account
 
     def project_rows
-      @project_rows ||= account.projects.order(:name).map do |project|
-        {
-          project: project,
-          summary: Roi::MetricsCalculator.call(
-            agent_runs: project.agent_runs,
-            related_runs: project.agent_runs,
-            window: current_window
-          )
-        }
+      @project_rows ||= begin
+        runs_by_project = current_window_runs.group_by(&:project_id)
+
+        account.projects.order(:name).map do |project|
+          project_runs = runs_by_project.fetch(project.id, [])
+
+          {
+            project: project,
+            summary: Roi::MetricsCalculator.call(
+              agent_runs: project_runs,
+              related_runs: project_runs,
+              window: current_window
+            )
+          }
+        end
       end
     end
 
@@ -119,6 +125,16 @@ module Accounts
 
     def current_window
       WINDOW.ago..Time.current
+    end
+
+    def current_window_runs
+      @current_window_runs ||= account_runs
+        .where(goal: "create_pr", status: "completed")
+        .where.not(pull_request_number: nil)
+        .where(created_at: current_window)
+        .includes(:issue, :quality_metrics)
+        .order(:created_at)
+        .to_a
     end
   end
 end

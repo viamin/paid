@@ -44,10 +44,11 @@ module Roi
     attr_reader :agent_runs, :related_runs, :window
 
     def scoped_runs
-      scope = agent_runs.where(goal: "create_pr", status: "completed").where.not(pull_request_number: nil)
-      scope = scope.where(created_at: window) if window
-
-      scope.includes(:issue, :quality_metrics).order(:created_at).to_a
+      @scoped_runs ||= if relation_like?(agent_runs)
+        scoped_relation(agent_runs).includes(:issue, :quality_metrics).order(:created_at).to_a
+      else
+        scoped_array(agent_runs)
+      end
     end
 
     def accepted_snapshot_for(run)
@@ -94,12 +95,42 @@ module Roi
       issue_ids = accepted_runs.map { |snapshot| snapshot[:run].issue_id }.compact.uniq
       return {} if issue_ids.empty?
 
-      scope = related_runs.where(issue_id: issue_ids).where.not(goal: "create_issue")
-      scope = scope.where(created_at: window) if window
+      if relation_like?(related_runs)
+        scope = related_runs.where(issue_id: issue_ids).where.not(goal: "create_issue")
+        scope = scope.where(created_at: window) if window
 
-      scope.pluck(:issue_id, :created_at).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, created_at), memo|
-        memo[issue_id] << created_at
+        scope.pluck(:issue_id, :created_at).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, created_at), memo|
+          memo[issue_id] << created_at
+        end
+      else
+        related_runs
+          .select { |run| issue_ids.include?(run.issue_id) && run.goal != "create_issue" }
+          .select { |run| window.nil? || window.cover?(run.created_at) }
+          .each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, memo|
+            memo[run.issue_id] << run.created_at
+          end
       end
+    end
+
+    def relation_like?(runs)
+      runs.respond_to?(:where)
+    end
+
+    def scoped_relation(runs)
+      scope = runs.where(goal: "create_pr", status: "completed").where.not(pull_request_number: nil)
+      scope = scope.where(created_at: window) if window
+      scope
+    end
+
+    def scoped_array(runs)
+      runs
+        .select do |run|
+          run.goal == "create_pr" &&
+            run.status == "completed" &&
+            run.pull_request_number.present? &&
+            (window.nil? || window.cover?(run.created_at))
+        end
+        .sort_by(&:created_at)
     end
 
     def average(values)

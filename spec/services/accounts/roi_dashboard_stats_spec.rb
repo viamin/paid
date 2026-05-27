@@ -51,5 +51,34 @@ RSpec.describe Accounts::RoiDashboardStats do
         cost_per_accepted_pr_cents: nil
       )
     end
+
+    it "builds per-project summaries from a single preloaded run set" do
+      other_project = create(:project, account: account, name: "Beta")
+
+      create_accepted_run(project:, issue_created_at: 5.days.ago, run_created_at: 4.days.ago, merged_at: 2.days.ago, cost_cents: 6_000,
+        pull_request_number: 11)
+      create_accepted_run(project: other_project, issue_created_at: 4.days.ago, run_created_at: 3.days.ago, merged_at: 1.day.ago,
+        cost_cents: 4_000, pull_request_number: 12)
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:project_rows].map { |row| [ row[:project].name, row[:summary][:cost_per_accepted_pr_cents] ] }).to eq([
+        [ "Beta", 4_000 ],
+        [ project.name, 6_000 ]
+      ])
+    end
+  end
+
+  def create_accepted_run(project:, issue_created_at:, run_created_at:, merged_at:, cost_cents:, pull_request_number:)
+    issue = create(:issue, project:, github_created_at: issue_created_at)
+    run = create(:agent_run, :completed,
+      project:,
+      issue:,
+      created_at: run_created_at,
+      completed_at: run_created_at + 1.day,
+      cost_cents:,
+      goal: "create_pr",
+      pull_request_number:)
+    create(:quality_metric, :human, agent_run: run, created_at: merged_at, scores: { "pr_merged" => 1.0 })
   end
 end
