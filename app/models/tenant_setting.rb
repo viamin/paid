@@ -100,6 +100,7 @@ class TenantSetting < ApplicationRecord
   validate :validate_default_budgets
   validate :validate_agent_settings
   validate :validate_worker_settings
+  validate :validate_quality_thresholds
   validate :validate_deployment_assurance
   validates :self_repo_full_name,
     format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
@@ -333,6 +334,13 @@ class TenantSetting < ApplicationRecord
     end
   end
 
+  def validate_quality_thresholds
+    return unless quality_thresholds.is_a?(Hash)
+
+    validate_quality_threshold_integer(quality_thresholds["min_recent_runs"], key: "min_recent_runs") if quality_thresholds.key?("min_recent_runs")
+    validate_quality_threshold_integer(quality_thresholds["lookback_window_hours"], key: "lookback_window_hours") if quality_thresholds.key?("lookback_window_hours")
+  end
+
   def validate_deployment_assurance
     return unless features.is_a?(Hash)
 
@@ -451,6 +459,12 @@ class TenantSetting < ApplicationRecord
     return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
 
     errors.add(:features, "deployment_assurance.#{path} must be an integer between 1 and #{PG_INT_MAX}")
+  end
+
+  def validate_quality_threshold_integer(value, key:)
+    return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
+
+    errors.add(:quality_thresholds, "#{key} must be an integer between 1 and #{PG_INT_MAX}")
   end
 
   def normalize_integer_value(value)

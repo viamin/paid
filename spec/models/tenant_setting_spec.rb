@@ -251,6 +251,24 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "quality_thresholds" do
+    it "rejects invalid integer input instead of persisting malformed strings" do
+      setting = build(:tenant_setting, quality_thresholds: {
+        "enabled" => "1",
+        "min_recent_runs" => "oops",
+        "lookback_window_hours" => "still-nope"
+      })
+
+      expect(setting).not_to be_valid
+      expect(setting.quality_thresholds["min_recent_runs"]).to eq("oops")
+      expect(setting.quality_thresholds["lookback_window_hours"]).to eq("still-nope")
+      expect(setting.errors[:quality_thresholds]).to include(
+        "min_recent_runs must be an integer between 1 and 2147483647",
+        "lookback_window_hours must be an integer between 1 and 2147483647"
+      )
+    end
+  end
+
   describe "worker_settings" do
     it "returns defaults when no worker_settings configured" do
       setting = build(:tenant_setting)
