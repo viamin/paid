@@ -1,0 +1,131 @@
+<% content_for(:title) { "GitHub Apps - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">GitHub Apps</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Manage GitHub App installations for enterprise repository access without PATs.
+      </p>
+    </div>
+    <div class="mt-4 sm:mt-0 flex gap-3">
+      <%= link_to integrations_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" do %>
+        All Integrations
+      <% end %>
+      <%= link_to new_github_token_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" do %>
+        <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+        </svg>
+        Add Token
+      <% end %>
+    </div>
+  </div>
+
+  <% if @github_installations.any? %>
+    <div class="mt-8 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+            <table class="min-w-full divide-y divide-gray-300">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Account</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Repositories</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created</th>
+                  <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                    <span class="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% @github_installations.each do |installation| %>
+                  <tr>
+                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                      <div class="flex flex-col">
+                        <span><%= installation.account_login || "Unknown" %></span>
+                        <span class="text-xs text-gray-500">ID: <%= installation.github_installation_id %></span>
+                      </div>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+                        <%= installation.target_type || "Organization" %>
+                      </span>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <%= installation.accessible_repositories.count %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm">
+                      <% if installation.revoked? %>
+                        <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                          Revoked
+                        </span>
+                      <% elsif installation.suspended? %>
+                        <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
+                          Suspended
+                        </span>
+                      <% else %>
+                        <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                          Active
+                        </span>
+                      <% end %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <%= local_time(installation.created_at, format: :date) %>
+                    </td>
+                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                      <div class="flex justify-end gap-2">
+                        <%= link_to "View", github_installation_path(installation), class: "text-indigo-600 hover:text-indigo-900" %>
+                        <% if policy(installation).update? && installation.active? %>
+                          <%= link_to "Migrate Projects", migrate_project_github_installation_path(installation), class: "text-indigo-600 hover:text-indigo-900" %>
+                        <% end %>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 rounded-lg bg-blue-50 p-4">
+      <div class="flex">
+        <div class="flex-shrink-0">
+          <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clip-rule="evenodd" />
+          </svg>
+        </div>
+        <div class="ml-3">
+          <h3 class="text-sm font-medium text-blue-800">GitHub App Benefits</h3>
+          <div class="mt-2 text-sm text-blue-700">
+            <ul class="list-disc space-y-1 pl-5">
+              <li>No personal access tokens required — use organization-level permissions</li>
+              <li>Access is granted and managed by GitHub organization admins</li>
+              <li>Works with enterprise security policies (SSO enforcement, IP allowlisting)</li>
+              <li>Consolidated audit trail in GitHub Enterprise</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-8 text-center">
+      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+      <h3 class="mt-2 text-sm font-semibold text-gray-900">No GitHub Apps installed</h3>
+      <p class="mt-1 text-sm text-gray-500">Install the Paid Agents GitHub App to connect repositories without Personal Access Tokens.</p>
+      <div class="mt-6">
+        <div class="rounded-md bg-yellow-50 p-4 max-w-md mx-auto">
+          <p class="text-sm text-yellow-700">
+            GitHub App installation requires administrator access to your GitHub organization.
+            Contact your GitHub organization admin to install the app.
+          </p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>
