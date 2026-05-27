@@ -180,6 +180,29 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response).to redirect_to(project_context_intake_path(project))
     end
 
+    it "redirects instead of falling through when finish round returns an unexpected terminal state" do
+      allow(Knowledge::ContextIntake::FinishRound).to receive(:call).and_return(
+        instance_double(
+          Knowledge::ContextIntake::FinishRound::Result,
+          next_question_key: nil,
+          pending_generation?: false,
+          completed?: false
+        )
+      )
+
+      patch project_context_intake_path(project),
+        params: {
+          question_key: last_question.fetch(:key),
+          answer_text: "Final answer",
+          navigation_action: "finish"
+        },
+        headers: { "Turbo-Frame" => Knowledge::ContextIntakeController::WIZARD_FRAME_ID }
+
+      expect(response).to have_http_status(:see_other)
+      expect(response).to redirect_to(project_context_intake_path(project))
+      expect(flash[:notice]).to eq("Business context saved and synthesized into project knowledge.")
+    end
+
     it "does not invoke AI question generation when the feature flag is disabled" do
       FeatureFlags.disable!(:context_intake_agent_questions)
 

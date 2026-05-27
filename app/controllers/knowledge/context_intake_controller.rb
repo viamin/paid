@@ -128,11 +128,9 @@ module Knowledge
 
       return render_pending_response if result.pending_generation?
 
-      if result.completed?
-        redirect_to project_context_intake_path(@project),
-          status: :see_other,
-          notice: "Business context saved and synthesized into project knowledge."
-      end
+      redirect_to project_context_intake_path(@project),
+        status: :see_other,
+        notice: "Business context saved and synthesized into project knowledge."
     end
 
     def render_wizard_response(status: :ok)
