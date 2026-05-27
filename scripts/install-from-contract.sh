@@ -10,7 +10,7 @@
 # Usage:
 #   scripts/install-from-contract.sh <provider>
 #
-# Supported providers: codex, gemini, copilot, kilocode, cursor, aider
+# Supported providers: codex, gemini, copilot, kilocode, cursor, aider, opencode
 
 set -e
 
@@ -34,7 +34,7 @@ done
 PROVIDER="${1:-}"
 if [ -z "$PROVIDER" ]; then
   echo "Usage: $0 <provider>" >&2
-  echo "Supported providers: codex, gemini, copilot, kilocode, cursor, aider" >&2
+  echo "Supported providers: codex, gemini, copilot, kilocode, cursor, aider, opencode" >&2
   exit 1
 fi
 
@@ -76,13 +76,20 @@ else
 
   case "$SOURCE" in
   npm)
-    PACKAGE=$(echo "$CONTRACT" | sed -n 's/^PACKAGE=//p')
-    if [ -z "$PACKAGE" ]; then
-      echo "ERROR: No PACKAGE in contract for provider: $PROVIDER" >&2
+    INSTALL_COMMAND=$(echo "$CONTRACT" | sed -n 's/^INSTALL_COMMAND=//p')
+    if [ -z "$INSTALL_COMMAND" ]; then
+      echo "ERROR: No INSTALL_COMMAND in contract for provider: $PROVIDER" >&2
       exit 1
     fi
-    echo "Installing $PROVIDER via npm: $PACKAGE"
-    npm install -g --ignore-scripts "$PACKAGE"
+    case "$INSTALL_COMMAND" in
+      *--ignore-scripts*) ;;
+      *)
+        echo "ERROR: INSTALL_COMMAND for npm provider $PROVIDER must include --ignore-scripts" >&2
+        exit 1
+        ;;
+    esac
+    echo "Installing $PROVIDER via npm contract"
+    eval "$INSTALL_COMMAND"
     ;;
 
   uv_tool)

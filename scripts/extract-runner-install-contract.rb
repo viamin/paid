@@ -13,13 +13,7 @@
 #   eval "$(bundle exec ruby scripts/extract-runner-install-contract.rb claude)"
 
 require "agent_harness"
-
-def normalized_install_command(contract)
-  command = Array(contract[:install_command]).dup
-  return command if command.empty? || command.include?("--ignore-scripts")
-
-  command << "--ignore-scripts"
-end
+require_relative "lib/install_contract_helpers"
 
 runner = ARGV[0]
 unless runner
@@ -112,7 +106,7 @@ if source == :uv_tool
   puts "SUPPORTED_VERSION=#{contract[:version]}"
 elsif is_npm
   package = contract[:package] || (source.is_a?(Hash) && source[:package])
-  install_command = normalized_install_command(contract)
+  install_command = InstallContractHelpers.normalized_install_command(contract)
   puts "SOURCE=npm"
   puts "PACKAGE=#{package}"
   puts "INSTALL_COMMAND=#{install_command.join(" ")}"
