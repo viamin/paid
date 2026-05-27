@@ -3716,13 +3716,13 @@ expect(container_service).to receive(:execute).with(
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(
           Temporalio::Error::ApplicationError,
-          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+          /No tier-capable runner available: .* is the only runner available for tier mid and it is currently rate limited/
         )
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to match(
-          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
+          /No tier-capable runner available: .* is the only runner available for tier mid and it is currently rate limited/
         )
         expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq([ kimi_runner.routing_key ])
       end
