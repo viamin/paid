@@ -6,6 +6,7 @@ module Projects
 
     def create
       authorize @project, :update?
+      Interop::AdoptionModeGuard.enforce!(project: @project, action: :import_config)
 
       result = Interop::Imports::ApplyProjectPackage.call(
         project: @project,
@@ -22,7 +23,7 @@ module Projects
           workflow_policies: result.workflow_policies_count
         }
       }, status: :created
-    rescue ActiveRecord::RecordInvalid, KeyError => e
+    rescue ActiveRecord::RecordInvalid, ArgumentError, KeyError => e
       render json: { errors: [ e.message ] }, status: :unprocessable_content
     end
 

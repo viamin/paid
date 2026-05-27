@@ -43,5 +43,23 @@ RSpec.describe AgentRuns::IngestExternal do
         )
       }.to raise_error(ArgumentError, /not enabled/)
     end
+
+    it "rejects ingestion when adoption mode does not permit it" do
+      project.update!(interop_settings: {
+        "adoption_mode" => "observe_only",
+        "external_execution_sources" => { "cursor" => true }
+      })
+
+      expect {
+        described_class.call(
+          project: project,
+          attributes: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-123",
+            custom_prompt: "Imported run"
+          }
+        )
+      }.to raise_error(ArgumentError, /ingest_external_runs is not permitted/)
+    end
   end
 end

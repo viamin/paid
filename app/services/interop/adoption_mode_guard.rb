@@ -13,6 +13,12 @@ module Interop
       new(...).call
     end
 
+    def self.enforce!(project:, action:)
+      return true if call(project:, action:)
+
+      raise ArgumentError, "#{action} is not permitted when adoption_mode is #{project.adoption_mode}"
+    end
+
     def initialize(project:, action:)
       @project = project
       @action = action.to_sym

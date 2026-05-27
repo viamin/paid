@@ -6,7 +6,7 @@ RSpec.describe Interop::AdoptionModeGuard do
   describe "#call" do
     let(:account) { create(:account) }
 
-    context "observe_only mode" do
+    context "when adoption_mode is observe_only" do
       let(:project) { create(:project, account: account, interop_settings: { "adoption_mode" => "observe_only" }) }
 
       it "permits viewing metrics" do
@@ -22,7 +22,7 @@ RSpec.describe Interop::AdoptionModeGuard do
       end
     end
 
-    context "advisory mode" do
+    context "when adoption_mode is advisory" do
       let(:project) { create(:project, account: account, interop_settings: { "adoption_mode" => "advisory" }) }
 
       it "permits importing config" do
@@ -38,7 +38,7 @@ RSpec.describe Interop::AdoptionModeGuard do
       end
     end
 
-    context "review_only mode" do
+    context "when adoption_mode is review_only" do
       let(:project) { create(:project, account: account, interop_settings: { "adoption_mode" => "review_only" }) }
 
       it "permits reviewing runs" do
@@ -50,7 +50,7 @@ RSpec.describe Interop::AdoptionModeGuard do
       end
     end
 
-    context "full_execution mode" do
+    context "when adoption_mode is full_execution" do
       let(:project) { create(:project, account: account, interop_settings: { "adoption_mode" => "full_execution" }) }
 
       it "permits executing runs" do

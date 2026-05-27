@@ -30,7 +30,7 @@ RSpec.describe Interop::Imports::MapExternalPackage do
       result = described_class.call(
         source_system: "devin",
         raw_data: {
-          prompts: [{ name: "Implement Feature", template: "Build {{feature}}" }],
+          prompts: [ { name: "Implement Feature", template: "Build {{feature}}" } ],
           workflows: [
             { policy_key: "devin.auto_review", name: "Auto Review", rules: { "enabled" => true } }
           ]
@@ -47,9 +47,9 @@ RSpec.describe Interop::Imports::MapExternalPackage do
       result = described_class.call(
         source_system: "internal_agent_workflows",
         raw_data: {
-          prompts: [{ name: "Test Prompt", template: "Test {{var}}" }],
-          style_guides: [{ name: "Internal Guide", content: "Follow internal standards" }],
-          policies: [{ policy_key: "internal.review", name: "Internal Review", policy_type: "review" }]
+          prompts: [ { name: "Test Prompt", template: "Test {{var}}" } ],
+          style_guides: [ { name: "Internal Guide", content: "Follow internal standards" } ],
+          policies: [ { policy_key: "internal.review", name: "Internal Review", policy_type: "review" } ]
         }
       )
 
@@ -68,7 +68,7 @@ RSpec.describe Interop::Imports::MapExternalPackage do
       result = described_class.call(
         source_system: "github_copilot",
         raw_data: {
-          prompts: [{ name: "My Custom Prompt", content: "Do the thing" }]
+          prompts: [ { name: "My Custom Prompt", content: "Do the thing" } ]
         }
       )
 

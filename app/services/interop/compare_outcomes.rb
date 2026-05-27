@@ -35,13 +35,15 @@ module Interop
     end
 
     def call
+      external = external_runs.to_a
+
       ComparisonResult.new(
         project_id: project.id,
         period_start: period_start,
         period_end: period_end,
         paid_native: compute_metrics(paid_native_runs),
-        external: compute_metrics(external_runs),
-        by_source: compute_by_source_metrics
+        external: compute_metrics(external),
+        by_source: compute_by_source_metrics(external)
       )
     end
 
@@ -80,9 +82,8 @@ module Interop
       )
     end
 
-    def compute_by_source_metrics
+    def compute_by_source_metrics(external_runs)
       external_runs
-        .to_a
         .group_by(&:external_source_key)
         .transform_values { |runs| compute_metrics(runs) }
     end
@@ -95,14 +96,10 @@ module Interop
     end
 
     def average_tokens(runs)
-      input_values = runs.map(&:tokens_input).compact
-      output_values = runs.map(&:tokens_output).compact
-      return 0.0 if input_values.empty? && output_values.empty?
+      totals = runs.map { |run| run.tokens_input.to_i + run.tokens_output.to_i }
+      return 0.0 if totals.empty?
 
-      input_avg = input_values.empty? ? 0.0 : (input_values.sum.to_f / input_values.size)
-      output_avg = output_values.empty? ? 0.0 : (output_values.sum.to_f / output_values.size)
-
-      (input_avg + output_avg).round(2)
+      (totals.sum.to_f / totals.size).round(2)
     end
 
     def empty_metrics

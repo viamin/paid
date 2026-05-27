@@ -24,7 +24,7 @@ module Interop
           raise NotImplementedError, "#{name} must implement .normalize_event"
         end
 
-        def verify_signature?(payload, signature:, secret:)
+        def verify_signature?(raw_body, signature:, secret:, request_headers: {})
           raise NotImplementedError, "#{name} must implement .verify_signature?"
         end
       end

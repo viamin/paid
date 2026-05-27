@@ -18,6 +18,7 @@ module Projects
 
     def create
       authorize @project, :update?
+      Interop::AdoptionModeGuard.enforce!(project: @project, action: :receive_connector_events)
 
       event = Interop::Connectors::IngestEvent.call(
         project: @project,
@@ -27,7 +28,9 @@ module Projects
         external_event_id: connector_event_params[:external_event_id],
         occurred_at: connector_event_params[:occurred_at],
         signature: connector_event_params[:signature],
-        secret: connector_secret
+        secret: connector_secret,
+        raw_body: request.raw_post,
+        request_headers: signature_headers
       )
 
       render json: {
@@ -36,7 +39,9 @@ module Projects
         event_type: event.event_type,
         status: event.status
       }, status: :created
-    rescue ArgumentError => e
+    rescue ActiveRecord::RecordNotUnique
+      render json: { errors: [ "Event already processed" ] }, status: :conflict
+    rescue ActiveRecord::RecordInvalid, ArgumentError => e
       render json: { errors: [ e.message ] }, status: :unprocessable_content
     end
 
@@ -64,6 +69,10 @@ module Projects
         .first
 
       credential&.secret
+    end
+
+    def signature_headers
+      request.headers.to_h.slice("X-Slack-Request-Timestamp")
     end
   end
 end

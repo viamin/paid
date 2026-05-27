@@ -36,10 +36,10 @@ module Interop
           }.compact
         end
 
-        def verify_signature?(payload, signature:, secret:)
+        def verify_signature?(raw_body, signature:, secret:, request_headers: {})
           return false if secret.blank? || signature.blank?
 
-          expected = OpenSSL::HMAC.hexdigest("SHA256", secret, payload.to_json)
+          expected = OpenSSL::HMAC.hexdigest("SHA256", secret, raw_body)
           ActiveSupport::SecurityUtils.secure_compare(expected, signature)
         end
       end

@@ -8,6 +8,7 @@ module Projects
       authorize @project, :update?
 
       if @project.update(interop_settings: interop_settings_params.to_h)
+        @project.instance_variable_set(:@effective_interop_settings, nil)
         render json: { interop_settings: @project.effective_interop_settings }
       else
         render json: { errors: @project.errors.full_messages }, status: :unprocessable_content

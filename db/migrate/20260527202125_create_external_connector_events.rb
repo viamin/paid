@@ -28,5 +28,47 @@ class CreateExternalConnectorEvents < ActiveRecord::Migration[8.1]
       name: "idx_connector_events_status_created"
     add_index :external_connector_events, :occurred_at,
       name: "idx_connector_events_occurred_at"
+
+    reversible do |dir|
+      dir.up do
+        safety_assured do
+          execute <<-SQL.squish
+            ALTER TABLE external_connector_events ENABLE ROW LEVEL SECURITY;
+
+            CREATE POLICY external_connector_events_account_isolation ON external_connector_events
+              USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
+              WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
+
+            CREATE POLICY external_connector_events_project_access ON external_connector_events
+              USING (
+                paid_tenant_bypass() OR EXISTS (
+                  SELECT 1
+                  FROM projects
+                  WHERE projects.id = external_connector_events.project_id
+                    AND projects.account_id = paid_current_account_id()
+                )
+              )
+              WITH CHECK (
+                paid_tenant_bypass() OR EXISTS (
+                  SELECT 1
+                  FROM projects
+                  WHERE projects.id = external_connector_events.project_id
+                    AND projects.account_id = paid_current_account_id()
+                )
+              );
+          SQL
+        end
+      end
+
+      dir.down do
+        safety_assured do
+          execute <<-SQL.squish
+            DROP POLICY IF EXISTS external_connector_events_project_access ON external_connector_events;
+            DROP POLICY IF EXISTS external_connector_events_account_isolation ON external_connector_events;
+            ALTER TABLE external_connector_events DISABLE ROW LEVEL SECURITY;
+          SQL
+        end
+      end
+    end
   end
 end

@@ -34,6 +34,8 @@ module AgentRuns
       raise ArgumentError, "external_source_key is required" if external_source_key.blank?
       raise ArgumentError, "external_run_key is required" if external_run_key.blank?
 
+      Interop::AdoptionModeGuard.enforce!(project: project, action: :ingest_external_runs)
+
       unless project.external_execution_enabled_for?(external_source_key)
         raise ArgumentError, "#{external_source_key} is not enabled for external execution ingestion on this project"
       end

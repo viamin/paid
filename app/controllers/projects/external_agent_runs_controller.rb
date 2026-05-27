@@ -6,6 +6,7 @@ module Projects
 
     def create
       authorize @project, :update?
+      Interop::AdoptionModeGuard.enforce!(project: @project, action: :ingest_external_runs)
 
       agent_run = AgentRuns::IngestExternal.call(
         project: @project,
@@ -19,7 +20,9 @@ module Projects
         external_source_key: agent_run.external_source_key,
         adoption_mode_snapshot: agent_run.adoption_mode_snapshot
       }, status: :created
-    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound, ArgumentError => e
+    rescue ActiveRecord::RecordNotFound => e
+      render json: { errors: [ e.message ] }, status: :not_found
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique, ArgumentError => e
       render json: { errors: [ e.message ] }, status: :unprocessable_content
     end
 

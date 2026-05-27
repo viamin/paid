@@ -58,5 +58,13 @@ RSpec.describe ExternalConnectorEvent do
       expect(event.reload.status).to eq("failed")
       expect(event.normalized_data["error"]).to eq("Something went wrong")
     end
+
+    it "handles nil normalized_data when storing the error message" do
+      event.update_column(:normalized_data, nil)
+
+      event.mark_failed!(message: "Something went wrong")
+
+      expect(event.reload.normalized_data).to eq({ "error" => "Something went wrong" })
+    end
   end
 end

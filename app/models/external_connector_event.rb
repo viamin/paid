@@ -29,7 +29,7 @@ class ExternalConnectorEvent < ApplicationRecord
 
   def mark_failed!(message: nil)
     attrs = { status: "failed", processed_at: Time.current }
-    attrs[:normalized_data] = normalized_data.merge("error" => message) if message.present?
+    attrs[:normalized_data] = (normalized_data || {}).merge("error" => message) if message.present?
     update!(**attrs)
   end
 

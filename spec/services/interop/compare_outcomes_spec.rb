@@ -34,6 +34,17 @@ RSpec.describe Interop::CompareOutcomes do
         expect(result.by_source).to have_key("cursor")
         expect(result.by_source["cursor"].run_count).to eq(1)
       end
+
+      it "averages tokens per run even when input/output nil patterns differ" do
+        create(:agent_run, :external_execution, :completed, project: project,
+               external_source_key: "devin", tokens_input: 100, tokens_output: nil)
+        create(:agent_run, :external_execution, :completed, project: project,
+               external_source_key: "devin", tokens_input: 200, tokens_output: 50)
+
+        result = described_class.call(project: project)
+
+        expect(result.by_source["devin"].avg_tokens_used).to eq(175.0)
+      end
     end
 
     context "with no runs" do

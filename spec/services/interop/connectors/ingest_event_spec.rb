@@ -5,6 +5,15 @@ require "rails_helper"
 RSpec.describe Interop::Connectors::IngestEvent do
   describe ".call" do
     let(:account) { create(:account) }
+    let(:slack_payload) { { "event" => { "ts" => "123.456", "type" => "message", "text" => "hi" } } }
+    let(:slack_raw_body) do
+      '{"connector_event":{"connector_key":"slack","event_type":"message_posted","external_event_id":"slack-1","payload":{"event":{"ts":"123.456","type":"message","text":"hi"}}}}'
+    end
+    let(:slack_timestamp) { "1_717_171_717" }
+    let(:slack_signature) do
+      digest = OpenSSL::HMAC.hexdigest("SHA256", "signing-secret", "v0:#{slack_timestamp}:#{slack_raw_body}")
+      "v0=#{digest}"
+    end
     let(:project) do
       create(:project, account: account, interop_settings: {
         "adoption_mode" => "advisory",
@@ -89,6 +98,58 @@ RSpec.describe Interop::Connectors::IngestEvent do
           external_event_id: "jira-dup-001"
         )
       }.to raise_error(ActiveRecord::RecordInvalid)
+    end
+
+    it "rejects connector ingestion when adoption mode does not permit it" do
+      project.update!(interop_settings: project.interop_settings.merge("adoption_mode" => "observe_only"))
+
+      expect {
+        described_class.call(
+          project: project,
+          connector_key: "jira",
+          event_type: "issue_created",
+          payload: {},
+          external_event_id: "jira-observe-only"
+        )
+      }.to raise_error(ArgumentError, /receive_connector_events is not permitted/)
+    end
+
+    it "verifies Slack signatures against the raw body and request timestamp header" do
+      project.update!(interop_settings: {
+        "adoption_mode" => "advisory",
+        "connectors" => { "slack" => true },
+        "external_execution_sources" => {}
+      })
+
+      event = described_class.call(
+        project: project,
+        connector_key: "slack",
+        event_type: "message_posted",
+        payload: slack_payload,
+        external_event_id: "slack-1",
+        signature: slack_signature,
+        secret: "signing-secret",
+        raw_body: slack_raw_body,
+        request_headers: { "X-Slack-Request-Timestamp" => slack_timestamp }
+      )
+
+      expect(event).to be_persisted
+      expect(event.status).to eq("processed")
+    end
+
+    it "creates a failed event when connector normalization raises" do
+      allow(Interop::Connectors::Jira).to receive(:normalize_event).and_raise(StandardError, "bad payload")
+
+      event = described_class.call(
+        project: project,
+        connector_key: "jira",
+        event_type: "issue_created",
+        payload: { "issue" => { "key" => "PROJ-99" } },
+        external_event_id: "jira-failed-normalization"
+      )
+
+      expect(event.status).to eq("failed")
+      expect(event.normalized_data).to eq({ "error" => "bad payload" })
     end
   end
 end
