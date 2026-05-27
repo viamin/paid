@@ -566,6 +566,7 @@ No mutant license key, secret, or credential entry is added to Paid for its own 
 - Tier-1 incremental run on a typical Paid PR: < 5 min wall clock.
 - Container-side `mutant run --since HEAD~1 --jobs 1` on a typical agent diff: < 3 min wall clock.
 - Nightly full sweep on Paid itself: < 90 min.
+- 2026-05-27 implementation note: the recurring GoodJob sweep is serialized to one project per invocation with a hard per-project timeout of 90 minutes (`MutationSweeps::Run::SWEEP_TIMEOUT`). CI coverage validates the orchestration path with a fixture-backed mutant result and keeps the nightly scheduler from fanning out all opted-in projects at once.
 - Composite score calculation overhead from new dimension: < 10 ms per quality metric.
 
 ### Security Validation

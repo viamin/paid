@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_27_084149) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1851,6 +1851,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
     t.decimal "mutation_kill_rate", precision: 5, scale: 4, comment: "Mutant kill rate for the agent run when mutation testing executed; nil means mutant did not run or produced no score."
     t.bigint "prompt_version_id"
     t.jsonb "scores", default: {}, null: false
+    t.string "source", default: "agent_run", null: false, comment: "Origin of the metric row so scheduled mutation sweeps stay distinct from per-agent-run quality metrics."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
     t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
@@ -1860,6 +1861,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
     t.index ["prompt_version_id", "created_at"], name: "idx_quality_metrics_prompt_recent_composite", order: { created_at: :desc }, where: "(composite_score IS NOT NULL)"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
+    t.index ["source"], name: "index_quality_metrics_on_source"
   end
 
   create_table "quality_pause_events", comment: "Audit trail for project-level automatic pauses and resumptions caused by quality gate outcomes.", force: :cascade do |t|
@@ -3415,6 +3417,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
       CREATE TRIGGER logidze_on_cost_budgets BEFORE INSERT OR UPDATE ON public.cost_budgets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
+  SQL
+
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -3433,6 +3439,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -3497,13 +3507,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

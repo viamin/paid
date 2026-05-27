@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Containers
   module QualityHooks
     extend ActiveSupport::Concern
@@ -45,13 +47,19 @@ module Containers
     def resolve_mutation_command(project, user, language)
       return unless language == "ruby"
 
-      requirement = PreCommitRequirement
-        .resolve(project: project, user: user)
-        .find { |record| record.check_type == "mutation_test" }
+      requirement = resolve_mutation_requirement(project, user, language)
       return unless requirement
 
       warn_once_when_mutant_license_missing(project, requirement.command)
       requirement.command
+    end
+
+    def resolve_scheduled_mutation_command(project, user, language)
+      requirement = resolve_mutation_requirement(project, user, language)
+      return unless requirement
+
+      warn_once_when_mutant_license_missing(project, requirement.command)
+      scheduled_mutation_command(requirement.command)
     end
 
     def warn_once_when_mutant_license_missing(project, command)
@@ -72,6 +80,50 @@ module Containers
 
     def mutant_license_warning_cache_key(project_id)
       "quality_hooks/mutant_license_missing/#{project_id}"
+    end
+
+    private
+
+    def resolve_mutation_requirement(project, user, language)
+      return unless language == "ruby"
+
+      PreCommitRequirement
+        .resolve(project: project, user: user)
+        .find { |record| record.check_type == "mutation_test" }
+    end
+
+    def scheduled_mutation_command(command)
+      tokens = Shellwords.split(command.to_s)
+      return if tokens.empty?
+
+      normalized = []
+      jobs_overridden = false
+      index = 0
+
+      while index < tokens.length
+        token = tokens[index]
+
+        case token
+        when "--since"
+          index += 2
+        when /\A--since=/
+          index += 1
+        when "--jobs"
+          normalized.concat([ "--jobs", "1" ])
+          jobs_overridden = true
+          index += 2
+        when /\A--jobs=/
+          normalized.concat([ "--jobs", "1" ])
+          jobs_overridden = true
+          index += 1
+        else
+          normalized << token
+          index += 1
+        end
+      end
+
+      normalized.concat([ "--jobs", "1" ]) unless jobs_overridden
+      normalized.join(" ")
     end
   end
 end
