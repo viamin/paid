@@ -118,9 +118,9 @@ module Accounts
           duration: "20 minutes",
           outcome: "Track adoption health, team fit, and the signals that justify rollout expansion.",
           modules: [
-            "Reading active-team and usage-depth metrics",
+            "Reading active-repository and usage-depth metrics",
             "What automation acceptance and override trends mean",
-            "When to expand from pilot repos to broader team coverage"
+            "When to expand from pilot repos to broader repository coverage"
           ]
         },
         {
@@ -178,10 +178,6 @@ module Accounts
           .distinct
       end
 
-      def active_teams_count
-        @active_teams_count ||= recent_projects.distinct.count(:owner)
-      end
-
       def active_projects_count
         @active_projects_count ||= recent_projects.count
       end
@@ -230,7 +226,7 @@ module Accounts
 
       def metrics
         {
-          active_teams: active_teams_count,
+          active_repositories: active_projects_count,
           active_projects: active_projects_count,
           usage_depth: {
             enabled: enabled_feature_count,
@@ -250,20 +246,20 @@ module Accounts
             label: "Setup",
             summary: "No repositories are connected yet. Finish the first production workflow before tuning rollout policy."
           }
-        elsif active_teams_count <= 1
+        elsif active_projects_count <= 1
           {
             label: "Pilot",
-            summary: "A small group is active. Focus on repeatability, reviewer confidence, and explicit expansion criteria."
+            summary: "A small repository footprint is active. Focus on repeatability, reviewer confidence, and explicit expansion criteria."
           }
         elsif usage_depth_percentage < 60
           {
             label: "Expansion",
-            summary: "Multiple teams are active, but core rollout capabilities are still uneven across the account."
+            summary: "Multiple repositories are active, but core rollout capabilities are still uneven across the account."
           }
         else
           {
             label: "Operationalized",
-            summary: "Paid is active across multiple teams with enough controls in place to scale with less bespoke support."
+            summary: "Paid is active across multiple repositories with enough controls in place to scale with less bespoke support."
           }
         end
       end
@@ -290,7 +286,7 @@ module Accounts
       def recommendations
         [
           first_repo_recommendation,
-          active_team_recommendation,
+          active_repository_recommendation,
           auto_pick_recommendation,
           review_recommendation,
           guardrail_recommendation,
@@ -310,14 +306,14 @@ module Accounts
         )
       end
 
-      def active_team_recommendation
-        return unless projects.any? && active_teams_count.zero?
+      def active_repository_recommendation
+        return unless projects.any? && active_projects_count.zero?
 
         recommendation(
           severity: :blocker,
-          title: "Drive the first active team through the pilot",
-          detail: "The account has connected repositories but no recent team activity in the last #{WINDOW_DAYS} days.",
-          action: "Pick one team-owned repo and run the pilot rollout playbook end to end."
+          title: "Drive the first active repository through the pilot",
+          detail: "The account has connected repositories but no recent repository activity in the last #{WINDOW_DAYS} days.",
+          action: "Pick one repository and run the pilot rollout playbook end to end."
         )
       end
 
@@ -361,7 +357,7 @@ module Accounts
           severity: :opportunity,
           title: "Turn on quality gates before broad expansion",
           detail: "Quality thresholds are still disabled, so platform owners have fewer early warning signals when automation drifts.",
-          action: "Enable account-level quality gates once the pilot team has stable baselines."
+          action: "Enable account-level quality gates once the pilot repositories have stable baselines."
         )
       end
 

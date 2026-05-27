@@ -16,9 +16,9 @@
 
   <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
     <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
-      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Active teams</p>
-      <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= adoption_dashboard.dig(:metrics, :active_teams) %></p>
-      <p class="text-sm text-gray-500 dark:text-gray-400">Distinct repo owners active in the last 30 days.</p>
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Active repositories</p>
+      <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white"><%= adoption_dashboard.dig(:metrics, :active_repositories) %></p>
+      <p class="text-sm text-gray-500 dark:text-gray-400">Repositories with Paid runs in the last 30 days.</p>
     </div>
     <div class="rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/60">
       <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Usage depth</p>
@@ -65,7 +65,7 @@
           <% end %>
         <% else %>
           <div class="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50 px-4 py-6 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100">
-            No immediate rollout blockers detected. Use the playbooks below to keep expansion repeatable as more teams adopt Paid.
+            No immediate rollout blockers detected. Use the playbooks below to keep expansion repeatable as more repositories adopt Paid.
           </div>
         <% end %>
       </div>

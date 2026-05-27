@@ -9,7 +9,7 @@ RSpec.describe Accounts::Adoption::Dashboard do
 
       result = described_class.call(account: account, tenant_setting: tenant_setting)
 
-      expect(result.dig(:metrics, :active_teams)).to eq(2)
+      expect(result.dig(:metrics, :active_repositories)).to eq(2)
       expect(result.dig(:metrics, :active_projects)).to eq(2)
       expect(result.dig(:metrics, :recent_runs)).to eq(3)
       expect(result.dig(:metrics, :usage_depth, :enabled)).to eq(6)
@@ -65,13 +65,11 @@ RSpec.describe Accounts::Adoption::Dashboard do
       account, tenant_setting = build_override_heavy_account
       dashboard = described_class.new(account:, tenant_setting:)
 
-      dashboard.send(:active_teams_count)
       dashboard.send(:active_projects_count)
       dashboard.send(:automation_acceptance_rate)
       dashboard.send(:manual_override_rate)
       dashboard.send(:recent_runs_count)
 
-      expect(count_queries { dashboard.send(:active_teams_count) }).to eq(0)
       expect(count_queries { dashboard.send(:active_projects_count) }).to eq(0)
       expect(count_queries { dashboard.send(:automation_acceptance_rate) }).to eq(0)
       expect(count_queries { dashboard.send(:manual_override_rate) }).to eq(0)
