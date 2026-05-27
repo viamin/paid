@@ -231,17 +231,19 @@ jobs:
           fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
-      - name: Extract OpenCode package from agent-harness
+      - name: Extract OpenCode install contract from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
         id: opencode-contract
         run: |
           contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb opencode)
-          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
-          if [ -z "$package" ]; then
-            echo "Failed to extract OpenCode package from agent-harness" >&2
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract OpenCode install command from agent-harness" >&2
             exit 1
           fi
-          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Extract Pi package from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
@@ -330,7 +332,7 @@ jobs:
             CURSOR_BINARY_NAME=${{ steps.cursor-contract.outputs.binary_name }}
             CURSOR_GLOBAL_PATH=${{ steps.cursor-contract.outputs.global_path }}
             CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
-            OPENCODE_PACKAGE=${{ steps.opencode-contract.outputs.package }}
+            OPENCODE_INSTALL_COMMAND=${{ steps.opencode-contract.outputs.install_command }}
             PI_PACKAGE=${{ steps.pi-contract.outputs.package }}
             KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}

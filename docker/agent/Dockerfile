@@ -238,15 +238,22 @@ RUN if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then \
     && echo "Installing Kilocode CLI via agent-harness contract: ${KILOCODE_INSTALL_COMMAND}" \
     && eval "${KILOCODE_INSTALL_COMMAND}"
 
-# OpenCode CLI: version is owned by agent-harness (installation_contract).
-# OPENCODE_PACKAGE is extracted from agent-harness at build time by
+# OpenCode CLI: install contract is owned by agent-harness.
+# OPENCODE_INSTALL_COMMAND is extracted from agent-harness at build time by
 # build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
-ARG OPENCODE_PACKAGE
-RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
-        echo "ERROR: OPENCODE_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
+ARG OPENCODE_INSTALL_COMMAND
+RUN if [ -z "${OPENCODE_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: OPENCODE_INSTALL_COMMAND not set; aborting build" >&2; \
         exit 1; \
     fi \
-    && npm install -g --ignore-scripts "${OPENCODE_PACKAGE}"
+    && case "${OPENCODE_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: OPENCODE_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing OpenCode via agent-harness contract: ${OPENCODE_INSTALL_COMMAND}" \
+    && eval "${OPENCODE_INSTALL_COMMAND}"
 
 # Pre-seed the OpenCode SQLite database so the first container invocation does
 # not emit "Performing one time database migration, may take a few minutes..."
