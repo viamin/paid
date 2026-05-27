@@ -25,6 +25,7 @@ class Project < ApplicationRecord
 
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
+  ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
     "driver" => "playwright",
@@ -103,6 +104,13 @@ class Project < ApplicationRecord
     "min_recent_runs" => 3,
     "lookback_window_hours" => 24,
     "metric_thresholds" => {}
+  }.freeze
+  DEFAULT_INTEROP_SETTINGS = {
+    "adoption_mode" => "observe_only",
+    "tool_integrations" => Interop::Catalog.tool_integration_keys.index_with(false),
+    "connectors" => Interop::Catalog.connector_keys.index_with(false),
+    "external_execution_sources" => Interop::Catalog.external_execution_source_keys.index_with(false),
+    "imports" => Interop::Catalog.import_keys.index_with { [] }
   }.freeze
 
   AUTOMATION_SETTINGS = [
@@ -192,10 +200,12 @@ class Project < ApplicationRecord
   has_many :exception_incidents, dependent: :nullify
   has_many :configuration_bundles, dependent: :destroy
   has_many :coordination_policies, dependent: :destroy
+  has_many :external_connector_events, dependent: :destroy
 
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
+  before_validation :normalize_interop_settings
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -236,6 +246,7 @@ class Project < ApplicationRecord
   validate :review_settings_valid
   validate :screenshot_settings_valid
   validate :priority_labels_valid
+  validate :interop_settings_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -461,6 +472,39 @@ class Project < ApplicationRecord
 
     stored = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
     @effective_screenshot_settings = normalize_screenshot_settings(DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored))
+  end
+
+  def effective_interop_settings
+    return @effective_interop_settings if defined?(@effective_interop_settings) && @effective_interop_settings
+
+    stored = interop_settings.is_a?(Hash) ? interop_settings.deep_stringify_keys : {}
+    @effective_interop_settings = DEFAULT_INTEROP_SETTINGS.deep_merge(stored)
+  end
+
+  def adoption_mode
+    effective_interop_settings["adoption_mode"]
+  end
+
+  def observe_only?
+    adoption_mode == "observe_only"
+  end
+
+  def advisory?
+    adoption_mode == "advisory"
+  end
+
+  def review_only?
+    adoption_mode == "review_only"
+  end
+
+  def full_execution?
+    adoption_mode == "full_execution"
+  end
+
+  def external_execution_enabled_for?(source_key)
+    effective_interop_settings
+      .fetch("external_execution_sources", {})
+      .fetch(source_key.to_s, false) == true
   end
 
   def effective_screenshot_status
@@ -1207,6 +1251,44 @@ class Project < ApplicationRecord
     errors.add(:screenshot_settings, e.message)
   end
 
+  def interop_settings_valid
+    return if interop_settings.nil? || interop_settings == {}
+
+    unless interop_settings.is_a?(Hash)
+      errors.add(:interop_settings, "must be a JSON object")
+      return
+    end
+
+    normalized = interop_settings.deep_stringify_keys
+
+    mode = normalized["adoption_mode"]
+    if mode.present? && !ADOPTION_MODES.include?(mode)
+      errors.add(:interop_settings, "adoption_mode must be one of: #{ADOPTION_MODES.join(', ')}")
+    end
+
+    validate_interop_boolean_map(normalized, "tool_integrations", Interop::Catalog.tool_integration_keys)
+    validate_interop_boolean_map(normalized, "connectors", Interop::Catalog.connector_keys)
+    validate_interop_boolean_map(normalized, "external_execution_sources", Interop::Catalog.external_execution_source_keys)
+    validate_interop_imports(normalized)
+  end
+
+  def normalize_interop_settings
+    return unless interop_settings.is_a?(Hash)
+
+    normalized = interop_settings.deep_stringify_keys
+    @effective_interop_settings = nil
+
+    %w[tool_integrations connectors external_execution_sources].each do |key|
+      next unless normalized[key].is_a?(Hash)
+
+      normalized[key] = normalized[key].transform_values do |value|
+        ActiveModel::Type::Boolean.new.cast(value)
+      end
+    end
+
+    self.interop_settings = normalized
+  end
+
   def validate_review_methods_config(normalized)
     methods = normalized["methods"]
     return if methods.nil?
@@ -1303,6 +1385,57 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
+  end
+
+  def validate_interop_boolean_map(normalized, key, allowed_keys)
+    value = normalized[key]
+    return if value.nil?
+
+    unless value.is_a?(Hash)
+      errors.add(:interop_settings, "#{key} must be a JSON object")
+      return
+    end
+
+    extras = value.keys - allowed_keys
+    if extras.any?
+      errors.add(:interop_settings, "#{key} contains unknown entries: #{extras.join(', ')}")
+    end
+
+    value.each do |child_key, child_value|
+      next if child_value == true || child_value == false
+
+      errors.add(:interop_settings, "#{key}.#{child_key} must be true or false")
+    end
+  end
+
+  def validate_interop_imports(normalized)
+    imports = normalized["imports"]
+    return if imports.nil?
+
+    unless imports.is_a?(Hash)
+      errors.add(:interop_settings, "imports must be a JSON object")
+      return
+    end
+
+    extras = imports.keys - Interop::Catalog.import_keys - [ "last_import" ]
+    if extras.any?
+      errors.add(:interop_settings, "imports contains unknown entries: #{extras.join(', ')}")
+    end
+
+    imports.each do |key, value|
+      next if key == "last_import"
+
+      unless value.is_a?(Array)
+        errors.add(:interop_settings, "imports.#{key} must be an array")
+        next
+      end
+
+      value.each do |entry|
+        next if entry.is_a?(Hash)
+
+        errors.add(:interop_settings, "imports.#{key} entries must be JSON objects")
+      end
+    end
   end
 
   def write_screenshot_setting(key, value)

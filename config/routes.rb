@@ -184,10 +184,14 @@ Rails.application.routes.draw do
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
+    resource :interop_settings, only: [ :update ], controller: "projects/interop_settings"
     resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
       post :detect
     end
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
+    resources :external_agent_runs, only: [ :create ], controller: "projects/external_agent_runs"
+    resources :interoperability_imports, only: [ :create ], controller: "projects/interoperability_imports"
+    resources :connector_events, only: [ :create, :index ], controller: "projects/connector_events"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :cancel, on: :member
       post :retry, on: :member

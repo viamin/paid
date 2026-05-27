@@ -128,7 +128,7 @@ RSpec.describe "Integrations" do
         get new_integration_path
 
         expect(response.body).to include("Integration credential")
-        expect(response.body).to include("GitLab, Jira, Azure DevOps")
+        expect(response.body).to include("GitLab, Bitbucket, Jira, Slack, Teams")
       end
     end
 
