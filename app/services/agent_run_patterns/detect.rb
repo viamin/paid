@@ -47,7 +47,7 @@ module AgentRunPatterns
     attr_reader :account, :window_hours
 
     def fetch_recent_finished_runs
-      AgentRun.includes(:runner, :agent_run_logs)
+      AgentRun.includes(:runner)
         .joins(:project)
         .where(projects: { account_id: account.id })
         .where(status: DETECTION_FINISHED_STATUSES)
@@ -79,7 +79,8 @@ module AgentRunPatterns
     end
 
     def detect_high_failure_rate(goal, runs)
-      failed = runs.count { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }
+      failed_runs = runs.select { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }
+      failed = failed_runs.size
       failure_rate = failed.to_f / runs.size
 
       return [] unless runs.size >= HIGH_FAILURE_MIN_SAMPLE
@@ -97,10 +98,9 @@ module AgentRunPatterns
           total_count: runs.size,
           failure_rate: failure_rate.round(4),
           baseline_rate: baseline&.round(4),
-          error_messages: runs.select { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }
-                              .filter_map(&:error_message).first(5),
-          evidence_bundle: build_evidence_bundle(runs.select { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }),
-          run_ids: runs.select { |r| AgentRun::FAILURE_STATUSES.include?(r.status) }.map(&:id)
+          error_messages: failed_runs.filter_map(&:error_message).first(5),
+          evidence_bundle: build_evidence_bundle(failed_runs),
+          run_ids: failed_runs.map(&:id)
         }
       ) ]
     end
@@ -189,14 +189,11 @@ module AgentRunPatterns
     end
 
     def extract_log_tail(run, log_type)
-      logs = if run.respond_to?(:agent_run_logs)
-        Array(run.agent_run_logs).select { |log| read_attribute(log, :log_type) == log_type }
-      else
-        []
-      end
+      logs = AgentRunLog.where(agent_run_id: read_attribute(run, :id), log_type: log_type)
+        .order(created_at: :asc)
+        .last(EVIDENCE_LOG_TAIL_LINE_LIMIT)
 
-      content = logs.sort_by { |log| read_attribute(log, :created_at) || Time.at(0) }
-        .filter_map { |log| read_attribute(log, :content) }
+      content = logs.filter_map { |log| read_attribute(log, :content) }
         .join("\n")
       return if content.blank?
 
