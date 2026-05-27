@@ -51,13 +51,13 @@ module Dashboard
 
     def runner_rows
       state_by_runner = runner_states.index_by(&:runner_name)
-      attempts_by_runner = recent_attempt_counts_by_runner
+      metrics_by_runner = recent_attempt_metrics_by_runner
 
       configured_runners.map do |runner|
         build_runner_status(
           runner,
           state_by_runner[runner.state_key],
-          attempt_count: attempts_by_runner.fetch(runner.state_key, 0)
+          recent_metrics: metrics_by_runner.fetch(runner.state_key, {})
         )
       end.sort_by { |runner| [ status_priority(runner.status), runner.runner.downcase, runner.owner_email.downcase ] }
     end
@@ -78,7 +78,7 @@ module Dashboard
         .includes(:user)
     end
 
-    def build_runner_status(runner, state, attempt_count:)
+    def build_runner_status(runner, state, recent_metrics:)
       state&.check_circuit_recovery!(timeout: circuit_breaker_timeout_for(runner))
 
       status =
@@ -100,15 +100,17 @@ module Dashboard
         status: status,
         status_label: status.to_s.humanize,
         available: status == :available,
-        failure_count: state&.failure_count || 0,
-        attempt_count: [ attempt_count, state&.failure_count || 0 ].max,
+        failure_count: recent_metrics.fetch(:failure_count, 0),
+        attempt_count: recent_metrics.fetch(:attempt_count, 0),
         rate_limited_until: state&.rate_limited_until
       )
     end
 
-    def recent_attempt_counts_by_runner
+    def recent_attempt_metrics_by_runner
       configured_state_keys = configured_runners.map(&:state_key)
       return {} if configured_state_keys.empty?
+
+      normalized_attempt_runner_sql = AgentRun.normalize_provider_sql("attempt->>'provider'")
 
       account_runs
         .joins("CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt")
@@ -118,9 +120,18 @@ module Dashboard
             agent_runs.created_at
           ) >= ?
         SQL
-        .where("COALESCE(attempt->>'runner', attempt->>'provider') IN (?)", configured_state_keys)
-        .group(Arel.sql("COALESCE(attempt->>'runner', attempt->>'provider')"))
-        .count
+        .where("#{normalized_attempt_runner_sql} IN (?)", configured_state_keys)
+        .group(Arel.sql(normalized_attempt_runner_sql))
+        .pluck(
+          Arel.sql(normalized_attempt_runner_sql),
+          Arel.sql("COUNT(*)::integer"),
+          Arel.sql("COUNT(*) FILTER (WHERE NOT COALESCE((attempt->>'success')::boolean, false))::integer")
+        ).each_with_object({}) do |(runner_key, attempts, failures), metrics|
+          metrics[runner_key] = {
+            attempt_count: attempts,
+            failure_count: failures
+          }
+        end
     end
 
     def account_runs

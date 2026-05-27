@@ -26,6 +26,7 @@ RSpec.describe Dashboard::RunnerHealth do
     )
     expect(stats[:runners].map(&:runner)).to eq([ rate_limited_runner.display_name, available_runner.display_name ])
     expect(stats[:runners].map(&:status)).to eq([ :rate_limited, :available ])
+    expect(stats[:runners].map(&:failure_count)).to eq([ 1, 0 ])
     expect(stats[:runners].map(&:attempt_count)).to eq([ 1, 1 ])
   end
 
@@ -90,13 +91,13 @@ RSpec.describe Dashboard::RunnerHealth do
       expect(stats[:runners].map(&:status)).to eq([ :recovering ])
     end
 
-    it "keeps the attempt count at least as high as the current failure count" do
+    it "uses only recent failed attempts in the displayed ratio" do
       create(:runner_state, user: user, runner_name: default_runner.state_key, failure_count: 3)
 
       stats = described_class.call(account: account)
 
-      expect(stats[:runners].first.failure_count).to eq(3)
-      expect(stats[:runners].first.attempt_count).to eq(3)
+      expect(stats[:runners].first.failure_count).to eq(0)
+      expect(stats[:runners].first.attempt_count).to eq(0)
     end
 
     it "counts recent attempts from older runs using the attempt timestamp" do
@@ -116,6 +117,20 @@ RSpec.describe Dashboard::RunnerHealth do
 
       stats = described_class.call(account: account)
 
+      expect(stats[:runners].first.attempt_count).to eq(1)
+    end
+
+    it "normalizes aliased attempt runner keys before aggregating recent metrics" do
+      create_runner_attempts(
+        project: project,
+        attempts: [
+          { "runner" => "claude_code", "provider" => "claude_code", "success" => false }
+        ]
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:runners].first.failure_count).to eq(1)
       expect(stats[:runners].first.attempt_count).to eq(1)
     end
   end
