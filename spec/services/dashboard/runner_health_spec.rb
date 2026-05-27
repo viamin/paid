@@ -154,5 +154,19 @@ RSpec.describe Dashboard::RunnerHealth do
       expect(stats[:runners].first.failure_count).to eq(1)
       expect(stats[:runners].first.attempt_count).to eq(1)
     end
+
+    it "never displays fewer attempts than failures" do
+      runner = default_runner
+
+      stats = described_class.new(account: account).send(
+        :build_runner_status,
+        runner,
+        nil,
+        recent_metrics: { failure_count: 5, attempt_count: 3 }
+      )
+
+      expect(stats.failure_count).to eq(5)
+      expect(stats.attempt_count).to eq(5)
+    end
   end
 end

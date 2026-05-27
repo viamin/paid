@@ -80,6 +80,8 @@ module Dashboard
 
     def build_runner_status(runner, state, recent_metrics:)
       state&.check_circuit_recovery!(timeout: circuit_breaker_timeout_for(runner))
+      failure_count = recent_metrics.fetch(:failure_count, 0)
+      attempt_count = [ recent_metrics.fetch(:attempt_count, 0), failure_count ].max
 
       status =
         if state&.rate_limited?
@@ -100,8 +102,8 @@ module Dashboard
         status: status,
         status_label: status.to_s.humanize,
         available: status == :available,
-        failure_count: recent_metrics.fetch(:failure_count, 0),
-        attempt_count: recent_metrics.fetch(:attempt_count, 0),
+        failure_count: failure_count,
+        attempt_count: attempt_count,
         rate_limited_until: state&.rate_limited_until
       )
     end
@@ -121,13 +123,14 @@ module Dashboard
             agent_runs.created_at
           ) >= ?
         SQL
-        .where("#{normalized_attempt_runner_sql} IN (?)", configured_state_keys)
         .group(Arel.sql(normalized_attempt_runner_sql))
         .pluck(
           Arel.sql(normalized_attempt_runner_sql),
           Arel.sql("COUNT(*)::integer"),
           Arel.sql("COUNT(*) FILTER (WHERE NOT COALESCE((attempt->>'success')::boolean, false))::integer")
         ).each_with_object({}) do |(runner_key, attempts, failures), metrics|
+          next unless configured_state_keys.include?(runner_key)
+
           metrics[runner_key] = {
             attempt_count: attempts,
             failure_count: failures
