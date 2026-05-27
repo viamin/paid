@@ -7,37 +7,31 @@ module Accounts
       FEATURE_SIGNALS = [
         {
           label: "Auto-pick rollout",
-          enabled: ->(context) { context.projects.any?(&:auto_pick_enabled?) }
+          key: :auto_pick_rollout
         },
         {
           label: "Automated review",
-          enabled: ->(context) { context.projects.any?(&:review_enabled?) }
+          key: :automated_review
         },
         {
           label: "Pre-commit guardrails",
-          enabled: lambda { |context|
-            context.account.pre_commit_requirements.where(enabled: true).exists? ||
-              context.projects.any? { |project| project.pre_commit_requirements.where(enabled: true).exists? }
-          }
+          key: :pre_commit_guardrails
         },
         {
           label: "PR templates",
-          enabled: lambda { |context|
-            context.account.pr_templates.where(enabled: true).exists? ||
-              context.projects.any? { |project| project.pr_templates.where(enabled: true).exists? }
-          }
+          key: :pr_templates
         },
         {
           label: "Quality gates",
-          enabled: ->(context) { context.tenant_setting.effective_quality_thresholds["enabled"] == true }
+          key: :quality_gates
         },
         {
           label: "Knowledge evolution",
-          enabled: ->(context) { context.projects.any?(&:knowledge_evolution_enabled?) }
+          key: :knowledge_evolution
         },
         {
           label: "Marketplace auto-attach",
-          enabled: ->(context) { context.tenant_setting.marketplace_auto_attach_required? }
+          key: :marketplace_auto_attach
         }
       ].freeze
 
@@ -142,8 +136,6 @@ module Accounts
         }
       ].freeze
 
-      Context = Data.define(:account, :tenant_setting, :projects)
-
       def self.call(...)
         new(...).call
       end
@@ -167,10 +159,6 @@ module Accounts
       private
 
       attr_reader :account, :tenant_setting
-
-      def context
-        @context ||= Context.new(account:, tenant_setting:, projects:)
-      end
 
       def projects
         @projects ||= account.projects.includes(:pre_commit_requirements, :pr_templates).to_a
@@ -200,7 +188,7 @@ module Accounts
 
       def feature_signals
         @feature_signals ||= FEATURE_SIGNALS.map do |signal|
-          signal.merge(enabled: signal.fetch(:enabled).call(context))
+          signal.merge(enabled: feature_enabled?(signal.fetch(:key)))
         end
       end
 
@@ -348,7 +336,7 @@ module Accounts
       end
 
       def guardrail_recommendation
-        return if account.pre_commit_requirements.where(enabled: true).exists? && account.pr_templates.where(enabled: true).exists?
+        return if account_pre_commit_guardrails_enabled? && account_pr_templates_enabled?
 
         recommendation(
           severity: :blocker,
@@ -387,6 +375,50 @@ module Accounts
           detail:,
           action:
         }
+      end
+
+      def feature_enabled?(key)
+        case key
+        when :auto_pick_rollout
+          projects.any?(&:auto_pick_enabled?)
+        when :automated_review
+          projects.any?(&:review_enabled?)
+        when :pre_commit_guardrails
+          account_pre_commit_guardrails_enabled? || project_pre_commit_guardrails_enabled?
+        when :pr_templates
+          account_pr_templates_enabled? || project_pr_templates_enabled?
+        when :quality_gates
+          tenant_setting.effective_quality_thresholds["enabled"] == true
+        when :knowledge_evolution
+          projects.any?(&:knowledge_evolution_enabled?)
+        when :marketplace_auto_attach
+          tenant_setting.marketplace_auto_attach_required?
+        end
+      end
+
+      def account_pre_commit_guardrails_enabled?
+        enabled_association_records?(account, :pre_commit_requirements)
+      end
+
+      def project_pre_commit_guardrails_enabled?
+        projects.any? { |project| enabled_association_records?(project, :pre_commit_requirements) }
+      end
+
+      def account_pr_templates_enabled?
+        enabled_association_records?(account, :pr_templates)
+      end
+
+      def project_pr_templates_enabled?
+        projects.any? { |project| enabled_association_records?(project, :pr_templates) }
+      end
+
+      def enabled_association_records?(record, association_name)
+        loaded_association_records(record, association_name).any?(&:enabled?)
+      end
+
+      def loaded_association_records(record, association_name)
+        association = record.association(association_name)
+        association.loaded? ? association.target : association.load_target
       end
     end
   end

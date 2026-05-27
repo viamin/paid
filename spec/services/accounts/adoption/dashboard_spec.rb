@@ -35,6 +35,32 @@ RSpec.describe Accounts::Adoption::Dashboard do
       )
     end
 
+    it "uses loaded project associations for guardrail signals" do
+      account = create(:account)
+      tenant_setting = create(:tenant_setting, account: account)
+
+      create(:pre_commit_requirement, :disabled, account: account)
+      create(:pr_template, :disabled, account: account)
+
+      3.times do |index|
+        project = create(:project, account: account, owner: "team-#{index}", created_by: create(:user, account: account))
+        create(:pre_commit_requirement, :project_level, project:, enabled: index.zero?)
+        create(:pr_template, :project_level, project:, enabled: index == 1)
+      end
+
+      queries = capture_queries do
+        result = described_class.call(account:, tenant_setting:)
+
+        expect(result.dig(:metrics, :usage_depth, :enabled_features)).to include("Pre-commit guardrails", "PR templates")
+      end
+
+      exists_probes = queries.grep(/SELECT 1 AS one.*(pre_commit_requirements|pr_templates)/i)
+      association_queries = queries.grep(/FROM "(pre_commit_requirements|pr_templates)"/i)
+
+      expect(exists_probes).to be_empty
+      expect(association_queries.size).to be <= 4
+    end
+
     def build_operationalized_account
       account = create(:account)
       tenant_setting = create(:tenant_setting, account: account)
