@@ -532,7 +532,7 @@ module Activities
           tier = requested_tier_for(agent_run)
           if tier.present?
             label = runner_attempt_label(runners.first, agent_run, user_settings.user)
-            error_message = "No tier-capable runner available: #{label} is the only runner configured for tier #{tier} and it is currently rate limited"
+            error_message = "No tier-capable runner available: #{label} is the only runner available for tier #{tier} and it is currently rate limited"
             error_type = "NoCompatibleRunnerAvailable"
           end
         end
