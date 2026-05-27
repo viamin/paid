@@ -129,5 +129,49 @@ RSpec.describe AgentRunPatterns::Diagnose, :no_db do
         expect(result.root_cause).to eq("LLM Provider Error")
       end
     end
+
+    context "with evidence bundle sourced from per-attempt failures" do
+      let(:pattern) do
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :error_cluster,
+          goal: "enhance_issue",
+          severity: :error,
+          details: {
+            error_pattern: "All runners exhausted: Codex, Claude",
+            evidence_bundle: AgentRunPatterns::EvidenceBundle.new(
+              outer_errors: [ "All runners exhausted: Codex, Claude" ],
+              runner_attempts: [
+                {
+                  runner: "runner:42",
+                  error_type: "provider_error",
+                  error_message: "Model metadata for `gpt-4o` not found",
+                  diagnostics: { details: [ "Model metadata for `gpt-4o` not found" ] }
+                }
+              ],
+              log_tails: [],
+              runner_configs: [
+                {
+                  runner_key: "cursor",
+                  auth_type: "api_key",
+                  tier_model_ids: { low: "gpt-4o" },
+                  provider_api_key_configured: true
+                }
+              ],
+              aggregate_stats: { run_count: 3 }
+            ).to_payload
+          }
+        )
+      end
+
+      let(:error_messages) { [] }
+
+      it "classifies from per-attempt evidence instead of the outer wrapper alone" do
+        result = described_class.call(pattern)
+
+        expect(result.root_cause).to eq("LLM Provider Error")
+        expect(result.category).to eq("llm_provider")
+        expect(result.confidence).to be > 0.0
+      end
+    end
   end
 end
