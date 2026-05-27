@@ -24,7 +24,7 @@ module RoiDashboardHelper
     delta = current - baseline
     if metric_key.to_sym == :cost_per_accepted_pr_cents
       cents = delta.round
-      sign = cents.positive? ? "+" : ""
+      sign = cents.positive? ? "+" : cents.negative? ? "-" : ""
       "#{sign}#{format_cost_cents(cents.abs)}"
     elsif metric_key.to_sym == :average_cycle_time_hours
       sign = delta.positive? ? "+" : ""
