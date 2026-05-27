@@ -198,7 +198,7 @@ RSpec.describe Models::RulesBasedSelector do
     end
 
     describe "provider compatibility" do
-      it "limits candidates to the selected provider family when no explicit tier pin exists" do
+      it "resolves through the selected provider's default tier mapping when no explicit tier pin exists" do
         anthropic_low = create(:llm_model, :cheap, model_id: "anthropic-low", provider: "anthropic", tier: "low", capability_score: 4.0)
         create(:llm_model, :cheap, model_id: "openai-low", provider: "openai", tier: "low", capability_score: 4.5)
         provider = agent_run.project.effective_owner.providers.find_by!(provider_key: "claude")
@@ -207,8 +207,9 @@ RSpec.describe Models::RulesBasedSelector do
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:tier]).to eq("low")
-        expect(result[:model]).to eq(anthropic_low)
-        expect(result[:candidates]).to all(have_attributes(provider: "anthropic"))
+        expect(result[:model]).not_to eq(anthropic_low)
+        expect(result[:model].model_id).to eq("basic-model")
+        expect(result[:candidates]).to eq([ result[:model] ])
       end
 
       it "pins fixed-model Pi runs to the configured MiniMax model" do
