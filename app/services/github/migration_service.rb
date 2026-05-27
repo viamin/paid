@@ -131,6 +131,7 @@ module Github
     # @return [Hash{String => Symbol}]
     def check_all_repositories
       raise MigrationError, "github_token is required" unless github_token
+      validate_preconditions!
 
       accessible_repo_ids = accessible_installation_repo_ids
       repo_by_name = github_token.accessible_repositories.index_by { |repo| repo["full_name"] }
@@ -151,6 +152,8 @@ module Github
     def validate_preconditions!
       raise MigrationError, "github_installation is required" unless github_installation
       raise MigrationError, "GitHub App is not configured" unless AppRegistry.configured?
+      raise MigrationError, "GitHub App installation must be active" unless github_installation.active?
+      raise MigrationError, "GitHub token must be active" if github_token && !github_token.active?
 
       if github_installation.account_id != (project&.account_id || github_token&.account_id)
         raise MigrationError, "Installation must belong to the same account as the project"

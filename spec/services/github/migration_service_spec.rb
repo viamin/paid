@@ -57,6 +57,21 @@ RSpec.describe Github::MigrationService do
       expect(failed_result.error).to include("Installation does not have access to repository")
       expect(failed_result.warnings).to be_empty
     end
+
+    it "fails every migration when the installation is inactive" do
+      installation.update!(revoked_at: Time.current)
+
+      result = described_class.migrate_from_token(
+        github_token: github_token,
+        github_installation: installation,
+        actor: actor
+      )
+
+      expect(result.total).to eq(2)
+      expect(result.successful).to eq(0)
+      expect(result.failed).to eq(2)
+      expect(result.results.map(&:error).uniq).to eq([ "GitHub App installation must be active" ])
+    end
   end
 
   describe ".check_accessibility" do
@@ -71,6 +86,7 @@ RSpec.describe Github::MigrationService do
     end
 
     before do
+      allow(Github::AppRegistry).to receive(:configured?).and_return(true)
       allow(github_token).to receive(:accessible_repositories).and_return(
         [
           { "id" => 1, "full_name" => "acme/accessible" },
@@ -89,6 +105,17 @@ RSpec.describe Github::MigrationService do
         "acme/accessible" => :accessible,
         "acme/requires-admin" => :requires_admin_action
       )
+    end
+
+    it "rejects inactive tokens" do
+      github_token.update!(revoked_at: Time.current)
+
+      expect do
+        described_class.check_accessibility(
+          github_token: github_token,
+          github_installation: installation
+        )
+      end.to raise_error(described_class::MigrationError, "GitHub token must be active")
     end
   end
 end

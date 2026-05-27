@@ -81,6 +81,28 @@ RSpec.describe "GithubInstallations" do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "rejects account members without admin access" do
+      member = create(:user, :member, account: account)
+      installation = create(:github_installation, account: account)
+
+      sign_out user
+      sign_in member
+
+      get migrate_project_github_installation_path(installation)
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
+
+    it "redirects when the installation is not active" do
+      installation = create(:github_installation, :revoked, account: account)
+
+      get migrate_project_github_installation_path(installation)
+
+      expect(response).to redirect_to(github_installation_path(installation))
+      expect(flash[:alert]).to eq("GitHub App installation must be active")
+    end
   end
 
   describe "POST /github_installations/:id/check_access" do
@@ -101,6 +123,16 @@ RSpec.describe "GithubInstallations" do
         "repositories" => { "acme/widgets" => "accessible" }
       )
     end
+
+    it "rejects inactive tokens" do
+      installation = create(:github_installation, account: account)
+      github_token = create(:github_token, account: account, created_by: user, revoked_at: Time.current)
+
+      post check_access_github_installation_path(installation), params: { github_token_id: github_token.id }
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body).to eq("error" => "Active GitHub token not found")
+    end
   end
 
   describe "POST /github_installations/:id/migrate" do
@@ -110,6 +142,16 @@ RSpec.describe "GithubInstallations" do
       post migrate_project_github_installation_path(installation), params: { github_token_id: -1 }
 
       expect(response).to redirect_to(migrate_project_github_installation_path(installation))
+    end
+
+    it "rejects inactive tokens" do
+      installation = create(:github_installation, account: account)
+      github_token = create(:github_token, account: account, created_by: user, revoked_at: Time.current)
+
+      post migrate_project_github_installation_path(installation), params: { github_token_id: github_token.id }
+
+      expect(response).to redirect_to(migrate_project_github_installation_path(installation))
+      expect(flash[:alert]).to eq("Active GitHub token not found")
     end
 
     it "rejects account members without admin access" do

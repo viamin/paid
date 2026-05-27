@@ -10,7 +10,9 @@
       </p>
     </div>
     <div class="flex gap-3">
-      <%= link_to "Migrate Projects", migrate_project_github_installation_path(@github_installation), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% if policy(@github_installation).update? && @github_installation.active? %>
+        <%= link_to "Migrate Projects", migrate_project_github_installation_path(@github_installation), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
       <%= link_to "Browse Repositories", repositories_github_installation_path(@github_installation), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     </div>
   </div>

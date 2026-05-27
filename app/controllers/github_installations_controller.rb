@@ -37,10 +37,11 @@ class GithubInstallationsController < ApplicationController
   # GET /github_installations/:id/migrate
   # Show migration form for a specific installation
   def migrate_projects
-    authorize @github_installation, :show?
+    authorize @github_installation, :update?
+    return redirect_for_inactive_installation unless @github_installation.active?
 
     @github_tokens = current_account.github_tokens.active.includes(:created_by, :projects).order(created_at: :desc)
-    @projects = current_account.projects.where(github_token: current_account.github_tokens.active).includes(:github_token).order(:name)
+    @projects = current_account.projects.where(github_token: @github_tokens).includes(:github_token).order(:name)
     @installation_repos = normalized_repositories
 
     # Check which repos are accessible
@@ -54,11 +55,12 @@ class GithubInstallationsController < ApplicationController
   # Migrate projects from PAT to GitHub App
   def migrate_from_token
     authorize @github_installation, :update?
+    return redirect_for_inactive_installation unless @github_installation.active?
 
-    github_token = current_account.github_tokens.find_by(id: params[:github_token_id])
+    github_token = current_account.github_tokens.active.find_by(id: params[:github_token_id])
     unless github_token
       redirect_to migrate_project_github_installation_path(@github_installation),
-        alert: "GitHub token not found"
+        alert: "Active GitHub token not found"
       return
     end
 
@@ -87,12 +89,13 @@ class GithubInstallationsController < ApplicationController
   # Check repository accessibility via installation
   def check_access
     authorize @github_installation, :show?
+    return render_inactive_installation_error unless @github_installation.active?
 
     github_token_id = params[:github_token_id]
-    github_token = current_account.github_tokens.find_by(id: github_token_id) if github_token_id.present?
+    github_token = current_account.github_tokens.active.find_by(id: github_token_id) if github_token_id.present?
 
     unless github_token
-      render json: { error: "GitHub token not found" }, status: :not_found
+      render json: { error: "Active GitHub token not found" }, status: :not_found
       return
     end
 
@@ -139,5 +142,17 @@ class GithubInstallationsController < ApplicationController
         "private" => data[:private] || false
       }
     end
+  end
+
+  def redirect_for_inactive_installation
+    redirect_to github_installation_path(@github_installation), alert: inactive_installation_message
+  end
+
+  def render_inactive_installation_error
+    render json: { error: inactive_installation_message }, status: :unprocessable_content
+  end
+
+  def inactive_installation_message
+    "GitHub App installation must be active"
   end
 end
