@@ -27,10 +27,14 @@ module Models
 
     def compatible_model_provider
       runner = agent_run.runner
-      return nil unless runner
+      return runner.direct_outbound_llm_model_provider.presence ||
+        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] if runner
 
-      runner.direct_outbound_llm_model_provider.presence ||
-        Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
+      provider = agent_run.provider
+      return nil unless provider
+
+      provider.tier_model_picker_provider.presence ||
+        Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider.provider_key.to_s]
     end
 
     def excluded_model?(model, excluded)

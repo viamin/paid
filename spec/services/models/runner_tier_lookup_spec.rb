@@ -122,7 +122,8 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
     let(:scope) { instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike) }
 
     it "returns the original scope when no runner is attached" do
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: nil))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: nil, provider: nil))
 
       expect(dummy.compatible_scope(scope)).to eq(scope)
     end
@@ -140,6 +141,17 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
       allow(scope).to receive(:by_provider).with("minimax").and_return(minimax_scope)
 
       expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
+    end
+
+    it "falls back to the selected provider family when no runner is attached" do
+      anthropic_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+      provider = instance_double(Provider, provider_key: "claude", tier_model_picker_provider: "anthropic")
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: nil, provider: provider))
+
+      allow(scope).to receive(:by_provider).with("anthropic").and_return(anthropic_scope)
+
+      expect(dummy.compatible_scope(scope)).to eq(anthropic_scope)
     end
   end
 end
