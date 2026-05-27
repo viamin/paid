@@ -67,11 +67,11 @@ module Accounts
           benchmark_label: label,
           benchmark_type: benchmark_type,
           accepted_pr_count: accepted_weight,
-          merge_rate: weighted_average(rows, :merge_rate, accepted_weight),
-          average_cycle_time_hours: weighted_average(rows, :average_cycle_time_hours, accepted_weight),
-          rework_rate: weighted_average(rows, :rework_rate, accepted_weight),
-          defect_escape_rate: weighted_average(rows, :defect_escape_rate, accepted_weight),
-          cost_per_accepted_pr_cents: weighted_average(rows, :cost_per_accepted_pr_cents, accepted_weight)&.round
+          merge_rate: weighted_average(rows, :merge_rate),
+          average_cycle_time_hours: weighted_average(rows, :average_cycle_time_hours),
+          rework_rate: weighted_average(rows, :rework_rate),
+          defect_escape_rate: weighted_average(rows, :defect_escape_rate),
+          cost_per_accepted_pr_cents: weighted_average(rows, :cost_per_accepted_pr_cents)&.round
         }
       end.sort_by { |row| -row[:accepted_pr_count].to_i }
     end
@@ -95,7 +95,7 @@ module Accounts
       end
     end
 
-    def weighted_average(rows, field, accepted_weight)
+    def weighted_average(rows, field)
       values = rows.filter_map do |row|
         value = row.public_send(field)
         next if value.nil?
@@ -107,7 +107,7 @@ module Accounts
       end
       return nil if values.empty?
 
-      divisor = accepted_weight.positive? ? accepted_weight : values.sum { |(_, weight)| weight }
+      divisor = values.sum { |(_, weight)| weight }
       return nil if divisor.zero?
 
       (values.sum { |(value, weight)| value * weight } / divisor.to_f).round(2)
