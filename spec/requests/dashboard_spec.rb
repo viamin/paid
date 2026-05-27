@@ -21,6 +21,7 @@ RSpec.describe "Dashboard" do
     expect(response_body).to include(runner.display_name)
     expect(response_body).to include("Rate limited")
     expect(response_body).to include("Configured")
+    expect(response_body).to include("Failures / Attempts")
     expect(response_body).to include("2/2")
     expect(response_body).to include(%(aria-label="2 failures out of 2 attempts"))
   end
