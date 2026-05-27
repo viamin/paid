@@ -76,13 +76,13 @@ else
 
   case "$SOURCE" in
   npm)
-    PACKAGE=$(echo "$CONTRACT" | sed -n 's/^PACKAGE=//p')
-    if [ -z "$PACKAGE" ]; then
-      echo "ERROR: No PACKAGE in contract for provider: $PROVIDER" >&2
+    INSTALL_COMMAND=$(echo "$CONTRACT" | sed -n 's/^INSTALL_COMMAND=//p')
+    if [ -z "$INSTALL_COMMAND" ]; then
+      echo "ERROR: No INSTALL_COMMAND in contract for provider: $PROVIDER" >&2
       exit 1
     fi
-    echo "Installing $PROVIDER via npm: $PACKAGE"
-    npm install -g --ignore-scripts "$PACKAGE"
+    echo "Installing $PROVIDER via npm contract"
+    eval "$INSTALL_COMMAND"
     ;;
 
   uv_tool)
