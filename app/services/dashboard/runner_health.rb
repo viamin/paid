@@ -113,6 +113,7 @@ module Dashboard
       normalized_attempt_runner_sql = AgentRun.normalize_provider_sql("attempt->>'provider'")
 
       account_runs
+        .where(created_at: (ATTEMPT_WINDOW * 2).ago..)
         .joins("CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt")
         .where(<<~SQL, ATTEMPT_WINDOW.ago)
           COALESCE(

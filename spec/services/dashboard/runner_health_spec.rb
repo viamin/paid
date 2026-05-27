@@ -120,6 +120,27 @@ RSpec.describe Dashboard::RunnerHealth do
       expect(stats[:runners].first.attempt_count).to eq(1)
     end
 
+    it "ignores runs created outside the buffered attempt query window" do
+      create(
+        :agent_run,
+        :failed,
+        project: project,
+        created_at: 15.days.ago,
+        runners_attempted: [
+          {
+            "runner" => default_runner.state_key,
+            "success" => false,
+            "attempted_at" => 15.days.ago.iso8601
+          }
+        ]
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:runners].first.failure_count).to eq(0)
+      expect(stats[:runners].first.attempt_count).to eq(0)
+    end
+
     it "normalizes aliased attempt runner keys before aggregating recent metrics" do
       create_runner_attempts(
         project: project,
