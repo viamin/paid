@@ -65,6 +65,13 @@ module Screenshots
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
       integration_credential_show: Target.new(slug: "integration_credential_show", path_builder: ->(seed_data) { "/integration_credentials/#{seed_data.fetch(:integration_credential).id}" }, requires_auth: true),
+      github_installations: Target.new(slug: "github_installations", path_builder: "/github_installations", requires_auth: true),
+      github_installation_show: Target.new(slug: "github_installation_show", path_builder: ->(seed_data) { "/github_installations/#{seed_data.fetch(:github_installation).id}" }, requires_auth: true),
+      github_installation_migrate_projects: Target.new(
+        slug: "github_installation_migrate_projects",
+        path_builder: ->(seed_data) { "/github_installations/#{seed_data.fetch(:github_installation).id}/migrate" },
+        requires_auth: true
+      ),
       github_tokens: Target.new(slug: "github_tokens", path_builder: "/github_tokens", requires_auth: true),
       github_token_new: Target.new(slug: "github_token_new", path_builder: "/github_tokens/new", requires_auth: true),
       github_token_show: Target.new(slug: "github_token_show", path_builder: ->(seed_data) { "/github_tokens/#{seed_data.fetch(:github_token).id}" }, requires_auth: true),
@@ -207,7 +214,11 @@ module Screenshots
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
-      "github_installations_controller.rb" => [ :project_new ],
+      "github_installations_controller.rb" => %i[
+        github_installations
+        github_installation_show
+        github_installation_migrate_projects
+      ],
       "github_tokens_controller.rb" => %i[github_tokens github_token_new github_token_show],
       "linear_tokens_controller.rb" => %i[linear_tokens linear_token_new linear_token_show],
       "notifications_controller.rb" => [ :notifications ],
@@ -340,6 +351,7 @@ module Screenshots
       when /\Aonboarding\// then [ :onboarding ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
+      when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
@@ -433,6 +445,16 @@ module Screenshots
       when "new.html.erb" then [ :integrations_new ]
       else
         [ :integrations ]
+      end
+    end
+
+    def github_installation_targets(leaf)
+      case leaf
+      when "index.html.erb" then [ :github_installations ]
+      when "show.html.erb" then [ :github_installation_show ]
+      when "migrate_projects.html.erb" then [ :github_installation_migrate_projects ]
+      else
+        [ :github_installation_show ]
       end
     end
 

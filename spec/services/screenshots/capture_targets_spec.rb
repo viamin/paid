@@ -22,6 +22,15 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "service_container_edit" ])
     end
 
+    it "maps GitHub App views to their dedicated screenshot targets" do
+      expect(described_class.call(changed_files: [ "app/views/github_installations/index.html.erb" ]).map(&:slug))
+        .to eq([ "github_installations" ])
+      expect(described_class.call(changed_files: [ "app/views/github_installations/show.html.erb" ]).map(&:slug))
+        .to eq([ "github_installation_show" ])
+      expect(described_class.call(changed_files: [ "app/views/github_installations/migrate_projects.html.erb" ]).map(&:slug))
+        .to eq([ "github_installation_migrate_projects" ])
+    end
+
     it "maps marketplace entry views to their specific screenshot targets" do
       expect(described_class.call(changed_files: [ "app/views/marketplace_entries/index.html.erb" ]).map(&:slug))
         .to eq([ "marketplace_entries" ])
@@ -107,6 +116,16 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
         "marketplace_entry_new",
         "marketplace_entry_show",
         "marketplace_entry_edit"
+      )
+    end
+
+    it "maps the GitHub App controller to its representative pages" do
+      targets = described_class.call(changed_files: [ "app/controllers/github_installations_controller.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly(
+        "github_installations",
+        "github_installation_show",
+        "github_installation_migrate_projects"
       )
     end
 
