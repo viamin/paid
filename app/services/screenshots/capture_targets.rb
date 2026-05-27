@@ -49,6 +49,7 @@ module Screenshots
       "integrations" => %i[integrations integrations_new],
       "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
+      "roi_dashboard" => %i[account_roi_dashboard project_roi_dashboard],
       "workflow" => [ :workflow_status ]
     }.freeze
 
