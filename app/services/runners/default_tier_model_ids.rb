@@ -2,6 +2,8 @@
 
 module Runners
   class DefaultTierModelIds
+    # Static last-resort defaults used only when neither Runner#tier_models nor
+    # Provider#tier_models provides an explicit model for the requested tier.
     RUNNER_KEY_TO_MODEL_PROVIDER = {
       "claude" => "anthropic",
       "cursor" => "anthropic",
@@ -21,6 +23,9 @@ module Runners
     end
 
     def call
+      # Direct-outbound runners must be configured explicitly on the runner.
+      # An empty hash here keeps the static map as a fallback-of-last-resort,
+      # not a hidden source of truth for runner-tier resolution.
       model_provider = RUNNER_KEY_TO_MODEL_PROVIDER[@runner_key]
       return {} if model_provider.blank? && !DIRECT_OUTBOUND_RUNNER_KEYS.include?(@runner_key)
 
