@@ -114,6 +114,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
     end
 
+    it "maps remediation decision views to the remediation decision screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/remediation_decisions/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "remediation_decision_show" ])
+    end
+
     it "maps marketplace entry controllers to representative marketplace routes" do
       targets = described_class.call(changed_files: [ "app/controllers/marketplace_entries_controller.rb" ])
 

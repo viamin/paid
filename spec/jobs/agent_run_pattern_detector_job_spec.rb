@@ -12,6 +12,8 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
       end)
       allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
       allow(AgentRunPatterns::Diagnose).to receive(:call)
+      allow(AgentRunPatterns::DailyDiagnosisBudget).to receive(:remaining_for).and_return(5)
+      allow(AgentRunPatterns::RecordRemediationDecision).to receive(:call).and_return(double(id: 99))
       allow(AgentRunPatterns::Notify).to receive(:call)
       allow(TenantContext).to receive(:with_system_access).and_yield
       allow(Account).to receive(:find_each).and_yield(account)
@@ -51,7 +53,13 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           type: :failure_streak,
           goal: "enhance_issue",
           severity: :error,
-          details: { streak_length: 3, total_runs: 3, failure_rate: 1.0, error_messages: [ "Error" ] }
+          details: {
+            fingerprint: "fp-1",
+            streak_length: 3,
+            total_runs: 3,
+            failure_rate: 1.0,
+            error_messages: [ "Error" ]
+          }
         )
       end
       let(:follow_up_pattern) do
@@ -59,57 +67,73 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           type: :error_cluster,
           goal: "enhance_issue",
           severity: :error,
-          details: { sample_messages: [ "GitHub API error: 403 Forbidden" ] }
+          details: {
+            fingerprint: "fp-2",
+            sample_messages: [ "GitHub API error: 403 Forbidden" ]
+          }
         )
       end
-      let(:unknown_diagnosis) do
-        AgentRunPatterns::Diagnose::Diagnosis.new(
-          root_cause: "Unknown",
-          category: "unknown",
-          confidence: 0.0,
-          remediation: "Investigate manually."
-        )
-      end
-      let(:github_diagnosis) do
+      let(:diagnosis) do
         AgentRunPatterns::Diagnose::Diagnosis.new(
           root_cause: "GitHub API Error",
-          category: "github_api",
           confidence: 1.0,
-          remediation: "Check GitHub token health."
+          proposed_action: "file_issue",
+          action_target: { "type" => "project", "id" => "7" },
+          evidence_pointers: [ "legacy_messages[0]" ]
         )
       end
 
       before do
         allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_return([ pattern ])
+        allow(AgentRunPatterns::Diagnose).to receive(:call).and_return(diagnosis)
       end
 
-      it "diagnoses each detected pattern" do
+      it "diagnoses each detected pattern with account context" do
         described_class.perform_now
 
-        expect(AgentRunPatterns::Diagnose).to have_received(:call).with(pattern)
+        expect(AgentRunPatterns::Diagnose).to have_received(:call).with(
+          pattern,
+          account: account,
+          allow_llm: true
+        )
       end
 
-      it "notifies for the account" do
+      it "records a remediation decision for each fingerprint" do
+        described_class.perform_now
+
+        expect(AgentRunPatterns::RecordRemediationDecision).to have_received(:call).with(
+          account: account,
+          pattern: pattern,
+          diagnosis: diagnosis
+        )
+      end
+
+      it "notifies for the account with fingerprint-keyed diagnoses and decisions" do
         described_class.perform_now
 
         expect(AgentRunPatterns::Notify).to have_received(:call).with(
           account: account,
           patterns: [ pattern ],
-          diagnoses: hash_including("enhance_issue")
+          diagnoses: hash_including("fp-1" => diagnosis),
+          decisions: hash_including("fp-1")
         )
       end
 
-      it "prefers the strongest diagnosis for each goal" do
+      it "stops issuing LLM diagnoses after the daily budget is exhausted" do
         allow(AgentRunPatterns::Detect).to receive(:call).with(account: account).and_return([ pattern, follow_up_pattern ])
-        allow(AgentRunPatterns::Diagnose).to receive(:call).with(pattern).and_return(unknown_diagnosis)
-        allow(AgentRunPatterns::Diagnose).to receive(:call).with(follow_up_pattern).and_return(github_diagnosis)
+        allow(AgentRunPatterns::DailyDiagnosisBudget).to receive(:remaining_for).and_return(1)
 
         described_class.perform_now
 
-        expect(AgentRunPatterns::Notify).to have_received(:call).with(
+        expect(AgentRunPatterns::Diagnose).to have_received(:call).with(
+          pattern,
           account: account,
-          patterns: [ pattern, follow_up_pattern ],
-          diagnoses: hash_including("enhance_issue" => github_diagnosis)
+          allow_llm: true
+        )
+        expect(AgentRunPatterns::Diagnose).to have_received(:call).with(
+          follow_up_pattern,
+          account: account,
+          allow_llm: false
         )
       end
     end
@@ -122,7 +146,8 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
         expect(AgentRunPatterns::Notify).to have_received(:call).with(
           account: account,
           patterns: [],
-          diagnoses: {}
+          diagnoses: {},
+          decisions: {}
         )
       end
     end
