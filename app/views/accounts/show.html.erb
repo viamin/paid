@@ -252,6 +252,8 @@
         </div>
       </section>
 
+      <%= render "accounts/adoption_readiness", adoption_dashboard: @adoption_dashboard %>
+
       <% if @billing_visible %>
         <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div>
@@ -269,11 +271,11 @@
             </div>
             <div class="rounded-2xl bg-sky-50 p-4 dark:bg-sky-950/20">
               <p class="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">Current usage</p>
+              <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
+                <%= @current_billing_period ? number_to_currency(@current_billing_period.total_cost_cents / 100.0) : "No period yet" %>
+              </p>
               <% if @current_billing_period %>
-                <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= number_to_currency(@current_billing_period.total_cost_cents / 100.0) %></p>
                 <p class="text-sm text-gray-600 dark:text-gray-300"><%= number_with_delimiter(@current_billing_period.total_runs) %> runs • <%= number_with_delimiter(@current_billing_period.total_tokens) %> tokens</p>
-              <% else %>
-                <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">No period yet</p>
               <% end %>
             </div>
             <div class="rounded-2xl bg-violet-50 p-4 dark:bg-violet-950/20">
