@@ -8,10 +8,9 @@ module Projects
       authorize @project, :show?
 
       events = @project.external_connector_events
-        .by_connector(params[:connector_key])
-        .by_event_type(params[:event_type])
-        .recent
-        .limit(50)
+      events = events.by_connector(params[:connector_key]) if params[:connector_key].present?
+      events = events.by_event_type(params[:event_type]) if params[:event_type].present?
+      events = events.recent.limit(50)
 
       render json: { connector_events: events.as_json(only: %i[id connector_key event_type external_event_id status occurred_at processed_at created_at]) }
     end
@@ -71,7 +70,9 @@ module Projects
     end
 
     def signature_headers
-      request.headers.to_h.slice("X-Slack-Request-Timestamp")
+      request.headers.env
+        .select { |key, _| key.start_with?("HTTP_X_") }
+        .transform_keys { |key| key.delete_prefix("HTTP_").tr("_", "-") }
     end
   end
 end

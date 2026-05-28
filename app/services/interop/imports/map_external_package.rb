@@ -28,7 +28,7 @@ module Interop
 
         Result.new(
           source_system: source_system,
-          **public_send(mapper, raw_data)
+          **send(mapper, raw_data)
         )
       end
 
