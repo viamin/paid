@@ -195,6 +195,27 @@ RSpec.describe AgentRunPatterns::Detect do
         expect_redacted_evidence_bundle(cluster.details[:evidence_bundle])
       end
 
+      it "loads stdout and stderr tails for sampled runs in one query" do
+        runs = create_list(
+          :agent_run,
+          3,
+          :failed,
+          project: project,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          completed_at: Time.current
+        )
+
+        runs.each do |run|
+          create(:agent_run_log, agent_run: run, log_type: "stdout", content: "stdout line")
+          create(:agent_run_log, agent_run: run, log_type: "stderr", content: "stderr line")
+        end
+
+        detector = described_class.new(account: account)
+
+        expect(count_queries { detector.send(:log_tail_evidence, runs) }).to eq(1)
+      end
+
       def build_evidence_cluster
         runs = create_list(
           :agent_run,

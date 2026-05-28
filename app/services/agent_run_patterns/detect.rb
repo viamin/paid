@@ -177,24 +177,37 @@ module AgentRunPatterns
     end
 
     def log_tail_evidence(runs)
-      Array(runs).first(EVIDENCE_MESSAGE_LIMIT).filter_map do |run|
+      sampled_runs = Array(runs).first(EVIDENCE_MESSAGE_LIMIT)
+      log_tails = load_log_tails(sampled_runs)
+
+      sampled_runs.filter_map do |run|
+        run_id = read_attribute(run, :id)
         evidence = {
-          run_id: read_attribute(run, :id),
-          stdout: extract_log_tail(run, "stdout"),
-          stderr: extract_log_tail(run, "stderr")
+          run_id: run_id,
+          stdout: sanitize_log_tail(log_tails[[ run_id, "stdout" ]]),
+          stderr: sanitize_log_tail(log_tails[[ run_id, "stderr" ]])
         }.compact
 
         evidence.except(:run_id).presence ? evidence : nil
       end
     end
 
-    def extract_log_tail(run, log_type)
-      logs = AgentRunLog.where(agent_run_id: read_attribute(run, :id), log_type: log_type)
-        .order(created_at: :asc)
-        .last(EVIDENCE_LOG_TAIL_LINE_LIMIT)
+    def load_log_tails(runs)
+      run_ids = Array(runs).filter_map { |run| read_attribute(run, :id) }
+      return {} if run_ids.empty?
 
-      content = logs.filter_map { |log| read_attribute(log, :content) }
-        .join("\n")
+      AgentRunLog.where(agent_run_id: run_ids, log_type: %w[stdout stderr])
+        .select(:agent_run_id, :log_type, :content)
+        .order(:agent_run_id, :log_type, :created_at)
+        .each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |log, grouped_logs|
+          key = [ read_attribute(log, :agent_run_id), read_attribute(log, :log_type) ]
+          grouped_logs[key] << read_attribute(log, :content)
+          grouped_logs[key].shift while grouped_logs[key].size > EVIDENCE_LOG_TAIL_LINE_LIMIT
+        end
+    end
+
+    def sanitize_log_tail(log_lines)
+      content = Array(log_lines).compact.join("\n")
       return if content.blank?
 
       sanitize_text(content.lines.last(EVIDENCE_LOG_TAIL_LINE_LIMIT).join.strip)

@@ -101,7 +101,7 @@ module AgentRunPatterns
 
       evidence_documents.each do |document|
         ROOT_CAUSE_CATEGORIES.each do |category_key, config|
-          score = config[:patterns].count { |pat| document.match?(pat) }
+          score = config[:patterns].any? { |pat| document.match?(pat) } ? 1 : 0
           matches[category_key] += score if score.positive?
         end
       end

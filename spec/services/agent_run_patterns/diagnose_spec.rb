@@ -173,5 +173,37 @@ RSpec.describe AgentRunPatterns::Diagnose, :no_db do
         expect(result.confidence).to be > 0.0
       end
     end
+
+    context "when one document matches multiple patterns in the same category" do
+      let(:pattern) do
+        AgentRunPatterns::Detect::Pattern.new(
+          type: :error_cluster,
+          goal: "enhance_issue",
+          severity: :error,
+          details: {
+            evidence_bundle: AgentRunPatterns::EvidenceBundle.new(
+              outer_errors: [
+                "Provider error: model not found and api key invalid",
+                "Something completely unrelated happened"
+              ],
+              runner_attempts: [],
+              log_tails: [],
+              runner_configs: [],
+              aggregate_stats: { run_count: 2 }
+            ).to_payload
+          }
+        )
+      end
+
+      let(:error_messages) { [] }
+
+      it "counts the document once when computing confidence" do
+        result = described_class.call(pattern)
+
+        expect(result.root_cause).to eq("LLM Provider Error")
+        expect(result.category).to eq("llm_provider")
+        expect(result.confidence).to eq(0.5)
+      end
+    end
   end
 end
