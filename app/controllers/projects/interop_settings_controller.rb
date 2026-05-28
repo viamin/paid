@@ -7,7 +7,9 @@ module Projects
     def update
       authorize @project, :update?
 
-      if @project.update(interop_settings: interop_settings_params.to_h)
+      updated_settings = @project.effective_interop_settings.deep_merge(interop_settings_params.to_h.deep_stringify_keys)
+
+      if @project.update(interop_settings: updated_settings)
         render json: { interop_settings: @project.effective_interop_settings }
       else
         render json: { errors: @project.errors.full_messages }, status: :unprocessable_content

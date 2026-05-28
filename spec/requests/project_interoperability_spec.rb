@@ -24,6 +24,26 @@ RSpec.describe "Project interoperability" do
       expect(project.reload.adoption_mode).to eq("review_only")
       expect(project.external_execution_enabled_for?(:cursor)).to be(true)
     end
+
+    it "merges partial interop settings updates into the existing configuration" do
+      project.update!(interop_settings: existing_interop_settings)
+      patch project_interop_settings_path(project), params: { project: { adoption_mode: "review_only" } }
+
+      expect(response).to have_http_status(:ok)
+      expect(project.reload.interop_settings).to include(
+        "adoption_mode" => "review_only",
+        "connectors" => include("slack" => true),
+        "imports" => include(
+          "last_import" => existing_interop_settings.dig("imports", "last_import"),
+          "prompts" => include(
+            include(
+              "source_identifier" => existing_prompt_import.fetch("source_identifier"),
+              "target_slug" => existing_prompt_import.fetch("target_slug")
+            )
+          )
+        )
+      )
+    end
   end
 
   describe "POST /api/projects/:project_id/external_agent_runs" do
@@ -467,5 +487,23 @@ RSpec.describe "Project interoperability" do
     def gitlab_signing_secret
       "whsec_#{Base64.strict_encode64(gitlab_signing_key)}"
     end
+  end
+
+  def existing_interop_settings
+    {
+      "adoption_mode" => "advisory",
+      "connectors" => { "slack" => true },
+      "imports" => {
+        "last_import" => "2026-05-28T10:00:00Z",
+        "prompts" => [ existing_prompt_import ]
+      }
+    }
+  end
+
+  def existing_prompt_import
+    {
+      "source_identifier" => "cursor.prompt-1",
+      "target_slug" => "existing-prompt"
+    }
   end
 end
