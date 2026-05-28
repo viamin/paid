@@ -13,7 +13,7 @@ module AgentRunPatterns
     end
 
     def remaining_for
-      [ daily_cap - decisions_created_today, 0 ].max
+      [ daily_cap - diagnoses_attempted_today, 0 ].max
     end
 
     private
@@ -26,8 +26,10 @@ module AgentRunPatterns
       value.positive? ? value : DEFAULT_DAILY_CAP
     end
 
-    def decisions_created_today
-      RemediationDecision.where(account: account, created_at: Time.current.all_day).count
+    def diagnoses_attempted_today
+      RemediationDecision
+        .where(account: account, diagnosis_attempted_on: Date.current)
+        .sum(:diagnosis_attempt_count_on_day)
     end
   end
 end

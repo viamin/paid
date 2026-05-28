@@ -15,5 +15,8 @@ FactoryBot.define do
     revert_data { {} }
     pre_remediation_failure_count { 3 }
     occurrence_count { 1 }
+    diagnosis_attempted_on { Date.current }
+    diagnosis_attempt_count_on_day { 1 }
+    last_diagnosis_attempt_at { Time.current }
   end
 end

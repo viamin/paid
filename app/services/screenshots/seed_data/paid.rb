@@ -267,6 +267,7 @@ module Screenshots
             record.evidence = { reason: "Collector has produced no artifacts in 30 days" }
           end
 
+          diagnosis_attempted_at = Time.current
           remediation_decision = RemediationDecision.find_or_create_by!(account: account, fingerprint: "screenshots-remediation-fingerprint") do |record|
             record.root_cause = "Runner fallback exhausted after repeated GitHub API rate limits"
             record.confidence = 0.88
@@ -279,6 +280,9 @@ module Screenshots
             record.revert_data = {}
             record.pre_remediation_failure_count = 3
             record.occurrence_count = 1
+            record.diagnosis_attempted_on = diagnosis_attempted_at.to_date
+            record.diagnosis_attempt_count_on_day = 1
+            record.last_diagnosis_attempt_at = diagnosis_attempted_at
           end
 
           WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|

@@ -382,13 +382,17 @@ module AgentRunPatterns
     end
 
     def with_fingerprint(goal:, type:, **details)
+      aggregate_stats = details[:evidence_bundle].to_h.deep_symbolize_keys[:aggregate_stats] || {}
+
       details.merge(
         fingerprint: Digest::SHA256.hexdigest({
           goal: goal,
           type: type,
           error_pattern: details[:error_pattern],
           error_messages: Array(details[:error_messages]).sort,
-          sample_messages: Array(details[:sample_messages]).sort
+          sample_messages: Array(details[:sample_messages]).sort,
+          distinct_project_ids: Array(aggregate_stats[:distinct_project_ids]).sort,
+          distinct_runner_ids: Array(aggregate_stats[:distinct_runner_ids]).sort
         }.to_json)
       )
     end

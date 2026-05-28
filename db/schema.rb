@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_28_111015) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_28_133444) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1953,8 +1953,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_111015) do
     t.bigint "applied_by_id", comment: "User who approved or applied the action when it was manual."
     t.decimal "confidence", precision: 4, scale: 3, default: "0.0", null: false, comment: "Model confidence score from 0.0 to 1.0 for the proposed action."
     t.datetime "created_at", null: false
+    t.integer "diagnosis_attempt_count_on_day", default: 1, null: false, comment: "How many diagnosis attempts for this fingerprint consumed budget on diagnosis_attempted_on."
+    t.date "diagnosis_attempted_on", comment: "UTC day when this fingerprint last consumed diagnosis budget."
     t.jsonb "evidence_pointers", default: [], null: false, comment: "Pointers into the sanitized evidence bundle that support the diagnosis."
     t.string "fingerprint", null: false, comment: "Stable pattern fingerprint used to dedupe recurring diagnoses."
+    t.datetime "last_diagnosis_attempt_at", comment: "Timestamp of the most recent diagnosis attempt recorded for this audit row."
     t.integer "occurrence_count", default: 1, null: false, comment: "How many detections collapsed into this deduped decision row."
     t.string "outcome", comment: "Evaluation result for the remediation: improved, unchanged, or regressed."
     t.integer "post_remediation_failure_count", comment: "Observed failure count for the fingerprint after remediation evaluation."
@@ -1964,6 +1967,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_111015) do
     t.text "root_cause", null: false, comment: "Human-readable diagnosis summary shown in notifications and audits."
     t.string "status", default: "proposed", null: false, comment: "Lifecycle state: proposed, approved, applied, skipped, failed, or reverted."
     t.datetime "updated_at", null: false
+    t.index ["account_id", "diagnosis_attempted_on"], name: "idx_remediation_decisions_budget_lookup"
     t.index ["account_id", "fingerprint", "created_at"], name: "idx_remediation_decisions_dedup_lookup"
     t.index ["account_id", "status", "created_at"], name: "idx_remediation_decisions_account_status_created"
     t.index ["account_id"], name: "index_remediation_decisions_on_account_id"

@@ -22,6 +22,9 @@ class RemediationDecision < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :outcome, inclusion: { in: OUTCOMES }, allow_nil: true
   validates :occurrence_count, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  validates :diagnosis_attempted_on, presence: true
+  validates :diagnosis_attempt_count_on_day, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  validates :last_diagnosis_attempt_at, presence: true
   validates :pre_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :post_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
 

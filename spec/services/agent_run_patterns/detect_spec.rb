@@ -419,6 +419,13 @@ RSpec.describe AgentRunPatterns::Detect do
       )
     end
 
+    it "changes the fingerprint when the candidate project set changes" do
+      first = fingerprint_for(project_ids: [ 7 ], runner_ids: [ 42 ])
+      second = fingerprint_for(project_ids: [ 8 ], runner_ids: [ 42 ])
+
+      expect(first[:fingerprint]).not_to eq(second[:fingerprint])
+    end
+
     def deterministic_runs
       [
         run_class.new(1, "enhance_issue", "failed", "No LLM provider produced an issue enhancement", 30.seconds.ago),
@@ -428,6 +435,22 @@ RSpec.describe AgentRunPatterns::Detect do
         run_class.new(5, "create_pr", "failed", "GitHub API error: 403 Forbidden", 2.minutes.ago),
         run_class.new(6, "create_pr", "failed", "GitHub API error: 403 Forbidden", 1.minute.ago)
       ]
+    end
+
+    def fingerprint_for(project_ids:, runner_ids:)
+      described_class.new(account: account).send(
+        :with_fingerprint,
+        goal: "enhance_issue",
+        type: :error_cluster,
+        error_pattern: "GitHub API error: <N> Forbidden",
+        sample_messages: [ "GitHub API error: 403 Forbidden" ],
+        evidence_bundle: {
+          aggregate_stats: {
+            distinct_project_ids: project_ids,
+            distinct_runner_ids: runner_ids
+          }
+        }
+      )
     end
   end
 end
