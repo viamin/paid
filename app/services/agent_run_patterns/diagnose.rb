@@ -66,20 +66,20 @@ module AgentRunPatterns
     end
 
     def call
-      error_messages = extract_error_messages
-      return unknown_diagnosis if error_messages.empty?
+      evidence_documents = extract_evidence_documents
+      return unknown_diagnosis if evidence_documents.empty?
 
-      matches = classify_errors(error_messages)
+      matches = classify_errors(evidence_documents)
       return unknown_diagnosis if matches.empty?
 
-      best_match = matches.max_by { |_, count| count }
+      best_match = matches.max_by { |_, score| score }
       category_key = best_match.first
       category = ROOT_CAUSE_CATEGORIES[category_key]
 
       Diagnosis.new(
         root_cause: category[:label],
         category: category_key.to_s,
-        confidence: best_match.last.to_f / error_messages.size,
+        confidence: [ best_match.last.to_f / evidence_documents.size, 1.0 ].min,
         remediation: category[:remediation]
       )
     end
@@ -88,19 +88,21 @@ module AgentRunPatterns
 
     attr_reader :pattern
 
-    def extract_error_messages
+    def extract_evidence_documents
+      evidence_bundle = pattern.details[:evidence_bundle]
+      return EvidenceBundle.from_payload(evidence_bundle).documents if evidence_bundle.present?
+
       details = pattern.details
       Array(details[:error_messages] || details[:sample_messages])
     end
 
-    def classify_errors(error_messages)
+    def classify_errors(evidence_documents)
       matches = Hash.new(0)
 
-      error_messages.each do |msg|
+      evidence_documents.each do |document|
         ROOT_CAUSE_CATEGORIES.each do |category_key, config|
-          if config[:patterns].any? { |pat| msg.match?(pat) }
-            matches[category_key] += 1
-          end
+          score = config[:patterns].any? { |pat| document.match?(pat) } ? 1 : 0
+          matches[category_key] += score if score.positive?
         end
       end
 

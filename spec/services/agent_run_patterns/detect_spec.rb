@@ -127,6 +127,23 @@ RSpec.describe AgentRunPatterns::Detect do
     end
 
     context "with error clusters" do
+      let(:fixture_attempts) do
+        JSON.parse(file_fixture("agent_run_patterns/model_metadata_not_found_runners_attempted.json").read)
+      end
+
+      let(:evidence_runner) do
+        create(:llm_model, model_id: "gpt-4o", provider: "openai", tier: "high")
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key: create(:provider_api_key, user: project.created_by, api_service_type: "openai"),
+          config: { "kilocode" => { "api_provider" => "openai", "model" => "gpt-4o" } },
+          tier_model_ids: { "low" => "gpt-4o", "mid" => "gpt-4o", "high" => "gpt-4o" }
+        )
+      end
+
       it "detects multiple failures sharing the same error pattern" do
         create_list(:agent_run, 3, :failed, project: project, goal: "analyze_issue",
           error_message: "No LLM provider produced an issue analysis",
@@ -169,6 +186,128 @@ RSpec.describe AgentRunPatterns::Detect do
         expect(clusters.map { |pattern| pattern.details[:error_pattern] }).to contain_exactly(
           "GitHub API error: <N> Forbidden",
           "Container error: OCI runtime exec format error"
+        )
+      end
+
+      it "includes a redacted evidence bundle assembled from attempts, logs, config, and aggregate stats" do
+        cluster = build_evidence_cluster
+        expect(cluster).to be_present
+        expect_redacted_evidence_bundle(cluster.details[:evidence_bundle])
+      end
+
+      it "loads stdout and stderr tails for sampled runs in one query" do
+        runs = create_list(
+          :agent_run,
+          3,
+          :failed,
+          project: project,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          completed_at: Time.current
+        )
+
+        runs.each do |run|
+          create(:agent_run_log, agent_run: run, log_type: "stdout", content: "stdout line")
+          create(:agent_run_log, agent_run: run, log_type: "stderr", content: "stderr line")
+        end
+
+        detector = described_class.new(account: account)
+
+        expect(count_queries { detector.send(:log_tail_evidence, runs) }).to eq(1)
+      end
+
+      it "reuses cached log tails when the same sampled runs are inspected again" do
+        runs = create_list(
+          :agent_run,
+          3,
+          :failed,
+          project: project,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          completed_at: Time.current
+        )
+
+        runs.each do |run|
+          create(:agent_run_log, agent_run: run, log_type: "stdout", content: "stdout line")
+          create(:agent_run_log, agent_run: run, log_type: "stderr", content: "stderr line")
+        end
+
+        detector = described_class.new(account: account)
+        detector.send(:log_tail_evidence, runs)
+
+        expect(count_queries { detector.send(:log_tail_evidence, runs.reverse) }).to eq(0)
+      end
+
+      it "limits each sampled log tail to the most recent lines in SQL order" do
+        run = create(
+          :agent_run,
+          :failed,
+          project: project,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          completed_at: Time.current
+        )
+
+        25.times do |index|
+          create(:agent_run_log, agent_run: run, log_type: "stdout", content: "stdout line #{index}")
+        end
+
+        detector = described_class.new(account: account)
+        tails = detector.send(:log_tail_evidence, [ run ])
+
+        expect(tails).to contain_exactly(
+          include(
+            run_id: run.id,
+            stdout: (5..24).map { |index| "stdout line #{index}" }.join("\n")
+          )
+        )
+      end
+
+      def build_evidence_cluster
+        runs = create_list(
+          :agent_run,
+          3,
+          :failed,
+          project: project,
+          runner: evidence_runner,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          runners_attempted: fixture_attempts,
+          completed_at: Time.current
+        )
+
+        runs.each do |run|
+          create(:agent_run_log, agent_run: run, log_type: "stdout",
+            content: "Provider says Bearer sk-live-secret-token is invalid")
+          create(:agent_run_log, agent_run: run, log_type: "stderr",
+            content: "GitHub helper used github_pat_abcdefghijklmnopqrstuvwxyz1234567890")
+        end
+
+        described_class.call(account: account).find { |pattern| pattern.type == :error_cluster }
+      end
+
+      def expect_redacted_evidence_bundle(bundle)
+        expect(bundle[:outer_errors]).to include("All runners exhausted: Codex, Claude")
+        expect(bundle[:runner_attempts].first).to include(
+          runner: "runner:42",
+          error_type: "provider_error",
+          error_message: "Model metadata for `gpt-4o` not found"
+        )
+        expect(bundle[:runner_attempts].first[:diagnostics].to_json).to include("[REDACTED:api_key]")
+        expect(bundle[:runner_attempts].first[:diagnostics].to_json).not_to include("github_pat_abcdefghijklmnopqrstuvwxyz1234567890")
+        expect(bundle[:log_tails].first[:stdout]).to include("[REDACTED:api_key]")
+        expect(bundle[:log_tails].first[:stderr]).to include("[REDACTED:github_token]")
+        expect(bundle[:runner_configs]).to contain_exactly(
+          {
+            runner_key: "kilocode",
+            auth_type: "api_key",
+            tier_model_ids: { low: "gpt-4o", mid: "gpt-4o", high: "gpt-4o" },
+            provider_api_key_configured: true
+          }
+        )
+        expect(bundle[:aggregate_stats]).to include(
+          run_count: 3,
+          distinct_runners: contain_exactly("runner:42")
         )
       end
     end
