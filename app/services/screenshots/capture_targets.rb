@@ -375,6 +375,7 @@ module Screenshots
       when /\Aaccounts\/roi_dashboards\// then [ :account_roi_dashboard ]
       when /\Aaccounts\// then [ :account ]
       when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
+      when /\Aremediation_decisions\// then [ :remediation_decision_show ]
       when /\Atenant_configurations\// then [ :tenant_configuration ]
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
