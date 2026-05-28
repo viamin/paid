@@ -14,6 +14,7 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
       allow(AgentRunPatterns::Diagnose).to receive(:call)
       allow(AgentRunPatterns::DailyDiagnosisBudget).to receive(:remaining_for).and_return(5)
       allow(AgentRunPatterns::RecordRemediationDecision).to receive(:call).and_return(double(id: 99))
+      allow(AgentRunPatterns::AutoApply).to receive(:call).and_return(double(id: 99))
       allow(AgentRunPatterns::Notify).to receive(:call)
       allow(TenantContext).to receive(:with_system_access).and_yield
       allow(Account).to receive(:find_each).and_yield(account)
@@ -105,6 +106,10 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           account: account,
           pattern: pattern,
           diagnosis: diagnosis
+        )
+        expect(AgentRunPatterns::AutoApply).to have_received(:call).with(
+          decision: anything,
+          pattern: pattern
         )
       end
 

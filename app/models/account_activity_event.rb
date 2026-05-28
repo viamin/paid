@@ -20,6 +20,8 @@ class AccountActivityEvent < ApplicationRecord
     "runner.created" => "runner",
     "runner.updated" => "runner",
     "runner.deleted" => "runner",
+    "self_heal.remediation_applied" => "runner",
+    "self_heal.remediation_reverted" => "runner",
     "agent_run.created" => "run",
     "agent_run.cancelled" => "run",
     "agent_run.retried" => "run",
@@ -110,6 +112,10 @@ class AccountActivityEvent < ApplicationRecord
       "Updated #{metadata_value('runner_name')} runner"
     when "runner.deleted"
       "Removed #{metadata_value('runner_name')} runner"
+    when "self_heal.remediation_applied"
+      "Auto-applied #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
+    when "self_heal.remediation_reverted"
+      "Reverted #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
     when "agent_run.created"
       "Created agent run ##{metadata_value('agent_run_id')} on #{metadata_value('project_name')}"
     when "agent_run.cancelled"
@@ -144,6 +150,8 @@ class AccountActivityEvent < ApplicationRecord
     when "project.created"
       Array(metadata.to_h["github_url"]).compact
     when "runner.created", "runner.updated"
+      Array(metadata.to_h["details"]).compact
+    when "self_heal.remediation_applied", "self_heal.remediation_reverted"
       Array(metadata.to_h["details"]).compact
     when "agent_run.created"
       Array(metadata.to_h["details"]).compact

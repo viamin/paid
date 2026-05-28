@@ -17,6 +17,20 @@ RSpec.describe "Notifications" do
       expect(response.body).to include("Test alert")
     end
 
+    it "renders a revert button for applied remediation notifications" do
+      create(
+        :notification,
+        account: account,
+        title: "Self-heal alert",
+        metadata: { revert_url: "/remediation_decisions/123/revert" }
+      )
+
+      get notifications_path
+
+      expect(response.body).to include("Revert")
+      expect(response.body).to include("/remediation_decisions/123/revert")
+    end
+
     it "renders the table with mobile horizontal scrolling constraints" do
       create(:notification, account: account, title: "Scrollable alert")
 

@@ -3,9 +3,20 @@
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
     <div class="border-b border-gray-200 px-6 py-5">
-      <p class="text-sm font-medium text-indigo-600">Self-heal diagnosis</p>
-      <h1 class="mt-1 text-2xl font-semibold text-gray-900">Remediation Decision #<%= @remediation_decision.id %></h1>
-      <p class="mt-2 text-sm text-gray-600"><%= @remediation_decision.root_cause %></p>
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p class="text-sm font-medium text-indigo-600">Self-heal diagnosis</p>
+          <h1 class="mt-1 text-2xl font-semibold text-gray-900">Remediation Decision #<%= @remediation_decision.id %></h1>
+          <p class="mt-2 text-sm text-gray-600"><%= @remediation_decision.root_cause %></p>
+        </div>
+        <% if @remediation_decision.revertable? %>
+          <%= button_to "Revert",
+                revert_remediation_decision_path(@remediation_decision),
+                method: :post,
+                class: "rounded-full border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50",
+                form: { data: { turbo_confirm: "Revert this remediation?" } } %>
+        <% end %>
+      </div>
     </div>
 
     <dl class="grid gap-6 px-6 py-6 sm:grid-cols-2">
@@ -26,12 +37,27 @@
         <dd class="mt-1 text-sm text-gray-900"><%= @remediation_decision.status.humanize %></dd>
       </div>
       <div>
+        <dt class="text-sm font-medium text-gray-500">Outcome</dt>
+        <dd class="mt-1 text-sm text-gray-900"><%= @remediation_decision.outcome&.humanize || "Pending" %></dd>
+      </div>
+      <div>
+        <dt class="text-sm font-medium text-gray-500">Applied at</dt>
+        <dd class="mt-1 text-sm text-gray-900"><%= @remediation_decision.applied_at ? local_time(@remediation_decision.applied_at) : "Not applied" %></dd>
+      </div>
+      <div>
         <dt class="text-sm font-medium text-gray-500">Fingerprint</dt>
         <dd class="mt-1 break-all font-mono text-xs text-gray-900"><%= @remediation_decision.fingerprint %></dd>
       </div>
       <div>
         <dt class="text-sm font-medium text-gray-500">Occurrences in window</dt>
         <dd class="mt-1 text-sm text-gray-900"><%= @remediation_decision.occurrence_count %></dd>
+      </div>
+      <div>
+        <dt class="text-sm font-medium text-gray-500">Failure counts</dt>
+        <dd class="mt-1 text-sm text-gray-900">
+          Before: <%= @remediation_decision.pre_remediation_failure_count || 0 %>,
+          After: <%= @remediation_decision.post_remediation_failure_count.nil? ? "Pending" : @remediation_decision.post_remediation_failure_count %>
+        </dd>
       </div>
     </dl>
 

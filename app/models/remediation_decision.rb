@@ -29,6 +29,11 @@ class RemediationDecision < ApplicationRecord
   validates :post_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
+  scope :applied, -> { where(status: "applied") }
+  scope :pending_outcome, -> { applied.where(outcome: nil) }
+  scope :for_runner_id, ->(runner_id) {
+    where(action_target_id: runner_id.to_s, action_target_type: %w[runner runner_field])
+  }
 
   def action_target_label
     case action_target_type
@@ -43,5 +48,25 @@ class RemediationDecision < ApplicationRecord
     else
       "#{action_target_type}:#{action_target_id}"
     end
+  end
+
+  def applied?
+    status == "applied"
+  end
+
+  def runner_target?
+    action_target_type.in?(%w[runner runner_field]) && action_target_id.present?
+  end
+
+  def runner_id
+    action_target_id.to_i if runner_target?
+  end
+
+  def revertable?
+    applied? && revert_data.to_h["handler"].present?
+  end
+
+  def auto_applied?
+    applied? && applied_by_id.nil?
   end
 end

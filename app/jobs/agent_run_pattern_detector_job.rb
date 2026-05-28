@@ -73,6 +73,10 @@ class AgentRunPatternDetectorJob < ApplicationJob
         pattern: pattern,
         diagnosis: diagnosis
       )
+      decision = AgentRunPatterns::AutoApply.call(
+        decision: decision,
+        pattern: pattern
+      )
 
       result[:diagnoses][fingerprint(pattern)] = diagnosis
       result[:decisions][fingerprint(pattern)] = decision
