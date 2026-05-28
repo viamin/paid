@@ -39,8 +39,29 @@ module Interop
         def verify_signature?(raw_body, signature:, secret:, request_headers: {})
           return false if secret.blank? || signature.blank?
 
-          expected = OpenSSL::HMAC.hexdigest("SHA256", secret, raw_body)
-          ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+          if header_value(request_headers, "webhook-signature").present?
+            verify_signing_token(raw_body, signature:, secret:, request_headers:)
+          else
+            ActiveSupport::SecurityUtils.secure_compare(secret, signature)
+          end
+        end
+
+        private
+
+        def verify_signing_token(raw_body, signature:, secret:, request_headers:)
+          webhook_id = header_value(request_headers, "webhook-id").to_s
+          timestamp = header_value(request_headers, "webhook-timestamp").to_s
+          return false if webhook_id.blank? || timestamp.blank?
+          return false unless recent_unix_timestamp?(timestamp)
+
+          raw_key = Base64.strict_decode64(secret.delete_prefix("whsec_"))
+          expected = "v1,#{Base64.strict_encode64(OpenSSL::HMAC.digest("SHA256", raw_key, "#{webhook_id}.#{timestamp}.#{raw_body}"))}"
+
+          signature.split(" ").any? do |candidate|
+            ActiveSupport::SecurityUtils.secure_compare(expected, candidate)
+          end
+        rescue ArgumentError
+          false
         end
       end
     end

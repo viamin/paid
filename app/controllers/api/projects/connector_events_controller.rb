@@ -10,7 +10,7 @@ module Api
         "jira" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
         "linear" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
         "teams" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
-        "gitlab" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
+        "gitlab" => %w[X-Gitlab-Token webhook-signature],
         "bitbucket" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
         "ci_systems" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256]
       }.freeze
@@ -73,19 +73,27 @@ module Api
 
       def signature_headers
         request.headers.env
-          .select { |key, _| key.start_with?("HTTP_X_") }
+          .select { |key, _| key.start_with?("HTTP_") }
           .transform_keys { |key| key.delete_prefix("HTTP_").tr("_", "-") }
       end
 
       def connector_signature
         signature_header_candidates
           .lazy
-          .map { |header| request.headers[header].presence }
+          .map { |header| header_value(header).presence }
           .find(&:present?) || connector_event_params[:signature].presence
       end
 
       def signature_header_candidates
         SIGNATURE_HEADER_CANDIDATES.fetch(connector_event_params[:connector_key].to_s, [])
+      end
+
+      def header_value(header_name)
+        signature_headers.each do |key, value|
+          return value if key.casecmp?(header_name)
+        end
+
+        nil
       end
     end
   end

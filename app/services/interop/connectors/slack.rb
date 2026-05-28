@@ -35,8 +35,9 @@ module Interop
         def verify_signature?(raw_body, signature:, secret:, request_headers: {})
           return false if secret.blank? || signature.blank?
 
-          timestamp = request_headers["x-slack-request-timestamp"].to_s
+          timestamp = header_value(request_headers, "X-Slack-Request-Timestamp").to_s
           return false if timestamp.blank?
+          return false unless recent_unix_timestamp?(timestamp)
 
           expected = OpenSSL::HMAC.hexdigest("SHA256", secret, "v0:#{timestamp}:#{raw_body}")
           ActiveSupport::SecurityUtils.secure_compare("v0=#{expected}", signature)

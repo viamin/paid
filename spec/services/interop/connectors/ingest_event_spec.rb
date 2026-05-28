@@ -9,7 +9,7 @@ RSpec.describe Interop::Connectors::IngestEvent do
     let(:slack_raw_body) do
       '{"connector_event":{"connector_key":"slack","event_type":"message_posted","external_event_id":"slack-1","payload":{"event":{"ts":"123.456","type":"message","text":"hi"}}}}'
     end
-    let(:slack_timestamp) { "1_717_171_717" }
+    let(:slack_timestamp) { Time.current.to_i.to_s }
     let(:slack_signature) do
       digest = OpenSSL::HMAC.hexdigest("SHA256", "signing-secret", "v0:#{slack_timestamp}:#{slack_raw_body}")
       "v0=#{digest}"
@@ -156,6 +156,31 @@ RSpec.describe Interop::Connectors::IngestEvent do
           request_headers: { "X-Slack-Request-Timestamp" => slack_timestamp }
         )
       }.to raise_error(ArgumentError, /signature is required for slack/)
+    end
+
+    it "rejects Slack signatures with stale timestamps" do
+      project.update!(interop_settings: {
+        "adoption_mode" => "advisory",
+        "connectors" => { "slack" => true },
+        "external_execution_sources" => {}
+      })
+
+      stale_timestamp = 10.minutes.ago.to_i.to_s
+      stale_signature = "v0=#{OpenSSL::HMAC.hexdigest("SHA256", "signing-secret", "v0:#{stale_timestamp}:#{slack_raw_body}")}"
+
+      expect {
+        described_class.call(
+          project: project,
+          connector_key: "slack",
+          event_type: "message_posted",
+          payload: slack_payload,
+          external_event_id: "slack-stale-timestamp",
+          signature: stale_signature,
+          secret: "signing-secret",
+          raw_body: slack_raw_body,
+          request_headers: { "X-Slack-Request-Timestamp" => stale_timestamp }
+        )
+      }.to raise_error(ArgumentError, /signature verification failed for slack/)
     end
 
     it "creates a failed event when connector normalization raises" do

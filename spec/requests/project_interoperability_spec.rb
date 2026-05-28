@@ -167,7 +167,7 @@ RSpec.describe "Project interoperability" do
 
   describe "POST /projects/:project_id/connector_events" do
     let(:slack_secret) { "signing-secret" }
-    let(:slack_timestamp) { "1_717_171_717" }
+    let(:slack_timestamp) { Time.current.to_i.to_s }
     let(:connector_event_params) do
       {
         connector_event: {
@@ -265,6 +265,67 @@ RSpec.describe "Project interoperability" do
       expect(response.parsed_body.fetch("errors").first).to match(/signature is required for slack/)
     end
 
+    it "rejects stale Slack signatures" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+
+      stale_timestamp = 10.minutes.ago.to_i.to_s
+      stale_signature = "v0=#{OpenSSL::HMAC.hexdigest("SHA256", slack_secret, "v0:#{stale_timestamp}:#{connector_event_json}")}"
+
+      expect {
+        post api_project_connector_events_path(project), params: connector_event_json, headers: {
+          "CONTENT_TYPE" => "application/json",
+          "X-Slack-Request-Timestamp" => stale_timestamp,
+          "X-Slack-Signature" => stale_signature
+        }
+      }.not_to change(project.external_connector_events, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors").first).to match(/signature verification failed for slack/)
+    end
+
+    it "accepts GitLab secret-token headers" do
+      create_connector_credential!("gitlab", gitlab_secret)
+      enable_connector!("gitlab")
+
+      expect {
+        post api_project_connector_events_path(project), params: gitlab_event_body("gitlab-token-event", 42, "MR title"), headers: {
+          "CONTENT_TYPE" => "application/json",
+          "X-Gitlab-Token" => gitlab_secret
+        }
+      }.to change(project.external_connector_events, :count).by(1)
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it "accepts GitLab signing-token headers" do
+      webhook_id = SecureRandom.uuid
+      webhook_timestamp = Time.current.to_i.to_s
+      gitlab_body = gitlab_event_body("gitlab-signed-event", 84, "Signed MR")
+      create_connector_credential!("gitlab", gitlab_signing_secret)
+      enable_connector!("gitlab")
+
+      gitlab_digest = OpenSSL::HMAC.digest("SHA256", gitlab_signing_key, "#{webhook_id}.#{webhook_timestamp}.#{gitlab_body}")
+      gitlab_signature = "v1,#{Base64.strict_encode64(gitlab_digest)}"
+
+      expect {
+        post api_project_connector_events_path(project), params: gitlab_body, headers: {
+          "CONTENT_TYPE" => "application/json",
+          "webhook-id" => webhook_id,
+          "webhook-timestamp" => webhook_timestamp,
+          "webhook-signature" => gitlab_signature
+        }
+      }.to change(project.external_connector_events, :count).by(1)
+
+      expect(response).to have_http_status(:created)
+    end
+
     it "rejects connector requests when no active integration credential is configured" do
       expect {
         post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
@@ -272,6 +333,53 @@ RSpec.describe "Project interoperability" do
 
       expect(response).to have_http_status(:unauthorized)
       expect(response.parsed_body.fetch("errors").first).to match(/No active integration credential configured/)
+    end
+
+    def create_connector_credential!(service_key, secret)
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: service_key,
+        auth_kind: "api_key",
+        secret: secret
+      )
+    end
+
+    def enable_connector!(connector_key)
+      project.update!(interop_settings: {
+        "adoption_mode" => "advisory",
+        "connectors" => { connector_key => true }
+      })
+    end
+
+    def gitlab_event_body(external_event_id, iid, title)
+      {
+        connector_event: {
+          connector_key: "gitlab",
+          event_type: "merge_request_opened",
+          external_event_id: external_event_id,
+          payload: {
+            object_attributes: {
+              iid: iid,
+              title: title,
+              state: "opened"
+            }
+          }
+        }
+      }.to_json
+    end
+
+    def gitlab_secret
+      "gitlab-secret"
+    end
+
+    def gitlab_signing_key
+      "gitlab-signing-secret"
+    end
+
+    def gitlab_signing_secret
+      "whsec_#{Base64.strict_encode64(gitlab_signing_key)}"
     end
   end
 end
