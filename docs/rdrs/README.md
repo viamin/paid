@@ -44,7 +44,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Final | High |
 | [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Final | Medium |
-| [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Implemented | P1 |
+| [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Draft | P1 |
 
 ### Intelligence
 

@@ -247,23 +247,4 @@ RSpec.describe User do
         .from(1).to(0)
     end
   end
-
-  describe "#settings" do
-    it "creates settings with defaults when missing" do
-      user = create(:user)
-
-      expect { user.settings }.to change(UserSetting, :count).by(1)
-      expect(user.settings).to eq(user.reload.user_setting)
-    end
-
-    it "reloads a settings row created after the association cached nil" do
-      user = create(:user)
-
-      expect(user.user_setting).to be_nil
-      existing_setting = create(:user_setting, user: user)
-
-      expect { user.settings }.not_to raise_error
-      expect(user.settings).to eq(existing_setting)
-    end
-  end
 end

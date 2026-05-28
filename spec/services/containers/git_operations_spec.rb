@@ -989,6 +989,53 @@ RSpec.describe Containers::GitOperations do
       )
     end
 
+    it "allows merge_conflict runs to exceed the standard file cap up to the merge_conflict limit" do
+      agent_run.update!(focus: "merge_conflict")
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..250).map { |i| "app/models/file#{i}.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect { git_ops.commit_uncommitted_changes }.not_to raise_error
+    end
+
+    it "still rejects merge_conflict runs that exceed the merge_conflict limit" do
+      agent_run.update!(focus: "merge_conflict")
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..501).map { |i| "app/models/file#{i}.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Auto-commit rejected: 501 files staged \(limit: 500\)/
+      )
+    end
+
     it "raises Error when staged file validation cannot list staged files" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)

@@ -14,9 +14,10 @@ RSpec.describe Avo::Actions::AccountLifecycleAction, :no_db do
   end
   let(:account) { account_class.new(11, "Acme") }
   let(:current_user) { Struct.new(:id, :email).new(7, "operator@example.com") }
+  let(:logger) { instance_double(ActiveSupport::Logger, info: true) }
 
   before do
-    allow(Rails.logger).to receive(:info)
+    allow(Rails).to receive(:logger).and_return(logger)
   end
 
   describe Avo::Actions::SuspendAccount do
@@ -26,7 +27,7 @@ RSpec.describe Avo::Actions::AccountLifecycleAction, :no_db do
       action = described_class.new.handle(query: [ account ], fields: {}, current_user:, resource: nil)
 
       expect(account).to have_received(:suspend!)
-      expect(Rails.logger).to have_received(:info).with(
+      expect(logger).to have_received(:info).with(
         hash_including(
           message: "operator_console.account_lifecycle",
           action: "suspend",

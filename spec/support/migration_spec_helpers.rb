@@ -14,6 +14,7 @@ module MigrationSpecHelpers
       account_memberships
       github_tokens
       user_settings
+      tenant_settings
       users
       accounts
     ].each { |table| connection.execute("DELETE FROM #{table}") }

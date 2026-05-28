@@ -98,12 +98,12 @@ if [ -z "${CODEX_PACKAGE}" ]; then
     exit 1
 fi
 
-# Extract OpenCode CLI install command from agent-harness installation contract.
+# Extract OpenCode CLI package from agent-harness installation contract.
 # agent-harness owns the supported OpenCode CLI version; Paid consumes it at build time.
 OPENCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" opencode)
-OPENCODE_INSTALL_COMMAND=$(echo "${OPENCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
-if [ -z "${OPENCODE_INSTALL_COMMAND}" ]; then
-    echo "ERROR: Could not extract OpenCode install command from agent-harness" >&2
+OPENCODE_PACKAGE=$(echo "${OPENCODE_CONTRACT}" | sed -n 's/^PACKAGE=//p')
+if [ -z "${OPENCODE_PACKAGE}" ]; then
+    echo "ERROR: Could not extract OpenCode package from agent-harness" >&2
     exit 1
 fi
 
@@ -161,7 +161,7 @@ echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 echo "  claude-install: via agent-harness contract"
 echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
-echo "  opencode-install: ${OPENCODE_INSTALL_COMMAND}"
+echo "  opencode: ${OPENCODE_PACKAGE}"
 echo "  pi: ${PI_PACKAGE}"
 echo "  kilocode-cli: ${KILOCODE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
@@ -180,7 +180,7 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
     --build-arg "CURSOR_BINARY_NAME=${CURSOR_BINARY_NAME}" \
     --build-arg "CURSOR_GLOBAL_PATH=${CURSOR_GLOBAL_PATH}" \
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
-    --build-arg "OPENCODE_INSTALL_COMMAND=${OPENCODE_INSTALL_COMMAND}" \
+    --build-arg "OPENCODE_PACKAGE=${OPENCODE_PACKAGE}" \
     --build-arg "PI_PACKAGE=${PI_PACKAGE}" \
     --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \

@@ -619,34 +619,6 @@ RSpec.describe "Runners" do
       expect(runner.reload.agent_co_author_trailer).to eq(trailer)
     end
 
-    it "persists tier_models on update" do
-      runner = create_openrouter_opencode_runner(user: user)
-      ensure_kimi_mid_model!
-
-      patch runner_path(runner), params: {
-        runner: { tier_models: { mid: "moonshotai/kimi-k2-0905" } }
-      }
-
-      expect(response).to redirect_to(runners_path)
-      expect(runner.reload.tier_models).to eq(
-        "mid" => { "model_id" => "moonshotai/kimi-k2-0905", "provider_id" => runner.id }
-      )
-    end
-
-    it "blocks saving an unresolved primary runner" do
-      runner = create_openrouter_opencode_runner(user: user)
-      runner.update_column(:tier_model_ids, {})
-      user.settings.update!(default_agent_runner: runner.routing_key)
-      ensure_kimi_mid_model!
-
-      patch runner_path(runner), params: {
-        runner: { tier_models: { mid: "moonshotai/kimi-k2-0905" } }
-      }
-
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("must resolve all tiers for a primary runner")
-    end
-
     it "persists tier_model_ids on update" do
       runner = user.runners.create!(runner_key: "cursor")
       create(:llm_model, model_id: "haiku-x", provider: "anthropic", tier: "low")
@@ -767,28 +739,6 @@ RSpec.describe "Runners" do
       expect(response.body).to include('name="runner[complexity_thresholds][mid_max]"')
       expect(response.body).not_to include('name="runner[complexity_thresholds[low_max]]"')
       expect(response.body).not_to include('name="runner[complexity_thresholds[mid_max]]"')
-    end
-  end
-
-  def create_openrouter_opencode_runner(user:)
-    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
-    create(
-      :runner,
-      user: user,
-      auth_type: "api_key",
-      provider_api_key: api_key,
-      runner_key: "opencode",
-      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
-    )
-  end
-
-  def ensure_kimi_mid_model!
-    LlmModel.find_or_create_by!(model_id: "moonshotai/kimi-k2-0905") do |model|
-      model.display_name = "Kimi K2"
-      model.provider = "openrouter"
-      model.category = "coding"
-      model.tier = "mid"
-      model.active = true
     end
   end
 

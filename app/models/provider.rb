@@ -92,18 +92,6 @@ class Provider < Runner
     super
   end
 
-  def tier_model_picker_visible_on_provider?
-    Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER.key?(provider_key.to_s)
-  end
-
-  def tier_model_picker_provider
-    if tier_model_picker_visible_on_runner?
-      direct_outbound_llm_model_provider
-    elsif tier_model_picker_visible_on_provider?
-      Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider_key.to_s]
-    end
-  end
-
   private
 
   def must_keep_at_least_one_agent_run_runner

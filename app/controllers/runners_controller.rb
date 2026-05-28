@@ -178,7 +178,6 @@ class RunnersController < ApplicationController
       *permitted,
       config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ], aider: [ :api_provider, :model ],
                 pi: [ :api_provider, :model ] },
-      tier_models: LlmModel::TIERS,
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -187,19 +186,13 @@ class RunnersController < ApplicationController
     # avoiding stale config from previously visible form fields.
     # The final .to_h.merge returns a plain Hash (not ActionController::Parameters),
     # which prevents UnfilteredParameters when consumed by the model.
-    config = attrs.key?(:config) ? (attrs[:config]&.to_h || {}) : nil
+    config = attrs[:config]&.to_h || {}
 
     runner_key = attrs[:runner_key].presence || attrs[:provider_key].presence || @runner&.runner_key
-    config = config.slice(runner_key) if config && runner_key.present?
+    config = config.slice(runner_key) if runner_key.present?
 
-    result = attrs.to_h
-    result["config"] = config unless config.nil?
+    result = attrs.to_h.merge("config" => config)
     result["runner_key"] = result.delete("provider_key") if result.key?("provider_key")
-    if result.key?("tier_models")
-      result["tier_models"] = normalize_tier_models_param(result["tier_models"])
-    elsif result.key?("tier_model_ids")
-      result["tier_models"] = normalize_tier_models_param(result["tier_model_ids"])
-    end
     if result.key?("tier_model_ids")
       result["tier_model_ids"] = result["tier_model_ids"].to_h.compact_blank
     end
@@ -221,24 +214,6 @@ class RunnersController < ApplicationController
 
       coerced = Integer(value, exception: false)
       result[key.to_s] = coerced || value
-    end
-  end
-
-  def normalize_tier_models_param(raw)
-    return {} unless raw.is_a?(Hash)
-
-    raw.each_with_object({}) do |(tier, value), result|
-      model_id = if value.is_a?(Hash)
-        value["model_id"] || value[:model_id]
-      else
-        value
-      end
-      next if model_id.blank?
-
-      result[tier.to_s] = {
-        "model_id" => model_id.to_s,
-        "provider_id" => @runner&.id
-      }.compact
     end
   end
 

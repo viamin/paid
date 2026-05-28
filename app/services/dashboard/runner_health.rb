@@ -3,7 +3,6 @@
 module Dashboard
   class RunnerHealth
     CACHE_TTL = 20.seconds
-    ATTEMPT_WINDOW = 7.days
 
     RunnerStatus = Struct.new(
       :runner,
@@ -14,7 +13,6 @@ module Dashboard
       :status_label,
       :available,
       :failure_count,
-      :attempt_count,
       :rate_limited_until,
       keyword_init: true
     )
@@ -51,14 +49,9 @@ module Dashboard
 
     def runner_rows
       state_by_runner = runner_states.index_by(&:runner_name)
-      metrics_by_runner = recent_attempt_metrics_by_runner
 
       configured_runners.map do |runner|
-        build_runner_status(
-          runner,
-          state_by_runner[runner.state_key],
-          recent_metrics: metrics_by_runner.fetch(runner.state_key, {})
-        )
+        build_runner_status(runner, state_by_runner[runner.state_key])
       end.sort_by { |runner| [ status_priority(runner.status), runner.runner.downcase, runner.owner_email.downcase ] }
     end
 
@@ -78,10 +71,8 @@ module Dashboard
         .includes(:user)
     end
 
-    def build_runner_status(runner, state, recent_metrics:)
+    def build_runner_status(runner, state)
       state&.check_circuit_recovery!(timeout: circuit_breaker_timeout_for(runner))
-      failure_count = recent_metrics.fetch(:failure_count, 0)
-      attempt_count = [ recent_metrics.fetch(:attempt_count, 0), failure_count ].max
 
       status =
         if state&.rate_limited?
@@ -102,44 +93,9 @@ module Dashboard
         status: status,
         status_label: status.to_s.humanize,
         available: status == :available,
-        failure_count: failure_count,
-        attempt_count: attempt_count,
+        failure_count: state&.failure_count || 0,
         rate_limited_until: state&.rate_limited_until
       )
-    end
-
-    def recent_attempt_metrics_by_runner
-      configured_state_keys = configured_runners.map(&:state_key)
-      return {} if configured_state_keys.empty?
-
-      normalized_attempt_runner_sql = AgentRun.normalize_provider_sql("attempt->>'provider'")
-
-      account_runs
-        .where(created_at: (ATTEMPT_WINDOW * 2).ago..)
-        .joins("CROSS JOIN LATERAL jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt")
-        .where(<<~SQL, ATTEMPT_WINDOW.ago)
-          COALESCE(
-            NULLIF(attempt->>'attempted_at', '')::timestamptz,
-            agent_runs.created_at
-          ) >= ?
-        SQL
-        .group(Arel.sql(normalized_attempt_runner_sql))
-        .pluck(
-          Arel.sql(normalized_attempt_runner_sql),
-          Arel.sql("COUNT(*)::integer"),
-          Arel.sql("COUNT(*) FILTER (WHERE NOT COALESCE((attempt->>'success')::boolean, false))::integer")
-        ).each_with_object({}) do |(runner_key, attempts, failures), metrics|
-          next unless configured_state_keys.include?(runner_key)
-
-          metrics[runner_key] = {
-            attempt_count: attempts,
-            failure_count: failures
-          }
-        end
-    end
-
-    def account_runs
-      AgentRun.joins(:project).where(projects: { account_id: account.id })
     end
 
     def circuit_breaker_timeout_for(runner)

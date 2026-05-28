@@ -1,8 +1,6 @@
 # RDR-008: Model Selection Strategy
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
->
-> Superseded by [RDR-034](RDR-034-tier-based-runner-fallback.md) for runner-tier resolution; the meta-agent still selects the run tier and may still record an optional primary model.
 
 ## Metadata
 

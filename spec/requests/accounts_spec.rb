@@ -48,17 +48,6 @@ RSpec.describe "Accounts" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Account Administration")
     end
-
-    it "hides compliance evidence export from non-admin readers" do
-      viewer = create(:user, :viewer, account: account)
-      sign_out owner
-      sign_in viewer
-
-      get account_path
-
-      expect(response).to have_http_status(:ok)
-      expect(response.body).not_to include("Export evidence")
-    end
   end
 
   describe "GET /account_audit_logs" do

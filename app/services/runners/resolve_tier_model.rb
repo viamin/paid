@@ -6,51 +6,38 @@ module Runners
       new(...).call
     end
 
-    def initialize(runner:, tier:, user: nil, provider: nil)
+    def initialize(runner:, tier:, user:)
       @runner = runner
       @tier = tier.to_s
       @user = user
-      @explicit_provider = provider
     end
 
     def call
-      runner_entry = @runner&.tier_models&.dig(@tier)
-      return success_result(runner_entry, source: "runner", fallback_provider_id: @runner&.id) if runner_entry.present?
+      provider = user&.provider_for(runner)
+      runner_entry = runner.tier_models[tier]
+      return success_result(runner_entry, source: "runner") if runner_entry.present?
 
-      legacy_runner_id = @runner&.tier_model_ids&.dig(@tier)
-      if legacy_runner_id.present?
-        return Result.new(model_id: legacy_runner_id, provider_id: @runner.id, source: "runner")
-      end
+      provider_entry = provider&.tier_models&.dig(tier)
+      return success_result(provider_entry, source: "provider") if provider_entry.present?
 
-      provider = resolve_provider
-      provider_entry = provider&.tier_models&.dig(@tier)
-      return success_result(provider_entry, source: "provider", fallback_provider_id: provider&.id) if provider_entry.present?
-
-      legacy_provider_id = provider&.tier_model_ids&.dig(@tier)
-      if legacy_provider_id.present?
-        return Result.new(model_id: legacy_provider_id, provider_id: provider.id, source: "provider")
-      end
-
-      default_model_id = DefaultTierModelIds.call(runner_key: @runner&.runner_key)[@tier]
-      return failure_result("no model configured for #{@runner&.runner_key} at #{@tier}") if default_model_id.blank?
+      default_model_id = DefaultTierModelIds.call(runner_key: runner.runner_key)[tier]
+      return failure_result("no model configured for #{runner.runner_key} at #{tier}") if default_model_id.blank?
 
       Result.new(
         model_id: default_model_id,
-        provider_id: provider&.id || @runner&.id,
+        provider_id: provider&.id,
         source: "default"
       )
     end
 
     private
 
-    def resolve_provider
-      @explicit_provider || @user&.provider_for(@runner)
-    end
+    attr_reader :runner, :tier, :user
 
-    def success_result(entry, source:, fallback_provider_id: nil)
+    def success_result(entry, source:)
       Result.new(
         model_id: entry.fetch("model_id"),
-        provider_id: entry["provider_id"] || fallback_provider_id,
+        provider_id: entry.fetch("provider_id"),
         source: source
       )
     end
