@@ -3,6 +3,14 @@
 module AgentRunPatterns
   class RecordRemediationDecision
     DEDUPE_WINDOW = 24.hours
+    DEDUPE_PROTECTED_FIELDS = %i[
+      status
+      occurrence_count
+      created_at
+      revert_data
+      outcome
+      post_remediation_failure_count
+    ].freeze
 
     def self.call(...)
       new(...).call
@@ -37,7 +45,7 @@ module AgentRunPatterns
 
     def update_existing_decision(decision)
       decision.assign_attributes(
-        decision_attributes.except(:status, :occurrence_count, :created_at)
+        decision_attributes.except(*DEDUPE_PROTECTED_FIELDS)
       )
       decision.occurrence_count += 1
       decision.save!

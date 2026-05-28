@@ -49,4 +49,25 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
     expect(second.id).to eq(first.id)
     expect(second.reload.occurrence_count).to eq(2)
   end
+
+  it "preserves evaluation fields when deduping an existing decision" do
+    decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+    decision.update!(
+      status: "applied",
+      revert_data: { "command" => "bin/self-heal revert 123" },
+      post_remediation_failure_count: 1,
+      outcome: "improved"
+    )
+
+    deduped = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+
+    expect(deduped.id).to eq(decision.id)
+    expect(deduped.reload).to have_attributes(
+      status: "applied",
+      revert_data: { "command" => "bin/self-heal revert 123" },
+      post_remediation_failure_count: 1,
+      outcome: "improved",
+      occurrence_count: 2
+    )
+  end
 end
