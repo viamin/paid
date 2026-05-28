@@ -216,6 +216,53 @@ RSpec.describe AgentRunPatterns::Detect do
         expect(count_queries { detector.send(:log_tail_evidence, runs) }).to eq(1)
       end
 
+      it "reuses cached log tails when the same sampled runs are inspected again" do
+        runs = create_list(
+          :agent_run,
+          3,
+          :failed,
+          project: project,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          completed_at: Time.current
+        )
+
+        runs.each do |run|
+          create(:agent_run_log, agent_run: run, log_type: "stdout", content: "stdout line")
+          create(:agent_run_log, agent_run: run, log_type: "stderr", content: "stderr line")
+        end
+
+        detector = described_class.new(account: account)
+        detector.send(:log_tail_evidence, runs)
+
+        expect(count_queries { detector.send(:log_tail_evidence, runs.reverse) }).to eq(0)
+      end
+
+      it "limits each sampled log tail to the most recent lines in SQL order" do
+        run = create(
+          :agent_run,
+          :failed,
+          project: project,
+          goal: "enhance_issue",
+          error_message: "All runners exhausted: Codex, Claude",
+          completed_at: Time.current
+        )
+
+        25.times do |index|
+          create(:agent_run_log, agent_run: run, log_type: "stdout", content: "stdout line #{index}")
+        end
+
+        detector = described_class.new(account: account)
+        tails = detector.send(:log_tail_evidence, [ run ])
+
+        expect(tails).to contain_exactly(
+          include(
+            run_id: run.id,
+            stdout: (5..24).map { |index| "stdout line #{index}" }.join("\n")
+          )
+        )
+      end
+
       def build_evidence_cluster
         runs = create_list(
           :agent_run,

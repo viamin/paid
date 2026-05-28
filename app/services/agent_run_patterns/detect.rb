@@ -24,6 +24,7 @@ module AgentRunPatterns
     def initialize(account:, window_hours: DEFAULT_WINDOW_HOURS)
       @account = account
       @window_hours = window_hours
+      @log_tail_cache = {}
     end
 
     def call
@@ -196,14 +197,34 @@ module AgentRunPatterns
       run_ids = Array(runs).filter_map { |run| read_attribute(run, :id) }
       return {} if run_ids.empty?
 
-      AgentRunLog.where(agent_run_id: run_ids, log_type: %w[stdout stderr])
-        .select(:agent_run_id, :log_type, :content)
-        .order(:agent_run_id, :log_type, :created_at)
-        .each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |log, grouped_logs|
+      @log_tail_cache[run_ids.sort] ||= begin
+        tail_rows_for(run_ids).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |log, grouped_logs|
           key = [ read_attribute(log, :agent_run_id), read_attribute(log, :log_type) ]
           grouped_logs[key] << read_attribute(log, :content)
-          grouped_logs[key].shift while grouped_logs[key].size > EVIDENCE_LOG_TAIL_LINE_LIMIT
         end
+      end
+    end
+
+    def tail_rows_for(run_ids)
+      ranked_logs = AgentRunLog.where(agent_run_id: run_ids, log_type: %w[stdout stderr])
+        .select(
+          :agent_run_id,
+          :log_type,
+          :content,
+          :created_at,
+          :id,
+          <<~SQL.squish
+            ROW_NUMBER() OVER (
+              PARTITION BY agent_run_id, log_type
+              ORDER BY created_at DESC, id DESC
+            ) AS row_number
+          SQL
+        )
+
+      AgentRunLog.from("(#{ranked_logs.to_sql}) agent_run_log_tails")
+        .where("row_number <= ?", EVIDENCE_LOG_TAIL_LINE_LIMIT)
+        .select(:agent_run_id, :log_type, :content)
+        .order(:agent_run_id, :log_type, created_at: :asc, id: :asc)
     end
 
     def sanitize_log_tail(log_lines)
