@@ -20,8 +20,13 @@ class AgentRunPatternDetectorJob < ApplicationJob
         patterns = AgentRunPatterns::Detect.call(account: account)
         total_patterns += patterns.size
 
-        diagnoses = build_diagnoses(patterns)
-        AgentRunPatterns::Notify.call(account: account, patterns: patterns, diagnoses: diagnoses)
+        results = build_diagnoses(account, patterns)
+        AgentRunPatterns::Notify.call(
+          account: account,
+          patterns: patterns,
+          diagnoses: results[:diagnoses],
+          decisions: results[:decisions]
+        )
 
         next if patterns.empty?
 
@@ -51,23 +56,30 @@ class AgentRunPatternDetectorJob < ApplicationJob
 
   private
 
-  def build_diagnoses(patterns)
-    patterns.each_with_object({}) do |pattern, hash|
-      diagnosis = AgentRunPatterns::Diagnose.call(pattern)
-      existing = hash[pattern.goal]
+  def build_diagnoses(account, patterns)
+    remaining_budget = AgentRunPatterns::DailyDiagnosisBudget.remaining_for(account: account)
 
-      hash[pattern.goal] = if existing.nil? || better_diagnosis?(diagnosis, existing)
-        diagnosis
-      else
-        existing
-      end
+    patterns.each_with_object({ diagnoses: {}, decisions: {} }) do |pattern, result|
+      allow_llm = remaining_budget.positive?
+      remaining_budget -= 1 if allow_llm
+
+      diagnosis = AgentRunPatterns::Diagnose.call(
+        pattern,
+        account: account,
+        allow_llm: allow_llm
+      )
+      decision = AgentRunPatterns::RecordRemediationDecision.call(
+        account: account,
+        pattern: pattern,
+        diagnosis: diagnosis
+      )
+
+      result[:diagnoses][fingerprint(pattern)] = diagnosis
+      result[:decisions][fingerprint(pattern)] = decision
     end
   end
 
-  def better_diagnosis?(candidate, existing)
-    return true if existing.category == "unknown" && candidate.category != "unknown"
-    return false if candidate.category == "unknown" && existing.category != "unknown"
-
-    candidate.confidence > existing.confidence
+  def fingerprint(pattern)
+    pattern.details[:fingerprint].to_s
   end
 end

@@ -24,6 +24,7 @@ Rails.application.routes.draw do
     patch :dismiss, on: :member
     post :mark_all_read, on: :collection
   end
+  resources :remediation_decisions, only: [ :show ]
 
   # Onboarding wizard
   resource :onboarding, only: [ :show, :update ], controller: "onboarding" do
