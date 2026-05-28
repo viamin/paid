@@ -13,6 +13,7 @@ RSpec.describe RunnerSmokeHelpers do
   describe ".scenario_names_from_env" do
     it "defaults to the current-enabled preset" do
       ENV.delete("PAID_SMOKE_SCENARIOS")
+      allow(described_class).to receive(:configured_scenario_names).and_return(%w[opencode-minimax pi-minimax])
 
       expect(described_class.scenario_names_from_env).to eq(%w[
         claude-subscription
@@ -21,13 +22,16 @@ RSpec.describe RunnerSmokeHelpers do
         kilocode-zai
         opencode-openrouter
         kilocode-inception
+        opencode-minimax
+        pi-minimax
       ])
     end
 
     it "expands preset names from the environment" do
       ENV["PAID_SMOKE_SCENARIOS"] = "current-enabled"
+      allow(described_class).to receive(:configured_scenario_names).and_return(%w[opencode-minimax])
 
-      expect(described_class.scenario_names_from_env).to eq(described_class::PRESETS.fetch("current-enabled"))
+      expect(described_class.scenario_names_from_env).to eq(described_class.current_enabled_scenario_names)
     end
 
     it "preserves duplicate scenario names for distinct matrix entries" do
@@ -42,10 +46,13 @@ RSpec.describe RunnerSmokeHelpers do
       expect(described_class.scenario_for("kilocode-zai").default_model).to eq("glm-5.1")
       expect(described_class.scenario_for("opencode-openrouter").default_model).to eq("moonshotai/kimi-k2")
       expect(described_class.scenario_for("kilocode-inception").default_model).to eq("mercury-2")
+      expect(described_class.scenario_for("opencode-minimax").default_model).to eq("MiniMax-M2.7")
+      expect(described_class.scenario_for("pi-deepseek").default_model).to eq("deepseek-chat")
+      expect(described_class.scenario_for("pi-minimax").default_model).to eq("MiniMax-M2.7")
     end
 
     it "raises a helpful error for unknown names" do
-      expect { described_class.scenario_for("unknown-provider") }
+      expect { described_class.scenario_for("unknown-runner") }
         .to raise_error(RunnerSmokeHelpers::ScenarioUnavailableError, /Unknown runner smoke scenario/)
     end
   end
@@ -63,6 +70,57 @@ RSpec.describe RunnerSmokeHelpers do
       runner = described_class.build_direct_outbound_runner!(user: user, scenario: scenario)
 
       expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2")
+    end
+
+    it "builds Pi DeepSeek runners through the shared direct-outbound path" do
+      pi_scenario = described_class.scenario_for("pi-deepseek")
+      allow(described_class).to receive(:development_runner_info_for).with(pi_scenario).and_return(
+        { "api_key" => "sk-deepseek-test" }
+      )
+
+      runner = described_class.build_direct_outbound_runner!(user: user, scenario: pi_scenario)
+
+      expect(runner.runner_key).to eq("pi")
+      expect(runner.pi_api_provider).to eq("deepseek")
+      expect(runner.pi_model_id).to eq("deepseek-chat")
+      expect(runner.provider_api_key.api_service_type).to eq("deepseek")
+    end
+
+    it "builds MiniMax runners with the Anthropic env-var backed service type" do
+      minimax_scenario = described_class.scenario_for("opencode-minimax")
+      allow(described_class).to receive(:development_runner_info_for).with(minimax_scenario).and_return(
+        { "api_key" => "sk-minimax-test" }
+      )
+
+      runner = described_class.build_direct_outbound_runner!(user: user, scenario: minimax_scenario)
+
+      expect(runner.runner_key).to eq("opencode")
+      expect(runner.opencode_api_provider).to eq("minimax")
+      expect(runner.opencode_model_id).to eq("MiniMax-M2.7")
+      expect(runner.provider_api_key.api_service_type).to eq("minimax")
+    end
+  end
+
+  describe ".current_enabled_scenario_names" do
+    it "adds configured direct-outbound scenarios to the baseline preset" do
+      allow(described_class).to receive(:configured_scenario_names).and_return(%w[opencode-minimax pi-minimax])
+
+      expect(described_class.current_enabled_scenario_names).to eq(%w[
+        claude-subscription
+        codex-subscription
+        copilot-subscription
+        kilocode-zai
+        opencode-openrouter
+        kilocode-inception
+        opencode-minimax
+        pi-minimax
+      ])
+    end
+
+    it "does not duplicate scenarios already present in the baseline preset" do
+      allow(described_class).to receive(:configured_scenario_names).and_return(%w[kilocode-zai opencode-openrouter])
+
+      expect(described_class.current_enabled_scenario_names).to eq(described_class::DEFAULT_SCENARIO_NAMES)
     end
   end
 end
