@@ -548,4 +548,153 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
   end
+
+  describe ".fetch_trusted_comments", :no_db do
+    let(:github_client) { instance_double(GithubClient) }
+    let(:repo) { "owner-1/repo-1" }
+    let(:number) { 42 }
+
+    def issue_comment(login:, body: "comment")
+      OpenStruct.new(user: OpenStruct.new(login: login), body: body)
+    end
+
+    it "returns no comments without calling GitHub when max_comments is zero" do
+      allow(github_client).to receive(:issue_comments)
+
+      expect(
+        described_class.fetch_trusted_comments(
+          github_client: github_client,
+          repo: repo,
+          number: number,
+          project: project,
+          max_comments: 0
+        )
+      ).to eq([])
+
+      expect(github_client).not_to have_received(:issue_comments)
+    end
+
+    it "returns no comments without calling GitHub when max_comments is negative" do
+      allow(github_client).to receive(:issue_comments)
+
+      expect(
+        described_class.fetch_trusted_comments(
+          github_client: github_client,
+          repo: repo,
+          number: number,
+          project: project,
+          max_comments: -1
+        )
+      ).to eq([])
+
+      expect(github_client).not_to have_received(:issue_comments)
+    end
+
+    it "returns the most recent trusted comments in chronological order" do
+      trusted_oldest = issue_comment(login: "viamin", body: "oldest trusted")
+      trusted_middle = issue_comment(login: "viamin", body: "middle trusted")
+      trusted_newest = issue_comment(login: "viamin", body: "newest trusted")
+
+      allow(github_client).to receive(:issue_comments).with(repo, number).and_return([
+        issue_comment(login: "stranger", body: "ignore me"),
+        trusted_oldest,
+        trusted_middle,
+        issue_comment(login: "another-stranger", body: "still ignore me"),
+        trusted_newest
+      ])
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        max_comments: 2
+      )
+
+      expect(result).to eq([ trusted_middle, trusted_newest ])
+    end
+
+    it "returns a single most recent trusted comment when max_comments is one" do
+      trusted_oldest = issue_comment(login: "viamin", body: "oldest trusted")
+      trusted_newest = issue_comment(login: "viamin", body: "newest trusted")
+      allow(github_client).to receive(:issue_comments).with(repo, number).and_return([
+        trusted_oldest,
+        issue_comment(login: "stranger", body: "ignore me"),
+        trusted_newest
+      ])
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        max_comments: 1
+      )
+
+      expect(result).to eq([ trusted_newest ])
+    end
+
+    it "honors a numeric max_comments value that is equal but not eql to an Integer" do
+      trusted_oldest = issue_comment(login: "viamin", body: "oldest trusted")
+      trusted_newest = issue_comment(login: "viamin", body: "newest trusted")
+      allow(github_client).to receive(:issue_comments).with(repo, number).and_return([
+        trusted_oldest,
+        trusted_newest
+      ])
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        max_comments: 1.0
+      )
+
+      expect(result).to eq([ trusted_newest ])
+    end
+
+    it "uses the default max comment limit when one is not provided" do
+      trusted_comments = Array.new(3) { |index| issue_comment(login: "viamin", body: "trusted #{index}") }
+      allow(github_client).to receive(:issue_comments).with(repo, number).and_return(trusted_comments)
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project
+      )
+
+      expect(result).to eq(trusted_comments)
+    end
+
+    it "drops comments with a missing user login" do
+      trusted_comment = issue_comment(login: "viamin", body: "trusted")
+      allow(github_client).to receive(:issue_comments).with(repo, number).and_return([
+        OpenStruct.new(user: nil, body: "ghost"),
+        trusted_comment
+      ])
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project
+      )
+
+      expect(result).to eq([ trusted_comment ])
+    end
+
+    it "returns an empty array when GitHub raises an API error" do
+      allow(github_client).to receive(:issue_comments).with(repo, number).and_raise(GithubClient::Error.new("API error"))
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project
+      )
+
+      expect(result).to eq([])
+    end
+  end
 end

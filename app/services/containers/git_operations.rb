@@ -148,8 +148,14 @@ module Containers
 
     # Maximum number of files allowed in the auto-commit safety net.
     # commit_uncommitted_changes runs with --no-verify, so this guard
-    # is the last line of defense against artifact commits.
+    # is the last line of defense against artifact commits. The
+    # artifact-pattern check below is the real safety net; the file
+    # count is a heuristic that should not block legitimate large
+    # diffs (e.g. merge_conflict resolutions in large codebases).
     MAX_AUTO_COMMIT_FILES = 100
+    MAX_AUTO_COMMIT_FILES_BY_FOCUS = {
+      "merge_conflict" => 500
+    }.freeze
 
     # Binary file extensions that should never appear in agent commits.
     # Limited to clearly-artifact types (compiled objects, packages, caches)
@@ -351,9 +357,10 @@ module Containers
     #
     # @param lint_command [String] command to run for linting
     # @param test_command [String] command to run for tests
+    # @param mutation_command [String] command to run for mutation testing
     # @return [void]
-    def install_git_hooks(lint_command:, test_command:)
-      install_hook("pre-commit", pre_commit_script(lint_command, test_command))
+    def install_git_hooks(lint_command:, test_command:, mutation_command: "true")
+      install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command))
     rescue Error => e
       # Expected failures: hook write/chmod failed, unsafe command, etc.
       Rails.logger.warn(
@@ -1006,11 +1013,12 @@ module Containers
       return if staged[:stdout].blank?
 
       files = staged[:stdout].lines.map(&:strip).reject(&:blank?)
+      file_limit = auto_commit_file_limit
 
-      if files.size > MAX_AUTO_COMMIT_FILES
+      if files.size > file_limit
         sample = files.first(20).join("\n  ")
         raise Error,
-          "Auto-commit rejected: #{files.size} files staged (limit: #{MAX_AUTO_COMMIT_FILES}). " \
+          "Auto-commit rejected: #{files.size} files staged (limit: #{file_limit}). " \
           "This almost certainly includes unintended build artifacts. " \
           "First 20 files:\n  #{sample}"
       end
@@ -1022,6 +1030,10 @@ module Containers
           "Auto-commit rejected: #{forbidden_files.size} forbidden artifact files detected. " \
           "These are build artifacts that must not be committed:\n  #{sample}"
       end
+    end
+
+    def auto_commit_file_limit
+      MAX_AUTO_COMMIT_FILES_BY_FOCUS.fetch(agent_run.focus.to_s, MAX_AUTO_COMMIT_FILES)
     end
 
     def forbidden_artifact?(path)
@@ -1193,7 +1205,7 @@ module Containers
     # operators (||, &&, ;, |, $, `, etc.) can appear.
     # Commands are expected from LANGUAGE_*_COMMANDS constants, but this
     # provides defense-in-depth against injection if the source changes.
-    SAFE_WORD_PATTERN = /\A[a-zA-Z0-9_\-\/\.]+\z/
+    SAFE_WORD_PATTERN = /\A[a-zA-Z0-9_\-\/\.~]+\z/
 
     def validate_hook_command!(command)
       words = command.split
@@ -1203,9 +1215,10 @@ module Containers
       raise Error, "Hook command contains unsafe characters: #{command.inspect}"
     end
 
-    def pre_commit_script(lint_command, test_command)
+    def pre_commit_script(lint_command, test_command, mutation_command)
       validate_hook_command!(lint_command)
       validate_hook_command!(test_command)
+      validate_hook_command!(mutation_command)
 
       <<~SHELL
         #!/bin/sh
@@ -1228,6 +1241,19 @@ module Containers
           #{test_command} || exit 1
         else
           echo "Warning: test tool not available, skipping test check"
+        fi
+
+        if [ "#{mutation_command}" = "true" ]; then
+          true
+        elif ! grep -Eq "^[[:space:]]*gem[[:space:]]+['\\\"]mutant-(rspec|minitest)['\\\"]" Gemfile 2>/dev/null; then
+          true
+        elif echo "#{mutation_command}" | grep -q -- "--usage commercial" && [ -z "${MUTANT_LICENSE_KEY:-}" ]; then
+          true
+        elif command -v #{mutation_command.split.first} >/dev/null 2>&1; then
+          echo "Running #{mutation_command}..."
+          #{mutation_command} || exit 1
+        else
+          echo "Warning: mutation tool not available, skipping mutation check"
         fi
       SHELL
     end

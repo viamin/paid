@@ -9,10 +9,12 @@ RSpec.describe QualityMetrics::CollectIssueFeedback do
         started_at: 10.minutes.ago, completed_at: Time.current, duration_seconds: 600)
     end
     let(:github_client) { instance_double(GithubClient) }
-    let(:github_token) { agent_run.project.github_token }
 
     before do
-      allow(github_token).to receive(:client).and_return(github_client)
+      allow(agent_run.project).to receive_messages(
+        github_credential_present?: true,
+        client: github_client
+      )
     end
 
     it "creates human quality metric from positive reactions on issue" do

@@ -22,6 +22,15 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "service_container_edit" ])
     end
 
+    it "maps GitHub App views to their dedicated screenshot targets" do
+      expect(described_class.call(changed_files: [ "app/views/github_installations/index.html.erb" ]).map(&:slug))
+        .to eq([ "github_installations" ])
+      expect(described_class.call(changed_files: [ "app/views/github_installations/show.html.erb" ]).map(&:slug))
+        .to eq([ "github_installation_show" ])
+      expect(described_class.call(changed_files: [ "app/views/github_installations/migrate_projects.html.erb" ]).map(&:slug))
+        .to eq([ "github_installation_migrate_projects" ])
+    end
+
     it "maps marketplace entry views to their specific screenshot targets" do
       expect(described_class.call(changed_files: [ "app/views/marketplace_entries/index.html.erb" ]).map(&:slug))
         .to eq([ "marketplace_entries" ])
@@ -55,6 +64,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/helpers/workflow_helper.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "workflow_status" ])
+    end
+
+    it "maps ROI helper changes to the ROI dashboard screenshot targets" do
+      targets = described_class.call(changed_files: [ "app/helpers/roi_dashboard_helper.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("account_roi_dashboard", "project_roi_dashboard")
     end
 
     it "maps component files to shared UI targets" do
@@ -93,6 +108,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "account" ])
     end
 
+    it "maps the account audit log controller to the audit log target" do
+      targets = described_class.call(changed_files: [ "app/controllers/account_audit_logs_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
+    end
+
     it "maps marketplace entry controllers to representative marketplace routes" do
       targets = described_class.call(changed_files: [ "app/controllers/marketplace_entries_controller.rb" ])
 
@@ -101,6 +122,16 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
         "marketplace_entry_new",
         "marketplace_entry_show",
         "marketplace_entry_edit"
+      )
+    end
+
+    it "maps the GitHub App controller to its representative pages" do
+      targets = described_class.call(changed_files: [ "app/controllers/github_installations_controller.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly(
+        "github_installations",
+        "github_installation_show",
+        "github_installation_migrate_projects"
       )
     end
 
@@ -142,7 +173,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
     it "maps projects/agent_runs_controller to include the new action target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/agent_runs_controller.rb" ])
 
-      expect(targets.map(&:slug)).to contain_exactly("project_agent_runs", "project_agent_run_new", "project_agent_run_show")
+      expect(targets.map(&:slug)).to contain_exactly(
+        "project_agent_runs",
+        "project_agent_run_new",
+        "project_agent_run_show",
+        "project_agent_run_provenance"
+      )
     end
 
     it "maps the project run form and run detail partials to the relevant project agent run pages" do
@@ -150,6 +186,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
         .to eq([ "project_agent_run_new" ])
       expect(described_class.call(changed_files: [ "app/views/agent_runs/_detail.html.erb" ]).map(&:slug))
         .to eq([ "project_agent_run_show" ])
+    end
+
+    it "maps the new project run provenance view to its screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/agent_runs/provenance.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_agent_run_provenance" ])
     end
 
     it "maps public assets to shared UI targets" do
@@ -240,6 +282,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/views/accounts/show.html.erb" ])
 
       expect(targets.map(&:slug)).to eq([ "account" ])
+    end
+
+    it "maps the account audit log view to the audit log target" do
+      targets = described_class.call(changed_files: [ "app/views/account_audit_logs/index.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
     end
 
     it "maps the clarifying-questions wizard view to its screenshot target" do

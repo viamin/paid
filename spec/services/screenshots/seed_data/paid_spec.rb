@@ -39,4 +39,16 @@ RSpec.describe Screenshots::SeedData::Paid do
     expect(pending_strategy_version).to be_pending_review
     expect(pending_strategy_version.strategy).to eq(strategy)
   end
+
+  it "returns seeded GitHub App installation metadata" do
+    result = described_class.call
+
+    installation = GithubInstallation.find(result.dig("github_installation", "id"))
+
+    expect(result.fetch("github_installation")).to eq(
+      "id" => installation.id,
+      "account_login" => "paid"
+    )
+    expect(installation).to be_active
+  end
 end

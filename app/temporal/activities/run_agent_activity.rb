@@ -86,6 +86,12 @@ module Activities
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
+    # Backoff applied to a runner whose credit/quota is exhausted. Long
+    # enough that we don't re-attempt every minute, short enough that a
+    # top-up takes effect within the hour. Notification fires at the
+    # RunnerQuotaExhausted WARNING_THRESHOLD (15 min) so the user is
+    # alerted before the backoff fully elapses.
+    INSUFFICIENT_CREDITS_BACKOFF = 1.hour
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -157,6 +163,7 @@ module Activities
         timeout_error = nil
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
+        skipped_circuit_open_count = 0
 
         max_execution_seconds = resolve_max_execution_seconds(agent_run, user_settings)
 
@@ -210,6 +217,7 @@ module Activities
             state = runner_states[runner_state_name]
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
             skipped_rate_limited_count += 1 if error_type == "rate_limited"
+            skipped_circuit_open_count += 1 if error_type == "unavailable" && state&.circuit_open?
             error_message = if error_type == "rate_limited" && state&.rate_limited_until.present?
               "Skipped due to cached rate limit until #{state.rate_limited_until.iso8601}"
             elsif error_type == "unavailable" && state&.circuit_open?
@@ -505,15 +513,27 @@ module Activities
           index += 1
         end
 
-        # When all runners were skipped due to cached rate-limit state (no
-        # attempts made), compute the earliest reset time from runner states.
+        # When all runners were skipped due to cached rate-limit or
+        # circuit-open state (no attempts made), compute the earliest
+        # recovery time from runner states. Circuit-open recovery is
+        # computed from circuit_opened_at plus the user's configured
+        # circuit-breaker timeout.
         all_skipped_rate_limited = runners.any? && skipped_rate_limited_count == runners.size
-        if rate_limit_reset_at.nil? && all_skipped_rate_limited
+        all_skipped_circuit_open = runners.any? && skipped_circuit_open_count == runners.size
+        all_skipped_unavailable = runners.any? &&
+          (skipped_rate_limited_count + skipped_circuit_open_count) == runners.size
+        if rate_limit_reset_at.nil? && all_skipped_unavailable
           reset_candidates = runners.filter_map do |runner|
             state = runner_states[state_key_for(runner, runner_command_key(runner, agent_run, user_settings.user), user_settings.user)]
-            state&.rate_limited_until
+            next nil unless state
+
+            [ state.rate_limited_until, circuit_recovery_at(state, user_settings) ].compact.min
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
+          # Final fallback: if no runner state surfaced a reset time, assume
+          # the circuit-breaker window so the run still has a recovery point
+          # instead of being parked in rate_limited with no auto-retry.
+          rate_limit_reset_at ||= Time.current + user_settings.circuit_breaker_timeout_seconds.seconds
         end
 
         # If a guardrail (e.g., cost budget enforcement from TokenUsageTracker)
@@ -528,11 +548,15 @@ module Activities
         # When the only compatible runner(s) were all rate-limited or
         # circuit-open, surface the real cause instead of the generic
         # "all runners exhausted" message.
-        if runners.size <= 1 && (all_skipped_rate_limited || last_error == "rate_limited")
+        if runners.size <= 1 && (all_skipped_unavailable || last_error == "rate_limited")
           selected_model = agent_run.model_selection&.llm_model
           if selected_model && runners.size == 1
             label = runner_attempt_label(runners.first, agent_run, user_settings.user)
-            reason = "rate limited"
+            reason = if all_skipped_circuit_open && last_error != "rate_limited"
+              "circuit open"
+            else
+              "rate limited"
+            end
             error_message = "No compatible runner available: #{label} is the only runner compatible with #{selected_model.model_id} and it is currently #{reason}"
             error_type = "NoCompatibleRunnerAvailable"
           end
@@ -548,10 +572,19 @@ module Activities
           # was not a real runner issue, so there is nothing to re-schedule.
           # (agent_run was reloaded above, so the model method sees current state)
           ProcessRunQueueJob.perform_later if timed_out && !agent_run.cancelled_by_cleanup?
-        elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
+        elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_unavailable)
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
+          unavailable_message = if error_type == "NoCompatibleRunnerAvailable"
+            error_message
+          elsif all_skipped_circuit_open && last_error != "rate_limited"
+            "All runners circuit open: #{runner_list}"
+          elsif all_skipped_unavailable && !all_skipped_rate_limited && last_error != "rate_limited"
+            "All runners currently unavailable: #{runner_list}"
+          else
+            "All runners rate limited: #{runner_list}"
+          end
           agent_run.rate_limit!(
-            error: error_type == "NoCompatibleRunnerAvailable" ? error_message : "All runners rate limited: #{runner_list}",
+            error: unavailable_message,
             reset_at: rate_limit_reset_at
           )
         elsif !agent_run.finished?
@@ -691,7 +724,8 @@ module Activities
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
       configured_runtime = runner_entry&.agent_harness_runner_runtime
-      return nil if codex_subscription_auth_runtime?(runner_entry)
+      return nil if codex_subscription_auth_runtime?(runner_entry) ||
+        codex_subscription_auth_candidate?(runner_candidate, user)
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
@@ -712,6 +746,26 @@ module Activities
 
     def codex_subscription_auth_runtime?(runner_entry)
       runner_entry&.runner_key == "codex" && runner_entry&.subscription?
+    end
+
+    # Backstop for fallback chains that pass the bare runner key ("codex")
+    # rather than a routing key. runner_entry_for returns nil for bare keys,
+    # so codex_subscription_auth_runtime? would otherwise miss the guard
+    # and a stale tier_model (e.g. gpt-4o, which the Codex subscription
+    # /v1/responses endpoint rejects) would flow into --model. Look up the
+    # user's Codex runner record directly when the candidate is the bare
+    # "codex" key so subscription auth is honored regardless of how the
+    # runner is referenced. The lookup is memoized per user because the
+    # runner loop can revisit "codex" multiple times in a single attempt.
+    def codex_subscription_auth_candidate?(runner_candidate, user)
+      return false unless user
+      return false unless runner_candidate.is_a?(String) && runner_candidate == "codex"
+
+      @codex_subscription_lookup_cache ||= {}
+      cached = @codex_subscription_lookup_cache.fetch(user.id) do
+        @codex_subscription_lookup_cache[user.id] = Runner.for_identifier(user, "codex")&.subscription? == true
+      end
+      cached
     end
 
     def runtime_cache_key(runtime)
@@ -899,6 +953,18 @@ module Activities
 
     def preflight_timeout_failure_threshold(user_settings)
       [ user_settings.circuit_breaker_failure_threshold, PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD ].min
+    end
+
+    # Estimated time at which an open runner circuit will transition to
+    # half-open. Used when every runner was skipped due to circuit-open
+    # state so the agent run can be re-queued instead of failing. When
+    # circuit_opened_at is missing (e.g. state created without the standard
+    # transition), assume the circuit just opened so callers still get a
+    # non-nil reset time instead of stalling the run indefinitely.
+    def circuit_recovery_at(state, user_settings)
+      return nil unless state&.circuit_open?
+      opened_at = state.circuit_opened_at || Time.current
+      opened_at + user_settings.circuit_breaker_timeout_seconds.seconds
     end
 
     # True when the agent run we're executing has already been force-timed-out
@@ -1131,8 +1197,11 @@ module Activities
         end
 
         if insufficient_credits_error?(sanitized_output)
-          raise RunnerExecutionError,
-            "Runner credit/quota error from #{runner}: #{sanitized_output.truncate(500)}"
+          raise_credit_exhausted!(
+            agent_run: agent_run,
+            runner: runner,
+            sanitized_output: sanitized_output
+          )
         end
 
         if runner_model_not_found_error?(sanitized_output)
@@ -1274,10 +1343,10 @@ module Activities
         end
 
         if insufficient_credits_error?(sanitized_output)
-          raise_preflight_failure!(
+          raise_credit_exhausted!(
             agent_run: agent_run,
             runner: runner,
-            reason: "Runner credit/quota error: #{sanitized_output.truncate(500)}"
+            sanitized_output: sanitized_output
           )
         end
 
@@ -1677,6 +1746,29 @@ module Activities
     def raise_preflight_timeout!(agent_run:, runner:, reason:)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
       raise PreflightTimeoutError, "Preflight check failed: #{reason}"
+    end
+
+    # Treat credit/quota exhaustion as a rate-limit-equivalent: mark the
+    # runner unavailable for INSUFFICIENT_CREDITS_BACKOFF so subsequent
+    # agent runs skip it instantly instead of burning preflight seconds
+    # rediscovering the same empty balance. The existing
+    # Notifications::Rules::RunnerQuotaExhausted rule picks this up via
+    # runner_state.rate_limited? once the warning threshold elapses,
+    # alerting the user to top up funds. Called from both the preflight
+    # and main-execution paths, so it does not assume a preflight context.
+    def raise_credit_exhausted!(agent_run:, runner:, sanitized_output:)
+      reset_at = INSUFFICIENT_CREDITS_BACKOFF.from_now
+      logger.warn(
+        message: "agent_execution.credit_exhausted",
+        runner: runner,
+        agent_run_id: agent_run.id,
+        reset_at: reset_at.iso8601,
+        reason: sanitized_output.truncate(500)
+      )
+      raise ProviderRateLimitError.new(
+        "Runner credit/quota exhausted for #{runner}: #{sanitized_output.truncate(200)}",
+        reset_at: reset_at
+      )
     end
 
     def harness_response_config(harness_key, runner_candidate, user)

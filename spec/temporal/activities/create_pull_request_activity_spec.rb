@@ -290,6 +290,29 @@ RSpec.describe Activities::CreatePullRequestActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "appends warn-only pre-commit findings to the PR body" do
+      agent_run.log!(
+        "system",
+        "Pre-commit check 'mutant' failed",
+        metadata: {
+          event: "pre_commit_check",
+          passed: false,
+          failure_behavior: "warn",
+          output_preview: "app/models/foo.rb:42 Surviving mutation in Foo#bar"
+        }
+      )
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(
+          body: a_string_including("## Quality Warnings")
+            .and(including("Surviving mutation in Foo#bar"))
+        )
+      ).and_return(pr_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "handles missing issue gracefully" do
       agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project)
 

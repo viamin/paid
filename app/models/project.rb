@@ -17,6 +17,7 @@ class Project < ApplicationRecord
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
+  GITHUB_AUTH_SOURCES = %w[app pat].freeze
   SCREENSHOT_DRIVERS = {
     "playwright" => "Best for modern browser flows and JavaScript-heavy apps.",
     "cuprite" => "Best for Rails and other server-rendered apps using Capybara."
@@ -140,7 +141,8 @@ class Project < ApplicationRecord
   include TenantScoped
   include AutoPickSkipLabels
 
-  belongs_to :github_token, counter_cache: true
+  belongs_to :github_token, counter_cache: true, optional: true
+  belongs_to :github_installation, optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :project_memberships, dependent: :destroy
@@ -150,6 +152,7 @@ class Project < ApplicationRecord
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
   has_many :cost_budgets, dependent: :destroy
+  has_many :roi_benchmarks, dependent: :destroy
   has_many :project_baselines, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :quality_recovery_actions, dependent: :destroy
@@ -226,8 +229,11 @@ class Project < ApplicationRecord
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
+  validate :exactly_one_github_credential, if: :validate_github_credential_presence?
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
+  validate :github_installation_belongs_to_same_account, if: -> { github_installation.present? }
+  validate :github_installation_is_active, if: -> { github_installation.present? && github_installation_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
   validate :screenshot_settings_valid
@@ -248,6 +254,7 @@ class Project < ApplicationRecord
   after_create_commit :enqueue_knowledge_collection
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
+  after_update_commit :clear_scheduler_pause_on_installation_change, if: :saved_change_to_github_installation_id?
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
@@ -568,6 +575,8 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_run_detail_update(agent_run)
+    return unless agent_run_marketplace_entries_table_exists?
+
     final_runner_record = agent_run.final_runner_record
     attempted_runners = agent_run.attempted_runners_by_routing_key
 
@@ -582,7 +591,7 @@ class Project < ApplicationRecord
         attempted_runners_by_routing_key: attempted_runners
       }
     )
-  rescue ActiveRecord::StatementInvalid => error
+  rescue ActiveRecord::StatementInvalid, ActionView::Template::Error => error
     # During db:migrate, AgentRun callbacks can still render the detail partial
     # before marketplace attachment tables exist. Ignore only that transient case.
     raise unless missing_agent_run_marketplace_entries_table?(error)
@@ -753,11 +762,14 @@ class Project < ApplicationRecord
   end
 
   # Returns the set of bot GitHub logins (downcased) for all enabled review
-  # methods that have a known bot account (copilot, codex, etc.).
+  # methods that have a known bot account (copilot, codex, etc.), plus the
+  # project's author-bot identity if using GitHub App auth.
   def enabled_review_bot_logins
-    RunnerSupport::RUNNER_BOT_USERNAMES
+    logins = RunnerSupport::RUNNER_BOT_USERNAMES
       .slice(*enabled_review_methods)
       .values.flatten.map(&:downcase).to_set
+
+    logins.merge(author_bot_logins)
   end
 
   def review_method_config(method)
@@ -816,6 +828,68 @@ class Project < ApplicationRecord
     end
 
     true
+  end
+
+  # Returns an opaque GitHub credential (installation token or PAT) for
+  # repo operations. Callers use this without knowing which auth path
+  # is active.
+  def github_credential
+    if github_installation_id.present? || github_installation.present?
+      return unless credential_active?(github_installation)
+
+      Github::AppInstallation.token_for(
+        installation_id: github_installation.github_installation_id,
+        repo_full_name: full_name
+      )
+    else
+      return unless credential_active?(github_token)
+
+      github_token&.token
+    end
+  end
+
+  # Returns a GithubClient authenticated via the project's GitHub credential
+  # (installation token for app-backed projects, PAT for token-backed projects).
+  def client
+    @client ||= if github_installation_id.present? || github_installation.present?
+      credential = github_credential
+      credential.present? ? GithubClient.new(token: credential) : nil
+    else
+      github_token&.client
+    end
+  end
+
+  # Returns true when the project has a configured GitHub credential (PAT or
+  # App installation).  Callers that guard on +project.github_token.present?+
+  # should use this instead so app-backed projects are not skipped.
+  def github_credential_present?
+    github_token.present? || github_installation.present?
+  end
+
+  def github_auth_source
+    github_installation.present? ? "app" : "pat"
+  end
+
+  def paid_agents_installation(installations: active_github_installations)
+    Array(installations).find { |installation| installation.covers_repository?(full_name) }
+  end
+
+  # Returns the GitHub login that will appear as the PR author for
+  # commits/PRs created with this project's credentials.
+  # For app-backed projects, returns the bot login (e.g. "paid-agents[bot]").
+  # For PAT-backed projects, returns nil (author identity is the PAT owner).
+  def github_author_login
+    if github_installation_id.present? || github_installation.present?
+      Github::AppRegistry.bot_login
+    end
+  end
+
+  # Returns bot logins for the project's configured GitHub App identity,
+  # used by reviewer-bot matching in scan_paid_prs_activity.
+  def author_bot_logins
+    return Set.new unless github_installation_id.present? || github_installation.present?
+
+    Github::AppRegistry.bot_logins.map(&:downcase).to_set
   end
 
   def quality_paused?
@@ -882,10 +956,30 @@ class Project < ApplicationRecord
 
   private
 
-  def missing_agent_run_marketplace_entries_table?(error)
-    return false unless error.message.include?("agent_run_marketplace_entries")
+  def agent_run_marketplace_entries_table_exists?
+    ActiveRecord::Base.connection.data_source_exists?("agent_run_marketplace_entries")
+  rescue ActiveRecord::StatementInvalid
+    false
+  end
 
-    defined?(PG::UndefinedTable) && error.cause.is_a?(PG::UndefinedTable)
+  def active_github_installations
+    account.github_installations.active
+  end
+
+  def missing_agent_run_marketplace_entries_table?(error)
+    causes = []
+    current_error = error
+
+    while current_error
+      causes << current_error
+      current_error = current_error.cause
+    end
+
+    causes.any? do |cause|
+      cause.message.include?("agent_run_marketplace_entries") &&
+        defined?(PG::UndefinedTable) &&
+        cause.is_a?(PG::UndefinedTable)
+    end
   end
 
   def normalize_screenshot_settings(settings)
@@ -933,6 +1027,17 @@ class Project < ApplicationRecord
       message: "github_token.auto_resume",
       project_id: id,
       new_github_token_id: github_token_id
+    )
+  end
+
+  def clear_scheduler_pause_on_installation_change
+    return unless scheduler_paused?
+
+    scheduler_resume!
+    Rails.logger.info(
+      message: "github_installation.auto_resume",
+      project_id: id,
+      new_github_installation_id: github_installation_id
     )
   end
 
@@ -986,6 +1091,30 @@ class Project < ApplicationRecord
     errors.add(:github_token, "must belong to the same account")
   end
 
+  def github_installation_belongs_to_same_account
+    return if github_installation.account_id == account_id
+
+    errors.add(:github_installation, "must belong to the same account")
+  end
+
+  def github_installation_is_active
+    return if github_installation.active?
+
+    errors.add(:github_installation, "must be active (not suspended or revoked)")
+  end
+
+  def exactly_one_github_credential
+    has_token = github_token_id.present?
+    has_installation = github_installation_id.present?
+
+    errors.add(:base, "must have either a GitHub App installation or a PAT, not both") if has_token && has_installation
+    errors.add(:base, "must have a GitHub App installation or a PAT") unless has_token || has_installation
+  end
+
+  def validate_github_credential_presence?
+    persisted? || github_token_id.present? || github_installation_id.present?
+  end
+
   def created_by_belongs_to_same_account
     return if created_by.account_id == account_id
 
@@ -996,6 +1125,13 @@ class Project < ApplicationRecord
     return if github_token.active?
 
     errors.add(:github_token, "must be active (not revoked or expired)")
+  end
+
+  def credential_active?(credential)
+    return false if credential.nil?
+    return credential.active? if credential.respond_to?(:active?)
+
+    true
   end
 
   def owner_reviewer_login_is_trusted

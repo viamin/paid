@@ -16,7 +16,15 @@ const SUBMITTABLE_INPUT_TYPES = new Set([
 ])
 
 export default class extends Controller {
-  static targets = ["saveButton"]
+  static targets = ["saveButton", "githubAuthSource", "appPanel", "patPanel"]
+
+  connect() {
+    this.toggleGithubAuthSections()
+  }
+
+  githubAuthSourceChanged() {
+    this.toggleGithubAuthSections()
+  }
 
   submitOnEnter(event) {
     if (!this.shouldSubmitOnEnter(event)) return
@@ -41,5 +49,18 @@ export default class extends Controller {
     if (!target || target.tagName !== "INPUT") return false
 
     return SUBMITTABLE_INPUT_TYPES.has(target.type)
+  }
+
+  toggleGithubAuthSections() {
+    if (!this.hasAppPanelTarget || !this.hasPatPanelTarget) return
+
+    const appSelected = this.selectedGithubAuthSource() === "app"
+    this.appPanelTarget.classList.toggle("hidden", !appSelected)
+    this.patPanelTarget.classList.toggle("hidden", appSelected)
+  }
+
+  selectedGithubAuthSource() {
+    const selected = this.githubAuthSourceTargets.find((input) => input.checked)
+    return selected?.value
   }
 }

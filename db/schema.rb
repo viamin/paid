@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -883,6 +883,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.index ["feature_key", "key", "value"], name: "index_flipper_gates_on_feature_key_and_key_and_value", unique: true
   end
 
+  create_table "github_app_installations", comment: "GitHub App installations for org/repo access without PATs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "app_id", null: false, comment: "GitHub App ID used for this installation"
+    t.string "app_slug", null: false, comment: "GitHub App slug for display and bot identity"
+    t.datetime "created_at", null: false
+    t.bigint "installation_id", null: false, comment: "GitHub installation ID from the App installation event"
+    t.bigint "installed_by_id"
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional installation metadata from GitHub"
+    t.jsonb "repositories", default: [], null: false, comment: "Cached list of installed repository metadata"
+    t.datetime "repositories_synced_at", comment: "Last time the repository list was synced from GitHub"
+    t.string "repository_selection", default: "selected", null: false, comment: "GitHub installation repository_selection: all or selected"
+    t.datetime "revoked_at", comment: "When the installation was revoked or uninstalled"
+    t.string "status", default: "active", null: false, comment: "Installation status: active, suspended, uninstalled"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "installation_id"], name: "idx_on_account_id_installation_id_effaccd2e5", unique: true
+    t.index ["account_id"], name: "index_github_app_installations_on_account_id"
+    t.index ["installation_id"], name: "index_github_app_installations_on_installation_id", unique: true
+    t.index ["installed_by_id"], name: "index_github_app_installations_on_installed_by_id"
+    t.index ["status"], name: "index_github_app_installations_on_status"
+  end
+
   create_table "github_health_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -892,6 +913,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.text "last_error_message"
     t.datetime "updated_at", null: false
     t.index ["endpoint"], name: "index_github_health_states_on_endpoint", unique: true
+  end
+
+  create_table "github_installations", comment: "Per-account GitHub App installation records for paid-agents[bot]", force: :cascade do |t|
+    t.jsonb "accessible_repositories", default: [], null: false, comment: "Cached list of accessible repos from install metadata"
+    t.bigint "account_id", null: false
+    t.string "account_login", comment: "GitHub org or user login that installed the App"
+    t.datetime "created_at", null: false
+    t.bigint "github_installation_id", null: false, comment: "GitHub installation ID from App install event"
+    t.string "repository_selection", comment: "all or selected"
+    t.datetime "revoked_at", comment: "When the installation was uninstalled/deleted"
+    t.datetime "suspended_at", comment: "When the installation was suspended by GitHub"
+    t.string "target_type", comment: "Organization or User"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "github_installation_id"], name: "idx_github_installations_on_account_installation", unique: true
+    t.index ["account_id"], name: "index_github_installations_on_account_id"
+    t.index ["github_installation_id"], name: "index_github_installations_on_github_installation_id"
   end
 
   create_table "github_tokens", force: :cascade do |t|
@@ -1678,7 +1715,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.jsonb "fitness_settings", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
-    t.bigint "github_token_id", null: false
+    t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
+    t.bigint "github_token_id"
     t.boolean "inherit_priority_labels", default: true, null: false
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
@@ -1698,6 +1736,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.boolean "open_source", default: false, null: false, comment: "Whether the project is open source (affects mutation test --usage flag)."
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.integer "plan_review_timeout_hours", default: 24, null: false, comment: "Maximum hours to wait for plan review approval before auto-approving."
@@ -1727,10 +1766,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
     t.index ["account_id"], name: "index_projects_on_account_id"
     t.index ["created_by_id"], name: "index_projects_on_created_by_id"
+    t.index ["github_installation_id"], name: "index_projects_on_github_installation_id"
     t.index ["github_token_id"], name: "index_projects_on_github_token_id"
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
     t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
     t.index ["scheduler_paused_at"], name: "index_projects_on_scheduler_paused_at", where: "(scheduler_paused_at IS NOT NULL)"
+    t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
   end
 
   create_table "prompt_versions", force: :cascade do |t|
@@ -1836,6 +1877,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.string "feedback_source", limit: 50
     t.jsonb "metadata", default: {}, null: false
     t.string "metric_type", limit: 20, null: false
+    t.decimal "mutation_kill_rate", precision: 5, scale: 4, comment: "Mutant kill rate for the agent run when mutation testing executed; nil means mutant did not run or produced no score."
     t.bigint "prompt_version_id"
     t.jsonb "scores", default: {}, null: false
     t.datetime "updated_at", null: false
@@ -1900,6 +1942,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.index ["account_id"], name: "index_quality_thresholds_on_account_id"
     t.index ["project_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_project_overrides", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
+  end
+
+  create_table "roi_benchmarks", comment: "Customer-specific comparison baselines used in ROI dashboards and pilot reports.", force: :cascade do |t|
+    t.integer "accepted_pr_count", default: 0, null: false, comment: "Accepted pull requests included in this benchmark window."
+    t.decimal "average_cycle_time_hours", precision: 10, scale: 2, comment: "Average elapsed hours from issue intake to accepted pull request."
+    t.string "benchmark_type", limit: 50, null: false, comment: "Supported comparison class: human_only or commercial_agent."
+    t.integer "cost_per_accepted_pr_cents", comment: "Blended cost for each accepted pull request in cents."
+    t.datetime "created_at", null: false
+    t.decimal "defect_escape_rate", precision: 5, scale: 2, comment: "Share of accepted pull requests followed by post-acceptance fix work, stored as a percentage."
+    t.datetime "ends_at", comment: "Inclusive end of the benchmark measurement window."
+    t.decimal "merge_rate", precision: 5, scale: 2, comment: "Accepted pull requests divided by created pull requests, stored as a percentage."
+    t.string "name", limit: 255, null: false, comment: "Human-readable benchmark label such as Human-only Baseline or Cursor Pilot."
+    t.text "notes", comment: "Free-form implementation notes captured for stakeholder review."
+    t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and benchmark segmentation."
+    t.decimal "rework_rate", precision: 5, scale: 2, comment: "Share of accepted pull requests requiring follow-up work, stored as a percentage."
+    t.datetime "starts_at", comment: "Inclusive start of the benchmark measurement window."
+    t.string "tool_name", limit: 100, comment: "Specific vendor or tool name when benchmark_type is commercial_agent."
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "benchmark_type", "ends_at"], name: "idx_roi_benchmarks_project_type_ends_at"
+    t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
   create_table "runner_states", force: :cascade do |t|
@@ -2253,6 +2315,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
 
+  create_table "user_identities", comment: "Links users to external identity providers (SSO/OIDC/SAML)", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "auth_data", default: {}, null: false, comment: "Raw auth data from provider (serialized for audit trail)"
+    t.datetime "created_at", null: false
+    t.string "provider", null: false, comment: "Identity provider name: saml, oidc, github, etc."
+    t.string "uid", null: false, comment: "External user identifier from the IdP"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["account_id"], name: "index_user_identities_on_account_id"
+    t.index ["provider", "uid"], name: "index_user_identities_on_provider_and_uid", unique: true
+    t.index ["user_id", "provider"], name: "index_user_identities_on_user_id_and_provider", unique: true
+    t.index ["user_id"], name: "index_user_identities_on_user_id"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
@@ -2447,6 +2523,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
+  add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
@@ -2509,6 +2586,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
   add_foreign_key "projects", "accounts"
+  add_foreign_key "projects", "github_installations", validate: false
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
@@ -2532,6 +2610,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_174519) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict

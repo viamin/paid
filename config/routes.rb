@@ -52,6 +52,13 @@ Rails.application.routes.draw do
     post :retry_validation, on: :member
   end
 
+  resources :github_installations, only: [ :index, :show ] do
+    get :repositories, on: :member
+    get :migrate, on: :member, as: :migrate_project, action: :migrate_projects
+    post :migrate, on: :member, action: :migrate_from_token
+    post :check_access, on: :member
+  end
+
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
@@ -66,9 +73,20 @@ Rails.application.routes.draw do
 
   # Customer-facing account administration
   resource :account, only: [ :show, :update ]
+  resource :account_roi_dashboard, only: [ :show ], controller: "accounts/roi_dashboards" do
+    get :export
+  end
+  resource :account_compliance_dashboard, only: [ :show, :update ], controller: "accounts/compliance_dashboards" do
+    get :export
+  end
   resources :account_memberships, only: [ :create, :update, :destroy ]
   resource :account_ownership_transfer, only: [ :create ]
   resource :account_lifecycle, only: [ :update ]
+
+  # Account audit log
+  resources :account_audit_logs, only: [ :index ] do
+    get :export, on: :collection
+  end
 
   # Account tenant configuration
   resource :tenant_configuration, only: [ :edit, :update ]
@@ -94,6 +112,7 @@ Rails.application.routes.draw do
   # MCP server definitions management
   resources :mcp_server_definitions
   resources :marketplace_entries
+  resource :marketplace_entry_pdf_import, only: [ :new, :create ], controller: "marketplace_entry_pdf_imports"
 
   # All agent runs across projects
   resources :agent_runs, only: [ :index ] do
@@ -165,9 +184,13 @@ Rails.application.routes.draw do
       get :export
     end
     resource :bundle_performance_dashboard, only: [ :show ], controller: "projects/bundle_performance_dashboards"
+    resource :roi_dashboard, only: [ :show ], controller: "projects/roi_dashboards" do
+      get :export
+    end
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
+    resources :roi_benchmarks, only: [ :create, :destroy ], controller: "projects/roi_benchmarks"
     resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
       post :detect
     end
@@ -179,6 +202,7 @@ Rails.application.routes.draw do
       post :diagnose_error, on: :member
       post :resume, on: :member
       post :terminate, on: :member
+      get :provenance, on: :member
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
@@ -200,6 +224,7 @@ Rails.application.routes.draw do
       controller: "knowledge/context_intake" do
       post :complete
     end
+    resource :pdf_knowledge_import, only: [ :new, :create ], controller: "projects/pdf_knowledge_imports"
     post :ensure_labels, on: :member
 
     resources :knowledge_recommendations, only: [ :index, :update ],

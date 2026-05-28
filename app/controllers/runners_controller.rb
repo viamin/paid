@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class RunnersController < ApplicationController
+  include AuditLogging
+
   # Lightweight stand-in for RunnerState used by the cached_runner_states
   # method.  Caching full ActiveRecord objects is brittle across deploys and
   # bloats the cache payload; this struct holds only the primitive attributes
@@ -39,6 +41,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
+      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -64,6 +67,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
+      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -78,6 +82,7 @@ class RunnersController < ApplicationController
     authorize @runner
 
     if @runner.discard
+      audit_event("runner.deleted", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_deleted_notice
       else

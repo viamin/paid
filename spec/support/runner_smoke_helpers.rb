@@ -40,6 +40,7 @@ module RunnerSmokeHelpers
     "inception" => "INCEPTION_API_KEY",
     "deepseek" => "DEEPSEEK_API_KEY",
     "mistral" => "MISTRAL_API_KEY",
+    "minimax" => "ANTHROPIC_API_KEY",
     "xai" => "XAI_API_KEY",
     "zai" => "ZAI_API_KEY",
     "zai_coding" => "ZAI_CODING_API_KEY"
@@ -92,6 +93,15 @@ module RunnerSmokeHelpers
       default_model: "moonshotai/kimi-k2",
       label: "OpenCode with OpenRouter API key"
     ),
+    "opencode-minimax" => Scenario.new(
+      name: "opencode-minimax",
+      runner_key: "opencode",
+      auth_type: "api_key",
+      api_provider: "minimax",
+      model_env: "PAID_SMOKE_OPENCODE_MINIMAX_MODEL",
+      default_model: "MiniMax-M2.7",
+      label: "OpenCode with MiniMax Token Plan API key"
+    ),
 
     "kilocode-zai" => Scenario.new(
       name: "kilocode-zai",
@@ -110,6 +120,24 @@ module RunnerSmokeHelpers
       model_env: "PAID_SMOKE_KILOCODE_INCEPTION_MODEL",
       default_model: "mercury-2",
       label: "KiloCode with Inception API key"
+    ),
+    "pi-deepseek" => Scenario.new(
+      name: "pi-deepseek",
+      runner_key: "pi",
+      auth_type: "api_key",
+      api_provider: "deepseek",
+      model_env: "PAID_SMOKE_PI_DEEPSEEK_MODEL",
+      default_model: "deepseek-chat",
+      label: "Pi with DeepSeek API key"
+    ),
+    "pi-minimax" => Scenario.new(
+      name: "pi-minimax",
+      runner_key: "pi",
+      auth_type: "api_key",
+      api_provider: "minimax",
+      model_env: "PAID_SMOKE_PI_MINIMAX_MODEL",
+      default_model: "MiniMax-M2.7",
+      label: "Pi with MiniMax Token Plan API key"
     ),
     "copilot-subscription" => Scenario.new(
       name: "copilot-subscription",
@@ -147,7 +175,7 @@ module RunnerSmokeHelpers
     claude-diag-tool-required
   ].freeze
   PRESETS = {
-    "current-enabled" => DEFAULT_SCENARIO_NAMES,
+    "current-enabled" => nil,
     "all-scenarios" => SCENARIOS.keys,
     "claude-diagnostics" => CLAUDE_DIAGNOSTIC_SCENARIO_NAMES
   }.freeze
@@ -156,7 +184,7 @@ module RunnerSmokeHelpers
 
   def scenario_names_from_env
     configured = ENV["PAID_SMOKE_SCENARIOS"].to_s.split(",").map(&:strip).reject(&:blank?)
-    (configured.presence || DEFAULT_SCENARIO_NAMES).flat_map { |name| expand_name(name) }
+    (configured.presence || [ "current-enabled" ]).flat_map { |name| expand_name(name) }
   end
 
   def scenarios_from_env
@@ -170,7 +198,13 @@ module RunnerSmokeHelpers
   end
 
   def expand_name(name)
+    return current_enabled_scenario_names if name == "current-enabled"
+
     PRESETS.fetch(name, [ name ])
+  end
+
+  def current_enabled_scenario_names
+    DEFAULT_SCENARIO_NAMES | configured_scenario_names
   end
 
   def build_runner!(user:, scenario:)
@@ -327,7 +361,65 @@ module RunnerSmokeHelpers
     end
 
     @development_runner_info_cache[scenario.name] = parsed
-  rescue JSON::ParseError
+  rescue JSON::ParserError
     nil
+  end
+
+  def configured_scenario_names
+    payload = configured_runner_payload
+    return [] unless payload.is_a?(Array)
+
+    payload.filter_map do |config|
+      scenario_for_configuration(config)
+    end.uniq
+  end
+
+  def configured_runner_payload
+    @configured_runner_payload ||= begin
+      runner_script = <<~'RUBY'
+        require "json"
+
+        result = TenantContext.with_system_access do
+          Runner.includes(:provider_api_key)
+            .where(auth_type: %w[subscription api_key])
+            .map do |runner|
+              config = runner.config.is_a?(Hash) ? runner.config.fetch(runner.runner_key, {}) : {}
+              {
+                "runner_key" => runner.runner_key,
+                "auth_type" => runner.auth_type,
+                "service_type" => runner.provider_api_key&.api_service_type,
+                "api_provider" => config["api_provider"]
+              }
+            end
+        end
+
+        puts JSON.generate(result)
+      RUBY
+
+      stdout, _stderr, status = Open3.capture3(
+        { "RAILS_ENV" => "development" },
+        "bundle", "exec", "rails", "runner", runner_script
+      )
+
+      if status.success?
+        JSON.parse(stdout.lines.last.to_s)
+      else
+        []
+      end
+    rescue JSON::ParserError
+      []
+    end
+  end
+
+  def scenario_for_configuration(config)
+    SCENARIOS.each_value.find do |scenario|
+      next false unless scenario.runner_key == config["runner_key"].to_s
+      next false unless scenario.auth_type == config["auth_type"].to_s
+      next true if scenario.subscription?
+
+      service_type = Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(scenario.api_provider, :service_type)
+      service_type == config["service_type"].to_s &&
+        scenario.api_provider == config["api_provider"].to_s
+    end&.name
   end
 end

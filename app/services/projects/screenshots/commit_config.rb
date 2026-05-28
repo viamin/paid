@@ -37,7 +37,7 @@ module Projects
           github.create_contents(repo, config_path, screenshot_commit_message, content, branch: branch)
         end
 
-        pull_request = project.github_token.client.create_pull_request(
+        pull_request = project.client.create_pull_request(
           repo,
           base: project.default_branch,
           head: branch,
@@ -51,11 +51,11 @@ module Projects
       private
 
       def github
-        project.github_token.client.client
+        project.client.client
       end
 
       def existing_file_on_default_branch(repo)
-        project.github_token.client.contents(repo, path: config_path, ref: project.default_branch)
+        project.client.contents(repo, path: config_path, ref: project.default_branch)
       rescue GithubClient::NotFoundError
         nil
       end

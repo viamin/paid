@@ -989,6 +989,53 @@ RSpec.describe Containers::GitOperations do
       )
     end
 
+    it "allows merge_conflict runs to exceed the standard file cap up to the merge_conflict limit" do
+      agent_run.update!(focus: "merge_conflict")
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..250).map { |i| "app/models/file#{i}.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", ConventionalCommitTitle.for_issue(agent_run.issue) ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect { git_ops.commit_uncommitted_changes }.not_to raise_error
+    end
+
+    it "still rejects merge_conflict runs that exceed the merge_conflict limit" do
+      agent_run.update!(focus: "merge_conflict")
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      files = (1..501).map { |i| "app/models/file#{i}.rb" }
+      staged_result = Containers::Provision::Result.success(stdout: "#{files.join("\n")}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "diff", "--cached", "--name-only", "--diff-filter=d" ], timeout: nil, stream: false)
+        .and_return(staged_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(
+        described_class::Error,
+        /Auto-commit rejected: 501 files staged \(limit: 500\)/
+      )
+    end
+
     it "raises Error when staged file validation cannot list staged files" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
@@ -1709,7 +1756,7 @@ RSpec.describe Containers::GitOperations do
       git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
     end
 
-    it "includes both lint and test commands in pre-commit hook" do
+    it "includes lint, test, and mutation commands in the pre-commit hook" do
       allow(container_service).to receive(:execute).and_return(hook_missing_result)
       allow(container_service).to receive(:execute)
         .with(a_string_matching(/chmod/), anything)
@@ -1722,10 +1769,38 @@ RSpec.describe Containers::GitOperations do
           success_result
         }
 
-      git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "pytest")
+      git_ops.install_git_hooks(
+        lint_command: "ruff check .",
+        test_command: "pytest",
+        mutation_command: "bundle exec mutant run"
+      )
 
       expect(pre_commit_script).to include("ruff check .")
       expect(pre_commit_script).to include("pytest")
+      expect(pre_commit_script).to include("bundle exec mutant run")
+    end
+
+    it "skips mutation checks when the project Gemfile does not declare mutant" do
+      allow(container_service).to receive(:execute).and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/chmod/), anything)
+        .and_return(success_result)
+
+      pre_commit_script = nil
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false) { |cmd, **|
+          pre_commit_script = cmd
+          success_result
+        }
+
+      git_ops.install_git_hooks(
+        lint_command: "bundle exec rubocop",
+        test_command: "bundle exec rspec",
+        mutation_command: "bundle exec mutant run --usage commercial"
+      )
+
+      expect(pre_commit_script).to include("grep -Eq")
+      expect(pre_commit_script).to include("MUTANT_LICENSE_KEY")
     end
 
     it "does not raise when hook installation fails with exception" do
@@ -1770,6 +1845,24 @@ RSpec.describe Containers::GitOperations do
 
         expect { git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "go test ./...") }
           .not_to raise_error
+      end
+
+      it "accepts mutation commands with git refs that include tildes" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect do
+          git_ops.install_git_hooks(
+            lint_command: "bundle exec rubocop",
+            test_command: "bundle exec rspec",
+            mutation_command: "bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1"
+          )
+        end.not_to raise_error
       end
 
       it "rejects commands with semicolons" do

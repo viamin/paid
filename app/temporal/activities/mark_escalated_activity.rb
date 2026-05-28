@@ -14,7 +14,7 @@ module Activities
       return { updated: false } unless issue
 
       project = issue.project
-      client = project.github_token.client
+      client = project.client
       phase_before = issue.pr_review_phase
       issue.update!(pr_review_phase: "escalated")
 

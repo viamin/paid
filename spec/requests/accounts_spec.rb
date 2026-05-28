@@ -23,11 +23,19 @@ RSpec.describe "Accounts" do
       get account_path
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Account Administration")
-      expect(response.body).to include("Team")
-      expect(response.body).to include("Tenant Limits and Usage")
-      expect(response.body).to include("Billing")
-      expect(response.body).to include("Activity Trail")
+      expect(response.body).to include(
+        "Account Administration",
+        "Team",
+        "Tenant Limits and Usage",
+        "ROI, Evals & Benchmarking",
+        "Compliance & Deployment Assurance",
+        "Adoption &amp; Operational Readiness",
+        "Admin playbooks",
+        "Role-based training &amp; onboarding",
+        "Reference operating models",
+        "Billing",
+        "Activity Trail"
+      )
     end
 
     it "allows a viewer to read the page" do
@@ -39,6 +47,43 @@ RSpec.describe "Accounts" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Account Administration")
+    end
+  end
+
+  describe "GET /account_audit_logs" do
+    it "renders the audit log page with recent account activity" do
+      account.account_activity_events.create!(
+        action: "membership.invited",
+        actor: owner,
+        metadata: { email: "new-user@example.com", role: "admin" }
+      )
+
+      get account_audit_logs_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Audit Log")
+      expect(response.body).to include("Export JSON")
+      expect(response.body).to include("Invited new-user@example.com as admin")
+    end
+
+    it "exports the audit log as JSON" do
+      event = account.account_activity_events.create!(
+        action: "project.created",
+        actor: owner,
+        metadata: { name: "Roadrunner", github_url: "https://github.com/acme/roadrunner" }
+      )
+
+      get export_account_audit_logs_path(format: :json)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.media_type).to eq("application/json")
+      expect(JSON.parse(response.body)).to include(
+        a_hash_including(
+          "id" => event.id,
+          "action" => "project.created",
+          "actor" => owner.email
+        )
+      )
     end
   end
 
