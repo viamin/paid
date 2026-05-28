@@ -46,18 +46,18 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(stdout).to include("Installing Bundler 4.0.11 to match Gemfile.lock")
-      expect(File.read(File.join(dir, "gem-install.log"))).to include("--no-document bundler:4.0.11")
+      expect(stdout).to include("Installing Bundler 4.0.12 to match Gemfile.lock")
+      expect(File.read(File.join(dir, "gem-install.log"))).to include("--no-document bundler:4.0.12")
     end
   end
 
-  def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.11" ])
+  def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.12" ])
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "lib", "paid"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
     FileUtils.mkdir_p(File.join(dir, "workspace-root"))
-    File.write(File.join(dir, "Gemfile.lock"), "BUNDLED WITH\n   4.0.11\n")
+    File.write(File.join(dir, "Gemfile.lock"), "BUNDLED WITH\n   4.0.12\n")
     File.write(File.join(dir, "installed-bundlers.txt"), installed_bundler_versions.join("\n"))
 
     script_path = File.join(dir, "bin", "setup")
