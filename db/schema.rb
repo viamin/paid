@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_27_084149) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1917,6 +1917,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_084149) do
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
   end
 
+  create_table "roi_benchmarks", comment: "Customer-specific comparison baselines used in ROI dashboards and pilot reports.", force: :cascade do |t|
+    t.integer "accepted_pr_count", default: 0, null: false, comment: "Accepted pull requests included in this benchmark window."
+    t.decimal "average_cycle_time_hours", precision: 10, scale: 2, comment: "Average elapsed hours from issue intake to accepted pull request."
+    t.string "benchmark_type", limit: 50, null: false, comment: "Supported comparison class: human_only or commercial_agent."
+    t.integer "cost_per_accepted_pr_cents", comment: "Blended cost for each accepted pull request in cents."
+    t.datetime "created_at", null: false
+    t.decimal "defect_escape_rate", precision: 5, scale: 2, comment: "Share of accepted pull requests followed by post-acceptance fix work, stored as a percentage."
+    t.datetime "ends_at", comment: "Inclusive end of the benchmark measurement window."
+    t.decimal "merge_rate", precision: 5, scale: 2, comment: "Accepted pull requests divided by created pull requests, stored as a percentage."
+    t.string "name", limit: 255, null: false, comment: "Human-readable benchmark label such as Human-only Baseline or Cursor Pilot."
+    t.text "notes", comment: "Free-form implementation notes captured for stakeholder review."
+    t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and benchmark segmentation."
+    t.decimal "rework_rate", precision: 5, scale: 2, comment: "Share of accepted pull requests requiring follow-up work, stored as a percentage."
+    t.datetime "starts_at", comment: "Inclusive start of the benchmark measurement window."
+    t.string "tool_name", limit: 100, comment: "Specific vendor or tool name when benchmark_type is commercial_agent."
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "benchmark_type", "ends_at"], name: "idx_roi_benchmarks_project_type_ends_at"
+    t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
+  end
+
   create_table "runner_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -2562,6 +2582,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_084149) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict

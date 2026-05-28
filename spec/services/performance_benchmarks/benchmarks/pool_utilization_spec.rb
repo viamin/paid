@@ -14,19 +14,21 @@ RSpec.describe PerformanceBenchmarks::Benchmarks::PoolUtilization do
     it "measures warm-container claim latency in milliseconds" do
       project = create(:project)
       agent_run = create(:agent_run, project: project)
+      warmed_at = Time.zone.parse("2026-01-01 12:00:00 UTC")
+      now = warmed_at + 1.day
 
       create(:container_pool_entry,
         :claimed,
         project: project,
         agent_run: agent_run,
-        warmed_at: 1.day.ago,
-        claimed_at: 1.day.ago + 45.seconds)
+        warmed_at: warmed_at,
+        claimed_at: warmed_at + 45.seconds)
 
-      result = described_class.call
+      result = described_class.call(now: now)
 
       expect(result.skipped?).to be(false)
       expect(result.key).to eq("pool_utilization")
-      expect(result.samples.first).to be_within(1.0).of(45_000.0)
+      expect(result.samples.first).to eq(45_000.0)
     end
   end
 end
