@@ -21,7 +21,7 @@ class CreateExternalConnectorEvents < ActiveRecord::Migration[8.1]
       name: "idx_connector_events_project_connector_type"
     add_index :external_connector_events, [ :account_id, :connector_key ],
       name: "idx_connector_events_account_connector"
-    add_index :external_connector_events, [ :project_id, :external_event_id ],
+    add_index :external_connector_events, [ :project_id, :connector_key, :external_event_id ],
       unique: true,
       name: "idx_connector_events_project_external_id"
     add_index :external_connector_events, [ :status, :created_at ],

@@ -10,7 +10,10 @@ class ExternalConnectorEvent < ApplicationRecord
   validates :event_type, presence: true
   validates :external_event_id, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validates :external_event_id, uniqueness: { scope: :project_id, message: "has already been ingested for this project" }
+  validates :external_event_id, uniqueness: {
+    scope: %i[project_id connector_key],
+    message: "has already been ingested for this connector in this project"
+  }
   validate :payload_is_object
   validate :normalized_data_is_object
 

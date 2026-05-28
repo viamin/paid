@@ -100,6 +100,29 @@ RSpec.describe Interop::Connectors::IngestEvent do
       }.to raise_error(ActiveRecord::RecordInvalid)
     end
 
+    it "allows duplicate external event IDs across different connectors in one project" do
+      described_class.call(
+        project: project,
+        connector_key: "jira",
+        event_type: "issue_created",
+        payload: {},
+        external_event_id: "shared-event-id"
+      )
+
+      project.update!(interop_settings: project.interop_settings.merge("connectors" => { "jira" => true, "linear" => true }))
+
+      event = described_class.call(
+        project: project,
+        connector_key: "linear",
+        event_type: "issue_updated",
+        payload: {},
+        external_event_id: "shared-event-id"
+      )
+
+      expect(event).to be_persisted
+      expect(event.connector_key).to eq("linear")
+    end
+
     it "rejects connector ingestion when adoption mode does not permit it" do
       project.update!(interop_settings: project.interop_settings.merge("adoption_mode" => "observe_only"))
 
@@ -181,6 +204,29 @@ RSpec.describe Interop::Connectors::IngestEvent do
           request_headers: { "X-Slack-Request-Timestamp" => stale_timestamp }
         )
       }.to raise_error(ArgumentError, /signature verification failed for slack/)
+    end
+
+    it "accepts a matching signature from any active secret candidate" do
+      project.update!(interop_settings: {
+        "adoption_mode" => "advisory",
+        "connectors" => { "slack" => true },
+        "external_execution_sources" => {}
+      })
+
+      event = described_class.call(
+        project: project,
+        connector_key: "slack",
+        event_type: "message_posted",
+        payload: slack_payload,
+        external_event_id: "slack-rotated-secret",
+        signature: slack_signature,
+        secrets: [ "new-signing-secret", "signing-secret" ],
+        raw_body: slack_raw_body,
+        request_headers: { "X-Slack-Request-Timestamp" => slack_timestamp }
+      )
+
+      expect(event).to be_persisted
+      expect(event.status).to eq("processed")
     end
 
     it "creates a failed event when connector normalization raises" do

@@ -16,11 +16,18 @@ RSpec.describe ExternalConnectorEvent do
       expect(event.errors[:connector_key]).to be_present
     end
 
-    it "requires unique external_event_id per project" do
+    it "requires unique external_event_id per project and connector" do
       create(:external_connector_event, project: project, external_event_id: "evt-1", connector_key: "jira", event_type: "issue_created")
       dup = build(:external_connector_event, project: project, external_event_id: "evt-1", connector_key: "jira", event_type: "issue_updated")
 
       expect(dup).not_to be_valid
+    end
+
+    it "allows the same external_event_id across different connectors in one project" do
+      create(:external_connector_event, project: project, external_event_id: "shared-evt", connector_key: "jira", event_type: "issue_created")
+
+      other_connector_event = build(:external_connector_event, project: project, external_event_id: "shared-evt", connector_key: "linear", event_type: "issue_created")
+      expect(other_connector_event).to be_valid
     end
 
     it "allows the same external_event_id across different projects" do

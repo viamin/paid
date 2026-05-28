@@ -115,6 +115,30 @@ RSpec.describe "Project interoperability" do
       expect(response).to have_http_status(:unauthorized)
       expect(response.parsed_body.fetch("errors")).to include("Invalid integration credential")
     end
+
+    it "accepts older active external-run credentials during rotation" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "cursor",
+        auth_kind: "api_key",
+        secret: "cursor-new-secret"
+      )
+
+      expect {
+        post api_project_external_agent_runs_path(project), params: {
+          external_agent_run: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-run-rotated-secret",
+            custom_prompt: "Imported run",
+            status: "completed"
+          }
+        }, headers: external_run_headers
+      }.to change(project.agent_runs, :count).by(1)
+
+      expect(response).to have_http_status(:created)
+    end
   end
 
   describe "POST /projects/:project_id/interoperability_imports" do
@@ -244,6 +268,31 @@ RSpec.describe "Project interoperability" do
       expect(response).to have_http_status(:created)
     end
 
+    it "accepts connector requests signed with an older active credential during rotation" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: "new-signing-secret"
+      )
+
+      expect {
+        post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
+      }.to change(project.external_connector_events, :count).by(1)
+
+      expect(response).to have_http_status(:created)
+    end
+
     it "rejects unsigned Slack requests when a signing credential is configured" do
       create(
         :integration_credential,
@@ -335,6 +384,23 @@ RSpec.describe "Project interoperability" do
       expect(response.parsed_body.fetch("errors").first).to match(/No active integration credential configured/)
     end
 
+    it "accepts ci_systems credentials for CI connector events" do
+      ci_secret = "ci-shared-secret"
+      create_connector_credential!("ci_systems", ci_secret)
+      enable_connector!("ci_systems")
+      payload = ci_systems_event_body("ci-event-1")
+      signature = ci_systems_signature(payload, ci_secret)
+
+      expect {
+        post api_project_connector_events_path(project), params: payload, headers: {
+          "CONTENT_TYPE" => "application/json",
+          "X-Signature" => signature
+        }
+      }.to change(project.external_connector_events, :count).by(1)
+
+      expect(response).to have_http_status(:created)
+    end
+
     def create_connector_credential!(service_key, secret)
       create(
         :integration_credential,
@@ -368,6 +434,26 @@ RSpec.describe "Project interoperability" do
           }
         }
       }.to_json
+    end
+
+    def ci_systems_event_body(external_event_id)
+      {
+        connector_event: {
+          connector_key: "ci_systems",
+          event_type: "pipeline_completed",
+          external_event_id: external_event_id,
+          payload: {
+            run: {
+              id: 42,
+              status: "success"
+            }
+          }
+        }
+      }.to_json
+    end
+
+    def ci_systems_signature(payload, secret)
+      OpenSSL::HMAC.hexdigest("SHA256", secret, payload)
     end
 
     def gitlab_secret

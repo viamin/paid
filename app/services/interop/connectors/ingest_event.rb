@@ -7,7 +7,7 @@ module Interop
         new(...).call
       end
 
-      def initialize(project:, connector_key:, event_type:, payload:, external_event_id:, occurred_at: nil, signature: nil, secret: nil, raw_body: nil, request_headers: {})
+      def initialize(project:, connector_key:, event_type:, payload:, external_event_id:, occurred_at: nil, signature: nil, secret: nil, secrets: nil, raw_body: nil, request_headers: {})
         @project = project
         @connector_key = connector_key.to_s
         @event_type = event_type.to_s
@@ -15,7 +15,7 @@ module Interop
         @external_event_id = external_event_id.to_s
         @occurred_at = occurred_at
         @signature = signature
-        @secret = secret
+        @secrets = Array(secrets.presence || secret).compact_blank
         @raw_body = raw_body.to_s
         @request_headers = request_headers.to_h.transform_keys { |key| key.to_s.downcase }
       end
@@ -51,7 +51,7 @@ module Interop
       private
 
       attr_reader :project, :connector_key, :event_type, :payload,
-                  :external_event_id, :occurred_at, :signature, :secret, :raw_body, :request_headers
+                  :external_event_id, :occurred_at, :signature, :secrets, :raw_body, :request_headers
 
       def validate!
         raise ArgumentError, "connector_key is required" if connector_key.blank?
@@ -67,7 +67,7 @@ module Interop
           raise ArgumentError, "#{connector_key} connector is not enabled for this project"
         end
 
-        raise ArgumentError, "signature is required for #{connector_key}" if secret.present? && signature.blank?
+        raise ArgumentError, "signature is required for #{connector_key}" if secrets.present? && signature.blank?
 
         verify_signature!(connector) if signature.present?
       end
@@ -81,7 +81,11 @@ module Interop
       def verify_signature!(connector)
         raise ArgumentError, "raw_body is required for signature verification" if raw_body.blank?
 
-        unless connector.verify_signature?(raw_body, signature: signature, secret: secret, request_headers: request_headers)
+        verified = secrets.any? do |secret|
+          connector.verify_signature?(raw_body, signature: signature, secret: secret, request_headers: request_headers)
+        end
+
+        unless verified
           raise ArgumentError, "signature verification failed for #{connector_key}"
         end
       end

@@ -26,7 +26,7 @@ module Api
           external_event_id: connector_event_params[:external_event_id],
           occurred_at: connector_event_params[:occurred_at],
           signature: connector_signature,
-          secret: @connector_credential.secret,
+          secrets: connector_secrets,
           raw_body: request.raw_post,
           request_headers: signature_headers
         )
@@ -54,8 +54,8 @@ module Api
           return
         end
 
-        @connector_credential = integration_credential_for(service_key)
-        return if @connector_credential
+        @connector_credentials = integration_credentials_for(service_key)
+        return if @connector_credentials.present?
 
         render json: { errors: [ "No active integration credential configured for #{service_key.presence || "this connector"}" ] }, status: :unauthorized
       end
@@ -94,6 +94,10 @@ module Api
         end
 
         nil
+      end
+
+      def connector_secrets
+        Array(@connector_credentials).map(&:secret)
       end
     end
   end

@@ -36,15 +36,15 @@ module Api
           return
         end
 
-        credential = integration_credential_for(service_key)
+        credentials = integration_credentials_for(service_key)
 
-        unless credential
+        if credentials.blank?
           render json: { errors: [ "No active integration credential configured for #{service_key.presence || "this source"}" ] }, status: :unauthorized
           return
         end
 
         provided_token = bearer_token || request.headers["X-Api-Key"].presence
-        return if secure_token_match?(provided_token, credential.secret)
+        return if credentials.any? { |credential| secure_token_match?(provided_token, credential.secret) }
 
         render json: { errors: [ "Invalid integration credential" ] }, status: :unauthorized
       end

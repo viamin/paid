@@ -29,14 +29,13 @@ module Api
       render json: { errors: [ "Project not found" ] }, status: :not_found
     end
 
-    def integration_credential_for(service_key)
+    def integration_credentials_for(service_key)
       return if service_key.blank?
 
       @project.account.integration_credentials
         .active
         .for_service(service_key)
         .order(created_at: :desc)
-        .first
     end
 
     def bearer_token

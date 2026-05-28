@@ -97,6 +97,13 @@ module Integrations
         category: :ci_cd,
         auth_kinds: %w[api_key oauth_token]
       },
+      "ci_systems" => {
+        key: "ci_systems",
+        label: "CI Systems",
+        description: "Shared signing tokens or API keys for generic CI webhook and outcome ingestion workflows.",
+        category: :ci_cd,
+        auth_kinds: %w[api_key signing_token]
+      },
       "github_copilot" => {
         key: "github_copilot",
         label: "GitHub Copilot",
