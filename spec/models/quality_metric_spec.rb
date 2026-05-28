@@ -13,6 +13,7 @@ RSpec.describe QualityMetric do
 
     it { is_expected.to validate_presence_of(:metric_type) }
     it { is_expected.to validate_inclusion_of(:metric_type).in_array(described_class::METRIC_TYPES) }
+    it { is_expected.to validate_inclusion_of(:source).in_array(described_class::SOURCES) }
     it { is_expected.to validate_uniqueness_of(:metric_type).scoped_to(:agent_run_id) }
 
     it {

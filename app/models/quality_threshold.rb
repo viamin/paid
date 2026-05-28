@@ -5,7 +5,7 @@ class QualityThreshold < ApplicationRecord
   DEFAULT_WINDOW_SIZE = 10
   DEFAULT_MIN_SAMPLE_SIZE = 3
   METRIC_TYPES = %w[composite_score pr_created ci_passed pr_merged iterations lint_clean
-                    tests_pass
+                    tests_pass mutation_kill_rate
                     review_comment_count agent_rerun_count issue_created
                     reaction_score review_posted review_score comment_posted
                     author_replied question_count].freeze

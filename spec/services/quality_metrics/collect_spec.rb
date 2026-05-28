@@ -50,6 +50,12 @@ RSpec.describe QualityMetrics::Collect do
       expect { described_class.call(agent_run: agent_run) }.to change(QualityMetric, :count).by(1)
     end
 
+    it "tags per-agent-run metrics with the default source" do
+      metric = described_class.call(agent_run: agent_run)
+
+      expect(metric.source).to eq("agent_run")
+    end
+
     it "checks for quality pauses after recording an eligible metric" do
       described_class.call(agent_run: agent_run)
 

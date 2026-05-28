@@ -87,6 +87,20 @@ RSpec.describe "Projects::QualityDashboards" do
 
         expect(response.body).to include("Export CSV")
       end
+
+      it "renders the mutation kill-rate panel only when mutation testing is enabled" do
+        create(:pre_commit_requirement, :mutation_test, project: project, account: account, name: "mutant")
+
+        get project_quality_dashboard_path(project)
+
+        expect(response.body).to include("Mutation kill-rate")
+      end
+
+      it "hides the mutation kill-rate panel when mutation testing is disabled" do
+        get project_quality_dashboard_path(project)
+
+        expect(response.body).not_to include("Mutation kill-rate")
+      end
     end
   end
 

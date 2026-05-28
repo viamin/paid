@@ -48,6 +48,7 @@ RSpec.describe ApplicationJob, :no_db do
         AbTestAnalysisJob
         ContainerMetricsCollectionJob
         QualityMetricsCollectionJob
+        ScheduledMutationSweepJob
         ServiceContainerMetricsCollectionJob
       ],
       knowledge: %w[

@@ -1880,6 +1880,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_133444) do
     t.decimal "mutation_kill_rate", precision: 5, scale: 4, comment: "Mutant kill rate for the agent run when mutation testing executed; nil means mutant did not run or produced no score."
     t.bigint "prompt_version_id"
     t.jsonb "scores", default: {}, null: false
+    t.string "source", default: "agent_run", null: false, comment: "Origin of the metric row so scheduled mutation sweeps stay distinct from per-agent-run quality metrics."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
     t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
@@ -1889,6 +1890,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_133444) do
     t.index ["prompt_version_id", "created_at"], name: "idx_quality_metrics_prompt_recent_composite", order: { created_at: :desc }, where: "(composite_score IS NOT NULL)"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
+    t.index ["source"], name: "index_quality_metrics_on_source"
   end
 
   create_table "quality_pause_events", comment: "Audit trail for project-level automatic pauses and resumptions caused by quality gate outcomes.", force: :cascade do |t|

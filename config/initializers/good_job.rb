@@ -209,6 +209,11 @@ Rails.application.configure do
       cron: "0 4 1 */3 *",
       class: "TemporalPatchGuardSweepJob",
       description: "Audit Temporal workflow patch guards against oldest running executions (quarterly)"
+    },
+    scheduled_mutation_sweep: {
+      cron: "17 9 * * *",
+      class: "ScheduledMutationSweepJob",
+      description: "Run nightly full-suite mutation sweeps for opted-in Ruby projects"
     }
   }
 end

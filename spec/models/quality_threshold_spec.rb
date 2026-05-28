@@ -124,6 +124,7 @@ RSpec.describe QualityThreshold do
         [ "issue_created", "create_issue" ],
         [ "reaction_score", "create_issue" ],
         [ "lint_clean", "create_pr" ],
+        [ "mutation_kill_rate", "create_pr" ],
         [ "review_comment_count", "create_pr" ],
         [ "review_posted", "review" ],
         [ "reaction_score", "review" ],

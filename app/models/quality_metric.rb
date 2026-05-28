@@ -3,6 +3,9 @@
 class QualityMetric < ApplicationRecord
   METRIC_TYPES = %w[automated human].freeze
   FEEDBACK_SOURCES = %w[system pr_merge pr_reaction pr_review issue_reaction review_reaction enhance_issue_feedback webhook comment].freeze
+  SOURCES = %w[agent_run scheduled_mutation_sweep].freeze
+  AGENT_RUN_SOURCE = "agent_run"
+  SCHEDULED_MUTATION_SWEEP_SOURCE = "scheduled_mutation_sweep"
   MUTATION_KILL_RATE_WEIGHT = 0.10
 
   # Weights for composite quality score (PR creation goal).
@@ -95,6 +98,7 @@ class QualityMetric < ApplicationRecord
 
   validates :metric_type, presence: true, inclusion: { in: METRIC_TYPES }
   validates :feedback_source, inclusion: { in: FEEDBACK_SOURCES }, allow_nil: true
+  validates :source, presence: true, inclusion: { in: SOURCES }
   validates :composite_score,
     numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 },
     allow_nil: true
@@ -105,6 +109,8 @@ class QualityMetric < ApplicationRecord
 
   scope :automated, -> { where(metric_type: "automated") }
   scope :human, -> { where(metric_type: "human") }
+  scope :agent_run_source, -> { where(source: AGENT_RUN_SOURCE) }
+  scope :scheduled_mutation_sweep, -> { where(source: SCHEDULED_MUTATION_SWEEP_SOURCE) }
   scope :by_prompt_version, ->(prompt_version_id) { where(prompt_version_id: prompt_version_id) }
   scope :by_project, ->(project_id) { joins(:agent_run).where(agent_runs: { project_id: project_id }) }
   scope :by_time_period, ->(start_date, end_date) { where(created_at: start_date..end_date) }
