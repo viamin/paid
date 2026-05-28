@@ -50,7 +50,7 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
     expect(second.reload.occurrence_count).to eq(2)
   end
 
-  it "preserves evaluation fields when deduping an existing decision" do
+  it "creates a new decision after the prior one moves past proposed" do
     decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
     decision.update!(
       status: "applied",
@@ -59,15 +59,31 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
       outcome: "improved"
     )
 
-    deduped = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
-
-    expect(deduped.id).to eq(decision.id)
-    expect(deduped.reload).to have_attributes(
+    replacement = nil
+    expect {
+      replacement = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+    }.to change(RemediationDecision, :count).by(1)
+    expect(replacement.id).not_to eq(decision.id)
+    expect(decision.reload).to have_attributes(
       status: "applied",
       revert_data: { "command" => "bin/self-heal revert 123" },
       post_remediation_failure_count: 1,
       outcome: "improved",
-      occurrence_count: 2
+      occurrence_count: 1
     )
+  end
+
+  it "leaves non-proposed decisions immutable when recording a repeated fingerprint" do
+    decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+    decision.update!(status: "applied")
+
+    replacement = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+
+    expect(replacement.reload).to have_attributes(
+      status: "proposed",
+      occurrence_count: 1,
+      proposed_action: "mark_runner_unavailable"
+    )
+    expect(decision.reload).to have_attributes(status: "applied", occurrence_count: 1)
   end
 end

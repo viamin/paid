@@ -25,7 +25,7 @@ module AgentRunPatterns
     def call
       RemediationDecision.transaction do
         existing = RemediationDecision
-          .where(account: account, fingerprint: fingerprint)
+          .where(account: account, fingerprint: fingerprint, status: "proposed")
           .where("created_at >= ?", DEDUPE_WINDOW.ago)
           .order(created_at: :desc)
           .lock
