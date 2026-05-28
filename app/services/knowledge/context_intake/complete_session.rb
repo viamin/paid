@@ -27,14 +27,14 @@ module Knowledge
       private
 
       def validate_required_questions!
-        required_keys = QuestionnaireSchema.required_questions.map { |q| q[:key] }
-        unanswered = session.context_intake_responses
-                            .where(question_key: required_keys)
-                            .where(answer_text: [ nil, "" ])
+        catalog_index = Knowledge::ContextIntake::QuestionnaireSchema.question_catalog_index(project: session.project)
+        unanswered = session.context_intake_responses.select do |response|
+          QuestionnaireSchema.required_question_for_response?(response, catalog_index: catalog_index) && response.answer_text.blank?
+        end
 
         return if unanswered.empty?
 
-        keys = unanswered.pluck(:question_key).join(", ")
+        keys = unanswered.map(&:question_key).join(", ")
         raise ActiveRecord::RecordInvalid.new(session),
           "Required questions not answered: #{keys}"
       end

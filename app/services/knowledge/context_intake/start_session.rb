@@ -43,19 +43,10 @@ module Knowledge
       end
 
       def create_predefined_responses!(session)
-        QuestionnaireSchema.sections.each_with_index do |section, _section_idx|
-          section[:questions].each_with_index do |question, q_idx|
-            session.context_intake_responses.create!(
-              question_key: question[:key],
-              question_text: question[:text],
-              section: section[:key],
-              sequence: q_idx,
-              is_follow_up: false,
-              skipped: false,
-              provenance: "human"
-            )
-          end
-        end
+        AppendQuestions.call(
+          session: session,
+          questions: QuestionnaireSchema.ordered_questions(project: project).select { |question| question[:round] == 1 }
+        )
       end
     end
   end
