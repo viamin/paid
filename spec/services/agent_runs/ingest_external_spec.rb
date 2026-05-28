@@ -61,5 +61,20 @@ RSpec.describe AgentRuns::IngestExternal do
         )
       }.to raise_error(ArgumentError, /ingest_external_runs is not permitted/)
     end
+
+    it "raises not found when the referenced issue belongs to another project" do
+      other_issue = create(:issue)
+
+      expect {
+        described_class.call(
+          project: project,
+          attributes: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-123",
+            issue_id: other_issue.id
+          }
+        )
+      }.to raise_error(ActiveRecord::RecordNotFound)
+    end
   end
 end
