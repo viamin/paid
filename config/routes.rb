@@ -189,9 +189,8 @@ Rails.application.routes.draw do
       post :detect
     end
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
-    resources :external_agent_runs, only: [ :create ], controller: "projects/external_agent_runs"
     resources :interoperability_imports, only: [ :create ], controller: "projects/interoperability_imports"
-    resources :connector_events, only: [ :create, :index ], controller: "projects/connector_events"
+    resources :connector_events, only: [ :index ], controller: "projects/connector_events"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :cancel, on: :member
       post :retry, on: :member
@@ -242,6 +241,11 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
+    resources :projects, only: [] do
+      resources :external_agent_runs, only: [ :create ], controller: "projects/external_agent_runs"
+      resources :connector_events, only: [ :create ], controller: "projects/connector_events"
+    end
+
     get "metrics", to: "metrics#show"
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post, format: false
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: [ :get, :post ], format: false

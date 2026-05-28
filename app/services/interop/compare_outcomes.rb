@@ -53,6 +53,7 @@ module Interop
 
     def base_runs
       project.agent_runs
+        .includes(:quality_metrics)
         .where(created_at: period_start..period_end)
         .where(status: AgentRun::FINISHED_STATUSES)
     end
@@ -70,7 +71,7 @@ module Interop
       return empty_metrics if runs.empty?
 
       completed = runs.select { |r| r.status == "completed" }
-      merged = runs.count { |r| r.pull_request_url.present? && r.status == "completed" }
+      merged = completed.count { |run| merged?(run) }
 
       MetricSlice.new(
         run_count: runs.size,
@@ -80,6 +81,12 @@ module Interop
         avg_cost_cents: average_for(runs, :cost_cents),
         pr_merge_rate: completed.empty? ? 0.0 : (merged.to_f / completed.size).round(4)
       )
+    end
+
+    def merged?(run)
+      run.quality_metrics.any? do |metric|
+        metric.metric_type == "human" && metric.scores.to_h["pr_merged"].to_f == 1.0
+      end
     end
 
     def compute_by_source_metrics(external_runs)

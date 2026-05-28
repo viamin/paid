@@ -8,13 +8,20 @@ RSpec.describe Interop::CompareOutcomes do
     let(:project) { create(:project, account: account) }
 
     context "with both paid-native and external runs" do
-      before do
+      let!(:paid_run_with_merged_pr) do
         create(:agent_run, :completed, project: project,
                execution_origin: "paid_native", duration_seconds: 100, tokens_input: 500, tokens_output: 200, cost_cents: 50, pull_request_url: "https://github.com/test/pr/1")
-        create(:agent_run, :completed, project: project,
-               execution_origin: "paid_native", duration_seconds: 200, tokens_input: 1000, tokens_output: 400, cost_cents: 100)
+      end
+      let!(:external_run_with_open_pr) do
         create(:agent_run, :external_execution, :completed, project: project,
                external_source_key: "cursor", duration_seconds: 150, tokens_input: 750, tokens_output: 300, cost_cents: 75, pull_request_url: "https://github.com/test/pr/2")
+      end
+
+      before do
+        create(:agent_run, :completed, project: project,
+               execution_origin: "paid_native", duration_seconds: 200, tokens_input: 1000, tokens_output: 400, cost_cents: 100)
+        create(:quality_metric, :human, agent_run: paid_run_with_merged_pr, scores: { "pr_merged" => 1.0 })
+        create(:quality_metric, :human, agent_run: external_run_with_open_pr, scores: { "pr_merged" => 0.0 })
       end
 
       it "returns separate metrics for paid-native and external runs" do
@@ -26,6 +33,13 @@ RSpec.describe Interop::CompareOutcomes do
 
         expect(result.external.run_count).to eq(1)
         expect(result.external.avg_duration_seconds).to eq(150.0)
+      end
+
+      it "uses the recorded pr_merged quality signal for merge rate" do
+        result = described_class.call(project: project)
+
+        expect(result.paid_native.pr_merge_rate).to eq(0.5)
+        expect(result.external.pr_merge_rate).to eq(0.0)
       end
 
       it "breaks down external metrics by source" do

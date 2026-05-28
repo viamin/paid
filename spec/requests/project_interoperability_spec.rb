@@ -7,9 +7,9 @@ RSpec.describe "Project interoperability" do
   let(:owner_user) { create(:user, :owner, account: account) }
   let(:project) { create(:project, account: account, created_by: owner_user) }
 
-  before { sign_in owner_user }
-
   describe "PATCH /projects/:project_id/interop_settings" do
+    before { sign_in owner_user }
+
     it "updates the project adoption mode and enabled sources" do
       patch project_interop_settings_path(project), params: {
         project: {
@@ -27,6 +27,18 @@ RSpec.describe "Project interoperability" do
   end
 
   describe "POST /projects/:project_id/external_agent_runs" do
+    let!(:cursor_credential) do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "cursor",
+        auth_kind: "api_key",
+        secret: "cursor-shared-secret"
+      )
+    end
+    let(:external_run_headers) { { "Authorization" => "Bearer #{cursor_credential.secret}" } }
+
     before do
       project.update!(interop_settings: {
         "adoption_mode" => "advisory",
@@ -36,14 +48,14 @@ RSpec.describe "Project interoperability" do
 
     it "ingests an external execution into agent_runs" do
       expect {
-        post project_external_agent_runs_path(project), params: {
+        post api_project_external_agent_runs_path(project), params: {
           external_agent_run: {
             external_source_key: "cursor",
             external_run_key: "cursor-run-42",
             custom_prompt: "Imported run",
             status: "completed"
           }
-        }
+        }, headers: external_run_headers
       }.to change(project.agent_runs, :count).by(1)
 
       expect(response).to have_http_status(:created)
@@ -54,7 +66,7 @@ RSpec.describe "Project interoperability" do
       other_project = create(:project, account: account, created_by: owner_user)
       other_issue = create(:issue, project: other_project)
 
-      post project_external_agent_runs_path(project), params: {
+      post api_project_external_agent_runs_path(project), params: {
         external_agent_run: {
           external_source_key: "cursor",
           external_run_key: "cursor-run-missing-issue",
@@ -62,7 +74,7 @@ RSpec.describe "Project interoperability" do
           custom_prompt: "Imported run",
           status: "completed"
         }
-      }
+      }, headers: external_run_headers
 
       expect(response).to have_http_status(:not_found)
     end
@@ -74,23 +86,40 @@ RSpec.describe "Project interoperability" do
       })
 
       expect {
-        post project_external_agent_runs_path(project), params: {
+        post api_project_external_agent_runs_path(project), params: {
           external_agent_run: {
             external_source_key: "cursor",
             external_run_key: "cursor-run-blocked",
             custom_prompt: "Imported run",
             status: "completed"
           }
-        }
+        }, headers: external_run_headers
       }.not_to change(project.agent_runs, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body.fetch("errors").first).to match(/ingest_external_runs is not permitted/)
     end
+
+    it "rejects requests without a valid integration credential" do
+      expect {
+        post api_project_external_agent_runs_path(project), params: {
+          external_agent_run: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-run-unauthorized",
+            custom_prompt: "Imported run",
+            status: "completed"
+          }
+        }
+      }.not_to change(project.agent_runs, :count)
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body.fetch("errors")).to include("Invalid integration credential")
+    end
   end
 
   describe "POST /projects/:project_id/interoperability_imports" do
     before do
+      sign_in owner_user
       project.update!(interop_settings: { "adoption_mode" => "advisory" })
     end
 
@@ -160,6 +189,13 @@ RSpec.describe "Project interoperability" do
       digest = OpenSSL::HMAC.hexdigest("SHA256", slack_secret, "v0:#{slack_timestamp}:#{connector_event_json}")
       "v0=#{digest}"
     end
+    let(:signed_slack_headers) do
+      {
+        "CONTENT_TYPE" => "application/json",
+        "X-Slack-Request-Timestamp" => slack_timestamp,
+        "X-Slack-Signature" => slack_signature
+      }
+    end
 
     before do
       project.update!(interop_settings: {
@@ -169,13 +205,22 @@ RSpec.describe "Project interoperability" do
     end
 
     it "blocks connector event ingestion in observe_only mode" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+
       project.update!(interop_settings: {
         "adoption_mode" => "observe_only",
         "connectors" => { "slack" => true }
       })
 
       expect {
-        post project_connector_events_path(project), params: connector_event_params
+        post api_project_connector_events_path(project), params: connector_event_params.to_json, headers: signed_slack_headers
       }.not_to change(project.external_connector_events, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
@@ -193,11 +238,7 @@ RSpec.describe "Project interoperability" do
       )
 
       expect {
-        post project_connector_events_path(project), params: connector_event_json, headers: {
-          "CONTENT_TYPE" => "application/json",
-          "X-Slack-Request-Timestamp" => slack_timestamp,
-          "X-Slack-Signature" => slack_signature
-        }
+        post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
       }.to change(project.external_connector_events, :count).by(1)
 
       expect(response).to have_http_status(:created)
@@ -214,7 +255,7 @@ RSpec.describe "Project interoperability" do
       )
 
       expect {
-        post project_connector_events_path(project), params: connector_event_json, headers: {
+        post api_project_connector_events_path(project), params: connector_event_json, headers: {
           "CONTENT_TYPE" => "application/json",
           "X-Slack-Request-Timestamp" => slack_timestamp
         }
@@ -222,6 +263,15 @@ RSpec.describe "Project interoperability" do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body.fetch("errors").first).to match(/signature is required for slack/)
+    end
+
+    it "rejects connector requests when no active integration credential is configured" do
+      expect {
+        post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
+      }.not_to change(project.external_connector_events, :count)
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body.fetch("errors").first).to match(/No active integration credential configured/)
     end
   end
 end
