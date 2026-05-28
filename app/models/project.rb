@@ -152,6 +152,7 @@ class Project < ApplicationRecord
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
   has_many :cost_budgets, dependent: :destroy
+  has_many :roi_benchmarks, dependent: :destroy
   has_many :project_baselines, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :quality_recovery_actions, dependent: :destroy
