@@ -10,28 +10,24 @@ RSpec.describe "Runner tier model assignments", type: :system do
   let!(:user) { create(:user, :owner, account: account) }
   let!(:project) { create(:project, account: account, created_by: user) }
   let!(:issue) { create(:issue, project: project, body: "x" * 700) }
-  let!(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter") }
   let!(:runner) do
     create(
       :runner,
       user: user,
-      auth_type: "api_key",
-      provider_api_key: api_key,
-      runner_key: "opencode",
-      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      runner_key: "cursor"
     )
   end
 
   before do
-    create(:llm_model, model_id: "low-openrouter", display_name: "Low OpenRouter", provider: "openrouter", tier: "low")
-    LlmModel.find_or_create_by!(model_id: "moonshotai/kimi-k2-0905") do |model|
-      model.display_name = "Kimi K2"
-      model.provider = "openrouter"
+    create(:llm_model, model_id: "claude-haiku-4-5", display_name: "Claude Haiku 4.5", provider: "anthropic", tier: "low")
+    LlmModel.find_or_create_by!(model_id: "claude-sonnet-4-5") do |model|
+      model.display_name = "Claude Sonnet 4.5"
+      model.provider = "anthropic"
       model.category = "coding"
       model.tier = "mid"
       model.active = true
     end
-    create(:llm_model, model_id: "high-openrouter", display_name: "High OpenRouter", provider: "openrouter", tier: "high")
+    create(:llm_model, model_id: "claude-opus-4-1", display_name: "Claude Opus 4.1", provider: "anthropic", tier: "high")
     Warden.test_mode!
     login_as(user, scope: :user)
     allow(Models::MetaAgentSelector).to receive(:call).and_return(nil)
@@ -44,17 +40,17 @@ RSpec.describe "Runner tier model assignments", type: :system do
   it "uses the saved tier mapping when selecting a model for a new run" do
     visit edit_runner_path(runner)
 
-    select "Kimi K2", from: "runner_tier_models_mid"
+    select "Claude Sonnet 4.5", from: "runner_tier_model_ids_mid"
     click_button "Update Runner"
 
     expect(page).to have_content("Runner updated successfully.")
-    expect(runner.reload.tier_models.dig("mid", "model_id")).to eq("moonshotai/kimi-k2-0905")
+    expect(runner.reload.tier_model_ids["mid"]).to eq("claude-sonnet-4-5")
 
-    agent_run = create(:agent_run, project: project, issue: issue, runner: runner, agent_type: "opencode")
+    agent_run = create(:agent_run, :cursor, project: project, issue: issue, runner: runner)
 
     selection = Models::Select.call(agent_run: agent_run)
 
-    expect(selection.llm_model.model_id).to eq("moonshotai/kimi-k2-0905")
+    expect(selection.llm_model.model_id).to eq("claude-sonnet-4-5")
     expect(selection.tier).to eq("mid")
   end
 end

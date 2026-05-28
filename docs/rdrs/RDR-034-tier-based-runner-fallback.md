@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-05-23
-- **Status**: Implemented
+- **Status**: Draft
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: TBD (file alongside merging this RDR)
@@ -294,9 +294,9 @@ end
 
 ## Implementation Plan
 
-### Phase 0 — Tactical (completed during rollout)
+### Phase 0 — Tactical (ship before RDR is implemented)
 
-- Loosen the model-compatibility gate to permit direct-outbound fallbacks even when their model differs.
+- Loosen `runner_compatible_with_model?` to permit direct-outbound fallbacks even when their model differs. Mark the change `# TODO(RDR-034): replace with tier-based filter`.
 - Record the per-attempt actual model in `runners_attempted[].resolved_model_id` so analytics that already read the attempts array stay accurate.
 - Raise the dev-environment preflight timeout from 10s to a configurable value (separate concern, but tracked alongside since it surfaced this bug).
 
@@ -329,7 +329,7 @@ end
 
 ### Phase 5 — Deprecation
 
-1. Remove the legacy model-compatibility filter once the tier-based filter is wired everywhere.
+1. Remove the `runner_compatible_with_model?` filter once the tier-based filter is wired everywhere.
 2. Document `RUNNER_KEY_TO_MODEL_PROVIDER` as last-resort defaults; encourage explicit configuration.
 
 ## Validation
@@ -362,7 +362,7 @@ end
 - [RDR-007](RDR-007-agent-cli-abstraction.md) — agent-harness as the LLM interface
 - [RDR-008](RDR-008-model-selection.md) — meta-agent + rules selection (extended, not replaced, by this RDR)
 - [RDR-025](RDR-025-runner-quota-tracking.md) — runner-level state (rate limit, circuit breaker)
-- [`run_agent_activity.rb:846-858`](../../app/temporal/activities/run_agent_activity.rb#L846-L858) — tier-based runner filtering in `build_runner_order`
-- [`run_agent_activity.rb:727-740`](../../app/temporal/activities/run_agent_activity.rb#L727-L740) — `runner_supports_tier?`
+- [`run_agent_activity.rb:826-833`](../../app/temporal/activities/run_agent_activity.rb#L826-L833) — current model-compat filter
+- [`run_agent_activity.rb:731-749`](../../app/temporal/activities/run_agent_activity.rb#L731-L749) — `runner_compatible_with_model?`
 - [`default_tier_model_ids.rb`](../../app/services/runners/default_tier_model_ids.rb) — hardcoded runner→provider map
 - [`model_escalation.rb`](../../app/services/quality_recovery/model_escalation.rb) — current quality-tier escalation flow

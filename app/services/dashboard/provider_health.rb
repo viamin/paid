@@ -11,7 +11,6 @@ module Dashboard
       :status_label,
       :available,
       :failure_count,
-      :attempt_count,
       :rate_limited_until,
       keyword_init: true
     )
@@ -36,7 +35,6 @@ module Dashboard
         status_label: runner_status.status_label,
         available: runner_status.available,
         failure_count: runner_status.failure_count,
-        attempt_count: runner_status.attempt_count,
         rate_limited_until: runner_status.rate_limited_until
       )
     end
