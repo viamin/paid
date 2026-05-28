@@ -31,6 +31,38 @@ class TenantSetting < ApplicationRecord
     "default_goal" => "create_pr",
     "auto_continue" => true
   }.freeze
+  DEFAULT_DEPLOYMENT_ASSURANCE = {
+    "deployment_model" => "self_hosted",
+    "network_boundary" => "private_vpc",
+    "reference_architecture" => "single_tenant",
+    "operations_owner" => "",
+    "customer_managed_keys" => {
+      "enabled" => false,
+      "provider" => "",
+      "key_reference" => "",
+      "last_rotated_at" => "",
+      "rotation_interval_days" => 90
+    },
+    "secret_rotation" => {
+      "documented" => false,
+      "owner" => "",
+      "last_completed_at" => "",
+      "interval_days" => 90
+    },
+    "disaster_recovery" => {
+      "backup_cadence" => "daily",
+      "backup_last_verified_at" => "",
+      "restore_last_tested_at" => "",
+      "upgrade_last_validated_at" => "",
+      "air_gap_package_validated_at" => "",
+      "rpo_hours" => 24,
+      "rto_hours" => 8
+    }
+  }.freeze
+  DEPLOYMENT_ASSURANCE_MODELS = %w[self_hosted private_vpc air_gapped].freeze
+  DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES = %w[private_vpc public_ingress offline].freeze
+  DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES = %w[single_tenant private_services offline_promotion].freeze
+  DEPLOYMENT_ASSURANCE_BACKUP_CADENCES = %w[hourly daily weekly].freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,
@@ -72,6 +104,8 @@ class TenantSetting < ApplicationRecord
   validate :validate_default_budgets
   validate :validate_agent_settings
   validate :validate_worker_settings
+  validate :validate_quality_thresholds
+  validate :validate_deployment_assurance
   validates :self_repo_full_name,
     format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
     allow_nil: true,
@@ -165,6 +199,16 @@ class TenantSetting < ApplicationRecord
 
   def effective_chat_settings
     merge_defaults(DEFAULT_CHAT_SETTINGS, features.fetch("chat_settings", {}))
+  end
+
+  def deployment_assurance_configuration
+    merge_defaults(DEFAULT_DEPLOYMENT_ASSURANCE, features.fetch("deployment_assurance", {}))
+  end
+
+  def deployment_assurance_configuration=(value)
+    merged_features = normalize_hash(features)
+    merged_features["deployment_assurance"] = normalize_deployment_assurance(value)
+    self.features = merged_features
   end
 
   def chat_session_token_limit
@@ -294,6 +338,57 @@ class TenantSetting < ApplicationRecord
     end
   end
 
+  def validate_quality_thresholds
+    return unless quality_thresholds.is_a?(Hash)
+
+    validate_quality_threshold_integer(quality_thresholds["min_recent_runs"], key: "min_recent_runs") if quality_thresholds.key?("min_recent_runs")
+    validate_quality_threshold_integer(quality_thresholds["lookback_window_hours"], key: "lookback_window_hours") if quality_thresholds.key?("lookback_window_hours")
+  end
+
+  def validate_deployment_assurance
+    return unless features.is_a?(Hash)
+
+    assurance = features.fetch("deployment_assurance", nil)
+    return unless assurance.is_a?(Hash)
+
+    validate_deployment_assurance_option(
+      assurance["deployment_model"],
+      path: "deployment_model",
+      allowed_values: DEPLOYMENT_ASSURANCE_MODELS
+    )
+    validate_deployment_assurance_option(
+      assurance["network_boundary"],
+      path: "network_boundary",
+      allowed_values: DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES
+    )
+    validate_deployment_assurance_option(
+      assurance["reference_architecture"],
+      path: "reference_architecture",
+      allowed_values: DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES
+    )
+    validate_deployment_assurance_option(
+      assurance.dig("disaster_recovery", "backup_cadence"),
+      path: "disaster_recovery.backup_cadence",
+      allowed_values: DEPLOYMENT_ASSURANCE_BACKUP_CADENCES
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("customer_managed_keys", "rotation_interval_days"),
+      path: "customer_managed_keys.rotation_interval_days"
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("secret_rotation", "interval_days"),
+      path: "secret_rotation.interval_days"
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("disaster_recovery", "rpo_hours"),
+      path: "disaster_recovery.rpo_hours"
+    )
+    validate_deployment_assurance_integer(
+      assurance.dig("disaster_recovery", "rto_hours"),
+      path: "disaster_recovery.rto_hours"
+    )
+  end
+
   def normalize_budget_hash(value)
     normalized_value = normalize_hash(value)
     return normalized_value unless normalized_value.is_a?(Hash)
@@ -304,7 +399,7 @@ class TenantSetting < ApplicationRecord
       result[budget_type.to_s] = normalize_hash(settings).tap do |normalized|
         normalized["enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["enabled"])
         %w[limit_cents alert_threshold_percent grace_buffer_percent].each do |key|
-          normalized[key] = normalized[key].present? ? normalized[key].to_i : nil
+          normalized[key] = normalize_integer_value(normalized[key])
         end
       end
     end
@@ -322,7 +417,7 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       keys.each do |key|
-        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
     end
   end
@@ -336,7 +431,7 @@ class TenantSetting < ApplicationRecord
         normalized[key] = normalized[key].present? ? normalized[key].to_f : nil if normalized.key?(key)
       end
       %w[min_recent_runs lookback_window_hours].each do |key|
-        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
     end
   end
@@ -355,9 +450,57 @@ class TenantSetting < ApplicationRecord
       next unless normalized.is_a?(Hash)
 
       WORKER_SETTING_INTEGER_KEYS.each do |key|
-        normalized[key] = normalized[key].present? ? normalized[key].to_i : nil if normalized.key?(key)
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
     end
+  end
+
+  def normalize_deployment_assurance(value)
+    merge_defaults(DEFAULT_DEPLOYMENT_ASSURANCE, normalize_hash(value)).tap do |normalized|
+      normalized["customer_managed_keys"]["enabled"] =
+        ActiveModel::Type::Boolean.new.cast(normalized.dig("customer_managed_keys", "enabled"))
+      normalized["secret_rotation"]["documented"] =
+        ActiveModel::Type::Boolean.new.cast(normalized.dig("secret_rotation", "documented"))
+
+      %w[rotation_interval_days].each do |key|
+        normalized["customer_managed_keys"][key] =
+          normalize_integer_value(normalized.dig("customer_managed_keys", key))
+      end
+
+      %w[interval_days].each do |key|
+        normalized["secret_rotation"][key] =
+          normalize_integer_value(normalized.dig("secret_rotation", key))
+      end
+
+      %w[rpo_hours rto_hours].each do |key|
+        normalized["disaster_recovery"][key] =
+          normalize_integer_value(normalized.dig("disaster_recovery", key))
+      end
+    end
+  end
+
+  def validate_deployment_assurance_integer(value, path:)
+    return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
+
+    errors.add(:features, "deployment_assurance.#{path} must be an integer between 1 and #{PG_INT_MAX}")
+  end
+
+  def validate_deployment_assurance_option(value, path:, allowed_values:)
+    return if allowed_values.include?(value)
+
+    errors.add(:features, "deployment_assurance.#{path} must be one of: #{allowed_values.join(', ')}")
+  end
+
+  def validate_quality_threshold_integer(value, key:)
+    return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
+
+    errors.add(:quality_thresholds, "#{key} must be an integer between 1 and #{PG_INT_MAX}")
+  end
+
+  def normalize_integer_value(value)
+    return nil unless value.present?
+
+    Integer(value, exception: false) || value
   end
 
   def apply_guardrail_columns

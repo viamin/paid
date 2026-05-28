@@ -33,6 +33,7 @@ RSpec.describe ExceptionHandler::IssueFiler do
     Runner.delete_all
     ProviderState.delete_all
     AccountMembership.delete_all
+    TenantSetting.delete_all
     User.delete_all
     Account.delete_all
   end

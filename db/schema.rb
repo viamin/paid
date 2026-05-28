@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1915,6 +1915,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
   end
 
+  create_table "roi_benchmarks", comment: "Customer-specific comparison baselines used in ROI dashboards and pilot reports.", force: :cascade do |t|
+    t.integer "accepted_pr_count", default: 0, null: false, comment: "Accepted pull requests included in this benchmark window."
+    t.decimal "average_cycle_time_hours", precision: 10, scale: 2, comment: "Average elapsed hours from issue intake to accepted pull request."
+    t.string "benchmark_type", limit: 50, null: false, comment: "Supported comparison class: human_only or commercial_agent."
+    t.integer "cost_per_accepted_pr_cents", comment: "Blended cost for each accepted pull request in cents."
+    t.datetime "created_at", null: false
+    t.decimal "defect_escape_rate", precision: 5, scale: 2, comment: "Share of accepted pull requests followed by post-acceptance fix work, stored as a percentage."
+    t.datetime "ends_at", comment: "Inclusive end of the benchmark measurement window."
+    t.decimal "merge_rate", precision: 5, scale: 2, comment: "Accepted pull requests divided by created pull requests, stored as a percentage."
+    t.string "name", limit: 255, null: false, comment: "Human-readable benchmark label such as Human-only Baseline or Cursor Pilot."
+    t.text "notes", comment: "Free-form implementation notes captured for stakeholder review."
+    t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and benchmark segmentation."
+    t.decimal "rework_rate", precision: 5, scale: 2, comment: "Share of accepted pull requests requiring follow-up work, stored as a percentage."
+    t.datetime "starts_at", comment: "Inclusive start of the benchmark measurement window."
+    t.string "tool_name", limit: 100, comment: "Specific vendor or tool name when benchmark_type is commercial_agent."
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "benchmark_type", "ends_at"], name: "idx_roi_benchmarks_project_type_ends_at"
+    t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
+  end
+
   create_table "runner_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -2560,6 +2580,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -3415,6 +3436,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
       CREATE TRIGGER logidze_on_cost_budgets BEFORE INSERT OR UPDATE ON public.cost_budgets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
+  SQL
+
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -3433,6 +3458,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -3497,13 +3526,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_151229) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

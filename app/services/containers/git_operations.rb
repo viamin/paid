@@ -148,8 +148,14 @@ module Containers
 
     # Maximum number of files allowed in the auto-commit safety net.
     # commit_uncommitted_changes runs with --no-verify, so this guard
-    # is the last line of defense against artifact commits.
+    # is the last line of defense against artifact commits. The
+    # artifact-pattern check below is the real safety net; the file
+    # count is a heuristic that should not block legitimate large
+    # diffs (e.g. merge_conflict resolutions in large codebases).
     MAX_AUTO_COMMIT_FILES = 100
+    MAX_AUTO_COMMIT_FILES_BY_FOCUS = {
+      "merge_conflict" => 500
+    }.freeze
 
     # Binary file extensions that should never appear in agent commits.
     # Limited to clearly-artifact types (compiled objects, packages, caches)
@@ -1007,11 +1013,12 @@ module Containers
       return if staged[:stdout].blank?
 
       files = staged[:stdout].lines.map(&:strip).reject(&:blank?)
+      file_limit = auto_commit_file_limit
 
-      if files.size > MAX_AUTO_COMMIT_FILES
+      if files.size > file_limit
         sample = files.first(20).join("\n  ")
         raise Error,
-          "Auto-commit rejected: #{files.size} files staged (limit: #{MAX_AUTO_COMMIT_FILES}). " \
+          "Auto-commit rejected: #{files.size} files staged (limit: #{file_limit}). " \
           "This almost certainly includes unintended build artifacts. " \
           "First 20 files:\n  #{sample}"
       end
@@ -1023,6 +1030,10 @@ module Containers
           "Auto-commit rejected: #{forbidden_files.size} forbidden artifact files detected. " \
           "These are build artifacts that must not be committed:\n  #{sample}"
       end
+    end
+
+    def auto_commit_file_limit
+      MAX_AUTO_COMMIT_FILES_BY_FOCUS.fetch(agent_run.focus.to_s, MAX_AUTO_COMMIT_FILES)
     end
 
     def forbidden_artifact?(path)
