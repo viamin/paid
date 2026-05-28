@@ -170,7 +170,7 @@ RSpec.describe AgentRunPatterns::Diagnose, :no_db do
 
         expect(result.root_cause).to eq("LLM Provider Error")
         expect(result.category).to eq("llm_provider")
-        expect(result.confidence).to be > 0.0
+        expect(result.confidence).to eq(0.5)
       end
     end
 

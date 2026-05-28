@@ -49,14 +49,8 @@ module AgentRunPatterns
           docs << [ tail[:stdout], tail[:stderr] ].compact.join("\n")
         end
 
-        runner_configs.each do |config|
-          docs << [
-            config[:runner_key],
-            config[:auth_type],
-            ("provider_api_key_configured" if config[:provider_api_key_configured]),
-            config[:tier_model_ids].presence&.to_json
-          ].compact.join("\n")
-        end
+        # Runner configs remain available via `to_payload`, but excluding them
+        # here prevents contextual metadata from diluting diagnosis confidence.
       end.reject(&:blank?)
     end
   end
