@@ -12,7 +12,7 @@ module OvermindEnvHelpers
       "BUNDLE_GEMFILE" => File.join(dir, "Gemfile"),
       "BUNDLE_BIN_PATH" => "/tmp/fake-bundle-bin",
       "BUNDLER_SETUP" => "/tmp/fake-bundler-setup",
-      "BUNDLER_VERSION" => "4.0.11",
+      "BUNDLER_VERSION" => "4.0.12",
       "RUBYLIB" => "/tmp/fake-rubylib",
       "RUBYOPT" => "-r/tmp/fake-bundler/setup",
       "RUBYGEMS_GEMDEPS" => "-"
