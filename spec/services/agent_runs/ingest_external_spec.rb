@@ -31,6 +31,21 @@ RSpec.describe AgentRuns::IngestExternal do
       expect(agent_run.adoption_mode_snapshot).to eq("advisory")
     end
 
+    it "creates an external agent run without issue, prompt, or source pull request metadata" do
+      agent_run = described_class.call(
+        project: project,
+        attributes: {
+          external_source_key: "cursor",
+          external_run_key: "cursor-blank-source"
+        }
+      )
+
+      expect(agent_run).to be_persisted
+      expect(agent_run.issue).to be_nil
+      expect(agent_run.custom_prompt).to be_nil
+      expect(agent_run.source_pull_request_number).to be_nil
+    end
+
     it "rejects ingestion for sources that are not enabled on the project" do
       expect {
         described_class.call(

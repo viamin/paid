@@ -198,6 +198,14 @@ RSpec.describe AgentRun do
         expect(agent_run).to be_valid
       end
 
+      it "does not require a prompt source for external runs" do
+        project = create(:project, :with_interop_settings)
+        agent_run = build(:agent_run, :external_execution, project: project, issue: nil, custom_prompt: nil,
+          source_pull_request_number: nil)
+
+        expect(agent_run).to be_valid
+      end
+
       it "requires source metadata for external runs" do
         agent_run = build(:agent_run, execution_origin: "external", external_source_key: nil, external_run_key: nil,
           issue: nil, custom_prompt: "Imported run")

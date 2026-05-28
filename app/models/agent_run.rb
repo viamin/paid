@@ -227,7 +227,7 @@ class AgentRun < ApplicationRecord
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :initiating_user_belongs_to_project_account, if: -> { initiating_user.present? && project.present? }
   validate :runner_belongs_to_project_owner, if: -> { runner.present? }
-  validate :has_prompt_source, on: :create
+  validate :has_prompt_source, on: :create, unless: :external_execution?
   validate :draft_review_round_tracking_is_consistent
   validate :external_execution_fields_are_consistent
 
