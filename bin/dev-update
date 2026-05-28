@@ -110,7 +110,9 @@ truncate_dev_update_logs() {
 }
 
 tree_is_dirty() {
-  [ -n "$(git status --porcelain 2>/dev/null)" ]
+  # Exclude .worktrees/ — sibling git worktrees live there and always appear
+  # untracked in the primary checkout; they are not changes to stash or commit.
+  [ -n "$(git status --porcelain -- . ':(exclude).worktrees' 2>/dev/null)" ]
 }
 
 stash_dirty_tree() {

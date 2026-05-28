@@ -14,6 +14,15 @@ module AccountAdministrationPage
     @recent_invoices = current_account.billing_invoices.order(created_at: :desc).limit(5)
     @recent_activity = current_account.account_activity_events.includes(:actor).recent.limit(20)
     @billing_visible = BillingPolicy.new(current_user, current_account).billing?
+    @compliance_dashboard = Accounts::Compliance::Dashboard.call(
+      account: current_account,
+      tenant_setting: @tenant_setting,
+      billing_visible: @billing_visible
+    )
+    @adoption_dashboard = Accounts::Adoption::Dashboard.call(
+      account: current_account,
+      tenant_setting: @tenant_setting
+    )
   end
 
   def render_account_administration_error(message = "Something went wrong. Please try again.")

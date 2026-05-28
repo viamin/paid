@@ -12,6 +12,7 @@ class AccountActivityEvent < ApplicationRecord
     "lifecycle.reactivated" => "lifecycle",
     "lifecycle.deactivated" => "lifecycle",
     "tenant_configuration.updated" => "settings",
+    "compliance.assurance_updated" => "settings",
     "project.created" => "project",
     "project.updated" => "project",
     "project.deleted" => "project",
@@ -93,6 +94,8 @@ class AccountActivityEvent < ApplicationRecord
       "Deactivated the account"
     when "tenant_configuration.updated"
       "Updated tenant configuration"
+    when "compliance.assurance_updated"
+      "Updated compliance and deployment assurance settings"
     when "project.created"
       "Created project #{metadata_value('name')}"
     when "project.updated"
@@ -132,7 +135,7 @@ class AccountActivityEvent < ApplicationRecord
 
   def detail_lines
     case action
-    when "account.updated", "tenant_configuration.updated"
+    when "account.updated", "tenant_configuration.updated", "compliance.assurance_updated"
       Array(metadata.to_h["changed_fields"]).map { |field| "#{field.humanize} changed" }
     when "ownership.transferred"
       [ "Previous owner: #{metadata_value('from_email')}" ]

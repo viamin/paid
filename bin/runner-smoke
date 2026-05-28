@@ -7,35 +7,35 @@ ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 
 require "bundler/setup"
 require_relative "../config/environment"
-require_relative "../spec/support/provider_smoke_helpers"
+require_relative "../spec/support/runner_smoke_helpers"
 
 def usage
   puts <<~USAGE
     Usage:
-      bin/provider-smoke
-      bin/provider-smoke list
-      bin/provider-smoke service [SCENARIO_OR_PRESET...]
-      bin/provider-smoke ui [SCENARIO_OR_PRESET...]
-      bin/provider-smoke all [SCENARIO_OR_PRESET...]
+      bin/runner-smoke
+      bin/runner-smoke list
+      bin/runner-smoke service [SCENARIO_OR_PRESET...]
+      bin/runner-smoke ui [SCENARIO_OR_PRESET...]
+      bin/runner-smoke all [SCENARIO_OR_PRESET...]
 
     Defaults:
-      `bin/provider-smoke` runs the service smoke matrix for the `current-enabled` preset.
+      `bin/runner-smoke` runs the service smoke matrix for the `current-enabled` preset.
 
     Presets:
   USAGE
 
-  ProviderSmokeHelpers::PRESETS.each do |name, scenarios|
-    resolved = scenarios || ProviderSmokeHelpers.expand_name(name)
+  RunnerSmokeHelpers::PRESETS.each do |name, scenarios|
+    resolved = scenarios || RunnerSmokeHelpers.expand_name(name)
     puts "      #{name}: #{resolved.join(', ')}"
   end
 
   puts "    Scenarios:"
-  ProviderSmokeHelpers::SCENARIOS.each_value do |scenario|
+  RunnerSmokeHelpers::SCENARIOS.each_value do |scenario|
     detail = if scenario.api_key?
       default_model = scenario.default_model ? ", default model: #{scenario.default_model}" : ""
-      "#{scenario.provider_key} via #{scenario.api_provider} (model env: #{scenario.model_env}#{default_model})"
+      "#{scenario.runner_key} via #{scenario.api_provider} (model env: #{scenario.model_env}#{default_model})"
     else
-      "#{scenario.provider_key} subscription"
+      "#{scenario.runner_key} subscription"
     end
     puts "      #{scenario.name}: #{detail}"
   end
@@ -43,22 +43,23 @@ end
 
 def expand_targets(targets)
   selected = targets.presence || [ "current-enabled" ]
-  selected.flat_map { |name| ProviderSmokeHelpers.expand_name(name) }
+  selected.flat_map { |name| RunnerSmokeHelpers.expand_name(name) }
 end
 
 def validate_targets!(targets)
   unknown = targets.reject do |name|
-    ProviderSmokeHelpers::PRESETS.key?(name) || ProviderSmokeHelpers::SCENARIOS.key?(name)
+    RunnerSmokeHelpers::PRESETS.key?(name) || RunnerSmokeHelpers::SCENARIOS.key?(name)
   end
   return if unknown.empty?
 
-  warn "Unknown provider smoke target(s): #{unknown.join(', ')}"
+  warn "Unknown runner smoke target(s): #{unknown.join(', ')}"
   usage
   exit 1
 end
 
 def run_rspec!(spec_paths:, scenario_names:)
   env = {
+    "RUN_RUNNER_SMOKE" => "true",
     "RUN_PROVIDER_SMOKE" => "true",
     "COVERAGE" => "false",
     "PAID_SMOKE_SCENARIOS" => scenario_names.join(",")
@@ -88,13 +89,13 @@ when "list", "--help", "-h", "help"
 when "service"
   validate_targets!(targets)
   run_rspec!(
-    spec_paths: [ "spec/services/providers/test_agent_local_smoke_spec.rb" ],
+    spec_paths: [ "spec/services/runners/test_agent_local_smoke_spec.rb" ],
     scenario_names: expand_targets(targets)
   )
 when "ui"
   validate_targets!(targets)
   run_rspec!(
-    spec_paths: [ "spec/system/providers/provider_smoke_spec.rb" ],
+    spec_paths: [ "spec/system/runners/runner_smoke_spec.rb" ],
     scenario_names: expand_targets(targets)
   )
 when "all"
@@ -102,8 +103,8 @@ when "all"
   scenario_names = expand_targets(targets)
   run_rspec!(
     spec_paths: [
-      "spec/services/providers/test_agent_local_smoke_spec.rb",
-      "spec/system/providers/provider_smoke_spec.rb"
+      "spec/services/runners/test_agent_local_smoke_spec.rb",
+      "spec/system/runners/runner_smoke_spec.rb"
     ],
     scenario_names: scenario_names
   )
