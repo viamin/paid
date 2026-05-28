@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_28_111015) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1944,6 +1944,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
   end
 
+  create_table "remediation_decisions", comment: "Audits self-heal diagnoses and proposed remediation actions for recurring agent-run failure fingerprints.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and auditing."
+    t.string "action_target_id", comment: "Opaque target identifier for the proposed action."
+    t.jsonb "action_target_metadata", default: {}, null: false, comment: "Extra target details such as a runner field name."
+    t.string "action_target_type", null: false, comment: "Normalized target category such as account, project, runner, or runner_field."
+    t.datetime "applied_at", comment: "When the remediation action was applied."
+    t.bigint "applied_by_id", comment: "User who approved or applied the action when it was manual."
+    t.decimal "confidence", precision: 4, scale: 3, default: "0.0", null: false, comment: "Model confidence score from 0.0 to 1.0 for the proposed action."
+    t.datetime "created_at", null: false
+    t.jsonb "evidence_pointers", default: [], null: false, comment: "Pointers into the sanitized evidence bundle that support the diagnosis."
+    t.string "fingerprint", null: false, comment: "Stable pattern fingerprint used to dedupe recurring diagnoses."
+    t.integer "occurrence_count", default: 1, null: false, comment: "How many detections collapsed into this deduped decision row."
+    t.string "outcome", comment: "Evaluation result for the remediation: improved, unchanged, or regressed."
+    t.integer "post_remediation_failure_count", comment: "Observed failure count for the fingerprint after remediation evaluation."
+    t.integer "pre_remediation_failure_count", comment: "Observed failure count for the fingerprint before remediation was proposed."
+    t.string "proposed_action", null: false, comment: "Frozen action enum proposed by the diagnosis pipeline."
+    t.jsonb "revert_data", default: {}, null: false, comment: "Structured data needed to reverse an applied remediation unambiguously."
+    t.text "root_cause", null: false, comment: "Human-readable diagnosis summary shown in notifications and audits."
+    t.string "status", default: "proposed", null: false, comment: "Lifecycle state: proposed, approved, applied, skipped, failed, or reverted."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "fingerprint", "created_at"], name: "idx_remediation_decisions_dedup_lookup"
+    t.index ["account_id", "status", "created_at"], name: "idx_remediation_decisions_account_status_created"
+    t.index ["account_id"], name: "index_remediation_decisions_on_account_id"
+    t.index ["applied_by_id"], name: "index_remediation_decisions_on_applied_by_id"
+    t.index ["proposed_action"], name: "index_remediation_decisions_on_proposed_action"
+  end
+
   create_table "roi_benchmarks", comment: "Customer-specific comparison baselines used in ROI dashboards and pilot reports.", force: :cascade do |t|
     t.integer "accepted_pr_count", default: 0, null: false, comment: "Accepted pull requests included in this benchmark window."
     t.decimal "average_cycle_time_hours", precision: 10, scale: 2, comment: "Average elapsed hours from issue intake to accepted pull request."
@@ -2610,6 +2637,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "remediation_decisions", "accounts"
+  add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
@@ -3466,6 +3495,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
       CREATE TRIGGER logidze_on_cost_budgets BEFORE INSERT OR UPDATE ON public.cost_budgets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
+  SQL
+
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -3484,6 +3517,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -3548,13 +3585,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_113550) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_exception_incidents, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

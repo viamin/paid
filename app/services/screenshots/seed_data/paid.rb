@@ -267,6 +267,20 @@ module Screenshots
             record.evidence = { reason: "Collector has produced no artifacts in 30 days" }
           end
 
+          remediation_decision = RemediationDecision.find_or_create_by!(account: account, fingerprint: "screenshots-remediation-fingerprint") do |record|
+            record.root_cause = "Runner fallback exhausted after repeated GitHub API rate limits"
+            record.confidence = 0.88
+            record.evidence_pointers = [ "runner_attempts[0].error_message" ]
+            record.proposed_action = "disable_runner_fallback"
+            record.action_target_type = "runner"
+            record.action_target_id = provider.id.to_s
+            record.action_target_metadata = {}
+            record.status = "proposed"
+            record.revert_data = {}
+            record.pre_remediation_failure_count = 3
+            record.occurrence_count = 1
+          end
+
           WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|
             record.project = project
             record.workflow_type = "GitHubPollWorkflow"
@@ -295,6 +309,7 @@ module Screenshots
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
             "knowledge_artifact" => { "id" => knowledge_artifact.id },
+            "remediation_decision" => { "id" => remediation_decision.id },
             "installation_project" => { "id" => installation_project.id, "name" => installation_project.name }
           }
         end

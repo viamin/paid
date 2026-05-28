@@ -33,6 +33,7 @@ module Screenshots
       account
       account_roi_dashboard
       account_audit_logs
+      remediation_decision_show
       quality_dashboard
       chat_sessions
       ab_tests
@@ -89,6 +90,11 @@ module Screenshots
       account_roi_dashboard: Target.new(slug: "account_roi_dashboard", path_builder: "/account_roi_dashboard", requires_auth: true),
       account_compliance_dashboard: Target.new(slug: "account_compliance_dashboard", path_builder: "/account_compliance_dashboard", requires_auth: true),
       account_audit_logs: Target.new(slug: "account_audit_logs", path_builder: "/account_audit_logs", requires_auth: true),
+      remediation_decision_show: Target.new(
+        slug: "remediation_decision_show",
+        path_builder: ->(seed_data) { "/remediation_decisions/#{seed_data.fetch(:remediation_decision).id}" },
+        requires_auth: true
+      ),
       tenant_configuration: Target.new(slug: "tenant_configuration", path_builder: "/tenant_configuration/edit", requires_auth: true),
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
@@ -231,6 +237,7 @@ module Screenshots
       "user_settings_controller.rb" => [ :user_settings ],
       "accounts_controller.rb" => [ :account ],
       "account_audit_logs_controller.rb" => [ :account_audit_logs ],
+      "remediation_decisions_controller.rb" => [ :remediation_decision_show ],
       "account_memberships_controller.rb" => [ :account ],
       "account_ownership_transfers_controller.rb" => [ :account ],
       "account_lifecycles_controller.rb" => [ :account ],

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module AgentRunPatterns
   class Detect
     FAILURE_STREAK_THRESHOLD = 3
@@ -66,7 +68,9 @@ module AgentRunPatterns
         type: :failure_streak,
         goal: goal,
         severity: :error,
-        details: {
+        details: with_fingerprint(
+          goal: goal,
+          type: :failure_streak,
           streak_length: streak.size,
           total_runs: runs.size,
           failure_rate: streak.size.to_f / runs.size,
@@ -75,7 +79,7 @@ module AgentRunPatterns
           run_ids: streak.map(&:id),
           started_at: streak.last.completed_at,
           ended_at: streak.first.completed_at
-        }
+        )
       ) ]
     end
 
@@ -94,7 +98,9 @@ module AgentRunPatterns
         type: :high_failure_rate,
         goal: goal,
         severity: severity,
-        details: {
+        details: with_fingerprint(
+          goal: goal,
+          type: :high_failure_rate,
           failure_count: failed,
           total_count: runs.size,
           failure_rate: failure_rate.round(4),
@@ -102,7 +108,7 @@ module AgentRunPatterns
           error_messages: failed_runs.filter_map(&:error_message).first(5),
           evidence_bundle: build_evidence_bundle(failed_runs),
           run_ids: failed_runs.map(&:id)
-        }
+        )
       ) ]
     end
 
@@ -122,7 +128,9 @@ module AgentRunPatterns
           type: :error_cluster,
           goal: goal,
           severity: :error,
-          details: {
+          details: with_fingerprint(
+            goal: goal,
+            type: :error_cluster,
             error_pattern: normalized_msg,
             occurrence_count: error_runs.size,
             total_failures: failed_runs.size,
@@ -130,7 +138,7 @@ module AgentRunPatterns
             evidence_bundle: build_evidence_bundle(error_runs),
             run_ids: error_runs.map(&:id),
             statuses: error_runs.group_by(&:status).transform_values(&:count)
-          }
+          )
         )
       end
 
@@ -255,6 +263,8 @@ module AgentRunPatterns
 
       {
         run_count: runs.size,
+        distinct_project_ids: Array(runs).filter_map { |run| read_attribute(run, :project_id) }.uniq.sort,
+        distinct_runner_ids: Array(runs).filter_map { |run| read_attribute(run, :runner_id) }.uniq.sort,
         distinct_runners: Array(runs).flat_map { |run| distinct_runner_names_for(run) }.uniq.sort,
         statuses: Array(runs).group_by { |run| read_attribute(run, :status) }.transform_values(&:count),
         time_window: {
@@ -369,6 +379,18 @@ module AgentRunPatterns
       return pattern.details[:error_pattern] if pattern.type == :error_cluster
 
       nil
+    end
+
+    def with_fingerprint(goal:, type:, **details)
+      details.merge(
+        fingerprint: Digest::SHA256.hexdigest({
+          goal: goal,
+          type: type,
+          error_pattern: details[:error_pattern],
+          error_messages: Array(details[:error_messages]).sort,
+          sample_messages: Array(details[:sample_messages]).sort
+        }.to_json)
+      )
     end
   end
 end
