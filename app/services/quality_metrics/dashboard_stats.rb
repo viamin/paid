@@ -36,6 +36,7 @@ module QualityMetrics
         tier_breakdown: tier_breakdown,
         human_feedback: human_feedback,
         gate_status: gate_status,
+        mutation_testing: mutation_testing_data,
         metrics_reference: self.class.metrics_reference
       }
     end
@@ -137,7 +138,7 @@ module QualityMetrics
     private :compute_overview
 
     def export_data(limit: 10_000)
-      metrics_scope = QualityMetric.by_project(project.id)
+      metrics_scope = QualityMetric.by_project(project.id).agent_run_source
         .includes(:prompt_version, agent_run: :model_selection)
         .order(created_at: :desc)
         .limit(limit)
@@ -164,8 +165,68 @@ module QualityMetrics
     private
 
     def metrics
-      @metrics ||= QualityMetric.by_project(project.id).with_composite_score
+      @metrics ||= QualityMetric.by_project(project.id).agent_run_source.with_composite_score
         .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
+    end
+
+    def mutation_testing_data
+      return unless mutation_testing_enabled?
+
+      latest_sweep = mutation_sweep_metrics.first
+
+      {
+        current_sweep_score: latest_sweep&.mutation_kill_rate&.to_f,
+        current_sweep_at: latest_sweep&.created_at,
+        trend_sparkline: mutation_sweep_trend,
+        run_histogram: agent_run_mutation_histogram
+      }
+    end
+
+    def mutation_testing_enabled?
+      @mutation_testing_enabled ||= PreCommitRequirement
+        .resolve(project: project, user: project.effective_owner)
+        .any? { |requirement| requirement.enabled? && requirement.check_type == "mutation_test" }
+    end
+
+    def mutation_sweep_metrics
+      @mutation_sweep_metrics ||= QualityMetric.by_project(project.id)
+        .scheduled_mutation_sweep
+        .automated
+        .where.not(mutation_kill_rate: nil)
+        .order(created_at: :desc)
+    end
+
+    def mutation_sweep_trend
+      mutation_sweep_metrics
+        .reorder(nil)
+        .where(created_at: 30.days.ago..)
+        .group("DATE(quality_metrics.created_at)")
+        .order(Arel.sql("DATE(quality_metrics.created_at) ASC"))
+        .average(:mutation_kill_rate)
+        .map { |date, score| [ date.iso8601, score.to_f.round(4) ] }
+    end
+
+    def agent_run_mutation_histogram
+      distribution = Array.new(10, 0)
+
+      QualityMetric.by_project(project.id)
+        .agent_run_source
+        .automated
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
+        .where.not(mutation_kill_rate: nil)
+        .order(created_at: :desc)
+        .limit(100)
+        .pluck(:mutation_kill_rate)
+        .each do |score|
+          bucket = [ (score.to_f * 10).floor, 9 ].min
+          distribution[bucket] += 1
+        end
+
+      distribution.each_with_index.map do |count, index|
+        lower = index * 10
+        upper = lower + 10
+        [ "#{lower}-#{upper}", count ]
+      end
     end
 
     def score_distribution

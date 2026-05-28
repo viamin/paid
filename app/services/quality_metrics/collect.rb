@@ -40,6 +40,7 @@ module QualityMetrics
       automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
+        source: QualityMetric::AGENT_RUN_SOURCE,
         scores: { "excluded_status" => agent_run.status },
         metadata: (automated_metric.metadata || {}).merge(
           score_metadata.merge(
@@ -60,6 +61,7 @@ module QualityMetrics
       automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
+        source: QualityMetric::AGENT_RUN_SOURCE,
         mutation_kill_rate: mutation_kill_rate,
         scores: scores,
         metadata: (automated_metric.metadata || {}).merge(score_metadata),

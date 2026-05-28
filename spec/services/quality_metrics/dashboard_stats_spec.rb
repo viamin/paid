@@ -208,6 +208,39 @@ RSpec.describe QualityMetrics::DashboardStats do
       )
     end
 
+    it "hides mutation testing data when the project is not opted in" do
+      result = described_class.call(project: project)
+
+      expect(result[:mutation_testing]).to be_nil
+    end
+
+    it "returns current sweep, sparkline data, and histogram when mutation testing is enabled" do
+      create(:pre_commit_requirement, :mutation_test, project: project, account: project.account, name: "mutant")
+
+      sweep_run = create(:agent_run, :completed, project: project)
+      create(:quality_metric,
+        agent_run: sweep_run,
+        source: QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE,
+        mutation_kill_rate: 0.91,
+        scores: { "mutation_kill_rate" => 0.91 },
+        created_at: 2.days.ago)
+
+      agent_run = create(:agent_run, :completed, project: project)
+      create(:quality_metric,
+        agent_run: agent_run,
+        source: QualityMetric::AGENT_RUN_SOURCE,
+        mutation_kill_rate: 0.72,
+        scores: { "mutation_kill_rate" => 0.72 },
+        composite_score: 0.72,
+        created_at: 1.day.ago)
+
+      result = described_class.call(project: project)[:mutation_testing]
+
+      expect(result[:current_sweep_score]).to eq(0.91)
+      expect(result[:trend_sparkline]).to all(satisfy { |point| point.is_a?(Array) && point.size == 2 })
+      expect(result[:run_histogram].sum { |(_, count)| count }).to eq(1)
+    end
+
     it "includes goal metadata for non-create_pr metrics" do
       result = described_class.call(project: project)
 

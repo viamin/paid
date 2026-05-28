@@ -15,6 +15,7 @@ FactoryBot.define do
     end
     composite_score { 0.9813 }
     feedback_source { "system" }
+    source { QualityMetric::AGENT_RUN_SOURCE }
 
     trait :automated do
       metric_type { "automated" }

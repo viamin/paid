@@ -89,6 +89,78 @@
     </div>
   </div>
 
+  <% if @stats[:mutation_testing] %>
+    <% mutation_testing = @stats[:mutation_testing] %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Mutation kill-rate</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Current sweep score</dt>
+          <% if mutation_testing[:current_sweep_score] %>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight <%= quality_score_color(mutation_testing[:current_sweep_score]) %>">
+              <%= format_quality_score(mutation_testing[:current_sweep_score]) %>
+            </dd>
+            <p class="mt-2 text-sm text-gray-500">
+              Last sweep <%= time_ago_in_words(mutation_testing[:current_sweep_at]) %> ago
+            </p>
+          <% else %>
+            <dd class="mt-2 text-sm text-gray-500">No scheduled sweep recorded yet.</dd>
+          <% end %>
+        </div>
+
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 lg:col-span-2">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">30-day sweep trend</h3>
+              <p class="mt-1 text-sm text-gray-500">Nightly full-suite scores against <%= @project.default_branch %>.</p>
+            </div>
+          </div>
+          <div class="mt-4">
+            <% if mutation_testing[:trend_sparkline].any? %>
+              <%= line_chart mutation_testing[:trend_sparkline],
+                  id: "mutation-sweep-sparkline",
+                  height: "120px",
+                  colors: ["#0f766e"],
+                  points: false,
+                  library: {
+                    plugins: { legend: { display: false } },
+                    scales: {
+                      x: { display: false },
+                      y: { display: false, min: 0, max: 1 }
+                    }
+                  } %>
+            <% else %>
+              <p class="text-sm text-gray-500">No sweep trend available yet.</p>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:p-6">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">Per-agent-run distribution</h3>
+              <p class="mt-1 text-sm text-gray-500">Last 100 in-loop mutation kill-rate scores.</p>
+            </div>
+          </div>
+          <div class="mt-4">
+            <%= column_chart mutation_testing[:run_histogram],
+                id: "mutation-run-histogram",
+                height: "220px",
+                colors: ["#0f766e"],
+                library: {
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                  }
+                } %>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
   <% overview = @stats[:overview] %>
   <% if overview[:total_metrics] > 0 %>
 

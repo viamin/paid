@@ -71,4 +71,36 @@ RSpec.describe Containers::QualityHooks do
       ENV["MUTANT_LICENSE_KEY"] = original_mutant_license_key
     end
   end
+
+  describe "#resolve_scheduled_mutation_command" do
+    it "removes incremental mode and keeps jobs pinned to one worker" do
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: "bundle exec mutant run --usage commercial --since HEAD~1 --use rspec --jobs 4 Foo*"
+      )
+
+      expect(
+        host.resolve_scheduled_mutation_command(project, user, "ruby")
+      ).to eq("bundle exec mutant run --usage commercial --use rspec --jobs 1 Foo\\*")
+    end
+
+    it "preserves shell escaping for quoted arguments" do
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: 'bundle exec mutant run --since HEAD~1 --include-subject "app/models/user profile.rb"'
+      )
+
+      expect(
+        host.resolve_scheduled_mutation_command(project, user, "ruby")
+      ).to eq('bundle exec mutant run --include-subject app/models/user\ profile.rb --jobs 1')
+    end
+  end
 end
