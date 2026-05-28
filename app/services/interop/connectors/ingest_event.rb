@@ -17,7 +17,7 @@ module Interop
         @signature = signature
         @secret = secret
         @raw_body = raw_body.to_s
-        @request_headers = request_headers.to_h.transform_keys(&:to_s)
+        @request_headers = request_headers.to_h.transform_keys { |key| key.to_s.downcase }
       end
 
       def call
@@ -66,6 +66,8 @@ module Interop
         unless connector_enabled?
           raise ArgumentError, "#{connector_key} connector is not enabled for this project"
         end
+
+        raise ArgumentError, "signature is required for #{connector_key}" if secret.present? && signature.blank?
 
         verify_signature!(connector) if signature.present?
       end

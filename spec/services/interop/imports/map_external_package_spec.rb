@@ -56,6 +56,7 @@ RSpec.describe Interop::Imports::MapExternalPackage do
       expect(result.prompts.size).to eq(1)
       expect(result.style_guides.size).to eq(1)
       expect(result.workflow_policies.size).to eq(1)
+      expect(result.workflow_policies.first[:policy_type]).to eq("execution")
     end
 
     it "raises for unknown source systems" do
@@ -73,6 +74,19 @@ RSpec.describe Interop::Imports::MapExternalPackage do
       )
 
       expect(result.prompts.first[:slug]).to eq("copilot.my.custom.prompt")
+    end
+
+    it "raises for unsupported workflow policy types during mapping" do
+      expect {
+        described_class.call(
+          source_system: "factory",
+          raw_data: {
+            policies: [
+              { policy_key: "factory.chaos", name: "Chaos", policy_type: "chaos" }
+            ]
+          }
+        )
+      }.to raise_error(ArgumentError, /unsupported policy_type for import: chaos/)
     end
   end
 end

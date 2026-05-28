@@ -12,6 +12,10 @@ module Interop
         "factory" => :map_factory,
         "internal_agent_workflows" => :map_internal
       }.freeze
+      POLICY_TYPE_ALIASES = {
+        "review" => "execution",
+        "lifecycle" => "lifecycle_state"
+      }.freeze
 
       def self.call(...)
         new(...).call
@@ -101,13 +105,21 @@ module Interop
       def map_workflow_entry(entry)
         {
           policy_key: entry[:policy_key] || entry[:key] || "",
-          policy_type: entry[:policy_type] || entry[:type] || "execution",
+          policy_type: normalize_policy_type(entry[:policy_type] || entry[:type]),
           name: entry[:name],
           rules: entry[:rules] || {},
           parameters: entry[:parameters] || {},
           context_selector: entry[:context_selector] || {},
           metadata: entry[:metadata] || {}
         }
+      end
+
+      def normalize_policy_type(raw_type)
+        normalized = raw_type.to_s.presence || "execution"
+        normalized = POLICY_TYPE_ALIASES.fetch(normalized.underscore, normalized.underscore)
+        return normalized if CoordinationPolicy::POLICY_TYPES.include?(normalized)
+
+        raise ArgumentError, "unsupported policy_type for import: #{raw_type}"
       end
     end
   end

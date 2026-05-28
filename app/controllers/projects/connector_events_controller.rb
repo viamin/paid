@@ -2,6 +2,16 @@
 
 module Projects
   class ConnectorEventsController < ApplicationController
+    SIGNATURE_HEADER_CANDIDATES = {
+      "slack" => %w[X-Slack-Signature],
+      "jira" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
+      "linear" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
+      "teams" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
+      "gitlab" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
+      "bitbucket" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
+      "ci_systems" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256]
+    }.freeze
+
     before_action :set_project
 
     def index
@@ -25,7 +35,7 @@ module Projects
         payload: connector_event_params[:payload] || {},
         external_event_id: connector_event_params[:external_event_id],
         occurred_at: connector_event_params[:occurred_at],
-        signature: connector_event_params[:signature],
+        signature: connector_signature,
         secret: connector_secret,
         raw_body: request.raw_post,
         request_headers: signature_headers
@@ -73,6 +83,17 @@ module Projects
       request.headers.env
         .select { |key, _| key.start_with?("HTTP_X_") }
         .transform_keys { |key| key.delete_prefix("HTTP_").tr("_", "-") }
+    end
+
+    def connector_signature
+      signature_header_candidates
+        .lazy
+        .map { |header| request.headers[header].presence }
+        .find(&:present?) || connector_event_params[:signature].presence
+    end
+
+    def signature_header_candidates
+      SIGNATURE_HEADER_CANDIDATES.fetch(connector_event_params[:connector_key].to_s, [])
     end
   end
 end

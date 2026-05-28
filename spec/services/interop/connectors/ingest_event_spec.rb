@@ -137,6 +137,27 @@ RSpec.describe Interop::Connectors::IngestEvent do
       expect(event.status).to eq("processed")
     end
 
+    it "rejects signed connectors when the request is missing a signature" do
+      project.update!(interop_settings: {
+        "adoption_mode" => "advisory",
+        "connectors" => { "slack" => true },
+        "external_execution_sources" => {}
+      })
+
+      expect {
+        described_class.call(
+          project: project,
+          connector_key: "slack",
+          event_type: "message_posted",
+          payload: slack_payload,
+          external_event_id: "slack-missing-signature",
+          secret: "signing-secret",
+          raw_body: slack_raw_body,
+          request_headers: { "X-Slack-Request-Timestamp" => slack_timestamp }
+        )
+      }.to raise_error(ArgumentError, /signature is required for slack/)
+    end
+
     it "creates a failed event when connector normalization raises" do
       allow(Interop::Connectors::Jira).to receive(:normalize_event).and_raise(StandardError, "bad payload")
 

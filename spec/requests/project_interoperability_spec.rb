@@ -137,6 +137,8 @@ RSpec.describe "Project interoperability" do
   end
 
   describe "POST /projects/:project_id/connector_events" do
+    let(:slack_secret) { "signing-secret" }
+    let(:slack_timestamp) { "1_717_171_717" }
     let(:connector_event_params) do
       {
         connector_event: {
@@ -152,6 +154,11 @@ RSpec.describe "Project interoperability" do
           }
         }
       }
+    end
+    let(:connector_event_json) { connector_event_params.to_json }
+    let(:slack_signature) do
+      digest = OpenSSL::HMAC.hexdigest("SHA256", slack_secret, "v0:#{slack_timestamp}:#{connector_event_json}")
+      "v0=#{digest}"
     end
 
     before do
@@ -173,6 +180,48 @@ RSpec.describe "Project interoperability" do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body.fetch("errors").first).to match(/receive_connector_events is not permitted/)
+    end
+
+    it "verifies Slack signatures from request headers without requiring a body field" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+
+      expect {
+        post project_connector_events_path(project), params: connector_event_json, headers: {
+          "CONTENT_TYPE" => "application/json",
+          "X-Slack-Request-Timestamp" => slack_timestamp,
+          "X-Slack-Signature" => slack_signature
+        }
+      }.to change(project.external_connector_events, :count).by(1)
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it "rejects unsigned Slack requests when a signing credential is configured" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+
+      expect {
+        post project_connector_events_path(project), params: connector_event_json, headers: {
+          "CONTENT_TYPE" => "application/json",
+          "X-Slack-Request-Timestamp" => slack_timestamp
+        }
+      }.not_to change(project.external_connector_events, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors").first).to match(/signature is required for slack/)
     end
   end
 end
