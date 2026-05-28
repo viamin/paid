@@ -361,7 +361,7 @@ module RunnerSmokeHelpers
     end
 
     @development_runner_info_cache[scenario.name] = parsed
-  rescue JSON::ParseError
+  rescue JSON::ParserError
     nil
   end
 
@@ -406,7 +406,7 @@ module RunnerSmokeHelpers
       else
         []
       end
-    rescue JSON::ParseError
+    rescue JSON::ParserError
       []
     end
   end
