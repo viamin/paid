@@ -26,7 +26,7 @@ RSpec.describe "Project interoperability" do
     end
   end
 
-  describe "POST /projects/:project_id/external_agent_runs" do
+  describe "POST /api/projects/:project_id/external_agent_runs" do
     let!(:cursor_credential) do
       create(
         :integration_credential,
@@ -165,7 +165,7 @@ RSpec.describe "Project interoperability" do
     end
   end
 
-  describe "POST /projects/:project_id/connector_events" do
+  describe "POST /api/projects/:project_id/connector_events" do
     let(:slack_secret) { "signing-secret" }
     let(:slack_timestamp) { Time.current.to_i.to_s }
     let(:connector_event_params) do
