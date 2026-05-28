@@ -46,7 +46,7 @@ module AgentRunPatterns
         subject: account,
         severity: notification_severity(worst),
         title: notification_title(worst, diagnosis),
-        description: notification_description(worst, diagnosis),
+        description: notification_description(worst, diagnosis, decision),
         metadata: build_metadata(decision),
         action_url: decision ? "/remediation_decisions/#{decision.id}" : "/dashboard",
         nav_section: "dashboard"
@@ -89,7 +89,7 @@ module AgentRunPatterns
       "#{goal} failures detected (#{count} failures) — #{root_cause}"
     end
 
-    def notification_description(worst, diagnosis)
+    def notification_description(worst, diagnosis, decision)
       parts = []
       parts << "Detected failure patterns across #{ordered_patterns.size} goal type(s):"
       parts << ""
@@ -101,7 +101,7 @@ module AgentRunPatterns
       if diagnosis
         parts << ""
         parts << "Root cause: #{diagnosis.root_cause}"
-        parts << "Proposed action: #{human_action(diagnosis)}"
+        parts << action_summary(decision, diagnosis)
 
         evidence_lines = evidence_lines_for(worst, diagnosis)
         if evidence_lines.any?
@@ -136,7 +136,9 @@ module AgentRunPatterns
         goals: ordered_patterns.map(&:goal).uniq,
         worst_goal: worst_pattern.goal,
         diagnosed_root_cause: diagnosis_for(worst_pattern)&.root_cause,
-        remediation_decision_id: decision&.id
+        remediation_decision_id: decision&.id,
+        remediation_status: decision&.status,
+        revert_url: decision&.revertable? ? "/remediation_decisions/#{decision.id}/revert" : nil
       }
     end
 
@@ -176,6 +178,14 @@ module AgentRunPatterns
       return "#{label} (project ##{target["id"]})" if target["type"] == "project"
 
       "#{label} (runner ##{target["id"]}, field #{target["field_name"]})"
+    end
+
+    def action_summary(decision, diagnosis)
+      if decision&.applied?
+        "Auto-applied action: #{human_action(diagnosis)}"
+      else
+        "Proposed action: #{human_action(diagnosis)}"
+      end
     end
 
     def evidence_lines_for(pattern, diagnosis)

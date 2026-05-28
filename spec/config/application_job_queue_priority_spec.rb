@@ -36,7 +36,9 @@ RSpec.describe ApplicationJob, :no_db do
         PoolReplenishmentJob
         PromptEvolutionJob
         QueueMonitorJob
+        RemediationDecisionOutcomeJob
         RecoverMissingPullRequestLabelsJob
+        RevertRemediationDecisionJob
         ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob

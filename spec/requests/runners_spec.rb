@@ -740,6 +740,24 @@ RSpec.describe "Runners" do
       expect(response.body).not_to include('name="runner[complexity_thresholds[low_max]]"')
       expect(response.body).not_to include('name="runner[complexity_thresholds[mid_max]]"')
     end
+
+    it "renders remediation decision history on the edit page" do
+      runner = user.runners.find_by!(runner_key: "claude")
+      create(
+        :remediation_decision,
+        account: user.account,
+        proposed_action: "disable_runner_fallback",
+        action_target_type: "runner",
+        action_target_id: runner.id.to_s,
+        root_cause: "Fallback runner repeatedly failed"
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Decision History")
+      expect(response.body).to include("Fallback runner repeatedly failed")
+    end
   end
 
   describe "POST /runners/:id/test_agent" do

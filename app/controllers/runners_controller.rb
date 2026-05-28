@@ -59,10 +59,12 @@ class RunnersController < ApplicationController
 
   def edit
     authorize @runner
+    load_remediation_history
   end
 
   def update
     authorize @runner
+    load_remediation_history
     @runner.assign_attributes(runner_params)
     validate_container_executable!
 
@@ -250,6 +252,13 @@ class RunnersController < ApplicationController
     elsif @runner.api_key?
       @api_key_runner_options |= [ key ] unless @api_key_runner_options.include?(key)
     end
+  end
+
+  def load_remediation_history
+    @remediation_history = policy_scope(RemediationDecision)
+      .for_runner_id(@runner.id)
+      .recent
+      .limit(20)
   end
 
   def validate_runner_key_enabled!
