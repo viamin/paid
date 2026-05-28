@@ -211,7 +211,7 @@ GEM
       concurrent-ruby (~> 1.1)
       webrick (~> 1.7)
       websocket-driver (~> 0.7)
-    fixture_kit (0.16.0)
+    fixture_kit (0.17.0)
       activerecord (>= 8.0)
       activesupport (>= 8.0)
       benchmark
@@ -792,7 +792,7 @@ CHECKSUMS
   faraday-retry (2.4.0) sha256=7b79c48fb7e56526faf247b12d94a680071ff40c9fda7cf1ec1549439ad11ebe
   fasterer (0.11.0) sha256=9c38b77583584f3339a729eb077fd8f2856a317abe747528f6563d7c23e9dda8
   ferrum (0.17.2) sha256=2c2540a850b211a46f4d81de21bfd62048f507e4c327d1807225c3823c17e6ee
-  fixture_kit (0.16.0) sha256=5f70b9742610439c1da5d778712d1e75b2abe37de1977ea383e503ffcd2d7c42
+  fixture_kit (0.17.0) sha256=88504de297687d8cb189c72723711b08f1d4a9e002341fff1412d6273a79c233
   flipper (1.4.2) sha256=dca7d65b5ec660b525b6c599e727219ac4994073c855b41b6656b2d91a9cb304
   flipper-active_record (1.4.2) sha256=ab70aeb78a44d59c690b5538fc269b08d1c2918abb720fe82832ac77fb1dfcd1
   fugit (1.12.1) sha256=5898f478ede9b415f0804e42b8f3fd53f814bd85eebffceebdbc34e1107aaf68
