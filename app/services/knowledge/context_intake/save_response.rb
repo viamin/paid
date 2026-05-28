@@ -18,8 +18,8 @@ module Knowledge
       end
 
       def call
-        validate_skip_allowed! if skipped
         response = session.context_intake_responses.find_by!(question_key: question_key)
+        validate_skip_allowed!(response) if skipped
 
         ActiveRecord::Base.transaction do
           response.update!(
@@ -36,18 +36,14 @@ module Knowledge
 
       private
 
-      def validate_skip_allowed!
-        question = QuestionnaireSchema.find_question(question_key)
-        return unless question&.dig(:question, :required)
+      def validate_skip_allowed!(response)
+        return unless QuestionnaireSchema.required_question_for_response?(response)
 
         raise ArgumentError, "Cannot skip required question: #{question_key}"
       end
 
       def update_session_step!
-        answered_count = session.context_intake_responses
-                                .where(is_follow_up: false)
-                                .answered
-                                .count
+        answered_count = session.context_intake_responses.answered.count
         session.update!(current_step: answered_count)
       end
 

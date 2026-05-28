@@ -80,11 +80,9 @@ module Knowledge
       end
 
       def create_artifacts!(project, collector_run)
-        responses_by_section = session.context_intake_responses
-                                      .where(skipped: false)
-                                      .where.not(answer_text: [ nil, "" ])
-                                      .order(:section, :sequence)
-                                      .group_by(&:section)
+        responses_by_section = QuestionnaireSchema.ordered_responses(
+          session.context_intake_responses.where(skipped: false).where.not(answer_text: [ nil, "" ]).to_a
+        ).group_by(&:section)
 
         responses_by_section.map do |section_key, responses|
           create_section_artifact!(project, collector_run, section_key, responses)
@@ -92,8 +90,7 @@ module Knowledge
       end
 
       def create_section_artifact!(project, collector_run, section_key, responses)
-        section = QuestionnaireSchema.sections.find { |s| s[:key] == section_key }
-        section_title = section&.dig(:title) || section_key.titleize
+        section_title = QuestionnaireSchema.question_for_response(responses.first)[:section_title]
 
         content = responses.map { |r| "**#{r.question_text}**\n#{r.answer_text}" }.join("\n\n")
         content_hash = Digest::SHA256.hexdigest(content)

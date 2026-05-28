@@ -1,0 +1,21 @@
+<%= turbo_frame_tag Knowledge::ContextIntakeController::WIZARD_FRAME_ID do %>
+  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-10 text-center sm:px-6">
+      <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Generating follow-up questions</p>
+      <h2 class="mt-2 text-lg font-medium text-gray-900">Reviewing your answers for another round</h2>
+      <p class="mt-3 text-sm text-gray-500">
+        The next questions will appear here automatically when they are ready.
+      </p>
+
+      <% if session.follow_up_generation_state["status"] == "failed" %>
+        <div class="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Follow-up question generation failed. Reload the page to retry.
+        </div>
+      <% else %>
+        <div class="mt-6 flex justify-center">
+          <div class="h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600"></div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+<% end %>

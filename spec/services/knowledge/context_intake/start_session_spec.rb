@@ -20,7 +20,7 @@ RSpec.describe Knowledge::ContextIntake::StartSession do
     it "pre-populates responses from the questionnaire schema" do
       session = described_class.call(project: project, user: user)
 
-      total = Knowledge::ContextIntake::QuestionnaireSchema.total_questions
+      total = Knowledge::ContextIntake::QuestionnaireSchema.ordered_questions(project: project).count { |question| question[:round] == 1 }
       expect(session.context_intake_responses.count).to eq(total)
     end
 
@@ -32,6 +32,7 @@ RSpec.describe Knowledge::ContextIntake::StartSession do
       expect(response.section).to eq("product_purpose")
       expect(response.is_follow_up).to be(false)
       expect(response.provenance).to eq("human")
+      expect(response.answer_data.dig("question", "required")).to be(true)
     end
 
     it "archives prior completed sessions" do
