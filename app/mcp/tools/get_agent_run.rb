@@ -49,7 +49,8 @@ module Tools
     private
 
     def run_for(agent_run_id)
-      @run = policy_scope(AgentRun).find(agent_run_id)
+      @runs_by_id ||= {}
+      @runs_by_id[agent_run_id] ||= policy_scope(AgentRun).find(agent_run_id)
     end
   end
 end

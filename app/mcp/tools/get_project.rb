@@ -40,7 +40,8 @@ module Tools
     private
 
     def project_for(project_id)
-      @project = policy_scope(Project).find(project_id)
+      @projects_by_id ||= {}
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
     end
 
     def run_summary(run)

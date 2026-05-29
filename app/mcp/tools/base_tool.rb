@@ -23,10 +23,9 @@ module Tools
       TenantContext.with(account) do
         reset_authorization_tracking!
         run_declared_authorizations!(args)
+        raise UnauthorizedError, "#{self.class.tool_name} must authorize before execution" unless preflight_authorized?
 
-        perform(**args).tap do
-          raise UnauthorizedError, "#{self.class.tool_name} must authorize before execution" unless authorized?
-        end
+        perform(**args)
       end
     end
 
@@ -77,7 +76,6 @@ module Tools
     private
 
     def authorize(record, query = nil, policy_class: nil)
-      @authorization_performed = true
       super
     end
     alias_method :authorize!, :authorize
@@ -95,23 +93,24 @@ module Tools
       Project.where(account:)
     end
 
-    def run_declared_authorizations!(args)
-      self.class.authorization_rules.each do |rule|
-        record = instance_exec(args, &rule[:resolver])
-        authorize(record, rule[:query], policy_class: rule[:policy_class])
-      end
-    end
-
     def reset_authorization_tracking!
-      @authorization_performed = false
+      @preflight_authorization_performed = false
     end
 
-    def authorized?
-      @authorization_performed
+    def preflight_authorized?
+      @preflight_authorization_performed
     end
 
     def self.own_authorization_rules
       @own_authorization_rules ||= []
+    end
+
+    def run_declared_authorizations!(args)
+      self.class.authorization_rules.each do |rule|
+        record = instance_exec(args, &rule[:resolver])
+        @preflight_authorization_performed = true
+        authorize(record, rule[:query], policy_class: rule[:policy_class])
+      end
     end
   end
 end
