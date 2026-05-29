@@ -5,23 +5,20 @@ require "rails_helper"
 module Models
   module RunnerTierLookupSpec
     class AgentRunLike
-      attr_reader :runner, :provider
+      attr_reader :runner
 
-      def initialize(runner:, provider: nil)
+      def initialize(runner:)
         @runner = runner
-        @provider = provider
       end
     end
 
     class RunnerLike
-      attr_reader :tier_models, :tier_model_ids, :runner_key, :direct_outbound_llm_model_provider, :id
+      attr_reader :tier_model_ids, :runner_key, :direct_outbound_llm_model_provider
 
-      def initialize(tier_models: nil, tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil, id: 1)
-        @tier_models = tier_models
+      def initialize(tier_model_ids:, runner_key: nil, direct_outbound_llm_model_provider: nil)
         @tier_model_ids = tier_model_ids
         @runner_key = runner_key
         @direct_outbound_llm_model_provider = direct_outbound_llm_model_provider
-        @id = id
       end
     end
 
@@ -70,17 +67,14 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
 
   describe "#lookup" do
     it "returns nil when no tier is requested" do
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
-        runner: nil, provider: nil))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: nil))
 
       expect(dummy.lookup(nil)).to be_nil
     end
 
     it "returns nil when the runner has no model configured for the tier" do
-      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike,
-        tier_models: nil, tier_model_ids: { "low" => "" }, runner_key: nil)
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
-        runner: runner, provider: nil))
+      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike, tier_model_ids: { "low" => "" })
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
 
       expect(dummy.lookup("low")).to be_nil
     end
@@ -88,10 +82,8 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
     it "looks up the active model for the configured tier" do
       model = instance_double(Models::RunnerTierLookupSpec::ModelLike)
       active_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
-      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike,
-        tier_models: nil, tier_model_ids: { "high" => "gpt-5.4" }, id: 42)
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
-        runner: runner, provider: nil))
+      runner = instance_double(Models::RunnerTierLookupSpec::RunnerLike, tier_model_ids: { "high" => "gpt-5.4" })
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
       fake_model_class = Class.new do
         def self.active
         end
@@ -122,8 +114,7 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
     let(:scope) { instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike) }
 
     it "returns the original scope when no runner is attached" do
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
-        runner: nil, provider: nil))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: nil))
 
       expect(dummy.compatible_scope(scope)).to eq(scope)
     end
@@ -141,17 +132,6 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
       allow(scope).to receive(:by_provider).with("minimax").and_return(minimax_scope)
 
       expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
-    end
-
-    it "falls back to the selected provider family when no runner is attached" do
-      anthropic_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
-      provider = instance_double(Provider, provider_key: "claude", tier_model_picker_provider: "anthropic")
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
-        runner: nil, provider: provider))
-
-      allow(scope).to receive(:by_provider).with("anthropic").and_return(anthropic_scope)
-
-      expect(dummy.compatible_scope(scope)).to eq(anthropic_scope)
     end
   end
 end

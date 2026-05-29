@@ -45,12 +45,6 @@ RSpec.describe AccountActivityEvent do
       event = described_class.new(action: "custom.action")
       expect(event.category).to eq("other")
     end
-
-    it "returns settings for compliance assurance updates" do
-      event = described_class.new(action: "compliance.assurance_updated")
-
-      expect(event.category).to eq("settings")
-    end
   end
 
   describe "#description" do
@@ -132,12 +126,6 @@ RSpec.describe AccountActivityEvent do
       expect(event.description).to eq("Changed password")
     end
 
-    it "describes compliance assurance updates" do
-      event = described_class.new(action: "compliance.assurance_updated")
-
-      expect(event.description).to eq("Updated compliance and deployment assurance settings")
-    end
-
     it "falls back to humanized action for unknown actions" do
       event = described_class.new(action: "custom.event")
       expect(event.description).to eq("Custom.event")
@@ -158,14 +146,6 @@ RSpec.describe AccountActivityEvent do
     it "returns notes for prompt rejection" do
       event = described_class.new(action: "prompt_version.rejected", metadata: { "notes" => "Needs work" })
       expect(event.detail_lines).to eq([ "Notes: Needs work" ])
-    end
-
-    it "returns changed fields for compliance assurance updates" do
-      event = described_class.new(action: "compliance.assurance_updated", metadata: {
-        "changed_fields" => %w[deployment_assurance_level export_scope]
-      })
-
-      expect(event.detail_lines).to eq([ "Deployment assurance level changed", "Export scope changed" ])
     end
 
     it "returns empty array for run events" do

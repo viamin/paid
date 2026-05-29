@@ -95,8 +95,6 @@ module Screenshots
             record.labels = [ project.enhance_issue_needs_input_label_name ]
           end
 
-          ensure_anthropic_tier_models!
-
           provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
@@ -269,6 +267,24 @@ module Screenshots
             record.evidence = { reason: "Collector has produced no artifacts in 30 days" }
           end
 
+          diagnosis_attempted_at = Time.current
+          remediation_decision = RemediationDecision.find_or_create_by!(account: account, fingerprint: "screenshots-remediation-fingerprint") do |record|
+            record.root_cause = "Runner fallback exhausted after repeated GitHub API rate limits"
+            record.confidence = 0.88
+            record.evidence_pointers = [ "runner_attempts[0].error_message" ]
+            record.proposed_action = "disable_runner_fallback"
+            record.action_target_type = "runner"
+            record.action_target_id = provider.id.to_s
+            record.action_target_metadata = {}
+            record.status = "proposed"
+            record.revert_data = {}
+            record.pre_remediation_failure_count = 3
+            record.occurrence_count = 1
+            record.diagnosis_attempted_on = diagnosis_attempted_at.to_date
+            record.diagnosis_attempt_count_on_day = 1
+            record.last_diagnosis_attempt_at = diagnosis_attempted_at
+          end
+
           WorkflowState.find_or_create_by!(temporal_workflow_id: "github-poll-#{project.id}") do |record|
             record.project = project
             record.workflow_type = "GitHubPollWorkflow"
@@ -297,35 +313,12 @@ module Screenshots
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
             "knowledge_artifact" => { "id" => knowledge_artifact.id },
+            "remediation_decision" => { "id" => remediation_decision.id },
             "installation_project" => { "id" => installation_project.id, "name" => installation_project.name }
           }
         end
 
         private
-
-        def ensure_anthropic_tier_models!
-          {
-            "low" => { model_id: "screenshot-claude-low", capability_score: 4.0 },
-            "mid" => { model_id: "screenshot-claude-mid", capability_score: 7.0 },
-            "high" => { model_id: "screenshot-claude-high", capability_score: 9.0 }
-          }.each do |tier, attrs|
-            LlmModel.find_or_create_by!(model_id: attrs.fetch(:model_id)) do |record|
-              record.display_name = "Screenshot Claude #{tier.titleize}"
-              record.provider = "anthropic"
-              record.category = "coding"
-              record.tier = tier
-              record.capability_score = attrs.fetch(:capability_score)
-              record.active = true
-              record.input_cost_per_million = 1.0
-              record.output_cost_per_million = 2.0
-              record.context_window = 200_000
-              record.max_output_tokens = 8_000
-              record.supports_tools = true
-              record.supports_vision = false
-              record.supports_json_output = true
-            end
-          end
-        end
 
         def reset_agent_run!(agent_run)
           agent_run.agent_run_logs.destroy_all

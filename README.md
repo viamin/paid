@@ -2,7 +2,7 @@
 
 Paid is a Rails 8 application that orchestrates AI agents to build software. Users add GitHub projects, and Paid watches for labeled issues, plans implementations, and runs agents in isolated Docker containers to create pull requests.
 
-Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. Phase 5 (Account Administration) is complete as of 2026-05-20. Phase 6 (Enterprise Trust & Governance) is complete as of 2026-05-27, and Phase 7 (Proof, Adoption & Interoperability) is next.
+Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. The app now logs orchestration decisions for analysis, evolves orchestration strategies and coordination policies through experiments, optimizes end-to-end configuration bundles, and applies measured orchestration scaling laws in addition to the Phase 3 and 3.5 platform work.
 
 ## Philosophy
 
@@ -150,7 +150,7 @@ bash .devcontainer/setup-signing-key.sh
 ### Option 3: Local Development
 
 ```bash
-# Prerequisites: Ruby 3.4+, Bundler 4.0.11, PostgreSQL 16+, Redis 7+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
+# Prerequisites: Ruby 3.4+, Bundler 4.0.12, PostgreSQL 16+, Redis 7+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
 # Also start PostgreSQL, Redis, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
 bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split Temporal poll/agent workers
@@ -374,7 +374,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. Phase 5 (Account Administration) is complete as of 2026-05-20. Phase 6 (Enterprise Trust & Governance) is complete as of 2026-05-27, and Phase 7 (Proof, Adoption & Interoperability) is next. Paid now includes orchestration decision logging, learned strategy evolution, end-to-end bundle optimization, self-improving coordination policies, orchestration scaling-law analysis, operator-facing plus customer-facing account administration, GitHub App-first enterprise onboarding, policy and approval controls, system-wide auditability, and compliance/deployment assurance on top of the completed Phase 1-3.5 platform capabilities. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
+Phase 4 (AI-Native Evolution) is complete as of 2026-05-14. Phase 5 (Account Administration) is complete as of 2026-05-20, and Phase 6 (Enterprise Trust & Governance) is next. Paid now includes orchestration decision logging, learned strategy evolution, end-to-end bundle optimization, self-improving coordination policies, orchestration scaling-law analysis, and both operator-facing plus customer-facing account administration on top of the completed Phase 1-3.5 platform capabilities. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
 
 ## License
 

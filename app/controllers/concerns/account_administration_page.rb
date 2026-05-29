@@ -19,6 +19,10 @@ module AccountAdministrationPage
       tenant_setting: @tenant_setting,
       billing_visible: @billing_visible
     )
+    @adoption_dashboard = Accounts::Adoption::Dashboard.call(
+      account: current_account,
+      tenant_setting: @tenant_setting
+    )
   end
 
   def render_account_administration_error(message = "Something went wrong. Please try again.")

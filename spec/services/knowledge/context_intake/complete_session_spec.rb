@@ -58,6 +58,19 @@ RSpec.describe Knowledge::ContextIntake::CompleteSession do
       }.to raise_error(ActiveRecord::RecordInvalid, /Required questions not answered/)
     end
 
+    it "reuses one catalog lookup for legacy unsnapshotted responses" do
+      session = Knowledge::ContextIntake::StartSession.call(project: project, user: user)
+      response = session.context_intake_responses.find_by!(question_key: "product_description")
+      response.update!(answer_data: {}, answer_text: nil)
+      allow(Knowledge::ContextIntake::QuestionnaireSchema).to receive(:question_catalog_index).and_call_original
+
+      expect {
+        described_class.call(session: session)
+      }.to raise_error(ActiveRecord::RecordInvalid, /Required questions not answered/)
+
+      expect(Knowledge::ContextIntake::QuestionnaireSchema).to have_received(:question_catalog_index).once
+    end
+
     it "creates knowledge artifacts for answered sections" do
       session = Knowledge::ContextIntake::StartSession.call(project: project, user: user)
 

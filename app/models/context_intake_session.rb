@@ -48,11 +48,8 @@ class ContextIntakeSession < ApplicationRecord
   end
 
   def progress
-    total = context_intake_responses.where(is_follow_up: false).count
-    answered = context_intake_responses.where(is_follow_up: false)
-                                       .where.not(answer_text: [ nil, "" ])
-                                       .or(context_intake_responses.where(is_follow_up: false, skipped: true))
-                                       .count
+    total = context_intake_responses.count
+    answered = context_intake_responses.answered.count
     return { total: 0, answered: 0, percentage: 0 } if total.zero?
 
     { total: total, answered: answered, percentage: (answered * 100.0 / total).round }
@@ -60,5 +57,33 @@ class ContextIntakeSession < ApplicationRecord
 
   def responses_by_section
     context_intake_responses.order(:section, :sequence).group_by(&:section)
+  end
+
+  def follow_up_generation_state
+    metadata.to_h.fetch("follow_up_generation", {})
+  end
+
+  def follow_up_generation_pending?
+    follow_up_generation_state["status"] == "pending"
+  end
+
+  def follow_up_generation_failed?
+    follow_up_generation_state["status"] == "failed"
+  end
+
+  def follow_up_generation_blocking?
+    follow_up_generation_state["blocking"] == true
+  end
+
+  def blocking_follow_up_generation_active?
+    follow_up_generation_blocking? && follow_up_generation_pending?
+  end
+
+  def blocking_follow_up_generation_failed?
+    follow_up_generation_blocking? && follow_up_generation_failed?
+  end
+
+  def clear_follow_up_generation!
+    update!(metadata: metadata.to_h.except("follow_up_generation"))
   end
 end

@@ -13,6 +13,9 @@ module Knowledge
       authorize @project, :show?
       @session ||= latest_session
       return unless @session&.in_progress?
+      clear_failed_blocking_generation! if @session.blocking_follow_up_generation_failed?
+      return render_pending_response if blocking_follow_up_generation_active? && turbo_frame_request?
+      return if blocking_follow_up_generation_active?
 
       load_wizard_state(active_question_key: params[:question])
       render_wizard_response if turbo_frame_request?
@@ -38,7 +41,7 @@ module Knowledge
         load_wizard_state(active_question_key: navigation_question_key)
         render_wizard_response
       end
-    rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
       @wizard_error = e.message
       target_question_key = error_question_key
       load_wizard_state(
@@ -83,18 +86,20 @@ module Knowledge
     end
 
     def load_wizard_state(active_question_key: nil, submitted_answer_text: nil)
-      @responses = @session.context_intake_responses.ordered.index_by(&:question_key)
-      @progress = @session.progress
-      @wizard_state = ContextIntake::WizardState.new(
-        responses: @responses,
-        active_question_key: active_question_key
+      state = ContextIntake::WizardFrameState.call(
+        session: @session,
+        active_question_key: active_question_key,
+        submitted_answer_text: submitted_answer_text
       )
-      @current_question_index = @wizard_state.current_question_index
-      @current_question = @wizard_state.current_question
-      @current_response = @responses[@current_question[:key]]
-      @current_answer_text = submitted_answer_text.nil? ? @current_response&.answer_text : submitted_answer_text
-      @previous_question = @wizard_state.previous_question
-      @next_question = @wizard_state.next_question
+      @responses = state[:responses]
+      @progress = state[:progress]
+      @wizard_state = state[:wizard_state]
+      @current_question_index = state[:current_question_index]
+      @current_question = state[:current_question]
+      @current_response = state[:current_response]
+      @current_answer_text = state[:current_answer_text]
+      @previous_question = state[:previous_question]
+      @next_question = state[:next_question]
     end
 
     def save_current_response!
@@ -109,7 +114,20 @@ module Knowledge
     end
 
     def complete_session!
-      ContextIntake::CompleteSession.call(session: @session)
+      result = ContextIntake::FinishRound.call(
+        session: @session,
+        project: @project,
+        current_question_key: params[:question_key],
+        agent_generation_enabled: feature_enabled?(:context_intake_agent_questions, project: @project)
+      )
+
+      if result.next_question_key.present?
+        load_wizard_state(active_question_key: result.next_question_key)
+        return render_wizard_response
+      end
+
+      return render_pending_response if result.pending_generation?
+
       redirect_to project_context_intake_path(@project),
         status: :see_other,
         notice: "Business context saved and synthesized into project knowledge."
@@ -119,6 +137,15 @@ module Knowledge
       if turbo_frame_request?
         render partial: "knowledge/context_intake/wizard_frame",
           locals: wizard_locals, status: status
+      else
+        render :show, status: status
+      end
+    end
+
+    def render_pending_response(status: :ok)
+      if turbo_frame_request?
+        render partial: "knowledge/context_intake/wizard_pending",
+          locals: { session: @session }, status: status
       else
         render :show, status: status
       end
@@ -136,6 +163,14 @@ module Knowledge
         progress: @progress,
         wizard_error: @wizard_error
       }
+    end
+
+    def blocking_follow_up_generation_active?
+      @session.blocking_follow_up_generation_active?
+    end
+
+    def clear_failed_blocking_generation!
+      @session.clear_follow_up_generation!
     end
 
     def navigation_action
@@ -174,7 +209,8 @@ module Knowledge
     end
 
     def current_question_required?
-      ContextIntake::QuestionnaireSchema.find_question(params[:question_key])&.dig(:question, :required)
+      response = @responses&.[](params[:question_key]) || @session.context_intake_responses.find_by(question_key: params[:question_key])
+      response.present? && ContextIntake::QuestionnaireSchema.required_question_for_response?(response)
     end
 
     def previous_navigation?
@@ -201,7 +237,9 @@ module Knowledge
     end
 
     def wizard_state
-      @wizard_state ||= ContextIntake::WizardState.new(responses: @responses)
+      @wizard_state ||= ContextIntake::WizardState.new(
+        responses: @responses || @session.context_intake_responses.index_by(&:question_key)
+      )
     end
 
     def normalized_answer_text

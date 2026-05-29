@@ -85,7 +85,7 @@ GEM
     agent-harness (0.18.2)
       logger (>= 1.6, < 2.0)
     ast (2.4.3)
-    avo (4.0.0.beta.37)
+    avo (4.0.0.beta.40)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -170,8 +170,8 @@ GEM
       responders
       warden (~> 1.2.3)
     diff-lcs (1.6.2)
-    discard (1.4.0)
-      activerecord (>= 4.2, < 9.0)
+    discard (2.0.0)
+      activerecord (>= 7.0, < 9.0)
     docile (1.4.1)
     docker-api (2.4.0)
       excon (>= 0.64.0)
@@ -211,7 +211,7 @@ GEM
       concurrent-ruby (~> 1.1)
       webrick (~> 1.7)
       websocket-driver (~> 0.7)
-    fixture_kit (0.16.0)
+    fixture_kit (0.17.0)
       activerecord (>= 8.0)
       activesupport (>= 8.0)
       benchmark
@@ -228,7 +228,7 @@ GEM
       railties (>= 7.2)
     globalid (1.3.0)
       activesupport (>= 6.1)
-    good_job (4.18.2)
+    good_job (4.19.0)
       activejob (>= 6.1.0)
       activerecord (>= 6.1.0)
       concurrent-ruby (>= 1.3.1)
@@ -399,7 +399,7 @@ GEM
       date
       stringio
     public_suffix (7.0.5)
-    puma (8.0.1)
+    puma (8.0.2)
       nio4r (~> 2.0)
     pundit (2.5.2)
       activesupport (>= 3.0.0)
@@ -658,7 +658,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness (~> 0.18.2)
-  avo (= 4.0.0.beta.37)
+  avo (= 4.0.0.beta.40)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -680,7 +680,7 @@ DEPENDENCIES
   flipper
   flipper-active_record
   fx
-  good_job (~> 4.18)
+  good_job (~> 4.19)
   herb
   jsbundling-rails
   kamal
@@ -738,7 +738,7 @@ CHECKSUMS
   afm (1.0.0) sha256=5bd4d6f6241e7014ef090985ec6f4c3e9745f6de0828ddd58bc1efdd138f4545
   agent-harness (0.18.2) sha256=ee7fba0996bd5f31367d83de087a336b9ce7472a50652d0e4239e13463cef9f0
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.0.0.beta.37) sha256=5135fa5d6cd593b8267e1d5a706ab2722117996bce3079f58ffd46dccdc0ebef
+  avo (4.0.0.beta.40) sha256=58d97d49c0553f569c18837c618819fad4895213ea29f189ab6f9c19a9aff9cd
   avo-icons (0.1.4) sha256=4f77070a5710ebb9db5cd6746aa5f043b8e71e61b27c7fba5210a40d87898e4d
   aws-eventstream (1.4.0) sha256=116bf85c436200d1060811e6f5d2d40c88f65448f2125bc77ffce5121e6e183b
   aws-partitions (1.1252.0) sha256=b44c74136ebd634d35f3fb8fd37def5214db21b9375f22c6954dbe7a7f2a449d
@@ -757,7 +757,7 @@ CHECKSUMS
   brakeman (8.0.4) sha256=7bf921fa9638544835df9aa7b3e720a9a72c0267f34f92135955edd80d4dcf6f
   browser (6.2.0) sha256=281d5295788825c9396427c292c2d2be0a5c91875c93c390fde6e5d61a5ace2d
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
-  bundler (4.0.11) sha256=5bcec0fb78302e48d02ee46f10ee6e6942be647ba5b44a6d1ddfda9a240ce785
+  bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
   bundler-audit (0.9.3) sha256=81c8766c71e47d0d28a0f98c7eed028539f21a6ea3cd8f685eb6f42333c9b4e9
   capybara (3.40.0) sha256=42dba720578ea1ca65fd7a41d163dd368502c191804558f6e0f71b391054aeef
   chartkick (5.2.1) sha256=2848d7de87189f30f28d077eb0bbdebc8a1f0f6f81de1ded95008fe564369949
@@ -772,7 +772,7 @@ CHECKSUMS
   debug (1.11.1) sha256=2e0b0ac6119f2207a6f8ac7d4a73ca8eb4e440f64da0a3136c30343146e952b6
   devise (5.0.4) sha256=d605f2b85854e74e56ee789e2d398702bc2d06e6bcd894717a670a3199c74cc1
   diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
-  discard (1.4.0) sha256=6efcd2a53ddf96781f81b825d398f1c88ab88c0faa84e131bea6e16ef95d65d0
+  discard (2.0.0) sha256=0fc520786b4d7b9b1ea8b2b3dadbb13c3e41d2ce7d297d04869baf1c9e30d2c0
   docile (1.4.1) sha256=96159be799bfa73cdb721b840e9802126e4e03dfc26863db73647204c727f21e
   docker-api (2.4.0) sha256=824be734f4cc8718189be9c8e795b6414acbbf7e8b082a06f959a27dd8dd63e6
   dotenv (3.2.0) sha256=e375b83121ea7ca4ce20f214740076129ab8514cd81378161f11c03853fe619d
@@ -792,13 +792,13 @@ CHECKSUMS
   faraday-retry (2.4.0) sha256=7b79c48fb7e56526faf247b12d94a680071ff40c9fda7cf1ec1549439ad11ebe
   fasterer (0.11.0) sha256=9c38b77583584f3339a729eb077fd8f2856a317abe747528f6563d7c23e9dda8
   ferrum (0.17.2) sha256=2c2540a850b211a46f4d81de21bfd62048f507e4c327d1807225c3823c17e6ee
-  fixture_kit (0.16.0) sha256=5f70b9742610439c1da5d778712d1e75b2abe37de1977ea383e503ffcd2d7c42
+  fixture_kit (0.17.0) sha256=88504de297687d8cb189c72723711b08f1d4a9e002341fff1412d6273a79c233
   flipper (1.4.2) sha256=dca7d65b5ec660b525b6c599e727219ac4994073c855b41b6656b2d91a9cb304
   flipper-active_record (1.4.2) sha256=ab70aeb78a44d59c690b5538fc269b08d1c2918abb720fe82832ac77fb1dfcd1
   fugit (1.12.1) sha256=5898f478ede9b415f0804e42b8f3fd53f814bd85eebffceebdbc34e1107aaf68
   fx (0.11.0) sha256=537f2c0359b54da8b17574acaedcaecea806ead14dcd9239a16f70ee66c70f7d
   globalid (1.3.0) sha256=05c639ad6eb4594522a0b07983022f04aa7254626ab69445a0e493aa3786ff11
-  good_job (4.18.2) sha256=7e557a15865fc7b7ad4ab71644cf1d4189a2a1869d3b381e5e88741c540beca6
+  good_job (4.19.0) sha256=7fad3ce174d2c1b4bfde4e84056076b00ac81719b5d679900c53671a721284b9
   google-protobuf (4.34.1) sha256=347181542b8d659c60f028fa3791c9cccce651a91ad27782dbc5c5e374796cdc
   google-protobuf (4.34.1-aarch64-linux-gnu) sha256=f9c07607dc139c895f2792a7740fcd01cd94d4d7b0e0a939045b50d7999f0b1d
   google-protobuf (4.34.1-aarch64-linux-musl) sha256=db58e5a4a492b43c6614486aea31b7fb86955b175d1d48f28ebf388f058d78a9
@@ -877,7 +877,7 @@ CHECKSUMS
   prosopite (2.2.0) sha256=14affaa3ff0ff15abe8f6ae2951de0984dc6da5df1c42333692d2c0789d08b91
   psych (5.3.1) sha256=eb7a57cef10c9d70173ff74e739d843ac3b2c019a003de48447b2963d81b1974
   public_suffix (7.0.5) sha256=1a8bb08f1bbea19228d3bed6e5ed908d1cb4f7c2726d18bd9cadf60bc676f623
-  puma (8.0.1) sha256=7b94e50c07655718c1fb8ae41a11fc06c7d61293208b3aa608ff71a46d3ad37c
+  puma (8.0.2) sha256=c8ed871dfbbe66448ea9ffd46692342d9804d4071522b52b5331b7b6e7b686fb
   pundit (2.5.2) sha256=e374152baa24f90b630428293faf4b4c5468fc3cc010165f7d8fcb44ce108bbd
   qdrant-ruby (0.9.10) sha256=18751c9dc9c6a540704bd777bdf7c526b0636ab09e4c64bf615d44f6de2d0c11
   raabro (1.4.0) sha256=d4fa9ff5172391edb92b242eed8be802d1934b1464061ae5e70d80962c5da882
@@ -969,4 +969,4 @@ CHECKSUMS
   zeitwerk (2.8.2) sha256=7212a61311083c604184b1ea2574b9aa05cd14f855a0841c06985cabe9181d12
 
 BUNDLED WITH
-  4.0.11
+  4.0.12

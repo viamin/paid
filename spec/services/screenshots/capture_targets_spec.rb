@@ -66,6 +66,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "workflow_status" ])
     end
 
+    it "maps ROI helper changes to the ROI dashboard screenshot targets" do
+      targets = described_class.call(changed_files: [ "app/helpers/roi_dashboard_helper.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("account_roi_dashboard", "project_roi_dashboard")
+    end
+
     it "maps component files to shared UI targets" do
       targets = described_class.call(changed_files: [ "app/components/sidebar_component.rb" ])
 
@@ -106,6 +112,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/controllers/account_audit_logs_controller.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "account_audit_logs" ])
+    end
+
+    it "maps remediation decision views to the remediation decision screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/remediation_decisions/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "remediation_decision_show" ])
     end
 
     it "maps marketplace entry controllers to representative marketplace routes" do
@@ -351,12 +363,6 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/controllers/users/registrations_controller.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "sign_up" ])
-    end
-
-    it "maps nested account compliance controllers to the compliance dashboard page" do
-      targets = described_class.call(changed_files: [ "app/controllers/accounts/compliance_dashboards_controller.rb" ])
-
-      expect(targets.map(&:slug)).to eq([ "account_compliance_dashboard" ])
     end
 
     it "covers every current non-api controller that detect_ui_changes can surface" do

@@ -7,7 +7,15 @@ class FeatureFlags
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
 
-  DEFINITIONS = {}.freeze
+  DEFINITIONS = {
+    context_intake_agent_questions: Definition.new(
+      name: :context_intake_agent_questions,
+      owner: "context-intake",
+      intent: "Enable LLM-generated follow-up questions during the business context wizard",
+      rollout_plan: "Per-tenant opt-in via tenant_settings.features, then percentage-of-actors rollout",
+      cleanup_criteria: "Remove when AI-generated questions are the default for all tenants"
+    )
+  }.freeze
 
   class << self
     def definitions

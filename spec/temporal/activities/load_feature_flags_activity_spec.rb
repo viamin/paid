@@ -18,9 +18,11 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
       )
     end
 
-    it "returns an empty snapshot when no flags are registered" do
+    it "returns the registered flags with disabled defaults when none are enabled" do
       expect(activity.execute(project_id: project.id)).to eq(
-        flags: {},
+        flags: {
+          context_intake_agent_questions: false
+        },
         project_missing: false
       )
     end

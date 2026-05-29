@@ -28,7 +28,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.0.0.beta.37"
+gem "avo", "4.0.0.beta.40"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -145,7 +145,7 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.18"
+gem "good_job", "~> 4.19"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.5"

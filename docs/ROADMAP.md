@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) complete as of 2026-05-20. Phase 6 (Enterprise Trust & Governance) complete as of 2026-05-27. Phase 7 (Proof, Adoption & Interoperability) is next.
+**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) complete as of 2026-05-20. Phase 6 (Enterprise Trust & Governance) is next.
 
 ## Phase Overview
 
@@ -1269,8 +1269,6 @@ Deliverables:
 
 This phase turns Paid from a capable internal system into something a security team, platform team, and VP Engineering can approve with confidence.
 
-**Status**: Complete as of 2026-05-27. Tracked by umbrella issue #2228.
-
 ### 6.1 GitHub App & Enterprise Identity
 
 **Objective**: Replace PAT-heavy onboarding with enterprise-grade identity, repository authorization, and organization deployment flows.
@@ -1346,12 +1344,10 @@ Deliverables:
 
 ### Phase 6 Completion Criteria
 
-- [x] GitHub App onboarding is production-ready and preferred over PAT onboarding
-- [x] System-wide audit logging covers all security- and operations-relevant mutations
-- [x] Policy and approval controls can enforce enterprise rollout guardrails
-- [x] Hardened deployment patterns and compliance evidence are documented and testable
-
-**Phase 6 completed**: All enterprise trust and governance objectives verified as of 2026-05-27.
+- [ ] GitHub App onboarding is production-ready and preferred over PAT onboarding
+- [ ] System-wide audit logging covers all security- and operations-relevant mutations
+- [ ] Policy and approval controls can enforce enterprise rollout guardrails
+- [ ] Hardened deployment patterns and compliance evidence are documented and testable
 
 ---
 

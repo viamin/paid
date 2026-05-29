@@ -24,6 +24,9 @@ Rails.application.routes.draw do
     patch :dismiss, on: :member
     post :mark_all_read, on: :collection
   end
+  resources :remediation_decisions, only: [ :show ] do
+    post :revert, on: :member
+  end
 
   # Onboarding wizard
   resource :onboarding, only: [ :show, :update ], controller: "onboarding" do
@@ -73,6 +76,9 @@ Rails.application.routes.draw do
 
   # Customer-facing account administration
   resource :account, only: [ :show, :update ]
+  resource :account_roi_dashboard, only: [ :show ], controller: "accounts/roi_dashboards" do
+    get :export
+  end
   resource :account_compliance_dashboard, only: [ :show, :update ], controller: "accounts/compliance_dashboards" do
     get :export
   end
@@ -181,10 +187,14 @@ Rails.application.routes.draw do
       get :export
     end
     resource :bundle_performance_dashboard, only: [ :show ], controller: "projects/bundle_performance_dashboards"
+    resource :roi_dashboard, only: [ :show ], controller: "projects/roi_dashboards" do
+      get :export
+    end
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resource :interop_settings, only: [ :update ], controller: "projects/interop_settings"
+    resources :roi_benchmarks, only: [ :create, :destroy ], controller: "projects/roi_benchmarks"
     resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
       post :detect
     end

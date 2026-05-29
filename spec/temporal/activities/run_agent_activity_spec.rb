@@ -795,6 +795,29 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
     end
+
+    it "ignores Paid model selection when Codex subscription auth is referenced by bare runner key" do
+      create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid"))
+
+      # Bare key — what fallback chains pass into the runner loop. Previously
+      # the subscription guard only fired for routing keys (`"runner:NN"`),
+      # so a fallback to "codex" leaked `--model gpt-4o` into the CLI even
+      # though the subscription /v1/responses endpoint rejects it.
+      runtime = activity.send(:selected_runner_runtime, "codex", user, agent_run)
+
+      expect(runtime).to be_nil
+    end
+
+    it "memoizes the bare-key Codex subscription lookup per user across calls" do
+      create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
+
+      expect(Runner).to receive(:for_identifier).once.with(user, "codex").and_call_original
+
+      2.times do
+        expect(activity.send(:selected_runner_runtime, "codex", user, agent_run)).to be_nil
+      end
+    end
   end
 
   describe "#runner_entry_for" do
@@ -1429,18 +1452,6 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def create_opencode_runner_entry(user:, api_key:, name:, model:, api_provider: "openrouter")
-    # Pre-seed the LlmModel without a tier so the runner's auto-seed callback
-    # (ensure_direct_outbound_llm_model!) returns this record instead of one
-    # tagged with a "mid" tier hint. With tier blank, tier_models_must_be_valid
-    # skips the strict tier-match check that would otherwise reject the
-    # all-tiers-same-model fixture below for a direct-outbound runner.
-    LlmModel.find_or_create_by!(model_id: model) do |m|
-      m.display_name = model
-      m.provider = api_provider
-      m.category = "coding"
-      m.active = true
-    end
-
     create(
       :runner,
       user: user,
@@ -2375,6 +2386,28 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do
+        opencode_provider = create_opencode_provider_for(user)
+        credit_error = Containers::Provision::Result.success(
+          stdout: "", stderr: "Error: Insufficient Balance", exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(credit_error)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(described_class::ProviderRateLimitError, /credit\/quota exhausted/) do |error|
+          expect(error.reset_at).to be_within(2.minutes).of(
+            described_class::INSUFFICIENT_CREDITS_BACKOFF.from_now
+          )
+        end
+      end
+
       it "opens the runner circuit after three consecutive preflight timeouts and skips later runs during cooldown" do
         runner = user.runners.find_by!(runner_key: "claude")
         user.settings.update!(circuit_breaker_failure_threshold: 10)
@@ -2399,6 +2432,26 @@ expect(container_service).to receive(:execute).with(
             "error_message" => "Skipped because runner circuit is open"
           )
         )
+      end
+
+      it "marks the agent run as rate_limited (not failed) when every runner is circuit-open" do
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 10,
+          circuit_breaker_timeout_seconds: 600
+        )
+        runner = user.runners.find_by!(runner_key: "claude")
+        create_open_runner_state(user: user, runner: runner, opened_at: Time.current)
+
+        skipped_run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect(activity).not_to receive(:run_agent_with_runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
+
+        skipped_run.reload
+        expect(skipped_run.status).to eq("rate_limited")
+        expect(skipped_run.error_message).to include("circuit open")
+        expect(skipped_run.rate_limited_until).to be_within(2.minutes).of(10.minutes.from_now)
       end
 
       it "reopens a half-open runner circuit when the recovery preflight times out" do
@@ -3314,8 +3367,8 @@ expect(container_service).to receive(:execute).with(
       it "refreshes the co-author trailer file for each runner attempt so fallback commits get the new trailer" do
         claude = user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
         cursor = user.runners.find_by!(runner_key: "cursor")
-        claude.update_columns(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
-        cursor.update_columns(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
+        claude.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+        cursor.update!(agent_co_author_trailer: "Co-Authored-By: Cursor <ai@cursor.com>")
 
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
@@ -3539,7 +3592,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
-      it "detects a real quota error returned with exit code 0" do
+      it "detects a real quota error returned with exit code 0 and marks the runner rate-limited" do
         quota_success = Containers::Provision::Result.success(
           stdout: "Error: Your billing limit has been reached. Please add credits.", stderr: "", exit_code: 0
         )
@@ -3550,9 +3603,13 @@ expect(container_service).to receive(:execute).with(
         }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
-        expect(agent_run.status).to eq("failed")
-        expect(agent_run.runners_attempted.first["error_type"]).to eq("error")
-        expect(agent_run.runners_attempted.first["error_message"]).to include("credit/quota error")
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
+        expect(agent_run.runners_attempted.first["error_message"]).to include("credit/quota exhausted")
+        runner_state = user.runner_states.find_by(runner_name: "claude")
+        expect(runner_state&.rate_limited_until).to be_within(2.minutes).of(
+          described_class::INSUFFICIENT_CREDITS_BACKOFF.from_now
+        )
       end
 
       it "does not misclassify substantial agent output as a quota error when pattern appears in test descriptions" do
@@ -3716,13 +3773,13 @@ expect(container_service).to receive(:execute).with(
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(
           Temporalio::Error::ApplicationError,
-          /No tier-capable runner available: .* is the only runner available for tier mid and it is currently rate limited/
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
         )
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to match(
-          /No tier-capable runner available: .* is the only runner available for tier mid and it is currently rate limited/
+          /No compatible runner available: .* is the only runner compatible with moonshotai\/kimi-k2-0905 and it is currently rate limited/
         )
         expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq([ kimi_runner.routing_key ])
       end

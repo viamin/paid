@@ -36,7 +36,9 @@ RSpec.describe ApplicationJob, :no_db do
         PoolReplenishmentJob
         PromptEvolutionJob
         QueueMonitorJob
+        RemediationDecisionOutcomeJob
         RecoverMissingPullRequestLabelsJob
+        RevertRemediationDecisionJob
         ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob
@@ -48,6 +50,7 @@ RSpec.describe ApplicationJob, :no_db do
         AbTestAnalysisJob
         ContainerMetricsCollectionJob
         QualityMetricsCollectionJob
+        ScheduledMutationSweepJob
         ServiceContainerMetricsCollectionJob
       ],
       knowledge: %w[

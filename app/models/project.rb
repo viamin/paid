@@ -162,6 +162,7 @@ class Project < ApplicationRecord
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
   has_many :cost_budgets, dependent: :destroy
+  has_many :roi_benchmarks, dependent: :destroy
   has_many :project_baselines, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :quality_recovery_actions, dependent: :destroy
@@ -192,6 +193,7 @@ class Project < ApplicationRecord
   has_many :pr_templates, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :chat_sessions, through: :chat_session_projects
+  has_many :context_intake_questions, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :quality_pause_events, dependent: :destroy

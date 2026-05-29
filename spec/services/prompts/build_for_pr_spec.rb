@@ -780,6 +780,14 @@ RSpec.describe Prompts::BuildForPr do
         expect(prompt).to include("Run `bin/rails db:prepare`")
         expect(prompt).to include("DATABASE_URL")
       end
+
+      it "tells a Ruby project to use the migration generator and never hand-edit schema.rb" do
+        expect(prompt).to include("Database Schema Workflow")
+        expect(prompt).to include("bin/rails generate migration")
+        expect(prompt).to include("bin/rails db:migrate")
+        expect(prompt).to include("Never edit `db/schema.rb` by hand")
+        expect(prompt).to include("strong_migrations")
+      end
     end
 
     context "when project has configured non-database service containers" do

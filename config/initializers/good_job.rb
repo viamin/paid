@@ -205,10 +205,20 @@ Rails.application.configure do
       class: "AgentRunPatternDetectorJob",
       description: "Detect goal-level failure patterns in agent runs and notify"
     },
+    remediation_decision_outcomes: {
+      cron: "*/15 * * * *",
+      class: "RemediationDecisionOutcomeJob",
+      description: "Evaluate outcomes for auto-applied self-heal remediations"
+    },
     temporal_patch_guard_sweep: {
       cron: "0 4 1 */3 *",
       class: "TemporalPatchGuardSweepJob",
       description: "Audit Temporal workflow patch guards against oldest running executions (quarterly)"
+    },
+    scheduled_mutation_sweep: {
+      cron: "17 9 * * *",
+      class: "ScheduledMutationSweepJob",
+      description: "Run nightly full-suite mutation sweeps for opted-in Ruby projects"
     }
   }
 end
