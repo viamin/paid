@@ -158,7 +158,7 @@ Collapse `mode: api|workspace` into a single session shape that *has* a containe
 - `mode = "api"` → `container_capability = "none"`
 - `mode = "workspace"` → `container_capability = "ready"` if container_id present, `"stopped"` otherwise
 
-`clone_manifest` records every successful clone so the session can be reopened later (container destroyed, then recreated and re-cloned from the manifest). Each entry also records `access_level`: `read_only` for clones authorized only by `project.show?`, `mutable` for clones authorized by `project.run_agent?`.
+`clone_manifest` records every successful clone so the session can be reopened later (container destroyed, then recreated and re-cloned from the manifest). Each entry also records `access_level`: `read_only` for clones authorized only by `project.show?`, `mutable` for clones authorized by `project.run_agent?`. This stored value is audit metadata only; mutability must be recomputed from `project_id` + `current_user` on every `tools/list`, container-tool call, and reopen because `ChatSessionPolicy#show?` allows different account members to reopen the same session with different privileges.
 
 ### Session Lifecycle
 
@@ -206,7 +206,7 @@ Collapse `mode: api|workspace` into a single session shape that *has* a containe
    ├── ChatSessions::IdleReaper destroys container, preserves clone_manifest,
    │   transitions container_capability to "stopped"
    ├── On user reopen: re-provision container, replay clone_manifest
-   └── On user close: destroy container + volumes, archive session
+   └── On user close: destroy container + volumes, mark session closed
 ```
 
 ### Tool Surface by Capability
@@ -250,8 +250,9 @@ Every container-only tool inherits the framework chokepoint from issue #2349:
 
 - `current_user` resolved and `TenantContext.with(user.account)` opened for the whole call
 - `clone_project` Pundit-checks `project.show?` for read-only clones and `project.run_agent?` for mutable clones
+- `clone_manifest.access_level` is audit metadata only; `tools/list`, every mutable tool dispatch, and reopen all recompute effective mutability from each cloned `project_id` and the current user
 - `write_repo_file`, `apply_patch`, `git_diff`, `git_status`, `git_branch_create`, and `propose_pull_request` resolve the target repo from `clone_manifest` and require `project.run_agent?` on that target project
-- `run_shell` is available only when `TenantSettings.chat_shell_enabled` is true and every cloned repo in the session is `access_level = "mutable"` for the current user. If the session contains any read-only clone, `run_shell` is omitted from `tools/list`
+- `run_shell` is available only when `TenantSettings.chat_shell_enabled` is true and every cloned repo in the session is effectively mutable for the current user when re-evaluated at request time. If the session contains any repo the current user cannot mutate, `run_shell` is omitted from `tools/list`
 - Once `run_shell` is enabled for a session, any later `clone_project` call must also satisfy `project.run_agent?`; shell-enabled sessions do not admit lower-privilege clones
 
 The cloning token decision (user GH token first, project token fallback, identity surfaced in result) matches issue #2352 — same helper.
@@ -305,7 +306,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 - **Cross-repo workflows become first-class.** Dependent PRs across `agent-harness` + `paid` (and similar pairs) can be reasoned about and proposed within a single session.
 - **No mode decision up front.** Users start typing immediately and gain capabilities as the container warms.
 - **Conversation continuity across capability transitions.** The MCP `tools/list_changed` mechanism handles this cleanly without re-priming the LLM.
-- **Session outlives container.** Reopening a closed session restores the workspace by replaying `clone_manifest`.
+- **Session outlives container.** Reopening an idle/stopped session restores the workspace by replaying `clone_manifest`.
 - **Sets up future tools cleanly.** `run_tests`, `bisect`, `evaluate_patch`, and other container-side tools fit the same capability-gated registration.
 
 ### Negative
@@ -324,7 +325,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 | Multi-repo PR proposals fan out into many uncoordinated PRs | Medium | `propose_pull_request` requires explicit `depends_on` declarations for related PRs; a default warning if more than one repo has uncommitted changes at propose time |
 | Background provisioning costs add up for users who never trigger container tools | Medium | Per-account `chat_eager_provisioning` flag; idle reaper destroys unused containers on the standard timeout |
 | Reopening a session with stale `clone_manifest` (project deleted, repo renamed) | Low | Re-provision marks failed clones in the manifest and surfaces them to chat as a system message; user can decide to retry or skip |
-| `run_shell` exposes too much surface | High | Default off via `TenantSettings.chat_shell_enabled`; only exposed when every cloned repo in the session is mutable for the current user; mutable tools re-check `run_agent?` on the target project; container constraints from RDR-004 still apply |
+| `run_shell` exposes too much surface | High | Default off via `TenantSettings.chat_shell_enabled`; only exposed when every cloned repo in the session revalidates as mutable for the current user; mutable tools re-check `run_agent?` on the target project; container constraints from RDR-004 still apply |
 
 ## Implementation Plan
 
@@ -355,13 +356,14 @@ The cloning token decision (user GH token first, project token fallback, identit
 
 - `Tools::Registry.tools_for(session, user)` filters by capability *and* by Pundit (today only Pundit)
 - `PaidMcpServer.tools_list` consults the session and emits the correct list
+- Mutability-sensitive tools recompute per-project `run_agent?` from `clone_manifest.project_id` + `current_user`; stored `access_level` is never treated as authority
 - Implement `tools/list_changed` notification dispatch over the existing MCP transport
 
 #### Step 4: Container-only tools (initial set)
 
 - `Tools::CloneProject` — clones a project, updates `clone_manifest`, surfaces token identity
 - `Tools::WriteRepoFile` — writes a file in a cloned repo (path validated against `clone_manifest`, `project.run_agent?` required on the target repo)
-- `Tools::RunShell` — off by default, capped wall-clock per call, only exposed for sessions whose entire `clone_manifest` is mutable for the current user
+- `Tools::RunShell` — off by default, capped wall-clock per call, only exposed for sessions whose entire cloned-project set is revalidated as mutable for the current user
 - `Tools::ApplyPatch` — applies a unified diff against a cloned repo (`project.run_agent?` required on the target repo)
 - `Tools::ProposePullRequest` — creates a branch, pushes via the resolved GH identity, opens a PR with `depends_on` lines
 
@@ -374,6 +376,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 #### Step 6: Reopen flow
 
 - `ChatSessions::Reopen` (new service) — re-provisions container, iterates `clone_manifest`, re-clones each project, surfaces any failures as a system message at the start of the conversation
+- `ChatSessions::Reopen` re-checks `project.show?`/`project.run_agent?` for the current user before recloning or restoring mutable-only affordances; clones that are no longer visible to that user are skipped and surfaced as authorization failures
 - UI surface: "reopen with workspace" button on `idle`/`stopped` sessions
 
 #### Step 7: UI capability indicator
@@ -412,7 +415,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 ### Testing Approach
 
 - **Unit**: capability state machine transitions; `clone_manifest` round-trip; tool filtering by capability
-- **Integration**: full lifecycle — create → first inline message → background provision completes → tool call routes to container → close → reopen replays manifest
+- **Integration**: full lifecycle — create → first inline message → background provision completes → tool call routes to container → idle reaper stops container → reopen replays manifest
 - **System**: browser chat that clones two repos, reads files from both, proposes two dependent PRs
 - **Security**: parity spec from #2349 covers every new container-only tool; specific assertions that `clone_project` cannot clone a project the user lacks `show?` for, that mutable tools cannot target repos where the user lacks `run_agent?`, and that `run_shell` is denied both when disabled at tenant level and when any cloned repo is read-only
 
@@ -427,6 +430,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 | `propose_pull_request` with `depends_on: ["owner/repo#42"]` | PR body includes `Depends on owner/repo#42`; existing dependency parser blocks auto-merge until #42 lands |
 | Idle reaper destroys container with 3 cloned repos | Session moves to `stopped`; `clone_manifest` preserved |
 | Reopen the above session | New container provisioned, all 3 repos re-cloned per manifest, session resumes |
+| Different account member reopens a session containing a mutable clone they cannot `run_agent?` | Repo may still be re-cloned if they satisfy `project.show?`, but `run_shell` stays absent and mutable tools reject that repo for that user |
 | Project deleted between close and reopen | Reopen surfaces a system message naming the failed clone; rest of session usable |
 | Account with `chat_eager_provisioning = false` | No background job; container provisioned lazily on first container-only tool call |
 | `run_shell` invoked when `TenantSettings.chat_shell_enabled = false` | Tool not present in `tools/list`; if invoked anyway, returns authorization error |
@@ -446,7 +450,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 - `clone_project` cannot bypass Pundit `project.show?`
 - Mutable container tools cannot bypass Pundit `project.run_agent?` on their target repo
 - Container token-identity logging shows which GH token was used per clone, surfaced to user and recorded in audit
-- `run_shell` honors `TenantSettings.chat_shell_enabled` and is suppressed unless the entire session workspace is mutable for the current user
+- `run_shell` honors `TenantSettings.chat_shell_enabled` and is suppressed unless the entire session workspace revalidates as mutable for the current user
 - Cross-repo PR proposals do not leak token credentials into PR bodies or branch names
 - Container network egress restrictions from RDR-004 unchanged
 
