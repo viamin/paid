@@ -51,4 +51,16 @@ RSpec.describe Screenshots::SeedData::Paid do
     )
     expect(installation).to be_active
   end
+
+  it "returns marketplace entry metadata for marketplace screenshot targets" do
+    result = described_class.call
+
+    marketplace_entry = MarketplaceEntry.find(result.dig("marketplace_entry", "id"))
+
+    expect(result.fetch("marketplace_entry")).to eq(
+      "id" => marketplace_entry.id,
+      "name" => "Screenshot Catalog Entry"
+    )
+    expect(marketplace_entry.current_version).to have_attributes(version: 1)
+  end
 end
