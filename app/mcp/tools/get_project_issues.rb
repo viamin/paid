@@ -2,6 +2,8 @@
 
 module Tools
   class GetProjectIssues < BaseTool
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
+
     def self.tool_name = "get_project_issues"
 
     def self.description
@@ -21,9 +23,8 @@ module Tools
       }
     end
 
-    def call(project_id:, state: nil, is_pull_request: false, limit: 20)
-      project = policy_scope(Project).find(project_id)
-      authorize project, :show?
+    def perform(project_id:, state: nil, is_pull_request: false, limit: 20)
+      project = project_for(project_id)
 
       issues = is_pull_request ? project.issues.pull_requests_only : project.issues.issues_only
       issues = issues.by_paid_state(state) if state.present?
@@ -39,6 +40,12 @@ module Tools
           updated_at: issue.updated_at
         }
       end
+    end
+
+    private
+
+    def project_for(project_id)
+      @project = policy_scope(Project).find(project_id)
     end
   end
 end

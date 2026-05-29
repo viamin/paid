@@ -17,6 +17,14 @@ module Tools
     ].freeze
 
     class << self
+      def dispatch(name:, arguments:, user:, session:)
+        tool_class = find(name)
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+        raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
+
+        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+      end
+
       def find(name)
         tool_hash[name]
       end
@@ -39,6 +47,7 @@ module Tools
       end
 
       def tool_available_to?(klass, user:)
+        return false if user.blank?
         return true unless klass.write_operation?
 
         return true if Pundit.policy(user, Project.new(account: user.account))&.run_agent?

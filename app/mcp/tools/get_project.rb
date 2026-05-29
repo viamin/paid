@@ -2,6 +2,8 @@
 
 module Tools
   class GetProject < BaseTool
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
+
     def self.tool_name = "get_project"
 
     def self.description
@@ -18,9 +20,8 @@ module Tools
       }
     end
 
-    def call(project_id:)
-      project = policy_scope(Project).find(project_id)
-      authorize project, :show?
+    def perform(project_id:)
+      project = project_for(project_id)
 
       recent_runs = project.agent_runs.recent.limit(5)
 
@@ -37,6 +38,10 @@ module Tools
     end
 
     private
+
+    def project_for(project_id)
+      @project = policy_scope(Project).find(project_id)
+    end
 
     def run_summary(run)
       {

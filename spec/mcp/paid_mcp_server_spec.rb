@@ -96,6 +96,21 @@ RSpec.describe PaidMcpServer do
     end
   end
 
+  describe "#call_tool" do
+    it "routes tool calls through the registry" do
+      allow(Tools::Registry).to receive(:dispatch).and_return([])
+
+      server.call_tool(name: "list_projects", arguments: {})
+
+      expect(Tools::Registry).to have_received(:dispatch).with(
+        name: "list_projects",
+        arguments: {},
+        user: user,
+        session: chat_session
+      )
+    end
+  end
+
   describe "rate limiting" do
     it "raises RateLimitExceeded when limit is hit" do
       allow(Rails.cache).to receive(:increment).and_return(PaidMcpServer::RATE_LIMIT_MAX + 1)
