@@ -52,6 +52,21 @@ RSpec.describe AgentRuns::IngestExternal do
       expect(agent_run.source_pull_request_number).to be_nil
     end
 
+    it "backfills completed_at for finished external runs without an explicit completion timestamp" do
+      freeze_time do
+        agent_run = described_class.call(
+          project: project,
+          attributes: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-finished-without-completed-at",
+            status: "completed"
+          }
+        )
+
+        expect(agent_run.completed_at).to eq(Time.current)
+      end
+    end
+
     it "rejects ingestion for sources that are not enabled on the project" do
       expect {
         described_class.call(

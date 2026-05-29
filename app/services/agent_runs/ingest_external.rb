@@ -53,14 +53,14 @@ module AgentRuns
         issue: issue,
         initiating_user: initiating_user,
         agent_type: attributes[:agent_type].presence || EXTERNAL_AGENT_TYPE_BY_SOURCE.fetch(external_source_key),
-        status: attributes[:status].presence || "completed",
+        status: status,
         goal: attributes[:goal].presence || "create_pr",
         focus: attributes[:focus].presence || "general",
         trigger_type: "manual",
         custom_prompt: attributes[:custom_prompt],
         source_pull_request_number: attributes[:source_pull_request_number],
         started_at: attributes[:started_at],
-        completed_at: attributes[:completed_at],
+        completed_at: completed_at,
         duration_seconds: attributes[:duration_seconds],
         tokens_input: attributes[:tokens_input],
         tokens_output: attributes[:tokens_output],
@@ -82,6 +82,17 @@ module AgentRuns
 
     def external_run_key
       @external_run_key ||= attributes[:external_run_key].to_s.presence
+    end
+
+    def status
+      @status ||= attributes[:status].presence || "completed"
+    end
+
+    def completed_at
+      return attributes[:completed_at] if attributes[:completed_at].present?
+      return unless AgentRun::FINISHED_STATUSES.include?(status)
+
+      attributes[:started_at].presence || Time.current
     end
 
     def issue
