@@ -197,6 +197,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
   end
 
   create_table "agent_runs", force: :cascade do |t|
+    t.string "adoption_mode_snapshot", comment: "Project adoption mode captured when an external execution was ingested."
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
     t.boolean "auto_pick", default: false, null: false
@@ -224,7 +225,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
+    t.string "execution_origin", default: "paid_native", null: false, comment: "Whether the run executed inside Paid or was ingested from an external toolchain."
     t.integer "expected_draft_review_count"
+    t.jsonb "external_metadata", default: {}, null: false, comment: "Structured metadata captured from external execution and migration workflows."
+    t.string "external_run_key", comment: "Stable external run identifier used for idempotent ingestion."
+    t.string "external_source_key", comment: "External system that executed the run, such as github_copilot, cursor, devin, factory, or internal_agent_workflows."
     t.string "final_runner", limit: 50
     t.string "focus", limit: 50, default: "general", null: false, comment: "Focused run intent derived from the highest-priority PR trigger or assigned workflow context."
     t.string "goal", limit: 50, default: "create_pr", null: false
@@ -272,12 +277,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
     t.string "worktree_path", limit: 500
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["execution_origin"], name: "index_agent_runs_on_execution_origin"
     t.index ["focus"], name: "index_agent_runs_on_focus"
     t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["initiating_user_id"], name: "index_agent_runs_on_initiating_user_id"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "created_at"], name: "idx_agent_runs_project_created_at_desc", order: { created_at: :desc }
+    t.index ["project_id", "external_source_key", "external_run_key"], name: "idx_agent_runs_external_dedup", unique: true, where: "(external_run_key IS NOT NULL)"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
@@ -842,6 +849,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
     t.index ["account_id", "subsystem"], name: "index_exception_incidents_on_subsystem"
     t.index ["project_id"], name: "index_exception_incidents_on_project"
     t.index ["severity"], name: "index_exception_incidents_on_severity"
+  end
+
+  create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
+    t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false, comment: "Connector-specific event type (e.g. issue_created, pipeline_completed, message_posted)."
+    t.string "external_event_id", null: false, comment: "Unique event ID from the external system, used for deduplication."
+    t.jsonb "normalized_data", default: {}, comment: "Normalized data extracted from the payload for query and comparison."
+    t.datetime "occurred_at", comment: "Timestamp when the event occurred in the external system."
+    t.jsonb "payload", default: {}, null: false, comment: "Raw event payload from the external system."
+    t.datetime "processed_at", comment: "Timestamp when the event was processed by Paid."
+    t.bigint "project_id", null: false, comment: "Project this connector event belongs to."
+    t.string "status", default: "pending", null: false, comment: "Processing status: pending, processed, failed."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "connector_key"], name: "idx_connector_events_account_connector"
+    t.index ["account_id"], name: "index_external_connector_events_on_account_id"
+    t.index ["occurred_at"], name: "idx_connector_events_occurred_at"
+    t.index ["project_id", "connector_key", "event_type"], name: "idx_connector_events_project_connector_type"
+    t.index ["project_id", "connector_key", "external_event_id"], name: "idx_connector_events_project_external_id", unique: true
+    t.index ["project_id"], name: "index_external_connector_events_on_project_id"
+    t.index ["status", "created_at"], name: "idx_connector_events_status_created"
   end
 
   create_table "failure_classifications", comment: "Persisted failure classification and chosen recovery action for coordination learning", force: :cascade do |t|
@@ -1719,6 +1748,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
     t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
     t.bigint "github_token_id"
     t.boolean "inherit_priority_labels", default: true, null: false
+    t.jsonb "interop_settings", default: {}, null: false, comment: "Project-level coexistence settings for gradual adoption, imports, connectors, and external execution sources."
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
@@ -2555,6 +2585,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
+  add_foreign_key "external_connector_events", "accounts"
+  add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "github_installations", "accounts"
@@ -3526,6 +3558,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3588,9 +3624,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

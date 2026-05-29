@@ -193,11 +193,14 @@ Rails.application.routes.draw do
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
+    resource :interop_settings, only: [ :update ], controller: "projects/interop_settings"
     resources :roi_benchmarks, only: [ :create, :destroy ], controller: "projects/roi_benchmarks"
     resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
       post :detect
     end
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
+    resources :interoperability_imports, only: [ :create ], controller: "projects/interoperability_imports"
+    resources :connector_events, only: [ :index ], controller: "projects/connector_events"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :cancel, on: :member
       post :retry, on: :member
@@ -248,6 +251,11 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
+    resources :projects, only: [] do
+      resources :external_agent_runs, only: [ :create ], controller: "projects/external_agent_runs"
+      resources :connector_events, only: [ :create ], controller: "projects/connector_events"
+    end
+
     get "metrics", to: "metrics#show"
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post, format: false
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: [ :get, :post ], format: false

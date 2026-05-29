@@ -2,6 +2,8 @@
 
 class AgentRun < ApplicationRecord
   attribute :focus, :string, default: "general"
+  attribute :execution_origin, :string, default: "paid_native"
+  attribute :external_metadata, :json, default: {}
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
@@ -13,11 +15,12 @@ class AgentRun < ApplicationRecord
     [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
-  AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode pi api].freeze
+  AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode pi api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
+  EXECUTION_ORIGINS = %w[paid_native external].freeze
   ACTIVE_STATUSES = %w[running].freeze
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
@@ -183,6 +186,7 @@ class AgentRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
   validates :focus, presence: true, inclusion: { in: FOCUSES }
+  validates :execution_origin, presence: true, inclusion: { in: EXECUTION_ORIGINS }
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
@@ -198,6 +202,10 @@ class AgentRun < ApplicationRecord
   validates :parent_workflow_id, length: { maximum: 255 }
   validates :container_id, length: { maximum: 128 }
   validates :container_host, length: { maximum: 64 }, allow_nil: true
+  validates :external_source_key, inclusion: { in: Interop::Catalog.external_execution_source_keys }, allow_nil: true
+  validates :external_run_key, length: { maximum: 255 }, allow_nil: true,
+    uniqueness: { scope: %i[project_id external_source_key] }
+  validates :adoption_mode_snapshot, inclusion: { in: Project::ADOPTION_MODES }, allow_nil: true
   validates :iterations, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -219,8 +227,9 @@ class AgentRun < ApplicationRecord
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :initiating_user_belongs_to_project_account, if: -> { initiating_user.present? && project.present? }
   validate :runner_belongs_to_project_owner, if: -> { runner.present? }
-  validate :has_prompt_source, on: :create
+  validate :has_prompt_source, on: :create, unless: :external_execution?
   validate :draft_review_round_tracking_is_consistent
+  validate :external_execution_fields_are_consistent
 
   def provider_id
     runner_id
@@ -278,6 +287,8 @@ class AgentRun < ApplicationRecord
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
+  scope :paid_native, -> { where(execution_origin: "paid_native") }
+  scope :external_execution, -> { where(execution_origin: "external") }
 
   def update_columns(attributes)
     super(attributes)
@@ -285,6 +296,10 @@ class AgentRun < ApplicationRecord
 
   def settings_user
     initiating_user || project&.effective_owner
+  end
+
+  def external_execution?
+    execution_origin == "external"
   end
 
   scope :recent, -> { order(created_at: :desc) }
@@ -2045,6 +2060,22 @@ class AgentRun < ApplicationRecord
 
     if expected_draft_review_count.blank?
       errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+    end
+  end
+
+  def external_execution_fields_are_consistent
+    if execution_origin == "external"
+      errors.add(:external_source_key, "is required for external execution") if external_source_key.blank?
+      errors.add(:external_run_key, "is required for external execution") if external_run_key.blank?
+      return
+    end
+
+    if external_source_key.present?
+      errors.add(:external_source_key, "must be blank for paid-native runs")
+    end
+
+    if external_run_key.present?
+      errors.add(:external_run_key, "must be blank for paid-native runs")
     end
   end
 

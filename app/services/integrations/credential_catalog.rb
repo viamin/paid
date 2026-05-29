@@ -11,6 +11,18 @@ module Integrations
         label: "Issue Tracking",
         description: "Credentials for tools that manage planning, triage, and delivery state."
       },
+      developer_tooling: {
+        label: "Developer Tooling",
+        description: "Credentials and interoperability hooks for incumbent agent tools used alongside Paid."
+      },
+      collaboration: {
+        label: "Collaboration",
+        description: "Credentials for chat and notification systems used for coexistence and event ingestion."
+      },
+      ci_cd: {
+        label: "CI/CD",
+        description: "Credentials for CI systems that emit run outcomes and workflow events into Paid."
+      },
       llm_provider: {
         label: "LLM Providers",
         description: "API keys and OAuth tokens stored in Paid for provider integrations and account-level runtime fallback."
@@ -26,6 +38,13 @@ module Integrations
         key: "gitlab",
         label: "GitLab",
         description: "API keys or OAuth tokens for GitLab repositories, merge requests, and future issue sync.",
+        category: :repository,
+        auth_kinds: %w[api_key oauth_token]
+      },
+      "bitbucket" => {
+        key: "bitbucket",
+        label: "Bitbucket",
+        description: "API keys or OAuth tokens for Bitbucket repositories, pull requests, and migration workflows.",
         category: :repository,
         auth_kinds: %w[api_key oauth_token]
       },
@@ -49,6 +68,76 @@ module Integrations
         description: "API tokens for Azure DevOps issue tracking and boards.",
         category: :issue_tracking,
         auth_kinds: %w[api_key oauth_token]
+      },
+      "slack" => {
+        key: "slack",
+        label: "Slack",
+        description: "OAuth tokens for Slack notifications, approvals, and event ingestion.",
+        category: :collaboration,
+        auth_kinds: %w[oauth_token api_key]
+      },
+      "teams" => {
+        key: "teams",
+        label: "Microsoft Teams",
+        description: "Webhook or OAuth credentials for Teams notifications and event ingestion.",
+        category: :collaboration,
+        auth_kinds: %w[oauth_token signing_token]
+      },
+      "gitlab_ci" => {
+        key: "gitlab_ci",
+        label: "GitLab CI",
+        description: "Tokens for ingesting pipeline events and external execution outcomes from GitLab CI.",
+        category: :ci_cd,
+        auth_kinds: %w[api_key oauth_token]
+      },
+      "bitbucket_pipelines" => {
+        key: "bitbucket_pipelines",
+        label: "Bitbucket Pipelines",
+        description: "Tokens for ingesting pipeline events and external execution outcomes from Bitbucket Pipelines.",
+        category: :ci_cd,
+        auth_kinds: %w[api_key oauth_token]
+      },
+      "ci_systems" => {
+        key: "ci_systems",
+        label: "CI Systems",
+        description: "Shared signing tokens or API keys for generic CI webhook and outcome ingestion workflows.",
+        category: :ci_cd,
+        auth_kinds: %w[api_key signing_token]
+      },
+      "github_copilot" => {
+        key: "github_copilot",
+        label: "GitHub Copilot",
+        description: "Interoperability credentials and metadata for GitHub Copilot coexistence workflows.",
+        category: :developer_tooling,
+        auth_kinds: %w[oauth_token api_key]
+      },
+      "cursor" => {
+        key: "cursor",
+        label: "Cursor",
+        description: "Interoperability credentials and metadata for Cursor-assisted workflows.",
+        category: :developer_tooling,
+        auth_kinds: %w[oauth_token api_key]
+      },
+      "devin" => {
+        key: "devin",
+        label: "Devin",
+        description: "Interoperability credentials and metadata for Devin execution ingestion and migration workflows.",
+        category: :developer_tooling,
+        auth_kinds: %w[oauth_token api_key]
+      },
+      "factory" => {
+        key: "factory",
+        label: "Factory",
+        description: "Interoperability credentials and metadata for Factory-managed agent workflows.",
+        category: :developer_tooling,
+        auth_kinds: %w[oauth_token api_key]
+      },
+      "internal_agent_workflows" => {
+        key: "internal_agent_workflows",
+        label: "Internal Agent Workflows",
+        description: "Signing and API credentials for ingesting outcomes from existing in-house agent systems.",
+        category: :developer_tooling,
+        auth_kinds: %w[api_key signing_token]
       },
       "github_signing" => {
         key: "github_signing",
