@@ -254,7 +254,9 @@ class TenantSetting < ApplicationRecord
 
   def enterprise_operations_configuration=(value)
     merged_features = normalize_hash(features)
-    merged_features["enterprise_operations"] = normalize_enterprise_operations(value)
+    merged_features["enterprise_operations"] = normalize_enterprise_operations(
+      enterprise_operations_configuration.deep_merge(normalize_hash(value))
+    )
     self.features = merged_features
   end
 

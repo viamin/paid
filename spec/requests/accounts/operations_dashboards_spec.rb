@@ -44,6 +44,24 @@ RSpec.describe "Accounts::OperationsDashboards" do
       }
     }
   end
+  let(:existing_operations_configuration) do
+    {
+      "service_levels" => {
+        "urgent_response_sla_hours" => 8,
+        "standard_response_sla_hours" => 16
+      },
+      "support" => {
+        "health_report_recipients" => "ops@example.com"
+      },
+      "upgrades" => {
+        "last_upgrade_at" => "2026-05-01"
+      },
+      "capacity_management" => {
+        "queue_warning_threshold" => 9,
+        "queue_critical_threshold" => 18
+      }
+    }
+  end
 
   before do
     sign_in owner
@@ -107,6 +125,32 @@ RSpec.describe "Accounts::OperationsDashboards" do
 
       expect(response).to redirect_to(account_operations_dashboard_path)
       expect(account.tenant_setting!.reload.enterprise_operations_configuration.dig("disaster_recovery", "automated_backups_enabled")).to be(false)
+    end
+
+    it "preserves omitted enterprise operations values on partial updates" do
+      tenant_setting = account.tenant_setting!
+      tenant_setting.update!(
+        enterprise_operations_configuration: tenant_setting.enterprise_operations_configuration.deep_merge(existing_operations_configuration)
+      )
+
+      patch account_operations_dashboard_path, params: {
+        enterprise_operations: {
+          service_levels: {
+            slo_window_days: "45"
+          }
+        }
+      }
+
+      expect(response).to redirect_to(account_operations_dashboard_path)
+
+      operations = tenant_setting.reload.enterprise_operations_configuration
+      expect(operations.dig("service_levels", "slo_window_days")).to eq(45)
+      expect(operations.dig("service_levels", "urgent_response_sla_hours")).to eq(8)
+      expect(operations.dig("service_levels", "standard_response_sla_hours")).to eq(16)
+      expect(operations.dig("support", "health_report_recipients")).to eq("ops@example.com")
+      expect(operations.dig("upgrades", "last_upgrade_at")).to eq("2026-05-01")
+      expect(operations.dig("capacity_management", "queue_warning_threshold")).to eq(9)
+      expect(operations.dig("capacity_management", "queue_critical_threshold")).to eq(18)
     end
 
     it "rejects invalid enterprise operations values" do
