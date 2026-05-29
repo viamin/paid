@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.1.0](https://github.com/viamin/paid/compare/v1.0.0...v1.1.0) (2026-05-29)
+
+
+### Features
+
+* **admin:** show style guide compression state ([#2267](https://github.com/viamin/paid/issues/2267)) ([d7b4867](https://github.com/viamin/paid/commit/d7b4867d663253ca40ed25e4e860d54ac2236cfc))
+* Adopt agent-harness install contract for opencode (postinstall support) ([#2312](https://github.com/viamin/paid/issues/2312)) ([beb384a](https://github.com/viamin/paid/commit/beb384a4845f6f40c3169cfb32183c21298e0f3b))
+* **adoption:** Phase 7.3 — Change Management & Operational Readiness ([#2319](https://github.com/viamin/paid/issues/2319)) ([d1f1122](https://github.com/viamin/paid/commit/d1f1122fd5f0ec78b640b59afb3578b50adfd4e3))
+* **agent-runs:** RDR-034 phase 0 — loosen runner fallback model filter (tactical) ([#2263](https://github.com/viamin/paid/issues/2263)) ([28ca38a](https://github.com/viamin/paid/commit/28ca38abb71710593367073e21be897ac117f091))
+* **agent-runs:** RDR-034 phase 1 — tier_models data model ([#2247](https://github.com/viamin/paid/issues/2247)) ([ed44fd3](https://github.com/viamin/paid/commit/ed44fd36a1c1f71f6fc7fd62a859c15dfaceef2c))
+* **agent-runs:** RDR-034 phase 3 — migrate downstream consumers to tier + resolved_model_id ([#2274](https://github.com/viamin/paid/issues/2274)) ([1e1b40f](https://github.com/viamin/paid/commit/1e1b40f9a33381ecbb95a755c7e2cf81fd0bd02c))
+* **agent-runs:** resolve tier models per runner attempt ([#2273](https://github.com/viamin/paid/issues/2273)) ([1c7c54f](https://github.com/viamin/paid/commit/1c7c54faf2483ad026fd5a572e2dbb06505f0d19))
+* **agent-runs:** retry enqueue when no runner is available ([#2243](https://github.com/viamin/paid/issues/2243)) ([dc879d6](https://github.com/viamin/paid/commit/dc879d6e7d68ffeb9c08636eb07ec8a720340e4a))
+* Audit post-rename drift after providers-&gt;runners migration completes ([#2268](https://github.com/viamin/paid/issues/2268)) ([df65d1a](https://github.com/viamin/paid/commit/df65d1aa6382f4828bf9d1f51502b95f9726c2a3))
+* **audit:** Phase 6.2 — Audit Logging & Forensics ([#2275](https://github.com/viamin/paid/issues/2275)) ([20c91d0](https://github.com/viamin/paid/commit/20c91d0cd3f34c384d7bb0b60bdfb866511e69b2))
+* **auto-pick:** add periodic eligibility sweep for missed issues ([#2241](https://github.com/viamin/paid/issues/2241)) ([e43d2ff](https://github.com/viamin/paid/commit/e43d2ffdd59527d85bbf80e5e5f5aa243e61fa41))
+* **compliance:** Phase 6.4 — Compliance & Deployment Assurance ([#2272](https://github.com/viamin/paid/issues/2272)) ([dcc8283](https://github.com/viamin/paid/commit/dcc82832731a142c7e7ed3a22871f2cb7d3dab8b))
+* Devcontainer should install AI tools via agent-harness contracts (parity with agent image) ([#2300](https://github.com/viamin/paid/issues/2300)) ([e572554](https://github.com/viamin/paid/commit/e572554dc00475beace1b5eb4212deac9985fd34))
+* **github:** implement RDR-030 app-based repo auth for paid-agents[bot] commit and PR authorship ([#2276](https://github.com/viamin/paid/issues/2276)) ([2ebdf85](https://github.com/viamin/paid/commit/2ebdf85a44f590a2cf3936b9d7b08efcc0330918))
+* **identity:** Phase 6.1 — GitHub App & Enterprise Identity ([#2305](https://github.com/viamin/paid/issues/2305)) ([8cfa038](https://github.com/viamin/paid/commit/8cfa038660d61f8c9678e323327d67d780afc042))
+* **interop:** Phase 7.2 — Migration, Coexistence & Toolchain Interop ([#2324](https://github.com/viamin/paid/issues/2324)) ([66c08eb](https://github.com/viamin/paid/commit/66c08eb6276ddd1e33c8673e692387ed31711de2))
+* Make business context wizard questions data-driven with multi-round follow-ups and AI-generated questions ([#2295](https://github.com/viamin/paid/issues/2295)) ([32db6c5](https://github.com/viamin/paid/commit/32db6c5bc036ee37f10457f080b5a0b8068a1a00))
+* Move hardcoded agent prompt sections into versioned Prompt records ([#2337](https://github.com/viamin/paid/issues/2337)) ([af7c5cf](https://github.com/viamin/paid/commit/af7c5cfb81df78e8e1c07bf921e18b25576a08be))
+* PDF import for project knowledge base and team marketplace ([#2301](https://github.com/viamin/paid/issues/2301)) ([843d7ff](https://github.com/viamin/paid/commit/843d7ff43129761ad731dd41be295d2a131a031d))
+* Phase 6: Enterprise Trust & Governance — Umbrella Issue ([#2317](https://github.com/viamin/paid/issues/2317)) ([487f78d](https://github.com/viamin/paid/commit/487f78db5b8d3af92b69c8b6827c537fe1213748))
+* **policy:** Phase 6.3 — Policy, Risk & Approval Controls ([#2248](https://github.com/viamin/paid/issues/2248)) ([9071dc4](https://github.com/viamin/paid/commit/9071dc4f625b3b6cbf1ed926aa09c02a7d6a2a7a))
+* **projects:** add project settings UI to choose paid-agents app vs PAT for GitHub auth ([#2302](https://github.com/viamin/paid/issues/2302)) ([589478d](https://github.com/viamin/paid/commit/589478d823b49e9a66b2edbfabe6548440b7d61a))
+* **prompt-evolution:** RDR for evolving StyleGuide records via the evolution pipeline ([#2260](https://github.com/viamin/paid/issues/2260)) ([35008fa](https://github.com/viamin/paid/commit/35008fa2387834b3cffc02b53a97e3e7550ed3d1))
+* **quality:** RDR-036 — mutation testing for AI-generated tests (mutant) ([#2277](https://github.com/viamin/paid/issues/2277)) ([153a88a](https://github.com/viamin/paid/commit/153a88ae7ee04bedf543839cb57d3271d68e5146))
+* **quality:** RDR-036 phase 1 — tier-1 mutation testing for Paid itself ([#2299](https://github.com/viamin/paid/issues/2299)) ([01a8515](https://github.com/viamin/paid/commit/01a85151e8bf6e13dc67eaa8c348603c266a3773))
+* **quality:** RDR-036 phase 2a — extend PreCommitRequirement with mutation_test check_type ([#2286](https://github.com/viamin/paid/issues/2286)) ([1a041b2](https://github.com/viamin/paid/commit/1a041b2390c3fe99416e3c1c16a7d129662aaab8))
+* **quality:** RDR-036 phase 2b — container hook + backpressure for mutation_test ([#2303](https://github.com/viamin/paid/issues/2303)) ([ccf7b7c](https://github.com/viamin/paid/commit/ccf7b7cc3fe8d2077331fdf2c67abeb3236d9dce))
+* **quality:** RDR-036 phase 3a — add mutation_kill_rate to QualityMetric pipeline ([#2294](https://github.com/viamin/paid/issues/2294)) ([4b09cb0](https://github.com/viamin/paid/commit/4b09cb0abc0a156a726f763c1f5f2ca363976109))
+* **quality:** RDR-036 phase 3b — nightly mutation sweep job + dashboard widget ([#2310](https://github.com/viamin/paid/issues/2310)) ([5db7143](https://github.com/viamin/paid/commit/5db7143e14dfe8e2ae6c4070b146f7efc94a00d7))
+* **roi:** Phase 7.1 — ROI, Evals & Benchmarking ([#2318](https://github.com/viamin/paid/issues/2318)) ([dcd3754](https://github.com/viamin/paid/commit/dcd375408baef6d604bb3b62075edf27e75c265e))
+* **runners:** add chat runner eligibility ([#2258](https://github.com/viamin/paid/issues/2258)) ([47ec679](https://github.com/viamin/paid/commit/47ec67908262924f9ee03802a2aeb32dcf495946))
+* **self-heal:** auto-apply reversible remediations ([#2334](https://github.com/viamin/paid/issues/2334)) ([a9782f2](https://github.com/viamin/paid/commit/a9782f2f87cf0fa0de4ac9148854d98cc87f7744))
+* **self-heal:** widen failure-pattern detection to read per-attempt errors ([#2325](https://github.com/viamin/paid/issues/2325)) ([8c7375e](https://github.com/viamin/paid/commit/8c7375ee6e987ba4791908cd53a5accca0e0cebe))
+* **self-heal:** ZFC-based Diagnose with proposed-action enum + RemediationDecision audit table ([#2333](https://github.com/viamin/paid/issues/2333)) ([4ec86b8](https://github.com/viamin/paid/commit/4ec86b8ef5ad5c9ebc74dd82482be467202aaa48))
+* **settings:** RDR-034 phase 4 — per-tier model assignment UX on runners and providers ([#2265](https://github.com/viamin/paid/issues/2265)) ([ad188c1](https://github.com/viamin/paid/commit/ad188c10b36ab210f996b50a6a9515839f1bac63))
+* Show attempt count alongside failure count in runner health column ([#2306](https://github.com/viamin/paid/issues/2306)) ([96fb018](https://github.com/viamin/paid/commit/96fb01899b75137921ab6d72586e9f36df15a79e))
+* **style-guides:** filter resolve_for by project language ([#2270](https://github.com/viamin/paid/issues/2270)) ([3275362](https://github.com/viamin/paid/commit/32753625741af58c7d36336087a4494da42932bc))
+* **style-guides:** seed global defaults for agent prompts ([#2249](https://github.com/viamin/paid/issues/2249)) ([db8cefa](https://github.com/viamin/paid/commit/db8cefa8703aa989973a800f0eb209b630183411))
+* **style-guides:** seed ruby and rails global guides ([#2271](https://github.com/viamin/paid/issues/2271)) ([2d20ace](https://github.com/viamin/paid/commit/2d20ace19842e9563c6ac965e1b506fb56d63255))
+* Use agent-harness Z.ai Coding Plan quota classification once upstream support is released ([#2293](https://github.com/viamin/paid/issues/2293)) ([b7e974c](https://github.com/viamin/paid/commit/b7e974ca804a6241c17dbdc7c098e173d8c64332))
+
+
+### Bug Fixes
+
+* **agent-runs:** re-enqueue analyzed issues ([#2269](https://github.com/viamin/paid/issues/2269)) ([7e03139](https://github.com/viamin/paid/commit/7e03139bfad932968a767584784872a68da73939))
+* **auto-pick:** match priority labels case-insensitively ([#2246](https://github.com/viamin/paid/issues/2246)) ([15e2f5a](https://github.com/viamin/paid/commit/15e2f5aafccbe8a855b601da4bfcd20301467f31))
+* **auto-pick:** recover completed issues after follow-up runs ([#2244](https://github.com/viamin/paid/issues/2244)) ([9e64eb2](https://github.com/viamin/paid/commit/9e64eb2a2147668b326f62fd258a6e7d31ad1a6e))
+* **auto-pick:** recover issues when produced PR was closed without merging ([#2257](https://github.com/viamin/paid/issues/2257)) ([2b10147](https://github.com/viamin/paid/commit/2b1014701343cb2e343885415edbdd79b8818dd7))
+* Chat interface UI is cluttered, repetitive, and breaks on mobile ([#2292](https://github.com/viamin/paid/issues/2292)) ([e4f2429](https://github.com/viamin/paid/commit/e4f242968a87202a523fcaeeca4a676f0f696cfa))
+* **deps:** centralize bundler version on Gemfile.lock BUNDLED WITH ([#2296](https://github.com/viamin/paid/issues/2296)) ([4e54eac](https://github.com/viamin/paid/commit/4e54eac8a6dd97409aeb7d3ab6ce0175121ec824))
+* **github-sync:** evaluate backfilled issues for auto-pick ([#2262](https://github.com/viamin/paid/issues/2262)) ([fe4bf6c](https://github.com/viamin/paid/commit/fe4bf6c4148d2438b00664f71dc8831d734c3383))
+* **github:** use paid-agents.com for default agent commit identity ([#2256](https://github.com/viamin/paid/issues/2256)) ([a1b2024](https://github.com/viamin/paid/commit/a1b20249943397571815ccfac6a38b3c2c8ac717))
+* **migrations:** make AddSourceToQualityMetrics safe and prevent recurrence ([#2335](https://github.com/viamin/paid/issues/2335)) ([a5222d2](https://github.com/viamin/paid/commit/a5222d2ff9c17c1efb17604fb85d87657f5f72d8))
+* **pr-2324:** break review-goal loop — gate bypass + proxy auto-recovery ([#2338](https://github.com/viamin/paid/issues/2338)) ([29ca998](https://github.com/viamin/paid/commit/29ca998943a831bb022540de25dc16f556e34a0d))
+* **runners:** improve recovery for circuit-breaker, credit, and large-diff failures ([#2320](https://github.com/viamin/paid/issues/2320)) ([a60792a](https://github.com/viamin/paid/commit/a60792a2369eeb3a09937e0fb6276eaf9a75ccc8))
+* **runners:** repair bin/provider-smoke after providers-&gt;runners rename ([#2326](https://github.com/viamin/paid/issues/2326)) ([1ca1054](https://github.com/viamin/paid/commit/1ca105422c7c87dbeb773c989bbc09d65141ae72))
+
 ## [1.0.0](https://github.com/viamin/paid/compare/v0.45.0...v1.0.0) (2026-05-23)
 
 
