@@ -23,7 +23,7 @@
   </div>
 
   <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-    Marketplace entries can attach prompt content, runtime configuration, or MCP server descriptors. Paid renders the stored artifact into the target provider format when the run is created.
+    Ecosystem entries define stable extension metadata plus the payload Paid can render into prompts, runtime configuration, MCP servers, or partner-facing catalog artifacts.
   </div>
 
   <div>
@@ -60,6 +60,23 @@
 
   <div class="grid gap-6 md:grid-cols-3">
     <div>
+      <%= form.label :extension_points, "Extension Points", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :extension_points, MarketplaceEntry::EXTENSION_POINTS.map { |value| [ value.humanize, value ] }, {}, multiple: true, size: MarketplaceEntry::EXTENSION_POINTS.size, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :certification_status, class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :certification_status, MarketplaceEntry::CERTIFICATION_STATUSES.map { |value| [ value.humanize, value ] }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :support_tier, class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :support_tier, MarketplaceEntry::SUPPORT_TIERS.map { |value| [ value.humanize, value ] }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+    </div>
+  </div>
+
+  <div class="grid gap-6 md:grid-cols-3">
+    <div>
       <%= form.label :tags_csv, "Tags", class: "block text-sm font-medium text-gray-700" %>
       <%= form.text_field :tags_csv, value: marketplace_entry.tags_csv, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm", placeholder: "ruby, internal-api" %>
     </div>
@@ -73,6 +90,23 @@
       <%= form.label :added_by_email, class: "block text-sm font-medium text-gray-700" %>
       <%= form.email_field :added_by_email, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
     </div>
+  </div>
+
+  <div class="grid gap-6 md:grid-cols-2">
+    <div>
+      <%= form.label :documentation_url, class: "block text-sm font-medium text-gray-700" %>
+      <%= form.url_field :documentation_url, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm", placeholder: "https://docs.example.com/paid-extension" %>
+    </div>
+
+    <div>
+      <%= form.label :source_code_url, class: "block text-sm font-medium text-gray-700" %>
+      <%= form.url_field :source_code_url, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm", placeholder: "https://github.com/example/paid-extension" %>
+    </div>
+  </div>
+
+  <div>
+    <%= form.label :certification_notes, class: "block text-sm font-medium text-gray-700" %>
+    <%= form.text_area :certification_notes, rows: 4, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm", placeholder: "Summarize validation evidence, support boundaries, and rollout expectations." %>
   </div>
 
   <div>

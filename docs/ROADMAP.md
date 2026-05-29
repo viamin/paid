@@ -1477,10 +1477,10 @@ Deliverables:
 
 Tasks:
 
-- [ ] Create plugin/extension model for custom collectors, policies, tools, and workflow strategies
-- [ ] Add marketplace or curated catalog for integrations, prompts, and policy packs
-- [ ] Add partner-friendly APIs for system integrators and internal platform teams
-- [ ] Publish ecosystem certification guidance for supported extensions
+- [x] Create plugin/extension model for custom collectors, policies, tools, and workflow strategies
+- [x] Add marketplace or curated catalog for integrations, prompts, and policy packs
+- [x] Add partner-friendly APIs for system integrators and internal platform teams
+- [x] Publish ecosystem certification guidance for supported extensions
 
 Deliverables:
 

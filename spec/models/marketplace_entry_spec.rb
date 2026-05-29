@@ -10,6 +10,8 @@ RSpec.describe MarketplaceEntry do
     it { is_expected.to validate_inclusion_of(:entry_type).in_array(described_class::ENTRY_TYPES) }
     it { is_expected.to validate_inclusion_of(:team_scope).in_array(described_class::TEAM_SCOPES) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+    it { is_expected.to validate_inclusion_of(:certification_status).in_array(described_class::CERTIFICATION_STATUSES) }
+    it { is_expected.to validate_inclusion_of(:support_tier).in_array(described_class::SUPPORT_TIERS) }
   end
 
   describe "#create_version!" do
@@ -31,6 +33,15 @@ RSpec.describe MarketplaceEntry do
       entry.tags_csv = "rails, internal-api, rails"
 
       expect(entry.tags).to eq([ "rails", "internal-api" ])
+    end
+  end
+
+  describe "extension points" do
+    it "rejects unsupported extension points" do
+      entry = build(:marketplace_entry, extension_points: [ "unsupported" ])
+
+      expect(entry).not_to be_valid
+      expect(entry.errors[:extension_points]).to include("contains unsupported values: unsupported")
     end
   end
 

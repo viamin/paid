@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_29_152437) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1373,22 +1373,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_223651) do
     t.bigint "account_id", null: false
     t.string "added_by_email", limit: 255, null: false
     t.string "added_by_name", limit: 255, null: false
+    t.text "certification_notes", comment: "Operator-facing notes describing certification scope, evidence, or gaps."
+    t.string "certification_status", limit: 50, default: "uncertified", null: false, comment: "Certification state used to communicate ecosystem support expectations."
     t.datetime "created_at", null: false
     t.bigint "current_version_id", comment: "Current active content snapshot for this marketplace entry."
     t.text "description"
+    t.string "documentation_url", limit: 500, comment: "Primary documentation URL for installation and lifecycle guidance."
     t.string "entry_type", limit: 50, null: false, comment: "Logical enhancement category such as skill, plugin, or MCP server."
+    t.jsonb "extension_points", default: [], null: false, comment: "Stable Paid extension points this entry targets, such as collectors or workflow strategies."
     t.string "name", limit: 255, null: false
     t.string "provider", limit: 100, comment: "Primary target runtime or provider family for this entry."
     t.string "provider_format", limit: 100, default: "canonical_v1", null: false, comment: "Default artifact schema or provider-native format identifier."
+    t.string "source_code_url", limit: 500, comment: "Source repository or package URL for the extension payload."
     t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for safe rollout and deprecation."
+    t.string "support_tier", limit: 50, default: "community", null: false, comment: "Who supports the entry operationally: community, partner, or first-party."
     t.jsonb "tags", default: [], null: false, comment: "Searchable labels for browsing and matching."
     t.string "team_scope", limit: 50, default: "account", null: false, comment: "Marketplace visibility scope within the tenant."
     t.datetime "updated_at", null: false
     t.text "usage_guidance", comment: "Human guidance describing when the entry should be used."
+    t.index ["account_id", "certification_status"], name: "idx_marketplace_entries_account_certification"
     t.index ["account_id", "entry_type", "status"], name: "idx_marketplace_entries_lookup"
     t.index ["account_id", "team_scope", "status"], name: "idx_marketplace_entries_scope"
     t.index ["account_id"], name: "index_marketplace_entries_on_account_id"
     t.index ["current_version_id"], name: "index_marketplace_entries_on_current_version_id"
+    t.index ["extension_points"], name: "index_marketplace_entries_on_extension_points", using: :gin
     t.index ["tags"], name: "index_marketplace_entries_on_tags", using: :gin
   end
 
