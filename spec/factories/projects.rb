@@ -52,5 +52,16 @@ FactoryBot.define do
       github_token { nil }
       github_installation { association :github_installation, account: account }
     end
+
+    trait :with_interop_settings do
+      interop_settings do
+        {
+          "adoption_mode" => "advisory",
+          "external_execution_sources" => {
+            "cursor" => true
+          }
+        }
+      end
+    end
   end
 end

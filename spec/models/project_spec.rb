@@ -95,6 +95,36 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
     end
+
+    describe "interop settings validation" do
+      it "accepts supported adoption modes and source maps" do
+        project = build(:project, interop_settings: {
+          "adoption_mode" => "review_only",
+          "tool_integrations" => { "cursor" => true },
+          "connectors" => { "slack" => true },
+          "external_execution_sources" => { "github_copilot" => true },
+          "imports" => { "prompts" => [ { "source_identifier" => "prompt-1" } ] }
+        })
+
+        expect(project).to be_valid
+      end
+
+      it "rejects unknown adoption modes" do
+        project = build(:project, interop_settings: { "adoption_mode" => "shadow" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:interop_settings].join).to include("adoption_mode")
+      end
+
+      it "rejects unknown external execution sources" do
+        project = build(:project, interop_settings: {
+          "external_execution_sources" => { "unknown_tool" => true }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:interop_settings].join).to include("unknown entries")
+      end
+    end
   end
 
   describe "scopes" do
@@ -263,6 +293,27 @@ RSpec.describe Project do
         project = create(:project, max_tokens_per_run: nil)
         project.account.update!(default_max_tokens_per_run: 2_000_000)
         expect(project.project_level_max_tokens_per_run).to eq(2_000_000)
+      end
+    end
+
+    describe "#adoption_mode" do
+      it "falls back to observe_only" do
+        expect(build(:project).adoption_mode).to eq("observe_only")
+      end
+
+      it "returns the configured mode" do
+        project = build(:project, :with_interop_settings)
+        expect(project.adoption_mode).to eq("advisory")
+        expect(project).to be_advisory
+      end
+    end
+
+    describe "#external_execution_enabled_for?" do
+      it "checks the defaults-merged external execution sources" do
+        project = build(:project, :with_interop_settings)
+
+        expect(project.external_execution_enabled_for?(:cursor)).to be(true)
+        expect(project.external_execution_enabled_for?(:devin)).to be(false)
       end
     end
 

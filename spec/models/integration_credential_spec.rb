@@ -25,6 +25,16 @@ RSpec.describe IntegrationCredential do
       expect(credential).not_to be_valid
       expect(credential.errors[:auth_kind]).to include("is not supported for GitHub Signing")
     end
+
+    it "supports coexistence tooling and connector services added for interoperability" do
+      %w[bitbucket slack teams github_copilot cursor devin factory internal_agent_workflows gitlab_ci bitbucket_pipelines].each do |service_key|
+        credential = build(:integration_credential, service_key:, category: nil)
+
+        credential.validate
+
+        expect(credential.errors[:service_key]).to be_empty, "expected #{service_key} to be supported"
+      end
+    end
   end
 
   describe ".active" do

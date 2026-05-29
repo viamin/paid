@@ -150,6 +150,18 @@ FactoryBot.define do
       agent_type { "api" }
     end
 
+    trait :devin do
+      agent_type { "devin" }
+    end
+
+    trait :factory_tool do
+      agent_type { "factory" }
+    end
+
+    trait :internal_agent do
+      agent_type { "internal_agent" }
+    end
+
     trait :manual do
       trigger_type { "manual" }
     end
@@ -203,6 +215,14 @@ FactoryBot.define do
 
     trait :analyze_issue_goal do
       goal { "analyze_issue" }
+    end
+
+    trait :external_execution do
+      execution_origin { "external" }
+      external_source_key { "cursor" }
+      external_run_key { "cursor-run-#{SecureRandom.uuid}" }
+      adoption_mode_snapshot { "advisory" }
+      external_metadata { { "origin" => "import" } }
     end
   end
 end

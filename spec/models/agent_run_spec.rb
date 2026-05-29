@@ -64,6 +64,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
     it { is_expected.to validate_presence_of(:focus) }
     it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
+    it { is_expected.to validate_inclusion_of(:execution_origin).in_array(described_class::EXECUTION_ORIGINS) }
     it { is_expected.to validate_presence_of(:trigger_type) }
     it { is_expected.to validate_inclusion_of(:trigger_type).in_array(described_class::TRIGGER_TYPES) }
     it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
@@ -186,6 +187,40 @@ RSpec.describe AgentRun do
 
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:runner]).to include("must belong to the same user as the project owner")
+      end
+    end
+
+    describe "external execution fields" do
+      it "allows valid external execution rows" do
+        project = create(:project, :with_interop_settings)
+        agent_run = build(:agent_run, :external_execution, project: project, issue: nil, custom_prompt: "Imported run")
+
+        expect(agent_run).to be_valid
+      end
+
+      it "does not require a prompt source for external runs" do
+        project = create(:project, :with_interop_settings)
+        agent_run = build(:agent_run, :external_execution, project: project, issue: nil, custom_prompt: nil,
+          source_pull_request_number: nil)
+
+        expect(agent_run).to be_valid
+      end
+
+      it "requires source metadata for external runs" do
+        agent_run = build(:agent_run, execution_origin: "external", external_source_key: nil, external_run_key: nil,
+          issue: nil, custom_prompt: "Imported run")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:external_source_key]).to include("is required for external execution")
+        expect(agent_run.errors[:external_run_key]).to include("is required for external execution")
+      end
+
+      it "rejects external identifiers on paid-native runs" do
+        agent_run = build(:agent_run, external_source_key: "cursor", external_run_key: "run-1",
+          issue: nil, custom_prompt: "Native run")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:external_source_key]).to include("must be blank for paid-native runs")
       end
     end
   end
@@ -2401,7 +2436,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid AGENT_TYPES" do
-      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode pi api])
+      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode pi api devin factory internal_agent])
     end
 
     it "defines valid GOALS" do
