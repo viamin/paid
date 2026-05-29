@@ -90,6 +90,25 @@ RSpec.describe "Accounts::OperationsDashboards" do
       expect(account.account_activity_events.recent.first.action).to eq("operations.dashboard_updated")
     end
 
+    it "allows disabling automated backups" do
+      account.tenant_setting!.update!(
+        enterprise_operations_configuration: account.tenant_setting!.enterprise_operations_configuration.deep_merge(
+          "disaster_recovery" => { "automated_backups_enabled" => true }
+        )
+      )
+
+      patch account_operations_dashboard_path, params: operations_params.deep_merge(
+        enterprise_operations: {
+          disaster_recovery: {
+            automated_backups_enabled: "0"
+          }
+        }
+      )
+
+      expect(response).to redirect_to(account_operations_dashboard_path)
+      expect(account.tenant_setting!.reload.enterprise_operations_configuration.dig("disaster_recovery", "automated_backups_enabled")).to be(false)
+    end
+
     it "rejects invalid enterprise operations values" do
       patch account_operations_dashboard_path, params: operations_params.deep_merge(
         enterprise_operations: {

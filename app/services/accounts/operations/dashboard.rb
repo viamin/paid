@@ -69,15 +69,18 @@ module Accounts
       end
 
       def service_levels_payload
+        uptime_percent = uptime_actual_percent
+        queue_health_percent = queue_health_actual_percent
+
         {
           window_days: configuration.dig("service_levels", "slo_window_days"),
           uptime_target_percent: configuration.dig("service_levels", "uptime_target_percent"),
-          uptime_actual_percent: uptime_actual_percent,
-          uptime_status: status_for_target(uptime_actual_percent, configuration.dig("service_levels", "uptime_target_percent")),
+          uptime_actual_percent: uptime_percent,
+          uptime_status: status_for_target(uptime_percent, configuration.dig("service_levels", "uptime_target_percent")),
           queue_health_target_percent: configuration.dig("service_levels", "queue_health_target_percent"),
-          queue_health_actual_percent: queue_health_actual_percent,
+          queue_health_actual_percent: queue_health_percent,
           queue_health_status: status_for_target(
-            queue_health_actual_percent,
+            queue_health_percent,
             configuration.dig("service_levels", "queue_health_target_percent")
           ),
           queue_start_slo_minutes: configuration.dig("service_levels", "queue_start_slo_minutes"),
@@ -173,21 +176,29 @@ module Accounts
       end
 
       def uptime_actual_percent
-        total_seconds = time_window.end - time_window.begin
-        return 100.0 if total_seconds <= 0
-
-        downtime_seconds = p1_incidents.sum { |incident| overlap_seconds(incident) }
-        percent = ((total_seconds - downtime_seconds) / total_seconds) * 100.0
-        percent.round(2).clamp(0.0, 100.0)
+        @uptime_actual_percent ||= begin
+          total_seconds = time_window.end - time_window.begin
+          if total_seconds <= 0
+            100.0
+          else
+            downtime_seconds = p1_incidents.sum { |incident| overlap_seconds(incident) }
+            percent = ((total_seconds - downtime_seconds) / total_seconds) * 100.0
+            percent.round(2).clamp(0.0, 100.0)
+          end
+        end
       end
 
       def queue_health_actual_percent
-        rows = recent_runs.where.not(started_at: nil).pluck(:created_at, :started_at)
-        return 100.0 if rows.empty?
-
-        target_minutes = configuration.dig("service_levels", "queue_start_slo_minutes")
-        met_count = rows.count { |created_at, started_at| ((started_at - created_at) / 60.0) <= target_minutes }
-        ((met_count / rows.size.to_f) * 100).round(2)
+        @queue_health_actual_percent ||= begin
+          rows = recent_runs.where.not(started_at: nil).pluck(:created_at, :started_at)
+          if rows.empty?
+            100.0
+          else
+            target_minutes = configuration.dig("service_levels", "queue_start_slo_minutes")
+            met_count = rows.count { |created_at, started_at| ((started_at - created_at) / 60.0) <= target_minutes }
+            ((met_count / rows.size.to_f) * 100).round(2)
+          end
+        end
       end
 
       def p1_incidents

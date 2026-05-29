@@ -52,6 +52,16 @@ RSpec.describe Accounts::Operations::Dashboard do
       expect(result.dig(:capacity, :cost_ceiling_utilization_percent)).to be_nil
     end
 
+    it "reuses calculated service level metrics within a payload build" do
+      configure_operations!
+      dashboard = described_class.new(account: account, tenant_setting: tenant_setting, billing_visible: true)
+
+      expect(dashboard).to receive(:uptime_actual_percent).once.and_call_original
+      expect(dashboard).to receive(:queue_health_actual_percent).once.and_call_original
+
+      dashboard.send(:service_levels_payload)
+    end
+
     def configure_operations!
       tenant_setting.enterprise_operations_configuration = {
         "service_levels" => { "queue_start_slo_minutes" => 10 },
