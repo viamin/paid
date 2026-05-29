@@ -646,6 +646,99 @@ RSpec.describe "Api::GithubProxy" do
         expect(JSON.parse(response.body)["error"]).to include("not configured")
       end
 
+      context "when a stale PENDING review blocks the POST with 422 (#2324)" do
+        before do
+          conflict_body = {
+            message: "Unprocessable Entity",
+            errors: [ "User can only have one pending review per pull request" ],
+            status: "422"
+          }.to_json
+          stub_request(:post, target_url)
+            .to_return(
+              { status: 422, body: conflict_body, headers: { "Content-Type" => "application/json" } },
+              { status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" } }
+            )
+          stub_request(:get, "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews?per_page=100")
+            .to_return(
+              status: 200,
+              body: [
+                { id: 4380830777, state: "PENDING", user: { login: "paid-code-reviewer[bot]" } },
+                { id: 4376258909, state: "COMMENTED", user: { login: "paid-code-reviewer[bot]" } }
+              ].to_json,
+              headers: { "Content-Type" => "application/json" }
+            )
+          stub_request(:delete, "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/4380830777")
+            .to_return(status: 200, body: { id: 4380830777 }.to_json, headers: { "Content-Type" => "application/json" })
+          allow(Rails.logger).to receive(:info)
+        end
+
+        it "deletes the stale pending review and retries the POST once" do
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).to have_requested(:delete, "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/4380830777").once
+          expect(WebMock).to have_requested(:post, target_url).twice
+          expect(response).to have_http_status(:ok)
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "github_proxy.pending_review_recovered",
+                           pending_review_id: 4380830777,
+                           pr_number: 10)
+          )
+          agent_run.reload
+          expect(agent_run.review_posted_at).to be_present
+        end
+
+        it "leaves the original 422 in place when no PENDING review is present" do
+          stub_request(:get, "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews?per_page=100")
+            .to_return(
+              status: 200,
+              body: [ { id: 1, state: "COMMENTED", user: { login: "paid-code-reviewer[bot]" } } ].to_json,
+              headers: { "Content-Type" => "application/json" }
+            )
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).not_to have_requested(:delete, "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/4380830777")
+          expect(WebMock).to have_requested(:post, target_url).once
+          expect(response).to have_http_status(:unprocessable_content)
+        end
+
+        it "leaves the original 422 in place when the DELETE fails" do
+          stub_request(:delete, "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/4380830777")
+            .to_return(status: 500, body: {}.to_json, headers: { "Content-Type" => "application/json" })
+
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+
+          expect(WebMock).to have_requested(:post, target_url).once
+          expect(response).to have_http_status(:unprocessable_content)
+        end
+      end
+
+      it "logs the upstream response body when GitHub rejects the review POST" do
+        validation_body = { message: "Validation Failed",
+                            errors: [ { resource: "PullRequestReviewComment", code: "missing_field", field: "path" } ] }.to_json
+        stub_request(:post, target_url)
+          .to_return(status: 422, body: validation_body, headers: { "Content-Type" => "application/json" })
+        allow(Rails.logger).to receive(:warn)
+
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "github_proxy.upstream_error",
+            status: 422,
+            agent_run_id: agent_run.id
+          )
+        )
+      end
+
       it "logs a warning when a non-clean review body is posted without inline comments" do
         allow(Rails.logger).to receive(:warn)
 

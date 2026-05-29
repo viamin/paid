@@ -81,6 +81,24 @@ RSpec.describe Automation::Strategies::AutoReview do
       expect(types).not_to include("record_pr_followup")
     end
 
+    it "routes to create_pr when paid_agent review is pending but not running and merge_conflicts is present (#2324)" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "merge_conflicts", details: "PR has merge conflicts" }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to include("queue_create_pr_run")
+      expect(types).not_to include("queue_review_run")
+    end
+
     it "routes review_bot_review_pending to a request_review decision for the trigger login" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

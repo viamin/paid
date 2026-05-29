@@ -8,6 +8,8 @@ module Api
     REVIEW_COMMENT_MARKER = "<!-- paid:code-review -->"
     REVIEW_HEADER = "## Code Review"
     STALE_REVIEW_DISMISSAL_MESSAGE = "Subsequent review found no remaining actionable issues."
+    PENDING_REVIEW_ERROR_PATTERN = /one pending review per pull request/i
+    GITHUB_ERROR_BODY_LOG_LIMIT = 2_000
 
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
@@ -53,12 +55,21 @@ module Api
       end
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
-      response = proxy_to_github(path, github_authorization_token(path), forwarded_body)
+      authorization_token = github_authorization_token(path)
+      response = proxy_to_github(path, authorization_token, forwarded_body)
+
+      if review_creation_request?(path) && pending_review_conflict?(response)
+        recovered = recover_from_pending_review(path, authorization_token, forwarded_body, match: match)
+        response = recovered if recovered
+      end
+
       project.github_token&.touch_last_used! unless use_review_bot_token?(path)
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
         track_review_creation(path, response)
+      elsif response.status >= 400
+        log_github_error_response(path, response)
       end
 
       render body: response.body, status: response.status,
@@ -223,6 +234,83 @@ module Api
 
     def review_url_for(pr_number, review_id)
       "https://github.com/#{authenticated_project.full_name}/pull/#{pr_number}#pullrequestreview-#{review_id}"
+    end
+
+    # GitHub rejects POST /pulls/N/reviews with 422 if the authenticated user
+    # already has a PENDING review on the PR. A prior interrupted review run
+    # can leave one behind, causing every subsequent review attempt to fail
+    # the same way (#2324).
+    def pending_review_conflict?(response)
+      return false unless response.status == 422
+
+      body = parse_response_body(response.body)
+      return false unless body.is_a?(Hash)
+
+      errors = Array(body["errors"]).flat_map do |err|
+        err.is_a?(Hash) ? err.values_at("message", "code") : [ err ]
+      end
+      errors << body["message"]
+      errors.any? { |msg| msg.to_s.match?(PENDING_REVIEW_ERROR_PATTERN) }
+    end
+
+    # Find the bot's PENDING review on the target PR and DELETE it, then
+    # retry the original POST exactly once. Returns the retried response on
+    # success, or nil if recovery wasn't possible (in which case the caller
+    # keeps the original 422).
+    def recover_from_pending_review(path, authorization_token, forwarded_body, match:)
+      pending_id = find_pending_review_id(match[:owner], match[:repo], match[:number], authorization_token)
+      return nil unless pending_id
+
+      delete_response = github_api_call(:delete,
+        "repos/#{match[:owner]}/#{match[:repo]}/pulls/#{match[:number]}/reviews/#{pending_id}",
+        authorization_token, nil)
+      unless delete_response.status.between?(200, 299)
+        log_error("github_proxy.pending_review_delete_failed",
+          "status=#{delete_response.status} pending_review_id=#{pending_id}")
+        return nil
+      end
+
+      log_info("github_proxy.pending_review_recovered",
+        pending_review_id: pending_id,
+        pr_number: match[:number].to_i)
+
+      proxy_to_github(path, authorization_token, forwarded_body)
+    rescue Faraday::Error => e
+      log_error("github_proxy.pending_review_recovery_failed", e.message)
+      nil
+    end
+
+    def find_pending_review_id(owner, repo, number, authorization_token)
+      list_path = "repos/#{owner}/#{repo}/pulls/#{number}/reviews?per_page=100"
+      response = github_api_call(:get, list_path, authorization_token, nil)
+      return nil unless response.status.between?(200, 299)
+
+      reviews = parse_response_body(response.body)
+      return nil unless reviews.is_a?(Array)
+
+      pending = reviews.find { |r| r.is_a?(Hash) && r["state"].to_s.casecmp("PENDING").zero? }
+      pending&.dig("id")
+    end
+
+    def github_api_call(method, path, authorization_token, body)
+      target_url = "https://api.github.com/#{path}"
+      build_connection.run_request(
+        method, target_url, body,
+        "Authorization" => "Bearer #{authorization_token}",
+        "Accept" => "application/vnd.github+json"
+      )
+    end
+
+    def log_github_error_response(path, response)
+      Rails.logger.warn(
+        message: "github_proxy.upstream_error",
+        agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
+        method: request.method,
+        path: path,
+        status: response.status,
+        body: response.body.to_s.truncate(GITHUB_ERROR_BODY_LOG_LIMIT)
+      )
     end
 
     def warn_if_missing_inline_comments(response_body)
