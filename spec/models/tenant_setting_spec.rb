@@ -275,6 +275,25 @@ RSpec.describe TenantSetting do
   end
 
   describe "deployment assurance" do
+    let(:legacy_deployment_assurance) do
+      {
+        "deployment_model" => "air_gapped",
+        "network_boundary" => "offline",
+        "reference_architecture" => "offline_promotion",
+        "disaster_recovery" => {
+          "backup_cadence" => "daily",
+          "rpo_hours" => 24,
+          "rto_hours" => 8
+        },
+        "customer_managed_keys" => {
+          "rotation_interval_days" => 90
+        },
+        "secret_rotation" => {
+          "interval_days" => 90
+        }
+      }
+    end
+
     it "merges the Phase 8.1 deployment defaults" do
       setting = build(:tenant_setting)
 
@@ -302,10 +321,21 @@ RSpec.describe TenantSetting do
       expect(setting.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(45)
     end
 
+    it "accepts legacy deployment assurance payloads while stored records are upgraded" do
+      setting = build(
+        :tenant_setting,
+        features: {
+          "deployment_assurance" => legacy_deployment_assurance
+        }
+      )
+
+      expect(setting).to be_valid
+    end
+
     it "rejects unsupported deployment model policy values" do
       setting = build(:tenant_setting)
       setting.deployment_assurance_configuration = {
-        "deployment_model" => "air_gapped",
+        "deployment_model" => "public_cloud",
         "tenant_isolation" => "shared",
         "release_management" => { "upgrade_channel" => "rapid", "support_window_days" => 0 }
       }

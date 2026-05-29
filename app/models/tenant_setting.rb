@@ -78,9 +78,18 @@ class TenantSetting < ApplicationRecord
     }
   }.freeze
   DEPLOYMENT_ASSURANCE_MODELS = %w[managed_cloud private_saas byoc].freeze
-  DEPLOYMENT_ASSURANCE_TENANT_ISOLATION = %w[multi_tenant_rls single_tenant customer_cloud].freeze
+  LEGACY_DEPLOYMENT_ASSURANCE_MODELS = %w[self_hosted private_vpc air_gapped].freeze
+  VALID_DEPLOYMENT_ASSURANCE_MODELS =
+    (DEPLOYMENT_ASSURANCE_MODELS + LEGACY_DEPLOYMENT_ASSURANCE_MODELS).freeze
   DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES = %w[paid_managed private_connect customer_vpc].freeze
+  LEGACY_DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES = %w[private_vpc public_ingress offline].freeze
+  VALID_DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES =
+    (DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES + LEGACY_DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES).freeze
   DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES = %w[managed_control_plane dedicated_hosted_stack customer_cloud_stack].freeze
+  LEGACY_DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES = %w[single_tenant private_services offline_promotion].freeze
+  VALID_DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES =
+    (DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES + LEGACY_DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES).freeze
+  DEPLOYMENT_ASSURANCE_TENANT_ISOLATION = %w[multi_tenant_rls single_tenant customer_cloud].freeze
   DEPLOYMENT_ASSURANCE_BACKUP_CADENCES = %w[hourly daily weekly].freeze
   DEPLOYMENT_ASSURANCE_UPGRADE_CHANNELS = %w[stable extended_support preview].freeze
   DEPLOYMENT_ASSURANCE_VERSION_SUPPORT_POLICIES = %w[latest n_minus_one lts].freeze
@@ -369,13 +378,13 @@ class TenantSetting < ApplicationRecord
   def validate_deployment_assurance
     return unless features.is_a?(Hash)
 
-    assurance = features.fetch("deployment_assurance", nil)
+    assurance = deployment_assurance_configuration
     return unless assurance.is_a?(Hash)
 
     validate_deployment_assurance_option(
       assurance["deployment_model"],
       path: "deployment_model",
-      allowed_values: DEPLOYMENT_ASSURANCE_MODELS
+      allowed_values: VALID_DEPLOYMENT_ASSURANCE_MODELS
     )
     validate_deployment_assurance_option(
       assurance["tenant_isolation"],
@@ -385,12 +394,12 @@ class TenantSetting < ApplicationRecord
     validate_deployment_assurance_option(
       assurance["network_boundary"],
       path: "network_boundary",
-      allowed_values: DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES
+      allowed_values: VALID_DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES
     )
     validate_deployment_assurance_option(
       assurance["reference_architecture"],
       path: "reference_architecture",
-      allowed_values: DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES
+      allowed_values: VALID_DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES
     )
     validate_deployment_assurance_option(
       assurance.dig("disaster_recovery", "backup_cadence"),
