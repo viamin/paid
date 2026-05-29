@@ -13,7 +13,7 @@ module Api
     skip_after_action :verify_authorized, only: :index
 
     def index
-      entries = filtered_scope.includes(:current_version, :marketplace_entry_rules).ordered
+      entries = filtered_scope.includes(:current_version).ordered
 
       render json: {
         entries: entries.map { |entry| index_entry_json(entry) }
