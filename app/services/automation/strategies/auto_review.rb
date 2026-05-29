@@ -131,7 +131,7 @@ module Automation
         end
 
         if trigger_types.include?(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
-          return paid_agent_pending_decisions(plugins)
+          return paid_agent_pending_decisions(plugins, signals)
         end
 
         if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
@@ -146,13 +146,33 @@ module Automation
         followup_decisions(signals)
       end
 
-      def paid_agent_pending_decisions(plugins)
+      def paid_agent_pending_decisions(plugins, signals)
         # paid_agent_review_pending is a hard gate: emit only the
         # queue_review_run decision and suppress create_pr follow-up runs
         # while the review is outstanding (#1135).
+        #
+        # Exception: when merge_conflicts is also present and the review
+        # isn't currently running, address the conflict via create_pr first
+        # (#2324). A review of code with conflicts can't produce meaningful
+        # feedback, and suppressing the conflict-fix leaves the PR pinned in
+        # a queue→fail→requeue loop. Active-run state still suppresses to
+        # avoid /workspace collision with the running review.
+        if !review_actively_running?(signals) && merge_conflicts_present?(signals)
+          return followup_decisions(signals)
+        end
+
         paid_plugin = plugins.find { |p| p.name == :paid_agent }
         decision = paid_plugin&.decision
         decision ? [ decision ] : []
+      end
+
+      def review_actively_running?(signals)
+        pending = signals.trigger(Automation::ReviewMethods::PaidAgent::TRIGGER_TYPE)
+        pending && pending[:active_run] == true
+      end
+
+      def merge_conflicts_present?(signals)
+        signals.triggers.any? { |t| t[:type].to_s == "merge_conflicts" }
       end
 
       def review_bot_pending_decisions(plugins, signals, trigger_types)

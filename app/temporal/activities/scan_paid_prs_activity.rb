@@ -76,6 +76,12 @@ module Activities
       label_action
     ].freeze
 
+    # Triggers that bypass the paid_agent_review_pending hard gate.
+    # merge_conflicts cannot be deferred — a review of code with conflicts
+    # isn't meaningful, and leaving it suppressed lets the PR loop indefinitely
+    # while reviews keep failing on un-mergeable code (#2324).
+    PASS_THROUGH_TRIGGER_TYPES = %w[merge_conflicts].freeze
+
     def execute(input)
       @pr_progress_states = {}
       @live_pr_states = {}
@@ -514,6 +520,15 @@ module Activities
         all_triggers.concat(ci_triggers)
       end
 
+      # Surface merge_conflicts for restarted PRs so the loop can break out of
+      # a stuck review cycle (#2324). True draft PRs are work-in-progress and
+      # may carry temporary conflicts, but a "restarted" PR was previously
+      # ready and now has a real conflict the owner expects automation to fix.
+      if issue.pr_review_phase == "restarted"
+        pr_data ||= fetch_pr_data(client, project, issue)
+        all_triggers.concat(check_merge_conflicts(project, pr_data))
+      end
+
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
@@ -571,11 +586,19 @@ module Activities
       # branch (WorktreeConflict). Other triggers (CI, comments, threads)
       # will be re-detected on the next scan after the review posts, when
       # the appropriate follow-up — informed by the new feedback — can run.
+      #
+      # Exception: merge_conflicts always passes through. A review of code
+      # with merge conflicts can't produce meaningful feedback, and
+      # suppressing it lets stuck-review loops keep pinning the PR (#2324).
+      # The decision-level gate in Automation::Strategies::AutoReview routes
+      # to create_pr only when the review isn't actively running, so the
+      # workspace stays single-tenant.
       review_pending = pending_review_trigger(pending_triggers + sidecar_triggers)
+      passthrough = pass_through_triggers(all_triggers)
       triggers =
         if review_pending
-          log_review_pending_gate(project, issue, suppressed: all_triggers)
-          pending_triggers + sidecar_triggers
+          log_review_pending_gate(project, issue, suppressed: all_triggers - passthrough)
+          passthrough + pending_triggers + sidecar_triggers
         else
           all_triggers + pending_triggers + sidecar_triggers
         end
@@ -589,6 +612,10 @@ module Activities
     # same cycle, since both runs would share /workspace.
     def pending_review_trigger(triggers)
       Array(triggers).find { |t| t[:type] == "paid_agent_review_pending" }
+    end
+
+    def pass_through_triggers(triggers)
+      Array(triggers).select { |t| PASS_THROUGH_TRIGGER_TYPES.include?(t[:type].to_s) }
     end
 
     # Emit a structured log when the gate suppresses other actionable
@@ -866,10 +893,14 @@ module Activities
 
       # Hard gate: a pending paid_agent review takes precedence over any
       # other actionable trigger for the PR — see scan_draft_pr for rationale.
+      # merge_conflicts is the documented exception (#2324): code with
+      # conflicts can't be meaningfully reviewed, so we let create_pr
+      # address the conflict first.
       review_pending = pending_review_trigger(triggers)
       if review_pending
-        log_review_pending_gate(project, issue, suppressed: triggers - [ review_pending ])
-        return [ review_pending ]
+        passthrough = pass_through_triggers(triggers)
+        log_review_pending_gate(project, issue, suppressed: triggers - [ review_pending ] - passthrough)
+        return [ review_pending ] + passthrough
       end
 
       triggers
