@@ -44,7 +44,7 @@ module Interop
         {
           prompts: Array(data[:prompts]).map { |p| map_prompt_entry(p, "copilot") },
           style_guides: [],
-          workflow_policies: []
+          workflow_policies: Array(data[:workflow_policies]).map { |w| map_workflow_entry(w) }
         }
       end
 
@@ -52,7 +52,7 @@ module Interop
         {
           prompts: Array(data[:prompts]).map { |p| map_prompt_entry(p, "cursor") },
           style_guides: Array(data[:style_guides]).map { |g| map_style_guide_entry(g) },
-          workflow_policies: []
+          workflow_policies: Array(data[:workflow_policies]).map { |w| map_workflow_entry(w) }
         }
       end
 
@@ -60,7 +60,7 @@ module Interop
         {
           prompts: Array(data[:prompts]).map { |p| map_prompt_entry(p, "devin") },
           style_guides: [],
-          workflow_policies: Array(data[:workflows]).map { |w| map_workflow_entry(w) }
+          workflow_policies: Array(data[:workflow_policies] || data[:workflows]).map { |w| map_workflow_entry(w) }
         }
       end
 
@@ -68,7 +68,7 @@ module Interop
         {
           prompts: Array(data[:prompts]).map { |p| map_prompt_entry(p, "factory") },
           style_guides: [],
-          workflow_policies: Array(data[:policies]).map { |w| map_workflow_entry(w) }
+          workflow_policies: Array(data[:workflow_policies] || data[:policies]).map { |w| map_workflow_entry(w) }
         }
       end
 
@@ -76,7 +76,7 @@ module Interop
         {
           prompts: Array(data[:prompts]).map { |p| map_prompt_entry(p, "internal") },
           style_guides: Array(data[:style_guides]).map { |g| map_style_guide_entry(g) },
-          workflow_policies: Array(data[:policies]).map { |w| map_workflow_entry(w) }
+          workflow_policies: Array(data[:workflow_policies] || data[:policies]).map { |w| map_workflow_entry(w) }
         }
       end
 

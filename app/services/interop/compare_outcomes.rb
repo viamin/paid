@@ -54,7 +54,7 @@ module Interop
     def base_runs
       project.agent_runs
         .includes(:quality_metrics)
-        .where(created_at: period_start..period_end)
+        .where("COALESCE(completed_at, started_at, created_at) BETWEEN ? AND ?", period_start, period_end)
         .where(status: AgentRun::FINISHED_STATUSES)
     end
 
@@ -103,7 +103,12 @@ module Interop
     end
 
     def average_tokens(runs)
-      totals = runs.map { |run| run.tokens_input.to_i + run.tokens_output.to_i }
+      totals = runs.filter_map do |run|
+        values = [ run.tokens_input, run.tokens_output ].compact
+        next if values.empty?
+
+        values.sum
+      end
       return 0.0 if totals.empty?
 
       (totals.sum.to_f / totals.size).round(2)

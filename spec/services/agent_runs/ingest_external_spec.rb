@@ -14,16 +14,22 @@ RSpec.describe AgentRuns::IngestExternal do
     end
 
     it "creates an external agent run wired into the project metrics surface" do
-      agent_run = described_class.call(
-        project: project,
-        attributes: {
-          external_source_key: "cursor",
-          external_run_key: "cursor-123",
-          goal: "create_pr",
-          status: "completed",
-          custom_prompt: "Imported PR automation outcome"
-        }
-      )
+      agent_run = nil
+
+      expect {
+        agent_run = described_class.call(
+          project: project,
+          attributes: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-123",
+            goal: "create_pr",
+            status: "completed",
+            custom_prompt: "Imported PR automation outcome"
+          }
+        )
+      }.to have_enqueued_job(QualityMetricsCollectionJob)
+        .and have_enqueued_job(HumanFeedbackCollectionJob)
+        .and have_enqueued_job(AnomalyDetectionJob)
 
       expect(agent_run).to be_persisted
       expect(agent_run.execution_origin).to eq("external")
@@ -90,6 +96,30 @@ RSpec.describe AgentRuns::IngestExternal do
           }
         )
       }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    it "normalizes integration-specific external metadata before persisting" do
+      agent_run = described_class.call(
+        project: project,
+        attributes: {
+          external_source_key: "cursor",
+          external_run_key: "cursor-metadata",
+          external_metadata: {
+            session_type: "composer",
+            model: "gpt-5",
+            metrics: {
+              tokens_used: 321
+            },
+            ignored: "drop-me"
+          }
+        }
+      )
+
+      expect(agent_run.external_metadata).to eq({
+        "session_type" => "composer",
+        "model" => "gpt-5",
+        "tokens_used" => 321
+      })
     end
   end
 end

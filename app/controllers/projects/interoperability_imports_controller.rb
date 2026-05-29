@@ -8,12 +8,17 @@ module Projects
       authorize @project, :update?
       Interop::AdoptionModeGuard.enforce!(project: @project, action: :import_config)
 
+      mapped_package = Interop::Imports::MapExternalPackage.call(
+        source_system: raw_import_payload.fetch("source_system"),
+        raw_data: raw_import_payload.except("source_system")
+      )
+
       result = Interop::Imports::ApplyProjectPackage.call(
         project: @project,
-        source_system: import_params.fetch(:source_system),
-        prompts: import_params[:prompts] || [],
-        style_guides: import_params[:style_guides] || [],
-        workflow_policies: import_params[:workflow_policies] || []
+        source_system: mapped_package.source_system,
+        prompts: mapped_package.prompts,
+        style_guides: mapped_package.style_guides,
+        workflow_policies: mapped_package.workflow_policies
       )
 
       render json: {
@@ -33,29 +38,14 @@ module Projects
       @project = policy_scope(Project).find(params[:project_id])
     end
 
-    def import_params
-      params.require(:interoperability_import).permit(
-        :source_system,
-        prompts: [
-          :slug,
-          :name,
-          :category,
-          :description,
-          :template,
-          :system_prompt,
-          :active,
-          { variables: [] }
-        ],
-        style_guides: %i[name raw_content language active],
-        workflow_policies: [
-          :policy_key,
-          :policy_type,
-          :name,
-          { context_selector: {} },
-          { rules: {} },
-          { parameters: {} },
-          { metadata: {} }
-        ]
+    def raw_import_payload
+      params.require(:interoperability_import).to_unsafe_h.slice(
+        "source_system",
+        "prompts",
+        "style_guides",
+        "workflow_policies",
+        "workflows",
+        "policies"
       )
     end
   end

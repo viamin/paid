@@ -29,13 +29,17 @@ module Api
       render json: { errors: [ "Project not found" ] }, status: :not_found
     end
 
-    def integration_credentials_for(service_key)
+    def integration_credentials_for(service_key, auth_kinds: nil)
       return if service_key.blank?
 
-      @project.account.integration_credentials
+      credentials = @project.account.integration_credentials
         .active
         .for_service(service_key)
         .order(created_at: :desc)
+
+      return credentials if auth_kinds.blank?
+
+      credentials.where(auth_kind: Array(auth_kinds).map(&:to_s))
     end
 
     def bearer_token

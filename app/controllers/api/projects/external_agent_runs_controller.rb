@@ -5,6 +5,8 @@ module Api
     class ExternalAgentRunsController < ActionController::API
       include Api::ProjectInteropAuthentication
 
+      INBOUND_AUTH_KINDS = %w[api_key signing_token].freeze
+
       before_action :authenticate_external_source!
 
       def create
@@ -36,7 +38,7 @@ module Api
           return
         end
 
-        credentials = integration_credentials_for(service_key)
+        credentials = integration_credentials_for(service_key, auth_kinds: INBOUND_AUTH_KINDS)
 
         if credentials.blank?
           render json: { errors: [ "No active integration credential configured for #{service_key.presence || "this source"}" ] }, status: :unauthorized
@@ -68,9 +70,15 @@ module Api
           :pull_request_number,
           :result_commit_sha,
           :external_source_key,
-          :external_run_key,
-          external_metadata: {}
+          :external_run_key
         )
+          .to_h
+          .merge(external_metadata: raw_external_metadata)
+      end
+
+      def raw_external_metadata
+        metadata = params.require(:external_agent_run).to_unsafe_h["external_metadata"]
+        metadata.is_a?(Hash) ? metadata : {}
       end
     end
   end

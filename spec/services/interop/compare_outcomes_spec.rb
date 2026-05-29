@@ -59,6 +59,31 @@ RSpec.describe Interop::CompareOutcomes do
 
         expect(result.by_source["devin"].avg_tokens_used).to eq(175.0)
       end
+
+      it "excludes runs with no token data from token averages" do
+        create(:agent_run, :external_execution, :completed, project: project,
+               external_source_key: "factory", tokens_input: nil, tokens_output: nil)
+        create(:agent_run, :external_execution, :completed, project: project,
+               external_source_key: "factory", tokens_input: 80, tokens_output: 20)
+
+        result = described_class.call(project: project)
+
+        expect(result.by_source["factory"].avg_tokens_used).to eq(100.0)
+      end
+
+      it "filters comparison windows by execution timestamps instead of ingest time" do
+        recent_window_start = 2.days.ago
+        recent_window_end = 1.day.ago
+
+        create(:agent_run, :external_execution, :completed, project: project,
+               external_source_key: "cursor", created_at: Time.current, started_at: 10.days.ago, completed_at: 10.days.ago + 10.minutes)
+        create(:agent_run, :external_execution, :completed, project: project,
+               external_source_key: "cursor", created_at: 10.days.ago, started_at: recent_window_start + 1.hour, completed_at: recent_window_start + 2.hours)
+
+        result = described_class.call(project: project, period_start: recent_window_start, period_end: recent_window_end)
+
+        expect(result.external.run_count).to eq(1)
+      end
     end
 
     context "with no runs" do

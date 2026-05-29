@@ -62,6 +62,7 @@ module Interop
 
         connector = Connectors::Registry.find(connector_key)
         raise ArgumentError, "unknown connector: #{connector_key}" unless connector
+        raise ArgumentError, "unsupported event_type for #{connector_key}: #{event_type}" unless connector.event_types.include?(event_type)
 
         unless connector_enabled?
           raise ArgumentError, "#{connector_key} connector is not enabled for this project"

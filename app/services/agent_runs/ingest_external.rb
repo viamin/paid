@@ -23,7 +23,9 @@ module AgentRuns
     def call
       validate!
 
-      AgentRun.create!(agent_run_attributes)
+      agent_run = AgentRun.create!(agent_run_attributes)
+      enqueue_post_ingest_jobs!(agent_run)
+      agent_run
     end
 
     private
@@ -70,7 +72,7 @@ module AgentRuns
         external_source_key: external_source_key,
         external_run_key: external_run_key,
         adoption_mode_snapshot: project.adoption_mode,
-        external_metadata: attributes[:external_metadata].is_a?(Hash) ? attributes[:external_metadata] : {}
+        external_metadata: normalized_external_metadata
       }.compact
     end
 
@@ -90,6 +92,23 @@ module AgentRuns
       elsif attributes[:issue_id].present?
         project.issues.find(attributes[:issue_id])
       end
+    end
+
+    def normalized_external_metadata
+      return {} unless attributes[:external_metadata].is_a?(Hash)
+
+      integration = Interop::Integrations::Registry.find(external_source_key)
+      return attributes[:external_metadata].deep_stringify_keys unless integration
+
+      integration.normalize_external_metadata(attributes[:external_metadata].deep_stringify_keys)
+    end
+
+    def enqueue_post_ingest_jobs!(agent_run)
+      return unless agent_run.finished?
+
+      QualityMetricsCollectionJob.perform_later(agent_run.id)
+      HumanFeedbackCollectionJob.set(wait: 5.minutes).perform_later(agent_run.id) if agent_run.successful?
+      AnomalyDetectionJob.perform_later(agent_run.id)
     end
   end
 end

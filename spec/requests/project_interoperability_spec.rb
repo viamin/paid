@@ -82,6 +82,27 @@ RSpec.describe "Project interoperability" do
       expect(project.agent_runs.last.execution_origin).to eq("external")
     end
 
+    it "preserves nested external metadata for normalization" do
+      post api_project_external_agent_runs_path(project), params: {
+        external_agent_run: {
+          external_source_key: "cursor",
+          external_run_key: "cursor-run-nested-metadata",
+          external_metadata: {
+            session_type: "composer",
+            metrics: {
+              tokens_used: 55
+            }
+          }
+        }
+      }.to_json, headers: external_run_headers.merge("CONTENT_TYPE" => "application/json")
+
+      expect(response).to have_http_status(:created)
+      expect(project.agent_runs.last.external_metadata).to eq({
+        "session_type" => "composer",
+        "tokens_used" => 55
+      })
+    end
+
     it "returns 404 when the referenced issue is not part of the project" do
       other_project = create(:project, account: account, created_by: owner_user)
       other_issue = create(:issue, project: other_project)
@@ -136,6 +157,30 @@ RSpec.describe "Project interoperability" do
       expect(response.parsed_body.fetch("errors")).to include("Invalid integration credential")
     end
 
+    it "rejects oauth-only credentials for inbound external run ingestion" do
+      cursor_credential.revoke!
+      oauth_credential = create(
+        :integration_credential,
+        :oauth,
+        account: account,
+        created_by: owner_user,
+        service_key: "cursor",
+        secret: "cursor-oauth-secret"
+      )
+
+      expect {
+        post api_project_external_agent_runs_path(project), params: {
+          external_agent_run: {
+            external_source_key: "cursor",
+            external_run_key: "cursor-run-oauth-only",
+            status: "completed"
+          }
+        }, headers: { "Authorization" => "Bearer #{oauth_credential.secret}" }
+      }.not_to change(project.agent_runs, :count)
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
     it "accepts older active external-run credentials during rotation" do
       create(
         :integration_credential,
@@ -184,6 +229,16 @@ RSpec.describe "Project interoperability" do
 
       expect(response).to have_http_status(:created)
       expect(project.prompts.find_by!(slug: "copilot.prompt")).to be_present
+    end
+
+    it "maps raw source-specific packages before applying them" do
+      post project_interoperability_imports_path(project), params: devin_import_payload
+
+      expect(response).to have_http_status(:created)
+      expect(project.prompts.find_by!(slug: "devin.devin.prompt").current_version.template).to eq("Handle {{task}}")
+      expect(project.coordination_policies.find_by!(policy_key: "devin.review").current_version.rules).to eq({
+        "layer_order" => %w[lint test review]
+      })
     end
 
     it "blocks imports in observe_only mode" do
@@ -286,6 +341,28 @@ RSpec.describe "Project interoperability" do
       }.to change(project.external_connector_events, :count).by(1)
 
       expect(response).to have_http_status(:created)
+    end
+
+    it "preserves nested connector payload JSON" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+
+      post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
+
+      expect(response).to have_http_status(:created)
+      expect(project.external_connector_events.last.payload).to eq({
+        "event" => {
+          "ts" => "123.456",
+          "type" => "message",
+          "text" => "hello"
+        }
+      })
     end
 
     it "accepts connector requests signed with an older active credential during rotation" do
@@ -393,6 +470,42 @@ RSpec.describe "Project interoperability" do
       }.to change(project.external_connector_events, :count).by(1)
 
       expect(response).to have_http_status(:created)
+    end
+
+    it "rejects oauth-only connector credentials for inbound webhook authentication" do
+      create(
+        :integration_credential,
+        :oauth,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        secret: "xoxb-oauth-secret"
+      )
+
+      expect {
+        post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
+      }.not_to change(project.external_connector_events, :count)
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "returns conflict for duplicate webhook deliveries caught by validation" do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "slack",
+        auth_kind: "api_key",
+        secret: slack_secret
+      )
+
+      post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
+
+      expect {
+        post api_project_connector_events_path(project), params: connector_event_json, headers: signed_slack_headers
+      }.not_to change(project.external_connector_events, :count)
+
+      expect(response).to have_http_status(:conflict)
     end
 
     it "rejects connector requests when no active integration credential is configured" do
@@ -504,6 +617,35 @@ RSpec.describe "Project interoperability" do
     {
       "source_identifier" => "cursor.prompt-1",
       "target_slug" => "existing-prompt"
+    }
+  end
+
+  def devin_import_payload
+    {
+      interoperability_import: {
+        source_system: "devin",
+        prompts: [
+          {
+            name: "Devin Prompt",
+            content: "Handle {{task}}"
+          }
+        ],
+        workflows: [
+          {
+            key: "devin.review",
+            type: "review",
+            name: "Devin Review",
+            rules: {
+              "layer_order" => %w[lint test review]
+            },
+            parameters: {
+              "approval" => {
+                "required" => true
+              }
+            }
+          }
+        ]
+      }
     }
   end
 end

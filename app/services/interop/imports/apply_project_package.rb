@@ -15,6 +15,11 @@ module Interop
         @prompts = Array(prompts)
         @style_guides = Array(style_guides)
         @workflow_policies = Array(workflow_policies)
+        @import_mappings = {
+          "prompts" => [],
+          "style_guides" => [],
+          "workflow_policies" => []
+        }
       end
 
       def call
@@ -35,7 +40,7 @@ module Interop
 
       private
 
-      attr_reader :project, :source_system, :prompts, :style_guides, :workflow_policies
+      attr_reader :project, :source_system, :prompts, :style_guides, :workflow_policies, :import_mappings
 
       def import_prompts
         prompts.count do |entry|
@@ -49,6 +54,10 @@ module Interop
           prompt.save!
 
           upsert_prompt_version!(prompt, data)
+          track_mapping!("prompts", {
+            "source_identifier" => data[:source_identifier].presence || data.fetch(:slug),
+            "target_slug" => prompt.slug
+          })
           true
         end
       end
@@ -79,6 +88,10 @@ module Interop
           guide.language = data[:language]
           guide.active = data.fetch(:active, true)
           guide.save!
+          track_mapping!("style_guides", {
+            "source_identifier" => data[:source_identifier].presence || data.fetch(:name),
+            "target_name" => guide.name
+          })
           true
         end
       end
@@ -111,6 +124,10 @@ module Interop
             policy.activate_version!(version)
           end
 
+          track_mapping!("workflow_policies", {
+            "source_identifier" => data[:source_identifier].presence || data.fetch(:policy_key),
+            "target_policy_key" => policy.policy_key
+          })
           true
         end
       end
@@ -129,7 +146,25 @@ module Interop
         }
 
         imports["last_import"] = summary
+        Interop::Catalog.import_keys.each do |key|
+          imports[key] = merge_mappings(Array(imports[key]), import_mappings.fetch(key))
+        end
+
         project.update!(interop_settings: settings.merge("imports" => imports))
+      end
+
+      def track_mapping!(type, mapping)
+        import_mappings.fetch(type) << mapping
+      end
+
+      def merge_mappings(existing, new_entries)
+        merged = existing.index_by { |entry| entry["source_identifier"].to_s }
+
+        new_entries.each do |entry|
+          merged[entry.fetch("source_identifier").to_s] = entry
+        end
+
+        merged.values
       end
     end
   end

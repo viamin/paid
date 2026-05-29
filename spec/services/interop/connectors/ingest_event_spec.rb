@@ -80,6 +80,18 @@ RSpec.describe Interop::Connectors::IngestEvent do
       }.to raise_error(ArgumentError, /not enabled/)
     end
 
+    it "rejects unsupported event types for a known connector" do
+      expect {
+        described_class.call(
+          project: project,
+          connector_key: "jira",
+          event_type: "totally_made_up",
+          payload: {},
+          external_event_id: "jira-invalid-type"
+        )
+      }.to raise_error(ArgumentError, /unsupported event_type/)
+    end
+
     it "rejects duplicate external event IDs for the same project" do
       described_class.call(
         project: project,

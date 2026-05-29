@@ -5,6 +5,8 @@ module Api
     class ConnectorEventsController < ActionController::API
       include Api::ProjectInteropAuthentication
 
+      INBOUND_AUTH_KINDS = %w[api_key signing_token].freeze
+
       SIGNATURE_HEADER_CANDIDATES = {
         "slack" => %w[X-Slack-Signature],
         "jira" => %w[X-Signature X-Hub-Signature X-Hub-Signature-256],
@@ -22,7 +24,7 @@ module Api
           project: @project,
           connector_key: connector_event_params[:connector_key],
           event_type: connector_event_params[:event_type],
-          payload: connector_event_params[:payload] || {},
+          payload: raw_payload,
           external_event_id: connector_event_params[:external_event_id],
           occurred_at: connector_event_params[:occurred_at],
           signature: connector_signature,
@@ -39,7 +41,13 @@ module Api
         }, status: :created
       rescue ActiveRecord::RecordNotUnique
         render json: { errors: [ "Event already processed" ] }, status: :conflict
-      rescue ActiveRecord::RecordInvalid, ArgumentError => e
+      rescue ActiveRecord::RecordInvalid => e
+        if duplicate_event_error?(e.record)
+          render json: { errors: [ "Event already processed" ] }, status: :conflict
+        else
+          render json: { errors: [ e.message ] }, status: :unprocessable_content
+        end
+      rescue ArgumentError => e
         render json: { errors: [ e.message ] }, status: :unprocessable_content
       end
 
@@ -54,7 +62,7 @@ module Api
           return
         end
 
-        @connector_credentials = integration_credentials_for(service_key)
+        @connector_credentials = integration_credentials_for(service_key, auth_kinds: INBOUND_AUTH_KINDS)
         return if @connector_credentials.present?
 
         render json: { errors: [ "No active integration credential configured for #{service_key.presence || "this connector"}" ] }, status: :unauthorized
@@ -66,8 +74,7 @@ module Api
           :event_type,
           :external_event_id,
           :occurred_at,
-          :signature,
-          payload: {}
+          :signature
         )
       end
 
@@ -98,6 +105,15 @@ module Api
 
       def connector_secrets
         Array(@connector_credentials).map(&:secret)
+      end
+
+      def raw_payload
+        payload = params.require(:connector_event).to_unsafe_h["payload"]
+        payload.is_a?(Hash) ? payload : {}
+      end
+
+      def duplicate_event_error?(record)
+        record.is_a?(ExternalConnectorEvent) && record.errors.of_kind?(:external_event_id, :taken)
       end
     end
   end
