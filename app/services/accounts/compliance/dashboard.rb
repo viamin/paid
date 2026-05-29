@@ -368,6 +368,10 @@ module Accounts
       end
 
       def byoc_reference_stack_control
+        if deployment_assurance["deployment_model"] == "air_gapped"
+          return air_gapped_reference_stack_control
+        end
+
         unless deployment_assurance["deployment_model"] == "byoc"
           return control(
             :byoc_reference_stack,
@@ -396,6 +400,29 @@ module Accounts
             "Cloud provider: #{byoc['cloud_provider'].presence || 'Not recorded'}",
             "Automation stack: #{byoc['automation_stack'].presence || 'Not recorded'}",
             "Reference stack: #{byoc['reference_stack'].presence || 'Not recorded'}",
+            "Last validated: #{display_date(recovery['reference_stack_last_validated_at'])}"
+          ]
+        )
+      end
+
+      def air_gapped_reference_stack_control
+        recovery = deployment_assurance["disaster_recovery"]
+        status =
+          if fresh_within?(recovery["reference_stack_last_validated_at"], days: 90)
+            :compliant
+          elsif parse_date(recovery["reference_stack_last_validated_at"])
+            :warning
+          else
+            :gap
+          end
+
+        control(
+          :byoc_reference_stack,
+          status: status,
+          evidence: [
+            "Legacy air-gapped deployment retained until migration completes",
+            "Reference architecture: #{deployment_assurance['reference_architecture'].humanize}",
+            "Network boundary: #{deployment_assurance['network_boundary'].humanize}",
             "Last validated: #{display_date(recovery['reference_stack_last_validated_at'])}"
           ]
         )

@@ -95,5 +95,25 @@ RSpec.describe Accounts::Compliance::Dashboard do
       expect(controls[:customer_managed_keys][:status]).to eq(:compliant)
       expect(controls[:byoc_reference_stack][:status]).to eq(:compliant)
     end
+
+    it "keeps legacy air-gapped tenants on an applicable validation control" do
+      tenant_setting.deployment_assurance_configuration = {
+        "deployment_model" => "air_gapped",
+        "tenant_isolation" => "single_tenant",
+        "network_boundary" => "offline",
+        "reference_architecture" => "offline_promotion",
+        "disaster_recovery" => {
+          "reference_stack_last_validated_at" => 10.days.ago.to_date.iso8601
+        }
+      }
+      tenant_setting.save!
+
+      result = described_class.call(account: account, tenant_setting: tenant_setting, billing_visible: false)
+      control = result[:controls].index_by { |item| item[:id] }.fetch(:byoc_reference_stack)
+
+      expect(control[:status]).to eq(:compliant)
+      expect(control[:evidence]).to include("Legacy air-gapped deployment retained until migration completes")
+      expect(result.dig(:counts, :not_applicable)).to eq(1)
+    end
   end
 end

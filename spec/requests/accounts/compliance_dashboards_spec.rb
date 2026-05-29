@@ -98,6 +98,29 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       expect(response.body).not_to include("Export evidence pack")
       expect(response.body).not_to include("Save compliance settings")
     end
+
+    it "renders currently stored legacy deployment assurance options" do
+      account.tenant_setting!.update!(
+        features: {
+          "deployment_assurance" => {
+            "deployment_model" => "air_gapped",
+            "tenant_isolation" => "single_tenant",
+            "network_boundary" => "offline",
+            "reference_architecture" => "offline_promotion"
+          }
+        }
+      )
+
+      get account_compliance_dashboard_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('value="air_gapped"')
+      expect(response.body).to include("Air gapped (legacy)")
+      expect(response.body).to include('value="offline"')
+      expect(response.body).to include("Offline (legacy)")
+      expect(response.body).to include('value="offline_promotion"')
+      expect(response.body).to include("Offline promotion (legacy)")
+    end
   end
 
   describe "PATCH /account_compliance_dashboard" do

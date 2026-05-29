@@ -8,6 +8,35 @@
 <% disaster_recovery = deployment_assurance["disaster_recovery"] %>
 <% release_management = deployment_assurance["release_management"] %>
 <% byoc = deployment_assurance["byoc"] %>
+<%
+  deployment_model_options = [
+    ["Managed cloud", "managed_cloud"],
+    ["Private SaaS", "private_saas"],
+    ["Bring your own cloud", "byoc"]
+  ]
+  network_boundary_options = [
+    ["Paid-managed", "paid_managed"],
+    ["Private connect", "private_connect"],
+    ["Customer VPC", "customer_vpc"]
+  ]
+  reference_architecture_options = [
+    ["Managed control plane", "managed_control_plane"],
+    ["Dedicated hosted stack", "dedicated_hosted_stack"],
+    ["Customer cloud stack", "customer_cloud_stack"]
+  ]
+
+  if TenantSetting::LEGACY_DEPLOYMENT_ASSURANCE_MODELS.include?(deployment_assurance["deployment_model"])
+    deployment_model_options.prepend([deployment_assurance["deployment_model"].humanize + " (legacy)", deployment_assurance["deployment_model"]])
+  end
+
+  if TenantSetting::LEGACY_DEPLOYMENT_ASSURANCE_NETWORK_BOUNDARIES.include?(deployment_assurance["network_boundary"])
+    network_boundary_options.prepend([deployment_assurance["network_boundary"].humanize + " (legacy)", deployment_assurance["network_boundary"]])
+  end
+
+  if TenantSetting::LEGACY_DEPLOYMENT_ASSURANCE_REFERENCE_ARCHITECTURES.include?(deployment_assurance["reference_architecture"])
+    reference_architecture_options.prepend([deployment_assurance["reference_architecture"].humanize + " (legacy)", deployment_assurance["reference_architecture"]])
+  end
+%>
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -109,7 +138,7 @@
           <section class="grid gap-4 md:grid-cols-2">
             <div>
               <%= label_tag "deployment_assurance_deployment_model", "Deployment model", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "deployment_assurance[deployment_model]", options_for_select([["Managed cloud", "managed_cloud"], ["Private SaaS", "private_saas"], ["Bring your own cloud", "byoc"]], deployment_assurance["deployment_model"]), id: "deployment_assurance_deployment_model", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "deployment_assurance[deployment_model]", options_for_select(deployment_model_options, deployment_assurance["deployment_model"]), id: "deployment_assurance_deployment_model", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "deployment_assurance_tenant_isolation", "Tenant isolation", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
@@ -117,11 +146,11 @@
             </div>
             <div>
               <%= label_tag "deployment_assurance_network_boundary", "Network boundary", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "deployment_assurance[network_boundary]", options_for_select([["Paid-managed", "paid_managed"], ["Private connect", "private_connect"], ["Customer VPC", "customer_vpc"]], deployment_assurance["network_boundary"]), id: "deployment_assurance_network_boundary", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "deployment_assurance[network_boundary]", options_for_select(network_boundary_options, deployment_assurance["network_boundary"]), id: "deployment_assurance_network_boundary", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "deployment_assurance_reference_architecture", "Reference architecture", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "deployment_assurance[reference_architecture]", options_for_select([["Managed control plane", "managed_control_plane"], ["Dedicated hosted stack", "dedicated_hosted_stack"], ["Customer cloud stack", "customer_cloud_stack"]], deployment_assurance["reference_architecture"]), id: "deployment_assurance_reference_architecture", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "deployment_assurance[reference_architecture]", options_for_select(reference_architecture_options, deployment_assurance["reference_architecture"]), id: "deployment_assurance_reference_architecture", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "deployment_assurance_operations_owner", "Operations owner", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
