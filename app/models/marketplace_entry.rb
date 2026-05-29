@@ -59,6 +59,8 @@ class MarketplaceEntry < ApplicationRecord
   validates :support_tier, presence: true, inclusion: { in: SUPPORT_TIERS }
   validates :documentation_url, length: { maximum: 500 }, allow_nil: true
   validates :source_code_url, length: { maximum: 500 }, allow_nil: true
+  validate :documentation_url_is_safe, if: -> { documentation_url.present? }
+  validate :source_code_url_is_safe, if: -> { source_code_url.present? }
   validate :tags_are_strings
   validate :extension_points_are_strings
   validate :extension_points_are_known
@@ -159,5 +161,20 @@ class MarketplaceEntry < ApplicationRecord
     return if current_version.marketplace_entry_id == id
 
     errors.add(:current_version, "must belong to this marketplace entry")
+  end
+
+  def documentation_url_is_safe
+    validate_http_url(:documentation_url)
+  end
+
+  def source_code_url_is_safe
+    validate_http_url(:source_code_url)
+  end
+
+  def validate_http_url(attribute)
+    value = public_send(attribute)
+    return if value.match?(%r{\Ahttps?://})
+
+    errors.add(attribute, "must be an HTTP(S) URL")
   end
 end

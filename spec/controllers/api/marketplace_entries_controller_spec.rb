@@ -6,11 +6,11 @@ RSpec.describe Api::MarketplaceEntriesController, type: :request do
   let(:account) { create(:account) }
   let(:user) { create(:user, :admin, account: account) }
 
-  before do
-    sign_in user
-  end
-
   describe "GET /api/marketplace_entries" do
+    before do
+      sign_in user
+    end
+
     it "returns active catalog entries by default" do
       active_entry = create_catalog_entry(
         name: "SOX Policy Pack",
@@ -47,9 +47,22 @@ RSpec.describe Api::MarketplaceEntriesController, type: :request do
         include("id" => matching_entry.id, "name" => "Workflow Kit")
       )
     end
+
+    it "returns JSON unauthorized for unauthenticated requests" do
+      sign_out user
+
+      get "/api/marketplace_entries"
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body).to eq("error" => "Unauthorized")
+    end
   end
 
   describe "GET /api/marketplace_entries/:id" do
+    before do
+      sign_in user
+    end
+
     it "returns full catalog metadata for a single entry" do
       entry = create_integration_entry
       version = create_catalog_version(entry)
@@ -70,6 +83,32 @@ RSpec.describe Api::MarketplaceEntriesController, type: :request do
           "conditions" => { "project_tags" => [ "connector" ] }
         )
       )
+    end
+
+    it "returns JSON not found for entries outside the policy scope" do
+      other_account_entry = create(:marketplace_entry, account: create(:account))
+
+      get "/api/marketplace_entries/#{other_account_entry.id}"
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body).to eq("error" => "Not found")
+    end
+
+    it "returns JSON not found for missing entries" do
+      get "/api/marketplace_entries/0"
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body).to eq("error" => "Not found")
+    end
+
+    it "returns JSON unauthorized for unauthenticated requests" do
+      sign_out user
+      entry = create_integration_entry
+
+      get "/api/marketplace_entries/#{entry.id}"
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body).to eq("error" => "Unauthorized")
     end
   end
 

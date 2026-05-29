@@ -2,6 +2,14 @@
 
 module Api
   class MarketplaceEntriesController < ApplicationController
+    rescue_from ActiveRecord::RecordNotFound do
+      render json: { error: "Not found" }, status: :not_found
+    end
+
+    rescue_from Pundit::NotAuthorizedError do
+      render json: { error: "Forbidden" }, status: :forbidden
+    end
+
     skip_after_action :verify_authorized, only: :index
 
     def index
@@ -22,6 +30,12 @@ module Api
     end
 
     private
+
+    def authenticate_user!
+      return if user_signed_in?
+
+      render json: { error: "Unauthorized" }, status: :unauthorized
+    end
 
     def filtered_scope
       scope = policy_scope(MarketplaceEntry)

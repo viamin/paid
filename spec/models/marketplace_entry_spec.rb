@@ -45,6 +45,30 @@ RSpec.describe MarketplaceEntry do
     end
   end
 
+  describe "URL safety" do
+    it "rejects javascript documentation URLs" do
+      entry = build(:marketplace_entry, documentation_url: "javascript:alert(1)")
+
+      expect(entry).not_to be_valid
+      expect(entry.errors[:documentation_url]).to include("must be an HTTP(S) URL")
+    end
+
+    it "rejects protocol-relative source code URLs" do
+      entry = build(:marketplace_entry, source_code_url: "//example.com/repo")
+
+      expect(entry).not_to be_valid
+      expect(entry.errors[:source_code_url]).to include("must be an HTTP(S) URL")
+    end
+
+    it "allows HTTP(S) documentation and source code URLs" do
+      entry = build(:marketplace_entry,
+        documentation_url: "https://docs.example.com/entry",
+        source_code_url: "http://example.com/repo")
+
+      expect(entry).to be_valid
+    end
+  end
+
   describe ".ransackable_associations" do
     it "does not expose account traversal" do
       expect(described_class.ransackable_associations).to eq([ "current_version" ])
