@@ -278,6 +278,23 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    describe ".service_environment_section_for" do
+      let(:configured_containers) do
+        [ OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432) ]
+      end
+
+      it "renders the schema workflow section even when the setup instruction is suppressed" do
+        section = described_class.service_environment_section_for(
+          project: project,
+          include_setup_instruction: false
+        )
+
+        expect(section).not_to include("# Service Environment")
+        expect(section).to include("Database Schema Workflow")
+        expect(section).to include("bin/rails generate migration")
+      end
+    end
+
     context "when project has configured stopped service containers" do
       let(:service_containers_relation) do
         # The .running scope returns empty even though containers exist —

@@ -2470,6 +2470,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger_types).to eq([ "paid_agent_review_pending" ])
       end
 
+      it "lets merge_conflicts pass through the gate alongside paid_agent_review_pending (#2324)" do
+        project.update!(auto_fix_merge_conflicts: true)
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "success" } ],
+          reviews: [],
+          mergeable: false
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("paid_agent_review_pending")
+        expect(trigger_types).to include("merge_conflicts")
+      end
+
       it "does not gate when there is no paid_agent review pending (review already complete)" do
         # A subsequent completed review with no new code changes clears the
         # pending trigger, so ci_failure should pass through unimpeded.
