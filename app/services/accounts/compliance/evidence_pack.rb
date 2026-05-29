@@ -15,7 +15,7 @@ module Accounts
 
       def call
         {
-          schema_version: "2026-05-24",
+          schema_version: "2026-05-29",
           generated_at: Time.current.iso8601,
           account: {
             id: account.id,
