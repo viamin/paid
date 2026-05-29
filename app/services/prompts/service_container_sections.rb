@@ -5,6 +5,20 @@ module Prompts
   # Included by both BuildForIssue and BuildForPr to provide
   # consistent database/infrastructure guardrails across all agent prompts.
   module ServiceContainerSections
+    PromptBlockRender = Data.define(:content, :prompt_version) do
+      def prompt_provenance
+        {
+          slug: prompt_version&.prompt&.slug,
+          prompt_id: prompt_version&.prompt_id,
+          prompt_version_id: prompt_version&.id,
+          version_number: prompt_version&.version,
+          source: prompt_version.present? ? "versioned" : "fallback"
+        }
+      end
+    end
+
+    SectionRender = Data.define(:content, :prompt_blocks)
+
     RUBY_DB_SETUP_SLUG = "service_environment.setup.ruby_db"
     FRAMEWORK_DB_SETUP_SLUG = "service_environment.setup.framework_db"
     NO_DB_SETUP_SLUG = "service_environment.setup.no_db"
@@ -75,27 +89,43 @@ module Prompts
     end
 
     def self.service_environment_section_for(project:, include_setup_instruction: true)
+      service_environment_section_render_for(
+        project: project,
+        include_setup_instruction: include_setup_instruction
+      ).content
+    end
+
+    def self.service_environment_section_render_for(project:, include_setup_instruction: true)
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
       language = Prompts::LanguageCommands.detected_language(project)
 
       sections = []
+      prompt_blocks = []
 
       if include_setup_instruction
+        database_instruction = render_database_instruction_result(
+          has_db: has_db,
+          language: language,
+          project: project
+        )
+        prompt_blocks << database_instruction.prompt_provenance
         sections << <<~SECTION
           # Service Environment
 
-          #{render_database_instruction(has_db: has_db, language: language, project: project)}
+          #{database_instruction.content}
         SECTION
       end
 
       if containers.any?
         lines = containers.map { |sc| service_description(sc) }
+        services_intro = render_available_services_intro_result(project: project)
+        prompt_blocks << services_intro.prompt_provenance
         sections << <<~SECTION
 
           # Available Services
 
-          #{render_available_services_intro(project: project)}
+          #{services_intro.content}
           #{lines.join("\n")}
 
           Do NOT install or build these services from source.
@@ -104,19 +134,23 @@ module Prompts
       end
 
       if has_db && language == "ruby"
-        sections << render_schema_workflow_ruby(project: project)
+        schema_workflow = render_schema_workflow_ruby_result(project: project)
+        prompt_blocks << schema_workflow.prompt_provenance
+        sections << schema_workflow.content
       end
 
       unless has_db
+        environment_constraints = render_environment_constraints_no_db_result(project: project)
+        prompt_blocks << environment_constraints.prompt_provenance
         sections << <<~SECTION
 
           # Environment Constraints
 
-          #{render_environment_constraints_no_db(project: project)}
+          #{environment_constraints.content}
         SECTION
       end
 
-      sections.join
+      SectionRender.new(content: sections.join, prompt_blocks: prompt_blocks)
     end
 
     # Reuse service_description logic for the module-level method.
@@ -213,6 +247,10 @@ module Prompts
 
     class << self
       def render_database_instruction(has_db:, language:, project:)
+        render_database_instruction_result(has_db: has_db, language: language, project: project).content
+      end
+
+      def render_database_instruction_result(has_db:, language:, project:)
         slug = if has_db
           language == "ruby" ? RUBY_DB_SETUP_SLUG : FRAMEWORK_DB_SETUP_SLUG
         else
@@ -227,6 +265,10 @@ module Prompts
       end
 
       def render_available_services_intro(project:)
+        render_available_services_intro_result(project: project).content
+      end
+
+      def render_available_services_intro_result(project:)
         render_prompt_block(
           slug: AVAILABLE_SERVICES_INTRO_SLUG,
           project: project,
@@ -235,6 +277,10 @@ module Prompts
       end
 
       def render_schema_workflow_ruby(project:)
+        render_schema_workflow_ruby_result(project: project).content
+      end
+
+      def render_schema_workflow_ruby_result(project:)
         render_prompt_block(
           slug: SCHEMA_WORKFLOW_RUBY_SLUG,
           project: project,
@@ -243,6 +289,10 @@ module Prompts
       end
 
       def render_environment_constraints_no_db(project:)
+        render_environment_constraints_no_db_result(project: project).content
+      end
+
+      def render_environment_constraints_no_db_result(project:)
         render_prompt_block(
           slug: ENVIRONMENT_CONSTRAINTS_NO_DB_SLUG,
           project: project,
@@ -253,11 +303,21 @@ module Prompts
       private
 
       def render_prompt_block(slug:, project:, fallback:)
-        Prompts::Render.call(
-          slug: slug,
-          project: project,
-          variables: {},
-          fallback: fallback
+        prompt = project ? Prompt.resolve(slug, project: project) : Prompt.global.active.find_by(slug: slug)
+        version = prompt&.current_version
+
+        if version.nil?
+          Rails.logger.warn(
+            message: "prompts.render_fallback",
+            slug: slug,
+            project_id: project&.id,
+            reason: "no_active_version"
+          )
+        end
+
+        PromptBlockRender.new(
+          content: version ? version.render({}) : fallback.call,
+          prompt_version: version
         )
       end
     end

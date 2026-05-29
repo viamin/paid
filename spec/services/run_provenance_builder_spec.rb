@@ -6,6 +6,24 @@ RSpec.describe RunProvenanceBuilder do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let(:agent_run) { create(:agent_run, project: project, agent_type: "claude_code") }
+  let(:service_environment_prompt_blocks) do
+    [
+      {
+        slug: Prompts::ServiceContainerSections::RUBY_DB_SETUP_SLUG,
+        prompt_id: 12,
+        prompt_version_id: 34,
+        version_number: 2,
+        source: "versioned"
+      },
+      {
+        slug: Prompts::ServiceContainerSections::AVAILABLE_SERVICES_INTRO_SLUG,
+        prompt_id: nil,
+        prompt_version_id: nil,
+        version_number: nil,
+        source: "fallback"
+      }
+    ]
+  end
 
   it "builds a provenance hash with all categories" do
     provenance = described_class.new(agent_run).build
@@ -38,6 +56,21 @@ RSpec.describe RunProvenanceBuilder do
     expect(provenance[:prompt][:source]).to eq("versioned")
     expect(provenance[:prompt][:prompt_slug]).to eq(prompt.slug)
     expect(provenance[:prompt][:version_number]).to eq(3)
+  end
+
+  it "includes service environment prompt provenance from create_agent_run metadata" do
+    agent_run.agent_run_phases.create!(
+      phase_key: "create_agent_run",
+      phase_group: "prompt",
+      started_at: 1.minute.ago,
+      finished_at: 30.seconds.ago,
+      duration_seconds: 30,
+      metadata: { service_environment_prompt_blocks: service_environment_prompt_blocks }
+    )
+
+    provenance = described_class.new(agent_run.reload).build
+
+    expect(provenance[:prompt][:service_environment_prompt_blocks]).to eq(service_environment_prompt_blocks)
   end
 
   it "handles nil model_selection" do

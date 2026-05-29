@@ -10,6 +10,42 @@ RSpec.describe Activities::CreateAgentRunActivity do
   let(:claude_runner) { project.created_by.runners.find_by!(runner_key: "claude") }
   let(:codex_runner) { create(:runner, user: project.created_by, runner_key: "codex") }
 
+  def create_service_environment_prompt(slug, template)
+    Prompt.find_by(slug: slug)&.destroy!
+    create(:prompt, :global, slug: slug).tap do |prompt|
+      prompt.create_version!(template: template)
+    end
+  end
+
+  def create_service_environment_prompts
+    [
+      create_service_environment_prompt(
+        Prompts::ServiceContainerSections::RUBY_DB_SETUP_SLUG,
+        "Custom Ruby DB setup guidance."
+      ),
+      create_service_environment_prompt(
+        Prompts::ServiceContainerSections::AVAILABLE_SERVICES_INTRO_SLUG,
+        "Custom services intro."
+      ),
+      create_service_environment_prompt(
+        Prompts::ServiceContainerSections::SCHEMA_WORKFLOW_RUBY_SLUG,
+        "Custom schema workflow."
+      )
+    ]
+  end
+
+  def expected_service_environment_prompt_blocks(prompts)
+    prompts.map { |prompt|
+      {
+        "slug" => prompt.slug,
+        "prompt_id" => prompt.id,
+        "prompt_version_id" => prompt.current_version.id,
+        "version_number" => prompt.current_version.version,
+        "source" => "versioned"
+      }
+    }
+  end
+
   before do
     # Stub conversation_section_for so the activity does not make real HTTP
     # calls to fetch issue comments (blocked by WebMock). Individual tests
@@ -739,6 +775,18 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to include("Run `bin/rails db:prepare`")
         expect(agent_run.custom_prompt).to include("DATABASE_URL")
         expect(agent_run.custom_prompt).not_to include("Environment Constraints")
+      end
+
+      it "records rendered service environment prompt versions in phase metadata" do
+        project.service_containers << create(:service_container, account: project.account)
+        prompts = create_service_environment_prompts
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        phase = agent_run.agent_run_phases.find_by!(phase_key: "create_agent_run")
+
+        expect(phase.metadata["service_environment_prompt_blocks"]).to eq(expected_service_environment_prompt_blocks(prompts))
       end
 
       it "separates appended sections from a template without a trailing newline" do

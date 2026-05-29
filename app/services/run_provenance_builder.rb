@@ -58,8 +58,15 @@ class RunProvenanceBuilder
       review_status: prompt_version&.review_status,
       reviewed_by_user_id: prompt_version&.reviewed_by_user_id,
       reviewed_at: prompt_version&.reviewed_at&.iso8601,
-      custom_prompt_truncated: custom_prompt&.truncate(200)
+      custom_prompt_truncated: custom_prompt&.truncate(200),
+      service_environment_prompt_blocks: service_environment_prompt_blocks
     }
+  end
+
+  def service_environment_prompt_blocks
+    create_phase = agent_run.agent_run_phases.find { |phase| phase.phase_key == "create_agent_run" }
+    blocks = create_phase&.metadata&.fetch("service_environment_prompt_blocks", nil)
+    Array(blocks).map { |block| block.respond_to?(:deep_symbolize_keys) ? block.deep_symbolize_keys : block }
   end
 
   def model_provenance
