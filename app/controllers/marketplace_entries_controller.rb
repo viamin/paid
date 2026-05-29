@@ -20,7 +20,9 @@ class MarketplaceEntriesController < ApplicationController
     @marketplace_entry = current_account.marketplace_entries.build(
       provider_format: "canonical_v1",
       team_scope: "account",
-      status: "draft"
+      status: "draft",
+      certification_status: "uncertified",
+      support_tier: "community"
     )
     authorize @marketplace_entry
   end
@@ -72,10 +74,12 @@ class MarketplaceEntriesController < ApplicationController
   def marketplace_entry_params
     permitted = [
       :name, :entry_type, :description, :provider, :provider_format,
-      :usage_guidance, :added_by_name, :added_by_email, :tags_csv,
-      :team_scope, :status, :changelog, :canonical_artifact_json,
+      :usage_guidance, :added_by_name, :added_by_email, :tags_csv, :team_scope,
+      :status, :certification_status, :support_tier, :documentation_url,
+      :source_code_url, :certification_notes, :changelog, :canonical_artifact_json,
       :renderers_json, :compatibility_constraints_json, :review_metadata_json
     ]
+    permitted << { extension_points: [] }
     if marketplace_rule_management_allowed?
       permitted.concat(
         %i[

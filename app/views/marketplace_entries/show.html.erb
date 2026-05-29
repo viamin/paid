@@ -18,17 +18,25 @@
     <div class="rounded-lg bg-white p-4 shadow md:col-span-1">
       <dl class="space-y-3 text-sm">
         <div><dt class="font-medium text-gray-500">Type</dt><dd class="text-gray-900"><%= @marketplace_entry.entry_type.humanize %></dd></div>
+        <div><dt class="font-medium text-gray-500">Extension Points</dt><dd class="text-gray-900"><%= @marketplace_entry.extension_points.any? ? @marketplace_entry.extension_points.map(&:humanize).join(", ") : "-" %></dd></div>
         <div><dt class="font-medium text-gray-500">Status</dt><dd class="text-gray-900"><%= @marketplace_entry.status.humanize %></dd></div>
+        <div><dt class="font-medium text-gray-500">Certification</dt><dd class="text-gray-900"><%= @marketplace_entry.certification_status.humanize %></dd></div>
+        <div><dt class="font-medium text-gray-500">Support Tier</dt><dd class="text-gray-900"><%= @marketplace_entry.support_tier.humanize %></dd></div>
         <div><dt class="font-medium text-gray-500">Provider</dt><dd class="text-gray-900"><%= @marketplace_entry.provider.presence || "-" %></dd></div>
         <div><dt class="font-medium text-gray-500">Format</dt><dd class="text-gray-900"><%= @marketplace_entry.provider_format %></dd></div>
         <div><dt class="font-medium text-gray-500">Added By</dt><dd class="text-gray-900"><%= @marketplace_entry.added_by_name %> (<%= @marketplace_entry.added_by_email %>)</dd></div>
         <div><dt class="font-medium text-gray-500">Current Version</dt><dd class="text-gray-900">v<%= @marketplace_entry.current_version&.version || "-" %></dd></div>
+        <div><dt class="font-medium text-gray-500">Docs</dt><dd class="text-gray-900"><%= @marketplace_entry.documentation_url.present? ? link_to(@marketplace_entry.documentation_url, @marketplace_entry.documentation_url, class: "text-indigo-600 hover:text-indigo-500") : "-" %></dd></div>
+        <div><dt class="font-medium text-gray-500">Source</dt><dd class="text-gray-900"><%= @marketplace_entry.source_code_url.present? ? link_to(@marketplace_entry.source_code_url, @marketplace_entry.source_code_url, class: "text-indigo-600 hover:text-indigo-500") : "-" %></dd></div>
       </dl>
     </div>
 
     <div class="rounded-lg bg-white p-4 shadow md:col-span-2">
       <h2 class="text-sm font-semibold text-gray-900">Usage Guidance</h2>
       <p class="mt-2 whitespace-pre-wrap text-sm text-gray-700"><%= @marketplace_entry.usage_guidance.presence || "No usage guidance provided." %></p>
+
+      <h2 class="mt-6 text-sm font-semibold text-gray-900">Certification Notes</h2>
+      <p class="mt-2 whitespace-pre-wrap text-sm text-gray-700"><%= @marketplace_entry.certification_notes.presence || "No certification notes recorded yet. See docs/ECOSYSTEM_CERTIFICATION.md for the certification checklist." %></p>
 
       <% version = @marketplace_entry.current_version %>
       <% if version %>
@@ -40,6 +48,9 @@
 
         <h2 class="mt-6 text-sm font-semibold text-gray-900">Compatibility</h2>
         <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-50 p-4 text-xs text-gray-800"><%= JSON.pretty_generate(version.compatibility_constraints) %></pre>
+
+        <h2 class="mt-6 text-sm font-semibold text-gray-900">Review Metadata</h2>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-50 p-4 text-xs text-gray-800"><%= JSON.pretty_generate(version.review_metadata) %></pre>
       <% end %>
     </div>
   </div>

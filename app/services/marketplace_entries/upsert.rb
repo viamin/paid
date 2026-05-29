@@ -41,6 +41,12 @@ module MarketplaceEntries
         provider: params[:provider],
         provider_format: params[:provider_format].presence || "canonical_v1",
         usage_guidance: params[:usage_guidance],
+        extension_points: normalize_string_list(params[:extension_points]),
+        certification_status: params[:certification_status].presence || "uncertified",
+        support_tier: params[:support_tier].presence || "community",
+        documentation_url: params[:documentation_url],
+        source_code_url: params[:source_code_url],
+        certification_notes: params[:certification_notes],
         team_scope: params[:team_scope].presence || "account",
         status: params[:status].presence || "draft"
       )
@@ -187,6 +193,10 @@ module MarketplaceEntries
         :renderers,
         "must map provider keys to JSON objects (invalid: #{invalid_provider_keys.join(', ')})"
       )
+    end
+
+    def normalize_string_list(value)
+      Array(value).map(&:to_s).map(&:strip).reject(&:blank?).uniq
     end
   end
 end

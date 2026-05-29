@@ -266,6 +266,7 @@ Rails.application.routes.draw do
 
     get "knowledge/search", to: "knowledge_search#search"
     get "knowledge/audit", to: "knowledge_audit#index"
+    resources :marketplace_entries, only: [ :index, :show ]
 
     # GitHub webhook receiver for PR reviews, merges, and comments
     post "github_webhooks", to: "github_webhooks#create"

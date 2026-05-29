@@ -2,11 +2,13 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260514223539_create_marketplace_entries")
+require Rails.root.join("db/migrate/20260529152437_add_ecosystem_fields_to_marketplace_entries")
 
 RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:ecosystem_migration) { AddEcosystemFieldsToMarketplaceEntries.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
@@ -22,7 +24,7 @@ RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
     example.run
   ensure
     teardown_schema
-    migration.up if preexisting.values.any?
+    restore_schema if preexisting.values.any?
   end
 
   it "creates marketplace tables and the current_version reference" do
@@ -67,6 +69,22 @@ RSpec.describe CreateMarketplaceEntries, :aggregate_failures do
       connection.table_exists?(:marketplace_entry_rules) ||
       connection.table_exists?(:marketplace_entry_versions) ||
       connection.table_exists?(:marketplace_entries)
+    reset_marketplace_column_information
+  end
+
+  def restore_schema
+    migration.up
+    ecosystem_migration.up
+    reset_marketplace_column_information
+  end
+
+  def reset_marketplace_column_information
+    [
+      MarketplaceEntry,
+      MarketplaceEntryVersion,
+      MarketplaceEntryRule,
+      AgentRunMarketplaceEntry
+    ].each(&:reset_column_information)
   end
 
   def tenant_policy_present?(table_name)

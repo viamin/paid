@@ -208,6 +208,32 @@ module Screenshots
             record.active = true
           end
 
+          marketplace_entry = account.marketplace_entries.find_or_create_by!(name: "Screenshot Catalog Entry") do |record|
+            record.description = "Representative marketplace entry for screenshot capture coverage."
+            record.entry_type = "workflow_strategy"
+            record.provider = "openai"
+            record.provider_format = "canonical_v1"
+            record.usage_guidance = "Attach to runs that need a managed rollout workflow strategy."
+            record.added_by_name = user.name.presence || "Screenshot User"
+            record.added_by_email = user.email
+            record.tags = [ "screenshots", "managed-platform" ]
+            record.extension_points = [ "workflow_strategies", "prompts" ]
+            record.certification_status = "verified"
+            record.support_tier = "first_party"
+            record.documentation_url = "https://docs.example.com/screenshots/catalog-entry"
+            record.source_code_url = "https://github.com/example/screenshots-catalog-entry"
+            record.certification_notes = "Seeded for screenshot coverage of marketplace entry detail and edit pages."
+            record.team_scope = "account"
+            record.status = "active"
+          end
+          marketplace_entry.current_version || marketplace_entry.create_version!(
+            canonical_artifact: { "slug" => "screenshots.workflow_strategy", "entry_type" => "workflow_strategy" },
+            renderers: { "default" => { "template" => "Use the managed rollout workflow strategy." } },
+            compatibility_constraints: { "paid_version" => ">= 8.0" },
+            review_metadata: { "certification_status" => "verified", "reviewed_by" => "screenshots" },
+            changelog: "Initial screenshot seed version"
+          )
+
           chat_session = ChatSession.where(account: account, title: "Screenshot Chat").first_or_create!(
             created_by: user,
             project: project,
@@ -311,6 +337,7 @@ module Screenshots
             "pending_strategy_version" => { "id" => pending_strategy_version.id },
             "ab_test" => { "id" => ab_test.id },
             "style_guide" => { "id" => style_guide.id, "name" => style_guide.name },
+            "marketplace_entry" => { "id" => marketplace_entry.id, "name" => marketplace_entry.name },
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
             "knowledge_artifact" => { "id" => knowledge_artifact.id },
             "remediation_decision" => { "id" => remediation_decision.id },
