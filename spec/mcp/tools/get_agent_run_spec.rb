@@ -35,5 +35,15 @@ RSpec.describe Tools::GetAgentRun do
       expect { tool.call(agent_run_id: other_run.id) }
         .to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    it "reuses the authorized run lookup during perform" do
+      run = create(:agent_run, project: create(:project, account: account))
+      scope = instance_double(ActiveRecord::Relation)
+
+      allow(tool).to receive(:policy_scope).with(AgentRun).and_return(scope)
+      expect(scope).to receive(:find).once.with(run.id).and_return(run)
+
+      tool.call(agent_run_id: run.id)
+    end
   end
 end

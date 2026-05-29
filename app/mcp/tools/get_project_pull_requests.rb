@@ -2,6 +2,8 @@
 
 module Tools
   class GetProjectPullRequests < BaseTool
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
+
     def self.tool_name = "get_project_pull_requests"
 
     def self.description
@@ -20,9 +22,8 @@ module Tools
       }
     end
 
-    def call(project_id:, github_state: nil, limit: 20)
-      project = policy_scope(Project).find(project_id)
-      authorize project, :show?
+    def perform(project_id:, github_state: nil, limit: 20)
+      project = project_for(project_id)
 
       prs = project.issues.pull_requests_only
       prs = prs.where(github_state:) if github_state.present?
@@ -39,6 +40,13 @@ module Tools
           updated_at: pr.updated_at
         }
       end
+    end
+
+    private
+
+    def project_for(project_id)
+      @projects_by_id ||= {}
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
     end
   end
 end

@@ -51,12 +51,7 @@ class PaidMcpServer
   end
 
   def call_tool(name:, arguments:)
-    tool_class = Tools::Registry.find(name)
-    raise ArgumentError, "Unknown tool: #{name}" unless tool_class
-    raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
-
-    tool = tool_class.new(user:, session:)
-    tool.call(**arguments.symbolize_keys)
+    Tools::Registry.dispatch(name:, arguments:, user:, session:)
   end
 
   class RateLimitExceeded < StandardError; end

@@ -2,6 +2,8 @@
 
 module Tools
   class SearchCode < BaseTool
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
+
     def self.tool_name = "search_code"
 
     def self.description
@@ -20,9 +22,8 @@ module Tools
       }
     end
 
-    def call(project_id:, query:, limit: 10)
-      project = policy_scope(Project).find(project_id)
-      authorize project, :show?
+    def perform(project_id:, query:, limit: 10)
+      project = project_for(project_id)
 
       search_limit = limit.to_i.clamp(1, 50)
 
@@ -43,6 +44,13 @@ module Tools
           content_preview: r[:content].to_s.truncate(500)
         }
       end
+    end
+
+    private
+
+    def project_for(project_id)
+      @projects_by_id ||= {}
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
     end
   end
 end

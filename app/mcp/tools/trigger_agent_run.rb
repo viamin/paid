@@ -2,6 +2,8 @@
 
 module Tools
   class TriggerAgentRun < BaseTool
+    authorize :run_agent?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
+
     def self.tool_name = "trigger_agent_run"
     def self.write_operation? = true
 
@@ -22,11 +24,10 @@ module Tools
       }
     end
 
-    def call(project_id:, issue_id:, confirmed: false, goal: "create_pr")
+    def perform(project_id:, issue_id:, confirmed: false, goal: "create_pr")
       raise ArgumentError, "Confirmation required: set confirmed=true to trigger an agent run" unless confirmed
 
-      project = policy_scope(Project).find(project_id)
-      authorize project, :run_agent?, policy_class: ProjectPolicy
+      project = project_for(project_id)
 
       issue = project.issues.find(issue_id)
 
@@ -63,6 +64,11 @@ module Tools
     end
 
     private
+
+    def project_for(project_id)
+      @projects_by_id ||= {}
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
+    end
 
     def duplicate_active_issue_run?(error)
       (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_issue")
