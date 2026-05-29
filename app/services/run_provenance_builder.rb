@@ -58,8 +58,28 @@ class RunProvenanceBuilder
       review_status: prompt_version&.review_status,
       reviewed_by_user_id: prompt_version&.reviewed_by_user_id,
       reviewed_at: prompt_version&.reviewed_at&.iso8601,
-      custom_prompt_truncated: custom_prompt&.truncate(200)
+      custom_prompt_truncated: custom_prompt&.truncate(200),
+      service_environment_prompt_blocks: service_environment_prompt_blocks
     }
+  end
+
+  def service_environment_prompt_blocks
+    phase = prompt_assembly_phases.find do |candidate|
+      service_environment_prompt_blocks_for(candidate).present?
+    end
+    blocks = phase && service_environment_prompt_blocks_for(phase)
+    Array(blocks).map { |block| block.respond_to?(:deep_symbolize_keys) ? block.deep_symbolize_keys : block }
+  end
+
+  def prompt_assembly_phases
+    @prompt_assembly_phases ||= %w[prepare_pr_prompt create_agent_run].filter_map do |phase_key|
+      agent_run.agent_run_phases.find { |phase| phase.phase_key == phase_key }
+    end
+  end
+
+  def service_environment_prompt_blocks_for(phase)
+    metadata = phase.metadata
+    metadata&.fetch("service_environment_prompt_blocks", metadata[:service_environment_prompt_blocks])
   end
 
   def model_provenance

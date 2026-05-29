@@ -80,6 +80,13 @@ module Prompts
       )
     end
 
+    def self.service_environment_section_render_for(project:, include_setup_instruction: true)
+      ServiceContainerSections.service_environment_section_render_for(
+        project: project,
+        include_setup_instruction: include_setup_instruction
+      )
+    end
+
     def build
       raise UntrustedIssueError, "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
 

@@ -42,6 +42,7 @@ module Activities
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
       prompt_version = nil
+      service_environment_prompt_blocks = []
       if custom_prompt.blank? && issue.present? && issue.trusted?
         prompt_version = Prompts::Resolve.call(slug: "coding.issue_implementation", project: project)
         if prompt_version
@@ -58,6 +59,9 @@ module Activities
             lint_command: lint_command_for(project),
             setup_database_instruction: ""
           )
+          service_environment = Prompts::BuildForIssue.service_environment_section_render_for(project: project)
+          service_environment_prompt_blocks = service_environment.prompt_blocks
+
           custom_prompt = [
             rendered_prompt,
             # Append trusted issue comments so they reach the agent even when
@@ -67,7 +71,7 @@ module Activities
               project: project, issue: issue,
               github_client: project.github_token&.client
             ),
-            Prompts::BuildForIssue.service_environment_section_for(project: project)
+            service_environment.content
           ].reject(&:blank?).join("\n\n")
           custom_prompt = ProjectConventions::InjectIntoPrompt.call(prompt: custom_prompt, project: project)
         end
@@ -112,6 +116,7 @@ module Activities
         phase_group: "prompt",
         metadata: {
           prompt_version_id: prompt_version&.id,
+          service_environment_prompt_blocks: service_environment_prompt_blocks,
           custom_prompt_provided: input[:custom_prompt].present?
         },
         started_at: agent_run.created_at

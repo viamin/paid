@@ -313,6 +313,30 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when a project-specific service environment prompt override exists" do
+      it "renders the override through Prompts::Render" do
+        real_project = create(:project, allowed_github_usernames: [ "viamin" ])
+        service_container = create(:service_container, account: real_project.account)
+        create(:project_service_container, project: real_project, service_container: service_container)
+
+        prompt = create(
+          :prompt,
+          :for_project,
+          project: real_project,
+          slug: Prompts::ServiceContainerSections::AVAILABLE_SERVICES_INTRO_SLUG,
+          name: "Custom Service Intro",
+          description: "Project-specific override for service intro.",
+          category: "coding"
+        )
+        prompt.create_version!(template: "Custom service intro for this project only.")
+
+        rendered = described_class.call(issue: issue, project: real_project)
+
+        expect(rendered).to include("Custom service intro for this project only.")
+        expect(rendered).not_to include("The following services are configured for this project")
+      end
+    end
+
     context "when github_client is provided" do
       let(:github_client) { instance_double(GithubClient) }
       let(:trusted_login) { project.allowed_github_usernames.first }
@@ -729,6 +753,45 @@ RSpec.describe Prompts::BuildForIssue do
       )
 
       expect(result).to eq([])
+    end
+  end
+
+  describe ".service_environment_section_for" do
+    let(:configured_containers) do
+      [ OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432) ]
+    end
+
+    it "renders the schema workflow section even when the setup instruction is suppressed" do
+      section = described_class.service_environment_section_for(
+        project: project,
+        include_setup_instruction: false
+      )
+
+      expect(section).not_to include("# Service Environment")
+      expect(section).to include("Database Schema Workflow")
+      expect(section).to include("bin/rails generate migration")
+    end
+
+    it "uses project-scoped prompt overrides" do
+      real_project = create(:project)
+      service_container = create(:service_container, account: real_project.account)
+      create(:project_service_container, project: real_project, service_container: service_container)
+
+      prompt = create(
+        :prompt,
+        :for_project,
+        project: real_project,
+        slug: Prompts::ServiceContainerSections::AVAILABLE_SERVICES_INTRO_SLUG,
+        name: "Custom Service Intro",
+        description: "Project-specific override for service intro.",
+        category: "coding"
+      )
+      prompt.create_version!(template: "Custom service intro for static section rendering.")
+
+      rendered = described_class.service_environment_section_for(project: real_project)
+
+      expect(rendered).to include("Custom service intro for static section rendering.")
+      expect(rendered).not_to include("The following services are configured for this project")
     end
   end
 end

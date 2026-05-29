@@ -95,6 +95,19 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(result[:prompt_version_id]).to eq(prompt.current_version.id)
     end
 
+    it "records service environment prompt blocks on the prepare_pr_prompt phase" do
+      activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      phase = agent_run.reload.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
+
+      expect(phase.metadata["service_environment_prompt_blocks"]).to eq(
+        Prompts::BuildForPr.service_environment_section_render_for(
+          project: project,
+          include_setup_instruction: false
+        ).prompt_blocks.map(&:deep_stringify_keys)
+      )
+    end
+
     it "passes explicit focus through to the prompt builder" do
       allow(github_client).to receive(:check_runs_for_ref)
         .with(project.full_name, "abc123")
