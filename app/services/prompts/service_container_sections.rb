@@ -5,10 +5,10 @@ module Prompts
   # Included by both BuildForIssue and BuildForPr to provide
   # consistent database/infrastructure guardrails across all agent prompts.
   module ServiceContainerSections
-    PromptBlockRender = Data.define(:content, :prompt_version) do
+    PromptBlockRender = Data.define(:content, :prompt_version, :slug) do
       def prompt_provenance
         {
-          slug: prompt_version&.prompt&.slug,
+          slug: prompt_version&.prompt&.slug || slug,
           prompt_id: prompt_version&.prompt_id,
           prompt_version_id: prompt_version&.id,
           version_number: prompt_version&.version,
@@ -317,7 +317,8 @@ module Prompts
 
         PromptBlockRender.new(
           content: version ? version.render({}) : fallback.call,
-          prompt_version: version
+          prompt_version: version,
+          slug: slug
         )
       end
     end
