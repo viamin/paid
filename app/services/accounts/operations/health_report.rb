@@ -56,7 +56,7 @@ module Accounts
               last_occurred_at: incident.last_occurred_at.iso8601
             }
           },
-          recent_activity: account.account_activity_events.recent.limit(20).map { |event|
+          recent_activity: account.account_activity_events.includes(:actor).recent.limit(20).map { |event|
             {
               occurred_at: event.created_at.iso8601,
               actor: event.actor_label,

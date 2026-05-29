@@ -79,6 +79,32 @@ RSpec.describe "Accounts::OperationsDashboards" do
         "Disaster recovery",
         "Upgrade orchestration"
       )
+      expect(response.body).to include(
+        'name="enterprise_operations[service_levels][urgent_response_sla_hours]"',
+        'name="enterprise_operations[service_levels][standard_response_sla_hours]"',
+        'name="enterprise_operations[upgrades][last_upgrade_at]"',
+        'name="enterprise_operations[support][health_report_recipients]"',
+        'name="enterprise_operations[capacity_management][queue_warning_threshold]"',
+        'name="enterprise_operations[capacity_management][queue_critical_threshold]"'
+      )
+    end
+
+    it "renders persisted operations settings in the editable form" do
+      account.tenant_setting!.update!(
+        enterprise_operations_configuration: account.tenant_setting!.enterprise_operations_configuration.deep_merge(existing_operations_configuration)
+      )
+
+      get account_operations_dashboard_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(
+        'value="8"',
+        'value="16"',
+        'value="2026-05-01"',
+        'value="ops@example.com"',
+        'value="9"',
+        'value="18"'
+      )
     end
 
     it "hides the export link from members" do
@@ -181,6 +207,13 @@ RSpec.describe "Accounts::OperationsDashboards" do
 
   describe "GET /account_operations_dashboard/export" do
     it "exports the health report as JSON" do
+      AccountActivityEvent.create!(
+        account: account,
+        actor: owner,
+        action: "operations.dashboard_updated",
+        metadata: { "changed_fields" => [ "enterprise_operations" ] }
+      )
+
       get export_account_operations_dashboard_path(format: :json)
 
       expect(response).to have_http_status(:ok)
@@ -189,6 +222,7 @@ RSpec.describe "Accounts::OperationsDashboards" do
       body = JSON.parse(response.body)
       expect(body.fetch("account").fetch("name")).to eq("Acme")
       expect(body).to include("operations_dashboard", "queue_depths", "runner_health", "open_incidents")
+      expect(body.fetch("recent_activity").first.fetch("actor")).to eq(owner.email)
     end
 
     it "forbids members from exporting the health report" do

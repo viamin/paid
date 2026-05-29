@@ -210,6 +210,14 @@
                 <%= label_tag "enterprise_operations_service_levels_queue_health_target_percent", "Queue health target %", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
                 <%= number_field_tag "enterprise_operations[service_levels][queue_health_target_percent]", configuration.dig("service_levels", "queue_health_target_percent"), min: 1, max: 100, step: 0.1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
               </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_urgent_response_sla_hours", "Urgent response SLA (hours)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][urgent_response_sla_hours]", configuration.dig("service_levels", "urgent_response_sla_hours"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_service_levels_standard_response_sla_hours", "Standard response SLA (hours)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[service_levels][standard_response_sla_hours]", configuration.dig("service_levels", "standard_response_sla_hours"), min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
             </div>
           </section>
 
@@ -256,6 +264,10 @@
                 <%= date_field_tag "enterprise_operations[upgrades][last_compatibility_check_at]", configuration.dig("upgrades", "last_compatibility_check_at"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
               </div>
               <div>
+                <%= label_tag "enterprise_operations_upgrades_last_upgrade_at", "Last upgrade", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= date_field_tag "enterprise_operations[upgrades][last_upgrade_at]", configuration.dig("upgrades", "last_upgrade_at"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
                 <%= label_tag "enterprise_operations_support_diagnostics_contact", "Diagnostics contact", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
                 <%= text_field_tag "enterprise_operations[support][diagnostics_contact]", configuration.dig("support", "diagnostics_contact"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
               </div>
@@ -264,8 +276,20 @@
                 <%= select_tag "enterprise_operations[support][safe_remediation_mode]", options_for_select(TenantSetting::ENTERPRISE_OPERATIONS_REMEDIATION_MODES.map { |value| [value.humanize, value] }, configuration.dig("support", "safe_remediation_mode")), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
               </div>
               <div>
+                <%= label_tag "enterprise_operations_support_health_report_recipients", "Health report recipients", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "enterprise_operations[support][health_report_recipients]", configuration.dig("support", "health_report_recipients"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
                 <%= label_tag "enterprise_operations_capacity_management_reserved_concurrency", "Reserved concurrency", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
                 <%= number_field_tag "enterprise_operations[capacity_management][reserved_concurrency]", configuration.dig("capacity_management", "reserved_concurrency"), min: 0, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_capacity_management_queue_warning_threshold", "Queue warning threshold", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[capacity_management][queue_warning_threshold]", configuration.dig("capacity_management", "queue_warning_threshold"), min: 0, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "enterprise_operations_capacity_management_queue_critical_threshold", "Queue critical threshold", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "enterprise_operations[capacity_management][queue_critical_threshold]", configuration.dig("capacity_management", "queue_critical_threshold"), min: 0, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
               </div>
               <div>
                 <%= label_tag "enterprise_operations_capacity_management_monthly_budget_alert_percent", "Budget alert %", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
