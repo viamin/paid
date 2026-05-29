@@ -114,6 +114,47 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError, "LLM returned invalid analysis JSON")
     end
 
+    it "rejects CLI streaming events and raises no-provider error" do
+      allow(llm_response).to receive(:output).and_return('{"type":"session.mcp_servers_loading"}')
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+    end
+
+    it "rejects truncated CLI streaming events matching production failure pattern" do
+      allow(llm_response).to receive(:output).and_return('{"type":"session.mcp_servers_loa')
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+    end
+
+    it "parses analysis from JSONL when the CLI outputs streaming events before the result" do
+      jsonl_output = [
+        '{"type":"session.mcp_servers_loading","data":{}}',
+        '{"type":"result","result":"{\"sufficient_context\":true,\"reasoning\":\"ok\",\"missing_context_areas\":[]}"}'
+      ].join("\n")
+      allow(llm_response).to receive(:output).and_return(jsonl_output)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be true
+      expect(result[:reasoning]).to eq("ok")
+    end
+
+    it "rejects JSONL output that has only streaming events and no result line" do
+      jsonl_output = [
+        '{"type":"session.mcp_servers_loading","data":{}}',
+        '{"type":"session.mcp_servers_loaded","data":{}}'
+      ].join("\n")
+      allow(llm_response).to receive(:output).and_return(jsonl_output)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+    end
+
     it "tracks token usage correctly" do
       activity.execute(agent_run_id: agent_run.id)
 
