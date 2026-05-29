@@ -8,10 +8,16 @@ RSpec.describe Accounts::Compliance::Dashboard do
     let(:tenant_setting) { account.tenant_setting! }
     let(:recent_deployment_assurance) do
       {
-        "deployment_model" => "air_gapped",
-        "network_boundary" => "offline",
-        "reference_architecture" => "offline_promotion",
+        "deployment_model" => "byoc",
+        "tenant_isolation" => "customer_cloud",
+        "network_boundary" => "customer_vpc",
+        "reference_architecture" => "customer_cloud_stack",
         "operations_owner" => "platform@example.com",
+        "monitoring" => {
+          "provider" => "Datadog",
+          "escalation_owner" => "sre@example.com",
+          "last_reviewed_at" => 2.days.ago.to_date.iso8601
+        },
         "customer_managed_keys" => {
           "enabled" => true,
           "provider" => "AWS KMS",
@@ -30,9 +36,21 @@ RSpec.describe Accounts::Compliance::Dashboard do
           "backup_last_verified_at" => 5.days.ago.to_date.iso8601,
           "restore_last_tested_at" => 20.days.ago.to_date.iso8601,
           "upgrade_last_validated_at" => 30.days.ago.to_date.iso8601,
-          "air_gap_package_validated_at" => 15.days.ago.to_date.iso8601,
+          "reference_stack_last_validated_at" => 15.days.ago.to_date.iso8601,
           "rpo_hours" => 4,
           "rto_hours" => 8
+        },
+        "release_management" => {
+          "upgrade_channel" => "extended_support",
+          "maintenance_window" => "Sun 02:00-04:00",
+          "maintenance_timezone" => "UTC",
+          "version_support_policy" => "lts",
+          "support_window_days" => 60
+        },
+        "byoc" => {
+          "cloud_provider" => "AWS",
+          "automation_stack" => "Terraform + ECS",
+          "reference_stack" => "aws-terraform-v1"
         }
       }
     end
@@ -42,9 +60,10 @@ RSpec.describe Accounts::Compliance::Dashboard do
       controls = result[:controls].index_by { |control| control[:id] }
 
       expect(result[:readiness_score]).to be < 100
+      expect(controls[:monitoring_coverage][:status]).to eq(:gap)
       expect(controls[:customer_managed_keys][:status]).to eq(:not_applicable)
       expect(controls[:secret_rotation][:status]).to eq(:gap)
-      expect(controls[:air_gap_validation][:status]).to eq(:not_applicable)
+      expect(controls[:byoc_reference_stack][:status]).to eq(:not_applicable)
     end
 
     it "treats enabled customer-managed keys without supporting evidence as a gap" do
@@ -72,8 +91,29 @@ RSpec.describe Accounts::Compliance::Dashboard do
       expect(result[:readiness_score]).to eq(100)
       expect(controls[:deployment_topology][:status]).to eq(:compliant)
       expect(controls[:audit_export][:status]).to eq(:compliant)
+      expect(controls[:monitoring_coverage][:status]).to eq(:compliant)
       expect(controls[:customer_managed_keys][:status]).to eq(:compliant)
-      expect(controls[:air_gap_validation][:status]).to eq(:compliant)
+      expect(controls[:byoc_reference_stack][:status]).to eq(:compliant)
+    end
+
+    it "keeps legacy air-gapped tenants on an applicable validation control" do
+      tenant_setting.deployment_assurance_configuration = {
+        "deployment_model" => "air_gapped",
+        "tenant_isolation" => "single_tenant",
+        "network_boundary" => "offline",
+        "reference_architecture" => "offline_promotion",
+        "disaster_recovery" => {
+          "reference_stack_last_validated_at" => 10.days.ago.to_date.iso8601
+        }
+      }
+      tenant_setting.save!
+
+      result = described_class.call(account: account, tenant_setting: tenant_setting, billing_visible: false)
+      control = result[:controls].index_by { |item| item[:id] }.fetch(:byoc_reference_stack)
+
+      expect(control[:status]).to eq(:compliant)
+      expect(control[:evidence]).to include("Legacy air-gapped deployment retained until migration completes")
+      expect(result.dig(:counts, :not_applicable)).to eq(1)
     end
   end
 end

@@ -1,19 +1,19 @@
 # Reference Architectures
 
-## Self-hosted reference architecture
+## Managed cloud reference architecture
 
-- Deploy Paid Rails, PostgreSQL, Redis, and object storage inside a single tenant boundary.
-- Terminate ingress at a managed reverse proxy or load balancer with TLS and IP allowlists.
-- Run agent containers on dedicated worker hosts with isolated Docker storage and outbound egress controls.
+- Run a Paid-operated control plane with tenant isolation enforced through account scoping, row-level security, and isolated execution workspaces.
+- Provide managed PostgreSQL, Redis, and object storage with routine backups, monitoring, and platform-led upgrades.
+- Expose customer access through standard SaaS endpoints while keeping operator access behind hardened administrative controls and audit logging.
 
-## Private VPC reference architecture
+## Private SaaS reference architecture
 
-- Place Paid web, worker, database, and cache tiers on private subnets with tightly scoped security groups.
-- Expose operator access through VPN, bastion, or identity-aware proxy rather than broad public ingress.
-- Prefer managed PostgreSQL, Redis, and object storage with customer-controlled network policies and backup retention.
+- Provision a dedicated single-tenant stack per customer with isolated Rails, worker, database, cache, and object-storage resources.
+- Restrict ingress through private connectivity, IP allowlists, or customer-approved identity-aware access paths.
+- Keep Paid responsible for patching, upgrades, backup verification, and production monitoring while preserving customer-specific network and residency controls.
 
-## Air-gapped reference architecture
+## Bring-your-own-cloud reference architecture
 
-- Build release artifacts in a connected staging environment, then promote signed packages into the disconnected network.
-- Mirror Ruby gems, Yarn packages, container images, and model/runtime dependencies into an approved offline registry.
-- Validate restore, upgrade, and rollback procedures against the promoted artifact set before production rollout.
+- Deploy Paid into the customer's cloud account using validated reference stacks such as `aws-terraform-v1`, `azure-aks-v1`, or `gcp-gke-v1`.
+- Keep network boundaries, persistence services, and runtime identities inside customer-owned cloud resources while preserving the same application behavior as managed offerings.
+- Re-validate automation, upgrades, rollback steps, and managed-service dependencies whenever the approved reference stack changes.

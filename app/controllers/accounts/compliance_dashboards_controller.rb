@@ -65,9 +65,15 @@ module Accounts
     def deployment_assurance_params
       params.fetch(:deployment_assurance, ActionController::Parameters.new).permit(
         :deployment_model,
+        :tenant_isolation,
         :network_boundary,
         :reference_architecture,
         :operations_owner,
+        monitoring: %i[
+          provider
+          escalation_owner
+          last_reviewed_at
+        ],
         customer_managed_keys: %i[
           enabled
           provider
@@ -86,9 +92,21 @@ module Accounts
           backup_last_verified_at
           restore_last_tested_at
           upgrade_last_validated_at
-          air_gap_package_validated_at
+          reference_stack_last_validated_at
           rpo_hours
           rto_hours
+        ],
+        release_management: %i[
+          upgrade_channel
+          maintenance_window
+          maintenance_timezone
+          version_support_policy
+          support_window_days
+        ],
+        byoc: %i[
+          cloud_provider
+          automation_stack
+          reference_stack
         ]
       ).to_h
     end
