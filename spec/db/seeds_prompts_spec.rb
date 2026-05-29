@@ -27,6 +27,12 @@ module SeedsPromptsSpec
     goal.create_github_issue
     goal.review_pull_request
     goal.enhance_issue
+    service_environment.available_services_intro
+    service_environment.environment_constraints_no_db
+    service_environment.schema_workflow_ruby
+    service_environment.setup.framework_db
+    service_environment.setup.no_db
+    service_environment.setup.ruby_db
   ].freeze
 end
 
