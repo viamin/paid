@@ -149,7 +149,7 @@ Collapse `mode: api|workspace` into a single session shape that *has* a containe
 # - Add:         container_capability  string  # none|pending|provisioning|ready|failed|stopped
 # - Add:         container_requested_at datetime
 # - Add:         container_ready_at     datetime
-# - Add:         clone_manifest         jsonb   # [{project_id, cloned_at, path, token_identity}]
+# - Add:         clone_manifest         jsonb   # [{project_id, cloned_at, path, token_identity, access_level}]
 # - Keep:        container_id, workspace_volume, idle_timeout_at
 ```
 
@@ -158,7 +158,7 @@ Collapse `mode: api|workspace` into a single session shape that *has* a containe
 - `mode = "api"` → `container_capability = "none"`
 - `mode = "workspace"` → `container_capability = "ready"` if container_id present, `"stopped"` otherwise
 
-`clone_manifest` records every successful clone so the session can be reopened later (container destroyed, then recreated and re-cloned from the manifest).
+`clone_manifest` records every successful clone so the session can be reopened later (container destroyed, then recreated and re-cloned from the manifest). Each entry also records `access_level`: `read_only` for clones authorized only by `project.show?`, `mutable` for clones authorized by `project.run_agent?`.
 
 ### Session Lifecycle
 
@@ -195,6 +195,8 @@ Collapse `mode: api|workspace` into a single session shape that *has* a containe
 
 4. Assistant invokes clone_project(project)
    ├── Pundit: project.show? for current user
+   ├── if session has shell enabled (or has already used a mutable workspace tool):
+   │   └── require project.run_agent? and record access_level = "mutable"
    ├── resolve clone token (user GH token, fallback project GH token)
    ├── docker exec git clone into /workspace/<project-slug>/
    ├── append to clone_manifest
@@ -235,21 +237,22 @@ CHAT_DEFAULTS = {
   pids_limit: 500,
   idle_timeout: 30.minutes,
   max_cloned_repos: 5,                   # NEW: cap clones per session
-  max_workspace_disk_mb: 4096,           # NEW: enforced via tmpfs / quota
+  max_workspace_disk_mb: 4096,           # NEW: target hard cap once quota-capable mounts land
   clone_timeout_per_repo: 120            # NEW: per-clone wall-clock
 }
 ```
 
-`max_cloned_repos` is a soft default — accounts with multi-repo workflows can raise it via `TenantSettings`. The disk cap is enforced by the workspace volume size limit, not by quotas inside the container.
+`max_cloned_repos` is a soft default — accounts with multi-repo workflows can raise it via `TenantSettings`. The current chat path creates plain Docker volumes, so `max_workspace_disk_mb` is advisory until a quota-capable workspace mount lands. This RDR keeps the setting because the session contract should already expose the intended cap, but implementation must treat hard disk enforcement as a separate prerequisite/follow-up rather than implying it exists today.
 
 ### Authorization
 
 Every container-only tool inherits the framework chokepoint from issue #2349:
 
 - `current_user` resolved and `TenantContext.with(user.account)` opened for the whole call
-- `clone_project` Pundit-checks `project.show?` (same gate as the read tools)
-- `propose_pull_request` Pundit-checks `project.run_agent?` (same gate as `trigger_agent_run`)
-- `run_shell` is Pundit-checked against the session's *primary* project's `run_agent?` policy — shell access is treated as equivalent privilege to triggering an agent run, and accounts can disable it entirely via `TenantSettings.chat_shell_enabled`
+- `clone_project` Pundit-checks `project.show?` for read-only clones and `project.run_agent?` for mutable clones
+- `write_repo_file`, `apply_patch`, `git_diff`, `git_status`, `git_branch_create`, and `propose_pull_request` resolve the target repo from `clone_manifest` and require `project.run_agent?` on that target project
+- `run_shell` is available only when `TenantSettings.chat_shell_enabled` is true and every cloned repo in the session is `access_level = "mutable"` for the current user. If the session contains any read-only clone, `run_shell` is omitted from `tools/list`
+- Once `run_shell` is enabled for a session, any later `clone_project` call must also satisfy `project.run_agent?`; shell-enabled sessions do not admit lower-privilege clones
 
 The cloning token decision (user GH token first, project token fallback, identity surfaced in result) matches issue #2352 — same helper.
 
@@ -317,11 +320,11 @@ The cloning token decision (user GH token first, project token fallback, identit
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Container failure mid-conversation surfaces as a broken chat | High | Capability transitions to `failed`; tool calls return structured `container_unavailable`; LLM can choose to fall back to API-only tools (e.g. `read_repo_file` via GitHub) |
-| User clones 50 repos and exhausts container disk | Medium | `max_cloned_repos` cap + workspace volume size limit; `clone_project` rejects with a clear error |
+| User clones 50 repos and exhausts container disk | Medium | `max_cloned_repos` cap now; hard `max_workspace_disk_mb` enforcement requires a quota-capable workspace-mount follow-up before this RDR can claim it as enforced |
 | Multi-repo PR proposals fan out into many uncoordinated PRs | Medium | `propose_pull_request` requires explicit `depends_on` declarations for related PRs; a default warning if more than one repo has uncommitted changes at propose time |
 | Background provisioning costs add up for users who never trigger container tools | Medium | Per-account `chat_eager_provisioning` flag; idle reaper destroys unused containers on the standard timeout |
 | Reopening a session with stale `clone_manifest` (project deleted, repo renamed) | Low | Re-provision marks failed clones in the manifest and surfaces them to chat as a system message; user can decide to retry or skip |
-| `run_shell` exposes too much surface | High | Default off via `TenantSettings.chat_shell_enabled`; when enabled, Pundit-gated on `run_agent?` for the primary project; container constraints from RDR-004 still apply |
+| `run_shell` exposes too much surface | High | Default off via `TenantSettings.chat_shell_enabled`; only exposed when every cloned repo in the session is mutable for the current user; mutable tools re-check `run_agent?` on the target project; container constraints from RDR-004 still apply |
 
 ## Implementation Plan
 
@@ -329,6 +332,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 
 - [ ] Issue #2349 (auth invariant framework) landed — every new tool inherits the chokepoint
 - [ ] Issue #2352 (source-code read tools) landed — provides the token-identity helper reused by `clone_project`
+- [ ] Workspace-mount follow-up landed — switch chat workspace storage from plain Docker volumes to a quota-capable mount before treating `max_workspace_disk_mb` as an enforced limit
 
 ### Step-by-Step
 
@@ -356,9 +360,9 @@ The cloning token decision (user GH token first, project token fallback, identit
 #### Step 4: Container-only tools (initial set)
 
 - `Tools::CloneProject` — clones a project, updates `clone_manifest`, surfaces token identity
-- `Tools::WriteRepoFile` — writes a file in a cloned repo (path validated against `clone_manifest`)
-- `Tools::RunShell` — Pundit-gated, off by default, capped wall-clock per call
-- `Tools::ApplyPatch` — applies a unified diff against a cloned repo
+- `Tools::WriteRepoFile` — writes a file in a cloned repo (path validated against `clone_manifest`, `project.run_agent?` required on the target repo)
+- `Tools::RunShell` — off by default, capped wall-clock per call, only exposed for sessions whose entire `clone_manifest` is mutable for the current user
+- `Tools::ApplyPatch` — applies a unified diff against a cloned repo (`project.run_agent?` required on the target repo)
 - `Tools::ProposePullRequest` — creates a branch, pushes via the resolved GH identity, opens a PR with `depends_on` lines
 
 #### Step 5: SendMessage integration
@@ -410,7 +414,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 - **Unit**: capability state machine transitions; `clone_manifest` round-trip; tool filtering by capability
 - **Integration**: full lifecycle — create → first inline message → background provision completes → tool call routes to container → close → reopen replays manifest
 - **System**: browser chat that clones two repos, reads files from both, proposes two dependent PRs
-- **Security**: parity spec from #2349 covers every new container-only tool; specific assertions that `clone_project` cannot clone a project the user lacks `show?` for, and that `run_shell` is denied when disabled at tenant level
+- **Security**: parity spec from #2349 covers every new container-only tool; specific assertions that `clone_project` cannot clone a project the user lacks `show?` for, that mutable tools cannot target repos where the user lacks `run_agent?`, and that `run_shell` is denied both when disabled at tenant level and when any cloned repo is read-only
 
 ### Test Scenarios
 
@@ -426,6 +430,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 | Project deleted between close and reopen | Reopen surfaces a system message naming the failed clone; rest of session usable |
 | Account with `chat_eager_provisioning = false` | No background job; container provisioned lazily on first container-only tool call |
 | `run_shell` invoked when `TenantSettings.chat_shell_enabled = false` | Tool not present in `tools/list`; if invoked anyway, returns authorization error |
+| Session contains a repo cloned with only `project.show?` | `run_shell` is absent from `tools/list`, and mutable tools reject that repo unless the user separately satisfies `project.run_agent?` |
 
 ### Performance Validation
 
@@ -439,8 +444,9 @@ The cloning token decision (user GH token first, project token fallback, identit
 
 - All new container-only tools route through the `BaseTool#dispatch` chokepoint from #2349
 - `clone_project` cannot bypass Pundit `project.show?`
+- Mutable container tools cannot bypass Pundit `project.run_agent?` on their target repo
 - Container token-identity logging shows which GH token was used per clone, surfaced to user and recorded in audit
-- `run_shell` honors `TenantSettings.chat_shell_enabled` and per-project `run_agent?`
+- `run_shell` honors `TenantSettings.chat_shell_enabled` and is suppressed unless the entire session workspace is mutable for the current user
 - Cross-repo PR proposals do not leak token credentials into PR bodies or branch names
 - Container network egress restrictions from RDR-004 unchanged
 
