@@ -186,6 +186,75 @@ upsert_global_prompt.call(
 )
 
 # ----------------------------------------------------------------------------
+# service_environment.* — Atomic service-environment guidance blocks
+# Used by: Prompts::ServiceContainerSections
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "service_environment.setup.ruby_db",
+  name: "Service Environment Setup (Ruby + DB)",
+  description: "Database setup instruction for Ruby projects with a configured database service.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+       Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you).
+  TEMPLATE
+  variables: []
+)
+
+upsert_global_prompt.call(
+  slug: "service_environment.setup.framework_db",
+  name: "Service Environment Setup (Framework + DB)",
+  description: "Database setup instruction for non-Ruby projects with a configured database service.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+       A database service will be available via the `DATABASE_URL` environment variable. Use your framework's standard command to create and migrate the database schema.
+  TEMPLATE
+  variables: []
+)
+
+upsert_global_prompt.call(
+  slug: "service_environment.setup.no_db",
+  name: "Service Environment Setup (No DB)",
+  description: "No-database setup warning for projects without a configured database service.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+       Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment.
+  TEMPLATE
+  variables: []
+)
+
+upsert_global_prompt.call(
+  slug: "service_environment.available_services_intro",
+  name: "Service Environment Available Services Intro",
+  description: "Introductory sentence for the service availability section shown when service containers are configured.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+    The following services are configured for this project and will be available in the agent environment:
+  TEMPLATE
+  variables: []
+)
+
+upsert_global_prompt.call(
+  slug: "service_environment.environment_constraints_no_db",
+  name: "Service Environment Constraints (No DB)",
+  description: "Environment constraints guidance shown when no database service is available in the agent environment.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+    You are running in an isolated container WITHOUT database services.
+    Do NOT attempt to install PostgreSQL, Redis, or any other infrastructure service.
+    Do NOT run `bin/setup`, `bin/rails db:prepare`, `bin/rails db:migrate`, or `initdb`.
+
+    If a task requires database access and none is available:
+    - Implement the code changes and write tests that use mocks, factories, or other
+      techniques that do not require a real database connection.
+    - Do NOT attempt to start or provision your own database server.
+    - If the default test command or pre-commit hook fails because it cannot reach the
+      database, run whatever subset of tests can pass without a database and clearly
+      explain in your final answer which tests could not be run due to missing services.
+  TEMPLATE
+  variables: []
+)
+
+# ----------------------------------------------------------------------------
 # ci.failure_guidance — Data-driven CI failure debugging guidance
 # Used by: Prompts::BuildForPr (rendered and injected into CI failures section)
 # ----------------------------------------------------------------------------

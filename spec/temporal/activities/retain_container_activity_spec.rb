@@ -9,6 +9,7 @@ RSpec.describe Activities::RetainContainerActivity do
   describe "#execute" do
     it "sets container_retained_until on the agent run" do
       agent_run = create(:agent_run, :running, project: project, container_id: "abc123")
+      allow(activity).to receive(:disk_pressure?).and_return(false)
 
       freeze_time do
         result = activity.execute(agent_run_id: agent_run.id)

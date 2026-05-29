@@ -5,6 +5,12 @@ module Prompts
   # Included by both BuildForIssue and BuildForPr to provide
   # consistent database/infrastructure guardrails across all agent prompts.
   module ServiceContainerSections
+    RUBY_DB_SETUP_SLUG = "service_environment.setup.ruby_db"
+    FRAMEWORK_DB_SETUP_SLUG = "service_environment.setup.framework_db"
+    NO_DB_SETUP_SLUG = "service_environment.setup.no_db"
+    AVAILABLE_SERVICES_INTRO_SLUG = "service_environment.available_services_intro"
+    ENVIRONMENT_CONSTRAINTS_NO_DB_SLUG = "service_environment.environment_constraints_no_db"
+
     # Public module method: returns the indented database setup instruction
     # line that goes between the install-deps step and the analyze step in
     # the issue prompt. Used by both BuildForIssue and CreateAgentRunActivity
@@ -13,7 +19,7 @@ module Prompts
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
       language = Prompts::LanguageCommands.detected_language(project)
-      build_database_instruction(has_db: has_db, language: language)
+      render_database_instruction(has_db: has_db, language: language, project: project)
     end
 
     def self.build_database_instruction(has_db:, language:)
@@ -29,6 +35,26 @@ module Prompts
       end
     end
 
+    def self.available_services_intro
+      "The following services are configured for this project and will be available in the agent environment:"
+    end
+
+    def self.environment_constraints_no_db
+      <<~SECTION
+        You are running in an isolated container WITHOUT database services.
+        Do NOT attempt to install PostgreSQL, Redis, or any other infrastructure service.
+        Do NOT run `bin/setup`, `bin/rails db:prepare`, `bin/rails db:migrate`, or `initdb`.
+
+        If a task requires database access and none is available:
+        - Implement the code changes and write tests that use mocks, factories, or other
+          techniques that do not require a real database connection.
+        - Do NOT attempt to start or provision your own database server.
+        - If the default test command or pre-commit hook fails because it cannot reach the
+          database, run whatever subset of tests can pass without a database and clearly
+          explain in your final answer which tests could not be run due to missing services.
+      SECTION
+    end
+
     def self.service_environment_section_for(project:, include_setup_instruction: true)
       containers = project.service_containers.to_a
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
@@ -40,7 +66,7 @@ module Prompts
         sections << <<~SECTION
           # Service Environment
 
-          #{build_database_instruction(has_db: has_db, language: language)}
+          #{render_database_instruction(has_db: has_db, language: language, project: project)}
         SECTION
       end
 
@@ -50,7 +76,7 @@ module Prompts
 
           # Available Services
 
-          The following services are configured for this project and will be available in the agent environment:
+          #{render_available_services_intro(project: project)}
           #{lines.join("\n")}
 
           Do NOT install or build these services from source.
@@ -63,17 +89,7 @@ module Prompts
 
           # Environment Constraints
 
-          You are running in an isolated container WITHOUT database services.
-          Do NOT attempt to install PostgreSQL, Redis, or any other infrastructure service.
-          Do NOT run `bin/setup`, `bin/rails db:prepare`, `bin/rails db:migrate`, or `initdb`.
-
-          If a task requires database access and none is available:
-          - Implement the code changes and write tests that use mocks, factories, or other
-            techniques that do not require a real database connection.
-          - Do NOT attempt to start or provision your own database server.
-          - If the default test command or pre-commit hook fails because it cannot reach the
-            database, run whatever subset of tests can pass without a database and clearly
-            explain in your final answer which tests could not be run due to missing services.
+          #{render_environment_constraints_no_db(project: project)}
         SECTION
       end
 
@@ -96,9 +112,10 @@ module Prompts
     private
 
     def setup_database_instruction
-      ServiceContainerSections.build_database_instruction(
+      ServiceContainerSections.render_database_instruction(
         has_db: has_database_container?,
-        language: detected_language
+        language: detected_language,
+        project: project
       )
     end
 
@@ -129,17 +146,7 @@ module Prompts
 
         # Environment Constraints
 
-        You are running in an isolated container WITHOUT database services.
-        Do NOT attempt to install PostgreSQL, Redis, or any other infrastructure service.
-        Do NOT run `bin/setup`, `bin/rails db:prepare`, `bin/rails db:migrate`, or `initdb`.
-
-        If a task requires database access and none is available:
-        - Implement the code changes and write tests that use mocks, factories, or other
-          techniques that do not require a real database connection.
-        - Do NOT attempt to start or provision your own database server.
-        - If the default test command or pre-commit hook fails because it cannot reach the
-          database, run whatever subset of tests can pass without a database and clearly
-          explain in your final answer which tests could not be run due to missing services.
+        #{ServiceContainerSections.render_environment_constraints_no_db(project: project)}
       SECTION
     end
 
@@ -153,7 +160,7 @@ module Prompts
 
         # Available Services
 
-        The following services are configured for this project and will be available in the agent environment:
+        #{ServiceContainerSections.render_available_services_intro(project: project)}
         #{lines.join("\n")}
 
         Do NOT install or build these services from source.
@@ -175,6 +182,49 @@ module Prompts
 
     def service_description(sc)
       ServiceContainerSections.service_description(sc)
+    end
+
+    class << self
+      def render_database_instruction(has_db:, language:, project:)
+        slug = if has_db
+          language == "ruby" ? RUBY_DB_SETUP_SLUG : FRAMEWORK_DB_SETUP_SLUG
+        else
+          NO_DB_SETUP_SLUG
+        end
+
+        render_prompt_block(
+          slug: slug,
+          project: project,
+          fallback: -> { build_database_instruction(has_db: has_db, language: language) }
+        )
+      end
+
+      def render_available_services_intro(project:)
+        render_prompt_block(
+          slug: AVAILABLE_SERVICES_INTRO_SLUG,
+          project: project,
+          fallback: -> { available_services_intro }
+        )
+      end
+
+      def render_environment_constraints_no_db(project:)
+        render_prompt_block(
+          slug: ENVIRONMENT_CONSTRAINTS_NO_DB_SLUG,
+          project: project,
+          fallback: -> { environment_constraints_no_db }
+        )
+      end
+
+      private
+
+      def render_prompt_block(slug:, project:, fallback:)
+        Prompts::Render.call(
+          slug: slug,
+          project: project,
+          variables: {},
+          fallback: fallback
+        )
+      end
     end
   end
 end
