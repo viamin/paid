@@ -44,6 +44,13 @@ module Prompts
       new(...).build
     end
 
+    def self.service_environment_section_render_for(project:, include_setup_instruction: false)
+      ServiceContainerSections.service_environment_section_render_for(
+        project: project,
+        include_setup_instruction: include_setup_instruction
+      )
+    end
+
     # Production-parity filter so REPLs/scripts get the same comments the live PR prompt does.
     def self.select_trusted_comments(comments, project:)
       comments.select do |comment|

@@ -14,8 +14,19 @@ module Activities
       rebase_succeeded = input.fetch(:rebase_succeeded, true)
       agent_run = AgentRun.find(agent_run_id)
       focus = input[:focus].presence || agent_run.focus.presence || "general"
-      track_phase(agent_run_id: agent_run_id, phase_key: "prepare_pr_prompt", phase_group: "prompt", agent_run: agent_run) do
-        project = agent_run.project
+      project = agent_run.project
+      service_environment_prompt_blocks = Prompts::BuildForPr.service_environment_section_render_for(
+        project: project,
+        include_setup_instruction: false
+      ).prompt_blocks
+
+      track_phase(
+        agent_run_id: agent_run_id,
+        phase_key: "prepare_pr_prompt",
+        phase_group: "prompt",
+        agent_run: agent_run,
+        metadata: { service_environment_prompt_blocks: service_environment_prompt_blocks }
+      ) do
         client = project.client
         prompt_version = Prompts::Resolve.call(
           slug: Prompts::BuildForPr::PROMPT_SLUG,

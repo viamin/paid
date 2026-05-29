@@ -64,9 +64,22 @@ class RunProvenanceBuilder
   end
 
   def service_environment_prompt_blocks
-    create_phase = agent_run.agent_run_phases.find { |phase| phase.phase_key == "create_agent_run" }
-    blocks = create_phase&.metadata&.fetch("service_environment_prompt_blocks", nil)
+    phase = prompt_assembly_phases.find do |candidate|
+      service_environment_prompt_blocks_for(candidate).present?
+    end
+    blocks = phase && service_environment_prompt_blocks_for(phase)
     Array(blocks).map { |block| block.respond_to?(:deep_symbolize_keys) ? block.deep_symbolize_keys : block }
+  end
+
+  def prompt_assembly_phases
+    @prompt_assembly_phases ||= %w[prepare_pr_prompt create_agent_run].filter_map do |phase_key|
+      agent_run.agent_run_phases.find { |phase| phase.phase_key == phase_key }
+    end
+  end
+
+  def service_environment_prompt_blocks_for(phase)
+    metadata = phase.metadata
+    metadata&.fetch("service_environment_prompt_blocks", metadata[:service_environment_prompt_blocks])
   end
 
   def model_provenance

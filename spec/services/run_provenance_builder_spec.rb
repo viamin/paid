@@ -73,6 +73,21 @@ RSpec.describe RunProvenanceBuilder do
     expect(provenance[:prompt][:service_environment_prompt_blocks]).to eq(service_environment_prompt_blocks)
   end
 
+  it "includes service environment prompt provenance from prepare_pr_prompt metadata" do
+    agent_run.agent_run_phases.create!(
+      phase_key: "prepare_pr_prompt",
+      phase_group: "prompt",
+      started_at: 1.minute.ago,
+      finished_at: 30.seconds.ago,
+      duration_seconds: 30,
+      metadata: { service_environment_prompt_blocks: service_environment_prompt_blocks }
+    )
+
+    provenance = described_class.new(agent_run.reload).build
+
+    expect(provenance[:prompt][:service_environment_prompt_blocks]).to eq(service_environment_prompt_blocks)
+  end
+
   it "handles nil model_selection" do
     provenance = described_class.new(agent_run).build
 
