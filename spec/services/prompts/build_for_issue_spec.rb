@@ -220,6 +220,16 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("DATABASE_URL")
       end
 
+      it "tells a Ruby project to use the migration generator and never hand-edit schema.rb" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Database Schema Workflow")
+        expect(prompt).to include("bin/rails generate migration")
+        expect(prompt).to include("bin/rails db:migrate")
+        expect(prompt).to include("Never edit `db/schema.rb` by hand")
+        expect(prompt).to include("strong_migrations")
+      end
+
       context "with a non-Ruby project" do
         let(:python_project) do
           OpenStruct.new(
@@ -241,6 +251,13 @@ RSpec.describe Prompts::BuildForIssue do
           expect(prompt).to include("DATABASE_URL")
           expect(prompt).to include("Use your framework's standard command")
           expect(prompt).not_to include("bin/rails db:prepare")
+        end
+
+        it "does not emit the Ruby migration workflow section" do
+          prompt = described_class.call(issue: issue, project: python_project)
+
+          expect(prompt).not_to include("Database Schema Workflow")
+          expect(prompt).not_to include("bin/rails generate migration")
         end
       end
     end
@@ -723,6 +740,21 @@ RSpec.describe Prompts::BuildForIssue do
   end
 
   describe ".service_environment_section_for" do
+    let(:configured_containers) do
+      [ OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432) ]
+    end
+
+    it "renders the schema workflow section even when the setup instruction is suppressed" do
+      section = described_class.service_environment_section_for(
+        project: project,
+        include_setup_instruction: false
+      )
+
+      expect(section).not_to include("# Service Environment")
+      expect(section).to include("Database Schema Workflow")
+      expect(section).to include("bin/rails generate migration")
+    end
+
     it "uses project-scoped prompt overrides" do
       real_project = create(:project)
       service_container = create(:service_container, account: real_project.account)
