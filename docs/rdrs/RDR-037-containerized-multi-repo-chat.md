@@ -37,7 +37,7 @@ The system also has no concept of "container is being prepared in the background
 
 ### What RDR-028 gave us
 
-- `ChatSession` model with `mode: api|workspace` and `status: active|idle|closed` ([app/models/chat_session.rb:25-26](../../app/models/chat_session.rb#L25-L26))
+- `ChatSession` model with `mode: api|workspace` and `status: active|idle|closed|archived` ([app/models/chat_session.rb:25-26](../../app/models/chat_session.rb#L25-L26))
 - `Containers::ProvisionForChat` ([app/services/containers/provision_for_chat.rb](../../app/services/containers/provision_for_chat.rb)) — synchronous provisioner with a workspace volume seeded from a single project's git repo
 - Per-session state volume mounted at `~/.claude`, `~/.codex`, etc. for CLI session resume
 - MCP server endpoint at `/api/mcp/call` with 12 read/run tools and session-token auth
@@ -157,6 +157,7 @@ Collapse `mode: api|workspace` into a single session shape that *has* a containe
 
 - `mode = "api"` → `container_capability = "none"`
 - `mode = "workspace"` → `container_capability = "ready"` if container_id present, `"stopped"` otherwise
+- Existing `status` values, including `archived`, remain unchanged by this migration; the backfill only replaces the old `mode` shape with `container_capability`
 
 `clone_manifest` records every successful clone so the session can be reopened later (container destroyed, then recreated and re-cloned from the manifest). Each entry also records `access_level`: `read_only` for clones authorized only by `project.show?`, `mutable` for clones authorized by `project.run_agent?`. This stored value is audit metadata only; mutability must be recomputed from `project_id` + `current_user` on every `tools/list`, container-tool call, and reopen because `ChatSessionPolicy#show?` allows different account members to reopen the same session with different privileges.
 
