@@ -12,6 +12,12 @@ FactoryBot.define do
     added_by_name { "Test User" }
     added_by_email { "test@example.com" }
     tags { [ "rails", "repo" ] }
+    extension_points { [ "prompts", "tools" ] }
+    certification_status { "verified" }
+    support_tier { "community" }
+    documentation_url { "https://docs.example.com/repo-coding-skill" }
+    source_code_url { "https://github.com/example/repo-coding-skill" }
+    certification_notes { "Validated against a reference Rails repo and reviewed for rollback safety." }
     team_scope { "account" }
     status { "active" }
   end

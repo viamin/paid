@@ -7,7 +7,9 @@ RSpec.describe MarketplaceEntries::Upsert, :no_db do
   let(:entry_class) do
     Struct.new(
       :name, :entry_type, :description, :provider, :provider_format, :usage_guidance,
-      :team_scope, :status, :added_by_name, :added_by_email, :tags_csv, keyword_init: true
+      :extension_points, :certification_status, :support_tier, :documentation_url,
+      :source_code_url, :certification_notes, :team_scope, :status, :added_by_name,
+      :added_by_email, :tags_csv, keyword_init: true
     ) do
       def assign_attributes(attributes)
         attributes.each { |key, value| public_send("#{key}=", value) }
@@ -22,6 +24,12 @@ RSpec.describe MarketplaceEntries::Upsert, :no_db do
       provider: "claude",
       provider_format: "canonical_v1",
       usage_guidance: "Use on Rails issue runs.",
+      extension_points: [ "prompts", "tools" ],
+      certification_status: "verified",
+      support_tier: "partner",
+      documentation_url: "https://docs.example.com/repo-coding-skill",
+      source_code_url: "https://github.com/example/repo-coding-skill",
+      certification_notes: "Reviewed against the Phase 8 ecosystem checklist.",
       team_scope: "account",
       status: "active",
       tags_csv: "rails, repo",
@@ -50,6 +58,17 @@ RSpec.describe MarketplaceEntries::Upsert, :no_db do
 
       expect(entry.added_by_name).to eq("Initial Publisher")
       expect(entry.added_by_email).to eq("initial@example.com")
+    end
+
+    it "normalizes ecosystem metadata onto the entry" do
+      entry = entry_class.new
+
+      described_class.new(entry:, params:, actor:).send(:assign_metadata)
+
+      expect(entry.extension_points).to eq([ "prompts", "tools" ])
+      expect(entry.certification_status).to eq("verified")
+      expect(entry.support_tier).to eq("partner")
+      expect(entry.documentation_url).to eq("https://docs.example.com/repo-coding-skill")
     end
   end
 

@@ -3,8 +3,8 @@
 <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-semibold text-gray-900">Marketplace Entries</h1>
-      <p class="mt-1 text-sm text-gray-500">Shared team skills, prompts, plugins, MCP servers, provider presets, and run enhancements.</p>
+      <h1 class="text-2xl font-semibold text-gray-900">Ecosystem Catalog</h1>
+      <p class="mt-1 text-sm text-gray-500">Shared integrations, prompts, policy packs, collectors, tools, workflow strategies, and runtime extensions.</p>
     </div>
     <div class="flex items-center gap-3">
       <% if current_account.paid_plan? %>
@@ -21,7 +21,7 @@
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
-          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Provider</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Certification</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Version</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
         </tr>
@@ -36,9 +36,17 @@
                 <div class="mt-1 text-xs text-gray-500"><%= entry_tags.join(", ") %></div>
               <% end %>
             </td>
-            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.entry_type.humanize %></td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <div><%= entry.entry_type.humanize %></div>
+              <% if entry.extension_points.any? %>
+                <div class="mt-1 text-xs text-gray-500"><%= entry.extension_points.map(&:humanize).join(", ") %></div>
+              <% end %>
+            </td>
             <td class="px-4 py-3 text-sm text-gray-700"><%= entry.status.humanize %></td>
-            <td class="px-4 py-3 text-sm text-gray-700"><%= entry.provider.presence || "-" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <div><%= entry.certification_status.humanize %></div>
+              <div class="mt-1 text-xs text-gray-500"><%= entry.support_tier.humanize %></div>
+            </td>
             <td class="px-4 py-3 text-sm text-gray-700"><%= entry.current_version&.version || "-" %></td>
             <td class="px-4 py-3 text-sm text-gray-700"><%= local_time(entry.updated_at, format: :short) %></td>
           </tr>
