@@ -16,13 +16,15 @@ module Accounts
         @tenant_setting.enterprise_operations_configuration = operations_params
         @tenant_setting.save!
 
-        Accounts::RecordActivity.call(
-          account: current_account,
-          actor: current_user,
-          action: "operations.dashboard_updated",
-          subject: @tenant_setting,
-          metadata: { changed_fields: [ "enterprise_operations" ] }
-        )
+        if @tenant_setting.saved_changes.except("updated_at").any?
+          Accounts::RecordActivity.call(
+            account: current_account,
+            actor: current_user,
+            action: "operations.dashboard_updated",
+            subject: @tenant_setting,
+            metadata: { changed_fields: [ "enterprise_operations" ] }
+          )
+        end
       end
 
       redirect_to account_operations_dashboard_path, notice: "Operations settings saved."

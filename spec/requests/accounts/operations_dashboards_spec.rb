@@ -108,6 +108,16 @@ RSpec.describe "Accounts::OperationsDashboards" do
       expect(account.account_activity_events.recent.first.action).to eq("operations.dashboard_updated")
     end
 
+    it "does not record activity for a no-op update" do
+      account.tenant_setting!.update!(enterprise_operations_configuration: operations_params.fetch(:enterprise_operations))
+
+      expect do
+        patch account_operations_dashboard_path, params: operations_params
+      end.not_to change(AccountActivityEvent, :count)
+
+      expect(response).to redirect_to(account_operations_dashboard_path)
+    end
+
     it "allows disabling automated backups" do
       account.tenant_setting!.update!(
         enterprise_operations_configuration: account.tenant_setting!.enterprise_operations_configuration.deep_merge(
