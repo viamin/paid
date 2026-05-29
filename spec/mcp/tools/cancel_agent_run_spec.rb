@@ -56,5 +56,15 @@ RSpec.describe Tools::CancelAgentRun do
         tool.call(agent_run_id: run.id, confirmed: true)
       }.to raise_error(ArgumentError, /not cancellable/)
     end
+
+    it "reuses the authorized run lookup during perform" do
+      run = create(:agent_run, :running, project: project)
+      scope = instance_double(ActiveRecord::Relation)
+
+      allow(tool).to receive(:policy_scope).with(AgentRun).and_return(scope)
+      expect(scope).to receive(:find).once.with(run.id).and_return(run)
+
+      tool.call(agent_run_id: run.id, confirmed: true)
+    end
   end
 end

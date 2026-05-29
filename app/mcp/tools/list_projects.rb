@@ -2,6 +2,8 @@
 
 module Tools
   class ListProjects < BaseTool
+    authorize :index?, ->(_args) { Project.new(account: account) }, policy_class: ProjectPolicy
+
     def self.tool_name = "list_projects"
 
     def self.description
@@ -20,7 +22,7 @@ module Tools
 
     VALID_STATUSES = %w[active inactive].freeze
 
-    def call(status: nil, limit: 20)
+    def perform(status: nil, limit: 20)
       if status.present? && !VALID_STATUSES.include?(status)
         raise ArgumentError, "Invalid status filter '#{status}': must be 'active' or 'inactive'"
       end

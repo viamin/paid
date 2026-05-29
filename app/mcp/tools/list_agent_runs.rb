@@ -2,6 +2,8 @@
 
 module Tools
   class ListAgentRuns < BaseTool
+    authorize :index?, ->(_args) { AgentRun.new(project: Project.new(account: account)) }, policy_class: AgentRunPolicy
+
     def self.tool_name = "list_agent_runs"
 
     def self.description
@@ -19,7 +21,7 @@ module Tools
       }
     end
 
-    def call(project_id: nil, status: nil, limit: 20)
+    def perform(project_id: nil, status: nil, limit: 20)
       runs = policy_scope(AgentRun)
       runs = runs.where(project_id:) if project_id.present?
       runs = runs.by_status(status) if status.present?
