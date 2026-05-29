@@ -2,9 +2,12 @@
 
 <% can_manage_compliance = policy(current_account).update? %>
 <% deployment_assurance = @compliance_dashboard[:deployment_assurance] %>
+<% monitoring = deployment_assurance["monitoring"] %>
 <% customer_managed_keys = deployment_assurance["customer_managed_keys"] %>
 <% secret_rotation = deployment_assurance["secret_rotation"] %>
 <% disaster_recovery = deployment_assurance["disaster_recovery"] %>
+<% release_management = deployment_assurance["release_management"] %>
+<% byoc = deployment_assurance["byoc"] %>
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -12,7 +15,7 @@
       <p class="text-sm font-medium uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">Compliance</p>
       <h1 class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">Deployment Assurance</h1>
       <p class="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
-        Capture deployment posture, customer-managed key status, rotation evidence, and operational runbook validation in one place.
+        Capture deployment model choices, operating ownership, and upgrade policy evidence in one place for buyer and security review.
       </p>
     </div>
 
@@ -106,19 +109,45 @@
           <section class="grid gap-4 md:grid-cols-2">
             <div>
               <%= label_tag "deployment_assurance_deployment_model", "Deployment model", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "deployment_assurance[deployment_model]", options_for_select([["Self hosted", "self_hosted"], ["Private VPC", "private_vpc"], ["Air gapped", "air_gapped"]], deployment_assurance["deployment_model"]), id: "deployment_assurance_deployment_model", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "deployment_assurance[deployment_model]", options_for_select([["Managed cloud", "managed_cloud"], ["Private SaaS", "private_saas"], ["Bring your own cloud", "byoc"]], deployment_assurance["deployment_model"]), id: "deployment_assurance_deployment_model", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+            </div>
+            <div>
+              <%= label_tag "deployment_assurance_tenant_isolation", "Tenant isolation", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+              <%= select_tag "deployment_assurance[tenant_isolation]", options_for_select([["Multi-tenant RLS", "multi_tenant_rls"], ["Single tenant", "single_tenant"], ["Customer cloud", "customer_cloud"]], deployment_assurance["tenant_isolation"]), id: "deployment_assurance_tenant_isolation", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "deployment_assurance_network_boundary", "Network boundary", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "deployment_assurance[network_boundary]", options_for_select([["Private VPC", "private_vpc"], ["Controlled public ingress", "public_ingress"], ["Offline", "offline"]], deployment_assurance["network_boundary"]), id: "deployment_assurance_network_boundary", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "deployment_assurance[network_boundary]", options_for_select([["Paid-managed", "paid_managed"], ["Private connect", "private_connect"], ["Customer VPC", "customer_vpc"]], deployment_assurance["network_boundary"]), id: "deployment_assurance_network_boundary", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "deployment_assurance_reference_architecture", "Reference architecture", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "deployment_assurance[reference_architecture]", options_for_select([["Single tenant", "single_tenant"], ["Private services", "private_services"], ["Offline promotion", "offline_promotion"]], deployment_assurance["reference_architecture"]), id: "deployment_assurance_reference_architecture", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "deployment_assurance[reference_architecture]", options_for_select([["Managed control plane", "managed_control_plane"], ["Dedicated hosted stack", "dedicated_hosted_stack"], ["Customer cloud stack", "customer_cloud_stack"]], deployment_assurance["reference_architecture"]), id: "deployment_assurance_reference_architecture", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "deployment_assurance_operations_owner", "Operations owner", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
               <%= text_field_tag "deployment_assurance[operations_owner]", deployment_assurance["operations_owner"], id: "deployment_assurance_operations_owner", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "platform-team@example.com" %>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-gray-200 p-4 dark:border-gray-700">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Monitoring coverage</h3>
+              <p class="text-sm text-gray-600 dark:text-gray-300">Record the monitoring provider, escalation owner, and last review used for this deployment model.</p>
+            </div>
+
+            <div class="mt-4 grid gap-4 md:grid-cols-3">
+              <div>
+                <%= label_tag "deployment_assurance_monitoring_provider", "Monitoring provider", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[monitoring][provider]", monitoring["provider"], id: "deployment_assurance_monitoring_provider", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "Datadog" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_monitoring_escalation_owner", "Escalation owner", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[monitoring][escalation_owner]", monitoring["escalation_owner"], id: "deployment_assurance_monitoring_escalation_owner", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "sre@example.com" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_monitoring_last_reviewed_at", "Last reviewed", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= date_field_tag "deployment_assurance[monitoring][last_reviewed_at]", monitoring["last_reviewed_at"], id: "deployment_assurance_monitoring_last_reviewed_at", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
             </div>
           </section>
 
@@ -186,8 +215,8 @@
 
           <section class="rounded-2xl border border-gray-200 p-4 dark:border-gray-700">
             <div>
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Disaster recovery and upgrades</h3>
-              <p class="text-sm text-gray-600 dark:text-gray-300">Record the most recent backup verification, restore rehearsal, upgrade validation, and offline package test.</p>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Disaster recovery</h3>
+              <p class="text-sm text-gray-600 dark:text-gray-300">Record the most recent backup verification, restore rehearsal, upgrade validation, and reference-stack validation evidence.</p>
             </div>
 
             <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -216,8 +245,60 @@
                 <%= date_field_tag "deployment_assurance[disaster_recovery][upgrade_last_validated_at]", disaster_recovery["upgrade_last_validated_at"], id: "deployment_assurance_disaster_recovery_upgrade_last_validated_at", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
               </div>
               <div>
-                <%= label_tag "deployment_assurance_disaster_recovery_air_gap_package_validated_at", "Air-gap package validated", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-                <%= date_field_tag "deployment_assurance[disaster_recovery][air_gap_package_validated_at]", disaster_recovery["air_gap_package_validated_at"], id: "deployment_assurance_disaster_recovery_air_gap_package_validated_at", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+                <%= label_tag "deployment_assurance_disaster_recovery_reference_stack_last_validated_at", "Reference stack validated", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= date_field_tag "deployment_assurance[disaster_recovery][reference_stack_last_validated_at]", disaster_recovery["reference_stack_last_validated_at"], id: "deployment_assurance_disaster_recovery_reference_stack_last_validated_at", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-gray-200 p-4 dark:border-gray-700">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Upgrade and support policy</h3>
+              <p class="text-sm text-gray-600 dark:text-gray-300">Define the release channel, maintenance window, and version-support promise for the selected deployment model.</p>
+            </div>
+
+            <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <%= label_tag "deployment_assurance_release_management_upgrade_channel", "Upgrade channel", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= select_tag "deployment_assurance[release_management][upgrade_channel]", options_for_select([["Stable", "stable"], ["Extended support", "extended_support"], ["Preview", "preview"]], release_management["upgrade_channel"]), id: "deployment_assurance_release_management_upgrade_channel", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_release_management_maintenance_window", "Maintenance window", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[release_management][maintenance_window]", release_management["maintenance_window"], id: "deployment_assurance_release_management_maintenance_window", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "Sun 02:00-04:00" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_release_management_maintenance_timezone", "Window timezone", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[release_management][maintenance_timezone]", release_management["maintenance_timezone"], id: "deployment_assurance_release_management_maintenance_timezone", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "UTC" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_release_management_version_support_policy", "Version support", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= select_tag "deployment_assurance[release_management][version_support_policy]", options_for_select([["Latest", "latest"], ["N-1", "n_minus_one"], ["LTS", "lts"]], release_management["version_support_policy"]), id: "deployment_assurance_release_management_version_support_policy", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_release_management_support_window_days", "Support window days", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= number_field_tag "deployment_assurance[release_management][support_window_days]", release_management["support_window_days"], min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-gray-200 p-4 dark:border-gray-700">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">BYOC reference stack</h3>
+              <p class="text-sm text-gray-600 dark:text-gray-300">Use this when the tenant runs Paid in its own cloud account with validated automation.</p>
+            </div>
+
+            <div class="mt-4 grid gap-4 md:grid-cols-3">
+              <div>
+                <%= label_tag "deployment_assurance_byoc_cloud_provider", "Cloud provider", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[byoc][cloud_provider]", byoc["cloud_provider"], id: "deployment_assurance_byoc_cloud_provider", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "AWS" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_byoc_automation_stack", "Automation stack", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[byoc][automation_stack]", byoc["automation_stack"], id: "deployment_assurance_byoc_automation_stack", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "Terraform + ECS" %>
+              </div>
+              <div>
+                <%= label_tag "deployment_assurance_byoc_reference_stack", "Reference stack", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+                <%= text_field_tag "deployment_assurance[byoc][reference_stack]", byoc["reference_stack"], id: "deployment_assurance_byoc_reference_stack", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white", placeholder: "aws-terraform-v1" %>
               </div>
             </div>
           </section>

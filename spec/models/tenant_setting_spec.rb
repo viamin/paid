@@ -274,6 +274,50 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "deployment assurance" do
+    it "merges the Phase 8.1 deployment defaults" do
+      setting = build(:tenant_setting)
+
+      expect(setting.deployment_assurance_configuration).to include(
+        "deployment_model" => "managed_cloud",
+        "tenant_isolation" => "multi_tenant_rls",
+        "network_boundary" => "paid_managed",
+        "reference_architecture" => "managed_control_plane"
+      )
+      expect(setting.deployment_assurance_configuration.dig("release_management", "upgrade_channel")).to eq("stable")
+      expect(setting.deployment_assurance_configuration.dig("release_management", "support_window_days")).to eq(30)
+    end
+
+    it "normalizes nested deployment assurance integers" do
+      setting = build(:tenant_setting)
+
+      setting.deployment_assurance_configuration = {
+        "release_management" => { "support_window_days" => "60" },
+        "disaster_recovery" => { "reference_stack_last_validated_at" => Date.current.iso8601 },
+        "customer_managed_keys" => { "enabled" => "1", "rotation_interval_days" => "45" }
+      }
+
+      expect(setting.deployment_assurance_configuration.dig("release_management", "support_window_days")).to eq(60)
+      expect(setting.deployment_assurance_configuration.dig("customer_managed_keys", "enabled")).to be(true)
+      expect(setting.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(45)
+    end
+
+    it "rejects unsupported deployment model policy values" do
+      setting = build(:tenant_setting)
+      setting.deployment_assurance_configuration = {
+        "deployment_model" => "air_gapped",
+        "tenant_isolation" => "shared",
+        "release_management" => { "upgrade_channel" => "rapid", "support_window_days" => 0 }
+      }
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:features]).to include(match(/deployment_assurance\.deployment_model/))
+      expect(setting.errors[:features]).to include(match(/deployment_assurance\.tenant_isolation/))
+      expect(setting.errors[:features]).to include(match(/deployment_assurance\.release_management\.upgrade_channel/))
+      expect(setting.errors[:features]).to include(match(/deployment_assurance\.release_management\.support_window_days/))
+    end
+  end
+
   describe ".resolve_worker_setting" do
     it "returns ENV value when no DB setting exists" do
       result = described_class.resolve_worker_setting(

@@ -9,10 +9,16 @@ RSpec.describe "Accounts::ComplianceDashboards" do
   let(:deployment_assurance_params) do
     {
       deployment_assurance: {
-        deployment_model: "private_vpc",
-        network_boundary: "private_vpc",
-        reference_architecture: "private_services",
+        deployment_model: "byoc",
+        tenant_isolation: "customer_cloud",
+        network_boundary: "customer_vpc",
+        reference_architecture: "customer_cloud_stack",
         operations_owner: "platform@example.com",
+        monitoring: {
+          provider: "Datadog",
+          escalation_owner: "sre@example.com",
+          last_reviewed_at: Date.current.iso8601
+        },
         customer_managed_keys: {
           enabled: "1",
           provider: "AWS KMS",
@@ -31,12 +37,41 @@ RSpec.describe "Accounts::ComplianceDashboards" do
           backup_last_verified_at: Date.current.iso8601,
           restore_last_tested_at: Date.current.iso8601,
           upgrade_last_validated_at: Date.current.iso8601,
-          air_gap_package_validated_at: "",
+          reference_stack_last_validated_at: Date.current.iso8601,
           rpo_hours: "4",
           rto_hours: "8"
+        },
+        release_management: {
+          upgrade_channel: "extended_support",
+          maintenance_window: "Sun 02:00-04:00",
+          maintenance_timezone: "UTC",
+          version_support_policy: "lts",
+          support_window_days: "60"
+        },
+        byoc: {
+          cloud_provider: "AWS",
+          automation_stack: "Terraform + ECS",
+          reference_stack: "aws-terraform-v1"
         }
       }
     }
+  end
+  let(:unsupported_option_params) do
+    deployment_assurance_params.deep_merge(
+      deployment_assurance: {
+        deployment_model: "public_cloud",
+        tenant_isolation: "shared_everything",
+        network_boundary: "open_internet",
+        reference_architecture: "shared_tenant",
+        release_management: {
+          upgrade_channel: "fast_ring",
+          version_support_policy: "forever"
+        },
+        disaster_recovery: {
+          backup_cadence: "monthly"
+        }
+      }
+    )
   end
 
   before do
@@ -74,9 +109,13 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       expect(response).to redirect_to(account_compliance_dashboard_path)
 
       assurance = account.tenant_setting!.reload.deployment_assurance_configuration
-      expect(assurance["deployment_model"]).to eq("private_vpc")
+      expect(assurance["deployment_model"]).to eq("byoc")
+      expect(assurance["tenant_isolation"]).to eq("customer_cloud")
+      expect(assurance.dig("monitoring", "provider")).to eq("Datadog")
       expect(assurance.dig("customer_managed_keys", "enabled")).to be(true)
       expect(assurance.dig("secret_rotation", "interval_days")).to eq(60)
+      expect(assurance.dig("release_management", "upgrade_channel")).to eq("extended_support")
+      expect(assurance.dig("byoc", "reference_stack")).to eq("aws-terraform-v1")
       expect(account.account_activity_events.recent.first.action).to eq("compliance.assurance_updated")
     end
 
@@ -84,34 +123,28 @@ RSpec.describe "Accounts::ComplianceDashboards" do
       expect do
         patch account_compliance_dashboard_path, params: deployment_assurance_params.deep_merge(
           deployment_assurance: {
-            customer_managed_keys: { rotation_interval_days: "oops" }
+            release_management: { support_window_days: "oops" }
           }
         )
       end.not_to change(AccountActivityEvent, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(account.tenant_setting!.reload.deployment_assurance_configuration.dig("customer_managed_keys", "rotation_interval_days")).to eq(90)
+      expect(account.tenant_setting!.reload.deployment_assurance_configuration.dig("release_management", "support_window_days")).to eq(30)
     end
 
     it "rejects unsupported deployment assurance option values" do
-      patch account_compliance_dashboard_path, params: deployment_assurance_params.deep_merge(
-        deployment_assurance: {
-          deployment_model: "public_cloud",
-          network_boundary: "open_internet",
-          reference_architecture: "shared_tenant",
-          disaster_recovery: {
-            backup_cadence: "monthly"
-          }
-        }
-      )
+      patch account_compliance_dashboard_path, params: unsupported_option_params
 
       expect(response).to have_http_status(:unprocessable_content)
 
       assurance = account.tenant_setting!.reload.deployment_assurance_configuration
-      expect(assurance["deployment_model"]).to eq("self_hosted")
-      expect(assurance["network_boundary"]).to eq("private_vpc")
-      expect(assurance["reference_architecture"]).to eq("single_tenant")
+      expect(assurance["deployment_model"]).to eq("managed_cloud")
+      expect(assurance["tenant_isolation"]).to eq("multi_tenant_rls")
+      expect(assurance["network_boundary"]).to eq("paid_managed")
+      expect(assurance["reference_architecture"]).to eq("managed_control_plane")
       expect(assurance.dig("disaster_recovery", "backup_cadence")).to eq("daily")
+      expect(assurance.dig("release_management", "upgrade_channel")).to eq("stable")
+      expect(assurance.dig("release_management", "version_support_policy")).to eq("n_minus_one")
     end
   end
 
