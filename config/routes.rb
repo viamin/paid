@@ -2,6 +2,7 @@
 
 Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
+  mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 
