@@ -2,6 +2,8 @@
 
 module Tools
   class UpdateMcpServerDefinition < BaseTool
+    include McpServerDefinitionAttributes
+
     authorize :update?, ->(args) { mcp_server_definition_for(args.fetch(:mcp_server_definition_id)) }, policy_class: McpServerDefinitionPolicy
 
     def self.tool_name = "update_mcp_server_definition"
@@ -33,9 +35,7 @@ module Tools
       raise ArgumentError, "attributes must be an object" unless attributes.is_a?(Hash)
 
       definition = mcp_server_definition_for(mcp_server_definition_id)
-      definition.update!(attributes.symbolize_keys.slice(
-        :name, :transport, :install_type, :command, :args_json, :url, :image, :env_json, :enabled, :metadata_json
-      ))
+      definition.update!(normalize_mcp_server_definition_attributes(attributes))
       McpServerDefinitionSerialization.serialize_mcp_server_definition(definition)
     end
 

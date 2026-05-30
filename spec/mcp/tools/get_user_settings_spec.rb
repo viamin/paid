@@ -29,6 +29,25 @@ RSpec.describe Tools::GetUserSettings do
       expect(result["theme_preference"]).to eq("dark")
       expect(user.settings.reload.theme_preference).to eq("dark")
     end
+
+    it "updates knowledge fallback runners" do
+      account = create(:account)
+      user = create(:user, :member, account:)
+      session = create(:chat_session, account:, created_by: user)
+
+      result = described_class.new(user:, session:).call(
+        settings: {
+          kb_embedding_fallback_runners: [ "openai", "deepseek" ],
+          kb_chat_fallback_runners: [ "claude", "cursor" ]
+        },
+        confirmed: true
+      )
+
+      expect(result["kb_embedding_fallback_runners"]).to eq(%w[openai deepseek])
+      expect(result["kb_chat_fallback_runners"]).to eq(%w[claude cursor])
+      expect(user.settings.reload.kb_embedding_fallback_runners).to eq(%w[openai deepseek])
+      expect(user.settings.kb_chat_fallback_runners).to eq(%w[claude cursor])
+    end
   end
 
   describe Tools::GetTenantSettings do

@@ -33,6 +33,26 @@ RSpec.describe Tools::ListMcpServerDefinitions do
       expect(account.mcp_server_definitions.find(result["id"]).command).to eq("npx @paid/docs-mcp")
       expect(result).not_to include("account_id", "log_data")
     end
+
+    it "accepts structured MCP payloads for args, env, and metadata" do
+      result = described_class.new(user:, session:).call(
+        attributes: {
+          name: "Docs Server",
+          transport: "stdio",
+          install_type: "npx",
+          command: "npx @paid/docs-mcp",
+          args_json: [ "--workspace", "/repo" ],
+          env_json: { "API_KEY" => "test" },
+          metadata_json: { "category" => "docs" }
+        },
+        confirmed: true
+      )
+
+      definition = account.mcp_server_definitions.find(result["id"])
+      expect(definition.args).to eq([ "--workspace", "/repo" ])
+      expect(definition.env).to eq({ "API_KEY" => "test" })
+      expect(definition.metadata).to eq({ "category" => "docs" })
+    end
   end
 
   describe Tools::UpdateMcpServerDefinition do
@@ -48,6 +68,24 @@ RSpec.describe Tools::ListMcpServerDefinitions do
       expect(result["name"]).to eq("Updated Server")
       expect(definition.reload.name).to eq("Updated Server")
       expect(result).not_to include("account_id", "log_data")
+    end
+
+    it "accepts structured MCP payloads for args, env, and metadata" do
+      definition = create(:mcp_server_definition, account:)
+
+      described_class.new(user:, session:).call(
+        mcp_server_definition_id: definition.id,
+        attributes: {
+          args_json: [ "--workspace", "/repo" ],
+          env_json: { "API_KEY" => "updated" },
+          metadata_json: { "category" => "docs" }
+        },
+        confirmed: true
+      )
+
+      expect(definition.reload.args).to eq([ "--workspace", "/repo" ])
+      expect(definition.env).to eq({ "API_KEY" => "updated" })
+      expect(definition.metadata).to eq({ "category" => "docs" })
     end
   end
 

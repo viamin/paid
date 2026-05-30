@@ -2,6 +2,8 @@
 
 module Tools
   class CreateMcpServerDefinition < BaseTool
+    include McpServerDefinitionAttributes
+
     authorize :create?, ->(_args) { account.mcp_server_definitions.build }, policy_class: McpServerDefinitionPolicy
 
     def self.tool_name = "create_mcp_server_definition"
@@ -31,9 +33,7 @@ module Tools
       raise ArgumentError, "Confirmation required: set confirmed=true to create an MCP server definition" unless confirmed
       raise ArgumentError, "attributes must be an object" unless attributes.is_a?(Hash)
 
-      definition = account.mcp_server_definitions.create!(attributes.symbolize_keys.slice(
-        :name, :transport, :install_type, :command, :args_json, :url, :image, :env_json, :enabled, :metadata_json
-      ))
+      definition = account.mcp_server_definitions.create!(normalize_mcp_server_definition_attributes(attributes))
       McpServerDefinitionSerialization.serialize_mcp_server_definition(definition)
     end
   end

@@ -41,7 +41,9 @@ module Tools
       fallback_enabled
       fallback_runners
       kb_embedding_runner
+      kb_embedding_fallback_runners
       kb_chat_runner
+      kb_chat_fallback_runners
       auto_pick_skip_labels
     ].freeze
 
