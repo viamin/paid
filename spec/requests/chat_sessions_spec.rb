@@ -130,6 +130,27 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["mode"]).to eq("api")
       end
 
+      it "creates a session with popup metadata context" do
+        post chat_sessions_path(format: :json), params: {
+          mode: "api",
+          project_id: create(:project, account: account).id,
+          metadata: {
+            entry_point: "popup",
+            page_context: {
+              url: "https://paid.example.test/projects/3",
+              page_title: "Acme API - Projects - Paid",
+              project_name: "Acme API"
+            }
+          }
+        }
+
+        expect(response).to have_http_status(:created)
+        expect(ChatSession.order(:id).last.metadata).to include(
+          "entry_point" => "popup",
+          "page_context" => include("project_name" => "Acme API")
+        )
+      end
+
       it "accepts provider_id as a legacy alias for runner_id" do
         runner = create(:runner, user: user)
 
@@ -225,6 +246,24 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
+      end
+
+      it "renders the popup variant for embedded requests" do
+        chat_session.update!(
+          metadata: {
+            "page_context" => {
+              "page_title" => "Projects - Paid",
+              "project_name" => "Acme API"
+            }
+          }
+        )
+
+        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Support chat")
+        expect(response.body).to include("Open page")
+        expect(response.body).to include("Projects - Paid")
       end
 
       it "renders mobile archive controls without expanding the sidebar by default" do
@@ -365,6 +404,27 @@ RSpec.describe "ChatSessions" do
         expect(response).to redirect_to(chat_session_path(chat_session))
         expect(chat_session.reload.title).to eq("Updated From Form")
         expect(chat_session.model).to eq("gpt-4.1")
+      end
+
+      it "updates popup metadata context" do
+        patch chat_session_path(chat_session, format: :json), params: {
+          metadata: {
+            entry_point: "popup",
+            page_context: {
+              url: "https://paid.example.test/projects/9/quality",
+              page_title: "Quality Metrics - Acme API - Paid",
+              project_name: "Acme API"
+            }
+          }
+        }
+
+        expect(response).to have_http_status(:ok)
+        expect(chat_session.reload.metadata).to include(
+          "page_context" => include(
+            "url" => "https://paid.example.test/projects/9/quality",
+            "project_name" => "Acme API"
+          )
+        )
       end
     end
   end

@@ -92,10 +92,17 @@ class ChatSessionsController < ApplicationController
 
     respond_to do |format|
       format.html do
-        load_sidebar_data(active_session: @chat_session)
-        scope = @chat_session.messages.chronological
-        @chat_messages = latest_messages(scope)
-        @has_older_messages = scope.where("chat_messages.id < ?", @chat_messages.first.id).exists? if @chat_messages.any?
+        load_chat_messages
+
+        if popup_request?
+          render partial: "chat_sessions/popup", locals: {
+            chat_session: @chat_session,
+            chat_messages: @chat_messages,
+            has_older_messages: @has_older_messages
+          }
+        else
+          load_sidebar_data(active_session: @chat_session)
+        end
       end
 
       format.json do
@@ -111,8 +118,9 @@ class ChatSessionsController < ApplicationController
   def update
     authorize @chat_session
     project_changed = update_params.key?(:project_id) && update_params[:project_id].to_s != @chat_session.project_id.to_s
+    metadata_changed = update_params.key?(:metadata) && update_params[:metadata] != @chat_session.metadata
     @chat_session.update!(update_params)
-    regenerate_system_message! if project_changed
+    regenerate_system_message! if project_changed || metadata_changed
 
     respond_to do |format|
       format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session updated." }
@@ -151,14 +159,14 @@ class ChatSessionsController < ApplicationController
 
   def create_params
     source = params.key?(:chat_session) ? params.require(:chat_session) : params
-    permitted = source.permit(:mode, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title)
+    permitted = source.permit(:mode, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     permitted
   end
 
   def update_params
-    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :provider_id)
+    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :provider_id, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     permitted
@@ -280,6 +288,16 @@ class ChatSessionsController < ApplicationController
     @available_runners = current_user.runners.kept_only.ordered
     @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)
+  end
+
+  def load_chat_messages
+    scope = @chat_session.messages.chronological
+    @chat_messages = latest_messages(scope)
+    @has_older_messages = scope.where("chat_messages.id < ?", @chat_messages.first.id).exists? if @chat_messages.any?
+  end
+
+  def popup_request?
+    params[:display] == "popup"
   end
 
   def pinned_sidebar_batch(active_session)

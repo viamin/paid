@@ -132,4 +132,25 @@ RSpec.describe ChatSession do
       end
     end
   end
+
+  describe "#page_context" do
+    it "returns the stored page context hash" do
+      session = build(:chat_session,
+        metadata: {
+          "page_context" => {
+            "url" => "https://paid.example.test/projects/99",
+            "project_name" => "Acme API"
+          }
+        })
+
+      expect(session.page_context).to eq(
+        "url" => "https://paid.example.test/projects/99",
+        "project_name" => "Acme API"
+      )
+    end
+
+    it "returns an empty hash when no page context is present" do
+      expect(build(:chat_session, metadata: nil).page_context).to eq({})
+    end
+  end
 end

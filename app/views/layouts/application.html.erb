@@ -190,5 +190,38 @@
     <main>
       <%= yield %>
     </main>
+
+    <% if chat_popup_available? %>
+      <div class="pointer-events-none fixed inset-x-4 bottom-4 z-40 sm:inset-x-auto sm:right-6 sm:w-[26rem]"
+           data-controller="chat-popup"
+           data-chat-popup-account-id-value="<%= current_account.id %>"
+           data-chat-popup-create-url-value="<%= chat_sessions_path %>"
+           data-chat-popup-panel-url-template-value="<%= chat_session_path("__SESSION_ID__") %>?display=popup"
+           data-chat-popup-context-value="<%= current_chat_popup_context.to_json %>">
+        <div class="pointer-events-auto">
+          <div data-chat-popup-target="panel" class="hidden h-[min(42rem,calc(100vh-7rem))]">
+            <div data-chat-popup-target="content" class="h-full"></div>
+          </div>
+
+          <div class="mt-3 flex justify-end">
+            <button type="button"
+                    class="group inline-flex items-center gap-3 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:bg-slate-700"
+                    data-chat-popup-target="button"
+                    data-action="chat-popup#toggle"
+                    aria-expanded="false">
+              <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.76c0 1.6 1.123 2.95 2.629 3.297.38.087.618.468.618.858v2.165a.75.75 0 0 0 1.28.53l2.27-2.27a1.125 1.125 0 0 1 .796-.33h2.406c1.601 0 2.95-1.123 3.297-2.629m0 0a4.875 4.875 0 0 0 0-4.762m0 4.762a4.875 4.875 0 0 1-4.762 0m4.762-4.762a4.875 4.875 0 0 0-4.762 0m-7.68 6.45A4.875 4.875 0 1 1 15.75 7.5" />
+                </svg>
+              </span>
+              <span class="text-left">
+                <span class="block text-[0.7rem] font-medium uppercase tracking-[0.18em] text-slate-300">Need help?</span>
+                <span class="block">Open chat</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    <% end %>
   </body>
 </html>

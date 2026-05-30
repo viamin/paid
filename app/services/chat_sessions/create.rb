@@ -15,10 +15,10 @@ module ChatSessions
   #   )
   class Create
     attr_reader :account, :user, :mode, :runner_id, :model,
-      :project_id, :system_prompt, :title
+      :project_id, :system_prompt, :title, :metadata
 
     def initialize(account:, user:, mode: nil, runner_id: nil, provider_id: nil, model: nil,
-      project_id: nil, system_prompt: nil, title: nil)
+      project_id: nil, system_prompt: nil, title: nil, metadata: nil)
       @account = account
       @user = user
       @mode = mode.presence || "api"
@@ -27,6 +27,7 @@ module ChatSessions
       @project_id = project_id
       @system_prompt = system_prompt
       @title = title
+      @metadata = metadata
     end
 
     def self.call(...)
@@ -66,7 +67,7 @@ module ChatSessions
         title: title,
         status: "active",
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
-        metadata: {}
+        metadata: metadata.presence || {}
       )
     end
 

@@ -101,6 +101,13 @@ class ChatSession < ApplicationRecord
     token_usages.sum(:cost_cents)
   end
 
+  def page_context
+    return {} unless metadata.is_a?(Hash)
+
+    context = metadata["page_context"]
+    context.is_a?(Hash) ? context : {}
+  end
+
   private
 
   def set_external_id

@@ -130,5 +130,28 @@ RSpec.describe ChatSessions::Create do
 
       expect(session.title).to eq("Debug session")
     end
+
+    it "persists popup page context metadata when provided" do
+      session = described_class.call(
+        account: account,
+        user: user,
+        metadata: {
+          "entry_point" => "popup",
+          "page_context" => {
+            "url" => "https://paid.example.test/projects/42",
+            "page_title" => "Acme API - Projects - Paid",
+            "project_name" => "Acme API"
+          }
+        }
+      )
+
+      expect(session.metadata).to include(
+        "entry_point" => "popup",
+        "page_context" => include(
+          "url" => "https://paid.example.test/projects/42",
+          "project_name" => "Acme API"
+        )
+      )
+    end
   end
 end
