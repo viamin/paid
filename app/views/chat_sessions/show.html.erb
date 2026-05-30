@@ -1,7 +1,6 @@
 <% content_for(:title) { "#{chat_session_title(@chat_session)} - Chat - Paid" } %>
 <% can_update_chat_session = policy(@chat_session).update? %>
 <% can_destroy_chat_session = policy(@chat_session).destroy? %>
-<% can_create_chat_message = policy(ChatMessage.new(chat_session: @chat_session)).create? %>
 
 <%= turbo_stream_from current_account, :chat_sessions %>
 
@@ -122,70 +121,10 @@
         </header>
 
         <div class="flex-1 overflow-hidden px-4 pb-4 pt-5 sm:px-6">
-          <div class="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-            <div class="flex-1 overflow-y-auto px-4 py-5 sm:px-6"
-                 data-chat-target="container"
-                 data-action="scroll->chat#handleScroll"
-                 data-controller="chat-stream">
-              <div class="space-y-5"
-                   data-chat-target="messages"
-                   data-chat-stream-target="messageContainer">
-                <% if @has_older_messages %>
-                  <%= turbo_frame_tag "older_messages",
-                        src: older_messages_chat_session_path(@chat_session, before: @chat_messages.first.id),
-                        loading: :lazy do %>
-                    <p class="py-2 text-center text-xs text-gray-400">Loading older messages...</p>
-                  <% end %>
-                <% end %>
-                <% @chat_messages.each do |message| %>
-                  <%= render "chat_messages/message", message: message %>
-                <% end %>
-              </div>
-
-              <div class="hidden px-2 pt-3"
-                   data-chat-target="typingIndicator"
-                   data-chat-stream-target="typingIndicator">
-                <div class="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200">
-                  <span class="h-2 w-2 animate-pulse rounded-full bg-indigo-400"></span>
-                  Assistant is typing...
-                </div>
-              </div>
-            </div>
-
-            <div class="border-t border-gray-200 bg-white px-4 py-4 sm:px-6">
-              <% if can_create_chat_message %>
-                <form data-controller="chat-input"
-                      data-action="submit->chat-input#send chat-input:send->chat#sendMessage chat:busy->chat-input#disable chat:idle->chat-input#enable"
-                      class="space-y-3">
-                  <label class="block">
-                    <span class="sr-only">Message</span>
-                    <textarea name="content"
-                              rows="1"
-                              maxlength="12000"
-                              placeholder="Ask about this project, request code changes, or continue the thread..."
-                              class="max-h-72 min-h-[3.25rem] w-full resize-none rounded-md border-gray-300 px-4 py-3 text-sm leading-6 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                              data-chat-input-target="textarea"
-                              data-chat-target="input"
-                              data-action="input->chat-input#resize keydown->chat-input#handleKeydown"></textarea>
-                  </label>
-                  <div class="flex items-center justify-between gap-3">
-                    <p class="text-xs text-gray-500" data-chat-target="status">Ready</p>
-                    <div class="flex items-center gap-3">
-                      <span class="text-xs font-medium text-gray-400" data-chat-input-target="charCount">0 / 12000</span>
-                      <button type="submit"
-                              class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-300"
-                              data-chat-input-target="sendButton">
-                        Send
-                      </button>
-                    </div>
-                  </div>
-                </form>
-
-              <% else %>
-                <p class="text-sm text-gray-500">You have read-only access to this chat.</p>
-              <% end %>
-            </div>
-          </div>
+          <%= render "conversation",
+                     chat_session: @chat_session,
+                     chat_messages: @chat_messages,
+                     has_older_messages: @has_older_messages %>
         </div>
       </div>
     </section>

@@ -45,6 +45,7 @@ module ChatSessions
     def build_sections
       sections = []
       sections << { priority: 0, content: base_identity }
+      sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
       sections << { priority: 2, content: tool_definitions } if mcp_tools.any?
       sections << { priority: 3, content: cross_project_context } if reference_projects.any?
@@ -105,6 +106,23 @@ module ChatSessions
       parts << recent_runs_section(project)
       parts << style_guide_section(project)
       parts.compact.join("\n\n")
+    end
+
+    def page_context
+      context = chat_session.page_context
+      return if context.blank?
+
+      lines = []
+      lines << "- URL: #{context["url"]}" if context["url"].present?
+      lines << "- Path: #{context["path"]}" if context["path"].present?
+      lines << "- Page title: #{context["page_title"]}" if context["page_title"].present?
+      lines << "- Controller: #{context["controller"]}" if context["controller"].present?
+      lines << "- Action: #{context["action"]}" if context["action"].present?
+      lines << "- Project: #{context["project_name"]}" if context["project_name"].present?
+
+      return if lines.empty?
+
+      "## Current Page Context\n#{lines.join("\n")}"
     end
 
     def cross_project_context
