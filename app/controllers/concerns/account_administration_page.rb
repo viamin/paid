@@ -19,6 +19,11 @@ module AccountAdministrationPage
       tenant_setting: @tenant_setting,
       billing_visible: @billing_visible
     )
+    @operations_dashboard = Accounts::Operations::Dashboard.call(
+      account: current_account,
+      tenant_setting: @tenant_setting,
+      billing_visible: @billing_visible
+    )
     @adoption_dashboard = Accounts::Adoption::Dashboard.call(
       account: current_account,
       tenant_setting: @tenant_setting

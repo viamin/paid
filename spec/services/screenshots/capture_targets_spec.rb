@@ -72,6 +72,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to contain_exactly("account_roi_dashboard", "project_roi_dashboard")
     end
 
+    it "maps operations dashboard views to the dedicated account operations target" do
+      targets = described_class.call(changed_files: [ "app/views/accounts/operations_dashboards/show.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "account_operations_dashboard" ])
+    end
+
     it "maps component files to shared UI targets" do
       targets = described_class.call(changed_files: [ "app/components/sidebar_component.rb" ])
 

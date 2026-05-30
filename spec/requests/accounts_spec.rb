@@ -23,20 +23,7 @@ RSpec.describe "Accounts" do
       get account_path
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include(
-        "Account Administration",
-        "Self-Heal Policy",
-        "Team",
-        "Tenant Limits and Usage",
-        "ROI, Evals & Benchmarking",
-        "Compliance & Deployment Assurance",
-        "Adoption &amp; Operational Readiness",
-        "Admin playbooks",
-        "Role-based training &amp; onboarding",
-        "Reference operating models",
-        "Billing",
-        "Activity Trail"
-      )
+      expect(response.body).to include(*account_page_sections)
     end
 
     it "allows a viewer to read the page" do
@@ -418,5 +405,23 @@ RSpec.describe "Accounts" do
 
       expect(response).to redirect_to(new_user_session_path)
     end
+  end
+
+  def account_page_sections
+    [
+      "Account Administration",
+      "Self-Heal Policy",
+      "Team",
+      "Tenant Limits and Usage",
+      "ROI, Evals & Benchmarking",
+      "Compliance & Deployment Assurance",
+      "Operations & Reliability",
+      "Adoption &amp; Operational Readiness",
+      "Admin playbooks",
+      "Role-based training &amp; onboarding",
+      "Reference operating models",
+      "Billing",
+      "Activity Trail"
+    ]
   end
 end
