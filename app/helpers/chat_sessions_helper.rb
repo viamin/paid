@@ -130,6 +130,35 @@ module ChatSessionsHelper
     JSON.pretty_generate(payload)
   end
 
+  def chat_popup_available?
+    user_signed_in? && controller_path != "chat_sessions"
+  end
+
+  def current_chat_popup_context
+    context = {
+      "url" => request.original_url,
+      "path" => request.fullpath,
+      "page_title" => content_for(:title).presence || "Paid",
+      "controller" => controller_path,
+      "action" => action_name
+    }
+
+    project = current_chat_popup_project
+    return context unless project
+
+    context.merge(
+      "project_id" => project.id,
+      "project_name" => project.name,
+      "project_full_name" => project.full_name
+    )
+  end
+
+  def current_chat_popup_project
+    return @project if defined?(@project) && @project.is_a?(Project)
+
+    nil
+  end
+
   private
 
   def preview_cache

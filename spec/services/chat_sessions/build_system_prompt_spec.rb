@@ -223,6 +223,32 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       end
     end
 
+    describe "page context" do
+      let(:chat_session) do
+        create(:chat_session,
+          account: account,
+          created_by: user,
+          metadata: {
+            "page_context" => {
+              "url" => "https://paid.example.test/projects/7/agent_runs",
+              "path" => "/projects/7/agent_runs",
+              "page_title" => "Agent Runs - Acme API - Paid",
+              "controller" => "projects/agent_runs",
+              "action" => "index",
+              "project_name" => "Acme API"
+            }
+          })
+      end
+
+      it "includes current page metadata from the session" do
+        expect(prompt).to include("Current Page Context")
+        expect(prompt).to include("URL: https://paid.example.test/projects/7/agent_runs")
+        expect(prompt).to include("Page title: Agent Runs - Acme API - Paid")
+        expect(prompt).to include("Controller: projects/agent_runs")
+        expect(prompt).to include("Project: Acme API")
+      end
+    end
+
     describe "cross-project context" do
       let(:ref_project) { create(:project, account: account, name: "shared-lib", owner: "acme", repo: "shared-lib") }
 

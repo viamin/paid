@@ -22,6 +22,9 @@ application.register("chat-input", ChatInputController)
 import ChatMessageController from "./chat_message_controller"
 application.register("chat-message", ChatMessageController)
 
+import ChatPopupController from "./chat_popup_controller"
+application.register("chat-popup", ChatPopupController)
+
 import ChatSessionListController from "./chat_session_list_controller"
 application.register("chat-session-list", ChatSessionListController)
 
