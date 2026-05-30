@@ -49,6 +49,30 @@ RSpec.describe Tools::GrepRepo do
       expect(github_client).to have_received(:search_code).with("repo:#{project.full_name} class Foo path:app/models", hash_including(:per_page))
     end
 
+    it "strips injected GitHub qualifiers from the user query" do
+      search_result = Struct.new(:total_count, :items).new(0, [])
+      allow(github_client).to receive(:search_code).and_return(search_result)
+
+      tool.call(project_id: project.id, query: "secret_key repo:other/private-repo org:secret-org path:config", path_filter: "app/models")
+
+      expect(github_client).to have_received(:search_code).with(
+        "repo:#{project.full_name} secret_key path:app/models",
+        hash_including(:per_page)
+      )
+    end
+
+    it "sanitizes injected qualifiers from path_filter" do
+      search_result = Struct.new(:total_count, :items).new(0, [])
+      allow(github_client).to receive(:search_code).and_return(search_result)
+
+      tool.call(project_id: project.id, query: "secret_key", path_filter: "app/models repo:other/private-repo")
+
+      expect(github_client).to have_received(:search_code).with(
+        "repo:#{project.full_name} secret_key path:app/models",
+        hash_including(:per_page)
+      )
+    end
+
     it "returns empty results when no matches" do
       search_result = Struct.new(:total_count, :items).new(0, [])
       allow(github_client).to receive(:search_code).and_return(search_result)

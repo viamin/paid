@@ -5,6 +5,10 @@ module Tools
     authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
 
     MAX_RESULTS = 30
+    SEARCH_QUALIFIER_PATTERN = /
+      (?:\A|\s)\K
+      (?:repo|org|user|path|language|filename|extension|symbol|content):\S+
+    /ix
 
     def self.tool_name = "grep_repo"
 
@@ -60,9 +64,20 @@ module Tools
     end
 
     def build_query(repo_full_name, query, path_filter)
-      parts = [ "repo:#{repo_full_name}", query ]
-      parts << "path:#{path_filter}" if path_filter.present?
+      sanitized_query = sanitize_query(query)
+      parts = [ "repo:#{repo_full_name}" ]
+      parts << sanitized_query if sanitized_query.present?
+      sanitized_path_filter = sanitize_path_filter(path_filter)
+      parts << "path:#{sanitized_path_filter}" if sanitized_path_filter.present?
       parts.join(" ")
+    end
+
+    def sanitize_query(query)
+      query.gsub(SEARCH_QUALIFIER_PATTERN, "").squish
+    end
+
+    def sanitize_path_filter(path_filter)
+      path_filter.to_s.gsub(SEARCH_QUALIFIER_PATTERN, "").squish.split.first
     end
 
     def identity_label(project)

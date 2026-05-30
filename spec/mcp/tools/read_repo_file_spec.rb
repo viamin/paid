@@ -69,6 +69,20 @@ RSpec.describe Tools::ReadRepoFile do
       expect(result[:error]).to include("size limit")
     end
 
+    it "checks API size before decoding content" do
+      oversized_content = "x" * 8
+      file_data = Struct.new(:path, :type, :content, :size).new(
+        "big_file.rb", "file", Base64.strict_encode64(oversized_content), 200 * 1024 + 1
+      )
+      allow(github_client).to receive(:contents).and_return(file_data)
+      allow(Base64).to receive(:decode64).and_call_original
+
+      result = tool.call(project_id: project.id, path: "big_file.rb")
+
+      expect(result[:error]).to include("size limit")
+      expect(Base64).not_to have_received(:decode64)
+    end
+
     it "raises for project in another account" do
       other_project = create(:project)
 

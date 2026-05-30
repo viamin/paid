@@ -34,9 +34,9 @@ module Tools
       return error_result("Path is not a file", project) unless data.type == "file"
 
       return error_result("File is empty", project, path: path) unless data.content.present?
+      return error_result("File exceeds #{MAX_FILE_SIZE_BYTES / 1024}KB size limit", project, path: path) if data.size > MAX_FILE_SIZE_BYTES
 
       raw = Base64.decode64(data.content)
-      return error_result("File exceeds #{MAX_FILE_SIZE_BYTES / 1024}KB size limit", project, path: path) if raw.bytesize > MAX_FILE_SIZE_BYTES
       return error_result("File appears to be binary", project, path: path) unless utf8_text?(raw)
 
       {
