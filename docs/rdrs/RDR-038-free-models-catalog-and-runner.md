@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: TBD (file alongside merging this RDR)
+- **Related Issues**: #2378 (tracking), #2381 (phase 1), #2380 (phase 2), #2379 (phase 3a), #2383 (phase 3b), #2382 (phase 3c), #2384 (phase 4), #2385 (phase 5)
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-034](RDR-034-tier-based-runner-fallback.md) (tier-based fallback), [RDR-025](RDR-025-runner-quota-tracking.md) (runner quota tracking)
 
 ## Problem Statement
@@ -566,7 +566,7 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 1 — Data Model
 
-**Issue**: TBD
+**Issue**: #2381
 **Dependencies**: None
 **Files to create/modify**:
 
@@ -578,8 +578,8 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 2 — Free Model Sync and Classification
 
-**Issue**: TBD
-**Dependencies**: Phase 1
+**Issue**: #2380
+**Dependencies**: Phase 1 (#2381)
 **Files to create/modify**:
 
 1. `app/services/free_models/sync.rb` — sync service that calls OpenRouter API and upserts `LlmModel` records.
@@ -591,8 +591,8 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 3a — Runner Key Registration and Execution Plan
 
-**Issue**: TBD
-**Dependencies**: Phase 1
+**Issue**: #2379
+**Dependencies**: Phase 1 (#2381)
 **Files to create/modify**:
 
 1. `app/models/runner.rb` — add `"openrouter_free"` to `RUNNER_KEYS`, `DIRECT_OUTBOUND_API_PROVIDERS`, configure as direct-outbound.
@@ -602,8 +602,8 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 3b — Model Rotation and Conditional Visibility
 
-**Issue**: TBD
-**Dependencies**: Phase 2, Phase 3a
+**Issue**: #2383
+**Dependencies**: Phase 2 (#2380), Phase 3a (#2379)
 **Files to create/modify**:
 
 1. `app/services/free_models/rotation.rb` — model rotation logic on rate-limit errors.
@@ -613,8 +613,8 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 3c — Pre-Configured Defaults and Runner Form
 
-**Issue**: TBD
-**Dependencies**: Phase 3b
+**Issue**: #2382
+**Dependencies**: Phase 3b (#2383)
 **Files to create/modify**:
 
 1. `app/services/free_models/default_tier_models.rb` — resolves best free model per tier from `LlmModel` table.
@@ -624,8 +624,8 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 4 — Data Classification Guardrails
 
-**Issue**: TBD
-**Dependencies**: Phase 1, Phase 3a
+**Issue**: #2384
+**Dependencies**: Phase 1 (#2381), Phase 3a (#2379)
 **Files to create/modify**:
 
 1. `app/services/guardrails/data_classification_policy.rb` — guardrail that checks model eligibility against project classification.
@@ -635,8 +635,8 @@ A guardrail that runs during model selection as a safety net:
 
 ### Phase 5 — Free Models Catalog UI and Onboarding
 
-**Issue**: TBD
-**Dependencies**: Phase 2, Phase 3c, Phase 4
+**Issue**: #2385
+**Dependencies**: Phase 2 (#2380), Phase 3c (#2382), Phase 4 (#2384)
 **Files to create/modify**:
 
 1. `app/controllers/free_models_controller.rb` — catalog page controller.
