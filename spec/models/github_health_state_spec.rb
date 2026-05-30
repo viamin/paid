@@ -101,6 +101,22 @@ RSpec.describe GithubHealthState do
       existing = create(:github_health_state)
       expect(described_class.current).to eq(existing)
     end
+
+    it "looks up scoped records by endpoint" do
+      existing = create(:github_health_state, endpoint: described_class.endpoint_for_github_token(42))
+
+      expect(described_class.current(endpoint: described_class.endpoint_for_github_token(42))).to eq(existing)
+    end
+  end
+
+  describe "endpoint helpers" do
+    it "builds a scoped endpoint for GitHub tokens" do
+      expect(described_class.endpoint_for_github_token(42)).to eq("github_token:42")
+    end
+
+    it "builds a scoped endpoint for GitHub App installations" do
+      expect(described_class.endpoint_for_github_installation(1234)).to eq("github_installation:1234")
+    end
   end
 
   describe ".github_available?" do

@@ -15,19 +15,16 @@ module Activities
     def execute(input)
       project_id = input[:project_id]
 
-      github_state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
-      if github_state&.unavailable?
-        logger.info(
-          message: "fetch_issues.skipped_github_unavailable",
-          project_id: project_id,
-          reason: github_state.rate_limited? ? "rate_limited" : "circuit_open",
-          available_at: github_state.rate_limited_until&.iso8601
-        )
-        return { issues: [], project_id: project_id, github_circuit_open: true }
-      end
+      github_state = unavailable_github_state
 
       project = Project.find_by(id: project_id)
       return { issues: [], project_id: project_id, project_missing: true } unless project
+
+      github_state ||= unavailable_github_state(project.github_health_endpoint)
+      if github_state
+        log_github_unavailable(project_id, github_state)
+        return { issues: [], project_id: project_id, github_circuit_open: true }
+      end
 
       client = project.client
       incremental = project.last_issue_sync_at.present?
@@ -174,6 +171,23 @@ module Activities
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "RateLimit"
+      )
+    end
+
+    def unavailable_github_state(endpoint = GithubHealthState::DEFAULT_ENDPOINT)
+      state = GithubHealthState.find_by(endpoint: endpoint)
+      return unless state
+
+      state.check_circuit_recovery!
+      state if state.unavailable?
+    end
+
+    def log_github_unavailable(project_id, github_state)
+      logger.info(
+        message: "fetch_issues.skipped_github_unavailable",
+        project_id: project_id,
+        reason: github_state.rate_limited? ? "rate_limited" : "circuit_open",
+        available_at: github_state.rate_limited_until&.iso8601
       )
     end
 

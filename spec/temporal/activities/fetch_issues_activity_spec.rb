@@ -204,7 +204,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       it "skips polling while the rate-limit window is active" do
         reset_at = 30.minutes.from_now
-        create(:github_health_state, rate_limited_until: reset_at)
+        create(:github_health_state, endpoint: project.github_health_endpoint, rate_limited_until: reset_at)
         stub_issues_by_label(nil => [])
         allow(Rails.logger).to receive(:info)
 
@@ -220,7 +220,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "does not skip once the rate-limit window has elapsed" do
-        create(:github_health_state, rate_limited_until: 1.minute.ago)
+        create(:github_health_state, endpoint: project.github_health_endpoint, rate_limited_until: 1.minute.ago)
         stub_issues_by_label(nil => [])
 
         result = activity.execute(project_id: project.id)

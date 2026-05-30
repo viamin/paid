@@ -112,7 +112,11 @@ class GithubToken < ApplicationRecord
   #
   # @return [GithubClient] GitHub API client
   def client
-    @client ||= GithubClient.new(token: token)
+    @client ||= GithubClient.new(token: token, health_endpoint: github_health_endpoint)
+  end
+
+  def github_health_endpoint
+    GithubHealthState.endpoint_for_github_token(id)
   end
 
   # Validates the token against GitHub API and updates scopes.

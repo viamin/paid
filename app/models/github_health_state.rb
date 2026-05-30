@@ -9,6 +9,8 @@
 class GithubHealthState < ApplicationRecord
   CIRCUIT_STATES = %w[closed open half_open].freeze
   DEFAULT_ENDPOINT = "api"
+  GITHUB_TOKEN_ENDPOINT_PREFIX = "github_token".freeze
+  GITHUB_INSTALLATION_ENDPOINT_PREFIX = "github_installation".freeze
   DEFAULT_FAILURE_THRESHOLD = 5
   DEFAULT_RECOVERY_TIMEOUT = 300
 
@@ -17,6 +19,14 @@ class GithubHealthState < ApplicationRecord
   validates :failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
   scope :for_endpoint, ->(name) { where(endpoint: name) }
+
+  def self.endpoint_for_github_token(github_token_id)
+    "#{GITHUB_TOKEN_ENDPOINT_PREFIX}:#{github_token_id}"
+  end
+
+  def self.endpoint_for_github_installation(github_installation_id)
+    "#{GITHUB_INSTALLATION_ENDPOINT_PREFIX}:#{github_installation_id}"
+  end
 
   # Returns the singleton state for the default GitHub API endpoint,
   # creating it if it does not exist.
