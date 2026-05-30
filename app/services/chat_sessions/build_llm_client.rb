@@ -14,10 +14,12 @@ module ChatSessions
 
     def call
       provider = chat_session.runner
-      return fallback_client unless provider
+      raise LlmClientConfigurationError, missing_runner_message unless provider
 
       api_key_record = provider.provider_api_key
-      return fallback_client unless api_key_record && api_key_record.api_key.present?
+      unless api_key_record&.api_key.present?
+        raise LlmClientConfigurationError, missing_api_key_message(provider)
+      end
 
       case api_key_record.api_service_type
       when ANTHROPIC_SERVICE_TYPE
@@ -52,8 +54,13 @@ module ChatSessions
       HttpClient.new(transport: transport, model: model, provider_type: :openai_compatible)
     end
 
-    def fallback_client
-      FallbackClient.new(model: chat_session.model)
+    def missing_runner_message
+      "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+    end
+
+    def missing_api_key_message(provider)
+      label = provider.name.presence || provider.display_name
+      "Chat runner #{label} is missing an API key. Choose a chat-enabled runner with a configured API key."
     end
 
     class HttpClient
@@ -101,42 +108,6 @@ module ChatSessions
           entry[:tool_name] = msg[:tool_name].to_s if msg[:tool_name].present?
           entry
         end
-      end
-    end
-
-    class FallbackClient
-      attr_reader :model
-
-      def initialize(model: nil)
-        @model = model
-      end
-
-      def call(conversation, on_chunk: nil)
-        prompt = serialize_conversation(conversation)
-        response = AgentHarness.send_message(prompt, dangerous_mode: true)
-
-        if on_chunk && response.output.present?
-          response.output.scan(/\S+\s*|\s+/).each { |chunk| on_chunk.call(chunk) }
-        end
-
-        {
-          content: response.output,
-          model: response.model,
-          tokens_input: response.input_tokens,
-          tokens_output: response.output_tokens,
-          tool_calls: nil
-        }
-      end
-
-      private
-
-      def serialize_conversation(conversation)
-        conversation.filter_map do |msg|
-          next nil if msg[:content].nil?
-
-          role = msg[:role].to_s.capitalize
-          "#{role}: #{msg[:content]}"
-        end.join("\n\n")
       end
     end
   end

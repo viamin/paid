@@ -44,6 +44,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
+  rescue ChatSessions::LlmClientConfigurationError => e
+    broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ActiveRecord::RecordNotFound
