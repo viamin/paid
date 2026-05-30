@@ -58,6 +58,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Final | Medium |
 | [RDR-011](RDR-011-observability.md) | Observability Stack | Final | Medium |
+| [RDR-039](RDR-039-exception-notification-custom-notifier.md) | Exception Reporting via `exception_notification` Custom Notifier | Draft | P2 |
 | [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) | Multi-Tenancy Isolation Strategy | Final | High |
 | [RDR-026](RDR-026-admin-interface-strategy.md) | Admin Interface Strategy | Draft | Medium |
 | [RDR-029](RDR-029-multi-tenancy-preparation.md) | Multi-Tenancy Preparation | Final | High |
