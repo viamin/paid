@@ -141,6 +141,9 @@ group :development do
   # Request-level performance metrics dashboard [https://github.com/igorkasyanchuk/rails_performance]
   gem "rails_performance"
 
+  # Per-request profiler overlay backed by vernier + prosopite [https://github.com/codergeek121/dial]
+  gem "dial", "~> 0.6"
+
   # Developer tools for HTML+ERB templates [https://herb-tools.dev]
   gem "herb", require: false
 end
