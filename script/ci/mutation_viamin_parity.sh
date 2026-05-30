@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 mode="${1:-incremental}"
 target_ref="${2:-}"
 output_file="${MUTANT_OUTPUT_FILE:-tmp/mutant-viamin.log}"
+summary_file="${GITHUB_STEP_SUMMARY:-/dev/null}"
 
 mkdir -p "$(dirname "$output_file")"
 
@@ -93,6 +94,6 @@ fi
   echo '```text'
   tail -n 200 "$output_file"
   echo '```'
-} >> "$GITHUB_STEP_SUMMARY"
+} >> "$summary_file"
 
 exit "$status"
