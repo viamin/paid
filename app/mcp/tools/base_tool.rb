@@ -57,6 +57,19 @@ module Tools
       false
     end
 
+    def self.available_to?(user:)
+      user.present?
+    end
+
+    def self.policy_allows?(user:, record:, query:, policy_class: nil)
+      return false if user.blank?
+
+      policy = policy_class ? policy_class.new(user, record) : Pundit.policy(user, record)
+      policy&.public_send(query) == true
+    rescue Pundit::NotAuthorizedError
+      false
+    end
+
     def self.authorize(query, resolver = nil, policy_class: nil, &block)
       resolver ||= block
       raise ArgumentError, "#{name}.authorize requires a resolver" unless resolver
