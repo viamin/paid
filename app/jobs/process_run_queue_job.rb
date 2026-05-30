@@ -38,9 +38,13 @@ class ProcessRunQueueJob < ApplicationJob
     return unless acquired
 
     begin
-      if github_circuit_open?
+      github_state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
+      github_state&.check_circuit_recovery!
+      if github_state&.unavailable?
         Rails.logger.info(
-          message: "process_run_queue.skipped_github_circuit_open"
+          message: "process_run_queue.skipped_github_unavailable",
+          reason: github_state.rate_limited? ? "rate_limited" : "circuit_open",
+          available_at: github_state.rate_limited_until&.iso8601
         )
         return
       end
@@ -118,12 +122,6 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   private
-
-  # Checks GitHub circuit breaker state. Attempts recovery if the
-  # timeout has elapsed, allowing a half-open probe.
-  def github_circuit_open?
-    !GithubHealthState.github_available_with_recovery?
-  end
 
   # Checks per-user capacity using an in-memory cache. The active count
   # is fetched from the DB on first access per user, then updated

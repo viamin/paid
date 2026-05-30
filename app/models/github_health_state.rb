@@ -26,12 +26,14 @@ class GithubHealthState < ApplicationRecord
     find_by!(endpoint: endpoint)
   end
 
-  # Returns true if GitHub is currently unavailable (circuit open).
+  # Returns true if GitHub is currently available. Treats both an open
+  # circuit (infrastructure failures) and an active rate-limit window as
+  # unavailable so callers can pause dispatching uniformly.
   def self.github_available?(endpoint: DEFAULT_ENDPOINT)
     state = find_by(endpoint: endpoint)
     return true unless state
 
-    !state.circuit_open?
+    !state.unavailable?
   end
 
   # Checks recovery timeout, then returns true if GitHub is available.
@@ -83,7 +85,7 @@ class GithubHealthState < ApplicationRecord
   # recovery timeout.
   def record_success!
     with_lock do
-      return if circuit_state == "closed" && failure_count.zero?
+      return if circuit_state == "closed" && failure_count.zero? && rate_limited_until.blank?
       return if circuit_open?
 
       was_half_open = circuit_half_open?
@@ -92,7 +94,8 @@ class GithubHealthState < ApplicationRecord
         failure_count: 0,
         circuit_state: "closed",
         circuit_opened_at: nil,
-        last_error_message: nil
+        last_error_message: nil,
+        rate_limited_until: nil
       )
 
       if was_half_open
@@ -101,6 +104,25 @@ class GithubHealthState < ApplicationRecord
           endpoint: endpoint
         )
       end
+    end
+  end
+
+  # Records a GitHub rate-limit response and persists the reset time so
+  # the queue scheduler will pause dispatching until the limit resets.
+  # Best-effort: callers should not let persistence errors mask the
+  # original rate-limit exception.
+  #
+  # @param reset_at [Time, nil] When the rate limit resets. Defaults to 60 seconds from now.
+  def mark_rate_limited!(reset_at: nil)
+    reset_at ||= 60.seconds.from_now
+    with_lock do
+      update!(rate_limited_until: reset_at)
+
+      Rails.logger.warn(
+        message: "github_health.rate_limited",
+        endpoint: endpoint,
+        rate_limited_until: reset_at.iso8601
+      )
     end
   end
 
@@ -136,8 +158,15 @@ class GithubHealthState < ApplicationRecord
     circuit_state == "closed"
   end
 
-  # Returns true when dispatching should be paused.
+  # Returns true if a rate-limit window is currently active.
+  def rate_limited?
+    rate_limited_until.present? && rate_limited_until > Time.current
+  end
+
+  # Returns true when dispatching should be paused — either the circuit is
+  # open from infrastructure failures or a GitHub rate limit is still in
+  # effect.
   def unavailable?
-    circuit_open?
+    circuit_open? || rate_limited?
   end
 end

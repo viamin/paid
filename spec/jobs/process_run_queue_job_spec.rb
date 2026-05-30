@@ -332,10 +332,16 @@ RSpec.describe ProcessRunQueueJob do
       it "skips dispatching entirely" do
         create(:github_health_state, :circuit_open)
         create(:agent_run, :queued)
+        allow(Rails.logger).to receive(:info)
 
         expect(temporal_client).not_to receive(:start_workflow)
 
         described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.skipped_github_unavailable",
+          reason: "circuit_open"
+        ))
       end
 
       it "attempts circuit recovery when timeout has elapsed" do
@@ -348,6 +354,34 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(state.reload.circuit_state).to eq("half_open")
+      end
+    end
+
+    context "when GitHub is rate limited" do
+      it "skips dispatching until the reset time has passed" do
+        reset_at = 30.minutes.from_now
+        create(:github_health_state, rate_limited_until: reset_at)
+        create(:agent_run, :queued)
+        allow(Rails.logger).to receive(:info)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.skipped_github_unavailable",
+          reason: "rate_limited",
+          available_at: reset_at.iso8601
+        ))
+      end
+
+      it "resumes dispatching once the rate-limit window has elapsed" do
+        create(:github_health_state, rate_limited_until: 1.minute.ago)
+        create(:agent_run, :queued)
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
       end
     end
 

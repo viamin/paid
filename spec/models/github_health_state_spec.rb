@@ -122,6 +122,16 @@ RSpec.describe GithubHealthState do
       create(:github_health_state, :circuit_half_open)
       expect(described_class.github_available?).to be true
     end
+
+    it "returns false while a rate-limit window is active" do
+      create(:github_health_state, :rate_limited)
+      expect(described_class.github_available?).to be false
+    end
+
+    it "returns true after the rate-limit window has elapsed" do
+      create(:github_health_state, rate_limited_until: 1.minute.ago)
+      expect(described_class.github_available?).to be true
+    end
   end
 
   describe ".github_available_with_recovery?" do
@@ -138,6 +148,11 @@ RSpec.describe GithubHealthState do
       state = create(:github_health_state, circuit_state: "open", circuit_opened_at: 10.minutes.ago)
       expect(described_class.github_available_with_recovery?).to be true
       expect(state.reload.circuit_state).to eq("half_open")
+    end
+
+    it "returns false while a rate-limit window is active even if the circuit is closed" do
+      create(:github_health_state, :rate_limited)
+      expect(described_class.github_available_with_recovery?).to be false
     end
   end
 
@@ -248,6 +263,13 @@ RSpec.describe GithubHealthState do
       expect(state.failure_count).to eq(0)
     end
 
+    it "clears rate_limited_until on a successful call" do
+      state = create(:github_health_state, rate_limited_until: 1.hour.from_now)
+      state.record_success!
+
+      expect(state.reload.rate_limited_until).to be_nil
+    end
+
     it "does not overwrite an open circuit when a failure races with success" do
       state = create(:github_health_state, :circuit_half_open)
       run_success_failure_race(state)
@@ -319,6 +341,71 @@ RSpec.describe GithubHealthState do
     it "returns false when circuit is half_open" do
       state = build(:github_health_state, :circuit_half_open)
       expect(state).not_to be_unavailable
+    end
+
+    it "returns true while a rate-limit window is active" do
+      state = build(:github_health_state, :rate_limited)
+      expect(state).to be_unavailable
+    end
+
+    it "returns false once the rate-limit window has elapsed" do
+      state = build(:github_health_state, rate_limited_until: 1.minute.ago)
+      expect(state).not_to be_unavailable
+    end
+  end
+
+  describe "#rate_limited?" do
+    it "returns true when rate_limited_until is in the future" do
+      state = build(:github_health_state, :rate_limited)
+      expect(state).to be_rate_limited
+    end
+
+    it "returns false when rate_limited_until is nil" do
+      state = build(:github_health_state)
+      expect(state).not_to be_rate_limited
+    end
+
+    it "returns false when rate_limited_until has already elapsed" do
+      state = build(:github_health_state, rate_limited_until: 1.minute.ago)
+      expect(state).not_to be_rate_limited
+    end
+  end
+
+  describe "#mark_rate_limited!" do
+    it "persists the supplied reset_at" do
+      state = create(:github_health_state)
+      reset_at = 30.minutes.from_now
+
+      state.mark_rate_limited!(reset_at: reset_at)
+
+      expect(state.reload.rate_limited_until).to be_within(1.second).of(reset_at)
+    end
+
+    it "defaults to 60 seconds from now when reset_at is nil" do
+      state = create(:github_health_state)
+      freeze_time do
+        state.mark_rate_limited!(reset_at: nil)
+        expect(state.reload.rate_limited_until).to eq(60.seconds.from_now)
+      end
+    end
+
+    it "logs a warning that includes the reset time" do
+      state = create(:github_health_state)
+      reset_at = 30.minutes.from_now
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(
+        message: "github_health.rate_limited",
+        rate_limited_until: reset_at.iso8601
+      ))
+
+      state.mark_rate_limited!(reset_at: reset_at)
+    end
+
+    it "is treated as unavailable immediately after being marked" do
+      state = create(:github_health_state)
+      state.mark_rate_limited!(reset_at: 1.hour.from_now)
+
+      expect(described_class.github_available?).to be false
     end
   end
 end

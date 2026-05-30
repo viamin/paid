@@ -1926,6 +1926,26 @@ RSpec.describe GithubClient do
         expect(error.reset_at).not_to be_nil
       end
     end
+
+    it "marks the GitHub health state as rate limited so dispatching pauses" do
+      reset_at = 30.minutes.from_now
+      allow(client.client).to receive(:rate_limit)
+        .and_return(instance_double(Octokit::RateLimit, resets_at: reset_at))
+
+      expect { client.repository(repo) }.to raise_error(GithubClient::RateLimitError)
+
+      state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
+      expect(state).to be_present
+      expect(state.rate_limited_until).to be_within(1.second).of(reset_at)
+      expect(state).to be_rate_limited
+      expect(GithubHealthState.github_available?).to be false
+    end
+
+    it "still raises RateLimitError when persisting the rate-limit state fails" do
+      allow(GithubHealthState).to receive(:current).and_raise(ActiveRecord::StatementInvalid.new("boom"))
+
+      expect { client.repository(repo) }.to raise_error(GithubClient::RateLimitError)
+    end
   end
 
   describe "generic API error handling" do

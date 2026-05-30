@@ -15,10 +15,13 @@ module Activities
     def execute(input)
       project_id = input[:project_id]
 
-      unless GithubHealthState.github_available?
+      github_state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
+      if github_state&.unavailable?
         logger.info(
-          message: "fetch_issues.skipped_github_circuit_open",
-          project_id: project_id
+          message: "fetch_issues.skipped_github_unavailable",
+          project_id: project_id,
+          reason: github_state.rate_limited? ? "rate_limited" : "circuit_open",
+          available_at: github_state.rate_limited_until&.iso8601
         )
         return { issues: [], project_id: project_id, github_circuit_open: true }
       end

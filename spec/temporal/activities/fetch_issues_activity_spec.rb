@@ -186,6 +186,49 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#execute" do
+    context "when GitHub is unavailable" do
+      it "skips polling when the circuit is open and logs the reason" do
+        create(:github_health_state, :circuit_open)
+        stub_issues_by_label(nil => [])
+        allow(Rails.logger).to receive(:info)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:github_circuit_open]).to be true
+        expect(github_client).not_to have_received(:issues)
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "fetch_issues.skipped_github_unavailable",
+          reason: "circuit_open"
+        ))
+      end
+
+      it "skips polling while the rate-limit window is active" do
+        reset_at = 30.minutes.from_now
+        create(:github_health_state, rate_limited_until: reset_at)
+        stub_issues_by_label(nil => [])
+        allow(Rails.logger).to receive(:info)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:github_circuit_open]).to be true
+        expect(github_client).not_to have_received(:issues)
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "fetch_issues.skipped_github_unavailable",
+          reason: "rate_limited",
+          available_at: reset_at.iso8601
+        ))
+      end
+
+      it "does not skip once the rate-limit window has elapsed" do
+        create(:github_health_state, rate_limited_until: 1.minute.ago)
+        stub_issues_by_label(nil => [])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:github_circuit_open]).to be_nil
+      end
+    end
+
     context "when issues are found" do
       let(:build_issue) do
         OpenStruct.new(
