@@ -24,7 +24,8 @@ RSpec.describe Tools::Registry do
       expect(definitions.map { |definition| definition[:name] }).to include(
         "invite_account_member",
         "update_tenant_settings",
-        "create_mcp_server_definition"
+        "create_mcp_server_definition",
+        "update_mcp_server_definition"
       )
     end
   end

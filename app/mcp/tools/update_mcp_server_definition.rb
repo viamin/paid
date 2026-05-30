@@ -23,6 +23,11 @@ module Tools
       }
     end
 
+    def self.available_to?(user:)
+      record = user&.account&.mcp_server_definitions&.build
+      policy_allows?(user:, record:, query: :update?, policy_class: McpServerDefinitionPolicy)
+    end
+
     def perform(mcp_server_definition_id:, attributes:, confirmed:)
       raise ArgumentError, "Confirmation required: set confirmed=true to update an MCP server definition" unless confirmed
       raise ArgumentError, "attributes must be an object" unless attributes.is_a?(Hash)
