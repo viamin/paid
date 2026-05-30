@@ -379,6 +379,7 @@ module Screenshots
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
       when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
+      when /\Aaccounts\/operations_dashboards\// then [ :account_operations_dashboard ]
       when /\Aaccounts\/roi_dashboards\// then [ :account_roi_dashboard ]
       when /\Aaccounts\// then [ :account ]
       when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
