@@ -262,6 +262,7 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Support chat")
+        expect(response.body).to include("New Chat")
         expect(response.body).to include("Open page")
         expect(response.body).to include("Projects - Paid")
       end
@@ -330,6 +331,13 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include(%(name="chat_session[runner_id]"))
         expect(response.body).not_to include(%(name="chat_session[model]"))
         expect(response.body).not_to include(%(name="content"))
+        expect(response.body).not_to include("New Chat")
+      end
+
+      it "does not render popup new-chat controls" do
+        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+
+        expect(response).to have_http_status(:ok)
         expect(response.body).not_to include("New Chat")
       end
     end
