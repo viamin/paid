@@ -17,5 +17,9 @@ FactoryBot.define do
       failure_count { 5 }
       circuit_opened_at { 10.minutes.ago }
     end
+
+    trait :rate_limited do
+      rate_limited_until { 1.hour.from_now }
+    end
   end
 end

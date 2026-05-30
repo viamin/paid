@@ -988,7 +988,10 @@ RSpec.describe Project do
         github_client = instance_double(GithubClient)
 
         allow(project).to receive(:github_credential).and_return("ghs_app_token")
-        allow(GithubClient).to receive(:new).with(token: "ghs_app_token").and_return(github_client)
+        allow(GithubClient).to receive(:new).with(
+          token: "ghs_app_token",
+          health_endpoint: project.github_health_endpoint
+        ).and_return(github_client)
 
         expect(project.client).to be(github_client)
       end

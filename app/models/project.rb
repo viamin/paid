@@ -904,9 +904,19 @@ class Project < ApplicationRecord
   def client
     @client ||= if github_installation_id.present? || github_installation.present?
       credential = github_credential
-      credential.present? ? GithubClient.new(token: credential) : nil
+      credential.present? ? GithubClient.new(token: credential, health_endpoint: github_health_endpoint) : nil
     else
       github_token&.client
+    end
+  end
+
+  def github_health_endpoint
+    if github_installation_id.present? || github_installation.present?
+      GithubHealthState.endpoint_for_github_installation(github_installation.github_installation_id)
+    elsif github_token_id.present?
+      GithubHealthState.endpoint_for_github_token(github_token_id)
+    else
+      GithubHealthState::DEFAULT_ENDPOINT
     end
   end
 

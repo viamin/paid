@@ -62,16 +62,18 @@ class GithubClient
     end
   end
 
-  attr_reader :client
+  attr_reader :client, :health_endpoint
 
   # @param token [String] GitHub personal access token
+  # @param health_endpoint [String] Stable health-state key for the auth principal
   # @param options [Hash] Additional Octokit client options
-  def initialize(token:, **options)
+  def initialize(token:, health_endpoint: GithubHealthState::DEFAULT_ENDPOINT, **options)
     @client = Octokit::Client.new(
       access_token: token,
       auto_paginate: false,
       **options
     )
+    @health_endpoint = health_endpoint
 
     configure_middleware
   end
@@ -1466,10 +1468,12 @@ class GithubClient
     raise NotFoundError, e.message
   rescue Octokit::TooManyRequests
     reset_at = client.rate_limit.resets_at rescue nil
+    record_github_rate_limit(reset_at)
     raise RateLimitError.new(reset_at)
   rescue Octokit::Forbidden => e
     if e.message.include?("rate limit")
       reset_at = client.rate_limit.resets_at rescue nil
+      record_github_rate_limit(reset_at)
       raise RateLimitError.new(reset_at)
     end
     raise ApiError.new(e.message, status: 403)
@@ -1486,7 +1490,7 @@ class GithubClient
   end
 
   def record_github_health_failure(error_message)
-    GithubHealthState.current.record_failure!(error_message: error_message)
+    GithubHealthState.current(endpoint: health_endpoint).record_failure!(error_message: error_message)
   rescue => e
     Rails.logger.warn(
       message: "github_client.health_state_record_failed",
@@ -1494,9 +1498,18 @@ class GithubClient
     )
   end
 
+  def record_github_rate_limit(reset_at)
+    GithubHealthState.current(endpoint: health_endpoint).mark_rate_limited!(reset_at: reset_at)
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.rate_limit_record_failed",
+      error: e.message
+    )
+  end
+
   def record_github_health_success
-    state = GithubHealthState.find_by(endpoint: GithubHealthState::DEFAULT_ENDPOINT)
-    return unless state && (state.failure_count > 0 || !state.circuit_closed?)
+    state = GithubHealthState.find_by(endpoint: health_endpoint)
+    return unless state && (state.failure_count > 0 || !state.circuit_closed? || state.rate_limited_until.present?)
 
     state.record_success!
   rescue => e

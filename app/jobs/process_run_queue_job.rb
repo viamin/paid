@@ -38,10 +38,8 @@ class ProcessRunQueueJob < ApplicationJob
     return unless acquired
 
     begin
-      if github_circuit_open?
-        Rails.logger.info(
-          message: "process_run_queue.skipped_github_circuit_open"
-        )
+      if (github_state = unavailable_github_state)
+        log_github_unavailable(github_state)
         return
       end
 
@@ -49,6 +47,7 @@ class ProcessRunQueueJob < ApplicationJob
       starts_count = 0
       iterations = 0
       skipped_ids = Set.new
+      blocked_project_ids = Set.new
       blocked_user_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
@@ -61,10 +60,17 @@ class ProcessRunQueueJob < ApplicationJob
         # can't start yet.
         next_run = AgentRun.peek_next_queued_run(
           exclude_ids: skipped_ids.to_a,
+          exclude_project_ids: blocked_project_ids.to_a,
           exclude_user_ids: blocked_user_ids.to_a
         )
 
         break unless next_run
+
+        if (github_state = unavailable_github_state(next_run.project.github_health_endpoint))
+          blocked_project_ids.add(next_run.project_id)
+          log_github_unavailable(github_state, project_id: next_run.project_id)
+          next
+        end
 
         # Resolve the project owner for capacity checks. If the owner
         # can't be resolved, fail the run immediately rather than
@@ -119,10 +125,22 @@ class ProcessRunQueueJob < ApplicationJob
 
   private
 
-  # Checks GitHub circuit breaker state. Attempts recovery if the
-  # timeout has elapsed, allowing a half-open probe.
-  def github_circuit_open?
-    !GithubHealthState.github_available_with_recovery?
+  def unavailable_github_state(endpoint = GithubHealthState::DEFAULT_ENDPOINT)
+    state = GithubHealthState.find_by(endpoint: endpoint)
+    return unless state
+
+    state.check_circuit_recovery!
+    state if state.unavailable?
+  end
+
+  def log_github_unavailable(state, project_id: nil)
+    payload = {
+      message: "process_run_queue.skipped_github_unavailable",
+      reason: state.rate_limited? ? "rate_limited" : "circuit_open",
+      available_at: state.rate_limited_until&.iso8601
+    }
+    payload[:project_id] = project_id if project_id
+    Rails.logger.info(payload)
   end
 
   # Checks per-user capacity using an in-memory cache. The active count
