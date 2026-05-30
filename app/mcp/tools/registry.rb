@@ -13,7 +13,10 @@ module Tools
       "Tools::CancelAgentRun",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
-      "Tools::SearchCode"
+      "Tools::SearchCode",
+      "Tools::ReadRepoFile",
+      "Tools::ListRepoTree",
+      "Tools::GrepRepo"
     ].freeze
 
     class << self

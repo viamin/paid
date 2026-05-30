@@ -170,6 +170,10 @@ class GithubClient
     handle_errors { client.tree(repo, ref, recursive: recursive) }
   end
 
+  def search_code(query, per_page: 30)
+    handle_errors { client.search_code(query, per_page: per_page) }
+  end
+
   # Lists repositories the token has push access to.
   # Filters by permissions.push to exclude repos where the token only
   # has metadata access (relevant for fine-grained PATs with selected repos).
