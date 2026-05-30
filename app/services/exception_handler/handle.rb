@@ -138,6 +138,7 @@ module ExceptionHandler
 
       target_project = @project
       return unless target_project
+      return unless Classifier::ISSUE_FILING_ALLOWLIST.include?(@subsystem)
 
       if incident.github_issue_url.present? && incident.project_id != target_project.id
         Rails.logger.info(

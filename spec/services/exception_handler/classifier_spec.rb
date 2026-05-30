@@ -4,6 +4,15 @@ require "rails_helper"
 
 RSpec.describe ExceptionHandler::Classifier do
   describe ".call" do
+    it "allowlists the seed subsystems for issue filing" do
+      expect(described_class::ISSUE_FILING_ALLOWLIST).to contain_exactly(
+        "knowledge",
+        "agent_runs",
+        "container_manager",
+        "secrets_proxy"
+      )
+    end
+
     it "classifies transient timeout errors as logged" do
       error = Net::OpenTimeout.new("execution expired")
 

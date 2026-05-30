@@ -33,6 +33,13 @@ module ExceptionHandler
       "general" => "p2"
     }.freeze
 
+    ISSUE_FILING_ALLOWLIST = %w[
+      knowledge
+      agent_runs
+      container_manager
+      secrets_proxy
+    ].freeze
+
     def self.call(exception:, subsystem:)
       new(exception: exception, subsystem: subsystem).call
     end
