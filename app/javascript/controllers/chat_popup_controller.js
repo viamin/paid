@@ -55,15 +55,32 @@ export default class extends Controller {
         this.writeState()
       }
 
-      const response = await window.fetch(this.panelUrl(sessionId), {
-        headers: { Accept: "text/html" },
-        credentials: "same-origin"
-      })
-
-      if (!response.ok) throw new Error(`Panel request failed with ${response.status}`)
-
-      this.contentTarget.innerHTML = await response.text()
+      await this.renderPanel(sessionId)
     } catch (error) {
+      this.contentTarget.innerHTML = this.errorMarkup()
+      window.console.error("chat popup failed", error)
+    } finally {
+      this.loading = false
+    }
+  }
+
+  async newChat(event) {
+    event?.preventDefault()
+    if (this.loading) return
+
+    const previousSessionId = this.state.sessionId
+
+    this.loading = true
+    this.contentTarget.innerHTML = this.loadingMarkup()
+
+    try {
+      const sessionId = await this.createSession()
+      this.state.sessionId = sessionId
+      this.writeState()
+      await this.renderPanel(sessionId)
+    } catch (error) {
+      this.state.sessionId = previousSessionId
+      this.writeState()
       this.contentTarget.innerHTML = this.errorMarkup()
       window.console.error("chat popup failed", error)
     } finally {
@@ -107,6 +124,17 @@ export default class extends Controller {
     })
 
     return response.ok
+  }
+
+  async renderPanel(sessionId) {
+    const response = await window.fetch(this.panelUrl(sessionId), {
+      headers: { Accept: "text/html" },
+      credentials: "same-origin"
+    })
+
+    if (!response.ok) throw new Error(`Panel request failed with ${response.status}`)
+
+    this.contentTarget.innerHTML = await response.text()
   }
 
   jsonHeaders() {
