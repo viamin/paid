@@ -77,6 +77,40 @@ class TenantSetting < ApplicationRecord
       "reference_stack" => ""
     }
   }.freeze
+  DEFAULT_ENTERPRISE_OPERATIONS = {
+    "service_levels" => {
+      "slo_window_days" => 30,
+      "uptime_target_percent" => 99.9,
+      "queue_health_target_percent" => 99.0,
+      "queue_start_slo_minutes" => 15,
+      "urgent_response_sla_hours" => 1,
+      "standard_response_sla_hours" => 4
+    },
+    "disaster_recovery" => {
+      "automated_backups_enabled" => true,
+      "restore_drill_interval_days" => 90,
+      "restore_owner" => "",
+      "last_restore_drill_at" => ""
+    },
+    "upgrades" => {
+      "release_channel" => "stable",
+      "maintenance_window" => "Sun 02:00 UTC",
+      "compatibility_lookahead_days" => 14,
+      "last_compatibility_check_at" => "",
+      "last_upgrade_at" => ""
+    },
+    "support" => {
+      "diagnostics_contact" => "",
+      "safe_remediation_mode" => "approval_required",
+      "health_report_recipients" => ""
+    },
+    "capacity_management" => {
+      "reserved_concurrency" => 0,
+      "queue_warning_threshold" => 20,
+      "queue_critical_threshold" => 50,
+      "monthly_budget_alert_percent" => 80
+    }
+  }.freeze
   DEPLOYMENT_ASSURANCE_MODELS = %w[managed_cloud private_saas byoc].freeze
   LEGACY_DEPLOYMENT_ASSURANCE_MODELS = %w[self_hosted private_vpc air_gapped].freeze
   VALID_DEPLOYMENT_ASSURANCE_MODELS =
@@ -93,6 +127,8 @@ class TenantSetting < ApplicationRecord
   DEPLOYMENT_ASSURANCE_BACKUP_CADENCES = %w[hourly daily weekly].freeze
   DEPLOYMENT_ASSURANCE_UPGRADE_CHANNELS = %w[stable extended_support preview].freeze
   DEPLOYMENT_ASSURANCE_VERSION_SUPPORT_POLICIES = %w[latest n_minus_one lts].freeze
+  ENTERPRISE_OPERATIONS_RELEASE_CHANNELS = %w[stable canary lts].freeze
+  ENTERPRISE_OPERATIONS_REMEDIATION_MODES = %w[approval_required operator_applied observe_only].freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,
@@ -136,6 +172,7 @@ class TenantSetting < ApplicationRecord
   validate :validate_worker_settings
   validate :validate_quality_thresholds
   validate :validate_deployment_assurance
+  validate :validate_enterprise_operations
   validates :self_repo_full_name,
     format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
     allow_nil: true,
@@ -238,6 +275,18 @@ class TenantSetting < ApplicationRecord
   def deployment_assurance_configuration=(value)
     merged_features = normalize_hash(features)
     merged_features["deployment_assurance"] = normalize_deployment_assurance(value)
+    self.features = merged_features
+  end
+
+  def enterprise_operations_configuration
+    merge_defaults(DEFAULT_ENTERPRISE_OPERATIONS, features.fetch("enterprise_operations", {}))
+  end
+
+  def enterprise_operations_configuration=(value)
+    merged_features = normalize_hash(features)
+    merged_features["enterprise_operations"] = normalize_enterprise_operations(
+      enterprise_operations_configuration.deep_merge(normalize_hash(value))
+    )
     self.features = merged_features
   end
 
@@ -438,6 +487,74 @@ class TenantSetting < ApplicationRecord
     )
   end
 
+  def validate_enterprise_operations
+    return unless features.is_a?(Hash)
+
+    operations = features.fetch("enterprise_operations", nil)
+    return unless operations.is_a?(Hash)
+
+    validate_enterprise_operations_integer(
+      operations.dig("service_levels", "slo_window_days"),
+      path: "service_levels.slo_window_days"
+    )
+    validate_enterprise_operations_percent(
+      operations.dig("service_levels", "uptime_target_percent"),
+      path: "service_levels.uptime_target_percent"
+    )
+    validate_enterprise_operations_percent(
+      operations.dig("service_levels", "queue_health_target_percent"),
+      path: "service_levels.queue_health_target_percent"
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("service_levels", "queue_start_slo_minutes"),
+      path: "service_levels.queue_start_slo_minutes"
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("service_levels", "urgent_response_sla_hours"),
+      path: "service_levels.urgent_response_sla_hours"
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("service_levels", "standard_response_sla_hours"),
+      path: "service_levels.standard_response_sla_hours"
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("disaster_recovery", "restore_drill_interval_days"),
+      path: "disaster_recovery.restore_drill_interval_days"
+    )
+    validate_enterprise_operations_option(
+      operations.dig("upgrades", "release_channel"),
+      path: "upgrades.release_channel",
+      allowed_values: ENTERPRISE_OPERATIONS_RELEASE_CHANNELS
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("upgrades", "compatibility_lookahead_days"),
+      path: "upgrades.compatibility_lookahead_days"
+    )
+    validate_enterprise_operations_option(
+      operations.dig("support", "safe_remediation_mode"),
+      path: "support.safe_remediation_mode",
+      allowed_values: ENTERPRISE_OPERATIONS_REMEDIATION_MODES
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("capacity_management", "reserved_concurrency"),
+      path: "capacity_management.reserved_concurrency",
+      min: 0
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("capacity_management", "queue_warning_threshold"),
+      path: "capacity_management.queue_warning_threshold"
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("capacity_management", "queue_critical_threshold"),
+      path: "capacity_management.queue_critical_threshold"
+    )
+    validate_enterprise_operations_integer(
+      operations.dig("capacity_management", "monthly_budget_alert_percent"),
+      path: "capacity_management.monthly_budget_alert_percent",
+      max: 100
+    )
+  end
+
   def normalize_budget_hash(value)
     normalized_value = normalize_hash(value)
     return normalized_value unless normalized_value.is_a?(Hash)
@@ -533,6 +650,35 @@ class TenantSetting < ApplicationRecord
     end
   end
 
+  def normalize_enterprise_operations(value)
+    merge_defaults(DEFAULT_ENTERPRISE_OPERATIONS, normalize_hash(value)).tap do |normalized|
+      normalized["disaster_recovery"]["automated_backups_enabled"] =
+        ActiveModel::Type::Boolean.new.cast(normalized.dig("disaster_recovery", "automated_backups_enabled"))
+
+      %w[
+        slo_window_days queue_start_slo_minutes urgent_response_sla_hours standard_response_sla_hours
+      ].each do |key|
+        normalized["service_levels"][key] = normalize_integer_value(normalized.dig("service_levels", key))
+      end
+
+      %w[uptime_target_percent queue_health_target_percent].each do |key|
+        normalized["service_levels"][key] = normalize_decimal_value(normalized.dig("service_levels", key))
+      end
+
+      %w[restore_drill_interval_days].each do |key|
+        normalized["disaster_recovery"][key] = normalize_integer_value(normalized.dig("disaster_recovery", key))
+      end
+
+      %w[compatibility_lookahead_days].each do |key|
+        normalized["upgrades"][key] = normalize_integer_value(normalized.dig("upgrades", key))
+      end
+
+      %w[reserved_concurrency queue_warning_threshold queue_critical_threshold monthly_budget_alert_percent].each do |key|
+        normalized["capacity_management"][key] = normalize_integer_value(normalized.dig("capacity_management", key))
+      end
+    end
+  end
+
   def validate_deployment_assurance_integer(value, path:)
     return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
 
@@ -545,6 +691,24 @@ class TenantSetting < ApplicationRecord
     errors.add(:features, "deployment_assurance.#{path} must be one of: #{allowed_values.join(', ')}")
   end
 
+  def validate_enterprise_operations_integer(value, path:, min: 1, max: PG_INT_MAX)
+    return if value.is_a?(Integer) && value.between?(min, max)
+
+    errors.add(:features, "enterprise_operations.#{path} must be an integer between #{min} and #{max}")
+  end
+
+  def validate_enterprise_operations_percent(value, path:)
+    return if value.is_a?(Numeric) && value.positive? && value <= 100
+
+    errors.add(:features, "enterprise_operations.#{path} must be greater than 0 and less than or equal to 100")
+  end
+
+  def validate_enterprise_operations_option(value, path:, allowed_values:)
+    return if allowed_values.include?(value)
+
+    errors.add(:features, "enterprise_operations.#{path} must be one of: #{allowed_values.join(', ')}")
+  end
+
   def validate_quality_threshold_integer(value, key:)
     return if value.is_a?(Integer) && value.between?(1, PG_INT_MAX)
 
@@ -555,6 +719,12 @@ class TenantSetting < ApplicationRecord
     return nil unless value.present?
 
     Integer(value, exception: false) || value
+  end
+
+  def normalize_decimal_value(value)
+    return nil unless value.present?
+
+    Float(value, exception: false) || value
   end
 
   def apply_guardrail_columns

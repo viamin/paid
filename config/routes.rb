@@ -82,6 +82,9 @@ Rails.application.routes.draw do
   resource :account_compliance_dashboard, only: [ :show, :update ], controller: "accounts/compliance_dashboards" do
     get :export
   end
+  resource :account_operations_dashboard, only: [ :show, :update ], controller: "accounts/operations_dashboards" do
+    get :export
+  end
   resources :account_memberships, only: [ :create, :update, :destroy ]
   resource :account_ownership_transfer, only: [ :create ]
   resource :account_lifecycle, only: [ :update ]

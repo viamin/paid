@@ -32,6 +32,7 @@ module Screenshots
       user_settings
       account
       account_roi_dashboard
+      account_operations_dashboard
       account_audit_logs
       remediation_decision_show
       quality_dashboard
@@ -88,6 +89,7 @@ module Screenshots
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
       account_roi_dashboard: Target.new(slug: "account_roi_dashboard", path_builder: "/account_roi_dashboard", requires_auth: true),
+      account_operations_dashboard: Target.new(slug: "account_operations_dashboard", path_builder: "/account_operations_dashboard", requires_auth: true),
       account_compliance_dashboard: Target.new(slug: "account_compliance_dashboard", path_builder: "/account_compliance_dashboard", requires_auth: true),
       account_audit_logs: Target.new(slug: "account_audit_logs", path_builder: "/account_audit_logs", requires_auth: true),
       remediation_decision_show: Target.new(
@@ -261,6 +263,7 @@ module Screenshots
     NESTED_CONTROLLER_TARGETS = {
       "users/registrations_controller.rb" => [ :sign_up ],
       "accounts/compliance_dashboards_controller.rb" => [ :account_compliance_dashboard ],
+      "accounts/operations_dashboards_controller.rb" => [ :account_operations_dashboard ],
       "accounts/roi_dashboards_controller.rb" => [ :account_roi_dashboard ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
@@ -376,6 +379,7 @@ module Screenshots
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
       when /\Auser_settings\// then [ :user_settings ]
       when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
+      when /\Aaccounts\/operations_dashboards\// then [ :account_operations_dashboard ]
       when /\Aaccounts\/roi_dashboards\// then [ :account_roi_dashboard ]
       when /\Aaccounts\// then [ :account ]
       when /\Aaccount_audit_logs\// then [ :account_audit_logs ]
