@@ -61,6 +61,19 @@ module Tools
       user.present?
     end
 
+    def self.run_agent_available_to?(user:)
+      return false if user.blank?
+
+      record = Project.new(account: user.account)
+      return true if policy_allows?(user:, record:, query: :run_agent?, policy_class: ProjectPolicy)
+
+      Pundit.policy_scope!(user, Project).any? do |project|
+        policy_allows?(user:, record: project, query: :run_agent?, policy_class: ProjectPolicy)
+      end
+    rescue Pundit::NotAuthorizedError
+      false
+    end
+
     def self.policy_allows?(user:, record:, query:, policy_class: nil)
       return false if user.blank?
 

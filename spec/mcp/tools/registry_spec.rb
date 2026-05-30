@@ -15,6 +15,16 @@ RSpec.describe Tools::Registry do
       expect(definitions.map { |definition| definition[:name] }).to include("trigger_agent_run", "cancel_agent_run")
     end
 
+    it "hides run-management write tools when the user lacks run permissions" do
+      account = create(:account)
+      create(:project, account: account)
+      user = create(:user, :viewer, account: account)
+
+      definitions = described_class.definitions_for(user: user)
+
+      expect(definitions.map { |definition| definition[:name] }).not_to include("trigger_agent_run", "cancel_agent_run")
+    end
+
     it "includes account admin write tools even when no project exists" do
       account = create(:account)
       user = create(:user, :owner, account: account)
