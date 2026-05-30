@@ -31,11 +31,7 @@ module Tools
       ref = project.default_branch if ref == "HEAD"
       ref ||= "main"
 
-      if path.present?
-        entries = directory_entries(client, project, path, ref)
-      else
-        entries = tree_entries(client, project, ref)
-      end
+      entries = directory_entries(client, project, path, ref)
 
       {
         path: path.presence || "/",
@@ -59,19 +55,10 @@ module Tools
 
     def directory_entries(client, project, path, ref)
       data = client.contents(project.full_name, path: path, ref: ref)
-      return [] unless data.is_a?(Array)
+      raise GithubClient::NotFoundError, "Path is not a directory" unless data.is_a?(Array)
 
       data.map do |entry|
         { name: entry.name, path: entry.path, type: entry.type, size: entry.size }
-      end
-    end
-
-    def tree_entries(client, project, ref)
-      result = client.tree(project.full_name, ref, recursive: true)
-      return [] unless result&.tree
-
-      result.tree.map do |entry|
-        { name: File.basename(entry.path), path: entry.path, type: entry.type, size: entry.size }
       end
     end
 

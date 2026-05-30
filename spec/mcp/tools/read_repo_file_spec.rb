@@ -57,6 +57,18 @@ RSpec.describe Tools::ReadRepoFile do
       expect(result[:error]).to include("binary")
     end
 
+    it "returns error for NUL-containing content even when UTF-8 is otherwise valid" do
+      binary_content = "\x00abc".b
+      file_data = Struct.new(:path, :type, :content, :size).new(
+        "tmp/data.bin", "file", Base64.strict_encode64(binary_content), binary_content.bytesize
+      )
+      allow(github_client).to receive(:contents).and_return(file_data)
+
+      result = tool.call(project_id: project.id, path: "tmp/data.bin")
+
+      expect(result[:error]).to include("binary")
+    end
+
     it "returns error for oversized file" do
       big_content = "x" * (200 * 1024 + 1)
       file_data = Struct.new(:path, :type, :content, :size).new(

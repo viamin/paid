@@ -70,6 +70,8 @@ module Tools
     end
 
     def utf8_text?(raw)
+      return false if raw.include?("\x00")
+
       raw.dup.force_encoding("UTF-8").valid_encoding?
     end
 

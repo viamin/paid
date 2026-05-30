@@ -12,24 +12,23 @@ RSpec.describe Tools::ListRepoTree do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:tree)
     allow(github_client).to receive(:contents)
   end
 
   describe "#call" do
     it "returns root tree entries" do
-      tree_result = Struct.new(:tree).new([
-        Struct.new(:path, :type, :size).new("README.md", "blob", 100),
-        Struct.new(:path, :type, :size).new("app", "tree", 0),
-        Struct.new(:path, :type, :size).new("app/models/foo.rb", "blob", 200)
-      ])
-      allow(github_client).to receive(:tree).and_return(tree_result)
+      root_entries = [
+        Struct.new(:name, :path, :type, :size).new("README.md", "README.md", "file", 100),
+        Struct.new(:name, :path, :type, :size).new("app", "app", "dir", 0)
+      ]
+      allow(github_client).to receive(:contents).and_return(root_entries)
 
       result = tool.call(project_id: project.id)
 
-      expect(result[:entries].size).to eq(3)
+      expect(result[:entries].size).to eq(2)
       expect(result[:entries].first[:path]).to eq("README.md")
       expect(result[:identity]).to include("project-token")
+      expect(github_client).to have_received(:contents).with(project.full_name, hash_including(path: "", ref: project.default_branch))
     end
 
     it "returns directory entries for a specific path" do
@@ -49,6 +48,15 @@ RSpec.describe Tools::ListRepoTree do
       allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError, "Not found")
 
       result = tool.call(project_id: project.id, path: "nonexistent")
+
+      expect(result[:error]).to include("not found")
+    end
+
+    it "returns error when path is a file" do
+      file_entry = Struct.new(:name, :path, :type, :size).new("README.md", "README.md", "file", 100)
+      allow(github_client).to receive(:contents).and_return(file_entry)
+
+      result = tool.call(project_id: project.id, path: "README.md")
 
       expect(result[:error]).to include("not found")
     end
