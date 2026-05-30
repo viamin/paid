@@ -31,6 +31,7 @@ RSpec.describe Tools::ListMcpServerDefinitions do
 
       expect(result["name"]).to eq("Docs Server")
       expect(account.mcp_server_definitions.find(result["id"]).command).to eq("npx @paid/docs-mcp")
+      expect(result).not_to include("account_id", "log_data")
     end
   end
 
@@ -46,6 +47,7 @@ RSpec.describe Tools::ListMcpServerDefinitions do
 
       expect(result["name"]).to eq("Updated Server")
       expect(definition.reload.name).to eq("Updated Server")
+      expect(result).not_to include("account_id", "log_data")
     end
   end
 

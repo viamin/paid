@@ -23,13 +23,7 @@ module Tools
     private
 
     def serialize_definition(definition)
-      definition.attributes.slice(
-        "id", "name", "transport", "install_type", "command", "url", "image", "enabled", "created_at", "updated_at"
-      ).merge(
-        "args" => definition.args,
-        "env" => definition.env,
-        "metadata" => definition.metadata
-      )
+      McpServerDefinitionSerialization.serialize_mcp_server_definition(definition)
     end
   end
 end

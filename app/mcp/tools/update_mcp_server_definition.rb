@@ -36,7 +36,7 @@ module Tools
       definition.update!(attributes.symbolize_keys.slice(
         :name, :transport, :install_type, :command, :args_json, :url, :image, :env_json, :enabled, :metadata_json
       ))
-      definition.attributes
+      McpServerDefinitionSerialization.serialize_mcp_server_definition(definition)
     end
 
     private
