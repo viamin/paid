@@ -5,22 +5,22 @@ module Accounts
     class Dashboard
       REFERENCE_ARCHITECTURES = [
         {
-          key: "self_hosted",
-          name: "Self-hosted",
-          summary: "Single-tenant deployment with isolated Rails, PostgreSQL, Redis, and object storage.",
-          doc_path: "docs/compliance/reference-architectures.md#self-hosted-reference-architecture"
+          key: "managed_cloud",
+          name: "Managed cloud",
+          summary: "Paid-operated multi-tenant control plane with tenant isolation, backups, monitoring, and managed upgrades.",
+          doc_path: "docs/compliance/reference-architectures.md#managed-cloud-reference-architecture"
         },
         {
-          key: "private_vpc",
-          name: "Private VPC",
-          summary: "Private-network deployment with controlled ingress, egress, and managed persistence services.",
-          doc_path: "docs/compliance/reference-architectures.md#private-vpc-reference-architecture"
+          key: "private_saas",
+          name: "Private SaaS",
+          summary: "Single-tenant hosted stack for enterprise buyers that need dedicated infrastructure with Paid-operated updates.",
+          doc_path: "docs/compliance/reference-architectures.md#private-saas-reference-architecture"
         },
         {
-          key: "air_gapped",
-          name: "Air-gapped",
-          summary: "Offline package promotion model for environments that prohibit direct internet connectivity.",
-          doc_path: "docs/compliance/reference-architectures.md#air-gapped-reference-architecture"
+          key: "byoc",
+          name: "Bring your own cloud",
+          summary: "Customer-cloud deployment automation with validated reference stacks and customer-owned network boundaries.",
+          doc_path: "docs/compliance/reference-architectures.md#bring-your-own-cloud-reference-architecture"
         }
       ].freeze
 
@@ -33,8 +33,8 @@ module Accounts
         },
         {
           key: "upgrade_validation",
-          name: "Upgrade Validation",
-          summary: "Pre-upgrade checks, rollback planning, and post-upgrade verification.",
+          name: "Upgrade and Support Policy",
+          summary: "Upgrade channels, maintenance windows, rollback planning, and version-support expectations.",
           doc_path: "docs/compliance/operational-assurance-runbooks.md#upgrade-validation"
         },
         {
@@ -42,15 +42,21 @@ module Accounts
           name: "Secret Rotation",
           summary: "Customer-managed key rotation and provider credential renewal workflow.",
           doc_path: "docs/compliance/operational-assurance-runbooks.md#secret-rotation"
+        },
+        {
+          key: "byoc_reference_stack",
+          name: "BYOC Reference Stack Validation",
+          summary: "Reference-stack automation, cloud-provider ownership, and validation evidence for customer-cloud deployments.",
+          doc_path: "docs/compliance/operational-assurance-runbooks.md#byoc-reference-stack-validation"
         }
       ].freeze
 
       CONTROL_MAPPINGS = {
         deployment_topology: {
-          title: "Deployment topology documented",
-          requirement: "Reference architecture, network boundary, and operator ownership are recorded.",
+          title: "Deployment operating model documented",
+          requirement: "Deployment model, tenant isolation, reference architecture, and operator ownership are recorded.",
           mappings: [ "SOC 2 CC1.2", "SOC 2 CC6.6", "ISO 27001 A.5.8" ],
-          guidance: "Capture the deployment model and operations owner used for this tenant."
+          guidance: "Capture the operating model and the owner accountable for this tenant's production posture."
         },
         configuration_snapshot: {
           title: "Configuration snapshot exportable",
@@ -63,6 +69,12 @@ module Accounts
           requirement: "Administrative actions are recorded and can be exported for review.",
           mappings: [ "SOC 2 CC7.2", "ISO 27001 A.8.15" ],
           guidance: "Generate an evidence pack after lifecycle, membership, or tenant configuration changes."
+        },
+        monitoring_coverage: {
+          title: "Monitoring ownership documented",
+          requirement: "The deployment lists the monitoring provider, escalation owner, and recent review evidence.",
+          mappings: [ "SOC 2 CC7.1", "ISO 27001 A.8.16" ],
+          guidance: "Record who receives production alerts and when the monitoring configuration was last reviewed."
         },
         customer_managed_keys: {
           title: "Customer-managed key posture",
@@ -89,16 +101,16 @@ module Accounts
           guidance: "Run and record a restore exercise at least once per quarter."
         },
         upgrade_validation: {
-          title: "Upgrade validation",
-          requirement: "Upgrades are rehearsed with rollback planning before production rollout.",
+          title: "Upgrade and support policy",
+          requirement: "Every deployment model declares an upgrade channel, maintenance window, and supported version policy.",
           mappings: [ "SOC 2 CC8.1", "ISO 27001 A.8.32" ],
-          guidance: "Record the most recent validated upgrade rehearsal and expected rollback window."
+          guidance: "Record the supported release channel, maintenance window, and the most recent validated upgrade rehearsal."
         },
-        air_gap_validation: {
-          title: "Air-gap package validation",
-          requirement: "Offline deployment packages are validated when the tenant uses an air-gapped model.",
-          mappings: [ "SOC 2 CC6.7", "ISO 27001 A.5.14" ],
-          guidance: "Re-validate offline artifacts whenever the deployment package or dependencies change."
+        byoc_reference_stack: {
+          title: "BYOC reference stack validated",
+          requirement: "Customer-cloud deployments identify their cloud provider, automation stack, and recent validation evidence.",
+          mappings: [ "SOC 2 CC6.6", "ISO 27001 A.5.23" ],
+          guidance: "Re-validate the approved reference stack whenever the automation or managed dependencies change."
         }
       }.freeze
 
@@ -117,12 +129,13 @@ module Accounts
           deployment_topology_control,
           configuration_snapshot_control,
           audit_export_control,
+          monitoring_coverage_control,
           customer_managed_keys_control,
           secret_rotation_control,
           backup_verification_control,
           restore_validation_control,
           upgrade_validation_control,
-          air_gap_validation_control
+          byoc_reference_stack_control
         ]
 
         applicable_controls = controls.reject { |control| control[:status] == :not_applicable }
@@ -172,9 +185,34 @@ module Accounts
           status: status,
           evidence: [
             "Deployment model: #{deployment_assurance['deployment_model'].humanize}",
+            "Tenant isolation: #{deployment_assurance['tenant_isolation'].humanize}",
             "Network boundary: #{deployment_assurance['network_boundary'].humanize}",
             "Reference architecture: #{deployment_assurance['reference_architecture'].humanize}",
             owner.presence ? "Operations owner: #{owner}" : "Operations owner missing"
+          ]
+        )
+      end
+
+      def monitoring_coverage_control
+        monitoring = deployment_assurance["monitoring"]
+        status =
+          if monitoring["provider"].present? && monitoring["escalation_owner"].present?
+            if fresh_within?(monitoring["last_reviewed_at"], days: 90)
+              :compliant
+            else
+              :warning
+            end
+          else
+            :gap
+          end
+
+        control(
+          :monitoring_coverage,
+          status: status,
+          evidence: [
+            "Monitoring provider: #{monitoring['provider'].presence || 'Not recorded'}",
+            "Escalation owner: #{monitoring['escalation_owner'].presence || 'Not recorded'}",
+            "Last reviewed: #{display_date(monitoring['last_reviewed_at'])}"
           ]
         )
       end
@@ -304,10 +342,11 @@ module Accounts
 
       def upgrade_validation_control
         recovery = deployment_assurance["disaster_recovery"]
+        release_management = deployment_assurance["release_management"]
         status =
-          if fresh_within?(recovery["upgrade_last_validated_at"], days: 90)
+          if release_management["maintenance_window"].present? && fresh_within?(recovery["upgrade_last_validated_at"], days: 90)
             :compliant
-          elsif parse_date(recovery["upgrade_last_validated_at"])
+          elsif release_management["maintenance_window"].present? || parse_date(recovery["upgrade_last_validated_at"])
             :warning
           else
             :gap
@@ -317,36 +356,74 @@ module Accounts
           :upgrade_validation,
           status: status,
           evidence: [
+            "Upgrade channel: #{release_management['upgrade_channel'].humanize}",
+            "Maintenance window: #{release_management['maintenance_window'].presence || 'Not recorded'}",
+            "Maintenance timezone: #{release_management['maintenance_timezone'].presence || 'Not recorded'}",
+            "Support policy: #{release_management['version_support_policy'].humanize}",
+            "Support window: #{release_management['support_window_days']} days",
             "Last validated upgrade: #{display_date(recovery['upgrade_last_validated_at'])}",
             "Rollback planning documented in runbook"
           ]
         )
       end
 
-      def air_gap_validation_control
-        unless deployment_assurance["deployment_model"] == "air_gapped"
+      def byoc_reference_stack_control
+        if deployment_assurance["deployment_model"] == "air_gapped"
+          return air_gapped_reference_stack_control
+        end
+
+        unless deployment_assurance["deployment_model"] == "byoc"
           return control(
-            :air_gap_validation,
+            :byoc_reference_stack,
             status: :not_applicable,
-            evidence: [ "Tenant is not using an air-gapped deployment model" ]
+            evidence: [ "Tenant is not using a bring-your-own-cloud deployment model" ]
           )
         end
 
+        byoc = deployment_assurance["byoc"]
         recovery = deployment_assurance["disaster_recovery"]
         status =
-          if fresh_within?(recovery["air_gap_package_validated_at"], days: 90)
+          if byoc["cloud_provider"].present? && byoc["automation_stack"].present? && byoc["reference_stack"].present?
+            if fresh_within?(recovery["reference_stack_last_validated_at"], days: 90)
+              :compliant
+            else
+              :warning
+            end
+          else
+            :gap
+          end
+
+        control(
+          :byoc_reference_stack,
+          status: status,
+          evidence: [
+            "Cloud provider: #{byoc['cloud_provider'].presence || 'Not recorded'}",
+            "Automation stack: #{byoc['automation_stack'].presence || 'Not recorded'}",
+            "Reference stack: #{byoc['reference_stack'].presence || 'Not recorded'}",
+            "Last validated: #{display_date(recovery['reference_stack_last_validated_at'])}"
+          ]
+        )
+      end
+
+      def air_gapped_reference_stack_control
+        recovery = deployment_assurance["disaster_recovery"]
+        status =
+          if fresh_within?(recovery["reference_stack_last_validated_at"], days: 90)
             :compliant
-          elsif parse_date(recovery["air_gap_package_validated_at"])
+          elsif parse_date(recovery["reference_stack_last_validated_at"])
             :warning
           else
             :gap
           end
 
         control(
-          :air_gap_validation,
+          :byoc_reference_stack,
           status: status,
           evidence: [
-            "Offline package validated: #{display_date(recovery['air_gap_package_validated_at'])}"
+            "Legacy air-gapped deployment retained until migration completes",
+            "Reference architecture: #{deployment_assurance['reference_architecture'].humanize}",
+            "Network boundary: #{deployment_assurance['network_boundary'].humanize}",
+            "Last validated: #{display_date(recovery['reference_stack_last_validated_at'])}"
           ]
         )
       end

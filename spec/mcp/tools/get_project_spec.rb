@@ -36,5 +36,15 @@ RSpec.describe Tools::GetProject do
       expect { tool.call(project_id: other_project.id) }
         .to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    it "reuses the authorized project lookup during perform" do
+      project = create(:project, account: account)
+      scope = instance_double(ActiveRecord::Relation)
+
+      allow(tool).to receive(:policy_scope).with(Project).and_return(scope)
+      expect(scope).to receive(:find).once.with(project.id).and_return(project)
+
+      tool.call(project_id: project.id)
+    end
   end
 end

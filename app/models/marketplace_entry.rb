@@ -5,17 +5,32 @@ class MarketplaceEntry < ApplicationRecord
     skill
     agent
     prompt_pack
+    policy_pack
     enhancement
+    tool
     plugin
+    collector
+    workflow_strategy
+    integration
     mcp_server
     provider_config
     other
+  ].freeze
+  EXTENSION_POINTS = %w[
+    collectors
+    policies
+    tools
+    workflow_strategies
+    prompts
+    integrations
   ].freeze
   # Private visibility needs an owner/user reference that marketplace entries
   # do not currently persist. Keep the scope account-wide until ownership
   # semantics exist.
   TEAM_SCOPES = %w[account].freeze
   STATUSES = %w[draft active deprecated].freeze
+  CERTIFICATION_STATUSES = %w[uncertified self_attested verified certified].freeze
+  SUPPORT_TIERS = %w[community partner first_party].freeze
 
   attr_accessor :canonical_artifact_json, :renderers_json, :compatibility_constraints_json,
     :review_metadata_json, :automatic_enabled, :automatic_conditions_json,
@@ -40,13 +55,35 @@ class MarketplaceEntry < ApplicationRecord
   validates :added_by_email, presence: true, length: { maximum: 255 }
   validates :team_scope, presence: true, inclusion: { in: TEAM_SCOPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
+  validates :certification_status, presence: true, inclusion: { in: CERTIFICATION_STATUSES }
+  validates :support_tier, presence: true, inclusion: { in: SUPPORT_TIERS }
+  validates :documentation_url, length: { maximum: 500 }, allow_nil: true
+  validates :source_code_url, length: { maximum: 500 }, allow_nil: true
+  validate :documentation_url_is_safe, if: -> { documentation_url.present? }
+  validate :source_code_url_is_safe, if: -> { source_code_url.present? }
   validate :tags_are_strings
+  validate :extension_points_are_strings
+  validate :extension_points_are_known
   validate :current_version_belongs_to_entry
 
   scope :active, -> { where(status: "active") }
   scope :draft, -> { where(status: "draft") }
   scope :deprecated, -> { where(status: "deprecated") }
   scope :ordered, -> { order(:name, :id) }
+  scope :with_entry_type, ->(entry_type) { entry_type.present? ? where(entry_type: entry_type.to_s) : all }
+  scope :with_certification_status, lambda { |certification_status|
+    certification_status.present? ? where(certification_status: certification_status.to_s) : all
+  }
+  scope :with_extension_point, lambda { |extension_point|
+    next all if extension_point.blank?
+
+    where("extension_points @> ?", [ extension_point.to_s ].to_json)
+  }
+  scope :tagged_with, lambda { |tag|
+    next all if tag.blank?
+
+    where("tags @> ?", [ tag.to_s ].to_json)
+  }
   scope :search, lambda { |query|
     normalized_query = query.to_s.strip
     next all if normalized_query.blank?
@@ -104,10 +141,40 @@ class MarketplaceEntry < ApplicationRecord
     errors.add(:tags, "must be an array of strings")
   end
 
+  def extension_points_are_strings
+    return if extension_points.is_a?(Array) && extension_points.all? { |value| value.is_a?(String) }
+
+    errors.add(:extension_points, "must be an array of strings")
+  end
+
+  def extension_points_are_known
+    return unless extension_points.is_a?(Array)
+
+    unknown_values = extension_points - EXTENSION_POINTS
+    return if unknown_values.empty?
+
+    errors.add(:extension_points, "contains unsupported values: #{unknown_values.join(', ')}")
+  end
+
   def current_version_belongs_to_entry
     return if current_version.nil?
     return if current_version.marketplace_entry_id == id
 
     errors.add(:current_version, "must belong to this marketplace entry")
+  end
+
+  def documentation_url_is_safe
+    validate_http_url(:documentation_url)
+  end
+
+  def source_code_url_is_safe
+    validate_http_url(:source_code_url)
+  end
+
+  def validate_http_url(attribute)
+    value = public_send(attribute)
+    return if value.match?(%r{\Ahttps?://})
+
+    errors.add(attribute, "must be an HTTP(S) URL")
   end
 end

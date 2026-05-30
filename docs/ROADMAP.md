@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) complete as of 2026-05-20. Phase 6 (Enterprise Trust & Governance) is next.
+**Current Status**: Phase 3 (Scale) complete as of 2026-05-07. Phase 3.5 (Completion & Hardening) substantially complete as of 2026-05-07 with one remaining Runner Quota Tracking Step 1 task. Phase 4 (AI-Native Evolution) complete as of 2026-05-14. Remote container execution (RDR-019) completed as of 2026-05-16. Phase 5 (Account Administration) complete as of 2026-05-20. Phase 6 (Enterprise Trust & Governance) complete as of 2026-05-27. Phase 7 (Proof, Adoption & Interoperability) complete as of 2026-05-29. Phase 8 (Managed Platform & Ecosystem) is next.
 
 ## Phase Overview
 
@@ -1267,6 +1267,8 @@ Deliverables:
 
 **Goal**: Remove the trust, governance, and procurement blockers that keep mature engineering organizations from adopting Paid for production software delivery.
 
+**Status**: Complete as of 2026-05-27. Tracked by umbrella issue #2228.
+
 This phase turns Paid from a capable internal system into something a security team, platform team, and VP Engineering can approve with confidence.
 
 ### 6.1 GitHub App & Enterprise Identity
@@ -1344,16 +1346,20 @@ Deliverables:
 
 ### Phase 6 Completion Criteria
 
-- [ ] GitHub App onboarding is production-ready and preferred over PAT onboarding
-- [ ] System-wide audit logging covers all security- and operations-relevant mutations
-- [ ] Policy and approval controls can enforce enterprise rollout guardrails
-- [ ] Hardened deployment patterns and compliance evidence are documented and testable
+- [x] GitHub App onboarding is production-ready and preferred over PAT onboarding
+- [x] System-wide audit logging covers all security- and operations-relevant mutations
+- [x] Policy and approval controls can enforce enterprise rollout guardrails
+- [x] Hardened deployment patterns and compliance evidence are documented and testable
+
+**Phase 6 completed**: All enterprise trust and governance objectives verified as of 2026-05-27.
 
 ---
 
 ## Phase 7: Proof, Adoption & Interoperability
 
 **Goal**: Make Paid easy to justify commercially by proving ROI, fitting into existing toolchains, and reducing switching risk from commercial alternatives.
+
+**Status**: Complete as of 2026-05-29. Tracked by umbrella issue #2316.
 
 This phase is about winning deals. Mature buyers need more than features; they need proof, benchmarks, migration paths, and confidence that Paid can coexist with what they already use.
 
@@ -1413,16 +1419,20 @@ Deliverables:
 
 ### Phase 7 Completion Criteria
 
-- [ ] ROI and evaluation dashboards are available at project and account scope
-- [ ] Paid can benchmark itself against alternative workflows and tools
-- [ ] Customers can adopt Paid in observe-only or coexistence modes before full automation
-- [ ] Rollout and change-management guidance is productized
+- [x] ROI and evaluation dashboards are available at project and account scope
+- [x] Paid can benchmark itself against alternative workflows and tools
+- [x] Customers can adopt Paid in observe-only or coexistence modes before full automation
+- [x] Rollout and change-management guidance is productized
+
+**Phase 7 completed**: All proof, adoption, and interoperability objectives verified as of 2026-05-29.
 
 ---
 
 ## Phase 8: Managed Platform & Ecosystem
 
 **Goal**: Make Paid purchasable by organizations that want the benefits of the platform without operating all of its infrastructure themselves.
+
+**Status**: Planned. Tracked by umbrella issue #2342.
 
 This phase broadens the market from companies willing to self-host orchestration infrastructure to companies that want a managed or semi-managed product with enterprise operations behind it.
 
@@ -1467,10 +1477,10 @@ Deliverables:
 
 Tasks:
 
-- [ ] Create plugin/extension model for custom collectors, policies, tools, and workflow strategies
-- [ ] Add marketplace or curated catalog for integrations, prompts, and policy packs
-- [ ] Add partner-friendly APIs for system integrators and internal platform teams
-- [ ] Publish ecosystem certification guidance for supported extensions
+- [x] Create plugin/extension model for custom collectors, policies, tools, and workflow strategies
+- [x] Add marketplace or curated catalog for integrations, prompts, and policy packs
+- [x] Add partner-friendly APIs for system integrators and internal platform teams
+- [x] Publish ecosystem certification guidance for supported extensions
 
 Deliverables:
 

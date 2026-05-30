@@ -2,6 +2,8 @@
 
 module Tools
   class GetPullRequestDetails < BaseTool
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
+
     def self.tool_name = "get_pull_request_details"
 
     def self.description
@@ -19,9 +21,8 @@ module Tools
       }
     end
 
-    def call(project_id:, issue_id:)
-      project = policy_scope(Project).find(project_id)
-      authorize project, :show?
+    def perform(project_id:, issue_id:)
+      project = project_for(project_id)
 
       pr = project.issues.pull_requests_only.find(issue_id)
 
@@ -45,6 +46,11 @@ module Tools
     end
 
     private
+
+    def project_for(project_id)
+      @projects_by_id ||= {}
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
+    end
 
     def fetch_comments(project, pr)
       client = project.github_token&.client

@@ -2,6 +2,8 @@
 
 module Tools
   class GetAgentRun < BaseTool
+    authorize :show?, ->(args) { run_for(args.fetch(:agent_run_id)) }
+
     def self.tool_name = "get_agent_run"
 
     def self.description
@@ -18,9 +20,8 @@ module Tools
       }
     end
 
-    def call(agent_run_id:)
-      run = policy_scope(AgentRun).find(agent_run_id)
-      authorize run, :show?
+    def perform(agent_run_id:)
+      run = run_for(agent_run_id)
 
       {
         id: run.id,
@@ -43,6 +44,13 @@ module Tools
         completed_at: run.completed_at,
         created_at: run.created_at
       }
+    end
+
+    private
+
+    def run_for(agent_run_id)
+      @runs_by_id ||= {}
+      @runs_by_id[agent_run_id] ||= policy_scope(AgentRun).find(agent_run_id)
     end
   end
 end
