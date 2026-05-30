@@ -4,7 +4,8 @@ require "rails_helper"
 
 RSpec.describe GithubClient do
   let(:token) { "ghp_test_token_123456789012345678901234567890" }
-  let(:client) { described_class.new(token: token) }
+  let(:health_endpoint) { GithubHealthState::DEFAULT_ENDPOINT }
+  let(:client) { described_class.new(token: token, health_endpoint: health_endpoint) }
   let(:api_base) { "https://api.github.com" }
 
   before do
@@ -1899,6 +1900,7 @@ RSpec.describe GithubClient do
   describe "rate limit error handling" do
     let(:repo) { "owner/repo" }
     let(:reset_time) { Time.now.to_i + 3600 }
+    let(:health_endpoint) { GithubHealthState.endpoint_for_github_token(42) }
 
     before do
       stub_request(:get, "#{api_base}/repos/#{repo}")
@@ -1925,6 +1927,45 @@ RSpec.describe GithubClient do
       expect { client.repository(repo) }.to raise_error(GithubClient::RateLimitError) do |error|
         expect(error.reset_at).not_to be_nil
       end
+    end
+
+    it "marks the GitHub health state as rate limited so dispatching pauses" do
+      reset_at = 30.minutes.from_now
+      allow(client.client).to receive(:rate_limit)
+        .and_return(instance_double(Octokit::RateLimit, resets_at: reset_at))
+
+      expect { client.repository(repo) }.to raise_error(GithubClient::RateLimitError)
+
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_present
+      expect(state.rate_limited_until).to be_within(1.second).of(reset_at)
+      expect(state).to be_rate_limited
+      expect(GithubHealthState.github_available?(endpoint: health_endpoint)).to be false
+    end
+
+    it "still raises RateLimitError when persisting the rate-limit state fails" do
+      allow(GithubHealthState).to receive(:current).with(endpoint: health_endpoint)
+        .and_raise(ActiveRecord::StatementInvalid.new("boom"))
+
+      expect { client.repository(repo) }.to raise_error(GithubClient::RateLimitError)
+    end
+
+    it "does not clear a different credential's rate-limit state on success" do
+      create(:github_health_state,
+        endpoint: GithubHealthState.endpoint_for_github_token(7),
+        rate_limited_until: 1.hour.from_now)
+
+      stub_request(:get, "#{api_base}/repos/other/repo")
+        .to_return(status: 200, body: { full_name: "other/repo" }.to_json, headers: { "Content-Type" => "application/json" })
+
+      expect {
+        described_class.new(
+          token: "ghp_other_token_123456789012345678901234567890",
+          health_endpoint: GithubHealthState.endpoint_for_github_token(8)
+        ).repository("other/repo")
+      }.not_to change {
+        GithubHealthState.find_by(endpoint: GithubHealthState.endpoint_for_github_token(7))&.rate_limited_until
+      }
     end
   end
 

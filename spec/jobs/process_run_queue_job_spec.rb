@@ -332,10 +332,16 @@ RSpec.describe ProcessRunQueueJob do
       it "skips dispatching entirely" do
         create(:github_health_state, :circuit_open)
         create(:agent_run, :queued)
+        allow(Rails.logger).to receive(:info)
 
         expect(temporal_client).not_to receive(:start_workflow)
 
         described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.skipped_github_unavailable",
+          reason: "circuit_open"
+        ))
       end
 
       it "attempts circuit recovery when timeout has elapsed" do
@@ -348,6 +354,48 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(state.reload.circuit_state).to eq("half_open")
+      end
+    end
+
+    context "when GitHub is rate limited" do
+      let(:reset_at) { 30.minutes.from_now }
+      let(:blocked_project) { create(:project) }
+      let(:runnable_project) { create(:project) }
+      let!(:blocked_run) { create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago) }
+      let!(:runnable_run) { create(:agent_run, :queued, project: runnable_project, created_at: 1.minute.ago) }
+
+      before do
+        create(:github_health_state, endpoint: blocked_project.github_health_endpoint, rate_limited_until: reset_at)
+        allow(Rails.logger).to receive(:info)
+      end
+
+      it "skips only runs for projects using the rate-limited credential" do
+        expect(temporal_client).to receive(:start_workflow).with(
+          Workflows::AgentExecutionWorkflow,
+          hash_including(agent_run_id: runnable_run.id),
+          hash_including(task_queue: "paid-agent-tasks")
+        ).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.skipped_github_unavailable",
+          project_id: blocked_project.id,
+          reason: "rate_limited",
+          available_at: reset_at.iso8601
+        ))
+        expect(blocked_run.reload.status).to eq("queued")
+        expect(runnable_run.reload.temporal_workflow_id).to be_present
+      end
+
+      it "resumes dispatching once the rate-limit window has elapsed" do
+        project = create(:project)
+        create(:github_health_state, endpoint: project.github_health_endpoint, rate_limited_until: 1.minute.ago)
+        create(:agent_run, :queued, project: project)
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
       end
     end
 
