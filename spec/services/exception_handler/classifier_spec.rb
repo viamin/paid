@@ -4,13 +4,13 @@ require "rails_helper"
 
 RSpec.describe ExceptionHandler::Classifier do
   describe ".call" do
-    it "allowlists the seed subsystems for issue filing" do
-      expect(described_class::ISSUE_FILING_ALLOWLIST).to contain_exactly(
-        "knowledge",
-        "agent_runs",
-        "container_manager",
-        "secrets_proxy"
-      )
+    it "allowlists knowledge plus every current P1 subsystem for issue filing" do
+      p1_subsystems = described_class::SUBSYSTEM_SEVERITY.filter_map do |subsystem, severity|
+        subsystem if severity == "p1"
+      end
+
+      expect(described_class::ISSUE_FILING_ALLOWLIST).to include("knowledge", *p1_subsystems)
+      expect(described_class::ISSUE_FILING_ALLOWLIST).not_to include("github_sync", "general")
     end
 
     it "classifies transient timeout errors as logged" do

@@ -33,6 +33,8 @@ module ExceptionHandler
       "general" => "p2"
     }.freeze
 
+    # Keep issue filing conservative while preserving escalation for today's
+    # intentionally loud subsystems.
     ISSUE_FILING_ALLOWLIST = %w[
       knowledge
       agent_runs
