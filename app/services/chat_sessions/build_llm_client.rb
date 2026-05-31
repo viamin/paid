@@ -13,7 +13,7 @@ module ChatSessions
     end
 
     def call
-      provider = chat_session.runner
+      provider = resolved_runner
       raise LlmClientConfigurationError, missing_runner_message unless provider
 
       api_key = provider.effective_api_secret
@@ -32,6 +32,17 @@ module ChatSessions
     private
 
     attr_reader :chat_session
+
+    def resolved_runner
+      runner = chat_session.runner
+      return runner if runner&.effective_api_secret.present?
+
+      fallback_runner = Runner.first_configured_chat_enabled_for_owner(chat_session.created_by)
+      return runner unless fallback_runner && fallback_runner != runner
+
+      chat_session.update!(runner: fallback_runner)
+      fallback_runner
+    end
 
     def anthropic_client(api_key)
       transport = AgentHarness::TextTransport.new(api_key: api_key)
