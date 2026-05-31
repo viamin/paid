@@ -44,6 +44,40 @@ RSpec.describe "Dashboard" do
         expect(mobile_settings_link.text.strip).to eq("Settings")
       end
 
+      it "renders the user email dropdown in the desktop navbar" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        menu_button = doc.at_css("#user-menu-button")
+        menu = doc.at_css("#user-menu")
+
+        expect(menu_button).to be_present
+        expect(menu_button.text).to include(user.email)
+        expect(menu_button["aria-expanded"]).to eq("false")
+
+        expect(menu).to be_present
+        expect(menu["class"]).to include("hidden")
+        menu_labels = menu.css("a, form button").map { |node| node.text.strip }
+        menu_roles = menu.css("a, form button").map { |node| node["role"] }
+
+        expect(menu_labels).to include("Settings", "Account", "Sign out")
+        expect(menu_roles).to all(eq("menuitem"))
+        expect(menu.css("a").map { |node| node["data-action"] }).to all(eq("dropdown#close"))
+      end
+
+      it "removes settings and account actions from the desktop top-level nav" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        desktop_nav = doc.at_xpath("//nav//div[contains(@class, 'hidden') and contains(@class, 'md:flex')]")
+        top_level_labels = desktop_nav.xpath("./a|./form/button").map { |node| node.text.strip }
+
+        expect(top_level_labels).not_to include("Settings")
+        expect(top_level_labels).not_to include("Account")
+        expect(top_level_labels).not_to include("Tenant")
+        expect(top_level_labels).not_to include("Sign out")
+      end
+
       it "shows the run phase breakdown section via metrics frame" do
         get dashboard_metrics_path(time_range: "cumulative")
 

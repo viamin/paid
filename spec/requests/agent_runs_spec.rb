@@ -808,7 +808,7 @@ RSpec.describe "AgentRuns" do
 
         expect(response.body).to include(">Retry</button>")
         expect(response.body).not_to include("Retry options")
-        expect(response.body).not_to include('role="menu"')
+        expect(response.body).not_to include('aria-label="Retry options"')
       end
 
       it "shows a deleted runner entry label for missing routed fallback attempts" do
