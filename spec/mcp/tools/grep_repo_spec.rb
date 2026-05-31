@@ -75,6 +75,13 @@ RSpec.describe Tools::GrepRepo do
       )
     end
 
+    it "returns empty results for qualifier-only queries" do
+      result = tool.call(project_id: project.id, query: "repo:other/private-repo org:secret-org path:config")
+
+      expect(github_client).not_to have_received(:search_code)
+      expect(result).to eq(matches: [], total_count: 0, identity: identity)
+    end
+
     it "sanitizes injected qualifiers from path_filter" do
       search_result = Struct.new(:total_count, :items).new(0, [])
       allow(github_client).to receive(:search_code).and_return(search_result)

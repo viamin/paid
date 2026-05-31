@@ -34,6 +34,7 @@ module Tools
       client = repo_client.client
 
       qualified_query = build_query(project.full_name, query, path_filter)
+      return empty_result(repo_client.identity) if qualified_query.strip == "repo:#{project.full_name}"
 
       result = client.search_code(qualified_query, per_page: MAX_RESULTS)
 
@@ -52,10 +53,14 @@ module Tools
         identity: repo_client.identity
       }
     rescue GithubClient::NotFoundError
-      { matches: [], total_count: 0, identity: repo_client.identity }
+      empty_result(repo_client.identity)
     end
 
     private
+
+    def empty_result(identity)
+      { matches: [], total_count: 0, identity: identity }
+    end
 
     def build_query(repo_full_name, query, path_filter)
       sanitized_query = sanitize_query(query)
