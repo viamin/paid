@@ -20,4 +20,8 @@ class ChatSessionPolicy < ApplicationPolicy
   def destroy?
     has_any_account_role?(:owner, :admin, :member)
   end
+
+  def archive?
+    has_any_account_role?(:owner, :admin, :member)
+  end
 end

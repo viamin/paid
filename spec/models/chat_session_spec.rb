@@ -80,6 +80,15 @@ RSpec.describe ChatSession do
       end
     end
 
+    describe ".visible" do
+      it "excludes archived sessions" do
+        visible = create(:chat_session, account: account, created_by: user)
+        create(:chat_session, :archived, account: account, created_by: user)
+
+        expect(described_class.visible).to eq([ visible ])
+      end
+    end
+
     describe ".idle_expired" do
       it "returns active sessions past their idle timeout" do
         expired = create(:chat_session, account: account, created_by: user, idle_timeout_at: 1.hour.ago)

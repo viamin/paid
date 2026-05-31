@@ -40,6 +40,16 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["sessions"].length).to eq(1)
       end
 
+      it "does not include archived sessions in the default listing" do
+        visible = create(:chat_session, account: account, created_by: user, title: "Visible")
+        create(:chat_session, :archived, account: account, created_by: user, title: "Archived")
+
+        get chat_sessions_path(format: :json)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["sessions"].map { |session| session["id"] }).to eq([ visible.id ])
+      end
+
       it "paginates sessions" do
         26.times do |index|
           create(:chat_session, account: account, created_by: user, updated_at: index.minutes.ago)
@@ -246,6 +256,7 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
+        expect(response.body).to include("Archive")
       end
 
       it "renders the popup variant for embedded requests" do
@@ -262,6 +273,7 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Support chat")
+        expect(response.body).to include("Archive &amp; New Chat")
         expect(response.body).to include("New Chat")
         expect(response.body).to include("Open page")
         expect(response.body).to include("Projects - Paid")
@@ -338,6 +350,7 @@ RSpec.describe "ChatSessions" do
         get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
 
         expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include("Archive &amp; New Chat")
         expect(response.body).not_to include("New Chat")
       end
     end
@@ -433,6 +446,42 @@ RSpec.describe "ChatSessions" do
             "project_name" => "Acme API"
           )
         )
+      end
+    end
+  end
+
+  describe "PATCH /chat/:id/archive" do
+    let!(:chat_session) { create(:chat_session, account: account, created_by: user, title: "Current chat") }
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "archives the session and returns json" do
+        create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
+
+        patch archive_chat_session_path(chat_session, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["status"]).to eq("archived")
+        expect(chat_session.reload.status).to eq("archived")
+        expect(chat_session.metadata["archived_at"]).to be_present
+      end
+
+      it "redirects to another visible session for html requests" do
+        next_session = create(:chat_session, account: account, created_by: user, title: "Next chat")
+
+        patch archive_chat_session_path(chat_session)
+
+        expect(response).to redirect_to(chat_session_path(next_session))
+        expect(flash[:notice]).to eq("Chat session archived.")
+        expect(chat_session.reload.status).to eq("archived")
+      end
+
+      it "redirects back to /chat when no other visible session exists" do
+        patch archive_chat_session_path(chat_session)
+
+        expect(response).to redirect_to(chat_sessions_path)
+        expect(chat_session.reload.status).to eq("archived")
       end
     end
   end

@@ -96,6 +96,92 @@ class ChatPopupControllerNodeHarness
       }
     }
 
+    async function runArchiveAndNewChatSuccessCase() {
+      const writes = [];
+      const fetchCalls = [];
+      const contentTarget = { innerHTML: "" };
+      const controller = Object.create(ChatPopupController.prototype);
+
+      controller.contentTarget = contentTarget;
+      controller.state = { open: true, sessionId: 11 };
+      controller.loading = false;
+      controller.loadingMarkup = () => "loading";
+      controller.errorMarkup = () => "error";
+      controller.writeState = () => writes.push({ ...controller.state });
+      controller.archiveSession = async (sessionId) => {
+        if (sessionId !== 11) throw new Error(`Expected archiveSession() to receive 11, saw ${sessionId}`);
+      };
+      controller.createSession = async () => 42;
+      controller.renderPanel = async (sessionId) => {
+        fetchCalls.push(sessionId);
+        contentTarget.innerHTML = `panel-${sessionId}`;
+      };
+
+      await controller.archiveAndNewChat({ preventDefault() {} });
+
+      if (controller.state.sessionId !== 42) {
+        throw new Error(`Expected archiveAndNewChat() to replace the stored session id, saw ${controller.state.sessionId}`);
+      }
+
+      if (writes.length !== 1 || writes[0].sessionId !== 42) {
+        throw new Error(`Expected archiveAndNewChat() to persist the new session id once, saw ${JSON.stringify(writes)}`);
+      }
+
+      if (fetchCalls.length !== 1 || fetchCalls[0] !== 42) {
+        throw new Error(`Expected archiveAndNewChat() to render the new session once, saw ${JSON.stringify(fetchCalls)}`);
+      }
+
+      if (contentTarget.innerHTML !== "panel-42") {
+        throw new Error(`Expected rendered panel markup for the new session, saw ${contentTarget.innerHTML}`);
+      }
+
+      if (controller.loading !== false) {
+        throw new Error("Expected archiveAndNewChat() to clear the loading flag");
+      }
+    }
+
+    async function runArchiveAndNewChatCreateFailureCase() {
+      const writes = [];
+      const contentTarget = { innerHTML: "" };
+      const controller = Object.create(ChatPopupController.prototype);
+
+      controller.contentTarget = contentTarget;
+      controller.state = { open: true, sessionId: 11 };
+      controller.loading = false;
+      controller.loadingMarkup = () => "loading";
+      controller.errorMarkup = () => "error";
+      controller.writeState = () => writes.push({ ...controller.state });
+      controller.archiveSession = async () => {};
+      controller.createSession = async () => {
+        throw new Error("boom");
+      };
+      controller.renderPanel = async () => {
+        throw new Error("render should not run");
+      };
+
+      global.window = {
+        console: { error() {} }
+      };
+
+      await controller.archiveAndNewChat({ preventDefault() {} });
+
+      if (controller.state.sessionId !== null) {
+        throw new Error(`Expected create failure after archive to clear the stored session id, saw ${controller.state.sessionId}`);
+      }
+
+      if (writes.length !== 1 || writes[0].sessionId !== null) {
+        throw new Error(`Expected failure path to persist a cleared session id, saw ${JSON.stringify(writes)}`);
+      }
+
+      if (contentTarget.innerHTML !== "error") {
+        throw new Error(`Expected failure path to render the error state, saw ${contentTarget.innerHTML}`);
+      }
+
+      if (controller.loading !== false) {
+        throw new Error("Expected failure path to clear the loading flag");
+      }
+    }
+
     async function run() {
       global.window = {
         console: { error() {} }
@@ -103,6 +189,8 @@ class ChatPopupControllerNodeHarness
 
       await runNewChatSuccessCase();
       await runNewChatFailureCase();
+      await runArchiveAndNewChatSuccessCase();
+      await runArchiveAndNewChatCreateFailureCase();
     }
 
     run().catch((error) => {
