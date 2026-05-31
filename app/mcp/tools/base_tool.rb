@@ -119,6 +119,10 @@ module Tools
       Project.where(account:)
     end
 
+    def resolve_repo_read_client(project)
+      RepoReadClientResolver.new(project:, user:, session:).resolve
+    end
+
     def reset_authorization_tracking!
       @preflight_authorization_performed = false
     end
