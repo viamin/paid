@@ -39,6 +39,9 @@ module ExceptionHandler
     end
 
     def call
+      classification = nil
+      incident = nil
+
       fingerprint = Fingerprinter.call(exception: @exception, subsystem: @subsystem)
       classification = Classifier.call(exception: @exception, subsystem: @subsystem)
 
@@ -51,7 +54,6 @@ module ExceptionHandler
       file_or_update_issue(incident, classification) if @project
 
       notify_if_needed(incident, classification)
-      log_exception(classification, action: incident.action_taken)
 
       Result.new(success: true, incident: incident, action: incident.action_taken)
     rescue IssueFiler::RetryableFilingInProgress
@@ -63,9 +65,18 @@ module ExceptionHandler
         handler_error: e.message
       )
       Result.new(success: false, message: "Exception handler failed: #{e.message}")
+    ensure
+      log_actionable_exception(classification, incident)
     end
 
     private
+
+    def log_actionable_exception(classification, incident)
+      return unless classification
+      return if classification.action == "logged"
+
+      log_exception(classification, action: incident&.action_taken || classification.action)
+    end
 
     def resolve_project
       project_id = @context[:project_id]

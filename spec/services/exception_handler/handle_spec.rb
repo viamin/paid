@@ -175,6 +175,30 @@ RSpec.describe ExceptionHandler::Handle do
           )
         )
       end
+
+      it "still logs the captured exception when notification publishing fails" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+        allow(Notifications::Publish).to receive(:call).and_raise("notify failed")
+        allow(Rails.logger).to receive(:warn)
+        allow(Rails.logger).to receive(:error)
+
+        result = call_handler(error: error, account: account, context: context)
+
+        expect(result).to be_failure
+        expect(Rails.logger).to have_received(:warn).with(
+          a_hash_including(
+            message: "exception_handler.captured",
+            subsystem: "github_sync",
+            action: "notified"
+          )
+        )
+        expect(Rails.logger).to have_received(:error).with(
+          a_hash_including(
+            message: "exception_handler.handle_failed",
+            handler_error: "notify failed"
+          )
+        )
+      end
     end
 
     context "with a duplicate exception" do
