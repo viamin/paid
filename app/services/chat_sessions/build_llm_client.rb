@@ -14,16 +14,18 @@ module ChatSessions
 
     def call
       provider = chat_session.runner
-      return fallback_client unless provider
+      raise LlmClientConfigurationError, missing_runner_message unless provider
 
-      api_key_record = provider.provider_api_key
-      return fallback_client unless api_key_record && api_key_record.api_key.present?
+      api_key = provider.effective_api_secret
+      unless api_key.present?
+        raise LlmClientConfigurationError, missing_api_key_message(provider)
+      end
 
-      case api_key_record.api_service_type
+      case provider_service_type(provider)
       when ANTHROPIC_SERVICE_TYPE
-        anthropic_client(api_key_record)
+        anthropic_client(api_key)
       else
-        openai_compatible_client(api_key_record)
+        openai_compatible_client(provider, api_key)
       end
     end
 
@@ -31,29 +33,38 @@ module ChatSessions
 
     attr_reader :chat_session
 
-    def anthropic_client(api_key_record)
-      transport = AgentHarness::TextTransport.new(api_key: api_key_record.api_key)
+    def anthropic_client(api_key)
+      transport = AgentHarness::TextTransport.new(api_key: api_key)
       model = chat_session.model || AgentHarness::TextTransport::DEFAULT_MODEL
       HttpClient.new(transport: transport, model: model, provider_type: :anthropic)
     end
 
-    def openai_compatible_client(api_key_record)
-      service_type = api_key_record.api_service_type
+    def openai_compatible_client(provider, api_key)
+      service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       base_url = config&.dig(:base_url) || "https://api.openai.com/v1"
       model = chat_session.model || "gpt-4o"
 
       transport = AgentHarness::OpenAICompatibleTransport.new(
         base_url: base_url,
-        api_key: api_key_record.api_key,
+        api_key: api_key,
         model: model
       )
 
       HttpClient.new(transport: transport, model: model, provider_type: :openai_compatible)
     end
 
-    def fallback_client
-      FallbackClient.new(model: chat_session.model)
+    def missing_runner_message
+      "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+    end
+
+    def missing_api_key_message(provider)
+      label = provider.name.presence || provider.display_name
+      "Chat runner #{label} is missing an API key. Choose a chat-enabled runner with a configured API key."
+    end
+
+    def provider_service_type(provider)
+      provider.provider_api_key&.api_service_type || provider.required_api_service_type
     end
 
     class HttpClient
@@ -101,42 +112,6 @@ module ChatSessions
           entry[:tool_name] = msg[:tool_name].to_s if msg[:tool_name].present?
           entry
         end
-      end
-    end
-
-    class FallbackClient
-      attr_reader :model
-
-      def initialize(model: nil)
-        @model = model
-      end
-
-      def call(conversation, on_chunk: nil)
-        prompt = serialize_conversation(conversation)
-        response = AgentHarness.send_message(prompt, dangerous_mode: true)
-
-        if on_chunk && response.output.present?
-          response.output.scan(/\S+\s*|\s+/).each { |chunk| on_chunk.call(chunk) }
-        end
-
-        {
-          content: response.output,
-          model: response.model,
-          tokens_input: response.input_tokens,
-          tokens_output: response.output_tokens,
-          tool_calls: nil
-        }
-      end
-
-      private
-
-      def serialize_conversation(conversation)
-        conversation.filter_map do |msg|
-          next nil if msg[:content].nil?
-
-          role = msg[:role].to_s.capitalize
-          "#{role}: #{msg[:content]}"
-        end.join("\n\n")
       end
     end
   end

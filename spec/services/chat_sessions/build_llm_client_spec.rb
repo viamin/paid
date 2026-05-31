@@ -43,24 +43,54 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       end
     end
 
-    context "with a subscription runner (no API key)" do
-      it "returns a FallbackClient" do
-        runner = user.runners.find_or_create_by!(runner_key: "cursor", auth_type: "subscription")
-        chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+    context "with an integration credential-backed API key runner" do
+      it "returns an HttpClient using the runner's effective secret" do
+        integration_credential = create(:integration_credential,
+          account: account,
+          created_by: user,
+          service_key: "claude",
+          secret: "sk-integration-test-key"
+        )
+        runner = create(:runner,
+          user: user,
+          runner_key: "claude",
+          auth_type: "api_key",
+          provider_api_key: nil,
+          integration_credential: integration_credential
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "claude-3-7-sonnet")
 
         client = described_class.call(chat_session: chat_session)
 
-        expect(client).to be_a(described_class::FallbackClient)
+        expect(client).to be_a(described_class::HttpClient)
+        expect(client.model).to eq("claude-3-7-sonnet")
+      end
+    end
+
+    context "with a subscription runner (no API key)" do
+      it "raises a setup error" do
+        runner = user.runners.find_or_create_by!(runner_key: "cursor", auth_type: "subscription")
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+
+        expect {
+          described_class.call(chat_session: chat_session)
+        }.to raise_error(
+          ChatSessions::LlmClientConfigurationError,
+          "Chat runner #{runner.display_name} is missing an API key. Choose a chat-enabled runner with a configured API key."
+        )
       end
     end
 
     context "without a runner" do
-      it "returns a FallbackClient" do
+      it "raises a setup error" do
         chat_session = create(:chat_session, account: account, created_by: user)
 
-        client = described_class.call(chat_session: chat_session)
-
-        expect(client).to be_a(described_class::FallbackClient)
+        expect {
+          described_class.call(chat_session: chat_session)
+        }.to raise_error(
+          ChatSessions::LlmClientConfigurationError,
+          "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+        )
       end
     end
   end
@@ -168,54 +198,6 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       result = client.call(conversation)
 
       expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
-    end
-  end
-
-  describe described_class::FallbackClient do
-    let(:client) { described_class.new(model: "test-model") }
-    let(:conversation) do
-      [
-        { role: "system", content: "You are helpful." },
-        { role: "user", content: "Hello" }
-      ]
-    end
-
-    it "serializes conversation and calls AgentHarness.send_message" do
-      response = instance_double(AgentHarness::Response,
-        output: "Hi!",
-        model: "test-model",
-        input_tokens: 5,
-        output_tokens: 2,
-        metadata: {}
-      )
-      allow(AgentHarness).to receive(:send_message).and_return(response)
-
-      result = client.call(conversation)
-
-      expect(AgentHarness).to have_received(:send_message).with(
-        "System: You are helpful.\n\nUser: Hello",
-        dangerous_mode: true
-      )
-      expect(result[:content]).to eq("Hi!")
-      expect(result[:tokens_input]).to eq(5)
-      expect(result[:tokens_output]).to eq(2)
-      expect(result[:tool_calls]).to be_nil
-    end
-
-    it "replays response as chunks when on_chunk is provided" do
-      chunks_received = []
-      response = instance_double(AgentHarness::Response,
-        output: "Hello world",
-        model: "test-model",
-        input_tokens: 5,
-        output_tokens: 2,
-        metadata: {}
-      )
-      allow(AgentHarness).to receive(:send_message).and_return(response)
-
-      client.call(conversation, on_chunk: ->(chunk) { chunks_received << chunk })
-
-      expect(chunks_received.join).to eq("Hello world")
     end
   end
 end
