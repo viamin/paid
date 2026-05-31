@@ -92,5 +92,24 @@ RSpec.describe Knowledge::ArtifactStore do
         expect(KnowledgeArtifact.active.first.collector_run).to eq(new_run)
       end
     end
+
+    context "when an active-key race loses after another run inserts first" do
+      let(:new_version) { create(:project_version, project: project) }
+      let(:new_run) { create(:collector_run, project_version: new_version, collector_type: "test") }
+      let(:new_store) { described_class.new(project: project, collector_run: new_run) }
+
+      it "recovers by reusing the active artifact instead of raising" do
+        store.store_all([ artifact_data ])
+
+        allow(new_store).to receive(:create_artifact)
+          .and_raise(ActiveRecord::RecordNotUnique.new('PG::UniqueViolation: ERROR: duplicate key value violates unique constraint "idx_knowledge_artifacts_active_unique"'))
+
+        expect { new_store.store_all([ artifact_data.merge(content: '{"method":"GET","path":"/api/users","auth":true}') ]) }
+          .not_to raise_error
+
+        expect(KnowledgeArtifact.active.count).to eq(1)
+        expect(KnowledgeArtifact.active.first.collector_run).to eq(new_run)
+      end
+    end
   end
 end
