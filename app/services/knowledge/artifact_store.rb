@@ -2,6 +2,10 @@
 
 module Knowledge
   class ArtifactStore
+    ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
+    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
+    LOCK_NAMESPACE = 1_357_180_002
+
     attr_reader :project, :collector_run
 
     def initialize(project:, collector_run:)
@@ -29,36 +33,30 @@ module Knowledge
     private
 
     def store_artifact(data)
-      content_hash = compute_hash(data[:content])
+      with_artifact_lock(data) do
+        content_hash = compute_hash(data[:content])
+        existing = find_existing_artifact(data, content_hash)
 
-      existing = find_existing_artifact(data, content_hash)
+        if existing
+          reassign_to_current_run(existing)
+        else
+          begin
+            replace_artifact(data, content_hash)
+          rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+            raise unless unique_conflict?(e)
 
-      if existing
-        reassign_to_current_run(existing)
-      else
-        # Atomic stale-then-insert to prevent interleaving with concurrent
-        # collectors that could violate the partial unique index on active artifacts.
-        # Under high concurrency, two transactions can both mark prior rows stale
-        # and then race to insert an active row, causing a unique constraint
-        # violation. In that case, we refetch the now-existing artifact and
-        # reassign it to this collector_run.
-        begin
-          KnowledgeArtifact.transaction do
-            mark_prior_stale(data)
-            create_artifact(data, content_hash)
-          end
-        rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
-          raise unless content_hash_conflict?(e)
-
-          existing_after_conflict = find_existing_artifact(data, content_hash)
-          existing_after_conflict ||= find_by_run_and_hash(content_hash)
-
-          if existing_after_conflict
-            reassign_to_current_run(existing_after_conflict)
-          else
-            raise
+            recover_conflicted_artifact(data, content_hash)
           end
         end
+      end
+    end
+
+    def replace_artifact(data, content_hash)
+      # Atomic stale-then-insert to prevent interleaving with concurrent
+      # collectors that could violate the partial unique index on active artifacts.
+      KnowledgeArtifact.transaction do
+        mark_prior_stale(data)
+        create_artifact(data, content_hash)
       end
     end
 
@@ -86,6 +84,40 @@ module Knowledge
         content_hash: content_hash,
         status: "active"
       )
+    end
+
+    def find_active_artifact(data)
+      KnowledgeArtifact.find_by(
+        project: project,
+        collector_type: collector_run.collector_type,
+        artifact_type: data[:artifact_type],
+        scope_path: data[:scope_path],
+        identifier: data[:identifier],
+        status: "active"
+      )
+    end
+
+    def recover_conflicted_artifact(data, content_hash)
+      matching_artifact = find_existing_artifact(data, content_hash)
+      return reassign_to_current_run(matching_artifact) if matching_artifact
+
+      active_artifact = find_active_artifact(data)
+      return replace_artifact(data, content_hash) if active_artifact
+
+      run_hash_artifact = find_by_run_and_hash(content_hash)
+      return reassign_to_current_run(run_hash_artifact) if run_hash_artifact
+
+      raise ActiveRecord::RecordNotUnique, "Could not recover conflicting knowledge artifact insert"
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      raise unless unique_conflict?(e)
+
+      matching_artifact = find_existing_artifact(data, content_hash)
+      return reassign_to_current_run(matching_artifact) if matching_artifact
+
+      run_hash_artifact = find_by_run_and_hash(content_hash)
+      return reassign_to_current_run(run_hash_artifact) if run_hash_artifact
+
+      raise
     end
 
     def reassign_to_current_run(artifact)
@@ -179,7 +211,7 @@ module Knowledge
       end
     end
 
-    def content_hash_conflict?(exception)
+    def unique_conflict?(exception)
       case exception
       when ActiveRecord::RecordNotUnique
         true
@@ -192,6 +224,30 @@ module Knowledge
 
     def compute_hash(content)
       Digest::SHA256.hexdigest(content.to_s)
+    end
+
+    def with_artifact_lock(data)
+      execute_lock_sql(ADVISORY_LOCK_SQL, advisory_lock_key(data))
+      yield
+    ensure
+      execute_lock_sql(ADVISORY_UNLOCK_SQL, advisory_lock_key(data))
+    end
+
+    def advisory_lock_key(data)
+      Digest::SHA256
+        .digest([
+          project.id,
+          collector_run.collector_type,
+          data[:artifact_type],
+          data[:scope_path],
+          data[:identifier]
+        ].join(":"))
+        .unpack("l>")
+        .first
+    end
+
+    def execute_lock_sql(sql, lock_key)
+      ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, lock_key ])
     end
   end
 end
