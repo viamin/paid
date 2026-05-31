@@ -5,7 +5,11 @@ class LlmModel < ApplicationRecord
   CATEGORIES = %w[general coding planning review].freeze
   PROVIDERS = %w[anthropic openai google mistral meta cohere].freeze
   TIERS = %w[low mid high].freeze
+  PRICING_TIERS = %w[paid free freemium].freeze
+  DATA_TRAINING_RISKS = %w[none possible unknown].freeze
+  CATALOG_SOURCES = %w[seeded openrouter_sync manual].freeze
 
+  belongs_to :free_variant_of, class_name: "LlmModel", optional: true
   has_many :model_selections, dependent: :restrict_with_error
   has_many :configuration_bundles, dependent: :nullify
 
@@ -14,6 +18,9 @@ class LlmModel < ApplicationRecord
   validates :provider, presence: true, length: { maximum: 50 }
   validates :category, presence: true, inclusion: { in: CATEGORIES }
   validates :tier, inclusion: { in: TIERS }, allow_nil: true
+  validates :pricing_tier, inclusion: { in: PRICING_TIERS }
+  validates :data_training_risk, inclusion: { in: DATA_TRAINING_RISKS }, allow_nil: true
+  validates :catalog_source, inclusion: { in: CATALOG_SOURCES }
   validates :capability_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }, allow_nil: true
   validates :input_cost_per_million, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :output_cost_per_million, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -23,6 +30,9 @@ class LlmModel < ApplicationRecord
   scope :by_category, ->(category) { where(category: category) }
   scope :by_capability, -> { order(Arel.sql("capability_score DESC NULLS LAST")) }
   scope :by_tier, ->(tier) { where(tier: tier) }
+  scope :by_pricing_tier, ->(pricing_tier) { where(pricing_tier: pricing_tier) }
+  scope :free, -> { by_pricing_tier("free") }
+  scope :paid, -> { by_pricing_tier("paid") }
   scope :affordable, ->(budget_cents, avg_tokens) {
     return active if budget_cents.nil?
 
@@ -41,6 +51,10 @@ class LlmModel < ApplicationRecord
     input_cost = (input_cost_per_million || 0) * BigDecimal(input_tokens.to_s) / BigDecimal("1000000")
     output_cost = (output_cost_per_million || 0) * BigDecimal(output_tokens.to_s) / BigDecimal("1000000")
     ((input_cost + output_cost) * 100).round.to_i
+  end
+
+  def free?
+    pricing_tier == "free"
   end
 
   def self.default_for_task(category)
