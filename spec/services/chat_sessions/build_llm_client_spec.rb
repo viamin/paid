@@ -68,28 +68,60 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
 
     context "with a subscription runner (no API key)" do
-      it "raises a setup error" do
+      it "falls back to the creator's configured API key runner" do
         runner = user.runners.find_or_create_by!(runner_key: "cursor", auth_type: "subscription")
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-ant-fallback", api_service_type: "anthropic")
+        fallback_runner = create(:runner, :api_key,
+          user: user,
+          runner_key: "kilocode",
+          provider_api_key: api_key_record,
+          config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+        )
         chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+
+        client = described_class.call(chat_session: chat_session)
+
+        expect(client).to be_a(described_class::HttpClient)
+        expect(client.model).to eq("claude-sonnet-4-20250514")
+        expect(fallback_runner.effective_api_secret).to eq("sk-ant-fallback")
+      end
+    end
+
+    context "without a runner" do
+      it "falls back to the creator's configured API key runner" do
+        chat_session = create(:chat_session, account: account, created_by: user)
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-fallback", api_service_type: "openrouter")
+        create(:runner, :api_key,
+          user: user,
+          runner_key: "opencode",
+          provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
+        )
+
+        client = described_class.call(chat_session: chat_session)
+
+        expect(client).to be_a(described_class::HttpClient)
+        expect(client.model).to eq("gpt-4o")
+      end
+    end
+
+    context "with an API key runner missing its secret" do
+      it "raises a setup error for the selected runner" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-ant-test-key", api_service_type: "anthropic")
+        runner = create(:runner, :api_key,
+          user: user,
+          runner_key: "kilocode",
+          provider_api_key: api_key_record,
+          config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+        allow(runner).to receive(:effective_api_secret).and_return(nil)
 
         expect {
           described_class.call(chat_session: chat_session)
         }.to raise_error(
           ChatSessions::LlmClientConfigurationError,
           "Chat runner #{runner.display_name} is missing an API key. Choose a chat-enabled runner with a configured API key."
-        )
-      end
-    end
-
-    context "without a runner" do
-      it "raises a setup error" do
-        chat_session = create(:chat_session, account: account, created_by: user)
-
-        expect {
-          described_class.call(chat_session: chat_session)
-        }.to raise_error(
-          ChatSessions::LlmClientConfigurationError,
-          "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
         )
       end
     end
