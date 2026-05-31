@@ -119,6 +119,33 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "read_repo_file",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, path: "README.md" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+        }
+      },
+      {
+        tool_name: "list_repo_tree",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+        }
+      },
+      {
+        tool_name: "grep_repo",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, query: "def authorize" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+        }
+      },
+      {
         tool_name: "list_account_memberships",
         denied_user: -> { nil },
         arguments: -> { {} },
