@@ -16,6 +16,20 @@
   - [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution)
 - **Related Tests**: (to be created during implementation)
 
+## Amendment 1 (2026-05-29)
+
+### Decision
+
+Paid switches the sanctioned mutation-testing source from `mbj/mutant` to the MIT-licensed `viamin/mutant` fork. Follow-on implementation is tracked in `viamin/paid#2367` (gem-source switch), `viamin/paid#2368` (`--usage` cleanup), and `viamin/paid#2370` (customer UI work).
+
+### Rationale and trade-off
+
+This amendment removes the customer commercial-license burden from the design. The trade-off is a weaker initial signal: `viamin/mutant` currently ships fewer modern mutation operators than upstream `mbj/mutant`, so early kill-rate coverage is less exhaustive. The project accepts that weaker signal in exchange for eliminating customer license-key setup, license-compliance UX, and split open-source/commercial execution paths.
+
+### Switch blockers
+
+The gem-source switch remains gated on the upstream `viamin/mutant` blockers tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12`. Compatibility follow-up for the Paid integration remains tracked in `viamin/mutant#16`.
+
 ## Problem Statement
 
 LLM-generated tests are particularly susceptible to a class of pathology that is hard to catch with line/branch coverage:
@@ -27,7 +41,7 @@ LLM-generated tests are particularly susceptible to a class of pathology that is
 
 These passes look healthy to RuboCop, RSpec, SimpleCov, and the existing `QualityMetrics::Collect` pipeline because all of those measure *something other than whether the test would notice a regression*. The result is that Paid agents (and the projects Paid manages) can ship "fully tested" code whose tests have no semantic teeth.
 
-[Mutant](https://github.com/mbj/mutant) directly measures this. It mutates the production code under a subject and reports any mutation the test suite fails to kill. A surviving mutation is concrete evidence that the test is not actually exercising the behavior it claims to.
+[Mutant](https://github.com/viamin/mutant) directly measures this. It mutates the production code under a subject and reports any mutation the test suite fails to kill. A surviving mutation is concrete evidence that the test is not actually exercising the behavior it claims to.
 
 Two distinct surfaces need this:
 
@@ -47,7 +61,7 @@ Mutation testing executes the test suite once normally, then re-runs it many tim
 
 The kill rate (killed / total) is the *mutation score*. Unlike line coverage, mutation score cannot be gamed by writing assertion-free tests — those tests will not kill mutations.
 
-Mutant is the mature Ruby implementation. It supports RSpec (`mutant-rspec`) and Minitest (`mutant-minitest`), runs Ruby 3.2–4.0 on Linux/macOS, forks a worker per CPU, and persists run results under `.mutant/results/` for incremental analysis.
+Mutant is the selected Ruby implementation family. This RDR now assumes `viamin/mutant` as the sanctioned source, with the adoption blockers tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`. It supports RSpec (`mutant-rspec`) and Minitest (`mutant-minitest`), runs Ruby 3.2–4.0 on Linux/macOS, forks a worker per CPU, and persists run results under `.mutant/results/` for incremental analysis.
 
 Critical mechanics:
 
@@ -55,7 +69,7 @@ Critical mechanics:
 - **Incremental mode** — `--since git-reference` filters subjects to those whose line range overlaps a git diff hunk. Only catches *direct* changes; constant-edits that change behavior indirectly are missed.
 - **Concurrency** — `-j N` forks N workers. Default is one per core. Rails apps with a shared Postgres need per-worker template databases or `--jobs 1`; the docs explicitly warn that sharing one SQLite file across workers corrupts results.
 - **Limitations** — methods defined via `module_eval`/`class_eval`/`define_method`/`define_singleton_method` or string-eval cannot be mutated. This matters for Rails: a lot of metaprogramming-heavy code (concerns built via `included do`, ActiveSupport `delegate`, dynamically-defined attribute methods) is invisible to mutant. Plan subject selection around what is statically analyzable.
-- **License** — `--usage opensource` is free for open-source repos. Commercial use is `$30/month or $250/year per developer`. **Paid itself is open source**, so its own CI runs under `--usage opensource` at no cost. The license question only arises for *Paid-managed projects* whose source is commercial. Paid does not — and should not — hold mutant licenses on behalf of customers; the license belongs to the customer, the same way their GitHub PAT and LLM API credentials do.
+- **Licensing history** — Historical only after Amendment 1 (2026-05-29): ~~`--usage opensource` is free for open-source repos. Commercial use is `$30/month or $250/year per developer`. **Paid itself is open source**, so its own CI runs under `--usage opensource` at no cost. The license question only arises for *Paid-managed projects* whose source is commercial. Paid does not — and should not — hold mutant licenses on behalf of customers; the license belongs to the customer, the same way their GitHub PAT and LLM API credentials do.~~ Amendment 1 switches the sanctioned source to `viamin/mutant`, so Paid no longer designs around customer commercial-license handling.
 
 ### Technical Environment
 
@@ -77,7 +91,7 @@ Critical mechanics:
 
 | Tool | Status for Paid |
 |------|------|
-| **Mutant** (`mbj/mutant`) | Actively maintained, native Ruby AST mutation, RSpec/Minitest support, incremental mode, structured output under `.mutant/results/`. **Selected.** |
+| **Mutant** (`viamin/mutant`) | Sanctioned source after Amendment 1. Native Ruby AST mutation, RSpec/Minitest support, incremental mode, structured output under `.mutant/results/`, with current adoption blockers tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`. **Selected.** |
 | **mutest** | Mutant fork. Less active. No clear advantage for our use. |
 | **Stryker (Ruby port)** | Not maintained. |
 | **PIT / Stryker JS / Cosmic Ray** | Wrong language. Relevant only if Paid expands beyond Ruby for managed projects — out of scope for this RDR. |
@@ -125,9 +139,9 @@ The design below assumes incremental-by-default and reserves full runs for offli
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                  MUTATION TESTING IN PAID (mutant)                       │
 │                                                                          │
-│  LAYER A — Paid itself (open source repo, --usage opensource)            │
+│  LAYER A — Paid itself (same sanctioned viamin/mutant source)            │
 │    ├─ .mutant.yml at repo root (rspec integration, eager_load)           │
-│    ├─ CI job: mutant --since origin/main --usage opensource on PRs       │
+│    ├─ CI job: mutant --since origin/main on PRs                          │
 │    └─ Nightly GHA: full-suite mutant run, score published to dashboard   │
 │                                                                          │
 │  LAYER B — Paid-managed Ruby projects (per-project, opt-in)              │
@@ -158,8 +172,8 @@ The design below assumes incremental-by-default and reserves full runs for offli
 2. **`PreCommitRequirement` as the opt-in mechanism.** No new top-level configuration model. Customers already configure pre-commit checks per account/project; adding `mutation_test` as a `check_type` is one row, not a new subsystem.
 3. **`warn` as the default `failure_behavior`.** Mutant findings are noisy on first adoption (many surviving mutations point at redundant production code that should be deleted, not at missing tests). Defaulting to `warn` lets agents and humans triage rather than blocking commits until the corpus is clean.
 4. **Mutation score as one more `QualityMetric`, not a parallel pipeline.** The composite scoring, gating, pause-on-regression, prompt evolution, and style-guide evolution machinery already exists. Surfacing mutation score as a new column rather than a new framework means we get all of those behaviors for free.
-5. **Paid uses `--usage opensource`; customers bring their own license for commercial projects.** Paid itself is OSS and runs mutant for free under the opensource usage flag. For Paid-managed projects whose source is *not* open source, the customer holds the commercial license. Paid never proxies, stores, or transmits a customer's mutant license — it lives in the customer's `Gemfile`, `MUTANT_LICENSE_KEY` env, or Rails credentials, exposed to the agent container the same way the customer's GitHub PAT and LLM API keys already are. This avoids both legal exposure for Paid and a secrets-proxy detour. The customer-facing setting form for the `mutation_test` requirement surfaces an "Is this project open source?" toggle that switches the rendered command between `--usage opensource` and `--usage commercial`.
-6. **Tier-1 subjects for Paid itself before whole-codebase ambition.** Security-critical modules first: `Prompts::BuildForIssue.fetch_trusted_comments`, `Prompts::BuildForPr.select_trusted_comments`, `TenantContext`, `SecretsProxyController` policy, `Pundit` policies for high-blast-radius models. Score these to 100% kill before expanding scope. This keeps the runtime budget honest and the signal-to-noise ratio high.
+5. **Licensing path (historical only after Amendment 1).** ~~Paid uses `--usage opensource`; customers bring their own license for commercial projects. Paid itself is OSS and runs mutant for free under the opensource usage flag. For Paid-managed projects whose source is *not* open source, the customer holds the commercial license. Paid never proxies, stores, or transmits a customer's mutant license — it lives in the customer's `Gemfile`, `MUTANT_LICENSE_KEY` env, or Rails credentials, exposed to the agent container the same way the customer's GitHub PAT and LLM API keys already are. This avoids both legal exposure for Paid and a secrets-proxy detour. The customer-facing setting form for the `mutation_test` requirement surfaces an "Is this project open source?" toggle that switches the rendered command between `--usage opensource` and `--usage commercial`.~~ Amendment 1 supersedes this with the `viamin/mutant` source switch and the cleanup tracked in `viamin/paid#2368`.
+6. **Tier-1 subjects for Paid itself before whole-codebase ambition.** Security-critical modules first: `Prompts::BuildForIssue.fetch_trusted_comments`, `Prompts::BuildForPr.select_trusted_comments`, `TenantContext`, `SecretsProxyController` policy, `Pundit` policies for high-blast-radius models. Score these to 100% kill before expanding scope. This keeps the runtime budget honest and the signal-to-noise ratio high while `viamin/mutant` closes the blocker set in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12`.
 
 ### Technical Design
 
@@ -228,7 +242,7 @@ jobs:
         with: { bundler-cache: true }
       - run: bundle exec rails db:test:prepare
       - name: Mutant (incremental)
-        run: bundle exec mutant run --usage opensource --since origin/${{ github.base_ref }}
+        run: bundle exec mutant run --since origin/${{ github.base_ref }}
 
   full:
     if: github.event_name == 'schedule'
@@ -236,7 +250,7 @@ jobs:
     # ...same setup, no --since, results posted to internal dashboard
 ```
 
-No license key is required for Paid itself — `--usage opensource` is the supported usage flag for an open-source repo. The Rake task `bin/mutation` passes the same flag for local runs.
+Amendment 1 removes any separate usage-flag or license-key path from the target design. The local task and CI job should use the same sanitized `viamin/mutant` invocation once `viamin/paid#2367` and `viamin/paid#2368` land.
 
 #### 3. PreCommitRequirement extension
 
@@ -249,20 +263,20 @@ end
 
 Migration adds the new value; no schema change otherwise — `command`, `failure_behavior`, `auto_fix_command`, and `position` already model everything we need.
 
-Seeded default for accounts that opt in via Avo / customer-facing settings UI:
+Seeded default for accounts that opt in after the gem-source switch in `viamin/paid#2367` and the `--usage` cleanup in `viamin/paid#2368`:
 
 ```ruby
 PreCommitRequirement.create!(
   account: account,
   name: "mutation_test",
-  command: "bundle exec mutant run --usage #{account.open_source? ? 'opensource' : 'commercial'} --since HEAD~1 --use rspec --jobs 1",
+  command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1",
   check_type: "mutation_test",
   failure_behavior: "warn",
   position: 30
 )
 ```
 
-The `--usage` value is driven by the project's open-source flag (a new boolean on `Project`, defaulting to `false` for safety). For `--usage commercial`, the customer must expose a `MUTANT_LICENSE_KEY` env var to the container; Paid surfaces this as a required project credential in the settings UI and forwards it the same way it forwards other customer-provided env vars to agent containers. Paid never stores the key in its own credentials store.
+Historical only after Amendment 1 (2026-05-29): ~~The `--usage` value is driven by the project's open-source flag (a new boolean on `Project`, defaulting to `false` for safety). For `--usage commercial`, the customer must expose a `MUTANT_LICENSE_KEY` env var to the container; Paid surfaces this as a required project credential in the settings UI and forwards it the same way it forwards other customer-provided env vars to agent containers. Paid never stores the key in its own credentials store.~~ The sanctioned `viamin/mutant` direction removes both the proposed `Project#open_source?` flag and customer license-key UX from the design.
 
 The default `failure_behavior: "warn"` is intentional. Promotion to `block` is a per-project decision and should follow a period of `warn`-only operation that establishes a baseline kill rate.
 
@@ -358,7 +372,7 @@ module QualityMetrics
 end
 ```
 
-Null is meaningful: it means mutation testing did not run for this agent run (no requirement configured, non-Ruby project, DB unavailable, or mutant license missing). Composite scoring in `QualityMetrics::CalculateCompositeScore` excludes nil-valued dimensions rather than treating them as zero.
+Null is meaningful: it means mutation testing did not run for this agent run (no requirement configured, non-Ruby project, or DB unavailable). Composite scoring in `QualityMetrics::CalculateCompositeScore` excludes nil-valued dimensions rather than treating them as zero.
 
 #### 7. Prompt / style-guide evolution integration
 
@@ -376,8 +390,8 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 | Full or incremental in the agent loop? | **Incremental (`--since HEAD~1`).** Full only in nightly sweeps. |
 | Per-worker DBs or `--jobs 1`? | **`--jobs 1` in Phase 1.** Template DBs in Phase 2 if runtime becomes a blocker. |
 | Where to put mutation score? | **`QualityMetric#mutation_kill_rate`.** No parallel pipeline. |
-| Does Paid itself need a mutant license? | **No.** Paid is open source; CI runs `--usage opensource`. |
-| Who owns the license for commercial customer projects? | **The customer.** They provide `MUTANT_LICENSE_KEY` as a project env var; Paid forwards it to the agent container but never persists it. |
+| Does Paid itself need a mutant license? | **Historical only after Amendment 1:** ~~No. Paid is open source; CI runs `--usage opensource`.~~ The sanctioned `viamin/mutant` source removes this split-path requirement once `viamin/paid#2367` and `viamin/paid#2368` land. |
+| Who owns the license for commercial customer projects? | **Historical only after Amendment 1:** ~~The customer. They provide `MUTANT_LICENSE_KEY` as a project env var; Paid forwards it to the agent container but never persists it.~~ Amendment 1 removes customer license-key handling from the target design. |
 | Where to start for Paid itself? | **Tier-1 security-critical subjects.** Expand only after they reach 100% kill. |
 
 ## Alternatives Considered
@@ -439,12 +453,12 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 - **Catches the LLM-test pathology directly.** Mutation score is the most honest measure of whether AI-written tests do their job.
 - **Composite quality signal gets a new dimension** that downstream consumers (gating, pause, prompt evolution, style-guide evolution) inherit for free.
 - **Tier-1 self-quality for Paid.** Security boundaries (trusted comments, tenant context, RBAC policies) get adversarial coverage that line-coverage cannot provide.
-- **Customers retain control.** Opt-in per project, configurable failure behavior, customer-owned license.
+- **Customers retain control.** Opt-in per project and configurable failure behavior remain, but Amendment 1 removes customer-owned mutant licensing from the target design.
 - **Incremental by default.** Runtime cost is bounded by the diff, not by the codebase size.
 
 ### Negative Consequences
 
-- **License cost is pushed to customers running commercial projects.** Paid itself pays nothing (`--usage opensource`), but customers who enable `mutation_test` on a private repo are on the hook for `$30/dev/month` or `$250/dev/year` per developer using mutant. The UI must surface this clearly before enabling the requirement on a non-open-source project.
+- **Signal strength is initially lower.** `viamin/mutant` currently exposes fewer modern mutation operators than the commercial upstream, so early kill-rate scores are weaker than the original design expected.
 - **CI time increase.** Even incremental, a tier-1 mutation run on a PR is minutes, not seconds. Nightly full sweep is hours.
 - **Adoption noise.** First mutation runs in any codebase surface many alive mutations that point at *redundant production code*, not at missing tests. Triage cost is real until the corpus settles.
 - **Metaprogramming blind spots.** ActiveRecord callbacks, concerns, dynamically-defined methods are invisible to mutant. Mutation score is a meaningful but partial coverage of Rails code.
@@ -464,8 +478,8 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 - **Risk**: Customer's Ruby version is unsupported by mutant.
   **Mitigation**: Skip silently when `RUBY_VERSION` is outside the supported range; record `mutation_kill_rate: nil`; log a one-time per-project warning.
 
-- **Risk**: License compliance — running mutant with `--usage opensource` against a private customer repo is a license violation; running with `--usage commercial` without a license key fails the run.
-  **Mitigation**: (a) The `--usage` flag is derived from the project's `open_source?` flag, not configurable per-run, so an accidental opensource flag on a private repo requires deliberately mis-flagging the project. (b) When `--usage commercial` is set but no `MUTANT_LICENSE_KEY` env var is present, the hook short-circuits to `true` and records a one-time-per-project warning rather than failing the agent run. (c) Container integration also requires `mutant-rspec` (or `mutant-minitest`) in the customer's `Gemfile`; Paid does not install mutant globally.
+- **Risk**: Historical licensing path created compliance and credential UX burden.
+  **Mitigation**: Amendment 1 removes that path by switching the sanctioned source to `viamin/mutant`; the remaining adoption risk is upstream readiness, tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`.
 
 ## Implementation Plan
 
@@ -474,18 +488,20 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 1. Add `mutant-rspec` to `Gemfile` (test group), `bundle install`.
 2. Author `.mutant.yml` at repo root with tier-1 subjects.
 3. Iterate on tier-1 subjects until kill rate is 100%; any surviving mutation either gets a new test or the production code is deleted.
-4. Add `.github/workflows/mutation.yml` with the incremental PR job and nightly cron, both passing `--usage opensource`.
-5. Add a Make/Rake task `bin/mutation` for local incremental runs (also `--usage opensource`).
+4. Add `.github/workflows/mutation.yml` with the incremental PR job and nightly cron.
+5. Add a Make/Rake task `bin/mutation` for local incremental runs.
 
-No mutant license key, secret, or credential entry is added to Paid for its own runs.
+Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret, or credential entry is added to Paid for its own runs.~~ The current direction is to land the gem-source switch in `viamin/paid#2367`, then remove `--usage` handling in `viamin/paid#2368`.
 
 ### Phase 2: PreCommitRequirement and container integration
 
-1. Migration: add `"mutation_test"` to `PreCommitRequirement::CHECK_TYPES`.
-2. `Containers::QualityHooks` extension (Section 4 above).
-3. `git_operations.rb` support for `mutation_command` in `install_git_hooks`.
-4. Customer-facing settings UI / Avo admin to enable the requirement per account/project.
-5. `QualityFeedback::ParseMutant` parser and feedback-loop wiring in `AgentExecutionWorkflow`.
+1. Land `viamin/paid#2367` to switch the sanctioned source to `viamin/mutant`, subject to the upstream blockers in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12`.
+2. Land `viamin/paid#2368` to remove stale `--usage` plumbing and license-path assumptions from the integration.
+3. Migration: add `"mutation_test"` to `PreCommitRequirement::CHECK_TYPES`.
+4. `Containers::QualityHooks` extension (Section 4 above).
+5. `git_operations.rb` support for `mutation_command` in `install_git_hooks`.
+6. `QualityFeedback::ParseMutant` parser and feedback-loop wiring in `AgentExecutionWorkflow`.
+7. Land `viamin/paid#2370` for the customer-facing settings UI / Avo admin after the gem-source switch and `--usage` cleanup.
 
 ### Phase 3: Quality signal integration
 
@@ -501,8 +517,8 @@ No mutant license key, secret, or credential entry is added to Paid for its own 
 
 - `Gemfile`, `Gemfile.lock` — add `mutant-rspec`
 - `.mutant.yml` (new)
-- `.github/workflows/mutation.yml` (new, `--usage opensource`)
-- `bin/mutation` (new, `--usage opensource`)
+- `.github/workflows/mutation.yml` (new; historical draft assumed `--usage opensource`, Amendment 1 removes that split path after `viamin/paid#2368`)
+- `bin/mutation` (new; historical draft assumed `--usage opensource`, Amendment 1 removes that split path after `viamin/paid#2368`)
 
 **Container integration:**
 
@@ -529,9 +545,11 @@ No mutant license key, secret, or credential entry is added to Paid for its own 
 ### Dependencies
 
 - `mutant` and `mutant-rspec` gems (test group)
-- No mutant license needed for Paid itself (open source → `--usage opensource`)
-- Customer-side: `MUTANT_LICENSE_KEY` env var on any Paid-managed project that enables `mutation_test` and is not flagged as open source
+- `viamin/paid#2367` to switch the sanctioned source to `viamin/mutant`
+- `viamin/paid#2368` to remove `--usage` plumbing
+- `viamin/paid#2370` for customer UI work after the source switch
 - Postgres template DB tooling (Phase 2 only, if `--jobs > 1` becomes necessary)
+- Upstream readiness in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`
 
 ## Validation
 
@@ -543,6 +561,7 @@ No mutant license key, secret, or credential entry is added to Paid for its own 
 4. **Composite score tests** — `CalculateCompositeScore` excludes nil-valued dimensions rather than zeroing them.
 5. **Resolution tests** — `PreCommitRequirement.resolve` correctly merges mutation_test requirements across account/user/project scopes.
 6. **License-absent test** — when `mutant-rspec` is not in the customer's `Gemfile`, the hook is a no-op (`true`).
+7. **Fork-readiness tests** — fixture coverage for the `viamin/mutant` switch should track the open compatibility work in `viamin/mutant#16`.
 
 ### Test Scenarios
 
@@ -571,9 +590,7 @@ No mutant license key, secret, or credential entry is added to Paid for its own 
 
 ### Security Validation
 
-- Paid stores no mutant license keys in its own credentials, env, or secrets store.
-- Customer-supplied `MUTANT_LICENSE_KEY` flows only through Paid's existing project-env-var forwarding path; it is never logged, never persisted in `QualityMetric` or any other Paid table, and never leaves the customer's container boundary.
-- The `--usage` flag is derived from the project's `open_source?` flag, not from per-run input, so an opensource flag cannot be set against a commercial repo without an explicit project-level setting change (which is audited via logidze).
+- Amendment 1 removes customer mutant-license credentials and `--usage` branching from the target design, shrinking the secrets surface.
 - Surviving-mutation output never includes raw secret values from the test database (parser strips known-sensitive patterns before generating the prompt addendum).
 
 ## References
@@ -585,12 +602,12 @@ No mutant license key, secret, or credential entry is added to Paid for its own 
 
 ### Dependencies
 
-- [Mutant on GitHub](https://github.com/mbj/mutant)
-- [Mutant configuration docs](https://github.com/mbj/mutant/blob/main/docs/configuration.md)
-- [Mutant incremental mode docs](https://github.com/mbj/mutant/blob/main/docs/incremental.md)
-- [Mutant concurrency docs](https://github.com/mbj/mutant/blob/main/docs/concurrency.md)
-- [Mutant limitations docs](https://github.com/mbj/mutant/blob/main/docs/limitations.md)
-- [Mutant commercial license](https://github.com/mbj/mutant#commercial-license)
+- [viamin/mutant on GitHub](https://github.com/viamin/mutant)
+- [viamin/mutant blocker #9](https://github.com/viamin/mutant/issues/9)
+- [viamin/mutant blocker #10](https://github.com/viamin/mutant/issues/10)
+- [viamin/mutant blocker #11](https://github.com/viamin/mutant/issues/11)
+- [viamin/mutant blocker #12](https://github.com/viamin/mutant/issues/12)
+- [viamin/mutant compatibility follow-up #16](https://github.com/viamin/mutant/issues/16)
 
 ### Research Resources
 
