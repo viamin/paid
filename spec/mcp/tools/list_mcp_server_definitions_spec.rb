@@ -46,6 +46,7 @@ RSpec.describe Tools::ListMcpServerDefinitions do
 
       expect(result["name"]).to eq("Docs Server")
       expect(account.mcp_server_definitions.find(result["id"]).command).to eq("npx @paid/docs-mcp")
+      expect(result["env_keys"]).to eq([])
       expect(result).not_to include("account_id", "log_data")
     end
 
@@ -67,6 +68,8 @@ RSpec.describe Tools::ListMcpServerDefinitions do
       expect(definition.args).to eq([ "--workspace", "/repo" ])
       expect(definition.env).to eq({ "API_KEY" => "test" })
       expect(definition.metadata).to eq({ "category" => "docs" })
+      expect(result["env_keys"]).to eq([ "API_KEY" ])
+      expect(result).not_to have_key("env")
     end
   end
 
@@ -82,6 +85,7 @@ RSpec.describe Tools::ListMcpServerDefinitions do
 
       expect(result["name"]).to eq("Updated Server")
       expect(definition.reload.name).to eq("Updated Server")
+      expect(result["env_keys"]).to eq([])
       expect(result).not_to include("account_id", "log_data")
     end
 
@@ -101,6 +105,20 @@ RSpec.describe Tools::ListMcpServerDefinitions do
       expect(definition.reload.args).to eq([ "--workspace", "/repo" ])
       expect(definition.env).to eq({ "API_KEY" => "updated" })
       expect(definition.metadata).to eq({ "category" => "docs" })
+      expect(definition.reload.env).to eq({ "API_KEY" => "updated" })
+    end
+
+    it "returns env key names without exposing env values" do
+      definition = create(:mcp_server_definition, account:, env: { "TOKEN" => "secret", "API_KEY" => "hidden" })
+
+      result = described_class.new(user:, session:).call(
+        mcp_server_definition_id: definition.id,
+        attributes: { name: "Renamed Server" },
+        confirmed: true
+      )
+
+      expect(result["env_keys"]).to eq(%w[API_KEY TOKEN])
+      expect(result).not_to have_key("env")
     end
   end
 

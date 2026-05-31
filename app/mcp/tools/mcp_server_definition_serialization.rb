@@ -9,7 +9,7 @@ module Tools
         "id", "name", "transport", "install_type", "command", "url", "image", "enabled", "created_at", "updated_at"
       ).merge(
         "args" => definition.args,
-        "env" => definition.env,
+        "env_keys" => definition.env.keys.sort,
         "metadata" => definition.metadata
       )
     end

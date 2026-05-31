@@ -76,5 +76,22 @@ RSpec.describe Tools::GetUserSettings do
       expect(result["max_concurrent_runs"]).to eq(7)
       expect(account.tenant_setting!.reload.max_concurrent_runs).to eq(7)
     end
+
+    it "records tenant configuration activity when settings change" do
+      account = create(:account)
+      user = create(:user, :owner, account:)
+      session = create(:chat_session, account:, created_by: user)
+
+      described_class.new(user:, session:).call(
+        settings: { max_concurrent_runs: 7 },
+        confirmed: true
+      )
+
+      event = account.account_activity_events.recent.first
+      expect(event.action).to eq("tenant_configuration.updated")
+      expect(event.actor).to eq(user)
+      expect(event.subject).to eq(account.tenant_setting!)
+      expect(event.metadata["changed_fields"]).to include("max_concurrent_runs")
+    end
   end
 end

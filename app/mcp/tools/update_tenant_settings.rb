@@ -50,7 +50,20 @@ module Tools
 
       tenant_setting = account.tenant_setting!
       tenant_setting.update!(settings.symbolize_keys.slice(*PERMITTED_ATTRIBUTES))
+      record_activity!(tenant_setting) if tenant_setting.saved_changes.except("updated_at").any?
       tenant_setting.reload.attributes.except("id", "account_id", "created_at", "updated_at", "log_data")
+    end
+
+    private
+
+    def record_activity!(tenant_setting)
+      Accounts::RecordActivity.call(
+        account:,
+        actor: user,
+        action: "tenant_configuration.updated",
+        subject: tenant_setting,
+        metadata: { changed_fields: tenant_setting.saved_changes.except("updated_at").keys }
+      )
     end
   end
 end
