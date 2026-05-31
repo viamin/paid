@@ -39,12 +39,16 @@ module ExceptionHandler
     end
 
     def call
+      classification = nil
+      incident = nil
+
       fingerprint = Fingerprinter.call(exception: @exception, subsystem: @subsystem)
       classification = Classifier.call(exception: @exception, subsystem: @subsystem)
 
-      log_exception(classification)
-
-      return logged_result(classification) if classification.action == "logged"
+      if classification.action == "logged"
+        log_exception(classification, action: "logged")
+        return logged_result(classification)
+      end
 
       incident = find_or_create_incident(fingerprint, classification)
       file_or_update_issue(incident, classification) if @project
@@ -61,9 +65,18 @@ module ExceptionHandler
         handler_error: e.message
       )
       Result.new(success: false, message: "Exception handler failed: #{e.message}")
+    ensure
+      log_actionable_exception(classification, incident)
     end
 
     private
+
+    def log_actionable_exception(classification, incident)
+      return unless classification
+      return if classification.action == "logged"
+
+      log_exception(classification, action: incident&.action_taken || classification.action)
+    end
 
     def resolve_project
       project_id = @context[:project_id]
@@ -72,7 +85,7 @@ module ExceptionHandler
       @account.projects.find_by(id: project_id)
     end
 
-    def log_exception(classification)
+    def log_exception(classification, action:)
       Rails.logger.public_send(
         classification.severity == "p1" ? :error : :warn,
         message: "exception_handler.captured",
@@ -80,7 +93,7 @@ module ExceptionHandler
         exception_message: @exception.message&.truncate(500),
         subsystem: @subsystem,
         severity: classification.severity,
-        action: classification.action,
+        action: action,
         reason: classification.reason,
         project_id: @project&.id
       )
@@ -138,6 +151,7 @@ module ExceptionHandler
 
       target_project = @project
       return unless target_project
+      return unless Classifier::ISSUE_FILING_ALLOWLIST.include?(@subsystem)
 
       if incident.github_issue_url.present? && incident.project_id != target_project.id
         Rails.logger.info(
