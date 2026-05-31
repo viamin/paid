@@ -74,6 +74,79 @@ if agent_harness_version < Gem::Version.new("0.19.0")
     AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
 end
 
+# Suppress Claude CLI .mcp.json auto-discovery when Paid did not explicitly
+# configure any MCP servers. We pass an empty {"mcpServers": {}} config via
+# --mcp-config so the CLI emits only the requested JSON envelope.
+# TODO(#2365): remove when agent-harness >= 0.19.0 ships native MCP suppression
+module PaidAgentHarnessAnthropicMcpSuppressionPatch
+  def send_message(prompt:, **options)
+    super(prompt:, **with_explicit_empty_mcp_servers(options))
+  end
+
+  def plan_execution(prompt:, **options)
+    super(prompt:, **with_explicit_empty_mcp_servers(options))
+  end
+
+  protected
+
+  def build_command(prompt, options)
+    command = super
+    return command unless suppress_mcp_autodiscovery?(options)
+
+    plan = empty_mcp_config_plan(options)
+    command[0...-1] + [ "--mcp-config", plan.fetch(:path), command.last ]
+  end
+
+  def build_execution_preparation(options)
+    preparation = super
+    return preparation unless suppress_mcp_autodiscovery?(options)
+
+    merge_execution_preparations(
+      preparation,
+      AgentHarness::ExecutionPreparation.new(
+        file_writes: [
+          {
+            path: empty_mcp_config_plan(options).fetch(:path),
+            content: empty_mcp_config_plan(options).fetch(:content),
+            mode: 0o600
+          }
+        ]
+      )
+    )
+  end
+
+  private
+
+  def with_explicit_empty_mcp_servers(options)
+    return options if options.key?(:mcp_servers)
+
+    options.merge(mcp_servers: [])
+  end
+
+  def suppress_mcp_autodiscovery?(options)
+    options.key?(:mcp_servers) && Array(options[:mcp_servers]).empty?
+  end
+
+  def empty_mcp_config_plan(options)
+    options[:_paid_claude_empty_mcp_config] ||= {
+      path: File.join(Dir.tmpdir, "agent_harness_claude_mcp_#{SecureRandom.hex(8)}.json"),
+      content: JSON.generate(AgentHarness::McpConfigTranslator.for_provider(mcp_provider_key, []))
+    }
+  end
+
+  def merge_execution_preparations(base, extra)
+    return extra if base.nil?
+    return base if extra.nil?
+
+    AgentHarness::ExecutionPreparation.new(file_writes: base.file_writes + extra.file_writes)
+  end
+end
+
+if agent_harness_version < Gem::Version.new("0.19.0")
+  AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpSuppressionPatch) unless
+    AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpSuppressionPatch
+end
+
 # Backport embedding support until agent-harness ships a native public API.
 # Keep this version-gated and narrow so Paid can switch back to upstream
 # behavior cleanly once the gem exposes AgentHarness.embed (or equivalent).
