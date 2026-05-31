@@ -55,6 +55,29 @@ RSpec.describe Runners::HarnessExecutionPlan do
       expect(plan.command).not_to include("--disallowedTools")
       expect(plan.command.last).to eq("Say hello")
     end
+
+    it "passes an explicit empty MCP config to Claude when none are configured" do
+      allow(AgentHarness).to receive(:provider_class).and_call_original
+      allow(AgentHarness).to receive(:build_config).and_call_original
+
+      plan = described_class.for_runner_key(
+        runner_key: "claude",
+        prompt: "Say hello"
+      )
+
+      mcp_flag_index = plan.command.index("--mcp-config")
+
+      expect(mcp_flag_index).to be_present
+      expect(plan.command.last).to eq("Say hello")
+      expect(plan.preparation).to be_a(AgentHarness::ExecutionPreparation)
+      expect(plan.preparation.file_writes).to contain_exactly(
+        have_attributes(
+          path: plan.command.fetch(mcp_flag_index + 1),
+          content: JSON.generate("mcpServers" => {}),
+          mode: 0o600
+        )
+      )
+    end
   end
 
   describe ".call" do

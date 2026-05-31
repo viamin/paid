@@ -691,6 +691,16 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    it "returns nil preparation when no persisted runner exists and the bare runner key is unknown" do
+      context = described_class::CommandContext.new(
+        runner_candidate: nil,
+        runner: "not_a_real_runner",
+        user: user
+      )
+
+      expect(activity.send(:command_preparation_for, context, "ping")).to be_nil
+    end
+
     context "with a direct-outbound kilocode runner" do
       it "includes PAID_KILOCODE_CONFIG_B64 in command env alongside PAID_PROVIDER_ID" do
         context = build_kilocode_context(user)
@@ -1352,8 +1362,14 @@ RSpec.describe Activities::RunAgentActivity do
     expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
     expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
     expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
-    expect(execute_calls.second.second[:preparation].file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
-    expect(execute_calls.third.second[:preparation].file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
+    expect(JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)).to include(
+      "provider" => { "openrouter" => {} },
+      "model" => "moonshotai/kimi-k2-0905"
+    )
+    expect(JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)).to include(
+      "provider" => { "openrouter" => {} },
+      "model" => "moonshotai/kimi-k2-0905"
+    )
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -4310,17 +4326,28 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "executes without MCP flags when no servers are configured" do
-        expect(container_service).to receive(:execute).with(
-          satisfy { |cmd| cmd.is_a?(Array) && !cmd[2].include?("--mcp-config") },
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+      it "passes an explicit empty MCP config when no servers are configured" do
+        expect(container_service).to receive(:execute) do |command, options|
+          mcp_flag_index = command.index("--mcp-config")
+
+          expect(command).to include("claude", "--mcp-config")
+          expect(mcp_flag_index).to be_present
+          expect(options).to include(timeout: anything)
+          expect(options[:preparation]).to be_a(AgentHarness::ExecutionPreparation)
+          expect(options[:preparation].file_writes).to include(
+            have_attributes(
+              path: command.fetch(mcp_flag_index + 1),
+              content: JSON.generate("mcpServers" => {}),
+              mode: 0o600
+            )
+          )
+        end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
       it "does not reuse a cached plan when MCP servers change between executions" do
-        # First call: no MCP servers → plan built without --mcp-config
+        # First call: no MCP servers → plan built with the explicit empty MCP config
         plan_without_mcp = activity.send(:harness_execution_plan_for, "claude_code", "do stuff")
 
         # Simulate a second execution where MCP servers are now provisioned
