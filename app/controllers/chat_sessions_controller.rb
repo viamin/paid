@@ -8,9 +8,9 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy older_messages]
+  before_action :set_chat_session, only: %i[show update destroy archive older_messages]
   before_action :enforce_create_rate_limit, only: :create
-  before_action :default_request_format_to_json, only: %i[index create show update destroy]
+  before_action :default_request_format_to_json, only: %i[index create show update destroy archive]
 
   def index
     respond_to do |format|
@@ -145,6 +145,16 @@ class ChatSessionsController < ApplicationController
     end
   end
 
+  def archive
+    authorize @chat_session, :archive?
+    ChatSessions::Archive.call(chat_session: @chat_session)
+
+    respond_to do |format|
+      format.html { redirect_after_archive }
+      format.json { render json: session_json(@chat_session) }
+    end
+  end
+
   private
 
   def set_chat_session
@@ -215,6 +225,7 @@ class ChatSessionsController < ApplicationController
 
   def session_scope
     policy_scope(ChatSession)
+      .visible
       .with_preview_content
       .includes(:project, :runner, :chat_session_projects, :projects)
       .order(updated_at: :desc, id: :desc)
@@ -222,6 +233,7 @@ class ChatSessionsController < ApplicationController
 
   def session_scope_with_token_totals
     policy_scope(ChatSession)
+      .visible
       .with_preview_content
       .select(
         "chat_sessions.*",
@@ -235,6 +247,13 @@ class ChatSessionsController < ApplicationController
 
   def pagination_meta(pagy)
     { page: pagy.page, pages: pagy.pages, count: pagy.count }
+  end
+
+  def redirect_after_archive
+    next_session = session_scope.where.not(id: @chat_session.id).first
+    target = next_session ? chat_session_path(next_session) : chat_sessions_path
+
+    redirect_to target, notice: "Chat session archived."
   end
 
   def session_projects(session)

@@ -43,6 +43,7 @@ class ChatSession < ApplicationRecord
   end
 
   scope :active, -> { where(status: "active") }
+  scope :visible, -> { where.not(status: "archived") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
   scope :with_preview_content, lambda {
     preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")
@@ -58,6 +59,10 @@ class ChatSession < ApplicationRecord
 
   def active?
     status == "active"
+  end
+
+  def archived?
+    status == "archived"
   end
 
   def generate_title_from_content!
@@ -149,7 +154,7 @@ class ChatSession < ApplicationRecord
       [ account, :chat_sessions ],
       target: ActionView::RecordIdentifier.dom_id(self)
     )
-    broadcast_sidebar_prepend
+    broadcast_sidebar_prepend unless archived?
   end
 
   def broadcast_sidebar_remove

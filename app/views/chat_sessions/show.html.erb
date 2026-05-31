@@ -1,5 +1,6 @@
 <% content_for(:title) { "#{chat_session_title(@chat_session)} - Chat - Paid" } %>
 <% can_update_chat_session = policy(@chat_session).update? %>
+<% can_archive_chat_session = policy(@chat_session).archive? && !@chat_session.archived? %>
 <% can_destroy_chat_session = policy(@chat_session).destroy? %>
 
 <%= turbo_stream_from current_account, :chat_sessions %>
@@ -109,12 +110,20 @@
                     tokens
                   </p>
                 </div>
-                <% if can_destroy_chat_session %>
-                  <%= button_to "Close",
-                                chat_session_path(@chat_session),
-                                method: :delete,
-                                class: "inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20" %>
-                <% end %>
+                <div class="flex items-center gap-2">
+                  <% if can_archive_chat_session %>
+                    <%= button_to "Archive",
+                                  archive_chat_session_path(@chat_session),
+                                  method: :patch,
+                                  class: "inline-flex items-center rounded-md bg-amber-400/15 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-400/25" %>
+                  <% end %>
+                  <% if can_destroy_chat_session %>
+                    <%= button_to "Close",
+                                  chat_session_path(@chat_session),
+                                  method: :delete,
+                                  class: "inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20" %>
+                  <% end %>
+                </div>
               </div>
             </div>
           </div>
