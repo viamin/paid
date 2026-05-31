@@ -35,6 +35,48 @@ RSpec.describe "Integrations" do
         expect(response.body).to include("Add Integration")
       end
 
+      it "shows GitHub App installation guidance" do
+        get integrations_path
+
+        expect(response.body).to include("Install the <code>paid-agents</code> GitHub App")
+        expect(response.body).to include(Github::AppRegistry.install_url)
+        expect(response.body).to include("Repository")
+        expect(response.body).to include("User Account")
+        expect(response.body).to include("Organization")
+        expect(response.body).to include("No active <code>paid-agents</code> installation has been detected")
+      end
+
+      it "shows GitHub App installation coverage when installations exist" do
+        installation = create(:github_installation, account: account, accessible_repositories: [ { "id" => 123, "full_name" => "acme/widgets" } ])
+        create(:project, :with_github_installation, account: account, created_by: owner_user, owner: "acme", repo: "widgets", github_id: 123, github_installation: installation)
+        create(:project, account: account, created_by: owner_user, owner: "acme", repo: "pilot", github_id: 456, github_token: create(:github_token, account: account, created_by: owner_user))
+
+        get integrations_path
+
+        expect(response.body).to include("active <code>paid-agents</code> installation")
+        expect(response.body).to include("Projects covered by an active installation")
+        expect(response.body).to include("Projects already using GitHub App auth")
+        expect(response.body).to include("View Installations")
+      end
+
+      it "counts only projects using active GitHub App installations" do
+        active_installation = create(:github_installation, account: account, accessible_repositories: [ { "id" => 123, "full_name" => "acme/widgets" } ])
+        revoked_installation = create(:github_installation, account: account, accessible_repositories: [ { "id" => 456, "full_name" => "acme/retired" } ])
+
+        create(:project, :with_github_installation, account: account, created_by: owner_user, owner: "acme", repo: "widgets", github_id: 123, github_installation: active_installation)
+        create(:project, :with_github_installation, account: account, created_by: owner_user, owner: "acme", repo: "retired", github_id: 456, github_installation: revoked_installation)
+        revoked_installation.update!(revoked_at: Time.current)
+
+        get integrations_path
+
+        rows = Nokogiri::HTML5(response.body).css("dl div").to_h do |row|
+          [ row.at_css("dt")&.text&.strip, row.at_css("dd")&.text&.strip ]
+        end
+
+        expect(rows["Projects covered by an active installation"]).to eq("1")
+        expect(rows["Projects already using GitHub App auth"]).to eq("1")
+      end
+
       it "shows configured integrations grouped by type" do
         github_token = create(:github_token, account: account)
         provider_key = create(:provider_api_key, user: owner_user)

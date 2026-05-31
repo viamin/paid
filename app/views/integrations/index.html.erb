@@ -11,6 +11,112 @@
     </div>
   </div>
 
+  <div class="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-200 bg-gray-50 px-6 py-5">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Recommended Setup</p>
+          <h2 class="mt-1 text-xl font-semibold text-gray-900">Install the <code>paid-agents</code> GitHub App</h2>
+          <p class="mt-2 max-w-3xl text-sm text-gray-600">
+            Use the GitHub App when you want Paid to open pull requests, push branches, sync issues, and act as <code><%= Github::AppRegistry.bot_login %></code> instead of a personal token owner.
+          </p>
+        </div>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <%= link_to "Install paid-agents", Github::AppRegistry.install_url,
+            class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
+            target: "_blank", rel: "noopener noreferrer" %>
+          <% if @github_installations.any? %>
+            <%= link_to "View Installations", github_installations_path,
+              class: "inline-flex items-center justify-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+      <div class="space-y-6">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-900">Install by scope</h3>
+          <div class="mt-3 grid gap-4 md:grid-cols-3">
+            <div class="rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-900">Repository</h4>
+              <p class="mt-2 text-sm text-gray-600">
+                Choose <strong>Only select repositories</strong> when you want to pilot Paid on a single repo or a small rollout set.
+              </p>
+            </div>
+            <div class="rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-900">User Account</h4>
+              <p class="mt-2 text-sm text-gray-600">
+                Install on a personal GitHub account when Paid should work across repositories you own directly rather than an organization.
+              </p>
+            </div>
+            <div class="rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-900">Organization</h4>
+              <p class="mt-2 text-sm text-gray-600">
+                Install on an organization for shared ownership, centralized approval, and either selected repositories or full org coverage.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="text-sm font-semibold text-gray-900">Permissions Paid uses</h3>
+          <div class="mt-3 grid gap-4 md:grid-cols-2">
+            <div class="rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-900">Repository permissions</h4>
+              <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                <li><strong>Contents:</strong> read and write to clone repositories, read files, and push agent branches.</li>
+                <li><strong>Pull requests:</strong> read and write to open, update, label, review, and merge PRs.</li>
+                <li><strong>Issues:</strong> read and write to detect labels, sync work, and post agent updates.</li>
+                <li><strong>Metadata, checks, and commit statuses:</strong> read to confirm repo access and CI state.</li>
+              </ul>
+            </div>
+            <div class="rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-900">Organization permissions</h4>
+              <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                <li><strong>Members:</strong> read so Paid can resolve organization-owned repositories and approval flows.</li>
+                <li><strong>Installation events:</strong> GitHub notifies Paid when repos are granted, removed, suspended, or revoked.</li>
+                <li><strong>Optional workflows access:</strong> only needed if you later allow Paid to modify <code>.github/workflows</code>.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-gray-200 bg-gray-50 p-5">
+        <h3 class="text-sm font-semibold text-gray-900">Installation status</h3>
+
+        <% if @active_github_installations.any? %>
+          <p class="mt-3 text-sm text-gray-600">
+            <strong><%= @active_github_installations.count %></strong>
+            active <code>paid-agents</code> installation<%= "s" if @active_github_installations.many? %>
+            detected for this account.
+          </p>
+          <dl class="mt-4 space-y-3 text-sm text-gray-600">
+            <div class="flex items-start justify-between gap-4">
+              <dt>Projects covered by an active installation</dt>
+              <dd class="font-semibold text-gray-900"><%= @projects_covered_by_github_app %></dd>
+            </div>
+            <div class="flex items-start justify-between gap-4">
+              <dt>Projects already using GitHub App auth</dt>
+              <dd class="font-semibold text-gray-900"><%= @projects_with_github_app %></dd>
+            </div>
+          </dl>
+          <p class="mt-4 text-sm text-gray-600">
+            If a repository is covered here but still uses a PAT, switch it to GitHub App auth from the project settings page.
+          </p>
+        <% else %>
+          <p class="mt-3 text-sm text-gray-600">
+            No active <code>paid-agents</code> installation has been detected for this account yet.
+          </p>
+          <p class="mt-3 text-sm text-gray-600">
+            After installation, this page will show which connected repositories are covered and how many projects already use GitHub App auth.
+          </p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
   <% if @sections.any? %>
     <% @sections.each do |section| %>
       <div class="mt-10">
