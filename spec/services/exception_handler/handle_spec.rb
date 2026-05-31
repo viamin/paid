@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe ExceptionHandler::Handle do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
+  let(:project_context) { { project_id: project.id } }
 
   describe ".call" do
     context "with a transient exception" do
@@ -92,6 +93,109 @@ RSpec.describe ExceptionHandler::Handle do
             account: account,
             source: "exception_handler",
             severity: :warning
+          )
+        )
+      end
+
+      ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST.each do |subsystem|
+        it "files issues for the #{subsystem} subsystem" do
+          filed_incident = nil
+          filed_project = nil
+
+          allow(ExceptionHandler::IssueFiler).to receive(:call) do |incident:, project:|
+            filed_incident = incident
+            filed_project = project
+            incident.update!(action_taken: "issue_filed")
+          end
+
+          result = described_class.call(
+            exception: error,
+            account: account,
+            context: project_context.merge(subsystem:)
+          )
+
+          expect(ExceptionHandler::IssueFiler).to have_received(:call).once
+          expect(filed_project).to eq(project)
+          expect(filed_incident.subsystem).to eq(subsystem)
+          expect(result.incident.reload.action_taken).to eq("issue_filed")
+        end
+      end
+    end
+
+    context "with a non-allowlisted actionable exception" do
+      let(:error) do
+        e = RuntimeError.new("sync failed unexpectedly")
+        e.set_backtrace([ "/app/services/github_sync/sync_runner.rb:12:in `run'" ])
+        e
+      end
+      let(:context) { project_context.merge(subsystem: :github_sync) }
+
+      def call_handler(error:, account:, context:)
+        described_class.call(
+          exception: error,
+          account: account,
+          context: context
+        )
+      end
+
+      it "records the incident, skips issue filing, and still publishes a notification" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+        allow(Notifications::Publish).to receive(:call)
+
+        result = call_handler(error: error, account: account, context: context)
+
+        expect(result).to be_success
+        expect(result.action).to eq("notified")
+        expect(result.incident).to have_attributes(
+          subsystem: "github_sync",
+          action_taken: "notified"
+        )
+        expect(ExceptionHandler::IssueFiler).not_to have_received(:call)
+        expect(Notifications::Publish).to have_received(:call).with(
+          a_hash_including(
+            account: account,
+            source: "exception_handler",
+            subject: result.incident
+          )
+        )
+      end
+
+      it "logs the effective notified action" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+        allow(Notifications::Publish).to receive(:call)
+        allow(Rails.logger).to receive(:warn)
+
+        call_handler(error: error, account: account, context: context)
+
+        expect(Rails.logger).to have_received(:warn).with(
+          a_hash_including(
+            message: "exception_handler.captured",
+            subsystem: "github_sync",
+            action: "notified"
+          )
+        )
+      end
+
+      it "still logs the captured exception when notification publishing fails" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+        allow(Notifications::Publish).to receive(:call).and_raise("notify failed")
+        allow(Rails.logger).to receive(:warn)
+        allow(Rails.logger).to receive(:error)
+
+        result = call_handler(error: error, account: account, context: context)
+
+        expect(result).to be_failure
+        expect(Rails.logger).to have_received(:warn).with(
+          a_hash_including(
+            message: "exception_handler.captured",
+            subsystem: "github_sync",
+            action: "notified"
+          )
+        )
+        expect(Rails.logger).to have_received(:error).with(
+          a_hash_including(
+            message: "exception_handler.handle_failed",
+            handler_error: "notify failed"
           )
         )
       end
