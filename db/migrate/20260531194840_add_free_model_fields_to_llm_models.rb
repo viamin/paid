@@ -15,7 +15,7 @@ class AddFreeModelFieldsToLlmModels < ActiveRecord::Migration[8.1]
     add_reference :llm_models, :free_variant_of, null: true, index: { algorithm: :concurrently },
       comment: "Paid model that this free model variant corresponds to."
     safety_assured do
-      add_foreign_key :llm_models, :llm_models, column: :free_variant_of_id
+      add_foreign_key :llm_models, :llm_models, column: :free_variant_of_id, validate: false
     end
   end
 end
