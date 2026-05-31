@@ -40,7 +40,10 @@ module ChatSessions
       fallback_runner = Runner.first_configured_chat_enabled_for_owner(chat_session.created_by)
       return runner unless fallback_runner && fallback_runner != runner
 
-      chat_session.update!(runner: fallback_runner)
+      # A runner fallback can also invalidate a provider-specific saved model
+      # (for example, Claude -> OpenAI-compatible), so persist the corrected
+      # runner/model pair together before building the client.
+      chat_session.update!(runner: fallback_runner, model: default_model_for(fallback_runner))
       fallback_runner
     end
 
@@ -54,7 +57,7 @@ module ChatSessions
       service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       base_url = config&.dig(:base_url) || "https://api.openai.com/v1"
-      model = chat_session.model || "gpt-4o"
+      model = chat_session.model || default_model_for(provider)
 
       transport = AgentHarness::OpenAICompatibleTransport.new(
         base_url: base_url,
@@ -76,6 +79,16 @@ module ChatSessions
 
     def provider_service_type(provider)
       provider.provider_api_key&.api_service_type || provider.required_api_service_type
+    end
+
+    def default_model_for(provider)
+      provider.direct_outbound_model_id.presence || default_model_for_service_type(provider_service_type(provider))
+    end
+
+    def default_model_for_service_type(service_type)
+      return AgentHarness::TextTransport::DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
+
+      "gpt-4o"
     end
 
     class HttpClient

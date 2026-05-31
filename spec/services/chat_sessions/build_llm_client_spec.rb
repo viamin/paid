@@ -82,7 +82,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
 
     context "with an unconfigured runner and another configured chat runner" do
-      it "falls back to the configured runner and persists it on the session" do
+      it "falls back to the configured runner and persists a compatible model on the session" do
         unavailable_runner = user.runners.find_or_create_by!(runner_key: "claude", auth_type: "subscription")
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-openrouter-test", api_service_type: "openrouter")
         fallback_runner = create(:runner, :api_key,
@@ -91,12 +91,19 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
           provider_api_key: api_key_record,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
         )
-        chat_session = create(:chat_session, account: account, created_by: user, runner: unavailable_runner)
+        chat_session = create(:chat_session,
+          account: account,
+          created_by: user,
+          runner: unavailable_runner,
+          model: "claude-sonnet-4-20250514"
+        )
 
         client = described_class.call(chat_session: chat_session)
 
         expect(client).to be_a(described_class::HttpClient)
         expect(chat_session.reload.runner).to eq(fallback_runner)
+        expect(chat_session.model).to eq("moonshotai/kimi-k2")
+        expect(client.model).to eq("moonshotai/kimi-k2")
       end
     end
 
