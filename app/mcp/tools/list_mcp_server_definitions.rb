@@ -15,15 +15,21 @@ module Tools
     end
 
     def perform
-      policy_scope(McpServerDefinition).includes(:account).order(created_at: :desc).map do |definition|
-        serialize_definition(definition)
+      policy_scope(McpServerDefinition).order(created_at: :desc).map do |definition|
+        serialize_summary(definition)
       end
     end
 
     private
 
-    def serialize_definition(definition)
-      McpServerDefinitionSerialization.serialize_mcp_server_definition(definition)
+    def serialize_summary(definition)
+      definition.attributes.slice(
+        "id",
+        "name",
+        "install_type",
+        "transport",
+        "enabled"
+      )
     end
   end
 end

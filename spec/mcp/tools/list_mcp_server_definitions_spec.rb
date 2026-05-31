@@ -8,12 +8,27 @@ RSpec.describe Tools::ListMcpServerDefinitions do
   let(:session) { create(:chat_session, account:, created_by: user) }
 
   describe Tools::ListMcpServerDefinitions do
-    it "lists account MCP server definitions" do
-      definition = create(:mcp_server_definition, account:)
+    it "lists account MCP server definitions with summary fields only" do
+      definition = create(
+        :mcp_server_definition,
+        account:,
+        command: "npx @paid/docs-mcp",
+        env: { "API_KEY" => "secret" },
+        metadata: { "category" => "docs" }
+      )
 
       result = described_class.new(user:, session:).call
+      serialized_definition = result.find { |row| (row["id"] || row[:id]) == definition.id }
 
       expect(result.map { |row| row["id"] || row[:id] }).to include(definition.id)
+      expect(serialized_definition).to include(
+        "id" => definition.id,
+        "name" => definition.name,
+        "install_type" => definition.install_type,
+        "transport" => definition.transport,
+        "enabled" => definition.enabled
+      )
+      expect(serialized_definition).not_to include("command", "url", "image", "args", "env", "metadata")
     end
   end
 
