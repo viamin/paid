@@ -16,7 +16,23 @@ module Tools
       "Tools::SearchCode",
       "Tools::ReadRepoFile",
       "Tools::ListRepoTree",
-      "Tools::GrepRepo"
+      "Tools::GrepRepo",
+      "Tools::ListAccountMemberships",
+      "Tools::InviteAccountMember",
+      "Tools::UpdateAccountMembership",
+      "Tools::RemoveAccountMembership",
+      "Tools::GetUserSettings",
+      "Tools::UpdateUserSettings",
+      "Tools::GetTenantSettings",
+      "Tools::UpdateTenantSettings",
+      "Tools::ListProviderApiKeys",
+      "Tools::CreateProviderApiKey",
+      "Tools::UpdateProviderApiKey",
+      "Tools::RemoveProviderApiKey",
+      "Tools::ListMcpServerDefinitions",
+      "Tools::CreateMcpServerDefinition",
+      "Tools::UpdateMcpServerDefinition",
+      "Tools::RemoveMcpServerDefinition"
     ].freeze
 
     class << self
@@ -50,14 +66,7 @@ module Tools
       end
 
       def tool_available_to?(klass, user:)
-        return false if user.blank?
-        return true unless klass.write_operation?
-
-        return true if Pundit.policy(user, Project.new(account: user.account))&.run_agent?
-
-        scope = Pundit.policy_scope!(user, Project)
-
-        scope.any? { |project| Pundit.policy!(user, project).run_agent? }
+        klass.available_to?(user:)
       end
     end
   end
