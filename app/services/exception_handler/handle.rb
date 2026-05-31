@@ -42,14 +42,16 @@ module ExceptionHandler
       fingerprint = Fingerprinter.call(exception: @exception, subsystem: @subsystem)
       classification = Classifier.call(exception: @exception, subsystem: @subsystem)
 
-      log_exception(classification)
-
-      return logged_result(classification) if classification.action == "logged"
+      if classification.action == "logged"
+        log_exception(classification, action: "logged")
+        return logged_result(classification)
+      end
 
       incident = find_or_create_incident(fingerprint, classification)
       file_or_update_issue(incident, classification) if @project
 
       notify_if_needed(incident, classification)
+      log_exception(classification, action: incident.action_taken)
 
       Result.new(success: true, incident: incident, action: incident.action_taken)
     rescue IssueFiler::RetryableFilingInProgress
@@ -72,7 +74,7 @@ module ExceptionHandler
       @account.projects.find_by(id: project_id)
     end
 
-    def log_exception(classification)
+    def log_exception(classification, action:)
       Rails.logger.public_send(
         classification.severity == "p1" ? :error : :warn,
         message: "exception_handler.captured",
@@ -80,7 +82,7 @@ module ExceptionHandler
         exception_message: @exception.message&.truncate(500),
         subsystem: @subsystem,
         severity: classification.severity,
-        action: classification.action,
+        action: action,
         reason: classification.reason,
         project_id: @project&.id
       )

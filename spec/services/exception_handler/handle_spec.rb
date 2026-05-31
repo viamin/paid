@@ -159,6 +159,22 @@ RSpec.describe ExceptionHandler::Handle do
           )
         )
       end
+
+      it "logs the effective notified action" do
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+        allow(Notifications::Publish).to receive(:call)
+        allow(Rails.logger).to receive(:warn)
+
+        call_handler(error: error, account: account, context: context)
+
+        expect(Rails.logger).to have_received(:warn).with(
+          a_hash_including(
+            message: "exception_handler.captured",
+            subsystem: "github_sync",
+            action: "notified"
+          )
+        )
+      end
     end
 
     context "with a duplicate exception" do
