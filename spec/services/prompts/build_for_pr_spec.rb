@@ -66,11 +66,11 @@ RSpec.describe Prompts::BuildForPr do
   end
 
   before do
+    TenantContext.with_system_access { StyleGuide.delete_all }
+
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
       .and_return(pr_data)
-
-
 
     allow(github_client).to receive_messages(
       check_runs_for_ref: [],

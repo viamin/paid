@@ -117,6 +117,184 @@ RSpec.describe Tools::Registry do
           authorize_record!(user, project_record, :show?)
           Knowledge::Search.call(project: project_record, query: "agent run", mode: "hybrid", limit: 10)
         }
+      },
+      {
+        tool_name: "list_account_memberships",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, account, :show?, policy_class: AccountPolicy)
+          account.account_memberships.includes(:user).order(role: :desc, created_at: :asc).to_a
+        }
+      },
+      {
+        tool_name: "invite_account_member",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { email: "blocked@example.com", role: "member", confirmed: true } },
+        ui_call: ->(user) {
+          authorize_record!(user, account, :update?, policy_class: AccountPolicy)
+          Accounts::InviteMember.call(account: account, actor: user, email: "blocked@example.com", role: "member")
+        }
+      },
+      {
+        tool_name: "update_account_membership",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> {
+          membership = create(:account_membership, account: account, user: create(:user, account: account), role: :member)
+          { membership_id: membership.id, role: "admin", confirmed: true }
+        },
+        ui_call: ->(user) {
+          membership = account.account_memberships.order(:id).last
+          authorize_record!(user, account, :update?, policy_class: AccountPolicy)
+          Accounts::UpdateMembership.call(account: account, membership: membership, actor: user, role: "admin")
+        }
+      },
+      {
+        tool_name: "remove_account_membership",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> {
+          membership = create(:account_membership, account: account, user: create(:user, account: account), role: :member)
+          { membership_id: membership.id, confirmed: true }
+        },
+        ui_call: ->(user) {
+          membership = account.account_memberships.order(:id).last
+          authorize_record!(user, account, :update?, policy_class: AccountPolicy)
+          Accounts::RemoveMembership.call(account: account, membership: membership, actor: user)
+        }
+      },
+      {
+        tool_name: "get_user_settings",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          settings_owner = create(:user, :member, account: account)
+          authorize_record!(user, settings_owner.settings, :edit?)
+          settings_owner.settings
+        }
+      },
+      {
+        tool_name: "update_user_settings",
+        denied_user: -> { nil },
+        arguments: -> { { settings: { theme_preference: "dark" }, confirmed: true } },
+        ui_call: ->(user) {
+          settings_owner = create(:user, :member, account: account)
+          authorize_record!(user, settings_owner.settings, :update?)
+          settings_owner.settings.update!(theme_preference: "dark")
+        }
+      },
+      {
+        tool_name: "get_tenant_settings",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, account, :update?, policy_class: AccountPolicy)
+          account.tenant_setting!
+        }
+      },
+      {
+        tool_name: "update_tenant_settings",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { settings: { max_concurrent_runs: 9 }, confirmed: true } },
+        ui_call: ->(user) {
+          authorize_record!(user, account, :update?, policy_class: AccountPolicy)
+          account.tenant_setting!.update!(max_concurrent_runs: 9)
+        }
+      },
+      {
+        tool_name: "list_provider_api_keys",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { Pundit.policy_scope!(user, ProviderApiKey).ordered.to_a }
+      },
+      {
+        tool_name: "create_provider_api_key",
+        denied_user: -> { nil },
+        arguments: -> { { name: "Denied", api_key: "sk", api_service_type: "openai", confirmed: true } },
+        ui_call: ->(user) {
+          key_owner = create(:user, :member, account: account)
+          record = key_owner.provider_api_keys.build
+          authorize_record!(user, record, :create?, policy_class: ProviderApiKeyPolicy)
+          key_owner.provider_api_keys.create!(name: "Denied", api_key: "sk", api_service_type: "openai")
+        }
+      },
+      {
+        tool_name: "update_provider_api_key",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> {
+          provider_api_key = create(:provider_api_key, user: create(:user, :member, account: account))
+          { provider_api_key_id: provider_api_key.id, attributes: { name: "Denied" }, confirmed: true }
+        },
+        ui_call: ->(user) {
+          provider_api_key = ProviderApiKey.order(:id).last
+          record = Pundit.policy_scope!(user, ProviderApiKey).find(provider_api_key.id)
+          authorize_record!(user, record, :update?, policy_class: ProviderApiKeyPolicy)
+          record.update!(name: "Denied")
+        }
+      },
+      {
+        tool_name: "remove_provider_api_key",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> {
+          provider_api_key = create(:provider_api_key, user: create(:user, :member, account: account))
+          { provider_api_key_id: provider_api_key.id, confirmed: true }
+        },
+        ui_call: ->(user) {
+          provider_api_key = ProviderApiKey.order(:id).last
+          record = Pundit.policy_scope!(user, ProviderApiKey).find(provider_api_key.id)
+          authorize_record!(user, record, :destroy?, policy_class: ProviderApiKeyPolicy)
+          record.destroy!
+        }
+      },
+      {
+        tool_name: "list_mcp_server_definitions",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, McpServerDefinition, :index?, policy_class: McpServerDefinitionPolicy)
+          Pundit.policy_scope!(user, McpServerDefinition).to_a
+        }
+      },
+      {
+        tool_name: "create_mcp_server_definition",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> {
+          {
+            attributes: { name: "Denied", transport: "stdio", install_type: "npx", command: "npx denied" },
+            confirmed: true
+          }
+        },
+        ui_call: ->(user) {
+          record = account.mcp_server_definitions.build
+          authorize_record!(user, record, :create?, policy_class: McpServerDefinitionPolicy)
+          account.mcp_server_definitions.create!(name: "Denied", transport: "stdio", install_type: "npx", command: "npx denied")
+        }
+      },
+      {
+        tool_name: "update_mcp_server_definition",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> {
+          definition = create(:mcp_server_definition, account: account)
+          { mcp_server_definition_id: definition.id, attributes: { name: "Denied" }, confirmed: true }
+        },
+        ui_call: ->(user) {
+          definition = McpServerDefinition.order(:id).last
+          definition = Pundit.policy_scope!(user, McpServerDefinition).find(definition.id)
+          authorize_record!(user, definition, :update?, policy_class: McpServerDefinitionPolicy)
+          definition.update!(name: "Denied")
+        }
+      },
+      {
+        tool_name: "remove_mcp_server_definition",
+        denied_user: -> { create(:user, :admin, account: account) },
+        arguments: -> {
+          definition = create(:mcp_server_definition, account: account)
+          { mcp_server_definition_id: definition.id, confirmed: true }
+        },
+        ui_call: ->(user) {
+          definition = Pundit.policy_scope!(user, McpServerDefinition).order(:id).last
+          authorize_record!(user, definition, :destroy?, policy_class: McpServerDefinitionPolicy)
+          definition.destroy!
+        }
       }
     ]
   end
