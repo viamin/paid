@@ -272,7 +272,7 @@ RSpec.describe "ChatSessions" do
         get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Support chat")
+        expect(response.body).to include("Untitled chat")
         expect(response.body).to include("Archive &amp; New Chat")
         expect(response.body).to include("New Chat")
         expect(response.body).to include("Open page")
