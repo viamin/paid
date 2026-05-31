@@ -32,10 +32,17 @@ RSpec.describe Project do
     it { is_expected.to validate_numericality_of(:max_tokens_per_run).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(2_147_483_647).allow_nil }
     it { is_expected.to validate_numericality_of(:token_limit_warning_threshold).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
+    it { is_expected.to validate_inclusion_of(:data_classification).in_array(described_class::DATA_CLASSIFICATIONS) }
 
     it "defaults max_execution_seconds to 3600" do
       project = build(:project)
       expect(project.max_execution_seconds).to eq(3600)
+    end
+
+    it "defaults data_classification to internal" do
+      project = build(:project)
+
+      expect(project.data_classification).to eq("internal")
     end
 
     it "validates knowledge_status inclusion" do
@@ -165,6 +172,26 @@ RSpec.describe Project do
       it "returns the GitHub URL" do
         project = build(:project, owner: "viamin", repo: "paid")
         expect(project.github_url).to eq("https://github.com/viamin/paid")
+      end
+    end
+
+    describe "#confidential?" do
+      it "returns true for confidential projects" do
+        expect(build(:project, data_classification: "confidential")).to be_confidential
+      end
+
+      it "returns false for other classifications" do
+        expect(build(:project, data_classification: "internal")).not_to be_confidential
+      end
+    end
+
+    describe "#restricted?" do
+      it "returns true for restricted projects" do
+        expect(build(:project, data_classification: "restricted")).to be_restricted
+      end
+
+      it "returns false for other classifications" do
+        expect(build(:project, data_classification: "confidential")).not_to be_restricted
       end
     end
 

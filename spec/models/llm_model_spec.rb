@@ -12,9 +12,28 @@ RSpec.describe LlmModel do
     it { is_expected.to validate_presence_of(:provider) }
     it { is_expected.to validate_presence_of(:category) }
     it { is_expected.to validate_inclusion_of(:category).in_array(described_class::CATEGORIES) }
+    it { is_expected.to validate_inclusion_of(:pricing_tier).in_array(described_class::PRICING_TIERS) }
+    it { is_expected.to validate_inclusion_of(:catalog_source).in_array(described_class::CATALOG_SOURCES) }
 
     it "permits a nil tier" do
       expect(build(:llm_model, tier: nil)).to be_valid
+    end
+
+    it "permits a nil data_training_risk" do
+      expect(build(:llm_model, data_training_risk: nil)).to be_valid
+    end
+
+    it "rejects an unknown data_training_risk" do
+      model = build(:llm_model, data_training_risk: "always")
+
+      expect(model).not_to be_valid
+      expect(model.errors[:data_training_risk]).to be_present
+    end
+
+    it "accepts each known data_training_risk" do
+      LlmModel::DATA_TRAINING_RISKS.each do |risk|
+        expect(build(:llm_model, data_training_risk: risk)).to be_valid
+      end
     end
 
     it "rejects an unknown tier" do
@@ -31,10 +50,38 @@ RSpec.describe LlmModel do
   end
 
   describe "associations" do
+    it { is_expected.to belong_to(:free_variant_of).class_name("LlmModel").optional }
     it { is_expected.to have_many(:model_selections) }
   end
 
   describe "scopes" do
+    describe ".free" do
+      it "returns only free models" do
+        free_model = create(:llm_model, pricing_tier: "free")
+        create(:llm_model, pricing_tier: "paid")
+
+        expect(described_class.free).to eq([ free_model ])
+      end
+    end
+
+    describe ".paid" do
+      it "returns only paid models" do
+        paid_model = create(:llm_model, pricing_tier: "paid")
+        create(:llm_model, pricing_tier: "free")
+
+        expect(described_class.paid).to eq([ paid_model ])
+      end
+    end
+
+    describe ".by_pricing_tier" do
+      it "filters by pricing tier" do
+        freemium = create(:llm_model, pricing_tier: "freemium")
+        create(:llm_model, pricing_tier: "paid")
+
+        expect(described_class.by_pricing_tier("freemium")).to eq([ freemium ])
+      end
+    end
+
     describe ".active" do
       it "returns only active models" do
         active = create(:llm_model, active: true)
@@ -80,6 +127,16 @@ RSpec.describe LlmModel do
 
       # Input: 3.0 * 1 = 3.0, Output: 15.0 * 0.1 = 1.5, Total: 4.5 => 450 cents
       expect(cost).to eq(450)
+    end
+  end
+
+  describe "#free?" do
+    it "returns true when the pricing tier is free" do
+      expect(build(:llm_model, pricing_tier: "free")).to be_free
+    end
+
+    it "returns false for non-free pricing tiers" do
+      expect(build(:llm_model, pricing_tier: "paid")).not_to be_free
     end
   end
 

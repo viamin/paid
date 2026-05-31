@@ -808,7 +808,7 @@ RSpec.describe "AgentRuns" do
 
         expect(response.body).to include(">Retry</button>")
         expect(response.body).not_to include("Retry options")
-        expect(response.body).not_to include('role="menu"')
+        expect(response.body).not_to include('aria-label="Retry options"')
       end
 
       it "shows a deleted runner entry label for missing routed fallback attempts" do
@@ -987,6 +987,17 @@ RSpec.describe "AgentRuns" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Trigger Agent Run")
         expect(response.body).to include("Claude")
+      end
+
+      it "adds extra mobile bottom spacing for the floating chat button" do
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        container = doc.at_css("main > div.mx-auto.max-w-2xl")
+
+        expect(container).not_to be_nil
+        expect(container["class"]).to include("pb-28")
+        expect(container["class"]).to include("sm:pb-8")
       end
 
       it "includes goal-toggle Stimulus wiring" do
