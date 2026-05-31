@@ -26,6 +26,7 @@ class Project < ApplicationRecord
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
+  DATA_CLASSIFICATIONS = %w[open internal confidential restricted].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
     "driver" => "playwright",
@@ -239,6 +240,7 @@ class Project < ApplicationRecord
   validates :token_limit_warning_threshold,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
+  validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :exactly_one_github_credential, if: :validate_github_credential_presence?
@@ -296,6 +298,14 @@ class Project < ApplicationRecord
 
   def deactivate!
     update!(active: false)
+  end
+
+  def confidential?
+    data_classification == "confidential"
+  end
+
+  def restricted?
+    data_classification == "restricted"
   end
 
   def label_for_stage(stage)
