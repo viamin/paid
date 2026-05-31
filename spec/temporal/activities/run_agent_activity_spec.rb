@@ -691,6 +691,16 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    it "returns nil preparation when no persisted runner exists and the bare runner key is unknown" do
+      context = described_class::CommandContext.new(
+        runner_candidate: nil,
+        runner: "not_a_real_runner",
+        user: user
+      )
+
+      expect(activity.send(:command_preparation_for, context, "ping")).to be_nil
+    end
+
     context "with a direct-outbound kilocode runner" do
       it "includes PAID_KILOCODE_CONFIG_B64 in command env alongside PAID_PROVIDER_ID" do
         context = build_kilocode_context(user)
@@ -4337,7 +4347,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "does not reuse a cached plan when MCP servers change between executions" do
-        # First call: no MCP servers → plan built without --mcp-config
+        # First call: no MCP servers → plan built with the explicit empty MCP config
         plan_without_mcp = activity.send(:harness_execution_plan_for, "claude_code", "do stuff")
 
         # Simulate a second execution where MCP servers are now provisioned

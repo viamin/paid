@@ -2011,6 +2011,7 @@ module Activities
     def command_preparation_for(command_context, prompt, agent_run: nil)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
       return direct_outbound_execution_plan(runner_entry, prompt, agent_run: agent_run).preparation if runner_entry&.agent_harness_runtime?
+      return nil unless runner_entry || harness_execution_plan_supported?(command_context.runner)
 
       if runner_entry&.requires_direct_outbound?
         return harness_execution_plan_for(
@@ -2028,6 +2029,13 @@ module Activities
         user: command_context.user,
         agent_run: agent_run
       ).preparation
+    end
+
+    def harness_execution_plan_supported?(runner_key)
+      harness_provider_for(runner_key)
+      true
+    rescue AgentHarness::ConfigurationError, KeyError
+      false
     end
 
     # Assembles the effective MCP server list from the agent run's
