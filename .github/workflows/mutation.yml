@@ -153,6 +153,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     continue-on-error: true
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/Gemfile.viamin
 
     services:
       postgres:
@@ -192,24 +194,19 @@ jobs:
             echo "MUTANT_PARITY_MODE=full" >> "$GITHUB_ENV"
           fi
           echo "MUTANT_OUTPUT_FILE=tmp/mutant-viamin.log" >> "$GITHUB_ENV"
+          mkdir -p tmp
+          : > tmp/mutant-viamin.log
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f
-        env:
-          BUNDLE_GEMFILE: Gemfile.viamin
-          BUNDLE_FROZEN: "true"
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Prepare database
-        env:
-          BUNDLE_GEMFILE: Gemfile.viamin
         run: bundle exec bin/rails db:prepare
 
       - name: Mutant viamin parity
-        env:
-          BUNDLE_GEMFILE: Gemfile.viamin
         run: |
           chmod +x script/ci/mutation_viamin_parity.sh
           if [ "$MUTANT_PARITY_MODE" = "incremental" ]; then
@@ -224,3 +221,4 @@ jobs:
         with:
           name: mutation-viamin-parity-log
           path: ${{ env.MUTANT_OUTPUT_FILE }}
+          if-no-files-found: ignore
