@@ -1095,7 +1095,7 @@ module Activities
       )
       command = build_command(command_context, prompt)
       command_env = command_env_for(command_context, prompt)
-      command_preparation = command_preparation_for(command_context, prompt)
+      command_preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
 
       resolved_harness_provider = begin
         harness_provider_for(runner)
@@ -1317,7 +1317,7 @@ module Activities
       prompt = runner_preflight_prompt_for(runner)
       command = build_command(command_context, prompt, agent_run: agent_run)
       env = command_env_for(command_context, prompt)
-      preparation = command_preparation_for(command_context, prompt)
+      preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
       preflight_timeout = preflight_timeout_seconds_for(command_context.runner_candidate, command_context.user)
 
       result = container_service.execute(
@@ -2008,11 +2008,26 @@ module Activities
       env
     end
 
-    def command_preparation_for(command_context, prompt)
+    def command_preparation_for(command_context, prompt, agent_run: nil)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
-      return nil unless runner_entry&.agent_harness_runtime?
+      return direct_outbound_execution_plan(runner_entry, prompt, agent_run: agent_run).preparation if runner_entry&.agent_harness_runtime?
 
-      direct_outbound_execution_plan(runner_entry, prompt).preparation
+      if runner_entry&.requires_direct_outbound?
+        return harness_execution_plan_for(
+          command_context.runner,
+          prompt,
+          runner_entry: runner_entry,
+          user: command_context.user,
+          agent_run: agent_run
+        ).preparation
+      end
+
+      harness_execution_plan_for(
+        command_context.runner,
+        prompt,
+        user: command_context.user,
+        agent_run: agent_run
+      ).preparation
     end
 
     # Assembles the effective MCP server list from the agent run's
