@@ -3,6 +3,10 @@
 require "rails_helper"
 
 RSpec.describe StyleGuides::InjectIntoPrompt do
+  before do
+    TenantContext.with_system_access { StyleGuide.delete_all }
+  end
+
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let(:base_prompt) { "# Task\n\nFix the bug in auth.rb" }

@@ -3,6 +3,10 @@
 require "rails_helper"
 
 RSpec.describe StyleGuide do
+  before do
+    TenantContext.with_system_access { described_class.delete_all }
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:account).optional }
     it { is_expected.to belong_to(:project).optional }

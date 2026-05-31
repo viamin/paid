@@ -11,6 +11,10 @@ module Tools
       "Cancel an in-flight agent run. Requires explicit confirmation."
     end
 
+    def self.available_to?(user:)
+      run_agent_available_to?(user:)
+    end
+
     def self.input_schema
       {
         type: "object",

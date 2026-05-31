@@ -3,6 +3,10 @@
 require "rails_helper"
 
 RSpec.describe Metrics::PrometheusCollector do
+  before do
+    GoodJob::Job.delete_all
+  end
+
   describe ".call" do
     subject(:output) { described_class.call }
 
