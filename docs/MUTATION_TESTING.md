@@ -1,10 +1,10 @@
 # Mutation Testing
 
-Paid runs a tier-1 mutation suite from [`/.mutant.yml`](/workspace/.mutant.yml) in CI. That suite stays intentionally small and targets high-blast-radius code such as trusted-comment filtering, tenant context handling, and authorization policy behavior.
+Paid runs a tier-1 mutation suite from [`.mutant.yml`](../.mutant.yml) in CI. That suite stays intentionally small and targets high-blast-radius code such as trusted-comment filtering, tenant context handling, and authorization policy behavior.
 
 ## CI jobs
 
-- `incremental` in [`.github/workflows/mutation.yml`](/workspace/.github/workflows/mutation.yml) runs the sanctioned `mutant-rspec` release on pull requests with `--usage opensource --since origin/<base-ref>`.
+- `incremental` in [`.github/workflows/mutation.yml`](../.github/workflows/mutation.yml) runs the sanctioned `mutant-rspec` release on pull requests with `--usage opensource --since origin/<base-ref>`.
 - `full` in the same workflow runs the sanctioned release nightly across the full tier-1 suite.
 - `mutation-viamin-parity` runs against `viamin/mutant@main` as an allowed-failure check on every pull request and on the nightly schedule.
 
