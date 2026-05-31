@@ -58,8 +58,10 @@ RSpec.describe "Dashboard" do
         expect(menu).to be_present
         expect(menu["class"]).to include("hidden")
         menu_labels = menu.css("a, form button").map { |node| node.text.strip }
+        menu_roles = menu.css("a, form button").map { |node| node["role"] }
 
         expect(menu_labels).to include("Settings", "Account", "Sign out")
+        expect(menu_roles).to all(eq("menuitem"))
         expect(menu.css("a").map { |node| node["data-action"] }).to all(eq("dropdown#close"))
       end
 
