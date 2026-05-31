@@ -48,6 +48,21 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
     end
   end
 
+  def stub_detect_framework
+    allow(Projects::Screenshots::DetectFramework).to receive(:call).and_return(
+      Projects::Screenshots::DetectFramework::Result.new(
+        framework: "Rails",
+        confidence: "high",
+        driver: "cuprite",
+        service_dependencies: [ "postgres" ],
+        setup_commands: [ "bin/setup --skip-server" ],
+        suggested_config: { "driver" => "cuprite" },
+        suggested_yaml: "driver: cuprite\n",
+        detected_at: Time.current.iso8601
+      )
+    )
+  end
+
   def persisted_project
     TenantContext.with_system_access { Project.find(project.id) }
   end
@@ -85,20 +100,10 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
   end
 
   it "runs framework detection from the settings page" do
-    allow(Projects::Screenshots::DetectFramework).to receive(:call).and_return(
-      Projects::Screenshots::DetectFramework::Result.new(
-        framework: "Rails",
-        confidence: "high",
-        driver: "cuprite",
-        service_dependencies: [ "postgres" ],
-        setup_commands: [ "bin/setup --skip-server" ],
-        suggested_config: { "driver" => "cuprite" },
-        suggested_yaml: "driver: cuprite\n",
-        detected_at: Time.current.iso8601
-      )
-    )
-
+    stub_detect_framework
     visit edit_project_path(project)
+    expect(page).to have_button("Auto-detect")
+    expect(page).to have_no_button("Detect & Suggest")
     click_button "Auto-detect"
 
     expect(page).to have_content("Detected Rails with high confidence.")
