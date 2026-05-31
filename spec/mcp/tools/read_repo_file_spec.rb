@@ -117,6 +117,30 @@ RSpec.describe Tools::ReadRepoFile do
         .to raise_error(ActiveRecord::RecordNotFound)
     end
 
+    it "resolves HEAD to the project's default branch" do
+      file_data = Struct.new(:path, :type, :content, :size).new(
+        "README.md", "file", Base64.strict_encode64("# Hello"), 7
+      )
+      project.update!(default_branch: "stable")
+      allow(github_client).to receive(:contents).and_return(file_data)
+
+      tool.call(project_id: project.id, path: "README.md")
+
+      expect(github_client).to have_received(:contents).with(project.full_name, hash_including(ref: "stable"))
+    end
+
+    it "falls back to main when HEAD has no stored default branch" do
+      file_data = Struct.new(:path, :type, :content, :size).new(
+        "README.md", "file", Base64.strict_encode64("# Hello"), 7
+      )
+      allow(project).to receive(:default_branch).and_return(nil)
+      allow(github_client).to receive(:contents).and_return(file_data)
+
+      tool.call(project_id: project.id, path: "README.md")
+
+      expect(github_client).to have_received(:contents).with(project.full_name, hash_including(ref: "main"))
+    end
+
     it "uses specified ref" do
       file_data = Struct.new(:path, :type, :content, :size).new(
         "README.md", "file", Base64.strict_encode64("# Hello"), 7

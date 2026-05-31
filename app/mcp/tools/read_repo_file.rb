@@ -29,6 +29,9 @@ module Tools
       repo_client = resolve_repo_read_client(project)
       client = repo_client.client
 
+      ref = project.default_branch if ref == "HEAD"
+      ref ||= "main"
+
       data = client.contents(project.full_name, path: path, ref: ref)
 
       return error_result("Path is a directory, not a file", repo_client.identity) if data.is_a?(Array)
